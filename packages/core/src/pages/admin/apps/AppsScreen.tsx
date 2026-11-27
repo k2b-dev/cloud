@@ -3,11 +3,11 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Failed, Inline, Input, Mark, type NavProps, Notice, Pane, StatusRow, Table, Tabs, Text, useToast } from "@k2b/ui/v2";
+import { Bar, Button, Failed, Input, type NavProps, Notice, Pane, StatusRow, Table, Tabs, Text, useToast } from "@k2b/ui/v2";
 import { createMemo, createSignal, Match, Show, Switch } from "solid-js";
 import { adminToasts } from "../_area/toasts";
 import AddApp from "./AddApp";
-import { AppOverview, ErrorsView, EventsView, markIcon, RoutesView, RuntimeView, StatusChip, statusLabel } from "./app-views";
+import { AppOverview, ErrorsView, EventsView, RoutesView, RuntimeView, StatusChip, statusLabel } from "./app-views";
 import Domains from "./Domains";
 import DomainsAdd from "./DomainsAdd";
 import { appsFormat } from "./format";
@@ -223,7 +223,7 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
                       : { icon: "filter-off", text: t().noMatch, action: { label: t().showAllApps, href: appsHref({ app: query().app }) } }
                   }
                   phone={(entry) => ({
-                    mark: { icon: markIcon(entry.icon), color: entry.accent ?? undefined },
+                    // slot for #4208 (DP): the app's mark in its colour leads the phone row
                     // a problem state leads the meta line in its colour (identity B, phone); a good one in words
                     lines: [
                       entry.name,
@@ -240,7 +240,7 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
                       title: t().columnApp,
                       width: { min: 160, default: 200 },
                       // the app's own sign in its colour (the content shows whose it is); one line per row, routes in the detail
-                      mark: (entry) => ({ icon: markIcon(entry.icon), color: entry.accent ?? undefined }),
+                      // slot for #4208 (DP): Column mark, the app's icon (markIcon) in its accent colour
                       cell: (entry) => entry.name,
                     },
                     {
@@ -268,11 +268,8 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
             head={
               <Bar
                 start={
-                  // k2b-ui gap: the tinted object head (40 px sign, name 18, three key facts) comes with DP; mark and name stand in
-                  <Inline>
-                    <Mark icon={markIcon(app()!.entry.icon)} color={app()!.entry.accent ?? undefined} />
-                    <Text type="body">{app()!.entry.name}</Text>
-                  </Inline>
+                  // slot for #4208/#4223 (DP): the tinted object head (40 px mark, name 18, three key facts); the name stands in
+                  <Text type="body">{app()!.entry.name}</Text>
                 }
                 end={
                   <>

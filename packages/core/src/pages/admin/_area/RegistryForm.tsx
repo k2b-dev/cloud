@@ -1,7 +1,7 @@
 import { coreClient } from "@k2b/cloud/clients/core";
 import { createSettingsDraft, SaveRejected, saveFailure, settingsSaveControls } from "@k2b/cloud/ssr/settings-draft";
 import { readSettingsError, useLocale } from "@k2b/ui";
-import { Bar, Button, Check, Chip, Notice, Section, Setting } from "@k2b/ui/v2";
+import { Bar, Button, Check, Chip, Field, Notice, Section } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { localizeSettingField } from "../settings/_components/setting-copy";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
@@ -258,12 +258,13 @@ export default function RegistryForm(props: {
       !unreadable(fieldProps.key) &&
       JSON.stringify(form.draft()[fieldProps.key] ?? null) !== JSON.stringify(item().value ?? null);
     return (
-      <Setting
+      // slot for #4223 (DP): this field becomes a Setting row (name left, value at a fixed width) with `was`;
+      // until then the unsaved change's old value stands in the hint
+      <Field
         name={fieldProps.key}
         label={item().label}
-        hint={hint(item())}
+        hint={changed() ? `${hint(item())} · ${t().changedWas({ value: preview(item(), item().value, t()) })}` : hint(item())}
         error={form.errors()[fieldProps.key] ?? fieldErrors()[fieldProps.key]}
-        was={changed() ? preview(item(), item().value, t()) : undefined}
         action={
           isReset()
             ? {
@@ -298,7 +299,7 @@ export default function RegistryForm(props: {
             form.update({ [fieldProps.key]: value });
           }}
         />
-      </Setting>
+      </Field>
     );
   };
 

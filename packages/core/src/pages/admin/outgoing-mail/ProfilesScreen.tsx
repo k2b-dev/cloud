@@ -159,7 +159,7 @@ export default function ProfilesScreen(props: { nav: NavProps; profiles: Profile
               {
                 title: t().profile,
                 width: { min: 180, default: 220 },
-                mark: () => ({ icon: "mail-cog" }),
+                // slot for #4208 (DP): Column mark "mail-cog"
                 // a plain value, so a long name is cut with "…" and says itself on hover
                 cell: (row) => (row.isDefault ? `${row.name} · ${t().defaultBadge}` : row.name),
               },

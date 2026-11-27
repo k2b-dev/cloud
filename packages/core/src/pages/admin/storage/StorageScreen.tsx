@@ -665,7 +665,7 @@ export default function StorageScreen(props: StorageScreenProps) {
                   title: t().name,
                   // the minimum widths add up to less than the list's room beside an open bucket, so the table keeps its form
                   width: { min: 150, default: 200 },
-                  mark: () => ({ icon: "database" }),
+                  // slot for #4208 (DP): Column mark "database"
                   cell: (row) => storageBucketName(t(), row),
                 },
                 { title: t().where, drop: true, cell: (row) => storageBucketLine(t(), row) },

@@ -45,8 +45,6 @@ export const heights = {
   bar: 40,
   columns: 36,
   row: 40,
-  /** A row that leads with a thing's mark of 32 px (a file's thumbnail, a folder), in a table or a list. */
-  rowMark: 44,
   row2: 52,
   row3: 72,
   dense: 32,

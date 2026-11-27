@@ -93,13 +93,13 @@ test("a reset goes back to the default only on save, Discard drops it, and a rem
   // The third field's place below the first, independent of where the pane is scrolled.
   const thirdTop = () =>
     page.evaluate(() => {
-      const fields = document.querySelectorAll('main [data-k2-part="Setting"]');
+      const fields = document.querySelectorAll('main [data-k2-part="Field"]');
       return Math.round(fields[2]!.getBoundingClientRect().top - fields[0]!.getBoundingClientRect().top);
     });
   await settled(page);
   const before = await thirdTop();
   // the reset is the setting's own deed, at the end of its name's line
-  const name = page.locator('main [data-k2-part="Setting"]').first();
+  const name = page.locator('main [data-k2-part="Field"]').first();
   await name.getByRole("button", { name: "Reset to default", exact: true }).click();
   expect(await nameField().isDisabled()).toBe(true);
   expect(await page.getByText("Goes back to the default when you save.").isVisible()).toBe(true);
