@@ -178,8 +178,9 @@ still reaches the column's edges), `more` (one link under the rows, its
 words on their text edge, never at the right: "All deliveries ›"; its
 `meta` shows only in a
 `Pane side`, where the link becomes a row), children. No line under
-the head or between entries, one line at the end. Put `Row`s directly in a
-section, or a `Digest`, `Facts`, `Group`s.
+the head or between entries, one line at the end. A long title (a
+question, a name) wraps onto more lines and the head grows with it; no word
+is cut. Put `Row`s directly in a section, or a `Digest`, `Facts`, `Group`s.
 
 ### Group
 
@@ -402,8 +403,9 @@ lines instead of cutting a thing.
   form from being sent without a value; the label line shows nothing for
   it, the fields that may stay empty say "optional". After a failed save a
   required field shows `error="Pflichtfeld."`.
-- `Input`: `value`, `placeholder`, `type`, `icon`, `multiline`, `min`,
-  `max`, `onInput`; `label` when it stands without a `Field` (a search).
+- `Input`: `value`, `placeholder`, `type`, `icon`, `multiline` (shows
+  `rows` lines at least, 3 by default, or the lines of its value from the
+  server's page on, and grows with its words up to ten lines, then scrolls), `min`, `max`, `onInput`; `label` when it stands without a `Field` (a search).
   `onKeyDown` (Enter to search, Escape to clear; while
   `event.isComposing`, Enter belongs to the input method and must not
   search), `ref` (the text field, to focus it), `end` (a symbol or a ghost
@@ -469,7 +471,9 @@ lines instead of cutting a thing.
   month's short name, keys move the weeks, the arrows by six. Use it inside a
   popover or sheet; a form field is `DateInput`.
 - `Check`: `label`, `checked` (`true`, `false`, `"mixed"`), `switch`,
-  `onChange`, `disabled` (dimmed).
+  `onChange`, `disabled` (dimmed), `description` (a quiet line under the
+  words, such as what turning it on does; it describes the box and is no
+  part of its name).
 - `Choice`: a few visible options, one chosen: `name`, `options`, `value`,
   `label`, `onChange`, `disabled` (every option dimmed). With a `label` and no `Field` around it, it shows
   that label as a field of its own; inside a `Field` the field's label is
