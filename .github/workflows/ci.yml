@@ -247,11 +247,13 @@ jobs:
   # The browser tests again in WebKit, the engine of Safari and of every
   # browser on iOS. The Playwright image of the catalog's version serves it
   # through `playwright run-server`; contributing/testing.md runs the same
-  # locally. Refreshed from runs 45486435794 and 45498231860, including a
-  # failed run. The table covers all 514 files. Twenty-two shards need 626.1 s
-  # (10.44 min), leaving 33.9 s below the 11-min target; twenty-one need
-  # 655.9 s, leaving too little room, and nineteen need 724.8 s and fail it.
-  # Ten extra unmeasured files (median 11.6 s) still fit at 631.3 s.
+  # locally. Refreshed from the merge-group runs 46029392449, 46029216532,
+  # 46028824752, 46028520019, 46028016333, 46026406738, 46026059471,
+  # 46025915797, 46019629749 and 46013063442 (failed groups included), the
+  # maximum of each file. The table covers all 577 files. Twenty-five shards
+  # need 650.9 s (10.85 min); twenty-four need 677.9 s and miss the 11-min
+  # target, twenty-two (before) need 739.5 s. One more unmeasured file (median
+  # 12.0 s) still fits at 651.3 s.
   # The 11-min target reserves the full 2-min warm-up plus the measured p95
   # 1.61x slowdown:
   # 11 * 1.61 + 2 < 20. The runner tests enforce this 55%-of-budget guard.
@@ -265,7 +267,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]
     env:
       TEST_BROWSER: webkit
       TEST_BROWSER_ENDPOINT: ws://127.0.0.1:3333/
