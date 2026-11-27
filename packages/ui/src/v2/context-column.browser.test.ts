@@ -138,6 +138,15 @@ describe("a context column stands beside its main column only where there is roo
           expect([where, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)]).toEqual([where, true]);
           if (beside) expectBeside(where, mainBox, sideBox, kind === "detail" ? 320 : 340);
           else await expectBelow(where, page, mainBox, sideBox);
+          // beside it, the main column takes the rest of the row, also one of a fixed width: that width only decides
+          // where the context gives way
+          if (beside && kind === "fixed") {
+            const split = await boxOf(page, ".k2-split[data-context]");
+            if (!split) throw new Error(`${where}: the split is missing`);
+            // the split less the context and its line (340 px)
+            expect([where, mainBox.width]).toEqual([where, split.width - 340]);
+            expect([where, mainBox.width > 560]).toEqual([where, true]);
+          }
         });
       // the server's page and the live one put the columns in the same places
       expect(seen[1]).toEqual(seen[0]);

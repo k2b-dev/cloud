@@ -665,6 +665,11 @@
 .k2-ui .k2-split[data-context] > .k2-seam {
   overflow-y: clip;
 }
+/* beside its context the main column takes the rest of the row, also one with a width: that width only decides where
+   the context gives way */
+.k2-ui .k2-split[data-context] > .k2-pane[data-width]:not([data-side]) {
+  flex-grow: 1;
+}
 
 /* ── Bar: fixed height by place, line below, places start and end ──────────────────────────────────────────── */
 .k2-ui .k2-bar {

@@ -425,7 +425,9 @@ export type PaneProps = {
    * the right half of a detail that grows on a large screen (who and what happened, beside what it is).
    *
    * In a `Pane.Split` of exactly one main column and this context column after it, the context stands beside the main
-   * column only where the split holds both at their default widths (a column without a `width` at 400 px). With less
+   * column only where the split holds both at their default widths (a column without a `width` at 400 px, a
+   * `{ fixed }` one at its width). Beside it, the main column always takes the rest of the row, also a `{ fixed }` one:
+   * there its width only decides where the context gives way. With less
    * room it gives way to the end of the main column: the split then scrolls in one piece, the main column first and
    * the context under it at the full width, so the main column is never squeezed and nothing hides; and it needs no
    * room of the workspace, so the sidebar never becomes a drawer for it. `{ from }` asks for more room, in px of the

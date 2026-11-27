@@ -14,7 +14,9 @@ export type Width = { min: number; default: number };
 
 /**
  * The width of a pane or a table column: one that can be dragged (`Width`), or `{ fixed }`, one width in CSS px
- * without a grip, for a page to read rather than to arrange (a visitor page, a wall screen).
+ * without a grip, for a page to read rather than to arrange (a visitor page, a wall screen). On the main column of a
+ * context split (`Pane side`) it only sets the width that decides whether the context stands beside or gives way;
+ * there the main column always takes the rest of the row.
  */
 export type ColumnWidth = Width | { fixed: number };
 

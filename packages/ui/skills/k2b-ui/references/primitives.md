@@ -77,7 +77,10 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   feeds, a chart beside a table); quieter sections, a `more` link becomes a
   row. In a `Pane.Split` of exactly one main column and this context column
   after it, the context stands beside only where the split holds both at
-  their default widths (400 px without a `width`). With less it gives way
+  their default widths (400 px without a `width`, a `{ fixed }` main
+  column at its width). Beside it, the main column always takes the rest of
+  the row; a `{ fixed }` width there only decides where the context gives
+  way. With less it gives way
   to the end of the main column, at its full width, and the split scrolls
   in one piece: the main column is never squeezed and nothing hides; it
   needs no room of the workspace, so the sidebar never becomes a drawer for
