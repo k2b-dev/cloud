@@ -109,7 +109,7 @@ const METER_CSS = `
 
 // study B: .band, .fig, .ex, .exr; the phone stacks figure, chart and exceptions
 const HERO_CSS = `
-.venue-hero{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:'fig chart' 'ex ex';gap:14px 32px;align-items:end;padding:18px var(--k2-edge,20px) 14px;font:var(--k2-t-body);color:var(--k2-text-2)}
+.venue-hero{container:venue-hero/inline-size;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:'fig chart' 'ex ex';gap:14px 32px;align-items:end;padding:18px var(--k2-edge,20px) 14px;font:var(--k2-t-body);color:var(--k2-text-2)}
 .venue-hero-fig{grid-area:fig;display:flex;flex-direction:column;gap:2px;min-width:0}
 .venue-hero-n{font:600 30px/34px var(--k2-font);color:color-mix(in srgb,var(--venue-app) 82%,#000);letter-spacing:-.015em;white-space:nowrap;font-variant-numeric:tabular-nums}
 .venue-hero-l{font:var(--k2-t-body);font-weight:500;color:var(--k2-text-2);white-space:nowrap}
@@ -120,6 +120,7 @@ const HERO_CSS = `
 .venue-hero-exr{display:flex;align-items:center;gap:8px;white-space:nowrap;color:var(--k2-text-2);min-width:0}
 .venue-hero-exr b{font-weight:600}
 .venue-hero-exr .venue-hero-m{margin-left:2px}
+@container venue-hero (min-width:600px){.venue-hero-ex{flex-wrap:nowrap}.venue-hero-exr{flex:0 1 auto}.venue-hero-exr .venue-hero-m{flex:0 1 auto;min-width:3ch}}
 .venue-hero-dot{width:7px;height:7px;border-radius:50%;background:var(--k2-n400);flex:none}
 .venue-hero-dot[data-tone=ok]{background:var(--k2-ok-dot)}
 .venue-hero-dot[data-tone=bad]{background:var(--k2-bad-dot)}
