@@ -53,10 +53,8 @@ export const heights = {
   /** The head of a table's columns (identity B). */
   tableHead: 34,
   row: 40,
-  /** A row of a list that leads with a thing's mark of 32 px (a file's thumbnail, a folder). */
+  /** A row of a list or a table that leads with a thing's mark (24, or 32 where the list shows pictures). */
   rowMark: 44,
-  /** A row of a table that leads with a thing's mark of 28 px (identity B). */
-  tableRowMark: 46,
   row2: 52,
   row3: 72,
   dense: 32,

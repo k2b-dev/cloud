@@ -43,6 +43,11 @@ export type TextProps = {
   tone?: Status | "ai" | "draft";
   /** The words lead to this page: they keep the ink of the text and are underlined (blue is only the main action). */
   href?: string;
+  /**
+   * The full words as a tooltip, for text its place may cut (a long title in a head): the same words, never a hint
+   * of something else.
+   */
+  title?: string;
   /** The words. */
   children: JSX.Element;
 };
@@ -59,6 +64,7 @@ export const Text = (props: TextProps) => (
   <Dynamic
     component={props.href ? "a" : "span"}
     href={props.href}
+    title={props.title}
     class={`k2-text${props.type ? ` ${typeClass[props.type]}` : ""}${props.weight ? ` ${weightClass[props.weight]}` : ""}${props.muted ? " k2-muted" : ""}${props.href ? " k2-link" : ""}`}
     data-k2-part="Text"
     data-type={props.type}
@@ -296,7 +302,8 @@ export type RowProps = {
   icon?: string;
   /**
    * … the mark of the thing the row stands for (a base, a file with its thumbnail, a table): its symbol on a tint of
-   * its colour, or its picture; 24 px in a row of one line, 32 px in a row of two or three …
+   * its colour, or its picture; 24 px, and 32 px in a list that shows pictures of its things (a mark with `image` or
+   * `kind`); the row is then 44 px, on the phone 56 with a mark of 40 …
    */
   mark?: MarkProps;
   /** … or a person. */
@@ -469,7 +476,8 @@ export const Row = (props: RowProps) => {
       </Show>
       <Show when={end() !== undefined || props.action}>
         <span class="k2-row-end">
-          <Show when={props.action}>{(action) => <ActionButton action={action()} />}</Show>
+          {/* the deed is named by its words and then the row's title, so rows with the same deed are told apart */}
+          <Show when={props.action}>{(action) => <ActionButton action={action()} about={title} />}</Show>
           {end()}
         </span>
       </Show>
@@ -498,10 +506,13 @@ export type Column<T> = {
   cell: (row: T) => CellValue;
   /** Numbers and amounts stand at the end. */
   align?: "start" | "end";
-  /** The cell leads with the thing's mark: a file's thumbnail or type, a base's symbol (24 px, rule: each thing its mark). */
+  /**
+   * The cell leads with the thing's mark: a base's symbol in 24 px, a file's thumbnail or type in 32 (with them every
+   * mark of the table), rule: each thing its mark.
+   */
   mark?: (row: T) => MarkProps;
-  /** The cell leads with a person, such as the owner; the name in the cell names the avatar. */
-  avatar?: (row: T) => Person;
+  /** The cell leads with a person, such as the owner; the name in the cell names the avatar. A row without one leads with nothing. */
+  avatar?: (row: T) => Person | undefined;
   /**
    * A column that can be dragged wider or narrower: its minimum and default in px. The column is exactly its
    * default wide; cut text never widens it.
@@ -756,7 +767,7 @@ export const Table = <T,>(props: TableProps<T>) => {
           data-lines={lines()}
           data-sized={sized() ? "" : undefined}
           data-grid={grid() ? "" : undefined}
-          // a column that leads with the thing's mark makes every row 44 px with a mark of 32, as the mockup's lists
+          // a column that leads with the thing's mark makes every row 44 px, as the mockup's lists
           data-marks={props.columns.some((column) => column.mark) ? "" : undefined}
           aria-label={props.label}
           aria-busy={loading() ? "true" : undefined}

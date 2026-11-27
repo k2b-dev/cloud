@@ -6,10 +6,12 @@ const settingMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      changedFrom: ({ value }: { value: string }) => `changed · was ${value}`,
+      changed: "changed",
+      before: ({ value }: { value: string }) => `was ${value}`,
     },
     de: {
-      changedFrom: ({ value }: { value: string }) => `geändert · vorher ${value}`,
+      changed: "geändert",
+      before: ({ value }: { value: string }) => `vorher ${value}`,
     },
   },
 });

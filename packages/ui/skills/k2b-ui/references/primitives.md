@@ -223,7 +223,9 @@ inside it.
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
 - lead: `mark` (the thing's `Mark`: a base, a file with its thumbnail, a
-  table; 32 px, and a row of one line with it is 44 px), or `avatar`, or a
+  table; 24 px, 32 in a list that shows pictures of its things (a mark
+  with `image` or `kind`, and the folders beside them); a row with a mark
+  is 44 px, on the phone 56 with a mark of 40), or `avatar`, or a
   quiet `icon` for a plain place or deed, or a dot when `unread`.
 - `meta` (quiet note after the title, a count), `time` (top right). Title
   and `meta` share the first line in equal parts, and each takes only what
@@ -236,7 +238,10 @@ inside it.
   colour, symbol, word): under the lines on the title's text edge; they
   wrap to more lines instead of being cut, on the phone too, and the row
   grows only when they are there.
-- `action` (one framed button at the end; under the text on the phone),
+- `action` (one framed button at the end; under the text on the phone; its
+  name is its words and then the row's title, "Ansehen Angebot Küche", so
+  rows with the same deed are told apart: name nothing yourself; on the
+  phone a finger hits 44 px of it, its look unchanged),
   `end` (a few icon buttons, or the state chip of a one- or two-line row).
 - states: `unread`, `strong`, `current` (the open one, app tint),
   `yours` (you are next).
@@ -269,8 +274,9 @@ lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 page itself if it needs one. The last column takes the rest. Chips,
 `Progress`, text buttons are fine in cells. `open(row) => { href } | {
 onOpen }` makes each row open its entry. A column's `mark(row)` leads its
-cell with the thing's `Mark` (a file's thumbnail or type, 32 px; the
-table's rows are then 44 px, as the mockup's lists), its
+cell with the thing's `Mark` (a base's symbol 24 px; a file's thumbnail
+or type 32, and every mark of that table with it; the table's rows are
+then 44 px, as the mockup's lists), its
 `avatar(row)` with a person (the name in the cell names it); `phone(row)`
 takes a `mark` as well.
 
@@ -318,6 +324,10 @@ one.
 out a little), `muted`, `tone` (`ok`, `warn`, `bad`, `ai`, `draft`), `href`
 (underlined words that lead somewhere; blue is only for the main action).
 Without `type`, text takes the role of its place.
+`title` gives text its full words as a tooltip where its place may cut it:
+the title of an open entry in its detail's head takes two lines, then "…".
+Two lines make that head 65 px: beside a list, its line then no longer meets
+the status row (K1 holds for a one-line title).
 In a column it is a block with the text edge; in a bar or row it runs
 inline. Emphasis is a weight, never a size.
 
@@ -354,8 +364,8 @@ lines instead of cutting a thing.
   symbol; while it loads and when it fails the symbol shows), `kind` (the
   type on its corner: `PDF`), `label` (without one it is decoration beside
   its name). The place sets the size: 20 in the sidebar and in a sentence,
-  24 leading a row of one line, 32 leading a row of two or three, 36 on a
-  card. In a sentence write `<Mark {...table} /><Text weight="strong">Aufträge</Text>`.
+  24 leading a row or a cell, 32 there in a list or table that shows
+  pictures of its things (`image` or `kind`), 36 on a card. In a sentence write `<Mark {...table} /><Text weight="strong">Aufträge</Text>`.
 - `Avatar.Stack`: `people`, `max` (3, at most 5), `label`. People over each
   other with a ring and "+n"; one picture with every name. In a narrow
   place (a 90 px column) it shows the faces it holds whole and counts the
@@ -380,7 +390,9 @@ lines instead of cutting a thing.
   words first in a bar or last at the end of a bar, group head or row stands
   with its words on the text edge, a framed one with its box); `icon`, `avatar` (a `Person`,
   such as the one a thread is assigned to), `href` (+ `onNavigate`),
-  `onClick`, `menu` (chevron), `forward`, `disabled` (dimmed), `busy` (a
+  `onClick`, `menu` (chevron), `forward`, `about` (the id of what the deed
+  is about, such as a row's title: its name is its own words, then those;
+  `Row` does this for its `action`), `disabled` (dimmed), `busy` (a
   turning sign over the label while its deed runs, such as a save: the
   width, the look and the focus stay, a second press and a second sending
   of the form do nothing), `pressed` (a toggle such as a favourite star:
@@ -390,18 +402,21 @@ lines instead of cutting a thing.
   whose words give way to its symbol in a narrow place). Without children
   it needs `label`.
 - `Setting`: `label`, `name`, `hint`, `error`, `was` ("12 Std.": an unsaved
-  change says "geändert · vorher 12 Std." under its control), `action`
-  (one quiet deed after the value, such as "Auf Standard zurücksetzen"
-  while the value differs from its default), one control as child. One
-  setting of a settings page: the name (13, 500) alone in a column of 240
-  px, beside the middle of the control in a column of 300 px; the one line
-  of help and what it was under the control. One column, the hint under
-  the name, when its pane is narrower than 640 px (800 px with an
-  `action`; by the pane, not the window). `compact` (a number with its unit, a short
-  selection) and a `Check` keep the value beside the name also there. A
-  column of settings ends above the phone's floating main action. Never
-  stack `Field`s
-  as a settings page.
+  change says "geändert · vorher 12 Std."), `action` (one quiet deed after
+  the value, such as "Auf Standard zurücksetzen" while the value differs
+  from its default), one control as child. One setting of a settings page:
+  the name (13, 500) alone in a column of 240 px, beside the middle of the
+  control in a column of 300 px; the one line of help under the control,
+  "geändert" under the name and the deed beside the value. Below 800 px of
+  pane both stand on a line kept under the value ("geändert" at its start,
+  the deed at its end); below 640 px the value goes under the name and its
+  hint (by the pane, not the window). A setting that names `was` or
+  `action` (as `undefined` while unchanged) keeps their places, so a
+  change moves nothing; one that names neither keeps no room. Tab reaches
+  the deed after the value. `compact` (a
+  number with its unit, a short selection) and a `Check` keep the value
+  beside the name also on the phone. A column of settings ends above the
+  phone's floating main action. Never stack `Field`s as a settings page.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
   such as "Sekunden", or "optional"), `action` (one quiet deed at the end
@@ -418,6 +433,14 @@ lines instead of cutting a thing.
   search), `ref` (the text field, to focus it), `end` (a symbol or a ghost
   icon button, such as the filter of a search), `disabled` (a grey well
   that takes no input; the browser leaves it out of a sent form).
+  A search the server answers takes `name` and `send={{ action, params,
+  onSearch }}`: the field is its own GET form, so Enter loads `action`
+  with the text and `params` (the rest of the address) also without
+  JavaScript; `onSearch` searches in place where JavaScript runs. It keeps
+  its place in a head and folds on the phone, and its form is named by
+  `label`. Never wrap it in a `<form>` and never put it inside one: forms
+  do not nest, and the browser drops the inner one (`describeV2` reports
+  both).
   The standard text-field attributes pass through and stand in the
   server's markup, so a password manager reads them before the island
   hydrates: `autocomplete` (`username`, `current-password`,
@@ -464,8 +487,11 @@ lines instead of cutting a thing.
   and minute as spinbuttons in the locale's clock (24 hours in German, AM/PM
   in American English; typing, arrows, Backspace; never the browser's time
   field), applied
-  with "Übernehmen". Use it inside a popover or sheet; a form field is
-  `DateInput`.
+  with "Übernehmen". `view="weeks"` (with a required `min`, usually today) shows six
+  weeks from the week of `min` as one grid instead of whole months, for a moment ahead ("Später", an
+  expiry): one row per week over the ends of months, the 1st shows the
+  month's short name, keys move the weeks, the arrows by six. Use it inside a
+  popover or sheet; a form field is `DateInput`.
 - `Check`: `label`, `checked` (`true`, `false`, `"mixed"`), `switch`,
   `onChange`, `disabled` (dimmed).
 - `Choice`: a few visible options, one chosen: `name`, `options`, `value`,
@@ -482,10 +508,12 @@ lines instead of cutting a thing.
   `menu` (its deeds, such as pin and hide: a "…" over its count that shows
   under the pointer and with the focus; Tab always reaches it),
   `nested`, `dot` (`"ok"` for something new, `"warn"`/`"bad"` for a
-  problem there), `color` (the place's data colour: its symbol becomes its
-  `Mark`, the same as in its rows and on its card). `quota: { label, value,
-  of, text }` shows what the open place uses above the foot ("Werkstatt ·
-  38,2 von 100 GB" over a bar; amber from 75 %, red from 90 %). An item with `items` instead of `icon` and a link folds
+  problem there, `"running"` for work that runs now: a small turning mark
+  in the dot's place that says "Läuft"), `color` (the place's data colour:
+  its symbol becomes its `Mark`, the same as in its rows and on its card).
+  `quota: { label, value, of, text }` shows what the open place uses above
+  the foot ("Werkstatt · 38,2 von 100 GB" over a bar; amber from 75 %, red
+  from 90 %). An item with `items` instead of `icon` and a link folds
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.
@@ -518,7 +546,8 @@ lines instead of cutting a thing.
   row becomes the bar of what can be done with them; `meta` says quietly
   what is selected after the count, such as "12,9 MB · 3 Bilder"; the count
   stands in 14 px 600; from five deeds on the first three stand and the rest
-  wait in "Mehr", so give the deeds in their order of use).
+  wait in "Mehr", and where their words do not fit the last ones go there
+  too before a word is cut, so give the deeds in their order of use).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
   head `Bar start` instead of `Tabs`. The last item is the page itself. On
   the phone the path gives way and the shell's phone bar names the page; the
@@ -535,7 +564,9 @@ lines instead of cutting a thing.
   }[]`; a way of a few steps, such as a delivery's way inside its `Group`.
 - `Notice`: `tone` `note`, `ai`, `bad`, `warn`; `title`, `meta`, `icon`,
   `actions` (≤ 2 text buttons; `disabled` on one that cannot be taken
-  now, and the sentence says why), children (the sentence and its
+  now, and the sentence says why), `primary` (the one thing to do, such as
+  "Neu laden": a framed button after one quiet text button at most; it is
+  no primary of the page), children (the sentence and its
   consequence). Use it for errors with a way out instead of "try again"
   buttons of your own.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
@@ -556,7 +587,10 @@ lines instead of cutting a thing.
   [list queries](list-queries.md). `end` (the `ListOrder` and a choice of
   display such as list or grid) makes the bar the one status row of its
   list (52 px) with `results` in quiet words before it: the page head then
-  has two rows, path and deeds, then this bar. `display` (`MenuSection`s,
+  has two rows, path and deeds, then this bar. Where the statements would
+  get less than 240 px beside it, the end takes a line of its own; its
+  width follows `results`, so right at that width a longer count can move
+  it there. `display` (`MenuSection`s,
   such as "Darstellung" with list and grid, or a colour choice) puts each
   section as a menu of its own in the end on the desktop; on the phone,
   where the end has no room, sort, grouping and these sections fold into

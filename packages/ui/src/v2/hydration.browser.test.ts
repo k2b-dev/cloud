@@ -176,6 +176,10 @@ test("every cell and every field is made once, on the server and in the browser;
     // the head of each group is in the table and in the phone list, each its own
     expect(await page.locator(".k2-table tr[data-group] .k2-chip").allTextContents()).toEqual(["Offen", "Erledigt"]);
     expect(await page.locator(".k2-table-phone-group .k2-chip").allTextContents()).toEqual(["Offen", "Erledigt"]);
+    // a changed setting's end (what it was, then its deed) stands once, in both places the same
+    expect(
+      await page.locator("[data-k2-part='Setting'] > .k2-field-end > *").evaluateAll((parts) => parts.map((part) => part.className)),
+    ).toEqual(["k2-field-was", "k2-field-action"]);
   });
 });
 
@@ -194,9 +198,10 @@ test("an entry that opens something holds no control inside a control, and each 
     await row.getByRole("button", { name: "Mehr zu Holzwerk" }).click();
     expect(await hash()).toBe("#angebot");
     await page.getByText("Geöffnet: mehr").waitFor();
-    await page.getByRole("button", { name: "Jonas Hartwig" }).click();
+    await page.getByRole("button", { name: "Jonas Hartwig", exact: true }).click();
     await page.getByText("Geöffnet: jonas").waitFor();
-    await page.getByRole("button", { name: "Annehmen" }).click();
+    // the row's deed is named by its words and then the row's title
+    await page.getByRole("button", { name: "Annehmen Jonas Hartwig", exact: true }).click();
     await page.getByText("Geöffnet: annehmen").waitFor();
     // a digest entry and a table row open from anywhere on them, their own links stay theirs
     // a link in the title of a row stays its own; the row is opened by the element named by that title

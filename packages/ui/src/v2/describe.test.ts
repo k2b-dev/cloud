@@ -14,6 +14,7 @@ const root = mkdtempSync(resolve(tmpdir(), "k2-v2-describe-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 const { fixtures } = await import("../../test/v2-fixtures");
 const { Fixture: StatesFixture } = await import("../../test/v2-states-navigation.fixture");
+const { Field, ImageInput } = await import("./controls");
 
 const windows: Window[] = [];
 afterAll(async () => {
@@ -33,6 +34,32 @@ describe("describeV2", () => {
   test("a state chip of a number alone is a problem: a state is never a colour without a word", () => {
     expect(outline('<span class="k2-chip" data-k2-part="Chip" data-status="warn">7</span>')).toContain('state chip "7" has no word');
     expect(outline('<span class="k2-chip" data-k2-part="Chip" data-status="warn">7 Anmeldungen</span>')).not.toContain("has no word");
+  });
+
+  test("a search inside a form of the page, and a form inside a form, are problems", () => {
+    const wrapped = outline(
+      '<form method="get"><span class="k2-input" data-k2-part="Input" data-search=""><input type="search" aria-label="Suche" /></span></form>',
+    );
+    expect(wrapped).toContain('- a search "Suche" stands inside a <form>: give its Input `send` instead of a form around it');
+    // a search that sends itself is fine on its own
+    expect(
+      outline(
+        '<form method="get" role="search" aria-label="Suche" class="k2-input" data-search=""><input type="search" name="q" /></form>',
+      ),
+    ).not.toContain("<form>");
+    // markup drops an inner form, so the nesting comes from code that builds the page
+    const window = new Window();
+    windows.push(window);
+    const outer = window.document.createElement("form");
+    const inner = window.document.createElement("form");
+    inner.setAttribute("aria-label", "Suche");
+    outer.append(inner);
+    const page = window.document.createElement("div");
+    page.className = "k2-ui";
+    page.append(outer);
+    expect(describeV2(page as unknown as Element)).toContain(
+      '- a <form> "Suche" stands inside another <form>: forms never nest, and the browser drops the inner one',
+    );
   });
 
   test("outlines the mail fixture part by part", () => {
@@ -182,6 +209,30 @@ describe("describeV2", () => {
         expect(describeV2(document.body.firstElementChild as unknown as Element), `${name}: ${selector}`).toBe(expected);
       }
     }
+  });
+
+  // the island test of the settings recipe (#4229): the button of an image field in an island of its own read "[]"
+  test("an image field keeps the words of its button when the button stands in an island of its own", () => {
+    const markup = renderToString(() =>
+      createComponent(Field, {
+        label: "Logo",
+        get children() {
+          return createComponent(ImageInput, { value: "data:image/png;base64,AA==", onChange: () => undefined });
+        },
+      }),
+    );
+    const expected = outline(markup);
+    expect(expected).toContain("ImageInput picture [Change image]");
+    const window = new Window();
+    windows.push(window);
+    const document = window.document;
+    document.body.innerHTML = `<div class="k2-ui">${markup}</div>`;
+    for (const element of document.querySelectorAll('[data-k2-part="Button"]')) {
+      const island = document.createElement("solid-island");
+      element.replaceWith(island);
+      island.append(element);
+    }
+    expect(describeV2(document.body.firstElementChild as unknown as Element)).toBe(expected);
   });
 
   test("says so when nothing on the page is v2", () => {

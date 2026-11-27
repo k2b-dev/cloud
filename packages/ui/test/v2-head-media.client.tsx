@@ -13,11 +13,13 @@ import {
   EmptyWaysScreen,
   FactsScreen,
   GroupsScreen,
+  InvitationScreen,
   LongAddressScreen,
   ProseCodeScreen,
   RowStatesScreen,
   SectionFootScreen,
   SelectionScreen,
+  SettingChangeScreen,
   StructureScreen,
   ViewStatementScreen,
 } from "./v2-row-states.fixture";
@@ -34,6 +36,7 @@ declare global {
       | "grid"
       | "selecting"
       | "settings"
+      | "setting-change"
       | "states"
       | "canvas"
       | "cells"
@@ -41,7 +44,10 @@ declare global {
       | "path"
       | "path-chip"
       | "split-canvas"
+      | "split-tall-canvas"
+      | "invitation"
       | "selection"
+      | "selection-four"
       | "long"
       | "areas"
       | "structure"
@@ -77,6 +83,8 @@ render(
     <LocaleProvider locale="de">
       {which === "settings" ? (
         <SigninSettings />
+      ) : which === "setting-change" ? (
+        <SettingChangeScreen />
       ) : which === "states" ? (
         <RowStatesScreen />
       ) : which === "prose" ? (
@@ -89,8 +97,8 @@ render(
         <AreasMenuScreen />
       ) : which === "empty-ways" ? (
         <EmptyWaysScreen />
-      ) : which === "selection" ? (
-        <SelectionScreen />
+      ) : which === "selection" || which === "selection-four" ? (
+        <SelectionScreen four={which === "selection-four"} />
       ) : which.startsWith("owner-") ? (
         <OwnerScreen color={`#${which.slice(6)}`} />
       ) : which === "hero-worst" || which === "hero-bare" || which === "head-worst" || which === "head-bare" ? (
@@ -113,8 +121,10 @@ render(
         <LongAddressScreen />
       ) : which === "path" || which === "path-chip" ? (
         <DeepPathScreen chip={which === "path-chip"} />
-      ) : which === "canvas" || which === "split-canvas" || which === "split-list-canvas" ? (
-        <CanvasFillScreen split={which !== "canvas"} list={which === "split-list-canvas"} />
+      ) : which === "invitation" ? (
+        <InvitationScreen />
+      ) : which === "canvas" || which === "split-canvas" || which === "split-list-canvas" || which === "split-tall-canvas" ? (
+        <CanvasFillScreen split={which !== "canvas"} list={which === "split-list-canvas"} tall={which === "split-tall-canvas"} />
       ) : which === "cells" || which === "cells-narrow" ? (
         <CellsScreen narrow={which === "cells-narrow"} />
       ) : (

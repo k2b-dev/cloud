@@ -528,7 +528,7 @@ describe("measureV2Layout", () => {
     async () => {
       const page = await open(
         columns(
-          '<div class="row" style="display:flex;flex-wrap:wrap;gap:8px"><span style="display:contents;overflow:hidden"><span class="k2-chip">Wartet auf Antwort</span><span class="k2-chip">Angebot</span></span></div>',
+          '<div class="row" style="display:flex;flex-wrap:wrap;gap:8px"><span style="display:contents;overflow:hidden"><span class="k2-chip"><span class="k2-chip-text">Wartet auf Antwort</span></span><span class="k2-chip"><span class="k2-chip-text">Angebot</span></span></span></div>',
         ),
         { width: 390 },
       );

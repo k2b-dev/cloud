@@ -63,7 +63,6 @@ test("there are two weights of hairline, 1 px each, and the radii and heights ar
     tableHead: "table-head",
     row: "row",
     rowMark: "row-mark",
-    tableRowMark: "table-row-mark",
     row2: "row2",
     row3: "row3",
     dense: "dense",
