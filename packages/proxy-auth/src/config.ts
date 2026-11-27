@@ -1,6 +1,9 @@
 import { appAccess, defineApp } from "@k2b/cloud";
 
-/** Proxy Auth's own colour: the shell around and its own figures carry it. */
+/**
+ * The colour of Proxy Auth: the shell around and its own figures carry it. The same colour as `appearance.accent` below, which stays a literal: the
+ * shell-gradient check reads it from the source.
+ */
 export const ACCENT = "#334155";
 
 export const app = defineApp({
@@ -17,7 +20,7 @@ export const app = defineApp({
       de: { name: "Proxy-Authentifizierung", description: "Forward-Auth-Clients konfigurieren und Callback-Zugriffe prüfen." },
     },
   },
-  appearance: { accent: ACCENT, background: { from: "#475569", to: "#4f46e5", angle: 135 } },
+  appearance: { accent: "#334155", background: { from: "#475569", to: "#4f46e5", angle: 135 } },
   basePath: "/admin/proxy-auth",
   baseUrl: "http://app-proxy-auth:3000",
   adminHref: "/admin/proxy-auth",
