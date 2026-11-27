@@ -17,6 +17,12 @@ export type EmptyProps = {
   action?: Action;
   /** A second, quieter way out after the first, such as "Ganzes Notizbuch zeigen"; a text button. */
   secondary?: Action;
+  /**
+   * The sign in the colour of a state, for a place that holds nothing because something went wrong or waits and the
+   * person cannot retry it here, such as a server's error page: `bad` for wrong, `warn` for waiting. Without it the
+   * sign is neutral. Data that failed to load once and can be loaded again is `Failed`, with its retry.
+   */
+  tone?: "bad" | "warn";
 };
 
 /**
@@ -25,7 +31,7 @@ export type EmptyProps = {
  */
 export const Empty = (props: EmptyProps) => (
   <div class="k2-state" data-k2-part="Empty">
-    <span class="k2-sign">
+    <span class="k2-sign" data-tone={props.tone}>
       <Icon name={props.icon} />
     </span>
     <span class="k2-state-text">{props.text}</span>
