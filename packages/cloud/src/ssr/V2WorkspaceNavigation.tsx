@@ -1,7 +1,8 @@
 import { createNavigation, type NavigationItem } from "@k2b/ui";
 import type { MenuEntry, NavGroup, NavItem, NavTree, NavTreeNode, OnNavigate } from "@k2b/ui/v2";
-import { createMemo } from "solid-js";
+import { type Accessor, createMemo, getOwner, runWithOwner } from "solid-js";
 import WorkspaceNavigationProvider from "./WorkspaceNavigationProvider";
+import { holdsCurrent } from "./workspace-navigation";
 
 type V2Navigation = {
   items: NavigationItem[];
@@ -22,8 +23,6 @@ type V2Navigation = {
  * - symbols, counts, the open one and "something new" carry over.
  * Deeds are found by id (`click`), links by their address as written (`navigate`).
  */
-const holdsCurrent = (item: NavigationItem): boolean => !!item.active || (item.children ?? []).some(holdsCurrent);
-
 const fromNav = (groups: readonly NavGroup[], foot: readonly NavItem[]): V2Navigation => {
   const navigate = new Map<string, OnNavigate>();
   const click = new Map<string, () => void>();
@@ -122,6 +121,12 @@ const fromNav = (groups: readonly NavGroup[], foot: readonly NavItem[]): V2Navig
   return { items: [...items, ...rows(foot, "foot")], navigate, click };
 };
 
+/**
+ * The entries the page carries for a menu opened before the island runs: as many as a long v2 list renders on the
+ * server before it windows the rest (#4211), so the page's weight does not grow with the navigation.
+ */
+const SNAPSHOT_ENTRIES = 40;
+
 export type V2WorkspaceNavigationProps = {
   /** The name of the menu, such as the open mailbox. */
   label: string;
@@ -136,9 +141,21 @@ export type V2WorkspaceNavigationProps = {
  * it, the phone bar's title becomes the menu "Name ⌄" and lists the same entries, and a tap opens each entry the way
  * the sidebar does (in place through its `onNavigate`, else as a page). Render it once, inside the app's island, with
  * the data of its `Nav`.
+ *
+ * The page carries the first 40 entries (and the way to the open one) for a menu opened before the island is alive;
+ * the island gives the menu all of them once it runs. Outside an island the menu keeps those 40.
  */
 export default function V2WorkspaceNavigation(props: V2WorkspaceNavigationProps) {
-  const tree = createMemo(() => fromNav(props.groups, props.foot ?? []));
+  // the tree is made when the menu first reads it, not when the island mounts: a base with a thousand tables costs a
+  // page whose phone menu never opens nothing
+  const owner = getOwner();
+  let made: Accessor<V2Navigation> | undefined;
+  const tree = () => {
+    made ??=
+      runWithOwner(owner, () => createMemo(() => fromNav(props.groups, props.foot ?? []))) ??
+      (() => fromNav(props.groups, props.foot ?? []));
+    return made();
+  };
   const navigation = createNavigation({
     items: () => tree().items,
     onNavigate: (event) => {
@@ -147,5 +164,5 @@ export default function V2WorkspaceNavigation(props: V2WorkspaceNavigationProps)
     },
     onAction: (action) => tree().click.get(action)?.(),
   });
-  return <WorkspaceNavigationProvider navigation={navigation} label={props.label} />;
+  return <WorkspaceNavigationProvider navigation={navigation} label={props.label} entries={SNAPSHOT_ENTRIES} />;
 }
