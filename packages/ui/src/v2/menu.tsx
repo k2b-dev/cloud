@@ -590,11 +590,11 @@ const MenuRoot = (props: MenuRootProps) => {
   const name = () => props.label ?? t().moreActions;
   let trigger: HTMLElement | undefined;
   // The "…" at the end of a bar takes the buttons the bar has no room for, as its first section (see `Bar`), so no
-  // second "…" stands beside it. Only the plain "…" offers itself: no words, no symbol and no name of its own (a
-  // `Menu icon="filter" label="Filter"` is another thing and takes no actions).
+  // second "…" stands beside it. Every "…" offers itself: no words and no symbol of its own, whatever its name says
+  // ("Weitere Aktionen", "Mehr zum Angebot"). A `Menu icon="filter" label="Filter"` is another thing and takes none.
   const fold = useContext(BarFold);
   onMount(() => {
-    if (fold && trigger && iconOnly() && props.icon === undefined && props.label === undefined) onCleanup(fold.offer(trigger));
+    if (fold && trigger && iconOnly() && props.icon === undefined) onCleanup(fold.offer(trigger));
   });
   const items = (): readonly MenuEntry[] => {
     const folded = fold && trigger && fold.host() === trigger ? fold.entries() : [];

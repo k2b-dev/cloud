@@ -33,8 +33,11 @@ type Watched = {
 
 /** The buttons a bar may fold into "…"; the one list for the fold and for `measureV2Layout`. */
 export const foldable = '.k2-btn:not([data-variant="primary"], [data-floats], [data-closes], [aria-haspopup], [popover])';
-/** What stands after the "…" that takes the folded buttons without folding itself: a closing ×, the primary. */
-const neverFolds = '[data-variant="primary"], [data-floats], [data-closes]';
+/**
+ * What stands after the "…" that takes the folded buttons without folding itself: a closing ×, the primary, a menu
+ * of its own (a symbol such as "Ansicht", or words such as "Filter"). A "…" that offers itself is no such menu.
+ */
+const neverFolds = '[data-variant="primary"], [data-floats], [data-closes], [aria-haspopup]';
 
 /**
  * The parts of an element as laid out in its row: a wrapper of `display: contents` (an island) is looked through; the
@@ -98,9 +101,9 @@ const measure = (entry: Watched): Found => {
     (Number.parseFloat(endStyle.marginRight) || 0);
   const controls = laidOut(end).filter((control) => control.getClientRects().length > 0);
   const widths = controls.map((control) => control.getBoundingClientRect().width);
-  // the end's last "…" menu, after which stand only parts that never fold (a closing ×, the primary), takes the
-  // folded buttons: nothing new stands beside it, and nothing after the ×
-  const last = [...controls].reverse().find((control) => !control.matches(neverFolds));
+  // the end's last "…" menu, after which stand only parts that never fold (a closing ×, the primary, a menu of its
+  // own), takes the folded buttons: nothing new stands beside it, and nothing after the ×
+  const last = [...controls].reverse().find((control) => entry.hosts.has(control) || !control.matches(neverFolds));
   const host = last && entry.hosts.has(last) ? last : undefined;
   const more = bar.querySelector<HTMLElement>(":scope > .k2-bar-end > .k2-bar-fold .k2-btn");
   // the bar's own "…" is a button of the bar's own height for controls, as square as an icon button
