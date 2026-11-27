@@ -1,0 +1,7 @@
+### The lowest value and the first time of a chart drew over each other at the corner
+
+- **What happened:** In Pulse and Venue, small line charts on the phone drew the lowest value label ("0", "10") and the first time label ("07:00") over each other, where the two axes meet.
+- **Root cause:** A host stretches the drawing to its box while text keeps its size. A short box brings the row of time labels within a few pixels of the lowest value label. The first time label stood in its middle under its tick at the value axis, so its left half reached across the axis into the value labels.
+- **Error class:** A label placed around a point that is also the edge of another group of labels, on the assumption that the drawing keeps its height.
+- **Guard:** In a host that stretches a line or a scatter (`Chart`, and the chart snapshots), the first X label begins at its tick (`stretchedAxisCornerSvg`). The value labels end left of the axis, so the two never meet, at any width or height. `packages/ui/src/content/chart-axes.browser.test.ts` checks at 1440 and 390 px, in Chromium and WebKit, that no two axis labels of a chart overlap, for lines in Canvases of 120, 160 and 240 px, a line with a time axis, an area and a bar chart.
+- **Changed records:** the snapshot digests of `line` and `lineWithGap`, and 7 of 37 frozen demo drawings. Each differs only in the first X label's `text-anchor`. The renderer's own drawings (`legacy-svg.json`) stay as they are.

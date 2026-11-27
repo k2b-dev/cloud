@@ -1,5 +1,6 @@
 import type { CalendarEvent, CalendarEventRenderContext } from "@k2b/ui";
 import { For, Show } from "solid-js";
+import { hexColor } from "@/frontend/lib/color";
 import { CALENDAR_PRIORITY_COLORS } from "./colors";
 
 /** Further tags or assignees beyond the item color; more would not fit beside a title. */
@@ -72,7 +73,7 @@ export function CalendarItemContent(props: {
         <Show when={props.extra.length > 0}>
           <span class="hidden shrink-0 items-center gap-0.5 @min-[7rem]:flex" aria-hidden="true" data-spaces-calendar-dots="">
             <For each={props.extra.slice(0, MAX_EXTRA_DOTS)}>
-              {(color) => <span class="size-1.5 rounded-full" style={{ "background-color": color }} />}
+              {(color) => <span class="size-1.5 rounded-full" style={{ "background-color": hexColor(color) }} />}
             </For>
           </span>
         </Show>
@@ -121,7 +122,7 @@ function TimelineContent(props: {
           <Show when={props.extra.length > 0}>
             <span class="ml-1 inline-flex items-center gap-0.5 align-middle" aria-hidden="true" data-spaces-calendar-dots="">
               <For each={props.extra.slice(0, MAX_EXTRA_DOTS)}>
-                {(color) => <span class="size-1.5 rounded-full" style={{ "background-color": color }} />}
+                {(color) => <span class="size-1.5 rounded-full" style={{ "background-color": hexColor(color) }} />}
               </For>
             </span>
           </Show>

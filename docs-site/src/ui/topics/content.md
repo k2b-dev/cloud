@@ -38,7 +38,7 @@ Words in one of the four type roles (meta, row, body, lead); emphasis is a weigh
 
 ### Prose
 
-Reading text, 14/22 with a measure of 720 px; Markdown is rendered safely, without raw HTML or images.
+Reading text, 14/22 with a measure of 720 px; Markdown is rendered safely, without raw HTML or images. A Markdown table reads like a small table: cells 12 px apart on the text edge, the head as a Table head, a line between rows; a column aligned right (`--:`) holds numbers in tabular figures.
 
 <Props of="Prose" />
 
@@ -65,6 +65,12 @@ The one place for a drawing of its own: a plan, a map, a chart. Inside it CSS is
 One tick per time slot, such as the scrapes of the last 30 minutes: ok in the soft colour of what it belongs to, a failure red and taller, a slot without data a low stub. The slots read in the writing direction, oldest first. It is the one column of a list that shows its data over time, 140 × 20 px in a cell, for at most 60 slots; with `stretch` in a detail its slots stand 2 px apart and grow up to 12 px, and a wider place keeps the strip at its start. Its `label` always says what, over which time, and what happened, such as "postgres-haupt, letzte 30 Minuten: 3 von 30 Abrufen fehlgeschlagen".
 
 <Props of="Ticks" />
+
+### Heat
+
+A year of days as a picture, such as the mails of a mailbox: one column per week with the newest at the end of the writing direction, one row per weekday, each day in a tone of one colour by its count. The four tones split the distinct counts into quarters, so the busiest day is always the strongest and one busy day does not leave the rest pale. It takes 53 weeks from one bounded aggregate (one entry per day) and `today` from the server, so the first paint needs no measuring. It fits its place by layout alone: the days shrink and never cut the newest weeks, up to 12 px each. The arrows walk the days; one tip, shared by every day, shows the day and its count (and a `detail` line) on hover and keyboard focus. Its `summary` line sums it up above it, such as "2.262 Mails in den letzten 12 Monaten · Ø 6 pro Tag". As the `hero` of a `Workspace`'s `detailEmpty`, make it once in the component and hand it over. A `color` must keep 3:1 to the surface at its strongest; without one the days take the app's readable ink.
+
+<Props of="Heat HeatDay" />
 
 ### Disclosure
 
