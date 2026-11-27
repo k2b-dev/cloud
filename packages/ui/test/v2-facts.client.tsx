@@ -1,0 +1,68 @@
+import { render } from "solid-js/web";
+import { Facts, Pane, Section, Workspace } from "../src/v2";
+
+// Facts as the key-value detail (v2-kv-angaben v1): contact data with kinds in the main column, bank data in a side
+// column, and the worst case in the same places (a label of six words, an address that cannot break, six lines of an
+// address, a web address with a query and one with a scheme that may not open, nothing set, a long note).
+
+declare global {
+  interface Window {
+    __k2Mounted?: boolean;
+  }
+}
+
+const root = document.getElementById("root");
+if (!root) throw new Error("facts: #root is missing");
+render(
+  () => (
+    <Workspace>
+      <Pane.Split>
+        <Pane label="Angaben">
+          <Section title="Kontakt">
+            <Facts
+              items={[
+                { label: "E-Mail", kind: "email", value: "o.brandner@example.org" },
+                {
+                  label: "Telefon",
+                  kind: "phone",
+                  value: [
+                    { value: "+49 30 5550 142", note: "mobil" },
+                    { value: "+49 30 5550 990", note: "Büro" },
+                  ],
+                },
+                { label: "Anschrift", kind: "address", value: ["Am Beispielhang 12", "12345 Beispielstadt"] },
+                { label: "Website", kind: "url", value: "https://www.beispiel-verwaltung.example.org/kunden/portal/rechnungen?jahr=2026" },
+                { label: "Skript", kind: "url", value: "javascript:alert(1)" },
+                { label: "Steuer-ID", value: undefined },
+                { label: "Fax", kind: "phone", value: "" },
+                {
+                  label: "Abweichende Rechnungsanschrift für Sammelrechnungen",
+                  kind: "email",
+                  value: "kaori.wolkenstein-ueberlingen-fuerstenberg.rechnungen@sehr-lange-subdomain.beispiel-verwaltung.example.org",
+                },
+                {
+                  label: "Notiz",
+                  kind: "note",
+                  value: "Ruft am liebsten nachmittags an. Ihr Sohn Corvin holt ab, er ist als Bote hinterlegt. Bitte keine Briefe.",
+                },
+              ]}
+            />
+          </Section>
+        </Pane>
+        <Pane side label="Bank" width={{ min: 300, default: 340 }}>
+          <Section title="Bank">
+            <Facts
+              items={[
+                { label: "Inhaberin", value: "Ottilie Brandner" },
+                { label: "BIC", value: "INGDDEFFXXX", mono: true, copy: "INGDDEFFXXX" },
+                { label: "Gläubiger-ID", value: null },
+              ]}
+            />
+          </Section>
+        </Pane>
+      </Pane.Split>
+    </Workspace>
+  ),
+  root,
+);
+window.__k2Mounted = true;

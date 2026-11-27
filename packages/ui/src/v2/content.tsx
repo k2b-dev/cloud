@@ -23,6 +23,7 @@ import { useBehaviorMessages } from "./behavior/messages";
 import { useGrip } from "./behavior/resize";
 import { announceBranch, announceText, type TreegridRow, treegridStep } from "./behavior/treegrid";
 import { ActionButton, CopyButton } from "./button";
+import { useControlMessages } from "./control-messages";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, custom, Dot, Icon, Mark, type MarkProps } from "./marks";
@@ -148,20 +149,114 @@ export const Inline = (props: InlineProps) => (
 
 // ── Facts ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type Fact = {
+/** What kind of value a fact holds; Facts makes its link and its copy from it. */
+export type FactKind = "email" | "phone" | "url" | "address" | "note";
+
+type FactBase = {
   /** The quiet label before the value. */
   label: string;
-  /** The value: words, a `Chip` or a link. */
-  value: JSX.Element;
   /** A quiet word under the value, such as "Standard". */
   hint?: string;
-  /** Offers a copy button at the value; the text that is copied. */
+  /** Offers a copy button at the value; the text that is copied. A kind brings its own. */
   copy?: string;
   /**
    * A value to be read sign by sign, such as a token, a key or an ID: monospace, it breaks at any sign instead of
    * mid-word, and one click selects all of it for copying.
    */
   mono?: boolean;
+};
+
+/** One of several values of a kind, with a quiet word after it, such as a phone number and "mobil". */
+export type FactEntry = string | { value: string; note: string };
+
+/**
+ * A label and its value. A value that is not set (left out, `""`, `null` or no entries) shows a quiet "—". With a
+ * `kind` the value is text and Facts makes what fits it:
+ * - `email`, `phone`: a `mailto:` or `tel:` link and a copy button; several entries stand one under the other,
+ *   each its own link (and no copy button, as it could copy only one);
+ * - `url`: the address without its scheme on one line, cut with "…", that opens in a new tab;
+ * - `address`: its lines as they are (`\n` or several entries), and a copy button for all of them;
+ * - `note`: a person's longer words, kept at a reading measure with a quiet line before them.
+ */
+export type Fact = FactBase &
+  (
+    | { kind?: undefined; value?: JSX.Element }
+    | { kind: "email" | "phone" | "url"; value?: FactEntry | readonly FactEntry[] | null }
+    | { kind: "address" | "note"; value?: string | readonly string[] | null }
+  );
+
+const entriesOf = (value: FactEntry | readonly FactEntry[] | null | undefined): { value: string; note?: string }[] => {
+  const list: readonly FactEntry[] =
+    value === null || value === undefined ? [] : typeof value === "string" || !("length" in value) ? [value] : value;
+  return list.map((entry) => (typeof entry === "string" ? { value: entry } : entry)).filter((entry) => entry.value.trim() !== "");
+};
+
+/** The lines of an address or a note as one text. */
+const linesOf = (value: string | readonly string[] | null | undefined) => (typeof value === "string" ? value : (value ?? []).join("\n"));
+
+/** The text of a fact's value for its copy button, when its kind brings one. */
+const kindCopy = (item: Fact): string | undefined => {
+  if (item.kind === "address") {
+    const lines = linesOf(item.value);
+    return lines.trim() === "" ? undefined : lines;
+  }
+  if (item.kind === "email" || item.kind === "phone") {
+    const entries = entriesOf(item.value);
+    return entries.length === 1 ? entries[0]!.value : undefined;
+  }
+  return undefined;
+};
+
+/** Whether a fact's value is set: anything but nothing, an empty text or no entries. */
+const isSet = (item: Fact) => {
+  if (item.kind === "address" || item.kind === "note") return linesOf(item.value).trim() !== "";
+  if (item.kind !== undefined) return entriesOf(item.value).length > 0;
+  const value: unknown = item.value;
+  return !(value === undefined || value === null || value === false || value === "" || (Array.isArray(value) && value.length === 0));
+};
+
+/**
+ * The link of an entry. An address of the web opens only over http or https; one with another scheme (`javascript:`,
+ * `data:`) gets no link and stays words, as in `Prose`.
+ */
+const hrefOf = (kind: "email" | "phone" | "url", value: string): string | undefined => {
+  if (kind === "email") return `mailto:${value}`;
+  if (kind === "phone") return `tel:${value.replace(/[^+\d]/g, "")}`;
+  if (!/^[a-z][a-z\d+.-]*:/i.test(value)) return `https://${value}`;
+  return /^https?:/i.test(value) ? value : undefined;
+};
+
+/** The value of a fact: as given, or with a kind its links, lines or note. */
+const FactValue = (props: { item: Fact }) => {
+  const item = props.item;
+  if (item.kind === undefined) return <>{item.value}</>;
+  if (item.kind === "address" || item.kind === "note")
+    return (
+      <span class="k2-fact-lines" data-note={item.kind === "note" ? "" : undefined}>
+        {linesOf(item.value)}
+      </span>
+    );
+  const kind = item.kind;
+  return (
+    <For each={entriesOf(item.value)}>
+      {(entry) => (
+        <span class="k2-fact-entry" data-url={kind === "url" ? "" : undefined}>
+          <a
+            class="k2-fact-link"
+            href={hrefOf(kind, entry.value)}
+            target={kind === "url" ? "_blank" : undefined}
+            rel={kind === "url" ? "noopener noreferrer" : undefined}
+            title={kind === "url" ? entry.value : undefined}
+          >
+            {kind === "url" ? entry.value.replace(/^https?:\/\//i, "").replace(/\/$/, "") : entry.value}
+          </a>
+          <Show when={entry.note}>
+            <span class="k2-fact-note">{entry.note}</span>
+          </Show>
+        </span>
+      )}
+    </For>
+  );
 };
 
 export type FactsProps = {
@@ -182,10 +277,13 @@ export type FactsProps = {
 };
 
 /**
- * Values with their labels: label 12 quiet, value 13, 32 px a row, copy at the value. The label column is as wide as
- * the longest label, at least 80 px and at most 160 px.
+ * Values with their labels, such as the contact data of a person. The label stands in a column of 116 px and wraps
+ * there; the value beside it keeps its lines, and a kind gives it its link and its copy button. In a main column the
+ * pairs stand 34 px apart with a hair between them; in a side column they are dense, without lines; on the phone the
+ * label stands over its value. Nothing to set: the place decides.
  */
 export const Facts = (props: FactsProps) => {
+  const said = useControlMessages();
   // A list of pairs (dt, dd); a copy button stands inside its value, the end of an inline line beside the list.
   const list = (part?: string) => (
     <dl class="k2-facts" data-k2-part={part} data-inline={props.inline ? "" : undefined} aria-busy={props.loading ? "true" : undefined}>
@@ -194,17 +292,30 @@ export const Facts = (props: FactsProps) => {
           <div class="k2-fact-pair">
             <dt>{item.label}</dt>
             <dd>
-              <span class="k2-fact-value" data-mono={item.mono ? "" : undefined}>
-                <Show when={!props.loading} fallback={<PlaceholderValue>{item.value}</PlaceholderValue>}>
-                  {item.value}
+              <span class="k2-fact-value" data-mono={item.mono ? "" : undefined} data-kind={item.kind}>
+                <Show
+                  when={!props.loading}
+                  fallback={<PlaceholderValue>{item.kind === undefined ? item.value : undefined}</PlaceholderValue>}
+                >
+                  <Show
+                    when={isSet(item)}
+                    fallback={
+                      <span class="k2-fact-empty">
+                        <span aria-hidden="true">—</span>
+                        <span class="k2-hidden-text">{said().notSet}</span>
+                      </span>
+                    }
+                  >
+                    <FactValue item={item} />
+                  </Show>
                 </Show>
                 <Show when={item.hint}>
                   <small>{item.hint}</small>
                 </Show>
               </span>
               {/* while the value is on its way its copy button stands, not yet usable, so nothing moves when it comes */}
-              <Show when={!props.inline && (props.loading ? item.copy !== undefined : item.copy)}>
-                <CopyButton label={item.label} value={item.copy ?? ""} disabled={props.loading} />
+              <Show when={!props.inline && (props.loading ? (item.copy ?? kindCopy(item)) !== undefined : (item.copy ?? kindCopy(item)))}>
+                <CopyButton label={item.label} value={item.copy ?? kindCopy(item) ?? ""} disabled={props.loading} />
               </Show>
             </dd>
           </div>

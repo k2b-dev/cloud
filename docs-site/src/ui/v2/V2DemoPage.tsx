@@ -1,5 +1,6 @@
 import { LocaleProvider } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
+import { ContactScreen } from "./contact-screen";
 import FilterScreen from "./FilterScreen.island";
 import FormScreen from "./FormScreen.island";
 import KeysScreen from "./KeysScreen.island";
@@ -158,6 +159,26 @@ export const v2Screens = {
     phone: { app: "Benutzer" },
     query: "?role=member,guest&group=groups",
     render: (search) => <FilterScreen list="people" search={search} />,
+  },
+  contact: {
+    title: "Angaben · Kontakt einer Kundin",
+    description:
+      "A person's details as label and value: e-mail and phone as links with a copy button, an address in its lines, a web address on one line, an ID in monospace, a dash for what is not set, a note at a reading measure. Roomy with a hair in the main column, dense in the side column, the label over its value on the phone.",
+    mockup: "v2-kv-angaben v1",
+    app: "#2563eb",
+    phone: { back: "Kunden" },
+    rail: kundenRail,
+    render: () => <ContactScreen />,
+  },
+  "contact-worst": {
+    title: "Angaben · schlimmster Fall",
+    description:
+      "The same details with a label of six words, an e-mail address that cannot break, an address of six lines, a web address with a query, empty values, a label of one sign and a long note.",
+    mockup: "v2-kv-angaben v1 (2)",
+    app: "#2563eb",
+    phone: { back: "Kunden" },
+    rail: kundenRail,
+    render: () => <ContactScreen worst />,
   },
 } satisfies Record<string, V2Screen>;
 

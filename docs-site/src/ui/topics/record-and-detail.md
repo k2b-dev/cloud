@@ -68,7 +68,7 @@ One statement that stands out in a column, in a tone; free height and one line b
 
 ### Facts
 
-Labels with their values; `copy` for what people paste elsewhere, `mono` for keys and IDs, `inline` for one line.
+Labels with their values, such as contact data: the label in a column of 116 px, the value beside it; `kind` makes e-mail and phone links with a copy button, a web address on one line, an address in its lines and a note at a reading measure; a value not set is a quiet dash. `copy` for what people paste elsewhere, `mono` for keys and IDs, `inline` for one line.
 
 <Props of="Facts Fact" />
 

@@ -335,10 +335,19 @@ no rows and nothing loading, the empty state stands in place of the table.
 
 ### Facts
 
-`items: { label, value, hint?, copy?, mono? }[]`: label 12 quiet, value 13, 32 px
-per row; the label column is as wide as the longest label of that list
-(80–160 px), so two `Facts` lists may start their values at different
-edges.
+`items: { label, value, kind?, hint?, copy?, mono? }[]`: the key-value
+detail, such as contact data. The label stands in a column of 116 px (16 px
+to the value) and wraps there, so the facts of one page start their values
+on one edge; pairs of 34 px in 13 (label n500, value in ink); in a side
+column dense (96 px, label 12, pairs of 28); on the phone the label stands
+over its value. A value not set (left out, `""`, `null`, no entries) is a
+quiet dash named "not set". `kind` makes what fits the value: `email` and
+`phone` a `mailto:` or `tel:` link with a copy button (several entries,
+each `string` or `{ value, note }` such as "mobil", one under the other and
+without a copy button); `url` the address without its scheme on one line,
+cut with "…", opening in a new tab (only http and https get a link);
+`address` its lines (`\n` or an array) with a copy button for all of them;
+`note` longer words at a reading measure with a quiet line before them.
 `copy` adds a copy button with that text; `mono` shows a value read sign by
 sign (a token, a key, an ID) in monospace, broken at any sign and selected
 whole by one click. `inline` puts all on one
