@@ -34,7 +34,7 @@ import {
 } from "../service/draft-document-snapshots";
 import * as draftDocumentService from "../service/draft-documents";
 import { acceptDraftDocumentUpdate, mailDraftDocumentLog, readDraftDocument } from "../service/draft-documents";
-import { getDraft, MAX_DRAFT_RECOVERY_COPIES, recoverDraftDocumentRest } from "../service/drafts";
+import { discardDraft, getDraft, MAX_DRAFT_RECOVERY_COPIES, recoverDraftDocumentRest } from "../service/drafts";
 import { localizeMailError } from "../service/error-messages";
 import { enqueueMailInvalidation, mailLive } from "../service/live";
 import { createMailbox } from "../service/mailboxes";
@@ -358,8 +358,13 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
   });
 
   /** An open shared reply: it holds its conversation's reply slot. */
-  const replyDraft = async () => {
+  const replyDraft = async (thread?: { conversationId: string; messageId: string }) => {
     const target = await draft();
+    if (thread) {
+      await sql`UPDATE mail.drafts SET conversation_id = ${thread.conversationId}::uuid, source_message_id = ${thread.messageId}::uuid,
+        intent = 'reply' WHERE id = ${target.id}::uuid`;
+      return { ...target, ...thread };
+    }
     const [message] = await sql<{ id: string }[]>`INSERT INTO mail.message_contents
       (short_id, mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status, plain_text)
       VALUES (${newShortId()}, ${mailboxId}::uuid, ${`<${crypto.randomUUID()}@example.test>`}, 'Subject', now(),
@@ -371,7 +376,7 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
       VALUES (${conversation!.id}::uuid, ${message!.id}::uuid, 0, 'headers')`;
     await sql`UPDATE mail.drafts SET conversation_id = ${conversation!.id}::uuid, source_message_id = ${message!.id}::uuid, intent = 'reply'
       WHERE id = ${target.id}::uuid`;
-    return target;
+    return { ...target, conversationId: conversation!.id, messageId: message!.id };
   };
   /** A device's whole state with one unsent body, offered to Rest for the draft's open generation. */
   const keepDeviceInput = async (target: { id: string }, body: string) => {
@@ -575,6 +580,76 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
       const [outbox] = await sql<{ id: string }[]>`SELECT id FROM mail.outbox_submissions WHERE command_id=${command.id}::uuid`;
       value(await cancelScheduledSend({ context: otherContext, mailboxId, scheduledSendId: outbox!.id, input: { disposition: "draft" } }));
     }
+  });
+
+  /** A discarded reply R1; `rest` offers a device's unsent body against R1's last generation. */
+  const discardedReply = async () => {
+    const r1 = await replyDraft();
+    const base = await read();
+    value(await discardDraft({ context, mailboxId, draftId: r1.id, expectedRevision: base.revision }));
+    const rest = async (body: string) => {
+      const typed = await createDraftRevisionUpdate(base.fresh.state, { ...base.fresh.content, body }, { deadline: Date.now() + 5000 });
+      return recoverDraftDocumentRest({
+        context,
+        mailboxId,
+        draftId: r1.id,
+        generation: base.generation,
+        clientId: crypto.randomUUID(),
+        state: Y.mergeUpdates([base.fresh.state, typed]),
+      });
+    };
+    return { r1, rest };
+  };
+
+  test("input for a discarded reply becomes a new message while another person's scheduled reply holds the slot", async () => {
+    const { r1, rest } = await discardedReply();
+    const r2 = await replyDraft({ conversationId: r1.conversationId, messageId: r1.messageId });
+    const r2base = await read();
+    const checked = value(await reviewDraftComposeSafety({ context, mailboxId, draftId: r2.id, expectedRevision: r2base.revision }));
+    const command = value(
+      await createActorCommand({
+        context: otherContext,
+        mailboxId,
+        enqueue: false,
+        input: {
+          kind: "send",
+          draftId: r2.id,
+          senderIdentityId: identity.id,
+          expectedDraftRevision: checked.revision,
+          expectedContentHash: checked.contentHash,
+          undoSeconds: 60,
+          idempotencyKey: crypto.randomUUID(),
+          safetyApproval: { revision: checked.revision, fingerprint: checked.fingerprint, warningIds: checked.warnings.map((w) => w.id) },
+        },
+      }),
+    );
+    try {
+      const outcome = value(await rest("Device input for R1"));
+      // R2 holds the slot but cannot restore a copy; a mailbox-wide writer gets its own message instead.
+      if (outcome.status !== "recovered") throw new Error(`Expected a new draft, got ${outcome.status}`);
+      expect(outcome.draft).toMatchObject({ intent: "new", conversationId: null, body: "Device input for R1", state: "draft" });
+      expect(await copiesOf(r2.id)).toHaveLength(0);
+    } finally {
+      const [outbox] = await sql<{ id: string }[]>`SELECT id FROM mail.outbox_submissions WHERE command_id=${command.id}::uuid`;
+      value(await cancelScheduledSend({ context: otherContext, mailboxId, scheduledSendId: outbox!.id, input: { disposition: "draft" } }));
+    }
+  });
+
+  test("input for a discarded reply becomes a copy of the open reply holding the slot, up to the listed copies", async () => {
+    const { r1, rest } = await discardedReply();
+    const r2 = await replyDraft({ conversationId: r1.conversationId, messageId: r1.messageId });
+    await read(); // Seeds R2's shared document.
+    await sql`INSERT INTO mail.draft_recovery_copies (draft_id, base_revision, content, content_hash, creator_kind)
+      SELECT ${r2.id}::uuid, 1, '{}'::jsonb, lpad(to_hex(n), 64, '0'), 'system'
+      FROM generate_series(1, ${MAX_DRAFT_RECOVERY_COPIES - 1}) AS n`;
+    const kept = value(await rest("Device input for the open R2"));
+    if (kept.status !== "kept") throw new Error(`Expected a recovery copy on R2, got ${kept.status}`);
+    expect(kept.draft.id).toBe(value(await getDraft(context, mailboxId, r2.id)).id);
+    expect(kept.draft.state).toBe("draft");
+    expect(await copiesOf(r2.id)).toHaveLength(MAX_DRAFT_RECOVERY_COPIES);
+    // The listed copies are full: further input must not become a copy the list cannot show.
+    expect((await rest("Further device input for R2")).ok).toBe(false);
+    expect(await copiesOf(r2.id)).toHaveLength(MAX_DRAFT_RECOVERY_COPIES);
   });
 
   test.each([

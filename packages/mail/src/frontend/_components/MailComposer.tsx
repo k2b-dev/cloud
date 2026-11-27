@@ -470,8 +470,15 @@ export default function MailComposer(props: {
   /** Where the device's unsent text went, as the server answered. */
   const restNoticeText = () => {
     const current = sharedState();
-    if (current?.restCopied) return current.restCopied === "open" ? sharedT().restCopied : sharedT().restCopiedClosed;
+    if (current?.restCopied === "open") return sharedT().restCopied;
+    if (current?.restCopied) return current.recoveryDraft ? sharedT().restCopiedClosedOther : sharedT().restCopiedClosed;
     return current?.recoveryDraft ? sharedT().restSaved : sharedT().restUnchanged;
+  };
+  /** A kept copy opens the ordinary draft that holds it; only a recovered draft is a Rest draft. */
+  const restNoticeAction = () => {
+    const current = sharedState();
+    if (!current?.recoveryDraft) return sharedT().reopen;
+    return current.restCopied ? sharedT().openDraft : sharedT().openRest;
   };
   onBeforeLeave((event) => {
     const current = sharedState();
@@ -2334,7 +2341,7 @@ export default function MailComposer(props: {
                   else window.location.reload();
                 }}
               >
-                {sharedState()?.recoveryDraft ? sharedT().openRest : sharedT().reopen}
+                {restNoticeAction()}
               </Button>
             </Show>
           </div>
@@ -4285,7 +4292,7 @@ export default function MailComposer(props: {
                 else window.location.reload();
               }}
             >
-              {sharedState()?.recoveryDraft ? sharedT().openRest : sharedT().reopen}
+              {restNoticeAction()}
             </Button>
           </Show>
         </div>

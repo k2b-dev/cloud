@@ -66,7 +66,10 @@ export const mailSharedDraftMessages = i18n.define({
       restCopied: "This device's unsent changes were kept as a recovery copy of the open draft. Open it to restore them.",
       restCopiedClosed:
         "This device's unsent changes were kept as a recovery copy of this draft. It is being sent, so they can be restored only if the send is undone.",
+      restCopiedClosedOther:
+        "This device's unsent changes were kept as a recovery copy of another reply in this conversation. It is being sent, so they can be restored only if its send is undone.",
       openRest: "Open recovery draft",
+      openDraft: "Open draft",
       reopen: "Reopen current draft",
       restLabel: "Recovery draft",
       restSource: "Original draft",
@@ -110,7 +113,10 @@ export const mailSharedDraftMessages = i18n.define({
         "Die ungesendeten Änderungen dieses Geräts wurden als Wiederherstellungskopie des offenen Entwurfs gesichert. Öffne ihn, um sie wiederherzustellen.",
       restCopiedClosed:
         "Die ungesendeten Änderungen dieses Geräts wurden als Wiederherstellungskopie dieses Entwurfs gesichert. Er wird gerade gesendet; wiederherstellen lassen sie sich nur, wenn das Senden rückgängig gemacht wird.",
+      restCopiedClosedOther:
+        "Die ungesendeten Änderungen dieses Geräts wurden als Wiederherstellungskopie einer anderen Antwort in dieser Unterhaltung gesichert. Sie wird gerade gesendet; wiederherstellen lassen sie sich nur, wenn ihr Senden rückgängig gemacht wird.",
       openRest: "Rest-Entwurf öffnen",
+      openDraft: "Entwurf öffnen",
       reopen: "Aktuellen Entwurf öffnen",
       restLabel: "Rest-Entwurf",
       restSource: "Ursprünglicher Entwurf",
@@ -811,7 +817,8 @@ export async function openMailDraftDocumentClient(options: {
           // The server names the draft that holds the copy; only an open one can restore it.
           state.restCopied = result.draft.state === "draft" ? "open" : "closed";
           state.recoveryDraft = result.draft.id === options.draft.id ? null : result.draft;
-          state.message = state.restCopied === "open" ? t().restCopied : t().restCopiedClosed;
+          state.message =
+            state.restCopied === "open" ? t().restCopied : state.recoveryDraft ? t().restCopiedClosedOther : t().restCopiedClosed;
           acknowledge(encoding.fromBase64(result.durableSourceState));
         } else if (result.status === "recovered") {
           state.recoveryDraft = result.draft;

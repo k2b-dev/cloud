@@ -145,10 +145,13 @@ A draft with incomplete history keeps the explicit recovery below instead. A
 draft lists at most 100 recovery copies, so Mail refuses a new copy beyond that;
 the device keeps its text.
 
-When the reply is already scheduled or sending, for example by another person,
-a mailbox-wide writer's unsent input becomes a separate new message. An assigned-only writer may not
-start one; their input stays a recovery copy of the scheduled reply, which can
-be restored only if the send is undone.
+Input for a reply that can no longer take it lands in the conversation's reply
+slot. When an open reply holds the slot, the input becomes its recovery copy.
+When the reply holding the slot is already scheduled or sending, for example by
+another person, a mailbox-wide writer's input becomes a separate new message. An
+assigned-only writer may not start one; their input stays a recovery copy of
+that reply, which can be restored only if its send is undone. The limit of 100
+listed copies applies to every draft that receives one.
 
 With Sync 7.1.1, a join whose missing prefix is covered by the SQL snapshot
 rebases in place. A gap in the live stream reconnects with backoff and resends

@@ -3164,14 +3164,16 @@ export const recoverDraftDocumentRest = async (params: {
         await remember({});
         return ok({ status: "unchanged" as const, durableSourceState: params.state });
       }
-      if (open) {
-        // The recovery list shows the newest MAX_DRAFT_RECOVERY_COPIES copies of a draft, restored or not.
-        // Count exactly those rows: a copy beyond them would be unreachable. Unchanged rests make no copy.
+      // The recovery list shows the newest MAX_DRAFT_RECOVERY_COPIES copies of a draft, restored or not.
+      // Count exactly those rows before adding one: a copy beyond them would be unreachable.
+      const copiesFull = async (draftId: string) => {
         const [held] = await db<{ copies: number }[]>`SELECT count(*)::int AS copies
-          FROM mail.draft_recovery_copies WHERE draft_id = ${params.draftId}::uuid`;
-        if ((held?.copies ?? 0) >= MAX_DRAFT_RECOVERY_COPIES)
-          return conflict("This draft holds too many recovery copies. Restore or discard some, then retry; keep the device's text");
-      }
+          FROM mail.draft_recovery_copies WHERE draft_id = ${draftId}::uuid`;
+        return (held?.copies ?? 0) >= MAX_DRAFT_RECOVERY_COPIES;
+      };
+      const tooManyCopies = () =>
+        conflict("This draft holds too many recovery copies. Restore or discard some, then retry; keep the device's text");
+      if (open && (await copiesFull(params.draftId))) return tooManyCopies();
       const [sender] = await db<{ id: string }[]>`
         SELECT id FROM mail.sender_identities WHERE short_id = ${content.senderIdentityId} AND mailbox_id = ${params.mailboxId}::uuid
       `;
@@ -3204,13 +3206,19 @@ export const recoverDraftDocumentRest = async (params: {
         await remember({ kept: params.draftId });
         return answer("kept", params.draftId);
       }
-      // A scheduled or sending reply still holds its conversation's reply slot, and its copy cannot be
-      // restored. A mailbox-wide writer gets a separate new message, as quarantine recovery does. An
-      // assigned-only writer may not start one; its input stays a recovery copy of the draft holding the slot.
-      const held = source.intent !== "new" && source.conversation_id !== null && ["scheduled", "sending"].includes(source.state);
-      const access = held ? await requireMailboxAccess(params.context, params.mailboxId, "write", db) : null;
+      // A reply lands in its conversation's reply slot. When a draft holds that slot (this one or another),
+      // the input becomes a recovery copy of the holder. A scheduled or sending holder cannot restore it:
+      // a mailbox-wide writer then gets a separate new message, as quarantine recovery does, while an
+      // assigned-only writer may not start one and keeps the copy on the holder.
+      // Same lock order as before this path existed: the source row, then the conversation's slot.
+      const holder =
+        source.intent !== "new" && source.conversation_id !== null ? await lockConversationReplyDraft(db, source.conversation_id) : null;
+      const [holderState] = holder ? await db<{ state: string }[]>`SELECT state FROM mail.drafts WHERE id = ${holder.id}::uuid` : [];
+      const closedHolder = holderState !== undefined && holderState.state !== "draft";
+      const access = closedHolder ? await requireMailboxAccess(params.context, params.mailboxId, "write", db) : null;
       if (access && !access.ok) return access;
       const detached = access?.ok === true && access.data.scope !== "assigned";
+      if (holder && !detached && (await copiesFull(holder.id))) return tooManyCopies();
       const placed = detached ? { ...restored, quoteSource: null } : restored;
       const created = await insertComposeDraftInTransaction({
         db,
