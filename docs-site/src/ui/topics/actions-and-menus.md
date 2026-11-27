@@ -37,7 +37,7 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 ### Button
 
-The one button: `primary` once per page, framed by default, `ghost` and `text` for quiet places; `busy`, `pressed` and `disabled` for its state.
+The one button: `primary` once per page, framed by default, `ghost` and `text` for quiet places; `busy`, `pressed` and `disabled` for its state. `primary` takes the main colour of its app: blue, or plum for an app with `appearance.primary: "ai"`, such as the Assistant.
 
 <Props of="Button" />
 
