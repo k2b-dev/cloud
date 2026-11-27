@@ -5,8 +5,10 @@ import { PWA_SCOPE } from "../contracts/pwa";
 import { maintenanceGameMessages, offersMaintenanceGame } from "../maintenance-game";
 import { getLocale } from "../server/locale";
 import { resolveAppPresentation } from "../shared/app-presentation";
+import ErrorPageGame from "./ErrorPageGame.island";
 import Layout from "./Layout";
 import MinimalLayout from "./MinimalLayout";
+import PageErrorScreen from "./PageErrorScreen";
 import PwaLayout from "./PwaLayout";
 import { pageErrorMessages } from "./page-error-messages";
 import { pwaMessages } from "./pwa-messages";
@@ -44,10 +46,17 @@ export const renderPageError = (c: Context, status: PageErrorStatus, options: Pa
   c.get("page").title = title;
   // Only the generic „not found“ and server failure show the waiting game, below the way out.
   const offered = offersMaintenanceGame(status, { ...options, path: c.req.path });
+  const game = () => maintenanceGameMessages.resolve([getLocale(c)]).t;
   const page = () => (
     <>
-      <NotFoundState code={String(status)} title={title} description={description} action={action} />
-      {offered ? <WaitingGame t={maintenanceGameMessages.resolve([getLocale(c)]).t} /> : null}
+      {/* the v1 state takes the icon as its class */}
+      <NotFoundState
+        code={String(status)}
+        title={title}
+        description={description}
+        action={{ ...action, icon: action.icon && `ti ti-${action.icon}` }}
+      />
+      {offered ? <WaitingGame t={game()} /> : null}
     </>
   );
 
@@ -76,8 +85,20 @@ export const renderPageError = (c: Context, status: PageErrorStatus, options: Pa
         <main class="flex-1 bg-[var(--ui-canvas)] p-[var(--ui-space-shell)]">{page()}</main>
       </MinimalLayout>
     ) : (
-      <Layout c={c} title={title}>
-        {page()}
+      // The Cloud shell's error page is a v2 screen; the minimal and the mobile app's pages follow with their v2 frames
+      // (#4227, #4248). The shell gets no title: the phone bar shows the app, and the document keeps the page's title
+      // through `page.title`.
+      <Layout c={c} fullWidth ui="v2">
+        <PageErrorScreen
+          status={status}
+          title={title}
+          description={description}
+          action={action}
+          // never a protocol-relative address: `//elsewhere.example/a` stays on this Cloud
+          retryHref={`${c.req.path.replace(/^\/+/, "/")}${new URL(c.req.url).search}`}
+          labels={{ retry: t.retry, search: t.search, home: t.home }}
+          game={offered ? <ErrorPageGame t={game()} keys={t.inviteKeys} touch={t.inviteTouch} /> : undefined}
+        />
       </Layout>
     );
 };

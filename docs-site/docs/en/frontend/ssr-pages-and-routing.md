@@ -150,7 +150,9 @@ solve.
 
 The optional third argument accepts `title`, `description`,
 `action: { label, href, icon? }`, and `layout: "cloud" | "minimal" | "pwa"`
-(default `"cloud"`). Supply only safe, localized application copy, never
+(default `"cloud"`). `icon` is a Tabler name without the `ti-` prefix, such as
+`refresh`. On a server failure the page offers "Try again" first; when your
+action only loads the same address again, home becomes the second way out. Supply only safe, localized application copy, never
 internal error details. Use `"minimal"` for standalone pages without Cloud
 navigation. `"pwa"` (preview) renders the error as a page of the Cloud app,
 with a link back to its Start page; it is for pages below `/pwa/`. A

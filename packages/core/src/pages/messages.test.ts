@@ -19,11 +19,11 @@ describe("corePageMessages", () => {
   test("uses German for regional German locales", () => {
     const { t } = corePageMessages.resolve(["de-CH"]);
 
-    expect(t.pageNotFound).toBe("Seite nicht gefunden");
+    expect(t.help).toBe("Hilfe");
     expect(t.helpTitle({ appName: "Cloud" })).toBe("Cloud-Hilfe");
   });
 
   test("falls back to English for unsupported locales", () => {
-    expect(corePageMessages.resolve(["fr-FR"]).t.pageNotFound).toBe("Page not found");
+    expect(corePageMessages.resolve(["fr-FR"]).t.help).toBe("Help");
   });
 });

@@ -83,7 +83,7 @@ const unavailablePage = (c: Context, status: number) => {
     return ssr.error(c, status === 429 ? 429 : status === 504 ? 504 : 503, {
       title: t.title,
       description: t.later,
-      action: { label: t.retry, href: url.pathname + url.search, icon: "ti ti-refresh" },
+      action: { label: t.retry, href: url.pathname + url.search, icon: "refresh" },
     });
   return ssr.error(c, 404, { title: t.title, description: t.gone });
 };

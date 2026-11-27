@@ -4,10 +4,6 @@ export const corePageMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      pageNotFound: "Page not found",
-      nothingHere: "Nothing here",
-      wrongTurn: "This page does not exist or is no longer available.",
-      goHome: "Go to start",
       help: "Help",
       helpUnavailable: "Help is not currently available.",
       helpTitle: ({ appName }: { appName: string }) => `${appName} help`,
@@ -17,10 +13,6 @@ export const corePageMessages = i18n.define({
       legalNotConfigured: ({ title }: { title: string }) => `${title} is not configured. An administrator can add it in`,
     },
     de: {
-      pageNotFound: "Seite nicht gefunden",
-      nothingHere: "Diese Seite gibt es nicht",
-      wrongTurn: "Die Seite ist nicht vorhanden oder nicht mehr verfügbar.",
-      goHome: "Zur Startseite",
       help: "Hilfe",
       helpUnavailable: "Die Hilfe ist derzeit nicht verfügbar.",
       helpTitle: ({ appName }) => `${appName}-Hilfe`,

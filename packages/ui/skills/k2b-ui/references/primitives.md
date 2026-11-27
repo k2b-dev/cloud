@@ -250,7 +250,7 @@ one.
 
 ### Text
 
-`type`: `meta` 12/16, `row` 13/20 (default), `body` 14/20, `lead` 18/24.
+`type`: `meta` 12/16, `row` 13/20 (default), `body` 14/20, `lead` 18/24, `figure` 30/34 (the one hero of a screen).
 `weight` (`"strong"` 600, `"medium"` 500 for a state or amount that stands
 out a little), `muted`, `tone` (`ok`, `warn`, `bad`, `ai`, `draft`), `href`
 (underlined words that lead somewhere; blue is only for the main action).
@@ -490,6 +490,10 @@ lines instead of cutting a thing.
 Each stands where the data will stand, without a box, so the head and the
 status row above it never move.
 
+- `ErrorScreen`: `code`, `title`, `text`, `actions` (the primary `Button`, then
+  one secondary), `foot` (a quiet invitation such as the waiting game). A page
+  that could not open: the code large as an outline, alone, centred, no head;
+  stand it alone in a `Pane`.
 - `Empty`: `icon`, `text` (one sentence that says what is the matter: "Noch
   keine Einlieferung." is not "Keine Treffer mit diesem Filter."), `action`
   (the one way out).

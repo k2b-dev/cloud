@@ -64,6 +64,12 @@ A band with a sign, a sentence and its consequence, and at most two deeds; a dee
 
 <Props of="Notice" />
 
+### ErrorScreen
+
+A whole page that could not open (403, 404, 5xx), alone in its pane and without a head: the code large as an outline, alone, then the title, one sentence and two ways out in the middle of the page, and a quiet foot such as the waiting game.
+
+<Props of="ErrorScreen" />
+
 ## Not in v2 yet
 
 A placeholder for content that is no list, such as `Facts` or `Cells`: `Loading` draws rows only. Until it ships, use `Loading` with the lines that come closest, and write `// k2b-ui gap: loading facts` at that place.

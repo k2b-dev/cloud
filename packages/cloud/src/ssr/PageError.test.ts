@@ -76,6 +76,10 @@ const server = new Hono<AuthContext & { Variables: { runtime: RuntimeContext } }
   .get("/nested/missing", auth.requireRole("*"), (c) => ssr.error(c, 404))
   .get("/minimal", (c) => ssr.error(c, 404, { layout: "minimal" }))
   .get("/service-error", (c) => ssr.error(c, 503))
+  .get("/busy", (c) =>
+    ssr.error(c, 503, { title: "Busy", description: "Later.", action: { label: "Try again", href: "/busy?again=1", icon: "refresh" } }),
+  )
+  .get("/minimal-busy", (c) => ssr.error(c, 503, { layout: "minimal", action: { label: "Again", href: "/minimal-busy", icon: "refresh" } }))
   .get("/admin/missing", (c) => ssr.error(c, 404))
   .get("/app/test/item", (c) => ssr.error(c, 404, { action: { label: "Back to items", href: "/app/test" } }))
   .get("/unsafe", (c) => ssr.error(c, 404, { title: "</title><script>bad()</script>", description: "<img src=x onerror=bad()>" }))
@@ -88,7 +92,8 @@ const server = new Hono<AuthContext & { Variables: { runtime: RuntimeContext } }
   )
   .get("/resource", auth.requireRole("authenticated", ssr.access), (c) => ssr.error(c, 403))
   .get("/self", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), (c) => c.text("authorized handler"))
-  .post("/action", auth.requireRole("admin", ssr.access), (c) => c.text("action executed"));
+  .post("/action", auth.requireRole("admin", ssr.access), (c) => c.text("action executed"))
+  .get("*", (c) => ssr.error(c, 503));
 
 describe("shared page access and error responses", () => {
   test("signed-in error pages retain shared announcements", async () => {
@@ -153,8 +158,9 @@ describe("shared page access and error responses", () => {
         expect(response.headers.get("location")).toBeNull();
         expect(response.headers.get("cache-control")).toBe("private, no-store");
         expect(body).toContain(`lang="${locale}" class="${theme}"`);
-        expect(body).toContain(locale === "en" ? "Access denied" : "Zugriff verweigert");
-        expect(body).toContain("k2b-not-found");
+        expect(body).toContain(locale === "en" ? "have access to this" : "Dafür fehlt dir der Zugriff");
+        // the Cloud shell's error page is a v2 screen (approved direction A): the code large, title, sentence, ways out
+        expect(body).toContain('data-k2-part="ErrorScreen"');
         expect(body).not.toContain("authorized handler");
         expect(body).not.toContain("admin-sidebar");
       });
@@ -233,7 +239,7 @@ describe("shared page access and error responses", () => {
     const response = await server.request("/nested/missing");
     expect(response.status).toBe(404);
     expect(response.headers.get("location")).toBeNull();
-    expect(await response.text()).toContain("Page not found");
+    expect(await response.text()).toContain("This page does not exist");
     const minimal = await server.request("/minimal");
     const body = await minimal.text();
     expect(minimal.status).toBe(404);
@@ -262,8 +268,11 @@ describe("shared page access and error responses", () => {
   test("only the generic not-found and server-failure pages show the waiting game", async () => {
     const offered = async (path: string, init?: RequestInit) => {
       const body = await (await server.request(path, init)).text();
-      // The scene's box is part of the first paint, so nothing moves when the game code arrives.
-      return body.includes("data-waiting-game>") && body.includes("h-[clamp(20rem,52vh,32rem)]");
+      // On a v2 page the game is an invitation at the foot of the error screen and opens over it when asked; on the
+      // minimal page (v1 until #4227) the scene's box is part of the first paint, so nothing moves when its code arrives.
+      const invited = body.includes('class="k2-es-foot"');
+      const boxed = body.includes("data-waiting-game>") && body.includes("h-[clamp(20rem,52vh,32rem)]");
+      return invited || boxed;
     };
     expect(await offered("/nested/missing")).toBe(true);
     expect(await offered("/minimal")).toBe(true);
@@ -275,6 +284,25 @@ describe("shared page access and error responses", () => {
     expect(await offered("/unsafe")).toBe(false);
     expect(await offered("/app/test/item")).toBe(false);
     expect(await offered("/admin/missing")).toBe(false);
+  });
+  test("a failed page whose own way out only loads it again offers it once and home second", async () => {
+    const body = await (await server.request("/busy")).text();
+    expect(body.split("Try again").length - 1).toBe(1);
+    expect(body).toContain(`href="/busy"`);
+    expect(body).toContain(`href="/"`);
+  });
+  test("the action's icon is a Tabler name without the prefix, on the v2 and the minimal page", async () => {
+    const v2 = await (await server.request("/busy")).text();
+    const minimal = await (await server.request("/minimal-busy")).text();
+    for (const body of [v2, minimal]) {
+      expect(body).toContain("ti ti-refresh");
+      expect(body).not.toContain("ti-ti-");
+    }
+  });
+  test("the retry link never becomes a protocol-relative address", async () => {
+    const body = await (await server.request("http://localhost//elsewhere.example/a?b=1")).text();
+    expect(body).not.toContain(`href="//`);
+    expect(body).toContain(`href="/elsewhere.example/a?b=1"`);
   });
   test("denied POST actions never execute or replay effects", async () => {
     expect((await server.request("/action", { method: "POST" })).status).toBe(302);

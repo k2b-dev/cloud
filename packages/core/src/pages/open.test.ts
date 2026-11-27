@@ -88,7 +88,7 @@ test("returns Core's existing localized NotFound page when resolution fails", as
     new URL(cloudResourceHref({ type: "mail.draft", id: "missing" }), "https://cloud.example"),
   );
   expect(response.status).toBe(404);
-  expect(await response.text()).toContain("Nothing here");
+  expect(await response.text()).toContain("This page does not exist");
 });
 
 test("redirects signed-out users to the normal sign-in flow with the permalink as return target", async () => {
@@ -123,7 +123,7 @@ test("returns 404 without resolving an id segment missing the required prefix", 
     return "/app/mail";
   }).request("https://cloud.example/open/mail.draft/AbC123");
   expect(response.status).toBe(404);
-  expect(await response.text()).toContain("Nothing here");
+  expect(await response.text()).toContain("This page does not exist");
   expect(called).toBe(false);
 });
 

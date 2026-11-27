@@ -40,7 +40,7 @@ export default ssr<AuthContext>(async (c) => {
     return ssr.error(c, status, {
       title: t.failedTitle,
       description: t.failedText,
-      action: { label: t.retry, href: executionUrl(activityId.data), icon: "ti ti-refresh" },
+      action: { label: t.retry, href: executionUrl(activityId.data), icon: "refresh" },
     });
   }
 });
