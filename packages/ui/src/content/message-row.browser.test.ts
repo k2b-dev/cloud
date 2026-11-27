@@ -308,6 +308,13 @@ const open = async (
   await page.goto(`${assets}page`);
   // Fonts first: a font that arrives late changes every text's height, which is not the row's doing.
   await page.evaluate(async () => {
+    // `k2-emoji` is the system's colour emoji in the font stack, limited to the pictographic blocks: a reaction's emoji
+    // uses it. Its sources are local, so a system without a colour emoji font fails it at once, and then it never loads.
+    await Promise.all(
+      Array.from(document.fonts)
+        .filter((face) => face.family === "k2-emoji")
+        .map((face) => face.load().catch(() => face)),
+    );
     // Tabler 3.50 splits glyphs across unicode ranges; loading a space only warms the first face.
     await Promise.all(
       Array.from(document.fonts)

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, launchHookMs, pageErrors } from "../../test/browser";
+import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 
 // An emoji in text draws as the system's colour emoji, not as a plain glyph of a later system font. The font stacks of
 // v2 (`--k2-font`, `--k2-font-mono`) and of v1 (`--k2b-font-sans`, `--k2b-font-mono` in fonts.css) name `k2-emoji`, the
@@ -48,6 +48,7 @@ const measure = async (page: Page, signs: string[]) => {
     `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${v2}</style><style>${v1}</style></head>` +
       `<body><div class="k2-ui"><div class="k2b-ui">${spans}</div></div></body></html>`,
   );
+  await settled(page);
   return page.evaluate(async () => {
     await document.fonts.ready;
     const canvas = document.createElement("canvas");
@@ -65,7 +66,8 @@ const measure = async (page: Page, signs: string[]) => {
       // a text glyph is drawn in its fill colour only (red, with any alpha); a colour emoji has other hues
       let other = 0;
       for (let at = 0; at < pixels.length; at += 4) if (pixels[at + 3]! > 64 && (pixels[at + 1]! > 60 || pixels[at + 2]! > 60)) other += 1;
-      (out[span.dataset.s!] ??= []).push({ width: Math.round(span.getBoundingClientRect().width * 10) / 10, colour: other > 8 });
+      const name = span.dataset.s!;
+      out[name] = [...(out[name] ?? []), { width: Math.round(span.getBoundingClientRect().width * 10) / 10, colour: other > 8 }];
     }
     return out;
   });
