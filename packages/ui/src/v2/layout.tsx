@@ -627,7 +627,8 @@ const SplitBody = (props: {
   const room = () => {
     if (!props.contextual) return undefined;
     const [main, context] = props.entries;
-    const both = (main?.width?.default ?? flexibleMin) + (context?.width?.default ?? flexibleMin);
+    const both =
+      (main?.width ? widthRange(main.width).default : flexibleMin) + (context?.width ? widthRange(context.width).default : flexibleMin);
     return typeof context?.side === "object" ? Math.max(context.side.from, both) : both;
   };
   // Below that room (from 768 px on; the phone stacks every split) the split wraps: the context column and the line
