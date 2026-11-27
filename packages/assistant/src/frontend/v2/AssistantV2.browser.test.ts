@@ -612,6 +612,18 @@ const until = async (seen: () => boolean) => {
   while (!seen()) await Bun.sleep(100);
 };
 
+/** The search controls a person can see: fields and buttons whose name says "search" (a folded field is 1 px). */
+const visibleSearchControls = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>("input, button, a")]
+      .filter((element) => {
+        const name = `${element.getAttribute("aria-label") ?? ""} ${element.getAttribute("placeholder") ?? ""} ${element.textContent ?? ""}`;
+        const rect = element.getBoundingClientRect();
+        return /such/i.test(name) && rect.width > 1 && rect.height > 1 && element.checkVisibility({ visibilityProperty: true });
+      })
+      .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim() ?? ""),
+  );
+
 const shoot = async (page: Page, name: string) => {
   if (!shots) return;
   await page.screenshot({ path: resolve(shots, `${name}.png`) });
@@ -657,6 +669,8 @@ describe("Assistant on v2", () => {
         if (view === phone) {
           // On the phone the shell's bar holds the one search; New chat floats as the list's main action.
           expect(await page.locator(".k2-fab:visible").textContent()).toContain("Neuer Chat");
+          // One search on the phone: the shell's bar; the head's field folds into it.
+          expect(await visibleSearchControls(page)).toHaveLength(1);
           // The status row's end (the exception chips) is hidden on the phone (gap for R); creating in the chat
           // stays one press away in the head.
           expect(await page.locator('[data-slot="head"]').getByRole("button", { name: "Im Chat erstellen" }).isVisible()).toBe(true);
@@ -772,6 +786,8 @@ describe("Assistant on v2", () => {
     try {
       // A chat's main action is its composer: nothing floats over it.
       expect(await page.locator(".k2-fab:visible").count()).toBe(0);
+      // One search on the phone: the shell's bar; the head's field folds into it.
+      expect(await visibleSearchControls(page)).toHaveLength(1);
       const composer = page.locator(".assistant-chat-composer");
       const rect = await composer.boundingBox();
       expect(rect && rect.y + rect.height <= phone.height).toBe(true);
@@ -872,14 +888,16 @@ describe("Assistant on v2", () => {
   test("the search of every chat opens Cloud's search in the Assistant's chats", async () => {
     const { context, page, errors } = await open(wide, "/app/assistant");
     try {
-      // A symbol in the head (SEARCH + CREATE), so the path keeps the head's room.
-      await page.locator('[data-slot="head"]').getByRole("button", { name: "Alle Chats durchsuchen" }).click();
+      const search = page.getByRole("searchbox", { name: "Alle Chats durchsuchen" });
+      await search.fill("Rechnung");
+      await search.press("Enter");
       const searches = await page.waitForFunction(
         () =>
           (window as unknown as { assistantV2Searches: unknown[] }).assistantV2Searches.length > 0 &&
           (window as unknown as { assistantV2Searches: unknown[] }).assistantV2Searches,
       );
       expect(JSON.stringify(await searches.jsonValue())).toContain('"appId":"assistant"');
+      expect(JSON.stringify(await searches.jsonValue())).toContain('"query":"Rechnung"');
       expect(errors).toEqual([]);
     } finally {
       await context.close();

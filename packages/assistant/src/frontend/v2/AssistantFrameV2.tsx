@@ -3,7 +3,7 @@ import type { AiConversation } from "@k2b/cloud/ai";
 // time, so importing it would carry them, and the search bar and admin frame, into this island and its shared chunks.
 import V2WorkspaceNavigation from "@k2b/cloud/ssr/V2WorkspaceNavigation";
 import { useLocale } from "@k2b/ui";
-import { type Action, Bar, Button, Canvas, Menu, Nav, Pane, Path, Workspace } from "@k2b/ui/v2";
+import { type Action, Bar, Button, Canvas, Input, Menu, Nav, Pane, Path, Workspace } from "@k2b/ui/v2";
 import { type Accessor, createSignal, type JSX, lazy, Show, Suspense } from "solid-js";
 import { assistantMessages } from "../messages";
 import { useAssistantCopy } from "../ui-copy";
@@ -70,6 +70,12 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
   });
   const path = () => [{ label: t().assistant, href: props.nav.basePath }, ...props.path()];
   const copy = useAssistantCopy();
+  const [query, setQuery] = createSignal("");
+  const searchKey = (event: KeyboardEvent) => {
+    if (event.key !== "Enter" || event.isComposing) return;
+    event.preventDefault();
+    nav.search(query().trim());
+  };
   // The head's search searches the open Project's chats while one is open, and says so.
   const searchLabel = () => {
     const project = props.nav.projects().find((entry) => entry.id === props.nav.activeProjectId());
@@ -136,12 +142,20 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
             start={props.path().length > 0 ? <Path label={t().assistant} items={path()} /> : undefined}
             end={
               <>
-                {/* The search of every chat as a symbol (SEARCH + CREATE rule): it opens Cloud's search in the chats,
-                    as mod+shift+k does, and leaves the head's room to where the page stands.
-                    k2b-ui gap (Z2): the head's search should open over the head on click or "/"; and the shell's
-                    phone bar hands its search only to a head search field (`page-search.ts`), so there it opens the
-                    global search, not this one. */}
-                <Button variant="ghost" icon="search" label={searchLabel()} onClick={() => nav.search()} />
+                {/* The search of every chat (of the open Project while one is open). On the phone it folds into the
+                    shell's bar, so the page has one search there; Enter opens Cloud's search, as mod+shift+k does.
+                    k2b-ui gap (Z2): the head's search should be a symbol that opens over the head on click or "/"
+                    (SEARCH + CREATE rule); v2 gives the field a fixed 184 px at 1024, and the bar fold of #4392 keeps
+                    it whole beside where the page stands. */}
+                <Input
+                  type="search"
+                  icon="search"
+                  label={searchLabel()}
+                  placeholder={v2().searchHint}
+                  value={query()}
+                  onInput={setQuery}
+                  onKeyDown={searchKey}
+                />
                 {props.viewActions?.()}
                 <Show when={props.openChat()}>
                   {(chat) => (
