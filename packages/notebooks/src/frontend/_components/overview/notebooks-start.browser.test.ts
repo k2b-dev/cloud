@@ -123,32 +123,35 @@ const open = async (width = 1440, path = "/app/notebooks"): Promise<Page> => {
 };
 const row = (page: Page, name: string) =>
   page.locator('[data-k2-part="List"] [data-k2-part="Row"]').filter({ hasText: name }).getByRole("button");
+/** A way to start as a card, while none is open: its name is the card's link. */
+const card = (page: Page, name: string) => page.locator('[data-k2-part="Tiles"] .k2-tile').filter({ hasText: name }).getByRole("link");
 const detail = (page: Page) => page.locator('[data-k2-part="Pane"][data-detail]');
-/** Wide screens: a way to start opens beside the list, and its one main action opens the dialog. */
+/** Wide screens: a card opens its way beside the list, and its one main action opens the dialog. */
 const start = async (page: Page, name: string) => {
-  await row(page, name).click();
+  await card(page, name).click();
   await detail(page).locator('[data-slot="head"]').getByText(name).first().waitFor();
   await detail(page).getByRole("button", { name: "Erstellen" }).click();
 };
 
 for (const width of [1440, 1024, 390]) {
-  test(`${width}: without a notebook the page offers the ways to start as rows, a clean v2 workspace`, async () => {
+  test(`${width}: without a notebook the page offers the ways to start as cards with a preview, a clean v2 workspace`, async () => {
     const page = await open(width);
     try {
       const outline = await describeV2Page(page, "#root");
       expect(outline.includes("Problems (") ? outline : "").toBe("");
       expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-      // a blank notebook, then each template with what it holds; the rows are the actions, so no head and no
-      // floating action repeat them
-      const rows = page.locator('[data-k2-part="List"] [data-k2-part="Row"]');
-      expect(await rows.count()).toBe(3);
-      expect(await rows.nth(1).innerText()).toContain("Protokolle mit Aufgaben und Beschlüssen");
+      // a blank notebook, then each template with what it holds and its first pages; the cards are the actions, so
+      // no head and no floating action repeat them
+      const cards = page.locator('[data-k2-part="Tiles"] .k2-tile');
+      expect(await cards.count()).toBe(3);
+      expect(await cards.nth(1).innerText()).toContain("Protokolle mit Aufgaben und Beschlüssen");
+      expect(await cards.nth(1).innerText()).toMatch(/\d+ Seiten/);
       expect(await page.locator('.k2-ws-main > [data-slot="head"]').count()).toBe(0);
       expect(await page.locator(".k2-fab").count()).toBe(0);
-      // none is open yet: beside the list its place says how to go on; the phone keeps only the list
+      // none is open yet: no list beside an empty detail, the cards take the page
       expect(await detail(page).count()).toBe(0);
-      expect(await page.getByText("Wähle, womit dein Notizbuch beginnt").isVisible()).toBe(width >= 768);
+      expect(await page.locator('[data-k2-part="List"]').count()).toBe(0);
     } finally {
       await page.close();
     }
@@ -256,26 +259,34 @@ for (const [answer, says] of [
 test("a way to start opens beside the list, stays in the address, and comes back on reload", async () => {
   const page = await open();
   try {
-    await row(page, "Handbuch").click();
+    await card(page, "Handbuch").click();
     await detail(page).getByText("Annahme prüfen").waitFor();
     // the open row is the current one, and its pages name the page they stand under
     expect(await row(page, "Handbuch").locator("xpath=..").getAttribute("data-current")).toBe("");
     expect(new URL(page.url()).searchParams.get("template")).toBe("handbook");
+    // another row replaces the open one in place
+    await row(page, "Besprechungen").click();
+    await detail(page).locator('[data-slot="head"]').getByText("Besprechungen").first().waitFor();
+    expect(new URL(page.url()).searchParams.get("template")).toBe("meeting");
     await page.reload();
-    await detail(page).getByText("Annahme prüfen").waitFor();
+    await detail(page).locator('[data-slot="head"]').getByText("Besprechungen").first().waitFor();
+    // back returns to the cards the way was opened from
+    await page.goBack();
+    await card(page, "Handbuch").waitFor();
+    expect(await detail(page).count()).toBe(0);
     expect(created).toEqual([]);
   } finally {
     await page.close();
   }
 }, 60_000);
 
-test("the keyboard alone reaches each way to start, and Enter or Space opens the dialog", async () => {
+test("the keyboard alone reaches each way to start, and Enter opens the dialog", async () => {
   const page = await open(390);
   try {
     const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
     const focusOn = async (name: string) => {
       for (let step = 0; step < 20; step += 1) {
-        if (await row(page, name).evaluate((element) => element === document.activeElement)) return;
+        if (await card(page, name).evaluate((element) => element === document.activeElement)) return;
         await page.keyboard.press("Tab");
       }
       throw new Error(`Tab never reached ${name}`);
@@ -285,8 +296,9 @@ test("the keyboard alone reaches each way to start, and Enter or Space opens the
     await dialog.getByRole("textbox", { name: "Name" }).waitFor();
     await page.keyboard.press("Escape");
     await dialog.waitFor({ state: "hidden" });
+    // a card's name is a link, so Enter opens it (Space comes with the tile's own action, k2b-ui gap #4314)
     await focusOn("Handbuch");
-    await page.keyboard.press("Space");
+    await page.keyboard.press("Enter");
     await dialog.getByText("Kapitel, Abläufe und Ansprechpersonen").waitFor();
     expect(created).toEqual([]);
   } finally {
@@ -297,7 +309,7 @@ test("the keyboard alone reaches each way to start, and Enter or Space opens the
 test("on a wide screen the keyboard opens a way to start beside the list", async () => {
   const page = await open(1440);
   try {
-    await row(page, "Handbuch").focus();
+    await card(page, "Handbuch").focus();
     await page.keyboard.press("Enter");
     await detail(page).locator('[data-slot="head"]').getByText("Handbuch").first().waitFor();
     await detail(page).getByRole("button", { name: "Erstellen" }).focus();
@@ -311,7 +323,7 @@ test("on a wide screen the keyboard opens a way to start beside the list", async
 test("on the phone a way to start opens the dialog right away", async () => {
   const page = await open(390);
   try {
-    await row(page, "Handbuch").click();
+    await card(page, "Handbuch").click();
     const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
     await dialog.getByText("Kapitel, Abläufe und Ansprechpersonen").waitFor();
     await dialog.getByRole("button", { name: "Erstellen" }).click();

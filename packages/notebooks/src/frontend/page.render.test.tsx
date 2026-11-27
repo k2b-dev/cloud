@@ -137,7 +137,7 @@ test("the address names the open way to start, so a reload shows its pages", asy
   expect(await selectHtml(html, '[data-k2-part="Pane"][data-detail] [data-slot="head"] button')).toHaveLength(1);
 });
 
-test("without a notebook, Notebooks offers the ways to start as rows, read from the notebooks alone", async () => {
+test("without a notebook, Notebooks offers the ways to start as cards, read from the notebooks alone", async () => {
   list.mockResolvedValue({ items: [], total: 0, page: 1, perPage: 1, hasNext: false });
   const recent = spyOn(notebooksService.note, "recentForUser");
   const activity = spyOn(notebooksService.activity, "list");
@@ -151,16 +151,18 @@ test("without a notebook, Notebooks offers the ways to start as rows, read from 
   expect(hero?.text).toContain("Erstes Notizbuch anlegen");
   const purpose = "Ein Notizbuch sammelt Notizen zu einem Thema, mit eigenem Zugriff und eigenen Einstellungen.";
   expect(html.split(purpose)).toHaveLength(2);
-  // a blank notebook first, then every template with what it holds, each a row that opens
-  const ways = await selectHtml(html, '[data-k2-part="List"] > [data-k2-part="Row"], [data-k2-part="List"] > * > [data-k2-part="Row"]');
+  // a blank notebook first, then every template with what it holds and how many pages it makes, each a card that opens
+  // it (a real link, so it works before the page is live)
+  const ways = await selectHtml(html, '[data-k2-part="Tiles"] .k2-tile');
   const templates = notebooksService.template.list("de");
-  expect(ways.map((row) => row.text.trim())).toEqual([
+  expect(ways.map((card) => card.text.trim().split(/\d+ Seiten?/)[0])).toEqual([
     "Leeres NotizbuchLeer, mit einer Willkommensseite",
     ...templates.map((template) => `${template.name}${template.description}`),
   ]);
-  // none is open yet: the detail's place says how to go on (the phone keeps the list)
+  expect(await selectHtml(html, '[data-k2-part="Tiles"] .k2-tile a[href^="/app/notebooks?template="]')).toHaveLength(templates.length + 1);
+  // none is open yet: no list beside an empty detail, the cards take the page
   expect(await selectHtml(html, '[data-k2-part="Pane"][data-detail]')).toHaveLength(0);
-  expect(html).toContain("Wähle, womit dein Notizbuch beginnt");
+  expect(await selectHtml(html, '[data-k2-part="List"]')).toHaveLength(0);
   // no workspace head that only repeats the rows, and no floating action that repeats "Leeres Notizbuch"
   expect(await selectHtml(html, '[data-k2-ws-main] > [data-slot="head"], .k2-ws-main > [data-slot="head"]')).toHaveLength(0);
   expect(await selectHtml(html, ".k2-fab")).toHaveLength(0);
