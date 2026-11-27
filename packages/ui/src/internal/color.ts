@@ -24,6 +24,9 @@ const COLOR_FUNCTIONS = new Set([
   "var",
 ]);
 
+/** No colour value is longer than this; a longer one is no colour, and the check stays linear in time on any input. */
+const MAX_COLOR_LENGTH = 200;
+
 /**
  * A colour a part puts into a style: a hex colour, a colour name (`blue`, `transparent`), a custom property of the
  * page, or a colour function from a fixed list, nested as CSS allows (`rgb(124, 58, 237)`, `color-mix(…)`). It holds
@@ -31,9 +34,6 @@ const COLOR_FUNCTIONS = new Set([
  * else, such as a `;`, a `:`, `url(` or a second declaration, is dropped: a value from data never adds to the style
  * it stands in, on the server or in the browser.
  */
-/** No colour value is longer than this; a longer one is no colour, and the check stays linear in time on any input. */
-const MAX_COLOR_LENGTH = 200;
-
 export const cssColor = (value: string | null | undefined): string | undefined => {
   const color = value?.trim();
   if (!color || color.length > MAX_COLOR_LENGTH || !/^[a-z0-9#.,%/\s()-]+$/i.test(color)) return undefined;
