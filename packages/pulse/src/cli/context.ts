@@ -29,19 +29,30 @@ export const requireRestArg = (args: string[], index: number, label: string): st
   return value;
 };
 
-/** The bases whose name or description holds `ref`, one bounded page; the exact match is picked from them. */
-const searchBases = (ctx: CloudCliContext, ref: string): Promise<PulseBase[]> =>
-  readApi<PulseBase[]>(ctx, `/bases?q=${encodeURIComponent(ref)}&limit=${BASE_PAGE_MAX}`);
-
-/** Every base the caller can read, page by page. */
-export const listAllBases = async (ctx: CloudCliContext): Promise<PulseBase[]> => {
-  const bases: PulseBase[] = [];
-  for (;;) {
-    const page = await readApi<PulseBase[]>(ctx, `/bases?limit=${BASE_PAGE_MAX}&offset=${bases.length}`);
-    bases.push(...page);
-    if (page.length < BASE_PAGE_MAX) return bases;
+/**
+ * Every item of a paged list: reads page after page until a page is shorter than `size` or brings no item it has not
+ * seen, so a list that changes while it is read neither loops nor repeats an item.
+ */
+const readPages = async <T extends { id: string }>(read: (offset: number) => Promise<T[]>, size: number): Promise<T[]> => {
+  const items = new Map<string, T>();
+  for (let offset = 0; ; offset += size) {
+    const page = await read(offset);
+    const before = items.size;
+    for (const item of page) if (!items.has(item.id)) items.set(item.id, item);
+    if (page.length !== size || items.size === before) return [...items.values()];
   }
 };
+
+/** Every base whose name or description holds `ref`; the exact match, or the ambiguity, is found among all of them. */
+const searchBases = (ctx: CloudCliContext, ref: string): Promise<PulseBase[]> =>
+  readPages(
+    (offset) => readApi<PulseBase[]>(ctx, `/bases?q=${encodeURIComponent(ref)}&limit=${BASE_PAGE_MAX}&offset=${offset}`),
+    BASE_PAGE_MAX,
+  );
+
+/** Every base the caller can read, page by page. */
+export const listAllBases = (ctx: CloudCliContext): Promise<PulseBase[]> =>
+  readPages((offset) => readApi<PulseBase[]>(ctx, `/bases?limit=${BASE_PAGE_MAX}&offset=${offset}`), BASE_PAGE_MAX);
 
 export const resolveBase = async (ctx: CloudCliContext, ref: string): Promise<PulseBase> => {
   if (SHORT_ID_RE.test(ref)) {
@@ -63,18 +74,22 @@ export const resolveBaseFromCommand = async (
   return { base: await resolveBase(ctx, baseRef), rest };
 };
 
-/** All sources of a base, read page by page as the list endpoint returns them (at most `SOURCE_PAGE_MAX` at a time). */
-export const listSources = async (ctx: CloudCliContext, baseId: string): Promise<PulseSource[]> => {
-  const sources: PulseSource[] = [];
-  for (;;) {
-    const page = await readApi<PulseSource[]>(
-      ctx,
-      `/bases/${encodeURIComponent(baseId)}/sources?limit=${SOURCE_PAGE_MAX}&offset=${sources.length}`,
-    );
-    sources.push(...page);
-    if (page.length < SOURCE_PAGE_MAX) return sources;
-  }
-};
+/** All sources of a base (or those whose name holds `q`), read page by page as the list endpoint returns them. */
+export const listSources = (ctx: CloudCliContext, baseId: string, q?: string): Promise<PulseSource[]> =>
+  readPages(
+    (offset) =>
+      readApi<PulseSource[]>(
+        ctx,
+        `/bases/${encodeURIComponent(baseId)}/sources?limit=${SOURCE_PAGE_MAX}&offset=${offset}${q ? `&q=${encodeURIComponent(q)}` : ""}`,
+      ),
+    SOURCE_PAGE_MAX,
+  );
 
 export const resolveSource = async (ctx: CloudCliContext, baseId: string, ref: string): Promise<PulseSource> =>
-  exactMatch(await listSources(ctx, baseId), ref, [(source) => source.id, (source) => source.name], "source");
+  exactMatch(
+    // a reference that can be an id is looked for among all sources; a name is searched for on the server
+    await listSources(ctx, baseId, SHORT_ID_RE.test(ref) ? undefined : ref),
+    ref,
+    [(source) => source.id, (source) => source.name],
+    "source",
+  );

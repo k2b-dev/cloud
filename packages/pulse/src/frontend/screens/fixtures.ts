@@ -235,14 +235,15 @@ const fixtureSource0 = (patch: Partial<PulseSource> & Pick<PulseSource, "id" | "
 });
 
 /**
- * The base's sources as the list reads them, problems first (as identity study B shows them): the printer fails since
- * 10:40 after a morning of values, the hall light is new and waits for its first values, the inverter is paused.
+ * The base's sources in the list's order (newest first): the hall light is new and waits for its first values, the
+ * printer (set up on 3 November) fails since 10:40 after a morning of values, the inverter is paused.
  */
 export const fixtureSources: PulseSource[] = [
   fixtureSource({
     id: "s7Ee8Ff9",
     name: "Drucker Halle 2",
     endpointUrl: "http://10.0.0.12:9100/metrics",
+    createdAt: "2026-11-03T08:30:00.000Z",
     status: status({ newestDataAt: "2026-11-25T09:39:00.000Z", lastError: TIMEOUT, lastErrorAt: "2026-11-25T09:40:00.000Z" }),
     lastError: TIMEOUT,
     lastErrorAt: "2026-11-25T09:40:00.000Z",
@@ -317,7 +318,10 @@ export const fixtureSources: PulseSource[] = [
     todayCount: 318,
     lastSeenAt: "2026-11-25T09:28:00.000Z",
   }),
-];
+].sort(
+  // the list's order: newest first, the id between equals (pulse.sources ORDER BY created_at DESC, id ASC)
+  (left, right) => right.createdAt.localeCompare(left.createdAt) || left.id.localeCompare(right.id),
+);
 
 /**
  * A metrics source's last hour per minute, matching its state: the printer brought its 86 values every minute until
@@ -454,7 +458,6 @@ export const fixtureNav = (bases: readonly PulseBase[] = fixtureBases): PulseNav
     state: base.store.state === "failed" ? "failed" : "ok",
   })),
   more: bases.length > NAV_BASES,
-  deleting: [],
 });
 
 export const sourcesProps = (

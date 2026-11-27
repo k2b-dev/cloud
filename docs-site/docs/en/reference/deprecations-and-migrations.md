@@ -26,6 +26,18 @@ first. Before, it returned every base the caller could read.
 `cld pulse list` pages through all bases for you. A command that takes a base
 by name searches for it with `q`.
 
+## The Pulse source list returns one page
+
+`GET /api/pulse/bases/:baseId/sources` returns at most 500 sources per
+request, newest first. Before, it returned every source of the base.
+
+- To read further, page with `limit` (1 to 500, default 500) and `offset`. A
+  page shorter than `limit` is the last one.
+- The order is stable while sources change state, so paging misses none and
+  repeats none.
+- To find sources by name, pass `q`.
+- A `limit` above 500 answers `400`.
+
 ## The log list keeps its filters in new address parameters
 
 Operator note: the log list at `/admin/observability/logs` filters by time

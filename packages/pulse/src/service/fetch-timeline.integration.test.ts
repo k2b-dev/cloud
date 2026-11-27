@@ -77,6 +77,25 @@ suiteFor("database", "valkey")("Pulse fetch timeline", () => {
     expect(shop && "fetches" in shop).toBe(false);
   });
 
+  test("paging through the sources misses none and repeats none while a source starts failing between two pages", async () => {
+    // four more sources, created one after the other; pages of two
+    for (const [index, name] of ["Page A", "Page B", "Page C", "Page D"].entries())
+      await sql`INSERT INTO pulse.sources(short_id, base_id, kind, name, created_at)
+        VALUES (${newShortId()}, ${baseId}::uuid, 'metrics', ${name}, ${`2026-11-20T08:0${index}:00Z`}::timestamptz)`;
+    const page = async (offset: number) => {
+      const list = await listSources(baseId, scope(), { limit: 2, offset, now: NOW });
+      if (!list.ok) throw new Error("The list is not readable");
+      return list.data.map((source) => source.name);
+    };
+    const first = await page(0);
+    // the scraper writes the state of every fetch: a source further down starts failing before page two is read
+    await sql`UPDATE pulse.sources SET last_error = 'timeout', last_error_at = now()
+      WHERE base_id = ${baseId}::uuid AND name = 'Page A'`;
+    const seen = [...first, ...(await page(2)), ...(await page(4))];
+    expect(new Set(seen).size).toBe(seen.length);
+    expect(seen.sort()).toEqual(["Page A", "Page B", "Page C", "Page D", "Server", "Shop"]);
+  });
+
   test("the open source's hour has a minute per slot with the values its fetches brought, and stays closed to others", async () => {
     const hour = await sourceHour({ baseId, sourceId, user: scope(), now: NOW });
     if (!hour.ok) throw new Error("The hour is not readable");

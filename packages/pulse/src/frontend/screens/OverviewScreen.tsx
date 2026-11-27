@@ -99,7 +99,6 @@ export default function OverviewScreen(props: OverviewScreenProps) {
         state: base.store.state === "failed" ? "failed" : "ok",
       })),
       more: props.bases.length > NAV_BASES,
-      deleting: [],
     },
     () => "",
     // the overview's own "Neue Basis" dialog serves the sidebar's deed too

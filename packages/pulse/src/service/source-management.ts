@@ -211,14 +211,9 @@ export const listSources = async (
     FROM pulse.sources
     WHERE NOT deleted AND base_id = ${baseId}::uuid
       AND (${pattern}::text IS NULL OR name ILIKE ${pattern} ESCAPE '\\')
-    -- problems first: failing, then new without any data, then paused, then the ones that deliver
-    ORDER BY CASE
-        WHEN enabled AND last_error IS NOT NULL THEN 0
-        WHEN enabled AND last_data_at IS NULL AND last_seen_at IS NULL THEN 1
-        WHEN NOT enabled THEN 2
-        ELSE 3
-      END,
-      created_at DESC, id ASC
+    -- a stable order for paging: the scraper writes a source's state on every fetch, so the state never orders pages;
+    -- the sources that need attention are named in the figures above the list
+    ORDER BY created_at DESC, id ASC
     LIMIT ${limit}
     OFFSET ${offset}
   `;

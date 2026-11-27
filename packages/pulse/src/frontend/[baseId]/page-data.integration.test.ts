@@ -98,7 +98,27 @@ suiteFor("database", "valkey")("Pulse page loads", () => {
         console.info(`pulse page ${name}:\n${page.statements.map((text, index) => `  ${index + 1}. ${text}`).join("\n")}`);
       // what the island receives stays small: the first view, never whole lists
       expect(page.bytes).toBeLessThan(16_000);
+      // every service checks access, the page load reads the grant on its base once (the admin faces read their own)
+      expect({ name, grantReads: page.statements.filter((text) => text.startsWith("SELECT MAX(a.permission)")).length }).toEqual({
+        name,
+        grantReads: 1,
+      });
     }
     expect(Object.fromEntries(Object.entries(pages).map(([name, page]) => [name, page.statements.length]))).toEqual(pinned);
+  }, 60_000);
+
+  test("the sources page costs the same statements with ten sources as with three", async () => {
+    const three = await measure("/app/pulse/:baseId", `/app/pulse/${base}`, loadPulseWorkspacePageData);
+    // seven more metrics sources, each with a fetch, so ticks, counts and figures have more to read
+    for (let index = 0; index < 7; index++) {
+      const [row] = await sql<{ id: string }[]>`
+        INSERT INTO pulse.sources(short_id, base_id, kind, name, endpoint_url)
+        VALUES (${newShortId()}, ${baseId}::uuid, 'metrics', ${`More ${index}`}, ${`http://10.0.1.${index}:9100/metrics`}) RETURNING id`;
+      await sql`INSERT INTO pulse.source_scrapes(base_id, source_id, started_at, finished_at, duration_ms, success, metrics_count)
+        VALUES (${baseId}::uuid, ${row!.id}::uuid, now() - interval '1 minute', now(), 500, true, 12)`;
+    }
+    const ten = await measure("/app/pulse/:baseId", `/app/pulse/${base}`, loadPulseWorkspacePageData);
+    expect((ten.result as { workspaceProps: { initialSources: unknown[] } }).workspaceProps.initialSources).toHaveLength(10);
+    expect(ten.statements.length).toBe(three.statements.length);
   }, 60_000);
 });
