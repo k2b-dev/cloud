@@ -914,8 +914,7 @@
   max-width: 100%;
 }
 /* the tile of what is open now takes the tint of the app it belongs to, as an open row; only its ground changes */
-.k2-ui .k2-tile[data-current],
-.k2-ui .k2-tiles > .k2-tile[data-current][data-open]:hover {
+.k2-ui .k2-tile[data-current] {
   background: var(--k2-app-tint);
 }
 .k2-ui .k2-tile > span {
@@ -1079,6 +1078,11 @@
 }
 .k2-ui .k2-tiles[data-variant="media"] > .k2-tile[data-open]:hover {
   background: var(--k2-n100);
+}
+/* a tile of what is open keeps its tint under the pointer, after the hover grounds of card and media tiles; a selection
+   (below) still wins */
+.k2-ui .k2-tiles > .k2-tile[data-current][data-open]:hover {
+  background: var(--k2-app-tint);
 }
 .k2-ui .k2-tiles[data-variant="media"] > .k2-tile[data-selected],
 .k2-ui .k2-tiles[data-variant="media"] > .k2-tile[data-selected]:hover {
@@ -2072,6 +2076,8 @@
   color: var(--k2-subtle);
   padding: 6px 0;
   max-width: 160px;
+  /* a label longer than its column wraps in it, a word too long for it breaks: never cut, never over its value */
+  overflow-wrap: anywhere;
 }
 .k2-ui .k2-fact-pair > dd {
   display: flex;
@@ -5501,29 +5507,11 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
-  /* On the phone each pair is one line: the label on the left, a short value at the end of the line. A value longer
-     than the rest of the line goes whole under its label and starts on the text edge (no measuring: the line wraps). */
+  /* On the phone the labels stand in a column of 100 px beside their values, as the study draws them (identity B); a
+     long label wraps in its column, a long value beside its label. */
   .k2-ui .k2-facts {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .k2-ui .k2-facts:not([data-inline]) > .k2-fact-pair {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: start;
+    grid-template-columns: 100px minmax(0, 1fr);
     column-gap: 16px;
-    padding: 6px 0;
-    min-width: 0;
-  }
-  /* the label takes the room the value leaves, so a value beside it stands at the end and one under it at the start */
-  .k2-ui .k2-facts:not([data-inline]) > .k2-fact-pair > dt {
-    flex: 1 1 auto;
-    min-width: 0;
-    max-width: none;
-    padding: 0;
-  }
-  .k2-ui .k2-facts:not([data-inline]) > .k2-fact-pair > dd {
-    flex: 0 1 auto;
-    padding: 0;
   }
   /* a value not there yet holds a short place of its own at the end, as in an inline line */
   .k2-ui .k2-facts:not([data-inline]) > .k2-fact-pair > dd > .k2-fact-value > .k2-skel:not([data-over]) {

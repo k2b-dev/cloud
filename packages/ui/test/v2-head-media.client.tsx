@@ -7,6 +7,7 @@ import {
   AreasMenuScreen,
   CanvasFillScreen,
   CellsScreen,
+  CurrentTilesScreen,
   DeepPathScreen,
   DialogInlineScreen,
   EmptyWaysScreen,
@@ -58,7 +59,8 @@ declare global {
       | "section-foot"
       | "facts"
       | "dialog-inline"
-      | "agenda";
+      | "agenda"
+      | "tiles-current";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -91,6 +93,8 @@ render(
         <SelectionScreen four={which === "selection-four"} />
       ) : which === "agenda" ? (
         <AgendaTilesScreen />
+      ) : which === "tiles-current" ? (
+        <CurrentTilesScreen />
       ) : which === "dialog-inline" ? (
         <DialogInlineScreen />
       ) : which === "facts" ? (

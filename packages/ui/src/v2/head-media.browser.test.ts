@@ -46,7 +46,8 @@ type Case =
   | "section-foot"
   | "facts"
   | "dialog-inline"
-  | "agenda";
+  | "agenda"
+  | "tiles-current";
 
 let browser: Browser;
 let client: string;
@@ -1833,29 +1834,34 @@ test("a bar that ends a section draws no line of its own: one line parts it from
     );
 });
 
-test("on the phone a fact is one line, its label left and a short value at the end; a long value goes whole under its label", async () => {
+test("on the phone the labels of facts stand in a column of 100 px, each value beside its label; a long label wraps in its column, never cut or over its value", async () => {
   await withPage(
     "facts",
     async (page) => {
-      const found = await page.evaluate(() => {
-        const pane = document.querySelector(".k2-pane")!.getBoundingClientRect();
-        return [...document.querySelectorAll(".k2-fact-pair")].map((pair) => {
-          const label = pair.querySelector("dt")!.getBoundingClientRect();
-          const value = pair.querySelector(".k2-fact-value")!.getBoundingClientRect();
+      const found = await page.evaluate(() =>
+        [...document.querySelectorAll(".k2-fact-pair")].map((pair) => {
+          const term = pair.querySelector("dt")!;
+          const label = term.getBoundingClientRect();
+          const value = pair.querySelector("dd")!.getBoundingClientRect();
           return {
-            name: pair.querySelector("dt")!.textContent,
+            name: term.textContent,
+            label: Math.round(label.width),
+            gap: Math.round(value.left - label.right),
             beside: Math.abs(label.top - value.top) < 1,
-            // beside its label a value ends on the text edge (or before its copy button); under it, it starts there
-            end: Math.round(pane.right - value.right),
-            start: Math.round(value.left - pane.left),
+            whole: term.scrollWidth <= term.clientWidth && term.scrollHeight <= term.clientHeight,
+            lines: (() => {
+              const range = document.createRange();
+              range.selectNodeContents(term);
+              return new Set([...range.getClientRects()].map((line) => Math.round(line.top))).size;
+            })(),
           };
-        });
-      });
-      const by = Object.fromEntries(found.map((fact) => [fact.name, fact]));
-      for (const name of ["Mitglieder", "Erstellt"])
-        expect({ name, beside: by[name]!.beside, end: by[name]!.end }).toEqual({ name, beside: true, end: 16 });
-      for (const name of ["Ablage", "Kennung"])
-        expect({ name, beside: by[name]!.beside, start: by[name]!.start }).toEqual({ name, beside: false, start: 16 });
+        }),
+      );
+      expect(found.length).toBeGreaterThan(3);
+      for (const { name, label, gap, beside, whole } of found)
+        expect({ name, label, gap, beside, whole }).toEqual({ name, label: 100, gap: 16, beside: true, whole: true });
+      // the worst case: a word longer than the column breaks in it, and the label takes the lines it needs
+      expect(found.find((fact) => fact.name?.startsWith("Aufbewahrung"))!.lines).toBeGreaterThan(1);
       const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
       expect(layout.problems).toEqual([]);
     },
@@ -1909,7 +1915,11 @@ test("the tile of what is open now takes the open row's tint and aria-current, a
               current: tiles.filter((tile) => tile.getAttribute("aria-current") === "true").length,
               tinted: getComputedStyle(open).backgroundColor === tint,
               box: [Math.round(box.left), Math.round(box.top), Math.round(box.width), Math.round(box.height)].join(","),
-              sizes: new Set(tiles.map((tile) => Math.round(tile.getBoundingClientRect().height))).size,
+              // every tile's place and size, so the pointer on one moves none of them
+              all: tiles.map((tile) => {
+                const each = tile.getBoundingClientRect();
+                return [Math.round(each.left), Math.round(each.top), Math.round(each.width), Math.round(each.height)].join(",");
+              }),
             };
           });
         const before = await read();
@@ -1917,11 +1927,68 @@ test("the tile of what is open now takes the open row's tint and aria-current, a
         await page.locator(".k2-tile[aria-current='true']").hover();
         await settled(page);
         const hovered = await read();
-        expect({ tinted: hovered.tinted, box: hovered.box }).toEqual({ tinted: true, box: before.box });
+        expect({ tinted: hovered.tinted, box: hovered.box, all: hovered.all }).toEqual({ tinted: true, box: before.box, all: before.all });
       },
       width,
     );
 });
+
+// cards and media have a hover ground of their own: the tile of what is open keeps its tint over it, and a selection's
+// blue wins over the tint (review r1 #4314)
+for (const theme of ["light", "dark"] as const)
+  test(`a current card and a current picture keep the tint at rest and under the pointer, blue once selected, their box unchanged (${theme})`, async () => {
+    await withPage("tiles-current", async (page) => {
+      // in an app of its own colour, so its tint differs from the blue of a selection
+      await page.evaluate((next) => {
+        document.body.style.setProperty("--k2-app", "#16a34a");
+        document.body.setAttribute("data-theme", next);
+      }, theme);
+      await settled(page);
+      const read = (variant: "card" | "media") =>
+        page.evaluate((variant) => {
+          const tile = document.querySelector<HTMLElement>(`.k2-tiles[data-variant='${variant}'] > .k2-tile[aria-current='true']`)!;
+          const ground = (value: string) => {
+            const probe = document.createElement("i");
+            probe.style.background = value;
+            tile.parentElement!.append(probe);
+            const color = getComputedStyle(probe).backgroundColor;
+            probe.remove();
+            return color;
+          };
+          const own = getComputedStyle(tile).backgroundColor;
+          const box = tile.getBoundingClientRect();
+          return {
+            ground: own === ground("var(--k2-app-tint)") ? "tint" : own === ground("var(--k2-blue-tint)") ? "blue" : own,
+            box: [box.left, box.top, box.width, box.height].map(Math.round).join(","),
+          };
+        }, variant);
+      const tile = (variant: "card" | "media") => page.locator(`.k2-tiles[data-variant='${variant}'] > .k2-tile[aria-current='true']`);
+      for (const variant of ["card", "media"] as const) {
+        const rest = await read(variant);
+        await tile(variant).hover();
+        await settled(page);
+        const hovered = await read(variant);
+        expect({ variant, rest: rest.ground, hovered: hovered.ground, box: hovered.box }).toEqual({
+          variant,
+          rest: "tint",
+          hovered: "tint",
+          box: rest.box,
+        });
+      }
+      // the picture selected: blue under the pointer and away from it, in the same box
+      const before = await read("media");
+      await tile("media").getByRole("checkbox").click();
+      await settled(page);
+      const selectedHovered = await read("media");
+      await page.mouse.move(1, 1);
+      await settled(page);
+      const selectedRest = await read("media");
+      expect([selectedHovered, selectedRest]).toEqual([
+        { ground: "blue", box: before.box },
+        { ground: "blue", box: before.box },
+      ]);
+    });
+  });
 
 test("small tiles in a narrow pane stand two by two, never one per row: names on up to two lines, an odd last one keeps its half; a tile may open by a deed", async () => {
   for (const width of [390, 1440])

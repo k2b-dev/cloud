@@ -622,7 +622,8 @@ export const SectionFootScreen = () => (
   </Workspace>
 );
 
-// The facts of a space on the phone: short values beside their labels, a long one, an ID and one with a hint under them.
+// The facts of a space on the phone: short values beside their labels, a long one, an ID, one with a hint under it and a
+// label longer than its column.
 export const FactsScreen = () => (
   <Workspace>
     <Pane label="Space">
@@ -639,6 +640,8 @@ export const FactsScreen = () => (
               copy: "spc_01JD8QK4V7T2M9X3B6N5R0WZ4E7Q2F9K3H8M1P6Y5C",
             },
             { label: "Sichtbar", value: "Alle im Team", hint: "Standard" },
+            // the worst case: a label of several words, one of them longer than the column of 100 px
+            { label: "Aufbewahrungsfristverlängerung der Belege", value: "31.12.2036" },
           ]}
         />
       </Section>
@@ -661,6 +664,42 @@ export const DialogInlineScreen = () => (
     </Dialog>
   </Workspace>
 );
+
+// What is open now among cards and media (W2): a current card, and a current picture among media that one can select;
+// the tint stays under the pointer, a selection's blue wins over it (review r1 #4314).
+export const CurrentTilesScreen = () => {
+  const [selected, setSelected] = createSignal<readonly string[]>([]);
+  return (
+    <Workspace>
+      <Pane label="Offen">
+        <Section title="Bases">
+          <Tiles
+            label="Bases"
+            variant="card"
+            items={[
+              { icon: "table", color: "#0284c7", title: "Kunden", meta: "12 Tabellen", href: "#kunden", current: true },
+              { icon: "table", color: "#16a34a", title: "Lager", meta: "4 Tabellen", href: "#lager" },
+            ]}
+          />
+        </Section>
+        <Section title="Bilder">
+          <Tiles
+            label="Bilder"
+            variant="media"
+            select={{
+              selected: selected(),
+              onChange: (key, on) => setSelected(on ? [...selected(), key] : selected().filter((each) => each !== key)),
+            }}
+            items={[
+              { icon: "photo", title: "Front.jpg", meta: "2,1 MB", href: "#front", key: "front", current: true },
+              { icon: "photo", title: "Granit.jpg", meta: "1,4 MB", href: "#granit", key: "granit" },
+            ]}
+          />
+        </Section>
+      </Pane>
+    </Workspace>
+  );
+};
 
 // Today in the spaces (Spaces home, W3 #4197): five short entries with the colour of their space, long names, and a
 // note of the notebook start page (W2) that opens in the page through a deed instead of an address.
