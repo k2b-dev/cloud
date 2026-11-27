@@ -49,8 +49,8 @@ export function Fixture() {
                   {actions.map((action) => (
                     <Button keep icon={action.icon} label={action.label} onClick={deed(action.label)} />
                   ))}
-                  <Button keep variant="primary" icon="plus" onClick={deed("Neuer Auftrag")}>
-                    Neuer Auftrag
+                  <Button keep variant="primary" icon="plus" onClick={deed("Neu")}>
+                    Neu
                   </Button>
                 </>
               }

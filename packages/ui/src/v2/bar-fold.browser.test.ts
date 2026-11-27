@@ -77,10 +77,11 @@ test("390 px, after the page came alive: the actions that do not fit are in '…
     for (const control of shown) expect([control.name, control.right <= 390, control.left >= 0]).toEqual([control.name, true, true]);
     // the tabs give way first, to the open one and their own "Mehr"; then the end folds from its last action
     expect(names[0]).toBe("Übersicht");
-    expect(names.slice(-2)).toEqual(["Neuer Auftrag", "Weitere Aktionen"]);
+    expect(names.slice(-2)).toEqual(["Neu", "Weitere Aktionen"]);
     const kept = names.filter((name) => actions.includes(name));
     expect(kept).toEqual(actions.slice(0, kept.length));
     expect(kept.length).toBeLessThan(actions.length);
+    expect(kept.length).toBeGreaterThan(0);
     // the folded actions are in the menu, in their order, and an entry does the action's deed
     await page.locator(head("record")).getByRole("button", { name: "Weitere Aktionen" }).click();
     const entries = await page.getByRole("menuitem").allTextContents();
@@ -113,7 +114,7 @@ test("1440 px: a head that fits folds nothing and has no '…', on the server's 
   });
   await withPage(1440, true, async (page) => {
     const after = await seen(page, head("record"));
-    expect(after.map((control) => control.name)).toEqual(["Übersicht", "Aktivität", "Dateien", ...actions, "Neuer Auftrag"]);
+    expect(after.map((control) => control.name)).toEqual(["Übersicht", "Aktivität", "Dateien", ...actions, "Neu"]);
     expect(after).toEqual(before);
   });
 });
