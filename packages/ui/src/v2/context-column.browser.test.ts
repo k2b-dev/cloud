@@ -114,6 +114,11 @@ const cases: { kind: Kind; width: number; beside: boolean }[] = [
   { kind: "detail", width: 1440, beside: false },
   { kind: "detail", width: 1680, beside: true },
   { kind: "detail", width: 1920, beside: true },
+  // a main column of one width counts that width (560 + 340): at 1200 px the context gives way where it stands beside a
+  // flexible main column (400 + 340), and stands beside from 1300 px
+  { kind: "form", width: 1200, beside: true },
+  { kind: "fixed", width: 1200, beside: false },
+  { kind: "fixed", width: 1300, beside: true },
 ];
 
 describe("a context column stands beside its main column only where there is room", () => {

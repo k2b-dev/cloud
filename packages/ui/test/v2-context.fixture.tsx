@@ -13,8 +13,10 @@ import { Bar, Button, Facts, Nav, Pane, Row, Section, Table, Text, Workspace } f
 
 // - `short`: `form` with two rows only, so the split has room left below when the context column gives way;
 // - `three`: a list, its reader and an info column (`Pane side`): not a main column with its context, so it stays as
-//   every split is: three columns beside each other, the info column counted in the workspace's room.
-export type Kind = "form" | "short" | "table" | "detail" | "three";
+//   every split is: three columns beside each other, the info column counted in the workspace's room;
+// - `fixed`: `form` with a main column of one width (`width={{ fixed: 560 }}`): the context stands beside it from
+//   560 + 340 = 900 px of the split, where `form` (400 + 340) already stands beside.
+export type Kind = "form" | "short" | "table" | "detail" | "three" | "fixed";
 
 const items = [
   { icon: "plug", label: "Quellen", href: "#quellen" },
@@ -104,7 +106,7 @@ export function Fixture(props: { kind: Kind }) {
           </Pane.Split>
         ) : (
           <Pane.Split>
-            <Pane label="Haupt">
+            <Pane label="Haupt" width={props.kind === "fixed" ? { fixed: 560 } : undefined}>
               <Sources few={props.kind === "short"} />
             </Pane>
             <Pane side={props.kind === "table" ? { from: 1400 } : true} label="Kontext" width={{ min: 280, default: 340 }}>
