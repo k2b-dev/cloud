@@ -47,6 +47,10 @@ export const heights = {
   row: 40,
   row2: 52,
   row3: 72,
+  /** A row on the phone, one line: a tap target at least. */
+  rowPhone: 44,
+  /** A row on the phone, two lines. */
+  rowPhone2: 52,
   dense: 32,
   control: 36,
   controlSmall: 28,

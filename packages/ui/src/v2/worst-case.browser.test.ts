@@ -441,6 +441,14 @@ for (const width of [1440, 1024, 390, 320])
         expect(rows.map((row) => row.lines)).toEqual(rows.map(() => [1, 1]));
         expect(rows.every((row) => row.beside)).toBe(true);
         expect(rows.every((row) => row.opens)).toBe(true);
+        // on the phone a row of two lines takes its height from the one token of it, never a number of its own
+        if (width < 768) {
+          const floor = await page.evaluate(() => {
+            const token = getComputedStyle(document.body).getPropertyValue("--k2-h-row-phone2").trim();
+            return { token, rows: getComputedStyle(document.querySelector(".k2-row")!).minHeight };
+          });
+          expect(floor.rows).toBe(floor.token);
+        }
         // a cut line says all of it where the pointer rests on it; a whole one has no hint a screen reader would read twice
         expect(rows.map((row) => row.hints)).toEqual(rows.map((row) => row.cut.map((cut) => (cut ? "whole" : "none"))));
         // the long ones are cut where the column is narrow
