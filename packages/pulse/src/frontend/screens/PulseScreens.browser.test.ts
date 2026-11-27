@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
+import { SOURCES_PAGE } from "../workspace/source-page";
 import { sqlTestLimits, sqlTestResult } from "../workspace/sql-test-fixtures";
 import {
   FIXTURE_NOW,
@@ -285,11 +286,14 @@ describe("Pulse on v2", () => {
   test("a base with more sources than a page loads the next page by offset and counts all of them", async () => {
     const { context, tab, errors, calls } = await open(desktop, `/app/pulse/${baseId}`, { variant: "huge" });
     try {
-      expect(await tab.getByText("50 von 1.000 Zeilen sichtbar").isVisible()).toBe(true);
+      expect(await tab.getByText(`${SOURCES_PAGE} von 1.000 Zeilen sichtbar`).isVisible()).toBe(true);
       await tab.getByRole("button", { name: "Weitere laden" }).click();
-      await tab.locator('[data-k2-part="Table"]').getByText("Quelle 100", { exact: true }).waitFor();
-      expect(calls.some((call) => call.path.endsWith("/sources") && call.query?.get("offset") === "50")).toBe(true);
-      expect(await tab.getByText("100 von 1.000 Zeilen sichtbar").isVisible()).toBe(true);
+      await tab
+        .locator('[data-k2-part="Table"]')
+        .getByText(`Quelle ${2 * SOURCES_PAGE}`, { exact: true })
+        .waitFor();
+      expect(calls.some((call) => call.path.endsWith("/sources") && call.query?.get("offset") === String(SOURCES_PAGE))).toBe(true);
+      expect(await tab.getByText(`${2 * SOURCES_PAGE} von 1.000 Zeilen sichtbar`).isVisible()).toBe(true);
       expect(errors).toEqual([]);
     } finally {
       await context.close();

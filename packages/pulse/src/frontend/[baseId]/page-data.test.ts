@@ -11,6 +11,7 @@ import { savedQueries } from "../../service/saved-queries";
 import * as sqlService from "../../service/sql-service";
 import { adminFixtureIdentity } from "../../store/admin-identity.test-fixture";
 import { figuresOf, fixtureBase, fixtureNav } from "../screens/fixtures";
+import { SOURCES_PAGE } from "../workspace/source-page";
 import { sqlTestLimits } from "../workspace/sql-test-fixtures";
 import { loadPulseQueriesPageData, loadPulseSettingsPageData, loadPulseWorkspacePageData } from "./page-data";
 
@@ -73,7 +74,7 @@ test("the sources view reads one page of sources, and its tab still counts them 
   const { list, count } = stubBase();
   const data = await load("/app/pulse/:baseId", "/app/pulse/Base01", (c) => loadPulseWorkspacePageData(c));
   expect(list).toHaveBeenCalledTimes(1);
-  expect(list.mock.calls[0]?.[2]).toMatchObject({ limit: 50 });
+  expect(list.mock.calls[0]?.[2]).toMatchObject({ limit: SOURCES_PAGE });
   expect(count).toHaveBeenCalledTimes(1);
   expect(data).toMatchObject({ kind: "ok", sourceCount: 4 });
 });

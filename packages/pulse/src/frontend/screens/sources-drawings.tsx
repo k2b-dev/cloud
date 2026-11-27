@@ -12,21 +12,32 @@ const PULSE = "#1e40af";
 const SOFT = `color-mix(in srgb, ${PULSE} 32%, var(--k2-surface, #fff))`;
 const INK = `color-mix(in srgb, ${PULSE} 82%, #000)`;
 
+/** A rounded bar as a path segment, so many bars of one colour are one element. */
+const bar = (x: number, y: number, width: number, height: number, radius: number) => {
+  const r = Math.min(radius, width / 2, height / 2);
+  return `M${x + r} ${y}h${width - 2 * r}a${r} ${r} 0 0 1 ${r} ${r}v${height - 2 * r}a${r} ${r} 0 0 1 -${r} ${r}h-${width - 2 * r}a${r} ${r} 0 0 1 -${r} -${r}v-${height - 2 * r}a${r} ${r} 0 0 1 ${r} -${r}z`;
+};
+
+/** Slots of one kind drawn as one path each: three elements a drawing, however many slots it has. */
+const SlotPaths = (props: { d: (slot: FetchSlot) => string; fill: (slot: FetchSlot) => string }) => (
+  <For each={["none", "ok", "bad"] as const}>{(slot) => <path d={props.d(slot)} style={{ fill: props.fill(slot) }} />}</For>
+);
+
 /** One slot per minute of fetches (study `.ticks`): 3 px wide, 1 px apart; fine 12 px soft, failed 16 px red, none 4 px. */
 export const FetchTicksDrawing = (props: { slots: readonly FetchSlot[]; label: string }) => (
   <svg width={props.slots.length * 4 - 1} height="16" viewBox={`0 0 ${props.slots.length * 4 - 1} 16`} role="img" aria-label={props.label}>
-    <For each={props.slots}>
-      {(slot, index) => (
-        <rect
-          x={index() * 4}
-          y={slot === "bad" ? 0 : slot === "none" ? 6 : 2}
-          width="3"
-          height={slot === "bad" ? 16 : slot === "none" ? 4 : 12}
-          rx="1"
-          style={{ fill: slot === "bad" ? "var(--k2-bad-dot)" : slot === "none" ? "var(--k2-n200)" : SOFT }}
-        />
-      )}
-    </For>
+    <SlotPaths
+      d={(kind) =>
+        props.slots
+          .map((slot, index) =>
+            slot !== kind
+              ? ""
+              : bar(index * 4, slot === "bad" ? 0 : slot === "none" ? 6 : 2, 3, slot === "bad" ? 16 : slot === "none" ? 4 : 12, 1),
+          )
+          .join("")
+      }
+      fill={(kind) => (kind === "bad" ? "var(--k2-bad-dot)" : kind === "none" ? "var(--k2-n200)" : SOFT)}
+    />
   </svg>
 );
 
@@ -95,18 +106,24 @@ export function SourcesHeroDrawing(props: {
         <Show when={props.ticks}>
           {/* ok soft in Pulse's colour, bad red and taller, none a low stub on the base line */}
           <svg width="100%" height="44" viewBox={`0 0 ${width()} 44`} preserveAspectRatio="none" role="img" aria-label={props.chartLabel}>
-            <For each={props.ticks}>
-              {(slot, index) => (
-                <rect
-                  x={index() * step}
-                  y={slot === "bad" ? 0 : slot === "ok" ? 6 : 38}
-                  width="6"
-                  height={slot === "bad" ? 44 : slot === "ok" ? 38 : 6}
-                  rx="1.5"
-                  style={{ fill: slot === "bad" ? "var(--k2-bad-dot)" : slot === "ok" ? SOFT : "var(--k2-n200)" }}
-                />
-              )}
-            </For>
+            <SlotPaths
+              d={(kind) =>
+                (props.ticks ?? [])
+                  .map((slot, index) =>
+                    slot !== kind
+                      ? ""
+                      : bar(
+                          index * step,
+                          slot === "bad" ? 0 : slot === "ok" ? 6 : 38,
+                          6,
+                          slot === "bad" ? 44 : slot === "ok" ? 38 : 6,
+                          1.5,
+                        ),
+                  )
+                  .join("")
+              }
+              fill={(kind) => (kind === "bad" ? "var(--k2-bad-dot)" : kind === "ok" ? SOFT : "var(--k2-n200)")}
+            />
           </svg>
           <div class="pulse-hero-cap">
             <span>{props.start}</span>
