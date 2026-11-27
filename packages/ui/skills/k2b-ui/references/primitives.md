@@ -205,7 +205,11 @@ inside it.
 
 ### List and Row
 
-`List` holds `Row`s (`label` names it). A `Row`:
+`List` holds `Row`s (`label` names it; `color` is the colour of the app the
+rows belong to, for the tint of the open row, the page's app
+by default). Rows part with the quiet line (`--k2-hairline-subtle`); the
+clear line (`--k2-hairline`) only separates two things: a head and its
+content, a list and its detail, one section and the next. A `Row`:
 
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
@@ -242,7 +246,9 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 
 ### Table
 
-`columns: Column<T>[]`, `rows: T[]`, `label`. A column: `title`, `cell(row)`
+`columns: Column<T>[]`, `rows: T[]`, `label`, `color` (as on `List`: the
+open row in the tint of the app it belongs to, a chosen row blue; rows part
+with the quiet line, the column head with the clear one). A column: `title`, `cell(row)`
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
 never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer, on focus and while dragged; on touch screens it stays), `wrap` (one text column may take 3

@@ -30,9 +30,12 @@
   --k2-muted: #4b4b55;
   --k2-subtle: #6b6b74;
 
-  /* the one hairline, the edge of a control, a grip at rest */
+  /* Two line weights (identity B). The clear line separates two things: a head and its content, a list and its
+     detail, one section and the next, a frame. The quiet line only parts the rows and cells of one thing. */
   --k2-line: var(--k2-n200);
   --k2-hairline: 1px solid var(--k2-line);
+  --k2-line-subtle: var(--k2-n100);
+  --k2-hairline-subtle: 1px solid var(--k2-line-subtle);
   --k2-line-control: var(--k2-n300);
   --k2-grip: #8a8a94;
 
@@ -41,16 +44,6 @@
   --k2-blue-ink: #1d4ed8;
   --k2-blue-tint: #eff6ff;
   --k2-blue-ring: rgb(37 99 235 / 0.18);
-  /* The colour of the app is ONE colour, `--k2-app`, set by the page or the platform on the scope or above it; v2
-     never sets it. Ink and tint follow from it in each theme. Without it the mixes are invalid, so the blue of v2
-     stands, exactly as the mockup draws it; readers take `var(--k2-app, var(--k2-blue))`. */
-  --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 80%, #000000);
-  --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 8%, var(--k2-surface));
-  /* The ink of the app colour as text. The platform may set `--k2-app-ink`, a tone that keeps 4.5:1 on the surfaces
-     (`readableTone`); a mix alone does not promise that for every colour. Without it the mix stands, without a
-     colour the blue. v2 never sets `--k2-app-ink` itself, so the platform's value reaches every primitive. */
-  --k2-app-text: var(--k2-app-ink, var(--k2-app-ink-mix, var(--k2-blue-ink)));
-  --k2-app-tint: var(--k2-app-tint-mix, var(--k2-blue-tint));
 
   /* tones by meaning */
   --k2-ok-tint: #ecfdf5;
@@ -182,8 +175,6 @@
   --k2-note-ink: #fde68a;
   --k2-draft: #fb923c;
 
-  --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 55%, #ffffff);
-  --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 28%, var(--k2-surface));
   --k2-warn-ink: #fbbf24;
   --k2-pressed: #fbbf24;
   --k2-sticky-edge: rgb(0 0 0 / 0.45);
@@ -1137,6 +1128,36 @@
   gap: 12px;
 }
 
+/* The colour of the app is ONE colour, `--k2-app`, set by the page or the platform on the scope or above it; v2
+   never sets it. Ink and tint follow from it in each theme: the one block below, for the page's app on the v2 root
+   and for another app's rows (`data-k2-owner`, set by a List's or a Table's `color`, which also sets `--k2-app`).
+   Without a colour the mixes are invalid, so the blue of v2 stands, exactly as the mockup draws it; readers take
+   `var(--k2-app, var(--k2-blue))`. The tint is study B's 7 % in light; 18 % in dark, so the quiet text of a tinted
+   row keeps 4.5:1 (see the rows below).
+   The ink as text: the platform may set `--k2-app-ink`, a tone that keeps 4.5:1 on the surfaces (`readableTone`); a
+   mix alone does not promise that for every colour. Without it the mix stands, without a colour the blue. v2 never
+   sets `--k2-app-ink` itself, so the platform's value reaches every primitive; it belongs to the page's app, so
+   another app's rows drop it. */
+.k2-ui,
+.k2-ui [data-k2-owner] {
+  --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 80%, #000000);
+  --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 7%, var(--k2-surface));
+  --k2-app-text: var(--k2-app-ink, var(--k2-app-ink-mix, var(--k2-blue-ink)));
+  --k2-app-tint: var(--k2-app-tint-mix, var(--k2-blue-tint));
+}
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui),
+.k2-ui.dark,
+.k2-ui[data-theme="dark"],
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) [data-k2-owner],
+.k2-ui.dark [data-k2-owner],
+.k2-ui[data-theme="dark"] [data-k2-owner] {
+  --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 55%, #ffffff);
+  --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 18%, var(--k2-surface));
+}
+.k2-ui [data-k2-owner] {
+  --k2-app-ink: initial;
+}
+
 /* ── Row: 40 · 52 · 72 by its lines; roles by line; square, also when it opens something ────────────────────── */
 .k2-ui .k2-list {
   display: flex;
@@ -1152,7 +1173,7 @@
   align-items: center;
   min-height: var(--k2-h-row);
   padding: 8px var(--k2-edge);
-  border-bottom: var(--k2-hairline);
+  border-bottom: var(--k2-hairline-subtle);
   min-width: 0;
   color: inherit;
 }
@@ -1423,7 +1444,7 @@
 .k2-ui .k2-table td {
   height: var(--k2-h-row);
   padding: 0 12px;
-  border-bottom: var(--k2-hairline);
+  border-bottom: var(--k2-hairline-subtle);
   vertical-align: middle;
   min-width: 0;
 }
@@ -1444,6 +1465,10 @@
   text-align: right;
 }
 .k2-ui .k2-table tr:last-child td {
+  border-bottom: 0;
+}
+/* a list ends without a line, as a table does: what follows it brings its own; only a grid table keeps an end line */
+.k2-ui .k2-list > .k2-row:last-child {
   border-bottom: 0;
 }
 /* A small table (in a group, on a record) wraps its text like the mockup; a table with column widths keeps one line
@@ -1567,6 +1592,26 @@
 }
 .k2-ui .k2-table[data-grid] tbody tr[data-selected] > td {
   background: var(--k2-blue-tint);
+}
+/* The quiet line under a tinted row leaves, as in study B: the tint parts it. The line keeps its pixel, so nothing moves. */
+.k2-ui .k2-row:is([data-current], [data-selected]),
+.k2-ui .k2-table tbody tr:is([aria-current], [data-selected]) > td {
+  border-bottom-color: transparent;
+}
+/* In dark the quiet text of a tinted row moves 60 % towards the muted text (n500 → n600), so it keeps 4.5:1 on the
+   tint of every app colour, white included. */
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected])),
+.k2-ui.dark :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected])),
+.k2-ui[data-theme="dark"] :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected])) {
+  --k2-subtle: color-mix(in srgb, var(--k2-n500) 40%, var(--k2-n600));
+}
+/* Forced colours drop the tint: the open and the chosen rows stand in a frame of the system's highlight. */
+@media (forced-colors: active) {
+  .k2-ui .k2-row:is([data-current], [data-selected]),
+  .k2-ui .k2-table tbody tr:is([aria-current], [data-selected]) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
 }
 .k2-ui .k2-table[data-grid] td:not([data-select]):hover {
   box-shadow: inset 0 0 0 1px var(--k2-line-control);
