@@ -260,6 +260,25 @@ test("on the phone a chat with threads opens its threads first, and a thread ope
   }
 }, 60_000);
 
+for (const [width, height] of [
+  [1440, 900],
+  [390, 844],
+] as const)
+  test(`the chat's info shows its purpose, notifications and members at ${width} px`, async () => {
+    const { page, errors, close } = await load(`/app/chat/c/${open}?panel=info`, width, height);
+    try {
+      const info = page.locator('[data-k2-part="Pane"][aria-label="Chat info"]');
+      await info.locator('[data-k2-part="Row"]', { hasText: "Tobias Brandt" }).waitFor();
+      expect(await info.getByText("Notifications").count()).toBeGreaterThan(0);
+      const layout = await measureV2Layout(page, { root: "[data-k2-workspace]", skip: '[data-k2-part="Canvas"]' });
+      expect({ width, problems: layout.problems }).toEqual({ width, problems: [] });
+      await shoot(page, `08-info-light-${width}`);
+      expect(errors).toEqual([]);
+    } finally {
+      await close();
+    }
+  }, 60_000);
+
 // break-ui: the worst names and counts a list meets. Rows keep their sign and time, names are cut with "…", nothing
 // leaves its column, and the v2 rules hold at both widths. Last in the file: these chats join the list from here on.
 test("the list keeps its shape with the worst names and counts", async () => {

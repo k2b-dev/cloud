@@ -3226,13 +3226,14 @@ export function ChatWorkspaceView(
       </Show>
     </>
   );
-  const infoView = () => (
+  // v1's panel, or v2's info with the same props: one place decides what Info holds.
+  const infoView = (Panel: typeof ChatInfoPanel = ChatInfoPanel) => (
     <>
       {/* One panel per chat, like its history: search and loaded members never carry over to the next chat. */}
       <Show when={infoMounted() && openChat()?.id} keyed>
         <Show when={conversation()}>
           {(current) => (
-            <ChatInfoPanel
+            <Panel
               conversation={current()}
               viewerId={props.viewerId}
               active={panel() === "info"}
@@ -3769,8 +3770,32 @@ export function ChatWorkspaceView(
           ),
         }}
         detail={v2Detail}
-        info={() => (panel() === "info" && conversation() ? { close: { label: v2t().closeInfo, onClick: () => closeInfo() } } : null)}
-        infoContent={infoView}
+        info={() => {
+          const current = conversation();
+          if (panel() !== "info" || !current) return null;
+          const admin = current.kind !== "system" && current.permission === "admin";
+          // The chat's own deeds, as v1's Info has them in its head's "…".
+          const menu: MenuEntry[] =
+            current.kind === "system"
+              ? []
+              : [
+                  ...(admin ? [{ label: t().discoverySettings, icon: "compass", onClick: () => void editDiscovery() }] : []),
+                  ...(current.permission !== "read" ? [{ label: t().editDetails, icon: "pencil", onClick: editDetails }] : []),
+                  ...(admin && !current.channel ? [{ label: t().newThread, icon: "hash", onClick: () => void createThread() }] : []),
+                  ...(current.member && (current.channel || current.memberCount > 1)
+                    ? [
+                        {
+                          label: current.channel ? t().unsubscribe : t().leaveChat,
+                          icon: current.channel ? "bell-off" : "logout",
+                          danger: true,
+                          onClick: () => void (current.channel ? unsubscribe() : leaveChat()),
+                        },
+                      ]
+                    : []),
+                ];
+          return { close: { label: v2t().closeInfo, onClick: () => closeInfo() }, menu };
+        }}
+        infoContent={() => infoView(V2.ChatInfoPaneV2)}
       />
     );
   return (

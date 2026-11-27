@@ -87,3 +87,8 @@ type ThreadsProps = ComponentProps<typeof import("./ChatPagesV2").ThreadsPageV2>
 const loadThreads = () => import("./ChatPagesV2").then((module) => module.ThreadsPageV2);
 /** A chat's threads as the phone's page, loaded when it opens, as v1's is. */
 export const ThreadsPaneV2 = (props: ThreadsProps) => <DeferredV2 load={loadThreads} contentProps={props} />;
+
+type InfoProps = ComponentProps<typeof import("./ChatInfoV2").default>;
+const loadInfo = () => import("./ChatInfoV2").then((module) => module.default);
+/** The chat's info in its pane, loaded when it opens, as v1's is. */
+export const ChatInfoPaneV2 = (props: InfoProps) => <DeferredV2 load={loadInfo} contentProps={props} />;

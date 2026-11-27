@@ -1,0 +1,253 @@
+import { isManagerEntry } from "@k2b/cloud/access/ui";
+import {
+  Band,
+  Canvas,
+  Choice,
+  Empty,
+  Failed,
+  Field,
+  Input,
+  List,
+  Loading,
+  Menu,
+  type MenuEntry,
+  Notice,
+  Row,
+  Section,
+  Text,
+} from "@k2b/ui/v2";
+import { For, type JSX, Show } from "solid-js";
+import type { z } from "zod";
+import type { MemberSchema, PermissionSchema } from "../../service/contracts";
+import { type ChatInfoPanelProps, createMemberList } from "../ChatInfoPanel";
+import { type ChatNotificationSettingsProps, createNotificationChoice, NOTIFICATION_SETTINGS_HREF } from "../ChatNotificationSettings";
+import ChatSharedSection from "../ChatSharedSection";
+
+type Member = z.infer<typeof MemberSchema>;
+type Permission = z.infer<typeof PermissionSchema>;
+/** `groupSize` stops counting here; the server answers 501 for "more than 500". */
+const GROUP_COUNT_LIMIT = 500;
+
+/**
+ * The chat's level of notifications on v2: three levels as one choice, what the chosen one means under it, the
+ * duration of "Off", and where Cloud keeps browser, email and quiet hours. A choice saves at once; a failed save says so
+ * with its retry, and a browser that blocks notifications says so too.
+ */
+function NotificationsV2(props: ChatNotificationSettingsProps): JSX.Element {
+  const choice = createNotificationChoice(props);
+  const t = choice.t;
+  const levels = ["all", "mentions", "none"] as const;
+  return (
+    <Band label={t().notificationsLabel}>
+      <Field
+        label={t().notificationsLabel}
+        hint={choice.description(choice.value())}
+        action={{ label: t().notificationsSettingsLink, icon: "settings", href: NOTIFICATION_SETTINGS_HREF }}
+      >
+        <Choice
+          name="chat-notifications"
+          value={choice.value()}
+          disabled={choice.pending() !== null}
+          options={levels.map((level) => ({
+            value: level,
+            label:
+              props.notifications.defaultLevel === level ? `${choice.label(level)} · ${t().notificationsDefault}` : choice.label(level),
+          }))}
+          onChange={(level) => choice.choose(levels.find((entry) => entry === level) ?? "all")}
+        />
+      </Field>
+      <Show when={choice.value() === "none"}>
+        <Field
+          label={t().muteForLabel}
+          hint={choice.pending() === null && props.notifications.level === "none" ? choice.untilSentence() : undefined}
+        >
+          <Choice
+            name="chat-mute-for"
+            value={choice.muteFor() ?? undefined}
+            options={[
+              { value: "1h", label: t().muteFor1h },
+              { value: "8h", label: t().muteFor8h },
+              { value: "1w", label: t().muteFor1w },
+              { value: "forever", label: t().muteForever },
+            ]}
+            onChange={(duration) => {
+              if (duration === "1h" || duration === "8h" || duration === "1w" || duration === "forever") choice.chooseDuration(duration);
+            }}
+          />
+        </Field>
+      </Show>
+      <Show when={choice.failed()}>
+        {(input) => (
+          <Notice tone="bad" actions={[{ label: t().retry, onClick: () => choice.save(input()) }]}>
+            {t().notificationsNotSaved({ level: choice.label(props.notifications.level) })}
+          </Notice>
+        )}
+      </Show>
+      <Show when={!choice.failed() && choice.blocked()}>
+        <Notice tone="warn" icon="bell-off">
+          {t().notificationsBlocked}
+        </Notice>
+      </Show>
+      <Show when={props.notifications.following?.first ? props.notifications.following : null}>
+        {(following) => <Text type="meta">{t().followingSummary({ name: following().first!.name, more: following().count - 1 })}</Text>}
+      </Show>
+    </Band>
+  );
+}
+
+/**
+ * The chat's info on v2, beside the history or as its own page on a phone: what the chat is for, the reader's
+ * notifications, the members (searchable, a page at a time; managers change levels and remove behind each row's "…"),
+ * and what the chat shared. The chat's own deeds stand in the info's head.
+ */
+export default function ChatInfoV2(props: ChatInfoPanelProps): JSX.Element {
+  const members = createMemberList(props);
+  const t = members.t;
+  const permissionLabel = (permission: Permission) =>
+    permission === "read" ? t().permissionRead : permission === "write" ? t().permissionWrite : t().permissionManage;
+  const markers = (member: Member) =>
+    [
+      member.principal.type === "user" && member.principal.userId === props.viewerId ? t().ownMember : null,
+      member.guest ? t().guestMember : null,
+      member.deactivated ? t().deactivatedMember : null,
+      member.groupSize === null
+        ? null
+        : member.groupSize > GROUP_COUNT_LIMIT
+          ? t().largeGroup
+          : t().groupPeople({ count: member.groupSize }),
+      member.serviceAccountKind
+        ? member.serviceAccountKind === "agent" || member.serviceAccountKind === "standalone"
+          ? t().agentAccount
+          : member.serviceAccountKind === "resource_bound"
+            ? t().resourceAccount
+            : member.serviceAccountKind === "code"
+              ? t().codeAccount
+              : t().delegatedAccount
+        : null,
+      permissionLabel(member.permission),
+    ].filter((marker) => marker !== null);
+  const memberMenu = (member: Member): readonly MenuEntry[] => {
+    if (!members.manager()) return [];
+    const own = member.principal.type === "user" && member.principal.userId === props.viewerId;
+    const locked = member.principal.type !== "group" && !member.deactivated && members.managers() === 1 && isManagerEntry(member);
+    // Groups always write; only a direct person's level changes.
+    const levels: Permission[] = member.principal.type === "group" ? [] : ["read", "write", "admin"];
+    return [
+      ...(levels.length
+        ? [
+            {
+              title: t().permissionFor({ name: member.displayName }),
+              choice: member.permission,
+              onChoose: (value: string) => {
+                const level = levels.find((entry) => entry === value);
+                if (level) void members.changePermission(member, level);
+              },
+              items: levels
+                .filter((level) => member.serviceAccountKind !== "code" || level !== "admin")
+                .map((level) => ({
+                  label: permissionLabel(level),
+                  value: level,
+                  disabled: members.changing() || (locked && level !== "admin"),
+                  meta: locked && level !== "admin" ? t().lastManager : undefined,
+                })),
+            } satisfies MenuEntry,
+          ]
+        : []),
+      ...(own
+        ? []
+        : [
+            {
+              label: t().removeName({ name: member.displayName }),
+              icon: "user-minus",
+              danger: true,
+              disabled: members.changing() || locked,
+              meta: locked ? t().lastManager : undefined,
+              onClick: () => void members.remove(member),
+            } satisfies MenuEntry,
+          ]),
+    ];
+  };
+  return (
+    <>
+      <Show
+        when={!members.system()}
+        fallback={
+          <Band label={t().membersTitle}>
+            <Text>
+              {t().systemMembers}. {t().systemAccessHint}
+            </Text>
+          </Band>
+        }
+      >
+        <Band label={t().purpose}>
+          <Text type="meta">{t().purpose}</Text>
+          <Text>{props.conversation.purpose || t().noPurpose}</Text>
+        </Band>
+      </Show>
+      <Show when={props.notificationProps}>{(notifications) => <NotificationsV2 {...notifications()} />}</Show>
+      <Show when={!members.system()}>
+        <Section
+          title={t().membersTitle}
+          count={props.conversation.memberCount}
+          actions={members.manager() ? [{ label: t().addPeople, icon: "user-plus", onClick: props.onAddPeople }] : undefined}
+          more={
+            members.cursor() && !members.moreFailed()
+              ? {
+                  label: t().showMoreMembers,
+                  icon: "dots",
+                  disabled: members.status() !== "ready" || members.loadingMore(),
+                  onClick: () => void members.more(),
+                }
+              : undefined
+          }
+        >
+          <Input
+            type="search"
+            icon="search"
+            label={t().searchMembers}
+            placeholder={t().searchMembers}
+            value={members.input()}
+            onInput={members.setInput}
+          />
+          <Show when={members.status() === "error"}>
+            <Failed text={t().membersFailed} onRetry={() => void members.load()} />
+          </Show>
+          <Show when={members.status() === "loading" && members.rows.length === 0}>
+            <Loading rows={4} lines={2} />
+          </Show>
+          <Show when={members.status() === "ready" && members.rows.length === 0 && members.query()}>
+            <Empty icon="users" text={t().noMemberMatches({ q: members.query() })} />
+          </Show>
+          <List label={t().membersTitle}>
+            <For each={members.rows}>
+              {(member) => (
+                <Row
+                  avatar={{ name: member.displayName }}
+                  lines={[member.displayName, markers(member).join(" · ")]}
+                  end={
+                    <Show when={memberMenu(member).length > 0}>
+                      <Menu label={t().permissionFor({ name: member.displayName })} items={memberMenu(member)} />
+                    </Show>
+                  }
+                />
+              )}
+            </For>
+          </List>
+          <Show when={members.moreFailed()}>
+            <Notice tone="bad" actions={[{ label: t().retry, onClick: () => void members.more() }]}>
+              {t().membersFailed}
+            </Notice>
+          </Show>
+        </Section>
+      </Show>
+      <Show when={props.sharedProps}>
+        {(shared) => (
+          // k2b-ui gap: what the chat shared (files, links, elements with their filters and pages) still draws v1.
+          <Canvas label={t().shared}>
+            <ChatSharedSection {...shared()} />
+          </Canvas>
+        )}
+      </Show>
+    </>
+  );
+}

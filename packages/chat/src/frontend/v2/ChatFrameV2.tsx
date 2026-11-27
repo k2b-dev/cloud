@@ -68,7 +68,7 @@ export type ChatFrameV2Props = {
   };
   detail: Accessor<ChatDetailV2 | null>;
   /** The open chat's info beside it, while the address asks for it. */
-  info: Accessor<{ close: Action } | null>;
+  info: Accessor<{ close: Action; menu: readonly MenuEntry[] } | null>;
   /** The info itself, made once while it stands. */
   infoContent: () => JSX.Element;
 };
@@ -228,13 +228,18 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
                 head={
                   <Bar
                     start={<Text type="lead">{v2().info}</Text>}
-                    end={<Button variant="ghost" icon="x" label={info().close.label} onClick={() => info().close.onClick?.()} />}
+                    end={
+                      <>
+                        <Show when={info().menu.length > 0}>
+                          <Menu label={v2().chatActions} items={info().menu} />
+                        </Show>
+                        <Button variant="ghost" icon="x" label={info().close.label} onClick={() => info().close.onClick?.()} />
+                      </>
+                    }
                   />
                 }
               >
-                <Canvas label={v2().infoPane} height="fill">
-                  <div style={drawing}>{props.infoContent()}</div>
-                </Canvas>
+                {props.infoContent()}
               </Pane>
             )}
           </Show>
