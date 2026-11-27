@@ -17,6 +17,27 @@ state that shows an open menu, panel, dialog or toast is `{ render, press }`:
 the screen, and the names of the buttons and menu entries a person presses,
 in order, to open it.
 
+## The recipes and the look
+
+Every screen must meet [the look](look.md), recipes included. The recipes
+and pictures of this version show the structure of each screen (which
+primitive stands where, the states, the phone), not yet its identity: by
+the wireframe check in look.md, each of them is still a wireframe. Copy
+the structure, then add what look.md asks. Where a part is missing, write
+the gap at its place and name it in your report. Never copy a recipe's
+bare look as the result.
+
+| Recipe | What it still lacks (rule in look.md) |
+| --- | --- |
+| `frame`, `list-detail`, `mail`, `actions` | hero (1), marks and one data picture per row (3), tinted head of the open entry (5), two-column detail on a large screen (12) |
+| `table`, `filtered-table`, `states` | hero with its trend (1), marks and a data column (3), the screen filled with real data, a context column on a large screen (12) |
+| `record`, `record-groups` | tinted object head with sign and key facts (5), people beside what they did (3) |
+| `form`, `form-detail`, `settings` | the object's tinted head (5); settings as `Setting` rows (10) |
+| `dialogs`, `content` | marks and people in rows (3), a large screen that uses its room (12) |
+
+Each rebuilt recipe carries its screen brief (look.md, "Write the screen
+brief") at the top of its section here.
+
 ## frame.tsx: the frame of an app
 
 ![frame at 1440 px](../images/frame-1440.png)
@@ -81,6 +102,23 @@ in its words. Its footer `Bar` saves with a default button.
 - A form beside a page with a head primary never gets a second primary.
 - On the phone the form is the page; `back` leads to the list.
 - States: `errors`, `saving`.
+
+## settings.tsx: settings with more than text
+
+![settings at 1440 px](../images/settings-1440.png)
+![settings at 390 px](../images/settings-390.png)
+
+The sign-in settings of an app: a `Field` with an `action` that resets it
+to its default, a `Select` the operator fixed (`disabled`), allowed
+domains in a `TagsInput`, a logo in an `ImageInput`, an accent colour in a
+`ColorInput`, how dark the background is in a `Slider`, a pairing code in a
+`CodeInput`, and two `Disclosure`s with questions in a `Section`.
+
+- A field's deed stands at the end of its label line and never moves the
+  field; it takes the place of `optional`.
+- A choice the person may not change is a dimmed control with the reason
+  in its hint, not a missing one.
+- States: `empty`, `locked`.
 
 ## record.tsx: a record, first tab
 
@@ -240,6 +278,11 @@ empty (`Empty` with "Text schreiben"), loading (`Loading` rows) and failed
   overlay. It needs the `@k2b/ui` stylesheet and a `.k2b-ui` ancestor, which
   every Cloud page has; with `v2.css` alone a chart has no size (gap), so
   this recipe draws its plan itself.
+- A state timeline (`kind="stateTimeline"`) takes `now` from the page (the
+  server's request time, never a clock in the component) and draws it as a
+  thin line with "Jetzt" on its time axis; runs of seconds stay 3 units wide, centred on their
+  start; a start still to come has `planned: true` and is an outline that
+  says "geplant".
 - With no data, put `Empty` in place of the `Canvas`. `Loading` and
   `Failed` hold rows, not the height of a drawing, so the page moves while a
   chart loads (gap).

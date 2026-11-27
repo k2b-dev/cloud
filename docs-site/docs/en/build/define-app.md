@@ -357,7 +357,9 @@ same declaration. Cloud applies `data-k2b-primary="ai"` to the application's
 page body, its pages in the Cloud app, and its Help panel even when Core hosts
 that panel. Provider pages rendered with `PanelLayout` also take their own
 application's primary colour. Shared `@k2b/ui` controls and Cloud's selection
-and focus styles follow that scope in light and dark mode. Status colours and
+and focus styles follow that scope in light and dark mode, and so does the
+primary action of a UI v2 page (`Button variant="primary"` and the phone's
+floating action), with white words on plum. Status colours and
 other applications' declared accents keep their meaning.
 
 ## Declare platform integrations

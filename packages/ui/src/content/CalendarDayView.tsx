@@ -31,6 +31,8 @@ import { EventChip, eventHref } from "./calendar-shared";
 import {
   AllDayChips,
   createTimeView,
+  DAY_HOUR_PX,
+  DAY_PHONE_HOUR_PX,
   dayBands,
   dayGaps,
   daySummary,
@@ -47,6 +49,7 @@ import {
   TimeCheck,
   TimeGap,
   TimeMarker,
+  TimeMore,
   TimeOverlays,
   TimeQuickCreate,
   type TimeView,
@@ -582,7 +585,7 @@ const DaySection = (props: {
   const soon = () => soonNote(view, props.dayKey);
   const wake = () => view.wake();
   const nowMinute = () => (props.dayKey === view.nowKey() ? view.nowMinute() : null);
-  const bands = createMemo(() => dayBands(view, props.dayKey, expanded()));
+  const bands = createMemo(() => dayBands(view, props.dayKey, expanded(), DAY_PHONE_HOUR_PX));
   const gaps = createMemo(() => dayGaps(view, props.dayKey));
   const markers = () => model().markers.filter((marker) => marker.minute < (expanded() ? DAY_MINUTES : wake()));
   /** Deadlines whose pills would cover each other share the width; keyed by marker, so rows keep their elements. */
@@ -601,7 +604,8 @@ const DaySection = (props: {
   const timeline = createMemo<
     Array<
       | { at: number; kind: "gap"; gap: ReturnType<typeof gaps>[number] }
-      | { at: number; kind: "band"; band: ReturnType<typeof bands>[number] }
+      | { at: number; kind: "band"; band: ReturnType<typeof bands>["shown"][number] }
+      | { at: number; kind: "more"; more: ReturnType<typeof bands>["more"][number] }
       | { at: number; kind: "marker"; marker: ReturnType<typeof markers>[number] }
     >
   >(
@@ -613,13 +617,16 @@ const DaySection = (props: {
               (row) => row.kind === "gap" && row.gap.start === gap.start && row.gap.end === gap.end && row.gap.past === gap.past,
             ) ?? { at: gap.start, kind: "gap" as const, gap },
         ),
-        ...bands().map(
+        ...bands().shown.map(
           (band) =>
             previous.find((row) => row.kind === "band" && row.band === band) ?? {
               at: Math.max(0, band.start),
               kind: "band" as const,
               band,
             },
+        ),
+        ...bands().more.map(
+          (more) => previous.find((row) => row.kind === "more" && row.more === more) ?? { at: more.minute, kind: "more" as const, more },
         ),
         ...markers().map(
           (marker) =>
@@ -869,9 +876,12 @@ const DaySection = (props: {
                 dayKey={props.dayKey}
                 expanded={expanded()}
                 showLocation
-                hourPx={56}
+                hourPx={DAY_HOUR_PX}
+                phoneHourPx={DAY_PHONE_HOUR_PX}
                 scroller={props.scroller}
               />
+            ) : entry.kind === "more" ? (
+              <TimeMore view={view} more={entry.more} dayKey={props.dayKey} expanded={expanded()} />
             ) : (
               <TimeMarker
                 view={view}
