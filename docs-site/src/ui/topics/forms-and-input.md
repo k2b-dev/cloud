@@ -39,12 +39,15 @@ The sign-in settings of an app: a field that goes back to its default through th
 - A few options (two to four), all visible at once.
 - The person compares them before choosing, such as who does the work.
 - Inside a `Field` the field's label is its question.
+- People to choose show their face: give an option a `person`; the option is still named by its words.
+- With `multiple` several options can be chosen, as boxes; the form sends one entry for each.
 
 ### Select
 
 - Many options, or options that come from data, such as customers.
 - Takes little room; `placeholder` says what to pick.
 - An option that cannot be chosen now is `disabled`; so is the whole select while it cannot be changed.
+- A long address, such as a sender, keeps its start and its domain and gives way in the middle; the whole address is its hint.
 
 ## Parts
 
@@ -82,13 +85,13 @@ One image with its preview, a button to choose or change it and one to remove it
 
 ### Slider
 
-A number on a range, such as an opacity or a zoom, with the number as it reads at the end; `onCommit` saves when a drag ends.
+A number on a range, such as an opacity or a zoom, with the number as it reads at the end, followed by its `unit` (such as `px`); `onCommit` saves when a drag ends. On a phone the slider is 44 px high, so a finger takes it.
 
 <Props of="Slider" />
 
 ### ColorInput
 
-A colour: its swatch and code, a surface of saturation and brightness, a hue slider and the given swatches.
+A colour: its swatch and code in one line, and the given swatches. The swatch opens a panel with a surface of saturation and brightness and a hue slider.
 
 <Props of="ColorInput" />
 

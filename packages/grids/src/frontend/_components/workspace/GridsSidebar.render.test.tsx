@@ -148,6 +148,7 @@ describe("GridsSidebar workflows", () => {
           p99DurationMs: null,
           lastRunAt: null,
           failedLast24h: 0,
+          series: { bucket: "1h", points: [] },
           byWorkflow: [],
         },
         runs: { items: [], nextCursor: null },

@@ -1,3 +1,5 @@
+import { normalizeSelectColor } from "../../../field-types/select-colors";
+
 type SelectOption = {
   id: string;
   label: string;
@@ -13,26 +15,6 @@ export type SelectBadgeItem = {
 };
 
 type SelectBadgeStyle = Record<string, string>;
-
-const NAMED_SELECT_COLORS: Record<string, string> = {
-  blue: "#0000ff",
-  cyan: "#00ffff",
-  gray: "#808080",
-  green: "#008000",
-  orange: "#ffa500",
-  purple: "#800080",
-  red: "#ff0000",
-  yellow: "#ffff00",
-};
-
-const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
-
-const normalizeSelectColor = (color?: string): string | undefined => {
-  const value = color?.trim();
-  if (!value) return undefined;
-  if (HEX_COLOR.test(value)) return value;
-  return NAMED_SELECT_COLORS[value.toLowerCase()];
-};
 
 const optionList = (fieldConfig?: Record<string, unknown>): SelectOption[] =>
   ((fieldConfig?.options as SelectOption[] | undefined) ?? []).filter(
@@ -63,7 +45,6 @@ const expandHex = (color: string): string => {
 };
 
 const hexToRgb = (color: string): { r: number; g: number; b: number } | null => {
-  if (!HEX_COLOR.test(color)) return null;
   const hex = expandHex(color).slice(1);
   return {
     r: Number.parseInt(hex.slice(0, 2), 16),

@@ -19,6 +19,11 @@ type ButtonBase = {
   href?: string;
   /** With `href`: opens the page in place on a plain click (see `OnNavigate`); a disabled link never calls it. */
   onNavigate?: OnNavigate;
+  /**
+   * With `href`: the browser saves what the address leads to instead of opening it; a text names the file
+   * ("Angebot Küche.pdf"). Such a link never opens in place, and a disabled one downloads nothing.
+   */
+  download?: boolean | string;
   /** The deed of a button that has no address; never for what has one (use `href`). */
   onClick?: JSX.EventHandler<HTMLElement, MouseEvent>;
   /** The button opens a menu: a chevron after the label. */
@@ -87,7 +92,8 @@ export const Button = (props: ButtonProps) => {
     <Dynamic
       component={off() && props.href !== undefined ? "a" : linkOr(props.href, "button")}
       href={off() ? undefined : props.href}
-      onNavigate={off() || props.href === undefined ? undefined : props.onNavigate}
+      onNavigate={off() || props.href === undefined || props.download ? undefined : props.onNavigate}
+      download={off() || props.href === undefined || !props.download ? undefined : props.download === true ? "" : props.download}
       type={props.href ? undefined : (props.type ?? "button")}
       disabled={props.href ? undefined : props.disabled}
       aria-disabled={(props.href && props.disabled) || props.busy ? "true" : undefined}
