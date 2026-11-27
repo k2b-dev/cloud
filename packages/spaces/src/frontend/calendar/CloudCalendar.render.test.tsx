@@ -15,7 +15,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: CloudCalendarFixture } = await import("./cloud-calendar.browser-fixture");
 
 const sidebar = {
-  spaces: [{ id: "TeamLg", name: "Planning", color: "#6366f1", description: null, openItemCount: 9 }],
+  spaces: [{ id: "TeamLg", name: "Planning", color: "#6366f1", openItemCount: 9 }],
   pinnedSpaceIds: [],
   myWorkCount: 5,
 };

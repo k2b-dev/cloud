@@ -118,7 +118,6 @@ export async function loadSpacesSidebar(params: {
       id: space.id,
       name: space.name,
       color: space.color,
-      description: space.description,
       openItemCount: byId.get(page.items[index]!.id) ?? 0,
     })),
     pinnedSpaceIds: parsePinnedSpaceIds(params.cookieHeader),

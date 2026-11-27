@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import { orderSidebarSpaces } from "./spaces-navigation";
 
 const spaces = [
-  { id: "First01", name: "First", color: "#fff", description: null, openItemCount: 2 },
-  { id: "Other01", name: "Other", color: "#000", description: "Other work", openItemCount: 1 },
-  { id: "Last001", name: "Last", color: "#111", description: null, openItemCount: 0 },
+  { id: "First01", name: "First", color: "#fff", openItemCount: 2 },
+  { id: "Other01", name: "Other", color: "#000", openItemCount: 1 },
+  { id: "Last001", name: "Last", color: "#111", openItemCount: 0 },
 ];
 
 test("pins precede unpinned Spaces in stored order without changing the input", () => {

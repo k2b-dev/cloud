@@ -65,7 +65,7 @@ export default function CalendarFixture(props: Props) {
     <LocaleProvider locale={props.locale}>
       <SpaceScreen
         sidebar={{
-          spaces: [{ id: props.spaceId, name: space.name, color: space.color, description: null, openItemCount: 0 }],
+          spaces: [{ id: props.spaceId, name: space.name, color: space.color, openItemCount: 0 }],
           pinnedSpaceIds: [],
           myWorkCount: 0,
         }}

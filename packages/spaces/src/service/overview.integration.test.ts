@@ -82,7 +82,7 @@ testFor("database")("selected overview views preserve counts, filters and access
     });
     const accessibleSidebar = sidebar.spaces.find((space) => space.name === "Accessible overview fixture");
     expect(accessibleSidebar).toBeDefined();
-    expect(Object.keys(accessibleSidebar!).sort()).toEqual(["color", "description", "id", "name", "openItemCount"]);
+    expect(Object.keys(accessibleSidebar!).sort()).toEqual(["color", "id", "name", "openItemCount"]);
     expect(accessibleSidebar?.openItemCount).toBe(3); // today, upcoming and overdue
     expect(accessibleSidebar?.id).not.toBe(spaceIds[0]);
     expect(sidebar.spaces.some((space) => space.name === "Private overview fixture")).toBe(false);

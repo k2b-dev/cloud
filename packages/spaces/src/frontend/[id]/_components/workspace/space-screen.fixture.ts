@@ -464,13 +464,13 @@ export const spaceScreenProps = (href: string, state: SpaceFixtureState = "usual
   return {
     sidebar: {
       spaces: [
-        { id: "Space1", name: space.name, color: "#6366f1", description: null, openItemCount: items.length },
-        { id: "Space2", name: "Ideas", color: "#2563eb", description: null, openItemCount: 3 },
+        { id: "Space1", name: space.name, color: "#6366f1", openItemCount: items.length },
+        { id: "Space2", name: "Ideas", color: "#2563eb", openItemCount: 3 },
         ...(state === "worst"
           ? [
-              { id: "Space3", name: "会议准备", color: "#f97316", description: null, openItemCount: 1 },
-              { id: "Space4", name: "🎉 Sommerfest", color: "#db2777", description: null, openItemCount: 0 },
-              { id: "Space5", name: "Kundenservice Nord", color: "#0ea5e9", description: null, openItemCount: 12_840 },
+              { id: "Space3", name: "会议准备", color: "#f97316", openItemCount: 1 },
+              { id: "Space4", name: "🎉 Sommerfest", color: "#db2777", openItemCount: 0 },
+              { id: "Space5", name: "Kundenservice Nord", color: "#0ea5e9", openItemCount: 12_840 },
             ]
           : []),
       ],

@@ -1,7 +1,7 @@
 import { markHintSeen } from "@k2b/cloud/browser/hints";
 import { createSignal, onCleanup, onMount } from "solid-js";
 
-export type SidebarSpace = { id: string; name: string; color: string; description: string | null; openItemCount: number };
+export type SidebarSpace = { id: string; name: string; color: string; openItemCount: number };
 export type SpacesSidebarCurrent = { kind: "overview" } | { kind: "calendar" } | { kind: "space"; id: string };
 export type SpacesSidebarData = { spaces: SidebarSpace[]; pinnedSpaceIds: string[]; myWorkCount: number };
 

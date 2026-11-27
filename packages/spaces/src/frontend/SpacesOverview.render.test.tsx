@@ -39,14 +39,12 @@ const render = (initialActivityError: string | null = null, locale = "en", extra
             {
               id: "Space1",
               name: "Launch",
-              description: "Launch work",
               color: "#3b82f6",
               openItemCount: 3,
             },
             {
               id: "Space2",
               name: "Archive",
-              description: null,
               color: "#10b981",
               openItemCount: 0,
             },

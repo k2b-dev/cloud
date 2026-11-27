@@ -219,10 +219,10 @@ export const ITEMS = items;
 /** The Spaces sidebar beside the calendar. */
 export const SIDEBAR = {
   spaces: [
-    { id: "TeamLg", name: "Planning", color: "#6366f1", description: null, openItemCount: 9 },
-    { id: "Einkf1", name: "Ideas", color: "#2563eb", description: null, openItemCount: 4 },
-    { id: "Messe1", name: "Trade fair 2026", color: "#f97316", description: null, openItemCount: 12 },
-    { id: "Werks1", name: "Warehouse", color: "#10b981", description: null, openItemCount: 2 },
+    { id: "TeamLg", name: "Planning", color: "#6366f1", openItemCount: 9 },
+    { id: "Einkf1", name: "Ideas", color: "#2563eb", openItemCount: 4 },
+    { id: "Messe1", name: "Trade fair 2026", color: "#f97316", openItemCount: 12 },
+    { id: "Werks1", name: "Warehouse", color: "#10b981", openItemCount: 2 },
   ],
   pinnedSpaceIds: [],
   myWorkCount: 5,
@@ -234,10 +234,10 @@ const LONG_SPACE = "Annual inventory of the north warehouse, the cold store, the
 /** The worst case: one Space with a name at the limit, many Spaces, and counts past a thousand. */
 export const WORST_SIDEBAR = {
   spaces: [
-    { id: "TeamLg", name: LONG_SPACE, color: "#6366f1", description: null, openItemCount: 12_840 },
-    { id: "Einkf1", name: "Ideas", color: "#2563eb", description: null, openItemCount: 1 },
-    { id: "Messe1", name: "会议准备", color: "#f97316", description: null, openItemCount: 0 },
-    { id: "Werks1", name: "🎉 Sommerfest", color: "#10b981", description: null, openItemCount: 2 },
+    { id: "TeamLg", name: LONG_SPACE, color: "#6366f1", openItemCount: 12_840 },
+    { id: "Einkf1", name: "Ideas", color: "#2563eb", openItemCount: 1 },
+    { id: "Messe1", name: "会议准备", color: "#f97316", openItemCount: 0 },
+    { id: "Werks1", name: "🎉 Sommerfest", color: "#10b981", openItemCount: 2 },
   ],
   pinnedSpaceIds: ["TeamLg"],
   myWorkCount: 1_284,

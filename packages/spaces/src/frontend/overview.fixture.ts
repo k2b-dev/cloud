@@ -23,9 +23,9 @@ const task = (item: Partial<WorkItem> & Pick<WorkItem, "shortId" | "title">): Wo
 });
 
 export const overviewSpaces: SidebarSpace[] = [
-  { id: "Space1", name: "Planning", color: "#6366f1", description: "Team work", openItemCount: 9 },
-  { id: "Space2", name: "Ideas", color: "#2563eb", description: null, openItemCount: 3 },
-  { id: "Space3", name: "Trade fair 2026", color: "#f97316", description: null, openItemCount: 12 },
+  { id: "Space1", name: "Planning", color: "#6366f1", openItemCount: 9 },
+  { id: "Space2", name: "Ideas", color: "#2563eb", openItemCount: 3 },
+  { id: "Space3", name: "Trade fair 2026", color: "#f97316", openItemCount: 12 },
 ];
 
 export const overviewWork: OverviewWork = {
@@ -129,13 +129,12 @@ export const overviewActivity = [
 
 const longName = "Annual inventory of the north warehouse including the cold store and the returns area";
 export const overviewWorstSpaces: SidebarSpace[] = [
-  { id: "Space1", name: longName, color: "#6366f1", description: null, openItemCount: 128_400 },
-  { id: "Space2", name: "X", color: "#2563eb", description: null, openItemCount: 0 },
+  { id: "Space1", name: longName, color: "#6366f1", openItemCount: 128_400 },
+  { id: "Space2", name: "X", color: "#2563eb", openItemCount: 0 },
   ...Array.from({ length: 24 }, (_, index) => ({
     id: `Space${index + 10}`,
     name: `Bereich ${index + 1} · Überstundenplanung für Außendienstmitarbeiterinnen`,
     color: "#f97316",
-    description: null,
     openItemCount: index * 7,
   })),
 ];
