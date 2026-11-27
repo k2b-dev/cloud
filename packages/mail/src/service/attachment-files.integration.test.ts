@@ -12,7 +12,7 @@ import { mailCapabilities } from "../capabilities";
 import { MAX_DRAFT_ATTACHMENT_BYTES } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { grantMailboxAccess, type MailboxAccess } from "./access";
-import { backfillAttachmentFiles, indexMessageAttachments } from "./attachment-file-index";
+import { attachmentFileBackfillSteps, backfillAttachmentFiles, indexMessageAttachments } from "./attachment-file-index";
 import { attachmentFileQueries, listAttachmentFiles } from "./attachment-files";
 import type { MailRequestContext } from "./auth";
 import type { ConnectorEnvelope } from "./connectors";
@@ -262,8 +262,10 @@ suite("Mail attachments as a file-provider source", () => {
         { filename: "scan.pdf", type: "application/pdf", bytes: 6000, disposition: "inline", contentId: `scan-${suffix}@example.test` },
         // Small, but not a format the list previews, so not taken for a logo.
         { filename: "icon.svg", type: "image/svg+xml", bytes: 300, disposition: "attachment" },
+        // An image the body shows, sent without an inline disposition: the reader shows it in place, so it stays out.
+        { filename: "chart.png", type: "image/png", bytes: 6000, disposition: "attachment", contentId: `chart-${suffix}@example.test` },
       ],
-      html: `<p>Body of first</p><img src="cid:logo-${suffix}@example.test" alt="Logo">`,
+      html: `<p>Body of first</p><img src="cid:logo-${suffix}@example.test" alt="Logo"><img src="cid:chart-${suffix}%40example.test" alt="Chart">`,
     });
     await sql`INSERT INTO mail.conversation_assignees (conversation_id, user_id) VALUES (${first.conversationId}::uuid, ${assigned.id}::uuid)`;
     await receive(mailbox, "bob", {
@@ -359,6 +361,7 @@ suite("Mail attachments as a file-provider source", () => {
       WHERE message_id = ${envelopes.get("first")!.contentId}::uuid ORDER BY filename
     `;
     expect(indexed.map((row) => [row.filename, row.disposition, row.body_references])).toEqual([
+      ["chart.png", "attachment", true],
       ["dot.gif", "attachment", false],
       ["icon.svg", "attachment", false],
       ["logo.png", "inline", true],
@@ -752,6 +755,78 @@ suite("Mail attachments as a file-provider source", () => {
     expect(await items(reader, { parent: `${mailbox.shortId}/2026/05` })).toEqual(["Alice Example (alice@example.test)"]);
   });
 
+  /** Resolves once a statement on another connection waits for a row lock; fails after the test's own budget. */
+  const lockWaitStarted = async (statement: string) => {
+    const deadline = Date.now() + 10_000;
+    for (;;) {
+      const [row] = await sql<{ waiting: number }[]>`
+        SELECT count(*)::int AS waiting FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE ${`%${statement}%`}
+      `;
+      if ((row?.waiting ?? 0) > 0) return;
+      if (Date.now() > deadline) throw new Error(`No statement waits for a lock: ${statement}`);
+      await Bun.sleep(25);
+    }
+  };
+  const monthsOf = async (messageId: string) =>
+    (await sql<{ month: string }[]>`SELECT month::text FROM mail.attachment_files WHERE message_id = ${messageId}::uuid`).map(
+      (row) => row.month,
+    );
+
+  test("a date move that waits on a backfill batch between its lock and its insert moves the rows the batch adds", async () => {
+    const message = envelopes.get("alice-1")!.contentId;
+    await sql`DELETE FROM mail.attachment_files WHERE message_id = ${message}::uuid`;
+    const batch = await sql.reserve();
+    let moved: Promise<unknown> | undefined;
+    try {
+      await batch`BEGIN`;
+      const [locked] = await attachmentFileBackfillSteps.lock(batch, "00000000-0000-0000-0000-000000000000");
+      const ids = locked!.locked.split(",");
+      // The sync's date move comes between the batch's lock and its insert, and waits for the batch.
+      moved = sql`UPDATE mail.message_contents SET internal_date = '2026-06-03T09:00:00Z' WHERE id = ${message}::uuid AND true`.then(
+        (rows) => rows,
+      );
+      await lockWaitStarted("AND true");
+      await attachmentFileBackfillSteps.index(batch, ids);
+      await batch`COMMIT`;
+      await moved;
+    } finally {
+      await batch`ROLLBACK`.catch(() => undefined);
+      batch.release();
+      await moved?.catch(() => undefined);
+    }
+    // The trigger ran after the batch committed, with a snapshot that holds the batch's rows.
+    expect(await monthsOf(message)).toEqual(["2026-06-01"]);
+    await sql`UPDATE mail.message_contents SET internal_date = '2026-03-01T09:00:00Z' WHERE id = ${message}::uuid`;
+    expect(await monthsOf(message)).toEqual(["2026-03-01"]);
+  });
+
+  test("a date move that waits on a hydration inserting rows moves them once the hydration commits", async () => {
+    const message = envelopes.get("bob")!.contentId;
+    await sql`DELETE FROM mail.attachment_files WHERE message_id = ${message}::uuid`;
+    const hydration = await sql.reserve();
+    let moved: Promise<unknown> | undefined;
+    try {
+      await hydration`BEGIN`;
+      // As hydration does: the message row first, then its attachments' index rows.
+      await hydration`SELECT id FROM mail.message_contents WHERE id = ${message}::uuid FOR UPDATE`;
+      await indexMessageAttachments(hydration, message, []);
+      moved = sql`UPDATE mail.message_contents SET internal_date = '2026-07-04T09:00:00Z' WHERE id = ${message}::uuid AND 1 = 1`.then(
+        (rows) => rows,
+      );
+      await lockWaitStarted("AND 1 = 1");
+      await hydration`COMMIT`;
+      await moved;
+    } finally {
+      await hydration`ROLLBACK`.catch(() => undefined);
+      hydration.release();
+      await moved?.catch(() => undefined);
+    }
+    expect(await monthsOf(message)).toEqual(["2026-07-01"]);
+    await sql`UPDATE mail.message_contents SET internal_date = '2026-03-20T09:00:00Z' WHERE id = ${message}::uuid`;
+    expect(await monthsOf(message)).toEqual(["2026-03-01"]);
+  });
+
   test("an assigned-only reader's folders read their own attachments, not the mailbox's other rows", async () => {
     const blob = await storeReadableBlob(Readable.from([Buffer.from("x")]), 1);
     const [bulk] = await sql<{ id: string }[]>`
@@ -780,7 +855,7 @@ suite("Mail attachments as a file-provider source", () => {
     `;
     await sql`INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags)
       VALUES (${ref!.id}::uuid, ${mailbox.folderId}::uuid, ${bulk!.id}::uuid, ARRAY[]::text[])`;
-    await indexMessageAttachments(sql, bulk!.id);
+    await indexMessageAttachments(sql, bulk!.id, []);
     await sql`ANALYZE mail.attachment_files`;
     await sql`ANALYZE mail.conversation_assignees`;
     await sql`ANALYZE mail.conversation_messages`;

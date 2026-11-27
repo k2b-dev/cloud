@@ -131,10 +131,11 @@ The source has these folders:
 Mail indexes every attachment it stores and decides when it lists one. These
 attachments are not in the source:
 
-- An inline part (`Content-Disposition: inline`) that the message body shows
-  through a `cid:` link to its Content-ID, such as a signature logo. An inline
-  part with a Content-ID that the body does not show stays in the source.
-  Apple Mail and iOS Mail send photos and PDFs this way.
+- An image that the message body shows through a `cid:` link to its
+  Content-ID, such as a signature logo, whatever its `Content-Disposition`.
+  The Mail reader shows these images in the message and leaves them out of
+  its attachment list. A part with a Content-ID that the body does not show
+  stays in the source. Apple Mail and iOS Mail send photos and PDFs this way.
 - A JPEG, PNG, GIF or WebP image smaller than 4 KiB. These are the formats
   that the Mail list previews, and it leaves out the same small images as
   logos. Other small files, such as an SVG, stay in the source.
@@ -162,13 +163,20 @@ the mailbox, four for access, and one for the folder.
 ### Upgrade
 
 The upgrade adds the table `mail.attachment_files` and its indexes. It
-changes no existing data. Mail fills the table when it stores a message.
+changes no existing data. It also adds the trigger
+`message_contents_attachment_file_dates` on `mail.message_contents`, which
+moves a message's rows when its date changes. If you drop
+`mail.attachment_files`, drop this trigger too, because otherwise every sync
+that changes a message's date fails. Mail fills the table when it stores a
+message.
 After start, Mail adds the attachments that were stored before the upgrade
 in a background job, 100 attachments per transaction. The job saves its
 position in `mail.attachment_files_backfill`. A restart or a second replica
 continues from that position. The job does not wait for a message that Mail
 is storing or syncing at that moment. It leaves that message for a later run
-and pauses for 50 ms between transactions. Until the job is done, the source
+and pauses for 50 ms between transactions. For messages stored before the
+upgrade, the job recognizes a `cid:` link only with the Content-ID as written
+or with `@` written as `%40`; other encoded links count as not shown. Until the job is done, the source
 shows only part of the older attachments.
 
 A replica that still runs an older image does not add attachments to the

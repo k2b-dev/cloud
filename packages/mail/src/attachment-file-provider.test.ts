@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { CapabilityCatalogAppSchema, fileProviderAcceptsContext, fileProviderIssues, fileProviderSearchesTree } from "@k2b/cloud/contracts";
 import { mailCapabilities } from "./capabilities";
+import { bodyReferencedContentIds } from "./content-ids";
 import { MAX_DRAFT_ATTACHMENT_BYTES } from "./contracts";
 import { providerName } from "./service/attachment-files";
 
@@ -43,5 +44,13 @@ describe("Mail as a source of the file chooser", () => {
     expect(emoji.length).toBeLessThanOrEqual(255);
     expect(emoji.endsWith(".txt")).toBe(true);
     expect(emoji).not.toContain("�");
+  });
+
+  test("the parts a body shows follow the reader's Content-ID rule", () => {
+    const html = '<img src="cid:Logo%40Example.COM"><img src="cid:photo@example.com"><a href="cid:link@example.com">x</a>';
+    expect(
+      bodyReferencedContentIds(html, ["<logo@example.com>", "<photo@example.com>", "<photo@example.co>", "<link@example.com>", null]),
+    ).toEqual(["<logo@example.com>", "<photo@example.com>"]);
+    expect(bodyReferencedContentIds(null, ["<logo@example.com>"])).toEqual([]);
   });
 });

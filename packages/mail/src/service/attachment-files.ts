@@ -110,13 +110,14 @@ const scopedFiles = (mailboxId: string, access: MailboxAccess) =>
       };
 
 /**
- * What the source shows of an indexed attachment, decided when it reads: not an inline part the body references by
- * Content-ID (inline photos and PDFs from Apple Mail stay), not a preview-format image (JPEG, PNG, GIF, WebP) under the
- * list's signature-logo threshold, nothing `attachment.content.read` refuses as too large, and only mail that still lies
- * in a folder, like the Mail list.
+ * What the source shows of an indexed attachment, decided when it reads: not an image the body shows in place through
+ * its Content-ID, whatever its disposition, as the Mail reader leaves it out of the attachment list (inline photos and
+ * PDFs from Apple Mail that the body does not show stay); not a preview-format image (JPEG, PNG, GIF, WebP) under the
+ * list's signature-logo threshold; nothing `attachment.content.read` refuses as too large; and only mail that still
+ * lies in a folder, like the Mail list.
  */
 const shown = () => sql`
-  NOT (f.disposition = 'inline' AND f.body_references)
+  NOT (f.body_references AND lower(f.content_type) LIKE 'image/%')
   AND NOT (
     lower(btrim(split_part(f.content_type, ';', 1))) = ANY(${toPgTextArray([...IMAGE_PREVIEW_CONTENT_TYPES])}::text[])
     AND f.size_bytes < ${MIN_LIST_IMAGE_BYTES}

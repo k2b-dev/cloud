@@ -8,6 +8,7 @@ import type { Headers } from "@zone-eu/mailsplit";
 import type { TransactionSQL } from "bun";
 import { type AttachmentStream, MailParser, type MessageText } from "mailparser";
 import sanitizeHtml from "sanitize-html";
+import { bodyReferencedContentIds } from "../content-ids";
 import { withShortIdDb } from "../lib/short-id";
 import { enqueueAttachmentExtractionsForMessage, logAttachmentExtractionEnqueueFailure } from "./attachment-extraction";
 import { indexMessageAttachments } from "./attachment-file-index";
@@ -1117,8 +1118,14 @@ export const hydrateMessageFromSource = async (params: {
           hydrated_at = now()
         WHERE id = ${params.messageId}::uuid AND hydration_claim_id = ${claimId}::uuid
       `;
-            // After the body: the index records which inline parts the stored HTML references.
-            if (parts.some((part) => part.attachment)) await indexMessageAttachments(tx, params.messageId);
+            if (parts.some((part) => part.attachment)) {
+              // Which parts the stored body shows in place, by the reader's rule.
+              const shown = bodyReferencedContentIds(
+                sanitizedHtml,
+                parts.filter((part) => part.attachment).map((part) => part.contentId),
+              );
+              await indexMessageAttachments(tx, params.messageId, shown);
+            }
             if (!duplicate.duplicateFound) {
               collaborationEvent = await applyVerifiedConversationTransition({ db: tx, messageId: params.messageId });
               if (receipt) {
