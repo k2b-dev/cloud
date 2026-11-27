@@ -24,7 +24,10 @@ const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
  * refused (`invalidSelectColor`); reading drops it (`.catch` where the schema is used), since configurations written
  * before colours were checked may hold one.
  */
-export const SelectColorSchema = z.union([z.string().regex(HEX_COLOR), z.enum(SELECT_COLOR_NAMES)]);
+/** The longest colour: `#rrggbb`. */
+export const SELECT_COLOR_MAX_LENGTH = 7;
+
+export const SelectColorSchema = z.union([z.string().max(SELECT_COLOR_MAX_LENGTH).regex(HEX_COLOR), z.enum(SELECT_COLOR_NAMES)]);
 
 /**
  * A stored colour as it is read: a hex colour stays, a name becomes its hex value, anything else (written before
