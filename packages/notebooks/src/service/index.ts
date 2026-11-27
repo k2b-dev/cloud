@@ -157,6 +157,8 @@ export const notebooksService = {
     get: templates.get,
     outline: templates.outline,
     welcomeOutline: templates.welcomeOutline,
+    preview: templates.preview,
+    welcomePreview: templates.welcomePreview,
     instantiate: templates.instantiate,
   },
   note: {
