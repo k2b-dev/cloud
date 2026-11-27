@@ -507,6 +507,7 @@
     "@k2b/ui src/v2/primitives.browser.test.ts": 33.1,
     "@k2b/ui src/v2/skill-recipes.browser.test.ts": 5.3,
     "@k2b/ui src/v2/states-navigation.browser.test.ts": 15.8,
+    "@k2b/ui src/v2/worst-case.browser.test.ts": 10.4,
     "@k2b/ui src/widgets/dashboard-frame-parity.browser.test.ts": 3.2,
     "@k2b/ui src/widgets/dashboard-frame.browser.test.ts": 4.3,
     "@k2b/ui src/widgets/dashboard-grid.browser.test.ts": 5.4,
