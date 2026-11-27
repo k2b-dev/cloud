@@ -83,6 +83,20 @@ const paths = (page: Page) =>
       });
   });
 
+/** Two readings of the same parts ("name x width"): the same names, each x and width within 1 px (fractions round apart). */
+const sameWithin = (live: string[], sent: string[]) => {
+  const split = (line: string) => {
+    const parts = line.split(" ");
+    return { name: parts.slice(0, -2).join(" "), x: Number(parts.at(-2)), width: Number(parts.at(-1)) };
+  };
+  expect(live.map((line) => split(line).name)).toEqual(sent.map((line) => split(line).name));
+  const off = live.filter((line, index) => {
+    const [now, then] = [split(line), split(sent[index]!)];
+    return Math.abs(now.x - then.x) > 1 || Math.abs(now.width - then.width) > 1;
+  });
+  expect(off).toEqual([]);
+};
+
 const named = async (page: Page) => Object.fromEntries((await paths(page)).map((path) => [path.name, path]));
 
 for (const width of [390, 1024, 1440])
@@ -139,7 +153,7 @@ for (const width of [1024, 1440])
         page.evaluate(() =>
           // also the head's path beside an end that fits: before the page is alive the bar stands as it does when
           // nothing folds (bar-fold.ts), the start given way to the room the end leaves
-          ["Ort im Kopf", "Ort tief", "Ort mittel", "Seite lang 5"].map((name) =>
+          ["Ort im Kopf", "Ort tief", "Ort mittel", "Seite lang 5"].flatMap((name) =>
             [...document.querySelectorAll<HTMLElement>(`nav[aria-label="${name}"] > :is(.k2-path-step, b)`)].map((part) => {
               const box = part.getBoundingClientRect();
               return `${name} ${part.textContent?.slice(0, 12)} ${Math.round(box.x)} ${Math.round(box.width)}`;
@@ -149,7 +163,7 @@ for (const width of [1024, 1440])
       const sent = await at();
       expect(await page.evaluate(() => document.querySelectorAll("nav.k2-path [data-folded]").length)).toBe(0);
       await live(page);
-      expect(await at()).toEqual(sent);
+      sameWithin(await at(), sent);
       expect(errors).toEqual([]);
     } finally {
       await page.close();
@@ -232,7 +246,7 @@ test("1024 px: beside the crowded end nothing folds, and the paths stand as the 
     const deep = await crowded(page);
     expect([deep.fold, deep.endFolded]).toEqual(["0", 0]);
     expect((await named(page))["Ort und Aktionen"]?.whole).toBe(true);
-    expect(await at()).toEqual(sent);
+    sameWithin(await at(), sent);
     expect(errors).toEqual([]);
   } finally {
     await page.close();
