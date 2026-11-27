@@ -20,8 +20,18 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: FilteredOrders } = await import("../../skills/k2b-ui/recipes/filtered-table");
-const { LongPath, longPhoto, NamedPlace, OpenItem, PaneWithTwoActions, SearchAndAction, SearchWithWords, ToolbarInHead, TwoCreates } =
-  await import("../../test/v2-head-block.fixture");
+const {
+  ChatWithTabs,
+  LongPath,
+  longPhoto,
+  NamedPlace,
+  OpenItem,
+  PaneWithTwoActions,
+  SearchAndAction,
+  SearchWithWords,
+  ToolbarInHead,
+  TwoCreates,
+} = await import("../../test/v2-head-block.fixture");
 type Head =
   | "list"
   | "toolbar"
@@ -36,6 +46,9 @@ type Head =
   | "hollow-words"
   | "named-bare"
   | "pane-actions"
+  | "chat"
+  | "chat-open"
+  | "chat-tabs-first"
   | "named-bare-drawer";
 const screens = {
   list: () => createComponent(FilteredOrders, {}),
@@ -51,6 +64,9 @@ const screens = {
   "hollow-words": () => createComponent(SearchAndAction, { words: "Kunden" }),
   "named-bare": () => createComponent(NamedPlace, { bare: true }),
   "pane-actions": () => createComponent(PaneWithTwoActions, {}),
+  chat: () => createComponent(ChatWithTabs, {}),
+  "chat-open": () => createComponent(ChatWithTabs, { open: true }),
+  "chat-tabs-first": () => createComponent(ChatWithTabs, { tabsFirst: true }),
   "named-bare-drawer": () => createComponent(NamedPlace, { bare: true, detail: 600 }),
 };
 const markup = (head: Head) => renderToString(screens[head]);
@@ -528,6 +544,56 @@ test("1440 px: a head that holds nothing but the repeated title gives way whole;
     await phone.close();
   }
 }, 60_000);
+
+/** Which panes of the split stand, and how many seams show. */
+const split = (page: Page) =>
+  page.evaluate(() => ({
+    panes: [...document.querySelectorAll(".k2-split > .k2-pane")]
+      .filter((pane) => pane.getBoundingClientRect().height > 0)
+      .map((pane) => pane.getAttribute("aria-label")),
+    seams: [...document.querySelectorAll(".k2-split > .k2-seam")].filter((seam) => {
+      const box = seam.getBoundingClientRect();
+      return box.width > 0 && box.height > 0;
+    }).length,
+  }));
+
+test("390 px: in a split only the pane in front stands; a closed detail waits out of sight, from the server's page on", async () => {
+  const first = await open(390, "chat", { island: false });
+  try {
+    expect((await split(first)).panes).toEqual(["Chat"]);
+  } finally {
+    await first.close();
+  }
+  const page = await open(390, "chat");
+  try {
+    expect(await split(page)).toEqual({ panes: ["Chat"], seams: 0 });
+  } finally {
+    await page.close();
+  }
+  // a closed detail before the chat takes the seam after it along
+  const before = await open(390, "chat-tabs-first");
+  try {
+    expect(await split(before)).toEqual({ panes: ["Chat"], seams: 0 });
+  } finally {
+    await before.close();
+  }
+  // opened, it is the page
+  const opened = await open(390, "chat-open");
+  try {
+    expect((await split(opened)).panes).toEqual(["Tabs"]);
+  } finally {
+    await opened.close();
+  }
+}, 60_000);
+
+test("1440 px: a closed detail stands beside the chat as its column", async () => {
+  const page = await open(1440, "chat");
+  try {
+    expect((await split(page)).panes).toEqual(["Chat", "Tabs"]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
 
 test("390 px: an open item after a path keeps its way back, its title and its action in one row, and the first row free", async () => {
   const page = await open(390, "item");

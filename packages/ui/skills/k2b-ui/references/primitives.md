@@ -75,6 +75,10 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   line. A drag or the keys (arrows 8 px, Shift 64 px, Home and End to the
   limits, Enter back to the default) move the width; a reload starts at the
   default again. The sidebar's grip works the same.
+- `detail={false}`: a detail that is closed now (the Assistant's tabs beside
+  its chat). It stands as a column beside the others on a wide screen; on
+  the phone only the pane in front stands, and this one waits out of sight
+  until it opens (`detail` true), when it is the page.
 - `detail`: the reader beside a list. What is open belongs in the address:
   render the detail only while the address names an entry. On the phone
   the detail is the page, and the title in its head is never cut: beside the

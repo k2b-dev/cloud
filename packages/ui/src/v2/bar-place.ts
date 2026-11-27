@@ -1,4 +1,4 @@
-import { createContext, onCleanup, useContext } from "solid-js";
+import { createContext, createSignal, onCleanup, useContext } from "solid-js";
 import type { MenuEntry } from "./menu";
 
 /** What marks a bar: a title, a toolbar (a filter bar) or a path in its start, the "…" or a search at its end. */
@@ -78,7 +78,30 @@ export const SidebarPlaceContext = createContext<(name: () => string | undefined
  * The head of a workspace: the words of the sidebar's current entry, which a title of the same words repeats, and
  * where the head's bar tells its main actions, so the round button of the phone offers them all.
  */
-export type HeadPlace = { place: () => string | undefined; creates: (entries: () => readonly MenuEntry[]) => () => void };
+export type HeadPlace = {
+  place: () => string | undefined;
+  creates: (entries: () => readonly MenuEntry[]) => () => void;
+  /** A path in the head's start tells the words of the open item, its last step; the returned call takes them back. */
+  names: (name: () => string | undefined) => () => void;
+};
+
+/**
+ * A host that names the page in a bar of its own (Cloud's shell on the phone) hears the open item a workspace's head
+ * shows where it stands (the last step of its path), already as the server renders it: the page itself has no title
+ * then, such as the Assistant's open chat.
+ */
+export const PageNameContext = createContext<(name: () => string | undefined) => void>();
+
+const [toldPageName, tellPageName] = createSignal<{ readonly name: string | undefined }>();
+
+/**
+ * The open item a workspace's head names, in the browser: there a host's bar and the page are islands of their own,
+ * which no `PageNameContext` joins, and the item changes without a new page (the Assistant opens another chat). The
+ * workspace tells it here; `undefined` until one has, so the host keeps the name its server rendered until then.
+ */
+export const pageName = toldPageName;
+
+export { tellPageName };
 
 export const HeadPlaceContext = createContext<HeadPlace>();
 

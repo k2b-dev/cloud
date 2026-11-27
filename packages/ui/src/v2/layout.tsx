@@ -13,9 +13,17 @@ import {
   splitProps,
   useContext,
 } from "solid-js";
-import { Dynamic } from "solid-js/web";
+import { Dynamic, isServer } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
-import { BarPlaceContext, HeadPlaceContext, SidebarPlaceContext, StatusPlaceContext, type StatusRowKind } from "./bar-place";
+import {
+  BarPlaceContext,
+  HeadPlaceContext,
+  PageNameContext,
+  SidebarPlaceContext,
+  StatusPlaceContext,
+  type StatusRowKind,
+  tellPageName,
+} from "./bar-place";
 import { useDrawer } from "./behavior/overlays";
 import { type GripOptions, useGrip } from "./behavior/resize";
 import { ActionButton } from "./button";
@@ -130,8 +138,9 @@ const SeamGrip = (props: { grip: SeamGrip }) => {
 };
 
 /** The seam between two columns: the one 1 px line, and on a line that moves its grip. */
-const Seam = (props: { grip?: SeamGrip }) => (
-  <div class="k2-seam" aria-hidden={props.grip ? undefined : "true"}>
+const Seam = (props: { grip?: SeamGrip; besideClosed?: boolean }) => (
+  // the seam beside a closed detail, before or after it, goes with it on the phone
+  <div class="k2-seam" aria-hidden={props.grip ? undefined : "true"} data-beside-closed={props.besideClosed ? "" : undefined}>
     <Show when={props.grip}>{(grip) => <SeamGrip grip={grip()} />}</Show>
   </div>
 );
@@ -222,11 +231,29 @@ export const Workspace = (props: WorkspaceProps) => {
   ));
   // the head's main actions: where they are several, the phone's round button offers them all as one "+"
   const [headCreates, setHeadCreates] = createSignal<() => readonly MenuEntry[]>();
+  // the open item the head's path names, for a host that names the page in its own bar
+  const [headName, setHeadName] = createSignal<() => string | undefined>();
+  const tellHost = useContext(PageNameContext);
+  if (tellHost) tellHost(() => headName()?.());
+  else if (!isServer) {
+    // in the browser no host provides the context: the host's bar is another island and reads `pageName`
+    let told: { readonly name: string | undefined } | undefined;
+    createEffect(() => {
+      told = { name: headName()?.() };
+      tellPageName(told);
+    });
+    // a workspace that goes leaves the name it told, unless another one told its own since
+    onCleanup(() => tellPageName((current) => (current === told ? undefined : current)));
+  }
   const headPlace = {
     place: () => placeName()?.(),
     creates: (entries: () => readonly MenuEntry[]) => {
       setHeadCreates(() => entries);
       return () => setHeadCreates((current) => (current === entries ? undefined : current));
+    },
+    names: (name: () => string | undefined) => {
+      setHeadName(() => name);
+      return () => setHeadName((current) => (current === name ? undefined : current));
     },
   };
   const head = resolveChildren(() => <HeadPlaceContext.Provider value={headPlace}>{props.head}</HeadPlaceContext.Provider>);
@@ -415,6 +442,8 @@ export const Workspace = (props: WorkspaceProps) => {
 type SplitEntry = {
   readonly width?: Width;
   readonly label?: string;
+  /** A detail that is closed (`detail={false}`): on the phone it stands back until it opens. */
+  readonly closed?: boolean;
   element?: HTMLElement;
   /** The pane's width in px while its grip has moved it. */
   size?: Accessor<number | undefined>;
@@ -471,6 +500,9 @@ export const Pane = (props: PaneProps) => {
     },
     get label() {
       return props.label;
+    },
+    get closed() {
+      return props.detail === false;
     },
     size,
     resize: setSize,
@@ -533,6 +565,9 @@ export const Pane = (props: PaneProps) => {
       aria-label={props.label}
       data-width={props.width ? "" : undefined}
       data-detail={props.detail ? "" : undefined}
+      // a detail that is closed (`detail={false}`): beside the columns on a wide screen, and on the phone out of sight
+      // until it opens, so only the pane in front stands
+      data-detail-closed={props.detail === false ? "" : undefined}
       // a detail with its way back: on the phone its `Back` closes it, so the × of its head leaves
       data-back={props.detail && props.back ? (head() !== undefined ? "head" : "") : undefined}
       data-beside-block={besideBlock() ? "" : undefined}
@@ -642,7 +677,7 @@ const SplitBody = (props: { entries: readonly SplitEntry[]; empty: { icon: strin
         {(pane, index) => (
           <>
             {pane}
-            <Seam grip={grip(index())} />
+            <Seam grip={grip(index())} besideClosed={entryOf(index())?.closed === true || entryOf(index() + 1)?.closed === true} />
           </>
         )}
       </For>

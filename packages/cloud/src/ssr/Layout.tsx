@@ -1,5 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace, appWorkspaceLayoutStyle, keyboardPlatform, LocaleProvider, NoticeCard, PageTrailProvider } from "@k2b/ui";
+import { PageNameContext } from "@k2b/ui/v2";
 import type { JSX } from "solid-js/jsx-runtime";
 import { readAppWorkspaceLayoutCookie, resolveAppWorkspaceLayoutForSidebar } from "../_internal/app-workspace-state";
 import { readPanelCookie } from "../_internal/panel-cookie";
@@ -470,21 +471,27 @@ export default function Layout(props: LayoutProps) {
             // render in their document order, so their ids stay as they were.
             const content: ShellContentState = { workspaceNavigation: false, ownTitle: false };
             const script = swap && <ShellDataScript data={shellData} />;
-            const header = [
-              <LayoutHeader
-                panelOpen={panel ? panelState.open : undefined}
-                authenticated={showRail}
-                pageSearch={props.ui === "v2"}
-                title={props.headTitle === "page" ? breadcrumbs.at(-1)?.title : (appLabel ?? breadcrumbs.at(-1)?.title)}
-                launchpad={!!(user || appLabel)}
-                breadcrumbs={user ? undefined : breadcrumbs}
-                loginHref={user ? undefined : createLoginRedirectUrl(c.req.raw.url)}
-              />,
-              user && announcements && <AnnouncementBanners banners={announcements.banners} />,
-              user && <ProfileWarnings user={user} locale={lang} />,
-              user && <ExpiryWarnings user={user} dateConfig={dateConfig} locale={lang} />,
-            ].filter(Boolean);
-            const page = (
+            // A v2 page names its open item where its head's path ends (the Assistant's chat): the phone bar shows it,
+            // so on a v2 page the page renders before the header. A v1 page keeps its order, and so its ids.
+            let pageName: (() => string | undefined) | undefined;
+            const header = () =>
+              [
+                <LayoutHeader
+                  panelOpen={panel ? panelState.open : undefined}
+                  authenticated={showRail}
+                  pageSearch={props.ui === "v2"}
+                  title={props.headTitle === "page" ? breadcrumbs.at(-1)?.title : (appLabel ?? breadcrumbs.at(-1)?.title)}
+                  // the bar of a signed-in page is the phone's; a signed-out page's names the app beside its breadcrumbs
+                  pageName={showRail ? pageName?.() : undefined}
+                  launchpad={!!(user || appLabel)}
+                  breadcrumbs={user ? undefined : breadcrumbs}
+                  loginHref={user ? undefined : createLoginRedirectUrl(c.req.raw.url)}
+                />,
+                user && announcements && <AnnouncementBanners banners={announcements.banners} />,
+                user && <ProfileWarnings user={user} locale={lang} />,
+                user && <ExpiryWarnings user={user} dateConfig={dateConfig} locale={lang} />,
+              ].filter(Boolean);
+            const renderPage = () => (
               <ShellContentStateContext.Provider value={content}>
                 <PageTrailProvider trail={pageTrail} onOwnTitle={() => (content.ownTitle = true)}>
                   <PageTrailRow trail={pageTrail} />
@@ -496,11 +503,17 @@ export default function Layout(props: LayoutProps) {
                     // the phone bar's search opens the search of a v2 page's head, which then leaves that head
                     data-k2-host-search={props.ui === "v2" && showRail ? "" : undefined}
                   >
-                    <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
+                    <PageNameContext.Provider value={(name) => (pageName = name)}>
+                      <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
+                    </PageNameContext.Provider>
                   </main>
                 </PageTrailProvider>
               </ShellContentStateContext.Provider>
             );
+            const v2 = props.ui === "v2";
+            const page = v2 ? renderPage() : undefined;
+            const head = header();
+            const body = page ?? renderPage();
             return (
               <div
                 class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col"
@@ -511,8 +524,8 @@ export default function Layout(props: LayoutProps) {
                 data-workspace-navigation={content.workspaceNavigation ? "" : undefined}
               >
                 {script}
-                {header}
-                {page}
+                {head}
+                {body}
                 {!fullPage && !showRail && <LayoutFooter appName={settings?.app?.copyright || appName} legalLinks={legalLinks} />}
                 {swap && (
                   <div data-print-fallback="">

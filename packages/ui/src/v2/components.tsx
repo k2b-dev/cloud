@@ -16,7 +16,7 @@ import {
 import { Dynamic } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
-import { markBarPlace, markStatusRow, SidebarPlaceContext } from "./bar-place";
+import { HeadPlaceContext, inBarStart, markBarPlace, markStatusRow, SidebarPlaceContext } from "./bar-place";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
@@ -441,6 +441,9 @@ const usePageItself = () => {
 export const Path = (props: PathProps) => {
   // a path in the start of a bar gives way before the bar's actions
   markBarPlace("start", "path");
+  // in a workspace's head its last step is the open item, which a host's own bar may name (the phone's shell)
+  const head = inBarStart() ? useContext(HeadPlaceContext) : undefined;
+  if (head) onCleanup(head.names(() => props.items.at(-1)?.label));
   const itself = usePageItself();
   return (
     <nav class="k2-path" data-k2-part="Path" aria-label={props.label}>
