@@ -114,9 +114,9 @@ test("at 1440 px long names in a table give way to their marks, in a linked firs
 });
 
 // The head's actions stay inside their bar and whole beside a long subject. The bar's end is #4392's (it folds the
-// buttons without room into a menu); this test guards it and runs once #4392 is on main.
+// buttons without room into a menu); this test guards it: a todo until #4392 is on main, then it turns green.
 for (const width of [1440, 390])
-  test.skip(`at ${width} px a long subject gives way to the head's actions (#4392)`, async () => {
+  test.todo(`at ${width} px a long subject gives way to the head's actions (#4392 turns it green)`, async () => {
     await withPage(width, async (page) => {
       const found = await page.evaluate(heads);
       expect(found.length).toBe(2);

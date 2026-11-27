@@ -14,4 +14,4 @@
 - **Guard:** In a cell the name gives way (it wraps, or ends with "…" in a table with column widths; a wrap column
   keeps its three lines), in a linked first cell too. `measureV2Layout` reports a control that sticks out of a bar or
   pane (`out`). `head-overflow.browser.test.ts` draws worst-case names beside their marks in a linked table at
-  1440 px, and holds the head's case for #4392 (skipped until it lands).
+  1440 px, and keeps the head's case, which waits for #4392 to turn green.
