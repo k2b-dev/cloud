@@ -18,12 +18,13 @@ import {
 import { Dynamic } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import { watchFold } from "./bar-fold";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { Input, MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Dot, Icon } from "./marks";
-import { Menu, type MenuEntry, MenuTab } from "./menu";
+import { Menu, type MenuEntry, type MenuItem, MenuTab } from "./menu";
 import { type NavTree, NavTreeView } from "./nav-tree";
 import { useOverlayMessages } from "./overlay-messages";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
@@ -626,7 +627,8 @@ export type StatusRowProps = {
   filters?: JSX.Element;
   /**
    * While entries are selected the row becomes the bar of what can be done with them (rule 6): the count, the
-   * actions, and the way out.
+   * actions, and the way out. The count is never cut; actions without room go whole into a "…" menu from the end,
+   * right after the last one in sight (the bar's fold), and the way out stays at the end of the bar.
    */
   selection?: { count: string; actions: readonly Action[]; clear: Action };
 };
@@ -646,8 +648,21 @@ export const StatusRow = (props: StatusRowProps) => {
   const said = (value: string | number) => (typeof value === "number" ? value.toLocaleString(locale()) : value);
   const filters = resolveChildren(() => props.filters);
   const marks = resolveChildren(() => props.marks);
+  // While entries are selected, the bar's fold watches the row: the actions without room fold into "…" from the end,
+  // and the way out never. None on the server's page.
+  let bar: HTMLDivElement | undefined;
+  const [folded, setFolded] = createSignal<readonly MenuItem[]>([]);
+  const selecting = createMemo(() => props.selection !== undefined);
+  createEffect(() => {
+    if (!bar || !selecting()) return;
+    const fold = watchFold(bar, (entries) => setFolded(entries));
+    onCleanup(() => {
+      fold.stop();
+      setFolded([]);
+    });
+  });
   return (
-    <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>
+    <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined} ref={bar}>
       <Show
         when={props.selection}
         fallback={
@@ -696,17 +711,29 @@ export const StatusRow = (props: StatusRowProps) => {
         }
       >
         {(selection) => (
-          <div class="k2-bar-start">
-            <Show when={props.select}>
-              {(select) => <MarkCheck label={select().label} checked={select().checked} onChange={select().onChange} />}
-            </Show>
-            <span class="k2-status-lead" aria-live="polite">
-              {selection().count}
-            </span>
-            {/* in a narrow column the actions keep only their symbols, the way out its ×; the words stay their names */}
-            <For each={selection().actions}>{(action) => <ActionButton action={action} titled />}</For>
-            <ActionButton action={{ icon: "x", ...selection().clear }} variant="text" titled />
-          </div>
+          <>
+            <div class="k2-bar-start">
+              <Show when={props.select}>
+                {(select) => <MarkCheck label={select().label} checked={select().checked} onChange={select().onChange} />}
+              </Show>
+              <span class="k2-status-lead" aria-live="polite">
+                {selection().count}
+              </span>
+            </div>
+            {/* the actions fold from the end into "…" where they have no room (the bar's fold), the way out never; in a
+                narrow column they keep only their symbols first, the way out its ×; the words stay their names */}
+            <div class="k2-bar-end">
+              <For each={selection().actions}>{(action) => <ActionButton action={action} titled />}</For>
+              <Show when={folded().length > 0}>
+                <span class="k2-bar-fold">
+                  <Menu items={folded()} />
+                </span>
+              </Show>
+              <span class="k2-status-clear" data-closes="">
+                <ActionButton action={{ icon: "x", ...selection().clear }} variant="text" titled />
+              </span>
+            </div>
+          </>
         )}
       </Show>
     </div>
