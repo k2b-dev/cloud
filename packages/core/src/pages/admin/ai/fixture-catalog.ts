@@ -247,6 +247,7 @@ export const budgetsFixture = (input: AiFixtureInput): AiBudgetsData => {
             ],
     },
     personalizationTokens: 100_000,
+    brake: { used: 12.4, reserved: 0, unknown: 0, stoppedAt: input.state === "worst" ? "2026-10-27T16:00:00.000Z" : null },
     spend:
       input.state === "empty"
         ? { cost: 0, accounts: 0, unknown: 0, days: [] }

@@ -237,7 +237,7 @@ export default function BudgetsScreen(props: { nav: NavProps; data: AiBudgetsDat
           </Section>
         </Pane>
         <Show when={open()} keyed>
-          {(rule) => <BudgetDetail config={config()} rule={rule} models={props.data.models} />}
+          {(rule) => <BudgetDetail config={config()} rule={rule} models={props.data.models} brake={props.data.brake} />}
         </Show>
       </Pane.Split>
     </AdminWorkspace>
@@ -262,7 +262,7 @@ const grantLine = (
  * A6 detail: one budget rule (what it covers, the period, who gets how much, the state now) or the background brake.
  * "Speichern" in its head writes the whole budget configuration with its revision, as the rules editor always did.
  */
-function BudgetDetail(props: { config: AiBudgetConfig; rule: string; models: Model[] }) {
+function BudgetDetail(props: { config: AiBudgetConfig; rule: string; models: Model[]; brake: AiBudgetsData["brake"] }) {
   const locale = useLocale();
   const t = () => aiAreaMessages.resolve([locale()]).t;
   const toast = useToast();
@@ -468,6 +468,7 @@ function BudgetDetail(props: { config: AiBudgetConfig; rule: string; models: Mod
             change={(next) => setConfig({ ...config(), ...next })}
             disabled={saving()}
             canRelease={!dirty()}
+            initial={props.brake}
           />
         }
       >

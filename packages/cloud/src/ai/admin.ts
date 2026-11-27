@@ -1,3 +1,4 @@
+export { backgroundCostState } from "./inference-calls";
 export { aiModelCatalog } from "./model-catalog";
 export { type AiAdminOverview, readAiAdminOverview } from "./model-overview";
 export { aiModelUsage } from "./model-usage";

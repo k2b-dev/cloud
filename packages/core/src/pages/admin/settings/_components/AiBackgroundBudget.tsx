@@ -4,21 +4,24 @@ import { Check, Facts, Field, Input, Notice, Section, Text, useLocale } from "@k
 import { createSignal, onMount, Show } from "solid-js";
 import { aiAreaMessages } from "../../ai/messages";
 
-type State = { used: number; reserved: number; unknown: number; stoppedAt: string | null };
+export type BackgroundCostState = { used: number; reserved: number; unknown: number; stoppedAt: string | null };
+type State = BackgroundCostState;
 
 const numberText = (value: number | null | undefined) => (value === null || value === undefined ? "" : String(value));
 
 /**
  * The background cost brake as settings: the accounting unit, the brake with its warning and stop thresholds, and the
  * spending of the last 24 hours. A brake that stopped background AI is released here, once nothing unsaved waits.
- * k2b-ui gap (packages/cloud/src/ai/admin.ts): `backgroundCostState` is not exported for pages, so the state loads in
- * the browser after the first picture; its facts hold their place while it loads.
+ * The server reads the spending with the page (`initial`), so the first picture shows it; only when that read failed
+ * does the browser ask again, and "Aktualisieren" reads it anew.
  */
 export default function AiBackgroundBudget(props: {
   config: AiQuotaConfig;
   change: (config: AiQuotaConfig) => void;
   disabled: boolean;
   canRelease: boolean;
+  /** The spending of the last 24 hours as the server read it; null when that read failed. */
+  initial?: State | null;
 }) {
   const locale = useLocale();
   const t = () => aiAreaMessages.resolve([locale()]).t;
@@ -27,10 +30,10 @@ export default function AiBackgroundBudget(props: {
   const unit = () => props.config.unit ?? "EUR";
   const update = (patch: Partial<NonNullable<AiQuotaConfig["background"]>>) =>
     props.change({ ...props.config, background: { ...budget(), ...patch } });
-  const [state, setState] = createSignal<State>();
+  const [state, setState] = createSignal<State | undefined>(props.initial ?? undefined);
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
-  const [loading, setLoading] = createSignal(true);
+  const [loading, setLoading] = createSignal(!props.initial);
   const refresh = async () => {
     setLoading(true);
     try {
@@ -57,7 +60,9 @@ export default function AiBackgroundBudget(props: {
       setBusy(false);
     }
   };
-  onMount(() => void refresh());
+  onMount(() => {
+    if (!props.initial) void refresh();
+  });
   const amount = (value: number) => `${value.toLocaleString(locale(), { maximumSignificantDigits: 6 })} ${unit()}`;
   const warned = () => {
     const current = state();

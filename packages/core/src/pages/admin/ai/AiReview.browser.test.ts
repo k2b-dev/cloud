@@ -87,6 +87,7 @@ test("classes, providers and budgets keep the v2 rules at every width, with no l
     "sec=providers&state=worst",
     "sec=budgets",
     "sec=budgets&rule=claude",
+    "sec=budgets&rule=brake",
     "sec=budgets&state=worst",
     "state=noperm",
   ];

@@ -76,7 +76,7 @@ export default ssr<AuthContext>(async (c) => {
         </AdminLayout>
       );
     }
-    const data = await loadAiBudgets(index);
+    const data = await loadAiBudgets(index, { brake: query.rule === "brake" });
     return () => (
       <AdminLayout c={c} ui="v2" title={title}>
         <BudgetsScreen nav={nav} data={data} rule={query.rule ?? null} />

@@ -1,6 +1,14 @@
-import { type AiAdminOverview, aiModelCatalog, aiModelUsage, quotaAdminConfig, quotaReport } from "@k2b/cloud/ai/admin";
+import {
+  type AiAdminOverview,
+  aiModelCatalog,
+  aiModelUsage,
+  backgroundCostState,
+  quotaAdminConfig,
+  quotaReport,
+} from "@k2b/cloud/ai/admin";
 import { coreSettings } from "@k2b/cloud/services";
 import type { AiModel, AiModelSlot, AiModelUsage, AiModelVariant, AiProvider, AiQuotaConfig } from "@k2b/cloud/shared";
+import type { BackgroundCostState } from "../settings/_components/AiBackgroundBudget";
 import type { AiAreaQuery } from "./area";
 import type { AiCatalogIndex } from "./presentation";
 
@@ -73,8 +81,8 @@ export const loadAiProviders = async (index: AiCatalogIndex, overview: AiAdminOv
  * Budgets: the rules with how many people reached each, the models a rule can cover, the personalization budget and
  * the spending of the last 30 days from the people report (its total and its days), the figure the section leads with.
  */
-export const loadAiBudgets = async (index: AiCatalogIndex) => {
-  const [config, personalizationTokens, spend] = await Promise.all([
+export const loadAiBudgets = async (index: AiCatalogIndex, options: { brake?: boolean } = {}) => {
+  const [config, personalizationTokens, spend, brake] = await Promise.all([
     quotaAdminConfig(),
     coreSettings.get<number>("ai.memory_learning_monthly_token_budget").catch(() => null),
     quotaReport({ view: "users", range: "30d" })
@@ -85,11 +93,25 @@ export const loadAiBudgets = async (index: AiCatalogIndex) => {
         days: report.timeline.map((point) => point.cost ?? 0),
       }))
       .catch(() => null),
+    // The brake's spending of the last 24 hours, only while the brake is open; null tells the browser to ask again.
+    options.brake
+      ? backgroundCostState()
+          .then(
+            (state): BackgroundCostState => ({
+              used: state.used,
+              reserved: state.reserved,
+              unknown: state.unknown,
+              stoppedAt: state.stoppedAt ? state.stoppedAt.toISOString() : null,
+            }),
+          )
+          .catch(() => null)
+      : Promise.resolve(undefined),
   ]);
   return {
     config: budgetConfig(config),
     personalizationTokens,
     spend,
+    brake,
     models: index.models
       .filter((model) => (model.kind === "chat" || model.kind === "decision") && model.enabled)
       .map((model) => ({
