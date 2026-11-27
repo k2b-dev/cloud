@@ -773,8 +773,13 @@ export default function OAuthScreen(props: OAuthScreenProps) {
       nav={props.nav}
       // the table takes the whole width until a client opens beside it
       detail={props.tab === "clients" && props.open ? 500 : undefined}
-      // the main action on the list, floating at the bottom right on the phone (k2b-ui gap: Workspace keeps it over an open detail)
-      primary={props.tab === "clients" && !nothingYet() ? { label: t().newClient, icon: "plus", onClick: () => start("new") } : undefined}
+      // the main action of the list, floating at the bottom right on the phone; an open client is a page of its own there,
+      // with back and its deeds in its head, so nothing floats over it
+      primary={
+        props.tab === "clients" && !nothingYet() && !props.open
+          ? { label: t().newClient, icon: "plus", onClick: () => start("new") }
+          : undefined
+      }
       head={
         <Bar
           start={

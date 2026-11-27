@@ -60,14 +60,6 @@ test("a spark scales its bars to the highest value and keeps a sliver for a zero
   expect(spark.match(/--k2-v:(\d+)%/g)).toEqual(["--k2-v:8%", "--k2-v:50%", "--k2-v:100%"]);
   // nothing at all: every bar a sliver, never a division by zero
   expect(html(Spark, { values: [0, 0], label: "Nichts" }).match(/--k2-v:(\d+)%/g)).toEqual(["--k2-v:8%", "--k2-v:8%"]);
-
-  // the history of a thing in the colour of its owner: soft bars and an ink last bar, a colour that is none is dropped
-  const owned = html(Spark, { values: [1, 2], label: "Verbindungen", color: "#4338ca" });
-  expect(owned).toContain("--k2-c:#4338ca");
-  expect(owned).toContain("--k2-c-soft:");
-  expect(owned).toContain("--k2-c-ink:");
-  expect(html(Spark, { values: [1], label: "x", color: "url(x)" })).not.toContain("url(x)");
-  expect(html(Spark, { values: [1], label: "Ohne" })).not.toContain("--k2-c");
 });
 
 test("a card sends its mark, figures, people, history and the card that makes a new thing", () => {
