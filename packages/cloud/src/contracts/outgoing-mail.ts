@@ -118,6 +118,11 @@ export const AdminMailProfileSchema = MailProfileInputSchema.omit({ smtpPassword
   updatedAt: z.string(),
   updatedBy: z.string().nullable(),
   appCount: z.int(),
+  /**
+   * Recipients of this profile's mails in the last 24 hours, cancelled mails left out: the same count as an app's
+   * `quota.usedLast24h`, summed over every app that sends through the profile.
+   */
+  usedLast24h: z.int(),
 });
 export type AdminMailProfile = z.infer<typeof AdminMailProfileSchema>;
 export const AdminMailAppSchema = z.object({
