@@ -8,6 +8,9 @@ import { loadMailboxCodePageData } from "../../../service/workspace";
 import MailboxCode from "../../MailboxCode.island";
 import { opensMailCodeCatchUp } from "../../mail-code-catch-up-address";
 import { loadMailCodeCatchUp } from "../../mail-code-catch-up-data";
+import { opensMailCodeHistory } from "../../mail-code-history-address";
+import { loadMailCodeHistory } from "../../mail-code-history-data";
+import { mailCodeHistoryMessages } from "../../mail-code-history-messages";
 import { mailCodeMessages } from "../../mail-code-messages";
 import { loadMailSidebarData } from "../../mail-sidebar-data";
 import { mailPageMessages } from "../../pages-messages";
@@ -48,8 +51,12 @@ export default ssr<AuthContext>(async (c) => {
       }),
       requestContactDirectory(c),
     ]);
-    const catchUp = opensMailCodeCatchUp(new URL(c.req.url)) ? await loadMailCodeCatchUp(c, mailbox, code) : undefined;
+    const url = new URL(c.req.url);
+    const catchUp = opensMailCodeCatchUp(url) ? await loadMailCodeCatchUp(c, mailbox, code) : undefined;
+    const history = !catchUp && opensMailCodeHistory(url) ? await loadMailCodeHistory(context, mailboxId, url, codeHref) : undefined;
+    if (history && !history.ok) return ssr.error(c, history.error.status);
     const { t: codeText } = mailCodeMessages.resolve([locale]);
+    const { t: historyText } = mailCodeHistoryMessages.resolve([locale]);
     return () => (
       <Layout
         c={c}
@@ -61,7 +68,11 @@ export default ssr<AuthContext>(async (c) => {
           { title: t.breadcrumbStart, href: "/" },
           { title: t.breadcrumbMail, href: "/app/mail" },
           { title: mailbox.mailbox.name, href: `/app/mail/${mailbox.mailbox.id}` },
-          ...(catchUp ? [{ title: t.breadcrumbCode, href: codeHref }, { title: codeText.title }] : [{ title: t.breadcrumbCode }]),
+          ...(catchUp
+            ? [{ title: t.breadcrumbCode, href: codeHref }, { title: codeText.title }]
+            : history
+              ? [{ title: t.breadcrumbCode, href: codeHref }, { title: historyText.title }]
+              : [{ title: t.breadcrumbCode }]),
         ]}
       >
         <MailboxCode
@@ -71,6 +82,7 @@ export default ssr<AuthContext>(async (c) => {
           currentUserEmail={user.mail}
           contactDirectory={directory}
           catchUp={catchUp}
+          history={history?.ok ? history.data : undefined}
         />
       </Layout>
     );

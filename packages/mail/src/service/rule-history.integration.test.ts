@@ -2,10 +2,12 @@ import { beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { accounts } from "@k2b/cloud/services";
 import { Hono } from "hono";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import historyRoutes from "../api/automation-log";
 import type { MailApiContext } from "../api/public-resource-boundary";
 import { automationLogItemSchema } from "../contracts";
+import { loadMailCodeHistory } from "../frontend/mail-code-history-data";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
@@ -75,6 +77,28 @@ suite("Retired Mail rule history", () => {
     for (const action of ["undo", "redo"]) {
       const response = await router.request(`/mailboxes/${mailboxShortId}/automation-log/${item.id}/${action}`, { method: "POST" });
       expect(response.status, `Retired ${action} must have no handler`).toBe(404);
+    }
+  });
+
+  test("the history step of the Code page reads one day, its entry and the runs in a fixed number of statements", async () => {
+    const meter = await meterSql();
+    try {
+      const code = `/app/mail/${mailboxShortId}/code`;
+      let day: Awaited<ReturnType<typeof loadMailCodeHistory>> | undefined;
+      const byDay = await meter.during(async () => {
+        day = await loadMailCodeHistory(context, mailboxId, new URL(`https://cloud.test${code}?history=1&day=2026-11-01`), code);
+      });
+      expect(day).toMatchObject({ ok: true, data: { day: "2026-11-01", items: [{ id: item.id }], entry: null, run: null } });
+      // a link to one entry without a day opens that entry's day
+      let entry: Awaited<ReturnType<typeof loadMailCodeHistory>> | undefined;
+      const byEntry = await meter.during(async () => {
+        entry = await loadMailCodeHistory(context, mailboxId, new URL(`https://cloud.test${code}?history=1&entry=${item.id}`), code);
+      });
+      expect(entry).toMatchObject({ ok: true, data: { day: "2026-11-01", entry: item.id } });
+      // one access read for the step; the log page with its counts, the runs; the entry adds its own read
+      expect({ byDay: byDay.length, byEntry: byEntry.length }).toEqual({ byDay: 10, byEntry: 12 });
+    } finally {
+      await meter.close();
     }
   });
 });
