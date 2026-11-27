@@ -160,6 +160,7 @@ type SoftNavigatedDetail = {
   taskProgress: ReturnType<typeof extractTaskProgress>;
   attachments: Attachment[];
   backlinks: Backlink[];
+  backlinksTotal: number;
   relations: NoteDetailRelations;
   namedBlocks: ReturnType<typeof extractNamedBlockSummaries>;
 };

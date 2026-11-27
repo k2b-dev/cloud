@@ -82,13 +82,13 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | an app's frame: sidebar, head, columns | `Workspace` with `sidebar`, `head`, `primary` | all |
 | the app's sections in the sidebar | `Nav` | `list-detail.tsx` |
 | folders or pages in levels: in the sidebar; as rows (a folder's content) | a `Nav` group with `tree` (`load`, `loadMore` for what opens); `Table` with `rowKey` and `tree` | `tree.tsx` |
+| the app's own rows in the sidebar (conversations), the phone's page | `Nav` `list` with `phone: "page"`, `search` and `primary` | `conversations.tsx` |
 | views of the page, or areas of a record | `Tabs` (in the head `Bar`, or as `Pane` head) | `mail.tsx`, `record.tsx` |
 | where a sub-page stands | `Path` in the head `Bar start` | – |
 | the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |
 | an exception in the statement ("1 ohne Zugriff") | `StatusRow marks` with a `Chip status` | – |
 | many like things, one per line | `List` of `Row` | `mail.tsx` |
-| a thing with a face (a base, a file, a table, a storage) | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`) | `overview.tsx` |
-| an overview of things with figures, people and a history | `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
+| a thing with a face (a base, a file, a table); an overview of such things with figures, people and a history | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`); `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
 | who did what; several people at once (a team, who has access) | `Digest activity`; `Avatar.Stack` | `overview.tsx`, `home.tsx` |
 | a short history beside a number | `Spark`; in a cell `Cells.Cell trend` | `home.tsx` |
 | many like things with columns | `Table` | `table.tsx` |

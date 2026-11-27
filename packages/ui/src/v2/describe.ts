@@ -140,7 +140,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     }
     if (name === "Chip") {
       const kind = element.getAttribute("data-status") ?? element.getAttribute("data-kind");
-      return `(${clip(element.textContent ?? "", 30)}${kind && kind !== "plain" ? ` · ${kind}` : ""})`;
+      return `(${clip(element.textContent ?? "", 30)}${kind && kind !== "plain" ? ` · ${kind}` : ""}${element.hasAttribute("data-quiet") ? " quiet" : ""})`;
     }
     if (name === "Avatar") return `@${element.getAttribute("aria-label") ?? ""}${element.hasAttribute("data-image") ? " picture" : ""}`;
     if (name === "Avatar.Stack") return `@{${element.getAttribute("aria-label") ?? ""}}`;

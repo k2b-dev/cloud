@@ -1,6 +1,7 @@
 import { createComponent, type JSX } from "solid-js";
 import * as actions from "../../../../packages/ui/skills/k2b-ui/recipes/actions";
 import * as content from "../../../../packages/ui/skills/k2b-ui/recipes/content";
+import * as conversations from "../../../../packages/ui/skills/k2b-ui/recipes/conversations";
 import * as dialogs from "../../../../packages/ui/skills/k2b-ui/recipes/dialogs";
 import * as filteredTable from "../../../../packages/ui/skills/k2b-ui/recipes/filtered-table";
 import * as form from "../../../../packages/ui/skills/k2b-ui/recipes/form";
@@ -47,6 +48,7 @@ const RECIPE_LOCALE = "de";
 export const recipes = {
   actions,
   content,
+  conversations,
   dialogs,
   "filtered-table": filteredTable,
   form,
