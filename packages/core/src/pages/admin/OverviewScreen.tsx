@@ -30,7 +30,14 @@ export default function OverviewScreen(props: OverviewScreenProps) {
             <Show when={section.tasks.length > 0}>
               <Section title={section.title}>
                 <For each={section.tasks}>
-                  {(task) => <Row lines={[task.title, task.description]} icon={task.icon} color={task.color} href={task.href} />}
+                  {(task) => (
+                    // an app's own place leads with the app's mark in its colour; the administration's places with their symbol
+                    <Row
+                      lines={[task.title, task.description]}
+                      {...(task.color ? { mark: { icon: task.icon, color: task.color } } : { icon: task.icon })}
+                      href={task.href}
+                    />
+                  )}
                 </For>
               </Section>
             </Show>

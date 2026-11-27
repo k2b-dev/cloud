@@ -5,6 +5,9 @@ import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../../ui/test/dom";
 import { adminNavFixture } from "../admin-v2.fixture";
 
+// the page's own message, not the shell's always-present live region (`data-k2-news`), which is an empty alert too
+const NOTICE = '[data-k2-part="Notice"][role="alert"]';
+
 // 14:10 in Berlin; every time below is read in that zone.
 const NOW = new Date("2026-11-16T13:10:00.000Z");
 const PATH = "/admin/settings/maintenance";
@@ -222,8 +225,8 @@ else {
     const dispose = mount(dom, off);
     try {
       button(dom, "Start maintenance")!.click();
-      await waitFor(() => Boolean(dom.root.querySelector('[role="alert"]')), "error");
-      expect(dom.root.querySelector('[role="alert"]')!.textContent).toContain("Maintenance did not start.");
+      await waitFor(() => Boolean(dom.root.querySelector(NOTICE)), "error");
+      expect(dom.root.querySelector(NOTICE)!.textContent).toContain("Maintenance did not start.");
       expect(apiCalls(fetch.calls)).toEqual(["POST /api/admin/maintenance/on"]);
       expect(fetch.calls[0]!.body).toEqual({ until: SUGGESTED });
       expect(navigate).not.toHaveBeenCalled();
@@ -290,8 +293,8 @@ else {
     const dispose = mount(dom, off);
     try {
       button(dom, "Start maintenance")!.click();
-      await waitFor(() => Boolean(dom.root.querySelector('[role="alert"]')), "error");
-      expect(dom.root.querySelector('[role="alert"]')!.textContent).toContain("Maintenance is on, but your link");
+      await waitFor(() => Boolean(dom.root.querySelector(NOTICE)), "error");
+      expect(dom.root.querySelector(NOTICE)!.textContent).toContain("Maintenance is on, but your link");
       expect(dom.root.textContent).toContain("Active");
       button(dom, "Try again")!.click();
       await waitFor(() => reload.mock.calls.length > 0, "reload");
@@ -322,8 +325,8 @@ else {
     const dispose = mount(dom, off);
     try {
       button(dom, "Start maintenance")!.click();
-      await waitFor(() => Boolean(dom.root.querySelector('[role="alert"]')), "notice after the bounded wait", 6_000);
-      expect(dom.root.querySelector('[role="alert"]')!.textContent).toContain("Maintenance is on, but your link");
+      await waitFor(() => Boolean(dom.root.querySelector(NOTICE)), "notice after the bounded wait", 6_000);
+      expect(dom.root.querySelector(NOTICE)!.textContent).toContain("Maintenance is on, but your link");
       expect(dom.root.textContent).toContain("Everyone sees the maintenance page right now, you too from your next page load.");
       expect(dom.root.textContent).not.toContain("Everyone except you");
       expect(reload).not.toHaveBeenCalled();
@@ -337,7 +340,7 @@ else {
       button(dom, "Try again")!.click();
       await waitFor(() => reload.mock.calls.length > 0, "reload after the retry");
       expect(apiCalls(fetch.calls)).toEqual(["POST /api/admin/maintenance/bypass", `GET ${PATH}`, "GET /_cloud/gateway/status"]);
-      expect(dom.root.querySelector('[role="alert"]')).toBeNull();
+      expect(dom.root.querySelector(NOTICE)).toBeNull();
     } finally {
       dispose();
       fetch.restore();
