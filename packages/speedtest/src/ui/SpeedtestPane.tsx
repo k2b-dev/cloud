@@ -119,6 +119,7 @@ export default function SpeedtestPane(props: SpeedtestProps & { label?: string; 
           </Section>
         </Pane>
         <Pane label={t().throughput}>
+          {/* k2b-ui gap: waits #4342: on the phone the four figures stand two in a row (2 x 2); today one per row */}
           <Cells>
             <Cells.Cell
               icon="download"

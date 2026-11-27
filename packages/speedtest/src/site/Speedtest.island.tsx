@@ -11,6 +11,7 @@ export default function PublicSpeedtest(props: { server: string; locale: SiteLoc
         <Bar
           start={<Text type="body">{text().title}</Text>}
           end={
+            // k2b-ui gap: a v2 Button link takes no `lang` / `hreflang`; the v1 header link named the other language so
             <Button keep variant="ghost" icon="language" href={props.locale === "de" ? "/en" : "/de"} title={text().language}>
               {props.locale === "de" ? "English" : "Deutsch"}
             </Button>
