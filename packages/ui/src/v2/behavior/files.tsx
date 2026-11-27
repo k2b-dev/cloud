@@ -1,9 +1,7 @@
 /**
- * File picking and disclosure for v2, each one core primitive through the adapter: the file dialog, drops and pastes,
- * the `accept` rule and the form input from core's `fileInput`; open and closed with Enter, Space and the find-in-page
- * of a closed panel from core's `collapsible`. The v2 primitives add the look; no ui-sdk type crosses these exports.
+ * File picking for v2, one core primitive through the adapter: the file dialog, drops and pastes, the `accept` rule and
+ * the form input from core's `fileInput`. The v2 primitives add the look; no ui-sdk type crosses these exports.
  */
-import { collapsible } from "@ui-sdk/core/collapsible";
 import { fileInput } from "@ui-sdk/core/file-input";
 import { type SlotComponent, slotComponent, usePrimitive } from "./adapter";
 
@@ -51,28 +49,5 @@ export function useFilePick(options: () => FilePickOptions): FilePickParts {
     Trigger: slotComponent(handle, "trigger", "button"),
     Input: slotComponent(handle, "input", "input"),
     Dropzone: slotComponent(handle, "dropzone", "div"),
-  };
-}
-
-export type DisclosureOptions = {
-  open?: boolean;
-  defaultOpen?: boolean;
-  onOpenChange?: (open: boolean) => void;
-};
-
-export type DisclosureParts = {
-  Root: SlotComponent;
-  /** The button that opens and closes the panel; it says whether the panel is open. */
-  Trigger: SlotComponent;
-  /** The panel; pass `hiddenUntilFound` so find-in-page reaches a closed one. */
-  Panel: SlotComponent;
-};
-
-export function useDisclosure(options: () => DisclosureOptions): DisclosureParts {
-  const handle = usePrimitive(collapsible, options);
-  return {
-    Root: slotComponent(handle, "root", "div"),
-    Trigger: slotComponent(handle, "trigger", "button"),
-    Panel: slotComponent(handle, "panel", "div"),
   };
 }

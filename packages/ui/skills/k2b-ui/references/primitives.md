@@ -16,6 +16,12 @@ handler moves history with `push` or `replaceWith`, or loads the page with
 `Workspace primary` and every action as data), `Button`, `Chip` and the
 `open` target of a `Table`. Never use `onClick` for what has an address.
 
+**Lazy parts stay lazy.** Import every part from `@k2b/ui/v2`, also in a
+part of a page that loads later (`import()`). A part that only such a lazy
+part uses stays in its chunk: `Select`, `DateInput` or `FilterBar` on a
+lazy page adds nothing to the first chunk of the others. No workaround is
+needed, such as a `Menu` in place of a `Select`.
+
 ## Frame
 
 ### Workspace
