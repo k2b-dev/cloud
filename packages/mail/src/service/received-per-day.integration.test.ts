@@ -4,8 +4,10 @@ import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import type { MailRequestContext } from "./auth";
+import { cachedReadLoadLimit, cachedReadLoadsRunning } from "./cached-read-loads";
 import { createMailbox } from "./mailboxes";
 import { loadReceivedPerDay, peekReceivedPerDay, receivedPerDayLoadLimit } from "./received-per-day";
+import { cachedConversationViewCounts } from "./view-count-cache";
 
 // The mails a mailbox received per day, for the v2 reader while none is open: one statement, a day in the reader's time
 // zone, received means filed and never in Sent, Drafts or Junk, and an assigned-only reader counts only what it may see.
@@ -238,6 +240,59 @@ suite("Mail received per day", () => {
       expect(answers.filter((answer) => answer === null)).toHaveLength(3);
       expect(down).toHaveBeenCalled();
     } finally {
+      await meter.close();
+      down.mockRestore();
+    }
+  });
+
+  test("the view counts and the year of mail share one budget: together they never take the last connection", async () => {
+    const meter = await meterSql();
+    // after the meter: it may bind the runtime's clients anew
+    const down = spyOn(redis, "send").mockRejectedValue(new Error("Valkey down"));
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started = 0;
+    let most = 0;
+    const counts = { views: {}, mineWaiting: 0, doneByFolder: {} } as never;
+    const viewCount = (index: number) =>
+      cachedConversationViewCounts({
+        mailboxId,
+        reader: `budget-${index}`,
+        load: async () => {
+          started += 1;
+          most = Math.max(most, cachedReadLoadsRunning());
+          await held;
+          return counts;
+        },
+      });
+    try {
+      const limit = cachedReadLoadLimit();
+      // half the budget in view counts: the year of mail may no longer start
+      const views = Array.from({ length: receivedPerDayLoadLimit() }, (_, index) => viewCount(index));
+      // each view count first reads its version: wait until all of them count
+      const until = async (done: () => boolean) => {
+        for (const end = performance.now() + 5000; !done() && performance.now() < end; ) await Bun.sleep(5);
+      };
+      await until(() => started === receivedPerDayLoadLimit());
+      let year: unknown = "pending";
+      const statements = await meter.during(async () => {
+        year = await loadReceivedPerDay({ mailboxId, access: everything, timeZone: "Europe/Lisbon", now });
+      });
+      expect({ year, statements: statements.length }).toEqual({ year: null, statements: 0 });
+      // the rest of the budget in view counts, and one more that must wait for a free place
+      const more = Array.from({ length: limit - receivedPerDayLoadLimit() + 1 }, (_, index) => viewCount(100 + index));
+      await until(() => started === limit);
+      // the one more had its chance to start and waits
+      await Bun.sleep(50);
+      expect({ started, running: cachedReadLoadsRunning() }).toEqual({ started: limit, running: limit });
+      release();
+      await Promise.all([...views, ...more]);
+      expect(started).toBe(limit + 1);
+      expect(most).toBeLessThanOrEqual(limit);
+    } finally {
+      release();
       await meter.close();
       down.mockRestore();
     }

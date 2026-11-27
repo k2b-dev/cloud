@@ -2,6 +2,7 @@ import { redis, sql } from "@k2b/cloud";
 import { z } from "zod";
 import type { MailboxAccess } from "./access";
 import { messageVisibleTo } from "./access";
+import { cachedReadLoadLimit, cachedReadLoadsRunning, trackCachedReadLoad } from "./cached-read-loads";
 import { isDraftsOrJunkFolder } from "./follow-up-scope";
 
 /** The days a reader's year of mail spans: 53 weeks, whatever day a week starts on (53 × 7 days). */
@@ -111,27 +112,19 @@ const read = async (key: string, today: string): Promise<MailReceivedPerDay | nu
   }
 };
 
-// As the view-count cache: one count per key at a time in this process (`pending`) and across replicas (a fill lease),
-// and at most one fewer counts at once than the pool has connections, so a cache outage cannot take the pool.
+// As the view-count cache: one count per key at a time in this process (`pending`) and across replicas (a fill lease).
+// Its counts share the view counts' budget (`cached-read-loads`), and take at most half of it: the year of mail is a
+// picture, the view counts are what people act on.
 const FILL_LEASE_MS = 10_000; // Cloud's normal request idle budget; a crashed owner releases itself
 const FILL_POLL_MS = 50;
 const release = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`;
 const pending = new Map<string, Promise<MailReceivedPerDay | null>>();
-const activeLoads = new Set<Promise<MailReceivedPerDay>>();
-/** How many year counts may run at once in this process: one fewer than the pool's connections. */
-export const receivedPerDayLoadLimit = () => Math.max(1, (sql.options.max ?? 10) - 1);
+/** How many cached-read counts may run when a year count starts: half the shared budget. */
+export const receivedPerDayLoadLimit = () => Math.max(1, Math.floor(cachedReadLoadLimit() / 2));
 
-/** Counts now, or answers null when as many counts already run as the pool allows: the reader then shows no picture. */
-const boundedLoad = async (load: () => Promise<MailReceivedPerDay>): Promise<MailReceivedPerDay | null> => {
-  if (activeLoads.size >= receivedPerDayLoadLimit()) return null;
-  const task = load();
-  activeLoads.add(task);
-  try {
-    return await task;
-  } finally {
-    activeLoads.delete(task);
-  }
-};
+/** Counts now, or answers null when half the shared budget is in use: the reader then shows no picture. */
+const boundedLoad = async (load: () => Promise<MailReceivedPerDay>): Promise<MailReceivedPerDay | null> =>
+  cachedReadLoadsRunning() >= receivedPerDayLoadLimit() ? null : trackCachedReadLoad(load);
 
 const fill = (key: string, today: string, load: () => Promise<MailReceivedPerDay>): Promise<MailReceivedPerDay | null> => {
   const existing = pending.get(key);
