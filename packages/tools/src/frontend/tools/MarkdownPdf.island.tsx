@@ -1,5 +1,5 @@
 import { AutocompleteEditor, MarkdownEditor, useLocale } from "@k2b/ui";
-import { Band, Button, Canvas, Field, Input, Loading, Notice, Pane, Section, Select, StatusRow, Text } from "@k2b/ui/v2";
+import { Band, Button, Canvas, Empty, Field, Input, Loading, Notice, Pane, Section, Select, StatusRow, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type MarkdownPdfMessages, markdownPdfMessages } from "@/api/markdown-pdf-messages";
@@ -190,8 +190,7 @@ export function MarkdownPdfView(props: MarkdownPdfViewProps = {}) {
             ? t().generationComplete
             : t().emptyTitle;
   const template = () => templateOptions(t()).find((option) => option.id === templateId());
-  // The preview is a column of its own once there is something to show: while the first PDF is made, and after.
-  const previewing = () => busy() || previewUrl() !== null;
+  // The preview is a column of its own from the start: a quiet state before the first PDF, then the PDF.
 
   return (
     <ToolsScreen
@@ -204,7 +203,7 @@ export function MarkdownPdfView(props: MarkdownPdfViewProps = {}) {
       }
     >
       <Pane.Split>
-        <Pane label={t().markdownLabel} width={previewing() ? { min: 360, default: 600 } : undefined} scrollKey="tools-markdown-pdf">
+        <Pane label={t().markdownLabel} width={{ min: 360, default: 600 }} scrollKey="tools-markdown-pdf">
           <Show when={error()}>
             {(message) => (
               <Notice tone="bad" title={t().generationFailedTitle}>
@@ -231,16 +230,19 @@ export function MarkdownPdfView(props: MarkdownPdfViewProps = {}) {
           </Band>
           {/* The Markdown editor keeps its own behaviour (toolbar, shortcuts, counts); v2 has none of its own yet. */}
           <Canvas label={t().markdownLabel} height={520}>
-            <MarkdownEditor
-              label={t().markdownLabel}
-              value={markdown}
-              onValueChange={setMarkdown}
-              placeholder={t().markdownPlaceholder}
-              lines={18}
-              variant="embedded"
-              fill
-              showStats
-            />
+            {/* the editor keeps the pane's 20 px edge, as the fields above do */}
+            <div style={{ height: "100%", padding: "0 20px", "box-sizing": "border-box" }}>
+              <MarkdownEditor
+                label={t().markdownLabel}
+                value={markdown}
+                onValueChange={setMarkdown}
+                placeholder={t().markdownPlaceholder}
+                lines={18}
+                variant="embedded"
+                fill
+                showStats
+              />
+            </div>
           </Canvas>
           <Show when={templateId() === "custom"}>
             <Section icon="brand-css3" title={t().customCssLabel} summary={t().customCssDescription}>
@@ -258,58 +260,68 @@ export function MarkdownPdfView(props: MarkdownPdfViewProps = {}) {
             </Section>
           </Show>
         </Pane>
-        <Show when={previewing()}>
-          <Pane
-            label={t().previewTitle}
-            status={
-              <StatusRow
-                lead={lead()}
-                loading={busy()}
-                facts={[{ after: t().previewDescription }]}
-                filters={
-                  <Show
-                    when={busy()}
-                    fallback={
-                      <Show when={previewUrl()}>
-                        <Button variant="ghost" icon="external-link" onClick={openPreview}>
-                          {t().open}
-                        </Button>
-                        <Button variant="ghost" icon="download" disabled={!pdf()} onClick={download}>
-                          {t().downloadPdf}
-                        </Button>
-                      </Show>
-                    }
-                  >
-                    <Button variant="ghost" icon="x" onClick={cancel}>
-                      {t().cancel}
-                    </Button>
-                  </Show>
-                }
-              />
+        {/* the preview column stands from the start, so the page has its second column before the first PDF */}
+        <Pane
+          label={t().previewTitle}
+          status={
+            <StatusRow
+              lead={lead()}
+              loading={busy()}
+              facts={[{ after: t().previewDescription }]}
+              filters={
+                <Show
+                  when={busy()}
+                  fallback={
+                    <Show when={previewUrl()}>
+                      <Button variant="ghost" icon="external-link" onClick={openPreview}>
+                        {t().open}
+                      </Button>
+                      <Button variant="ghost" icon="download" disabled={!pdf()} onClick={download}>
+                        {t().downloadPdf}
+                      </Button>
+                    </Show>
+                  }
+                >
+                  <Button variant="ghost" icon="x" onClick={cancel}>
+                    {t().cancel}
+                  </Button>
+                </Show>
+              }
+            />
+          }
+        >
+          <Show when={stale()}>
+            <Notice tone="warn" title={t().staleTitle} actions={[{ label: t().generatePdf, onClick: () => void generate() }]}>
+              {t().staleBody}
+            </Notice>
+          </Show>
+          <Show
+            when={previewUrl()}
+            fallback={
+              <Canvas label={t().previewTitle} height={760}>
+                <Show
+                  when={busy()}
+                  fallback={
+                    <Empty
+                      icon="file-type-pdf"
+                      text={t().previewEmpty}
+                      action={{ label: t().generatePdf, icon: "file-type-pdf", onClick: () => void generate() }}
+                    />
+                  }
+                >
+                  <Loading />
+                </Show>
+              </Canvas>
             }
           >
-            <Show when={stale()}>
-              <Notice tone="warn" title={t().staleTitle} actions={[{ label: t().generatePdf, onClick: () => void generate() }]}>
-                {t().staleBody}
-              </Notice>
-            </Show>
-            <Show
-              when={previewUrl()}
-              fallback={
-                <Canvas label={t().previewTitle} height={760}>
-                  <Loading />
-                </Canvas>
-              }
-            >
-              {(url) => (
-                // k2b-ui gap: no document viewer in v2; the browser's own PDF view stands in a Canvas.
-                <Canvas label={t().iframeTitle} height={760}>
-                  <iframe src={url()} title={t().iframeTitle} style={{ border: 0, width: "100%", height: "100%", background: "#fff" }} />
-                </Canvas>
-              )}
-            </Show>
-          </Pane>
-        </Show>
+            {(url) => (
+              // k2b-ui gap: no document viewer in v2; the browser's own PDF view stands in a Canvas.
+              <Canvas label={t().iframeTitle} height={760}>
+                <iframe src={url()} title={t().iframeTitle} style={{ border: 0, width: "100%", height: "100%", background: "#fff" }} />
+              </Canvas>
+            )}
+          </Show>
+        </Pane>
       </Pane.Split>
     </ToolsScreen>
   );

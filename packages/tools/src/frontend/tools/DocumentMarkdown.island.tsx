@@ -1,6 +1,6 @@
 import { showFileDialog } from "@k2b/stdlib/browser";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Canvas, Empty, Notice, Pane, Section, Text, useToast } from "@k2b/ui/v2";
+import { Band, Button, Canvas, Empty, Notice, Pane, Prose, Section, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type DocumentMarkdownMessages, documentMarkdownMessages } from "@/api/document-markdown-messages";
@@ -264,49 +264,62 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
                   {t().truncatedBody}
                 </Notice>
               </Show>
-              <Section
-                icon="markdown"
-                title={t().previewTitle}
-                summary={t().resultMeta({
-                  filename: resolved().filename,
-                  format: resolved().format.toUpperCase(),
-                  input: formatBytes(resolved().inputBytes),
-                  output: formatBytes(resolved().outputBytes),
-                })}
-                actions={[
-                  { label: t().copyMarkdown, icon: "copy", onClick: () => copy(resolved().markdown) },
-                  { label: t().downloadMd, icon: "download", onClick: () => downloadMarkdown(resolved()) },
-                ]}
-              >
-                {/* The Markdown is drawn text: a fixed height, so a long document scrolls inside it. */}
-                {/* k2b-ui gap: no v2 code block yet (#4244); the Markdown stands in a Canvas until it lands. */}
-                <Canvas label={t().extractedFromAria({ filename: resolved().filename })} height={560}>
-                  <pre
-                    tabIndex={0}
-                    style={{
-                      margin: 0,
-                      // the text stands on the pane's 20 px edge, as every row and field does
-                      padding: "0 20px",
-                      "box-sizing": "border-box",
-                      height: "100%",
-                      overflow: "auto",
-                      "white-space": "pre-wrap",
-                      "overflow-wrap": "anywhere",
-                      font: "13px/20px var(--k2-font-mono)",
-                    }}
+              {/* the source and how it reads, side by side; one under the other on the phone */}
+              <Pane.Split>
+                <Pane label={t().sourceTitle}>
+                  <Section
+                    icon="markdown"
+                    title={t().sourceTitle}
+                    summary={t().resultMeta({
+                      filename: resolved().filename,
+                      format: resolved().format.toUpperCase(),
+                      input: formatBytes(resolved().inputBytes),
+                      output: formatBytes(resolved().outputBytes),
+                    })}
+                    actions={[
+                      { label: t().copyMarkdown, icon: "copy", onClick: () => copy(resolved().markdown) },
+                      { label: t().downloadMd, icon: "download", onClick: () => downloadMarkdown(resolved()) },
+                    ]}
                   >
-                    {resolved().markdown}
-                  </pre>
-                </Canvas>
-              </Section>
+                    {/* The Markdown is drawn text: a fixed height, so a long document scrolls inside it. */}
+                    {/* k2b-ui gap: no v2 code block yet (#4244); the Markdown stands in a Canvas until it lands. */}
+                    <Canvas label={t().extractedFromAria({ filename: resolved().filename })} height={560}>
+                      <pre
+                        tabIndex={0}
+                        style={{
+                          margin: 0,
+                          // the text stands on the pane's 20 px edge, as every row and field does
+                          padding: "0 20px",
+                          "box-sizing": "border-box",
+                          height: "100%",
+                          overflow: "auto",
+                          "white-space": "pre-wrap",
+                          "overflow-wrap": "anywhere",
+                          font: "13px/20px var(--k2-font-mono)",
+                        }}
+                      >
+                        {resolved().markdown}
+                      </pre>
+                    </Canvas>
+                  </Section>
+                </Pane>
+                <Pane label={t().renderedTitle}>
+                  <Section icon="eye" title={t().renderedTitle}>
+                    <Prose markdown={resolved().markdown} />
+                  </Section>
+                </Pane>
+              </Pane.Split>
             </>
           )}
         </Show>
-        <Band>
-          <Text type="meta" muted>
-            {t().aboutDocuments}
-          </Text>
-        </Band>
+        {/* what the tool takes and keeps, said once before the first document */}
+        <Show when={!result()}>
+          <Band>
+            <Text type="meta" muted>
+              {t().aboutDocuments}
+            </Text>
+          </Band>
+        </Show>
       </Pane>
     </ToolsScreen>
   );
