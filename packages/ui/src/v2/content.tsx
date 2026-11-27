@@ -14,6 +14,7 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { renderSafeMarkdown } from "../content/MarkdownView";
+import { hintPointer, unhintPart } from "../internal/truncated-title";
 import { useLocale } from "../intl/locale";
 import { useGrip } from "./behavior/resize";
 import { ActionButton, CopyButton } from "./button";
@@ -407,18 +408,30 @@ export const RowOpen = (props: { href?: string; onNavigate?: OnNavigate; onOpen?
   </Show>
 );
 
+/** The lines of a row that may be cut: its title and its second and third line. */
+const ROW_LINES = ":scope > .k2-row-l1 > .k2-row-title, :scope > .k2-row-l2, :scope > .k2-row-l3";
+
 /** One entry: from column edge to column edge, square, also when it opens something. */
 export const Row = (props: RowProps) => {
   const inList = useContext(ListContext);
   // Parts passed as JSX are made once and read from here: reading a prop again would make its JSX again.
   const text = createMemo(() => props.lines);
   const lines = () => text().length;
-  // a row of three lines cuts each line with "…", a row of two its second line: a cut line of words says all on hover
-  const cut = (index: number) => {
-    const line = text()[index];
-    const cuts = lines() === 3 || (lines() === 2 && index === 1);
-    return cuts && typeof line === "string" && line.trim() ? line : undefined;
-  };
+  // A row of three lines cuts each line with "…" and a row of two its second line. In a list a title is one line too (a
+  // row of one: on the desktop), so the rows of a list keep one height per kind (B rule 4, W7 and W9 26.11.); any other title
+  // stops after two lines. A line that is cut says all of it on hover, measured while the pointer rests on it, on the
+  // element it hits (the link that opens the row lies over the lines); a whole line has none, the hint leaves with the
+  // pointer, and over the link it names the title describes nothing, so it is never read twice (review of #4328).
+  const hint = (event: PointerEvent & { currentTarget: HTMLElement }) =>
+    hintPointer(
+      event.currentTarget,
+      event.target,
+      event.currentTarget.querySelectorAll<HTMLElement>(ROW_LINES),
+      event.clientX,
+      event.clientY,
+    );
+  // a scroll by the wheel moves no pointer: the row lets go of its hint when the pointer leaves it
+  const unhint = (event: PointerEvent & { currentTarget: HTMLElement }) => unhintPart(event.currentTarget);
   const meta = resolveChildren(() => props.meta);
   const time = resolveChildren(() => props.time);
   const end = resolveChildren(() => props.end);
@@ -429,6 +442,11 @@ export const Row = (props: RowProps) => {
       class="k2-row"
       data-k2-part="Row"
       role={inList ? "listitem" : undefined}
+      // a row of a list keeps the height of its kind: the stylesheet asks this, not where the row stands in the page (review of #4328)
+      data-in-list={inList ? "" : undefined}
+      onPointerMove={hint}
+      onPointerLeave={unhint}
+      onPointerCancel={unhint}
       data-open={props.href !== undefined || props.onOpen ? "" : undefined}
       data-lines={String(lines())}
       data-unread={props.unread ? "" : undefined}
@@ -488,7 +506,8 @@ export const Row = (props: RowProps) => {
         </Show>
       </span>
       <span class="k2-row-l1">
-        <span class="k2-row-title" id={title} title={cut(0)}>
+        {/* user text runs in its own direction (an Arabic or Hebrew line in a German page), "…" at its end */}
+        <span class="k2-row-title" id={title} dir="auto">
           {text()[0]}
         </span>
         <Show when={meta() !== undefined}>
@@ -496,12 +515,12 @@ export const Row = (props: RowProps) => {
         </Show>
       </span>
       <Show when={lines() > 1}>
-        <span class="k2-row-l2" title={cut(1)}>
+        <span class="k2-row-l2" dir="auto">
           {text()[1]}
         </span>
       </Show>
       <Show when={lines() > 2}>
-        <span class="k2-row-l3" title={cut(2)}>
+        <span class="k2-row-l3" dir="auto">
           {text()[2]}
         </span>
       </Show>

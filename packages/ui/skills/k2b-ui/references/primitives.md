@@ -164,12 +164,25 @@ inside it.
   72 px (mail: sender, subject, preview).
   The second line of two or three is one line, cut with "…" before what
   stands beside it (an address or JSON without a break never runs under the
-  marks or a deed); a cut line of words says all of it on hover.
+  marks or a deed). In a `List` the title is one line too (that of a row of
+  one on the desktop; on the phone it may take two, and its row keeps room
+  for them), so the rows of a list keep one height per kind of row: a row
+  with a deed and a plain row are two kinds. A row of three cuts each line.
+  The title of a `Row` outside a `List` wraps, but stops after two lines
+  with "…". A line that is cut says all of it on hover, measured while the
+  pointer rests on it, also through the link that opens the row, and the
+  hint leaves with the pointer; a whole line has no hint. Over the link it
+  names, the cut title shows its words too, but describes nothing (its
+  `aria-describedby` points at an empty element), so a screen reader does
+  not read the name twice.
+  Each line runs in the direction of its own text (`dir="auto"`) and keeps
+  the page's alignment: an Arabic or Hebrew line in a German page has its
+  "…" at its own end.
 - lead: `icon` + `color`, or `avatar`, or a dot when `unread`.
 - `meta` (quiet note after the title, a count), `time` (top right). Title
   and `meta` share the first line in equal parts, and each takes only what
   it needs: a count or a number stays whole, a long note is cut with "…",
-  and the title breaks only when it is longer than its part.
+  and a title that may wrap breaks only when it is longer than its part.
 - `marks` (chips, icons, avatars bottom right): use them with 3 lines; on a
   2-line row they add a third line. The third line shares its width with
   the marks, so keep it a preview text that may be cut, never an amount.

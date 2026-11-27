@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Browser, Page } from "playwright";
+import type { Browser, Locator, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-worst.client";
@@ -213,7 +213,8 @@ const secondLines = (page: Page) =>
         return {
           past: Math.max(0, Math.round(right - inner)),
           under,
-          title: (line.getAttribute("title") ?? "").length > 200 || (line.textContent ?? "").length < 200,
+          // a cut line says all of it where the pointer rests on it
+          title: (window.__k2HintOf?.(line) ?? "").length > 200 || (line.textContent ?? "").length < 200,
         };
       }),
   );
@@ -236,6 +237,34 @@ test("a phone row of a large table cuts its second line before its marks", async
     async (page) => {
       for (const line of await secondLines(page)) expect(line).toEqual({ past: 0, under: [], title: true });
       expect((await measureV2Layout(page, { root: "#root" })).past).toEqual([]);
+    },
+    "table",
+  );
+});
+
+// M (#4324, Mail administration): a phone row of a table wrapped its first line, so a long name grew its row. Each
+// phone row is one line of name and one of detail, cut with "…" and whole on hover, so a long name keeps the row's height.
+test("a phone row of a large table keeps its long name on one line", async () => {
+  await withPage(
+    390,
+    async (page) => {
+      const rows = await page.evaluate(() =>
+        Array.from(document.querySelectorAll<HTMLElement>(".k2-table-phone .k2-row")).map((row) => {
+          const title = row.querySelector<HTMLElement>(".k2-row-title")!;
+          return {
+            height: Math.round(row.getBoundingClientRect().height),
+            lines: Math.round(title.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(title).lineHeight)),
+            cut: title.scrollWidth > title.clientWidth + 1,
+            hint: window.__k2HintOf?.(title) === title.textContent?.trim(),
+          };
+        }),
+      );
+      // the long name keeps the height of a short one (the third row also has marks, which stand in a line of their own)
+      expect(rows[1]!.height).toBe(rows[0]!.height);
+      expect(rows.map((row) => row.lines)).toEqual([1, 1, 1]);
+      expect(rows.map((row) => row.cut)).toEqual([false, true, false]);
+      expect(rows[1]!.hint).toBe(true);
+      expect((await measureV2Layout(page, { root: "#root" })).squeezed).toEqual([]);
     },
     "table",
   );
@@ -337,3 +366,282 @@ test("a link in a cut second line shows its whole focus ring", async () => {
     "rows",
   );
 });
+
+// W7 (Assistant, Chat): a row of one or two lines let its title wrap without bound, so a long memory or chat name grew
+// its row to any height. In a list each title is one line with "…" (a row of one: on the desktop; on the phone it stops
+// after two lines), so every row keeps one height (B rule 4, W9), and each says its whole text on hover.
+for (const width of [1440, 390])
+  test(`a long title of a row in a list is one line, on the phone two for a row of one, at ${width} px`, async () => {
+    await withPage(
+      width,
+      async (page) => {
+        const rows = await page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>(".k2-row")).map((row) => {
+            const title = row.querySelector<HTMLElement>(".k2-row-title")!;
+            const line = Number.parseFloat(getComputedStyle(title).lineHeight);
+            return {
+              lines: Math.round(title.getBoundingClientRect().height / line),
+              cut: title.scrollHeight > title.clientHeight + 1 || title.scrollWidth > title.clientWidth + 1,
+              // the whole text on hover where the title can be cut; no hint a screen reader would read twice where not
+              hint: ((said) => (said === null ? "none" : said === title.textContent?.trim() ? "whole" : "other"))(
+                window.__k2HintOf?.(title) ?? null,
+              ),
+            };
+          }),
+        );
+        // the long ones: cut after one line (two for a row of one on the phone), the whole text on hover; the short
+        // ones: one line, whole, no hint
+        expect(rows).toEqual([
+          { lines: width < 768 ? 2 : 1, cut: true, hint: "whole" },
+          { lines: 1, cut: true, hint: "whole" },
+          { lines: 1, cut: false, hint: "none" },
+          { lines: 1, cut: false, hint: "none" },
+        ]);
+        // on the phone the rows of one kind stand at one height: a row of one line keeps room for two lines of title,
+        // with a short title, a long one or a deed at its end (review r2 of #4328: 57 / 44 / 45 side by side)
+        if (width < 768) {
+          const kinds = await page.evaluate(() => {
+            const heights: Record<string, number[]> = {};
+            for (const row of document.querySelectorAll<HTMLElement>(".k2-list > .k2-row")) {
+              const kind = row.dataset.lines ?? "";
+              heights[kind] = [...(heights[kind] ?? []), Math.round(row.getBoundingClientRect().height)];
+            }
+            return heights;
+          });
+          for (const heights of Object.values(kinds)) expect(new Set(heights).size).toBe(1);
+          expect(kinds["1"]?.length).toBe(3);
+        }
+        const layout = await measureV2Layout(page, { root: "#root" });
+        expect(layout.past).toEqual([]);
+        expect(layout.squeezed).toEqual([]);
+      },
+      "notes",
+    );
+  });
+
+// W9 (Chat): rows of two lines grew to 52, 68 and 84 px: a last message wrapped, a long name took two lines, an address
+// as a name broke at its hyphen, and the count slid beside the second line of the name. A row of two lines in a list is
+// one line of name and one of text, each cut with "…" and whole on hover, the count beside the name, so every row of the
+// list keeps one height (B rule 4).
+for (const width of [1440, 1024, 390, 320])
+  test(`rows of two lines keep one height with long names and messages at ${width} px`, async () => {
+    await withPage(
+      width,
+      async (page) => {
+        const rows = await page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>(".k2-row")).map((row) => {
+            const line = (part: HTMLElement) =>
+              Math.round(part.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(part).lineHeight));
+            const title = row.querySelector<HTMLElement>(".k2-row-title")!;
+            const text = row.querySelector<HTMLElement>(":scope > .k2-row-l2")!;
+            const meta = row.querySelector<HTMLElement>(".k2-row-meta");
+            const hint = (part: HTMLElement) =>
+              ((said) => (said === null ? "none" : said === part.textContent?.trim() ? "whole" : "other"))(
+                window.__k2HintOf?.(part) ?? null,
+              );
+            const name = title.getBoundingClientRect();
+            const count = meta?.getBoundingClientRect();
+            return {
+              height: Math.round(row.getBoundingClientRect().height),
+              lines: [line(title), line(text)],
+              cut: [title.scrollWidth > title.clientWidth + 1, text.scrollWidth > text.clientWidth + 1],
+              hints: [hint(title), hint(text)],
+              // the pointer on the name hits the link that opens the row, which lies over its lines (review of #4328)
+              opens: document.elementFromPoint(name.left + name.width / 2, name.top + name.height / 2)?.classList.contains("k2-row-open"),
+              // the count stands after the name, on its line
+              beside: !count || (count.left >= name.right - 0.5 && count.top < name.bottom && count.bottom > name.top),
+            };
+          }),
+        );
+        expect(new Set(rows.map((row) => row.height)).size).toBe(1);
+        expect(rows.map((row) => row.lines)).toEqual(rows.map(() => [1, 1]));
+        expect(rows.every((row) => row.beside)).toBe(true);
+        expect(rows.every((row) => row.opens)).toBe(true);
+        // on the phone a row of two lines takes its height from the one token of it, never a number of its own
+        if (width < 768) {
+          const floor = await page.evaluate(() => {
+            const token = getComputedStyle(document.body).getPropertyValue("--k2-h-row-phone2").trim();
+            return { token, rows: getComputedStyle(document.querySelector(".k2-row")!).minHeight };
+          });
+          expect(floor.rows).toBe(floor.token);
+        }
+        // a cut line says all of it where the pointer rests on it, the name too (its description stays empty, see the
+        // test of the link's name below); a whole one has no hint
+        expect(rows.map((row) => row.hints)).toEqual(rows.map((row) => row.cut.map((cut) => (cut ? "whole" : "none"))));
+        // the long ones are cut where the column is narrow
+        if (width <= 1024)
+          expect(rows.slice(0, 3).map((row) => row.cut)).toEqual([
+            [false, true],
+            [true, false],
+            [false, true],
+          ]);
+        if (width <= 390) expect(rows.slice(5, 7).map((row) => row.cut[0])).toEqual([true, true]);
+        const layout = await measureV2Layout(page, { root: "#root" });
+        expect(layout.past).toEqual([]);
+        expect(layout.squeezed).toEqual([]);
+      },
+      "chats",
+    );
+  });
+
+// Review r2 of #4328: the hint stayed on the link after the pointer left (a wheel scroll moves no pointer), and the
+// hint of a cut name became the link's description, the same words as its name. With a real pointer: over a cut
+// message the link says it, over the name it says nothing, and once the pointer left the row nothing is left.
+test("a row's hint leaves with the pointer and never repeats the name of its link", async () => {
+  await withPage(
+    1024,
+    async (page) => {
+      // the link's accessible name and description by the rules of accname: `aria-labelledby` names it, and
+      // `aria-describedby` describes it before its `title` does
+      const accessible = (link: Locator) =>
+        link.evaluate((element) => {
+          const text = (ids: string | null) =>
+            (ids ?? "")
+              .split(/\s+/)
+              .filter(Boolean)
+              .map((id) => document.getElementById(id)?.textContent?.trim() ?? "")
+              .join(" ");
+          const describedBy = element.getAttribute("aria-describedby");
+          return {
+            name: text(element.getAttribute("aria-labelledby")),
+            description: describedBy !== null ? text(describedBy) : (element.getAttribute("title") ?? ""),
+            hint: element.getAttribute("title"),
+          };
+        });
+      const row = page.locator(".k2-row", { hasText: "Nora Weber" });
+      const link = row.locator(".k2-row-open");
+      const center = async (selector: string) => {
+        const box = (await row.locator(selector).boundingBox())!;
+        return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      };
+      // over a cut message: the link says it on hover, and it describes the link (words its name lacks)
+      const message = await center(":scope > .k2-row-l2");
+      await page.mouse.move(message.x, message.y);
+      const overMessage = await accessible(link);
+      expect(overMessage.name).toBe("Nora Weber");
+      expect(overMessage.description).toContain("the invoice lists 12 chairs");
+      // over a cut name: the pointer sees the whole name, and its description stays empty, never the name again
+      await settled(page);
+      const long = page.locator(".k2-row", { hasText: "Lieferung KW 49" });
+      const longName = (await long.locator(".k2-row-title").boundingBox())!;
+      await page.mouse.move(longName.x + longName.width / 2, longName.y + longName.height / 2);
+      expect(await long.locator(".k2-row-title").evaluate((title) => title.scrollWidth > title.clientWidth + 1)).toBe(true);
+      const overName = await accessible(long.locator(".k2-row-open"));
+      expect(overName.hint).toBe(overName.name);
+      expect(overName.description).toBe("");
+      // in Chromium the browser's own tree says the same
+      if (page.context().browser()?.browserType().name() === "chromium") {
+        const cdp = await page.context().newCDPSession(page);
+        // the protocol's own types: the tree of the page as the browser hands it to assistive technology
+        const { nodes } = await cdp.send("Accessibility.getFullAXTree");
+        const node = nodes.find((each) => each.role?.value === "link" && each.name?.value === overName.name);
+        expect(node).toBeDefined();
+        expect(node?.description?.value ?? "").toBe("");
+      }
+      // away from the row: no hint and no description are left behind
+      await page.mouse.move(2, 2);
+      expect(await long.locator(".k2-row-open").getAttribute("title")).toBeNull();
+      expect(await long.locator(".k2-row-open").getAttribute("aria-describedby")).toBeNull();
+      expect(await link.getAttribute("title")).toBeNull();
+    },
+    "chats",
+  );
+});
+
+// Review r3 of #4328: a conversation without a preview (Mail passes " ") was shorter than the others, 72 beside 73 on
+// the desktop and 57 beside 73 on the phone. A row of three lines keeps its three lines, so both stand at one height.
+for (const width of [1440, 390])
+  test(`a row of three lines without a third one stands as high as the others at ${width} px`, async () => {
+    await withPage(
+      width,
+      async (page) => {
+        const heights = await page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>(".k2-row")).map((row) => Math.round(row.getBoundingClientRect().height)),
+        );
+        expect(heights).toHaveLength(2);
+        expect(new Set(heights).size).toBe(1);
+      },
+      "mail",
+    );
+  });
+
+// W9 (Chat break-ui): an Arabic or Hebrew last message ran in the page's direction, so it stood on the left and its
+// "…" fell on the wrong side, over its first words. Each line of a row runs in the direction of its own text.
+for (const width of [1440, 390])
+  test(`a row's lines in Arabic or Hebrew run right to left, cut at their end, at ${width} px`, async () => {
+    await withPage(
+      width,
+      async (page) => {
+        const lines = await page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>(".k2-row"))
+            .filter((row) => /[֐-ۿ]/.test(row.textContent ?? ""))
+            .flatMap((row) => [row.querySelector<HTMLElement>(".k2-row-title")!, row.querySelector<HTMLElement>(":scope > .k2-row-l2")!])
+            .map((line) => {
+              const box = line.getBoundingClientRect();
+              // the first letter of the text: in its own direction it stands at the right edge of its line, in view
+              const range = document.createRange();
+              range.setStart(line.firstChild!, 0);
+              range.setEnd(line.firstChild!, 1);
+              const first = range.getBoundingClientRect();
+              return {
+                direction: getComputedStyle(line).direction,
+                start: first.width > 0 && first.right <= box.right + 1 && first.right >= box.right - 12 && first.left >= box.left - 1,
+              };
+            }),
+        );
+        // two rows, each a name and a cut last message
+        expect(lines).toEqual(Array.from({ length: 4 }, () => ({ direction: "rtl", start: true })));
+      },
+      "chats",
+    );
+  });
+
+// Review of #4328: on the phone a row with a deed and a time took four lines (93 → 109 px). The time and the deed share
+// the line under the text, the time first, apart from each other, and the row grows by that one line only.
+test("on the phone a row's time and its deed share one line under the text", async () => {
+  await withPage(
+    390,
+    async (page) => {
+      const parts = await page.locator(".k2-row[data-action][data-time]").evaluate((row) => {
+        const box = (selector: string) => row.querySelector(selector)!.getBoundingClientRect();
+        const time = box(":scope > .k2-row-time");
+        const deed = box(":scope > .k2-row-end > .k2-btn");
+        const text = box(":scope > .k2-row-l2");
+        return {
+          line: Math.abs(time.top + time.height / 2 - (deed.top + deed.height / 2)) < 2,
+          apart: time.right <= deed.left + 0.5,
+          under: time.top >= text.bottom - 0.5,
+          height: Math.round(row.getBoundingClientRect().height),
+        };
+      });
+      expect([parts.line, parts.apart, parts.under]).toEqual([true, true, true]);
+      // 8 + 20 + 16 + 4 + 28 + 8 px and its line: two lines of text, then the line of time and deed (was 109 px)
+      expect(parts.height).toBeLessThanOrEqual(85);
+      const layout = await measureV2Layout(page, { root: "#root" });
+      expect(layout.past).toEqual([]);
+      expect(layout.squeezed).toEqual([]);
+    },
+    "deeds",
+  );
+});
+
+// W1b (26.11.): a row of one line with a time and a deed put both in one place, so the deed lay on the time. The time
+// stands first, then the deed, each in a place of its own, and the measure reports parts that lie on one another.
+for (const width of [1440, 390])
+  test(`a row of one line keeps its time and its deed apart at ${width} px`, async () => {
+    await withPage(
+      width,
+      async (page) => {
+        const parts = await page.locator(".k2-row", { hasText: "Mit Zeit und Aktion" }).evaluate((row) => {
+          const box = (selector: string) => row.querySelector(selector)!.getBoundingClientRect();
+          const time = box(":scope > .k2-row-time");
+          const end = box(":scope > .k2-row-end");
+          const edge = row.getBoundingClientRect();
+          return { apart: time.right <= end.left + 0.5, inside: end.right <= edge.right + 0.5, line: Math.abs(time.top - end.top) < 12 };
+        });
+        expect(parts).toEqual({ apart: true, inside: true, line: true });
+        expect((await measureV2Layout(page, { root: "#root" })).past).toEqual([]);
+      },
+      "notes",
+    );
+  });

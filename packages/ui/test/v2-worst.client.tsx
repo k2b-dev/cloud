@@ -12,8 +12,21 @@ declare global {
     __k2GrowNote?: () => void;
     /** Opens the tab of this name. */
     __k2OpenTab?: (label: string) => void;
+    /** The hint a person gets while the pointer rests on the middle of this line: the title of the element it hits. */
+    __k2HintOf?: (line: HTMLElement) => string | null;
   }
 }
+
+window.__k2HintOf = (line) => {
+  const box = line.getBoundingClientRect();
+  const x = box.left + box.width / 2;
+  const y = box.top + box.height / 2;
+  // the element the pointer hits there, such as the link that opens a row and lies over its lines
+  const hit = document.elementFromPoint(x, y);
+  if (!hit) return null;
+  hit.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: x, clientY: y }));
+  return hit.getAttribute("title");
+};
 
 const [note, setNote] = createSignal(["Erste Zeile", "Zweite Zeile", "Dritte Zeile", "Vierte Zeile"].join("\n"));
 window.__k2GrowNote = () => setNote((text) => `${text}\nFünfte Zeile\nSechste Zeile`);
@@ -26,7 +39,14 @@ if (!root) throw new Error("worst: #root is missing");
 // `<body data-case="table">`: a folder as a large table (Files), in groups, whose phone rows carry a date
 const files = [
   { id: "f1", name: "Angebote", kind: "Ordner", detail: "Ordner · Link", changed: "25.11.2026, 14:32" },
-  { id: "f2", name: "Zuschnitt Küchenfront.dxf", kind: "Dateien", detail: "1.000 KB · Team", changed: "1.11.2026, 09:05" },
+  {
+    id: "f2",
+    // a name longer than a phone row: its first line stays one line (M, #4324)
+    name: "Zuschnitt Küchenfront Eiche geölt für Familie Brandt, zweite Fassung nach dem Aufmaß vom 12. November, mit den Maßen der Werkstatt Nord, Kanten in Eiche massiv und Griffleisten aus Messing.dxf",
+    kind: "Dateien",
+    detail: "1.000 KB · Team",
+    changed: "1.11.2026, 09:05",
+  },
   {
     id: "f3",
     name: "Stripe Zahlungen",
@@ -42,7 +62,124 @@ const scenario = document.body.dataset.case;
 // `<body data-case="rows">`: endpoints whose second line is an address of 300 characters without a break, beside a deed
 const address = `https://cloud.example.test/tools/api/webhooks/receive/${"segmentwithoutanybreak".repeat(12)}`;
 const hyphened = `https://cloud.example.test/tools/api/webhooks/receive/${"segment-with-breaks-".repeat(12)}end`;
-if (scenario === "rows")
+// `<body data-case="notes">`: what the Assistant remembers (W7), as rows of one and of two lines whose text runs to
+// 600 signs; each title is one line (two for a row of one on the phone), its text whole on hover
+const memory = `Valentin möchte Angebote immer zuerst als Entwurf sehen, mit den Maßen der Werkstatt, ${"dem Holz, der Oberfläche und dem Liefertermin, ".repeat(10)}bevor etwas an Kundinnen geht.`;
+// `<body data-case="chats">`: a list of chats (W9) whose names and last messages run long, each with a time and a deed;
+// every row keeps one height: one line of name, one line of message
+const chats = [
+  {
+    name: "Nora Weber",
+    text: "One more thing: the invoice lists 12 chairs, we ordered 10. I will ask them to correct it before we pay anything, and then we can talk about the delivery date and the second table.",
+  },
+  {
+    name: "Lieferung KW 49 · Werkstatt Nord, Abholung Montag früh mit dem großen Transporter, danach Küchenfront, Zuschnitt und Montage beim Kunden in Leipzig, Abnahme mit dem Bauleiter und Rechnung an die Hausverwaltung am Freitag",
+    text: "Abholung Montag",
+  },
+  { name: "Ada", text: `Log: ${"payment_intent.succeeded".repeat(8)}` },
+  { name: "Jonas Keller", text: "Ok" },
+  // as long as a title of a row of two may be without a hint: it fits beside the time in the narrowest column
+  { name: "Mira Solberg-Hoffman", text: "Bis morgen", time: "Gestern" },
+  // a long name with a count beside it, and an address as a name (W9 break-ui): one line each, the count beside the name
+  { name: "Maximiliane Alexandra von Hohenzollern-Sigmaringen-Wittelsbach", text: "You: Already done.", meta: "86" },
+  { name: "projektabstimmung.lieferanten.werkstatt-nord@example.org", text: "Can you send photos to the supplier?" },
+  // user text in a script of the other direction (W9 break-ui): each line runs in its own direction, "…" at its end
+  {
+    name: "مستودع القاهرة",
+    text: "تم تأجيل التسليم إلى يوم الاثنين بسبب عطل في المستودع، يرجى إبلاغ العملاء وتحديث الجدول الزمني للطلبات المفتوحة قبل نهاية الأسبوع. ".repeat(
+      3,
+    ),
+  },
+  {
+    name: "מחסן תל אביב",
+    text: "המשלוח נדחה ליום שני בגלל תקלה במחסן, נא לעדכן את הלקוחות ואת לוח הזמנים של ההזמנות הפתוחות לפני סוף השבוע. ".repeat(3),
+  },
+];
+// `<body data-case="mail">`: conversations of Mail, one without a preview (Mail passes " "): one height for both
+if (scenario === "mail")
+  render(
+    () => (
+      <Workspace>
+        <Pane label="Spalte">
+          <List label="Unterhaltungen">
+            <Row
+              avatar={{ name: "Ada Renz" }}
+              lines={["Ada Renz", "Angebot Küche", "Die Maße passen, bitte noch die Griffe."]}
+              time="09:12"
+            />
+            <Row avatar={{ name: "Bruno Keller" }} lines={["Bruno Keller", "Rechnung November", " "]} time="08:40" />
+          </List>
+        </Pane>
+      </Workspace>
+    ),
+    root,
+  );
+// `<body data-case="deeds">`: endpoints of Tools with their one deed and the time they were last called (W1b): on the
+// phone the time and the deed share the line under the text
+else if (scenario === "deeds")
+  render(
+    () => (
+      <Workspace>
+        <Pane label="Spalte">
+          <List label="Endpunkte">
+            <Row
+              icon="webhook"
+              lines={["Stripe Zahlungen", "https://cloud.example.test/tools/api/webhooks/receive/stripe"]}
+              time="zuletzt heute, 11:29"
+              action={{ label: "Adresse kopieren", onClick: () => undefined }}
+            />
+            <Row icon="webhook" lines={["Lieferanten", "https://cloud.example.test/tools/api/webhooks/receive/suppliers"]} />
+          </List>
+        </Pane>
+      </Workspace>
+    ),
+    root,
+  );
+else if (scenario === "chats")
+  render(
+    () => (
+      <Workspace>
+        <Pane label="Spalte">
+          <List label="Chats">
+            {chats.map((chat) => (
+              <Row
+                avatar={{ name: chat.name }}
+                lines={[chat.name, chat.text]}
+                href={`#chat-${chat.name.length}`}
+                meta={chat.meta}
+                time={chat.time ?? "11:45"}
+                end={<Button variant="ghost" icon="dots" label={`Mehr zu ${chat.name}`} />}
+              />
+            ))}
+          </List>
+        </Pane>
+      </Workspace>
+    ),
+    root,
+  );
+else if (scenario === "notes")
+  render(
+    () => (
+      <Workspace>
+        <Pane label="Spalte">
+          <List label="Erinnerungen">
+            <Row icon="brain" lines={[memory]} />
+            <Row icon="brain" lines={[memory, "gemerkt am 26. Nov."]} time="heute" />
+            <Row icon="brain" lines={["Kurz gemerkt"]} />
+            {/* a row of one line with a time and a deed: each takes a place of its own (W1b) */}
+            <Row
+              icon="brain"
+              lines={["Mit Zeit und Aktion"]}
+              time="heute, 11:20"
+              end={<Button variant="ghost" icon="dots" label="Mehr zu Mit Zeit und Aktion" />}
+            />
+          </List>
+        </Pane>
+      </Workspace>
+    ),
+    root,
+  );
+else if (scenario === "rows")
   render(
     () => (
       <Workspace>

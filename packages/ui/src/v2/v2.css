@@ -91,6 +91,9 @@
   --k2-h-row: 40px;
   --k2-h-row2: 52px;
   --k2-h-row3: 72px;
+  --k2-h-row-phone: 44px;
+  --k2-h-row-phone2: 52px;
+  --k2-h-row-phone-list: 56px;
   --k2-h-dense: 32px;
   --k2-h-control: 36px;
   --k2-h-control-small: 28px;
@@ -1088,11 +1091,19 @@
   align-items: baseline;
   column-gap: 8px;
 }
-/* in a row of one or two lines the title wraps (it is what the row is about); the quiet note after it is cut */
+/* the title wraps (it is what the row is about), but two lines at most, then "…", whole on hover (W7 26.11.: a long
+   memory grew its row to any height); the quiet note after it is cut. Rows that cut their title are below. */
 .k2-ui .k2-row-title {
   font-weight: 400;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+.k2-ui .k2-row:where(:not([data-lines="3"]):not([data-in-list][data-lines="2"])) > .k2-row-l1 > .k2-row-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
 .k2-ui .k2-row-l1 > .k2-row-meta {
   font: var(--k2-t-meta);
@@ -1104,6 +1115,11 @@
 }
 .k2-ui .k2-row-l2 {
   grid-area: l2;
+}
+/* A line of the other direction (`dir="auto"`, an Arabic message in a German list) stands on the page's side like the
+   others; its "…" still falls at its own end (review of #4328). */
+.k2-ui :is(.k2-row-l2, .k2-row-l3) {
+  text-align: match-parent;
 }
 /* Line 2 reaches the end of the row while nothing stands beside it: only an end beside line 2 (a row with a time and
    two or three lines), or the marks of a row of two lines, keep it in its column. */
@@ -1138,10 +1154,21 @@
   box-shadow: inset 0 0 0 2px var(--k2-blue);
   border-radius: 2px;
 }
-/* a row of three lines cuts each line with "…", its title too: the row keeps its 72 px */
+/* a row of three lines cuts each line with "…", its title too, and keeps its 72 px; in a list, a row of two cuts its
+   title as well, so the rows of a list keep one height per kind (B rule 4; W9 26.11.: long names and messages grew a chat
+   list to 52, 68 and 84 px). A row of two on its own, such as a step in a group, keeps two lines of title. */
 .k2-ui .k2-row[data-lines="3"] > .k2-row-l1 > .k2-row-title,
+.k2-ui .k2-row[data-in-list][data-lines="2"] > .k2-row-l1 > .k2-row-title,
 .k2-ui .k2-row[data-lines="3"] > .k2-row-l2,
 .k2-ui .k2-row[data-lines="3"] > .k2-row-l3 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* a row of one line in a list cuts its title too (W7 26.11.: a long chat name took three lines in "Alle Chats"); on
+   the phone it keeps two lines of title (see below) */
+.k2-ui .k2-row[data-in-list][data-lines="1"] > .k2-row-l1 > .k2-row-title {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1170,6 +1197,12 @@
 }
 .k2-ui .k2-row[data-lines="1"] > .k2-row-end {
   grid-area: time;
+}
+/* a row of one line with a time keeps its deeds in a place of their own after it (W1b 26.11.): a column after the
+   last one of the row, on its one line, so the time and the deeds never lie on one another */
+.k2-ui .k2-row[data-lines="1"][data-time] > .k2-row-end {
+  grid-row: 1;
+  grid-column: -1 / span 1;
 }
 /* Many marks never push the text out of the row (break-ui 25.11.): they take at most half of it. What does not fit
    gives way in a fixed order: a tag is cut to about 12 letters first, then lone symbols (a clip, a lock) leave, then
@@ -1231,8 +1264,10 @@
 .k2-ui .k2-row[data-lines="2"] {
   min-height: var(--k2-h-row2);
 }
+/* three lines and the row's line (the one hairline, 1 px): a row whose third line is empty (a mail without a preview)
+   stands as high as the others (review r3 of #4328: 72 beside 73) */
 .k2-ui .k2-row[data-lines="3"] {
-  min-height: var(--k2-h-row3);
+  min-height: calc(var(--k2-h-row3) + 1px);
 }
 .k2-ui .k2-row[data-lines="3"] > .k2-row-lead {
   align-self: start;
@@ -4269,8 +4304,23 @@
   .k2-ui .k2-split > .k2-pane:not([data-width]) {
     min-width: 0;
   }
-  .k2-ui .k2-row {
-    min-height: 60px;
+  /* a row on the phone: a tap target at least, two lines 52 px as in the approved mockup; a row of one line in a list
+     keeps room for two lines of title, so a short and a long title stand at one height (review r2 of #4328); one
+     source, the height tokens (27.11.) */
+  .k2-ui .k2-row[data-lines] {
+    min-height: var(--k2-h-row-phone);
+  }
+  .k2-ui .k2-row[data-in-list][data-lines="1"] {
+    /* two lines of title with their padding, and the row's line (the one hairline, 1 px): a short title stands as high
+       as a long one */
+    min-height: calc(var(--k2-h-row-phone-list) + 1px);
+  }
+  .k2-ui .k2-row[data-lines="2"] {
+    min-height: var(--k2-h-row-phone2);
+  }
+  /* a row of three lines keeps its three lines on the phone too (a mail without a preview: 57 beside 73) */
+  .k2-ui .k2-row[data-lines="3"] {
+    min-height: calc(var(--k2-h-row3) + 1px);
   }
   .k2-ui .k2-row[data-action] {
     grid-template-areas: "lead l1" "lead l2" "lead time";
@@ -4284,6 +4334,32 @@
     grid-area: time;
     justify-content: flex-start;
     padding: 8px 0 4px;
+  }
+  /* a row of one line in a list keeps two lines of title on the phone, then "…" */
+  .k2-ui .k2-row[data-in-list][data-lines="1"] > .k2-row-l1 > .k2-row-title {
+    display: -webkit-box;
+    white-space: normal;
+  }
+  /* with a time as well, the time and the deed share the line under the text, the time first, so the two never lie
+     on one another (W1b 26.11.) and the row grows by one line only (review of #4328: four lines made it 109 px) */
+  .k2-ui .k2-row[data-action][data-time] {
+    grid-template-areas: "lead l1 l1" "lead l2 l2" "lead time end";
+    grid-template-columns: auto auto minmax(0, 1fr);
+  }
+  .k2-ui .k2-row[data-action][data-time]:not(:has(> .k2-row-lead > *)):not(.k2-list:has(> .k2-row > .k2-row-lead > *) > .k2-row) {
+    grid-template-areas: "l1 l1" "l2 l2" "time end";
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .k2-ui .k2-row[data-action][data-time] > .k2-row-end {
+    grid-area: end;
+    padding: 0 0 0 8px;
+  }
+  .k2-ui .k2-row[data-action][data-time] > :is(.k2-row-time, .k2-row-end) {
+    margin-top: 4px;
+  }
+  .k2-ui .k2-row[data-action][data-time] > .k2-row-time {
+    padding-left: 0;
+    text-align: left;
   }
   /* a finger hits 44 px of the row's deed (PS 26.11.); its look and its place stay. Its words never shrink (a button
      keeps its room), so nothing of them needs the button to clip. */
@@ -4369,7 +4445,7 @@
 /* ── Narrow column: below 480 px of its pane, by the pane's own width (a side panel on the desktop too) ─────────
    What simply has no room changes with the column, not the window: a large table becomes rows and drops columns,
    fields of a row, cells and the way of steps stand one under the other, and no column of a table is dragged. What
-   is about touch and the page (rows of 60 px, the phone bar, columns as pages, the text edge) stays with the window. */
+   is about touch and the page (rows of 44 and 52 px, the phone bar, columns as pages, the text edge) stays with the window. */
 .k2-ui .k2-pane {
   container: k2-pane / inline-size;
 }

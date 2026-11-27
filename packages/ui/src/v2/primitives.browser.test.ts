@@ -201,11 +201,18 @@ describe("v2 primitives keep the numbers of the mockup", () => {
           expect(numbers.head).toBe(width < textEdge.phoneBelow ? heights.tabs : heights.head);
           expect(numbers.status).toBe(heights.status);
           // The rows as the mockup measures them: one line 40; two lines 53 and three lines 73 (their content of 36 and
-          // 56 px, 8 px above and below, and the line); with a button at the end 61. On the phone one line takes 60.
+          // 56 px, 8 px above and below, and the line); with a button at the end 61. On the phone one line takes the token
+          // for a row of a list (`rowPhoneList`: room for two lines of title, and its line), two lines the token of two
+          // (`rowPhone2`) or their content.
           if (width >= textEdge.phoneBelow) {
             expect(numbers.bar).toBe(heights.bar);
             expect(numbers.rows).toEqual([heights.row, heights.row2 + hairline.width, heights.row3 + hairline.width, 61]);
-          } else expect(numbers.rows.slice(0, 3)).toEqual([60, heights.row2 + hairline.width, heights.row3 + hairline.width]);
+          } else
+            expect(numbers.rows.slice(0, 3)).toEqual([
+              heights.rowPhoneList + hairline.width,
+              heights.rowPhone2 + hairline.width,
+              heights.row3 + hairline.width,
+            ]);
           expect(numbers.title).toEqual(["ellipsis", true]);
           expect(numbers.iconText).toBe(edge + textEdge.afterIcon);
           expect(numbers.bandText).toBe(edge);
