@@ -4,3 +4,20 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* The Traefik example in the setup tab (k2b-ui gap: a code block). It keeps the text edge of its section, 20 px and
+   16 px on the phone, keeps every line whole and scrolls sideways when a line is longer than the column. */
+.proxy-auth-example {
+  margin: 0;
+  padding: 4px 20px 12px;
+  overflow-x: auto;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: pre;
+}
+@media not all and (min-width: 768px) {
+  .proxy-auth-example {
+    padding-inline: 16px;
+  }
+}
