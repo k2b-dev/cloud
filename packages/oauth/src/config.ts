@@ -1,6 +1,9 @@
 import { appAccess, defineApp } from "@k2b/cloud";
 
-/** OAuth's own colour: the shell around and its own figures and histories carry it. */
+/**
+ * The colour of OAuth: the shell around and its histories carry it. The same colour as `appearance.accent` below, which stays a literal: the
+ * shell-gradient check reads it from the source.
+ */
 export const ACCENT = "#4338ca";
 
 export const app = defineApp({
@@ -33,7 +36,7 @@ export const app = defineApp({
     baseLocale: "en",
     translations: { de: { description: "OAuth/OIDC-Clients, Weiterleitungen, Scopes und Secrets verwalten." } },
   },
-  appearance: { accent: ACCENT, background: { from: "#4f46e5", to: "#8b5cf6", angle: 135 } },
+  appearance: { accent: "#4338ca", background: { from: "#4f46e5", to: "#8b5cf6", angle: 135 } },
   basePath: "/oauth",
   baseUrl: "http://app-oauth:3000",
   adminHref: "/admin/oauth",
