@@ -195,17 +195,26 @@ describe("notebook page presentation authorization", () => {
     expect(await requestPageData("book", "/app/notebooks/book01/notes/gone01")).toEqual({ kind: "not_found" });
   });
 
-  for (const mode of ["book", "write"]) {
-    test(`an explicit note removed after ID resolution returns not-found in ${mode}`, async () => {
-      fixtures("write");
-      track(spyOn(noteStore, "getWithContentByShortId")).mockResolvedValue(null);
-      track(spyOn(notebooksService.note, "getWithContentByShortId")).mockResolvedValue(null);
-      // Write opens with the saved Markdown of the same lookup: the note resolves, then is gone when it loads.
-      const found = await notebooksService.note.getByShortId({ shortId: "note01" });
-      track(spyOn(notebooksService.note, "getByShortId")).mockResolvedValueOnce(found).mockResolvedValue(null);
-      expect(await requestPageData(mode)).toEqual({ kind: "not_found" });
-    });
-  }
+  test("an explicit note removed after ID resolution returns not-found in book", async () => {
+    fixtures("write");
+    track(spyOn(noteStore, "getWithContentByShortId")).mockResolvedValue(null);
+    track(spyOn(notebooksService.note, "getWithContentByShortId")).mockResolvedValue(null);
+    // Book reads its own document view: the note resolves, then is gone when Book loads it.
+    const found = await notebooksService.note.getByShortId({ shortId: "note01" });
+    track(spyOn(notebooksService.note, "getByShortId")).mockResolvedValueOnce(found).mockResolvedValue(null);
+    expect(await requestPageData("book")).toEqual({ kind: "not_found" });
+  });
+
+  // Write reads the note once for the whole request (page audit 27.11.): the row that resolves the address is the one
+  // it shows, so there is no second read for a removal to fall between. A note gone at that read is not found.
+  test("write reads an explicit note once, and a note gone at that read returns not-found", async () => {
+    fixtures("write");
+    const reads = track(spyOn(notebooksService.note, "getByShortId"));
+    expect((await requestPageData("write")).kind).not.toBe("not_found");
+    expect(reads).toHaveBeenCalledTimes(1);
+    reads.mockResolvedValue(null);
+    expect(await requestPageData("write")).toEqual({ kind: "not_found" });
+  });
 
   test("read grants may open Read, where comments show, and still never Write", async () => {
     fixtures("read");
