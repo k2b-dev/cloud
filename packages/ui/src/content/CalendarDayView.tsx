@@ -31,6 +31,8 @@ import { EventChip, eventHref } from "./calendar-shared";
 import {
   AllDayChips,
   createTimeView,
+  DAY_HOUR_PX,
+  DAY_PHONE_HOUR_PX,
   dayBands,
   dayGaps,
   daySummary,
@@ -47,6 +49,7 @@ import {
   TimeCheck,
   TimeGap,
   TimeMarker,
+  TimeMore,
   TimeOverlays,
   TimeQuickCreate,
   type TimeView,
@@ -173,7 +176,7 @@ export const CalendarDayView = (props: TimeViewProps) => {
     if (key === view.nowKey()) {
       const top = topFor(key, view.nowMinute());
       // Now in the upper third, but never showing the end of the day before above the day's own heading.
-      if (top !== null) scroller.scrollTop = Math.max(topFor(key) ?? 0, top - scroller.clientHeight / 3);
+      if (top !== null) scroller.scrollTop = clearHours(key, Math.max(topFor(key) ?? 0, top - scroller.clientHeight / 3));
       lastScrollTop = scroller.scrollTop;
       return;
     }
@@ -186,8 +189,30 @@ export const CalendarDayView = (props: TimeViewProps) => {
     const start = topFor(key);
     if (start === null) return;
     const entry = Number.isFinite(first) && first > 120 ? topFor(key, first - 60) : null;
-    scroller.scrollTop = entry === null ? start : Math.max(start, entry - 44);
+    scroller.scrollTop = entry === null ? start : clearHours(key, Math.max(start, entry - 44));
     lastScrollTop = scroller.scrollTop;
+  };
+
+  /**
+   * A place where an hour's label would stand half under the day's sticky heading moves up until the label stands
+   * whole below it; the day's own start is the highest it goes.
+   */
+  const clearHours = (key: string, top: number) => {
+    const section = sectionOf(key);
+    const start = topFor(key);
+    const head = section?.querySelector<HTMLElement>(".k2b-calendar-days__head");
+    if (!scroller || !section || start === null || !head) return top;
+    const origin = scroller.getBoundingClientRect().top - scroller.scrollTop;
+    const height = head.getBoundingClientRect().height;
+    // the heading sticks at the view's top: below it, the day shows from `top + height` on
+    const edge = top + height;
+    for (const label of section.querySelectorAll<HTMLElement>(".k2b-calendar-days__hour")) {
+      const box = label.getBoundingClientRect();
+      if (box.height === 0) continue;
+      const labelTop = box.top - origin;
+      if (labelTop < edge - 0.5 && box.bottom - origin > edge + 0.5) return Math.max(start, labelTop - height - 2);
+    }
+    return top;
   };
 
   // Input: the wheel brakes at day starts; a resting scroll glides onto a near one.
@@ -582,7 +607,7 @@ const DaySection = (props: {
   const soon = () => soonNote(view, props.dayKey);
   const wake = () => view.wake();
   const nowMinute = () => (props.dayKey === view.nowKey() ? view.nowMinute() : null);
-  const bands = createMemo(() => dayBands(view, props.dayKey, expanded()));
+  const bands = createMemo(() => dayBands(view, props.dayKey, expanded(), DAY_PHONE_HOUR_PX));
   const gaps = createMemo(() => dayGaps(view, props.dayKey));
   const markers = () => model().markers.filter((marker) => marker.minute < (expanded() ? DAY_MINUTES : wake()));
   /** Deadlines whose pills would cover each other share the width; keyed by marker, so rows keep their elements. */
@@ -601,7 +626,8 @@ const DaySection = (props: {
   const timeline = createMemo<
     Array<
       | { at: number; kind: "gap"; gap: ReturnType<typeof gaps>[number] }
-      | { at: number; kind: "band"; band: ReturnType<typeof bands>[number] }
+      | { at: number; kind: "band"; band: ReturnType<typeof bands>["shown"][number] }
+      | { at: number; kind: "more"; more: ReturnType<typeof bands>["more"][number] }
       | { at: number; kind: "marker"; marker: ReturnType<typeof markers>[number] }
     >
   >(
@@ -613,13 +639,16 @@ const DaySection = (props: {
               (row) => row.kind === "gap" && row.gap.start === gap.start && row.gap.end === gap.end && row.gap.past === gap.past,
             ) ?? { at: gap.start, kind: "gap" as const, gap },
         ),
-        ...bands().map(
+        ...bands().shown.map(
           (band) =>
             previous.find((row) => row.kind === "band" && row.band === band) ?? {
               at: Math.max(0, band.start),
               kind: "band" as const,
               band,
             },
+        ),
+        ...bands().more.map(
+          (more) => previous.find((row) => row.kind === "more" && row.more === more) ?? { at: more.minute, kind: "more" as const, more },
         ),
         ...markers().map(
           (marker) =>
@@ -869,9 +898,12 @@ const DaySection = (props: {
                 dayKey={props.dayKey}
                 expanded={expanded()}
                 showLocation
-                hourPx={56}
+                hourPx={DAY_HOUR_PX}
+                phoneHourPx={DAY_PHONE_HOUR_PX}
                 scroller={props.scroller}
               />
+            ) : entry.kind === "more" ? (
+              <TimeMore view={view} more={entry.more} dayKey={props.dayKey} expanded={expanded()} />
             ) : (
               <TimeMarker
                 view={view}
