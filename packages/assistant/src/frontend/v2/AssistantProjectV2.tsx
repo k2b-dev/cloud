@@ -81,7 +81,15 @@ export default function AssistantProjectV2(p: ProjectParts) {
                       time={<Format.RelativeTime value={chat.updatedAt} />}
                       href={assistantConversationHref("/app/assistant", chat.id)}
                       onNavigate={(nav) => p.openConversation(chat.id, nav)}
-                      action={{ label: p.copy().editNamed({ name: chat.title }), icon: "settings", onClick: () => p.editChat(chat) }}
+                      // The chat's settings, a quiet symbol at the row's end as in v1; the row itself opens the chat.
+                      end={
+                        <ButtonV2
+                          variant="ghost"
+                          icon="settings"
+                          label={p.copy().editNamed({ name: chat.title })}
+                          onClick={() => p.editChat(chat)}
+                        />
+                      }
                     />
                   )}
                 </For>

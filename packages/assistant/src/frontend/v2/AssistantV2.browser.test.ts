@@ -692,8 +692,11 @@ describe("Assistant on v2", () => {
         expect((await pane.locator('[data-k2-part="Cells"]').textContent())?.replace(/\s+/g, " ")).toMatch(
           /Chats\s*3.*Projektwissen\s*2.*Dateien\s*2.*Referenzen\s*0/,
         );
-        for (const title of ["Rechnung 2026-118 prüfen", "Mahnung an Kunde Berger formulieren", "Steuerberater: Fragen zur Umsatzsteuer"])
+        for (const title of ["Rechnung 2026-118 prüfen", "Mahnung an Kunde Berger formulieren", "Steuerberater: Fragen zur Umsatzsteuer"]) {
           expect(await pane.getByText(title).count()).toBe(1);
+          // Each chat's settings stay one press away from its row, as in v1.
+          expect(await pane.getByRole("button", { name: `${title} bearbeiten` }).count()).toBe(1);
+        }
         expect(await page.getByPlaceholder("Neuen Chat in Buchhaltung 2026 beginnen").count()).toBe(1);
         if (view !== phone) expect(await page.locator('[data-k2-part="Pane"][aria-label="Projektkontext"]').isVisible()).toBe(true);
         expect(await layoutProblems(page)).toEqual([]);
@@ -931,7 +934,6 @@ describe("Assistant on v2", () => {
     }
   }, 90_000);
 
-  // The stored tab's place under the chat on the phone is Z2's gap (a); its visibility test comes with Z2.
   // One pane at a time on the phone, as in v1: the one in front is the detail, and the other one gives way.
   test("on the phone a stored tab stays behind the chat on the first picture, and the composer stands in view", async () => {
     const { context, page, errors } = await open(phone, "/app/assistant", { tabs: true });
