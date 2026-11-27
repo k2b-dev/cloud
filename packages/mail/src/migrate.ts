@@ -12,16 +12,22 @@
 import { lazySync, sql } from "@k2b/cloud";
 import { migrateWorkflowAi } from "@k2b/cloud/ai/tasks";
 import { logger } from "@k2b/cloud/services";
-import { type ConcurrentIndex, type ConcurrentIndexOutcome, ensureConcurrentIndexes } from "@k2b/cloud/services/concurrent-index";
+import {
+  addMissingColumns,
+  type ConcurrentIndex,
+  type ConcurrentIndexOutcome,
+  createIndexIfMissing,
+  dropConcurrentIndex,
+  ensureConcurrentIndexes,
+} from "@k2b/cloud/services/concurrent-index";
 import automationLogSchema from "./automation-log-schema.sql" with { type: "text" };
 import { migrateAiDailyBudget } from "./migrate-ai-daily-budget";
-import { applyIfMissing, applySchemaScript, replaceTrigger } from "./migrate-catalog";
+import { applySchemaScript, replaceTrigger } from "./migrate-catalog";
 import {
   migrateReplyDrafts,
   REPLY_DRAFT_INDEX,
   REPLY_DRAFT_MIGRATION_NAME,
   REPLY_DRAFT_MIGRATION_VERSION,
-  RETIRED_DRAFT_INDEXES,
   type ReplyDraftMigrationResult,
 } from "./migrate-reply-drafts";
 import baselineSchema from "./schema.sql" with { type: "text" };
@@ -109,7 +115,7 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await tx`ALTER TABLE mail.remote_resources ADD COLUMN IF NOT EXISTS sync_state jsonb NULL
     CONSTRAINT remote_resources_sync_state_check CHECK (sync_state IS NULL OR jsonb_typeof(sync_state) = 'object')`.simple();
-  await applyIfMissing(tx, `ALTER TABLE mail.binding_folder_refs ADD COLUMN IF NOT EXISTS remote_folder_id text`);
+  await addMissingColumns(tx, "mail.binding_folder_refs", { remote_folder_id: "text" });
   // Replace only the predecessor's CHECK, leaving already upgraded definitions untouched.
   await tx`DO $$ BEGIN
     IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.provider_connections'::regclass
@@ -134,14 +140,14 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   // The operator-approved JMAP origin, the only one that receives the credentials. Same kind of addition.
   await tx`ALTER TABLE mail.provider_connections ADD COLUMN IF NOT EXISTS jmap_origin text`.simple();
   await tx`ALTER TABLE mail.schema_migrations ADD COLUMN IF NOT EXISTS details jsonb NOT NULL DEFAULT '{}'`.simple();
-  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS consolidated_count integer NOT NULL DEFAULT 0`);
+  await addMissingColumns(tx, "mail.drafts", { consolidated_count: "integer NOT NULL DEFAULT 0" });
   // Avoid validating a new CHECK while the column-addition transaction holds ACCESS EXCLUSIVE.
   await tx`DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.drafts'::regclass AND conname = 'drafts_consolidated_count_check') THEN
       ALTER TABLE mail.drafts ADD CONSTRAINT drafts_consolidated_count_check CHECK (consolidated_count >= 0) NOT VALID;
     END IF;
   END $$`.simple();
-  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS content_edited_at timestamptz`);
+  await addMissingColumns(tx, "mail.drafts", { content_edited_at: "timestamptz" });
   await tx`ALTER TABLE mail.draft_attachments ADD COLUMN IF NOT EXISTS forwarded_source_message_id uuid`.simple();
   await tx`ALTER TABLE mail.draft_attachments ADD COLUMN IF NOT EXISTS copied_source_message_id uuid`.simple();
   await tx`CREATE TABLE IF NOT EXISTS mail.reply_draft_retirements (
@@ -224,34 +230,26 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     name text PRIMARY KEY CHECK (name = 'shared_drafts_default'), details jsonb NOT NULL
   )`.simple();
   // Existing drafts retain their mode; mailbox switches affect only new user drafts.
-  await applyIfMissing(
-    tx,
-    `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS edit_mode text NOT NULL DEFAULT 'lock'
-    CHECK (edit_mode IN ('lock', 'shared'))`,
-  );
-  await applyIfMissing(
-    tx,
-    `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_generation bigint NOT NULL DEFAULT 1
-    CHECK (doc_generation > 0)`,
-  );
-  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_state bytea`);
-  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_cursor text`);
-  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_seq bigint`);
-  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_idle_through bigint`);
-  await applyIfMissing(
-    tx,
-    `CREATE INDEX IF NOT EXISTS drafts_document_coverage_idx ON mail.drafts
-    (GREATEST(COALESCE(doc_seq, 0), COALESCE(doc_idle_through, 0)), id)
-    WHERE state NOT IN ('sent', 'discarded') AND (doc_state IS NOT NULL OR edit_mode = 'shared')`,
-  );
+  await addMissingColumns(tx, "mail.drafts", { edit_mode: "text NOT NULL DEFAULT 'lock' CHECK (edit_mode IN ('lock', 'shared'))" });
+  await addMissingColumns(tx, "mail.drafts", { doc_generation: "bigint NOT NULL DEFAULT 1 CHECK (doc_generation > 0)" });
+  await addMissingColumns(tx, "mail.drafts", { doc_state: "bytea" });
+  await addMissingColumns(tx, "mail.drafts", { doc_cursor: "text" });
+  await addMissingColumns(tx, "mail.drafts", { doc_seq: "bigint" });
+  await addMissingColumns(tx, "mail.drafts", { doc_idle_through: "bigint" });
+  await createIndexIfMissing(tx, {
+    name: "drafts_document_coverage_idx",
+    table: "mail.drafts",
+    definition:
+      "(GREATEST(COALESCE(doc_seq, 0), COALESCE(doc_idle_through, 0)), id) WHERE state NOT IN ('sent', 'discarded') AND (doc_state IS NOT NULL OR edit_mode = 'shared')",
+  });
   await tx`CREATE TABLE IF NOT EXISTS mail.draft_document_log_policy (
     log_id text PRIMARY KEY, recovered_at timestamptz NOT NULL DEFAULT now()
   )`.simple();
-  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_history_complete boolean NOT NULL DEFAULT true`);
-  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_cursor text`);
-  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_state bytea`);
-  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_generation bigint`);
-  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_revision bigint`);
+  await addMissingColumns(tx, "mail.drafts", { doc_history_complete: "boolean NOT NULL DEFAULT true" });
+  await addMissingColumns(tx, "mail.drafts", { doc_frozen_cursor: "text" });
+  await addMissingColumns(tx, "mail.drafts", { doc_frozen_state: "bytea" });
+  await addMissingColumns(tx, "mail.drafts", { doc_frozen_generation: "bigint" });
+  await addMissingColumns(tx, "mail.drafts", { doc_frozen_revision: "bigint" });
   // Revision writers need the exact identities they read, including deletes.
   // A cursor alone cannot reconstruct an earlier state from a newer GC snapshot.
   await tx`CREATE TABLE IF NOT EXISTS mail.draft_document_revisions (
@@ -387,20 +385,16 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS link_seq bigint`.simple();
   await tx`ALTER SEQUENCE mail.conversation_link_seq OWNED BY mail.conversation_messages.link_seq`.simple();
   await tx`ALTER TABLE mail.conversation_messages ALTER COLUMN link_seq SET DEFAULT nextval('mail.conversation_link_seq')`.simple();
-  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_source boolean NOT NULL DEFAULT false`);
-  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_locale text NOT NULL DEFAULT 'en'`);
-  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_time_zone text NOT NULL DEFAULT 'UTC'`);
+  await addMissingColumns(tx, "mail.drafts", { quote_source: "boolean NOT NULL DEFAULT false" });
+  await addMissingColumns(tx, "mail.drafts", { quote_locale: "text NOT NULL DEFAULT 'en'" });
+  await addMissingColumns(tx, "mail.drafts", { quote_time_zone: "text NOT NULL DEFAULT 'UTC'" });
   // List pages ask for the open drafts of a few conversations; this keeps that lookup independent of all other drafts.
-  await applyIfMissing(
-    tx,
-    `CREATE INDEX IF NOT EXISTS drafts_open_conversation_idx ON mail.drafts (mailbox_id, conversation_id)
-    WHERE origin = 'user' AND state = 'draft' AND conversation_id IS NOT NULL`,
-  );
-  await applyIfMissing(
-    tx,
-    `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS signature_template_id uuid
-    REFERENCES mail.compose_templates(id) ON DELETE SET NULL`,
-  );
+  await createIndexIfMissing(tx, {
+    name: "drafts_open_conversation_idx",
+    table: "mail.drafts",
+    definition: "(mailbox_id, conversation_id) WHERE origin = 'user' AND state = 'draft' AND conversation_id IS NOT NULL",
+  });
+  await addMissingColumns(tx, "mail.drafts", { signature_template_id: "uuid REFERENCES mail.compose_templates(id) ON DELETE SET NULL" });
   await tx`
     CREATE TABLE IF NOT EXISTS mail.conversation_keeps (
       conversation_id uuid PRIMARY KEY REFERENCES mail.conversations(id) ON DELETE CASCADE,
@@ -533,8 +527,8 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
       WHERE state <> 'completed'
     `.simple();
   }
-  await applyIfMissing(tx, `ALTER TABLE mail.remote_message_refs ADD COLUMN IF NOT EXISTS remote_id text`);
-  await applyIfMissing(tx, `ALTER TABLE mail.draft_provider_snapshots ADD COLUMN IF NOT EXISTS remote_id text`);
+  await addMissingColumns(tx, "mail.remote_message_refs", { remote_id: "text" });
+  await addMissingColumns(tx, "mail.draft_provider_snapshots", { remote_id: "text" });
   await tx`DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint
       WHERE conrelid = 'mail.remote_message_refs'::regclass AND conname = 'remote_message_refs_address_shape') THEN
@@ -1089,32 +1083,11 @@ const indexValid = async (db: SqlClient, name: string): Promise<boolean> => {
   return row?.valid ?? false;
 };
 
-/** On a reserved connection, so ordinary pool queries never queue behind the drop's wait for older transactions. */
-const dropIndex = async (pool: SqlClient, name: string): Promise<void> => {
-  const db = await pool.reserve();
-  try {
-    await db.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS mail.${name}`).simple();
-  } finally {
-    db.release();
-  }
-};
-
-/** The reply box's unique backstop, then the indexes it replaced. Never throws. */
-export const buildReplyDraftIndex = (pool: SqlClient = sql): Promise<ConcurrentIndexOutcome> =>
-  oneAtATime(async () => {
-    const outcome = await ensureConcurrentIndexes([REPLY_DRAFT_INDEX], { log, purpose: "reply box", db: pool });
-    if (outcome !== "ready" && outcome !== "built") return outcome;
-    for (const name of RETIRED_DRAFT_INDEXES) {
-      try {
-        const [index] = await pool<{ present: boolean }[]>`SELECT to_regclass(${`mail.${name}`}) IS NOT NULL AS present`;
-        if (index?.present) await dropIndex(pool, name);
-      } catch (error) {
-        log.warn("A retired Mail draft index was not dropped; the next start retries", { index: name, error: String(error) });
-        break;
-      }
-    }
-    return outcome;
-  });
+/**
+ * The reply box's unique backstop, when it went missing after F6 or its build was interrupted. No transaction relies on
+ * it before it is valid (see `REPLY_DRAFT_INDEX`). Never throws.
+ */
+export const buildReplyDraftIndex = (pool: SqlClient = sql) => build([REPLY_DRAFT_INDEX], "reply box", pool);
 
 export const buildRoomAccessIndex = (pool: SqlClient = sql) => build([ROOM_ACCESS_INDEX], "shared draft access", pool);
 export const buildBackfillActivityIndex = (pool: SqlClient = sql) => build([backfillActivityIndex], "backfill activity", pool);
@@ -1193,8 +1166,10 @@ export const buildOptionalSearchIndex = async (): Promise<"unavailable" | Concur
     const before = await readBm25IndexState();
     if (!before.installed) return "unavailable";
     return await oneAtATime(async () => {
-      if (before.present && !before.bm25) await dropIndex(sql, bm25Index.name);
-      return ensureConcurrentIndexes([bm25Index], { log, purpose: "optional BM25 search", db: sql });
+      const options = { log, purpose: "optional BM25 search", db: sql };
+      // An index of another kind under the name counts as valid to the build, so it is replaced first.
+      const dropped = before.present && !before.bm25 ? await dropConcurrentIndex(bm25Index, options) : "ready";
+      return dropped === "ready" ? ensureConcurrentIndexes([bm25Index], options) : dropped;
     });
   } catch (error) {
     log.warn("Optional BM25 index for Mail search is unavailable; search stays native", {

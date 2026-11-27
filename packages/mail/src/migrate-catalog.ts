@@ -1,51 +1,37 @@
+import { addMissingColumns, createIndexIfMissing } from "@k2b/cloud/services/concurrent-index";
 import type { sql } from "bun";
 
 /*
  * ALTER TABLE, CREATE INDEX and CREATE TRIGGER lock their table before they look whether the object exists, and a
  * concurrent index build holds a conflicting lock for as long as it waits for older snapshots, possibly hours. On a
  * table that a background build may hold, Mail's start therefore runs such a statement only when the catalog shows that
- * it changes something. `migrate-startup.integration.test.ts` holds that lock on every such table while Mail migrates.
+ * it changes something (`addMissingColumns`, `createIndexIfMissing` and the two below).
+ * `migrate-startup.integration.test.ts` holds that lock on every such table while Mail migrates.
  */
 
-const INDEX = /^CREATE (?:UNIQUE )?INDEX IF NOT EXISTS ([a-z0-9_]+)\s+ON\s+([a-z0-9_]+)\.[a-z0-9_]+/;
-const COLUMN = /^ALTER TABLE ([a-z0-9_]+\.[a-z0-9_]+) ADD COLUMN IF NOT EXISTS ([a-z0-9_]+)\s/;
-// A second clause would change the table even when the column exists.
-const SECOND_CLAUSE =
-  /,\s*(?:ADD|ALTER|DROP|RENAME|VALIDATE|SET|RESET|OWNER|ENABLE|DISABLE|INHERIT|NO|CLUSTER|REPLICA|FORCE|ATTACH|DETACH)\s/i;
-
-const hasColumn = async (db: typeof sql, table: string, column: string) => {
-  const [row] = await db<{ present: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pg_attribute
-    WHERE attrelid = ${table}::regclass AND attname = ${column} AND attnum > 0 AND NOT attisdropped) AS present`;
-  return row?.present ?? false;
-};
-
-const hasRelation = async (db: typeof sql, name: string) => {
-  const [row] = await db<{ present: boolean }[]>`SELECT to_regclass(${name}) IS NOT NULL AS present`;
-  return row?.present ?? false;
-};
+const INDEX = /^CREATE (UNIQUE )?INDEX IF NOT EXISTS ([a-z0-9_]+)\s+ON\s+([a-z0-9_]+\.[a-z0-9_]+)\s+(.+)$/s;
+// One column only: a second clause would change the table even when the column exists.
+const COLUMN = /^ALTER TABLE ([a-z0-9_]+\.[a-z0-9_]+) ADD COLUMN IF NOT EXISTS ([a-z0-9_]+)\s+([^,]+)$/s;
 
 /**
- * Runs one `CREATE [UNIQUE] INDEX IF NOT EXISTS` or single-column `ALTER TABLE … ADD COLUMN IF NOT EXISTS` statement
- * only when its index or column is missing. Any other statement runs as given.
+ * A schema file of plain statements: each index or single-column addition goes through the catalog check, any other
+ * statement (`CREATE TABLE IF NOT EXISTS`, which takes no lock on an existing table) runs as written. Function bodies
+ * (`$$`) are not supported.
  */
-export const applyIfMissing = async (db: typeof sql, statement: string): Promise<void> => {
-  const text = statement.replace(/^(?:\s*--[^\n]*\n)*/, "").trim();
-  const index = INDEX.exec(text);
-  if (index && (await hasRelation(db, `${index[2]}.${index[1]}`))) return;
-  const column = COLUMN.exec(text);
-  if (column && !SECOND_CLAUSE.test(text) && (await hasColumn(db, column[1]!, column[2]!))) return;
-  await db.unsafe(text).simple();
-};
-
-/** A schema file of plain statements, each run through `applyIfMissing`; function bodies (`$$`) are not supported. */
 export const applySchemaScript = async (db: typeof sql, script: string): Promise<void> => {
   if (script.includes("$$")) throw new Error("A schema script with function bodies cannot be split into statements");
-  for (const statement of script.split(/;\s*(?:\n|$)/)) {
-    if (statement.replace(/--[^\n]*/g, "").trim()) await applyIfMissing(db, statement);
+  for (const raw of script.split(/;\s*(?:\n|$)/)) {
+    const statement = raw.replace(/^(?:\s*--[^\n]*\n)*/, "").trim();
+    if (!statement) continue;
+    const index = INDEX.exec(statement);
+    const column = COLUMN.exec(statement);
+    if (index) await createIndexIfMissing(db, { unique: Boolean(index[1]), name: index[2]!, table: index[3]!, definition: index[4]! });
+    else if (column) await addMissingColumns(db, column[1]!, { [column[2]!]: column[3]! });
+    else await db.unsafe(statement).simple();
   }
 };
 
-const TRIGGER = /^CREATE TRIGGER ([a-z_]+) .+ ON (mail\.[a-z_]+) FOR EACH ROW EXECUTE FUNCTION /;
+const TRIGGER = /^CREATE TRIGGER ([a-z0-9_]+) .+ ON (mail\.[a-z0-9_]+) FOR EACH ROW EXECUTE FUNCTION /;
 
 /**
  * Creates or replaces a trigger only when its stored definition differs. `definition` is written exactly as
