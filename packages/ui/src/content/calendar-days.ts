@@ -261,13 +261,101 @@ export const gapProposal = (gap: Pick<DayGap, "start" | "end">, hours: CalendarD
   return [start, start + 60];
 };
 
-export type DayLane<T> = DayBand<T> & { lane: number; lanes: number };
+/**
+ * A band with its place side by side: `lane` of `lanes`; `more` when a "+n" is drawn beside it; `beside` when it starts
+ * together with a band it overlaps, so the two stay side by side even where a narrow column lays later bands
+ * over earlier ones; `coveredAt`, the minute where such a later band starts over it.
+ */
+export type DayLane<T> = DayBand<T> & {
+  lane: number;
+  lanes: number;
+  group: number;
+  more?: boolean;
+  beside?: boolean;
+  coveredAt?: number;
+};
+
+/** Where a minute of the day is drawn, in minutes: the open night after `wake` is half as tall as the waking hours. */
+export const drawnMinute = (minute: number, wake: number, nightOpen: boolean) =>
+  nightOpen && minute > wake ? wake + (minute - wake) / 2 : minute;
 
 /** Overlapping bands side by side; a band counts at least `minimum` minutes long, as its drawn height does. */
 export const dayLanes = <T>(bands: readonly DayBand<T>[], minimum: number): DayLane<T>[] =>
   layoutCalendarIntervals(bands, (band) => ({ start: band.start, end: Math.max(band.end, band.start + minimum) })).map(
-    ({ item, lane, lanes }) => ({ ...item, lane, lanes }),
+    ({ item, lane, lanes, groupId }) => ({ ...item, lane, lanes, group: groupId }),
   );
+
+/** Entries that found no free place side by side: one "+n" for them, at the first one's start. */
+export type DayMore<T> = { minute: number; bands: DayBand<T>[] };
+
+export type CapOptions = {
+  /** The minutes a band counts at least, as its drawn height does. */
+  minimum: number;
+  /** How many bands stand side by side. */
+  max: number;
+  /** The height of a "+n", in drawn minutes. */
+  chip: number;
+  /** The height of a band's first title line, in drawn minutes: bands that start closer stay side by side. */
+  title: number;
+  /** Where a minute is drawn (see `drawnMinute`); the minute itself when every hour is as tall. */
+  drawn?: (minute: number) => number;
+};
+
+/**
+ * At most `max` bands side by side. In time order each entry takes a free place among the first `max`, as soon as one
+ * is free again, so a long crowded day stays filled over its hours; an entry that finds none collapses into a "+n". A
+ * "+n" is drawn `chip` tall: an entry that starts within that joins it, so no two of them cover each other, and a band
+ * its height reaches leaves it room. The bands that stay take their lanes among themselves. Heights are compared where
+ * they are drawn, so in the open night, at half the height, a "+n" covers twice the minutes.
+ */
+export const capBands = <T>(
+  bands: readonly DayBand<T>[],
+  { minimum, max, chip, title, drawn = (minute) => minute }: CapOptions,
+): { shown: DayLane<T>[]; more: DayMore<T>[] } => {
+  const end = (band: DayBand<T>) => Math.max(band.end, band.start + minimum);
+  const sorted = [...bands].sort((left, right) => left.start - right.start || end(right) - end(left));
+  const taken: { end: number; lane: number }[] = [];
+  const kept: DayBand<T>[] = [];
+  const hidden: DayBand<T>[] = [];
+  for (const band of sorted) {
+    for (let index = taken.length - 1; index >= 0; index -= 1) if (taken[index]!.end <= band.start) taken.splice(index, 1);
+    const lane = Array.from({ length: max }, (_, each) => each).find((each) => !taken.some((entry) => entry.lane === each));
+    if (lane === undefined) {
+      hidden.push(band);
+      continue;
+    }
+    taken.push({ end: end(band), lane });
+    kept.push(band);
+  }
+  const at = (minute: number) => drawn(Math.max(0, minute));
+  const more: DayMore<T>[] = [];
+  for (const band of hidden) {
+    const last = more.at(-1);
+    if (last && at(band.start) < at(last.minute) + chip) last.bands.push(band);
+    else more.push({ minute: Math.max(0, band.start), bands: [band] });
+  }
+  const reached = (band: DayBand<T>) => more.some((entry) => at(band.start) < at(entry.minute) + chip && at(end(band)) > at(entry.minute));
+  const lanes = dayLanes(kept, minimum);
+  const overlap = (one: DayBand<T>, other: DayBand<T>) => one.start < end(other) && end(one) > other.start;
+  const besides = new Set(
+    lanes.filter((band) =>
+      lanes.some((other) => other !== band && overlap(band, other) && Math.abs(at(band.start) - at(other.start)) < title),
+    ),
+  );
+  // where bands lie over each other, a later one covers an earlier one, except a band beside it in the other half
+  const covers = (over: DayLane<T>, band: DayLane<T>) =>
+    over.start > band.start && overlap(over, band) && !(besides.has(over) && besides.has(band) && over.lane !== band.lane);
+  const shown = lanes.map((band) => {
+    const coveredAt = Math.min(...lanes.filter((over) => covers(over, band)).map((over) => over.start));
+    return {
+      ...band,
+      ...(reached(band) ? { more: true } : {}),
+      ...(besides.has(band) ? { beside: true } : {}),
+      ...(Number.isFinite(coveredAt) ? { coveredAt } : {}),
+    };
+  });
+  return { shown, more };
+};
 
 /** About the minutes a deadline's pill covers in the waking hours; the open night is half as tall, so twice as many. */
 export const MARKER_MINUTES = 30;
