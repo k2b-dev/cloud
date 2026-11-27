@@ -53,7 +53,13 @@ A column that scrolls, with no padding: everything in it reaches both edges.
 - `width={{ min, default }}`: only inside `Pane.Split`; puts a grip on its
   line. A drag or the keys (arrows 8 px, Shift 64 px, Home and End to the
   limits, Enter back to the default) move the width; a reload starts at the
-  default again. The sidebar's grip works the same.
+  default again. The sidebar's grip works the same. On the phone a column
+  is as wide as the window, whatever its minimum.
+- `min` (a column without `width` that needs more than 400 px, such as
+  640 for a query and its result): it keeps that much, and the workspace
+  counts it, so the sidebar becomes a drawer where it does not fit.
+- A search at the start of a column's head (`Bar start={<Input
+  type="search" …/>}`) fills the head beside its end.
 - `detail`: the reader beside a list. What is open belongs in the address:
   render the detail only while the address names an entry. On the phone
   the detail is the page, and the title in its head is never cut: beside the

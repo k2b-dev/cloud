@@ -46,7 +46,7 @@ One per screen: the sidebar, the head, the main action, and the columns; it turn
 
 ### Pane
 
-A column that scrolls, with no padding: a head, a status that stays, a `width` inside a split, and `detail`, `back` and `side`.
+A column that scrolls, with no padding: a head, a status that stays, a `width` inside a split, and `detail`, `back` and `side`. A main column that needs more than 400 px names it with `min`, so the workspace counts it for the drawer. On the phone every column is as wide as the window. A search at the start of a column's head fills that head.
 
 <Props of="Pane" />
 

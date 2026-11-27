@@ -527,14 +527,14 @@
   background: var(--k2-surface);
 }
 /* A column with a width keeps its default while there is room and gives way down to its minimum; the flexible column
-   beside it keeps at least 400 px (concept: the main column keeps 400). */
+   beside it keeps at least 400 px (concept: the main column keeps 400), or the more it names (`min`). */
 .k2-ui .k2-pane[data-width] {
   flex: 0 1 auto;
   width: var(--k2-pane-w);
   min-width: var(--k2-pane-min);
 }
 .k2-ui .k2-split > .k2-pane:not([data-width]) {
-  min-width: 400px;
+  min-width: var(--k2-pane-min, 400px);
 }
 /* a fixed column at the end includes its line, so its grip sits at 100% minus its width, like one at the start */
 /* one primitive: Pane.Split puts a seam after every pane */
@@ -2192,6 +2192,15 @@
 }
 .k2-ui :is(.k2-bar, .k2-bar-end) > .k2-input[data-search] {
   width: 184px;
+}
+/* a search at the start of a column's head searches that column: it fills the room the bar leaves beside its end */
+.k2-ui .k2-pane > [data-slot="head"] > .k2-bar > .k2-bar-start:has(> .k2-input[data-search]) {
+  flex: 1 1 0;
+}
+.k2-ui .k2-pane > [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-input[data-search] {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
 }
 .k2-ui :is(:not(.k2-slot), [data-slot="status"]) > .k2-bar:not([data-status-row]) .k2-input {
   height: var(--k2-h-control-small);
@@ -4099,6 +4108,8 @@
   .k2-ui .k2-bar-start > .k2-tabs-nav > .k2-tabs {
     column-gap: 20px;
   }
+  /* the phone's columns are pages of the window's width: no minimum of the wide screen stays, with `width` or not */
+  .k2-ui .k2-split > .k2-pane[data-width],
   .k2-ui .k2-split > .k2-pane:not([data-width]) {
     min-width: 0;
   }
