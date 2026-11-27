@@ -32,7 +32,7 @@ export const measureSidebarGutter = (page: Page): Promise<SidebarGutter> =>
       ...place("foot row", document.querySelector(".k2-ws-side .k2b-app-workspace__sidebar-footer a[href]")),
     ];
     const touching = [...document.querySelectorAll<HTMLElement>(".k2-ws-side a[href], .k2-ws-side button")]
-      .filter((element) => shown(element) && !element.closest(".notebook-sidebar-chips"))
+      .filter((element) => shown(element))
       .filter((element) => {
         const box = element.getBoundingClientRect();
         return box.width > 0 && (box.left - side.left < gutter - 0.5 || side.right - box.right < gutter - 0.5);

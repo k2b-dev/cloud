@@ -209,6 +209,18 @@ describe("the notes list on v2", () => {
         ["first row", SIDEBAR_GUTTER],
         ["foot row", SIDEBAR_GUTTER],
       ]);
+      // the quick filters keep one line, and a chip that does not fit shortens its label instead of being cut
+      const chips = await tab.evaluate(() => {
+        const row = document.querySelector<HTMLElement>(".k2-ws-side .notebook-sidebar-chips")!;
+        const end = row.getBoundingClientRect().right;
+        const boxes = [...row.querySelectorAll<HTMLElement>(".notebook-sidebar-chip")].map((chip) => chip.getBoundingClientRect());
+        return {
+          overflow: row.scrollWidth - row.clientWidth,
+          lines: new Set(boxes.map((box) => Math.round(box.top))).size,
+          past: boxes.filter((box) => box.right > end + 0.5).length,
+        };
+      });
+      expect(chips).toEqual({ overflow: 0, lines: 1, past: 0 });
       const right = Object.fromEntries(starts.map(({ name, right }) => [name, right]));
       expect([right.search, right["first row"], right["foot row"]]).toEqual([SIDEBAR_GUTTER, SIDEBAR_GUTTER, SIDEBAR_GUTTER]);
       expect(errors).toEqual([]);
@@ -239,8 +251,11 @@ describe("the notes list on v2", () => {
       expect(box === null || (box.width <= 1 && box.height <= 1)).toBe(true);
       // the shell's phone bar focuses this field (`openPageSearch`), and it opens over the head
       await field.focus();
-      const open = await field.boundingBox();
-      expect(open?.width ?? 0).toBeGreaterThan(100);
+      await tab.waitForFunction(
+        () =>
+          (document.querySelector('[data-slot="head"] [data-k2-part="Input"][data-search] input')?.getBoundingClientRect().width ?? 0) >
+          100,
+      );
       await field.fill("Stand 4B");
       await field.press("Enter");
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("q") === "Stand 4B");
