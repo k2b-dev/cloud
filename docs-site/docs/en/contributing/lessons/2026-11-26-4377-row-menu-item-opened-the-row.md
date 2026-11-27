@@ -8,9 +8,8 @@
   item is no `a` or `button`, so the row's link navigated before the item's dialog could open.
 - **Error class:** A container that acts on clicks from its whole subtree, which also holds layers that only look
   outside it (menus, popovers, dialogs).
-- **Guard:** The row hands a click on only from its own content: a click inside a `[popover]`, a dialog or a menu
-  that belongs to the row (in its markup or reaching it through Solid's events) stays with that layer, while a layer
-  around the whole table (a table in a dialog) holds the row and opens its
-  rows as anywhere. `table-row-menu.browser.test.ts` chooses the item by pointer and by key in Chromium and WebKit,
-  checks the dialog, that the row's link did not move, the focus back on the menu's button, that the row still opens
-  by a click on it, and that a table inside a dialog opens its rows.
+- **Guard:** #4282 made the row leave a click from a menu or popover that does not hold the row; this change adds
+  dialogs to those layers. `table-row-menu.browser.test.ts` chooses the item by pointer and by key in Chromium and
+  WebKit, checks the dialog, that the row's link did not move, the focus back on the menu's button, that the row still
+  opens by a click on it, and that a table inside a dialog opens its rows (`row-menu.browser.test.ts` of #4282 checks
+  a table inside a popover).
