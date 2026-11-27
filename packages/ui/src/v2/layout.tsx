@@ -3,6 +3,7 @@ import {
   createContext,
   createEffect,
   createMemo,
+  createRenderEffect,
   createSignal,
   createUniqueId,
   For,
@@ -32,6 +33,11 @@ import type { Action, OnNavigate, Person, Status, Width } from "./types";
 
 /** A bar made as the head of a workspace or pane: on the phone it folds the deeds a crowded head cannot hold (`Bar`). */
 const HeadContext = createContext(false);
+/**
+ * The pane whose head this bar is learns whether the bar has a start of its own (a path, a title): a head of actions
+ * only shares its row with the status row. Told while the parts are made, so the server and the first render agree.
+ */
+const HeadStartContext = createContext<((bare: boolean) => void) | undefined>(undefined);
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -480,7 +486,13 @@ export const Pane = (props: PaneProps) => {
       return Boolean(props.side) && (contextual?.() ?? false);
     },
   });
-  const head = resolveChildren(() => <HeadContext.Provider value={true}>{props.head}</HeadContext.Provider>);
+  // whether the head is a bar without a start (actions only): then it shares one row with the status row
+  const [bare, setBare] = createSignal(false);
+  const head = resolveChildren(() => (
+    <HeadStartContext.Provider value={setBare}>
+      <HeadContext.Provider value={true}>{props.head}</HeadContext.Provider>
+    </HeadStartContext.Provider>
+  ));
   const status = resolveChildren(() => props.status);
   let section: HTMLElement | undefined;
   // A detail appears because something opened it, which then has the focus (the row). When the detail goes while the
@@ -533,12 +545,19 @@ export const Pane = (props: PaneProps) => {
           </div>
         )}
       </Show>
+      {/* A head and its status row are one block (look rule 30): no line between them, close together, and where the
+          pane is wide the status row joins the head's row. Decided while the parts are made, the same on the server. */}
       <Show when={head()}>
-        <div class="k2-slot" data-slot="head">
+        <div class="k2-slot" data-slot="head" data-block={status() ? (bare() ? "row" : "") : undefined}>
           {head()}
+          <Show when={status()}>
+            <div class="k2-slot" data-slot="status">
+              {status()}
+            </div>
+          </Show>
         </div>
       </Show>
-      <Show when={status()}>
+      <Show when={!head() && status()}>
         <div class="k2-slot" data-slot="status">
           {status()}
         </div>
@@ -716,13 +735,20 @@ export type BarProps = {
  */
 export const Bar = (props: BarProps) => {
   const inHead = useContext(HeadContext);
+  const tellStart = useContext(HeadStartContext);
   const t = useOverlayMessages();
   // On the phone the open view never gives way to deeds that keep their words: in a head with views, those deeds fold
   // into the head's own "…" (handed to it by context) or, without one, into this menu (the stylesheet shows it only
   // there); each runs as the button itself would, a pressed one as a ticked entry.
   const [folded, setFolded] = createSignal<MenuEntry[]>([]);
-  const start = resolveChildren(() => props.start);
-  const end = resolveChildren(() => <HeadFoldContext.Provider value={inHead ? folded : undefined}>{props.end}</HeadFoldContext.Provider>);
+  // the parts inside the bar are no head bars of their own
+  const start = resolveChildren(() => <HeadStartContext.Provider value={undefined}>{props.start}</HeadStartContext.Provider>);
+  const end = resolveChildren(() => (
+    <HeadStartContext.Provider value={undefined}>
+      <HeadFoldContext.Provider value={inHead ? folded : undefined}>{props.end}</HeadFoldContext.Provider>
+    </HeadStartContext.Provider>
+  ));
+  createRenderEffect(() => tellStart?.(start() === undefined));
   let bar: HTMLDivElement | undefined;
   onMount(() => {
     const deeds = inHead ? bar?.querySelector(":scope > .k2-bar-end") : null;

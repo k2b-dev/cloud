@@ -380,6 +380,10 @@ export const Input = (props: InputProps) => {
   );
   // the end is made once, here (reading the prop twice would make its JSX twice)
   const end = resolveChildren(() => props.end);
+  // whether a search holds words, from its value and from typing: a head's search folds to its symbol only while it is
+  // empty and has no focus (look rule 31); an attribute its owner sets, so no `:has()` restyles the page
+  const [text, setText] = createSignal(props.value ?? "");
+  createRenderEffect(() => setText(props.value ?? ""));
   const shared = () => ({
     id: field?.control,
     name: props.name ?? field?.name,
@@ -423,6 +427,7 @@ export const Input = (props: InputProps) => {
       data-disabled={props.disabled ? "" : undefined}
       data-multiline={props.multiline ? "" : undefined}
       data-search={props.type === "search" ? "" : undefined}
+      data-empty={props.type === "search" && !text() ? "" : undefined}
     >
       <Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>
       <For each={kept()}>{([name, value]) => <input type="hidden" name={name} value={value} />}</For>
@@ -439,7 +444,10 @@ export const Input = (props: InputProps) => {
             type={props.type ?? "text"}
             min={props.min}
             max={props.max}
-            onInput={(event) => props.onInput?.(event.currentTarget.value)}
+            onInput={(event) => {
+              setText(event.currentTarget.value);
+              props.onInput?.(event.currentTarget.value);
+            }}
             onKeyDown={(event) => {
               props.onKeyDown?.(event);
               if (props.type === "search") foldHeadSearch(event);
