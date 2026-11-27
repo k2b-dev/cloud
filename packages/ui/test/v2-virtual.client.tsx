@@ -122,7 +122,12 @@ else if (document.body.dataset.case === "context")
       <Workspace>
         <Pane.Split>
           <Pane label="Liste">
-            <List label="Einträge" items={entries} rowKey={(entry) => entry.key} row={(entry) => <Row lines={[entry.title]} href={`#${entry.key}`} />} />
+            <List
+              label="Einträge"
+              items={entries}
+              rowKey={(entry) => entry.key}
+              row={(entry) => <Row lines={[entry.title]} href={`#${entry.key}`} />}
+            />
           </Pane>
           <Pane label="Kontext" side={{ from: 1600 }}>
             <Row lines={["Speicher"]} />

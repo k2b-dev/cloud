@@ -384,7 +384,9 @@ test(
         expect(await shown()).toBeLessThan(80);
         const first = await page.evaluate(() => {
           const top = document.querySelector(".k2-split[data-context]")!.getBoundingClientRect().top;
-          const row = [...document.querySelectorAll('.k2-pane[aria-label="Liste"] [data-k2-part="Row"]')].find((each) => each.getBoundingClientRect().bottom > top + 1);
+          const row = [...document.querySelectorAll('.k2-pane[aria-label="Liste"] [data-k2-part="Row"]')].find(
+            (each) => each.getBoundingClientRect().bottom > top + 1,
+          );
           return Number(row?.getAttribute("aria-posinset") ?? 0);
         });
         // the rows in view are the ones far down the list, not the first ones
