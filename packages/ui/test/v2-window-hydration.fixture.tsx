@@ -30,7 +30,7 @@ const Rows = (props: { count: number; groups?: boolean }) => (
           }
         : undefined
     }
-    row={(entry) => <Row lines={[entry.title, "Zweite Zeile"]} href={`#${entry.key}`} />}
+    row={(entry) => <Row lines={[entry().title, "Zweite Zeile"]} href={`#${entry().key}`} />}
   />
 );
 

@@ -294,8 +294,12 @@ type ItemList<T> = {
   items: readonly T[];
   /** The stable key of an item. */
   rowKey: (item: T) => string;
-  /** The `Row` of an item, made once per item while it is in the page. */
-  row: (item: T, index: Accessor<number>) => JSX.Element;
+  /**
+   * The `Row` of an item, made once per key while it is in the page. `item` reads the item now: a new object with the
+   * same key (a refresh, a page more, a memo that maps the items anew) keeps the row, its focus and what runs in it,
+   * and only what reads `item()` follows (review of #4211).
+   */
+  row: (item: Accessor<T>, index: Accessor<number>) => JSX.Element;
   /**
    * The group an item belongs to, such as its day: items of one group follow one another, and a head stands before
    * the first of them (its words in 600 and a quiet count, no band, no line).
@@ -401,9 +405,11 @@ export const List = <T,>(props: ListProps<T>) => {
 /** The rows of a list of items, in a window (see `List`). */
 const ItemRows = <T,>(props: ItemList<T> & { label?: string }) => {
   let list: HTMLDivElement | undefined;
-  // What stands in the list: the rows, each group's head before its first row. An entry keeps its object while its
-  // item (or its group) stays, so a change of the items makes no row anew.
-  type Entry = { key: string; head: ListGroup } | { key: string; item: T };
+  // What stands in the list: the rows, each group's head before its first row. A row's entry keeps its object while its
+  // key stays, and hands a new object of its item on to the row (`item()`): a refresh or a page more, whose items are
+  // new objects with the same keys, makes no row anew, so its focus and what runs in it stay (review of #4211).
+  type RowEntry = { key: string; item: Accessor<T>; put: (item: T) => void };
+  type Entry = { key: string; head: ListGroup } | RowEntry;
   let made = new Map<string, Entry>();
   const at = new Map<string, number>();
   const entries = createMemo(() => {
@@ -427,7 +433,14 @@ const ItemRows = <T,>(props: ItemList<T> & { label?: string }) => {
       last = group?.key;
       const key = `row:${props.rowKey(item)}`;
       const before = kept.get(key);
-      const row = before && "item" in before && before.item === item ? before : { key, item };
+      let row: RowEntry;
+      if (before && "item" in before) {
+        before.put(item);
+        row = before;
+      } else {
+        const [now, put] = createSignal(item);
+        row = { key, item: now, put: (next) => put(() => next) };
+      }
       made.set(key, row);
       at.set(key, index);
       out.push(row);
@@ -820,6 +833,8 @@ const isPair = (value: CellValue): value is CellLines =>
 export type TableGroup = { key: string; head: () => JSX.Element; meta?: string; count?: string };
 
 type TableItem<T> = { group: TableGroup } | { row: T; index: number };
+const groupOf = <T,>(item: TableItem<T>) => ("group" in item ? item.group : undefined);
+const rowOf = <T,>(item: TableItem<T>) => ("row" in item ? item : undefined);
 
 /**
  * Many like things in columns: head 36, a line under every row, none between columns. Long text stays on one line
@@ -1146,49 +1161,52 @@ export const Table = <T,>(props: TableProps<T>) => {
                 label={props.label}
                 items={items()}
                 rowKey={itemKey}
-                row={(item) =>
-                  "group" in item ? (
-                    <div class="k2-bar" role="presentation">
-                      <div class="k2-bar-start">
-                        {item.group.head()}
-                        <Show when={item.group.count ?? item.group.meta}>
-                          <span class="k2-t-meta">{item.group.count ?? item.group.meta}</span>
-                        </Show>
+                row={(entry) => {
+                  // an entry's key says what it is (a head or a row); what it holds follows `entry()`
+                  const first = entry();
+                  if ("group" in first) {
+                    const group = () => groupOf(entry()) ?? first.group;
+                    return (
+                      <div class="k2-bar" role="presentation">
+                        <div class="k2-bar-start">
+                          {group().head()}
+                          <Show when={group().count ?? group().meta}>
+                            <span class="k2-t-meta">{group().count ?? group().meta}</span>
+                          </Show>
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    (() => {
-                      const form = phone()(item.row);
-                      const target = props.open?.(item.row);
-                      // a row says its place among the rows of the table: the heads of its groups are no rows
-                      const place = { index: () => item.index, size: () => props.rows.length };
-                      return (
-                        <ListItemContext.Provider value={place}>
-                          <Row
-                            lines={form.lines}
-                            avatar={form.avatar}
-                            time={form.time}
-                            marks={form.marks}
-                            end={form.end}
-                            strong
-                            href={target?.href}
-                            onNavigate={target?.onNavigate}
-                            onOpen={target?.onOpen}
-                            current={props.current !== undefined && props.current === key(item.row, item.index)}
-                            select={
-                              props.select
-                                ? {
-                                    selected: selected(item.row, item.index),
-                                    onChange: (on) => toggle(key(item.row, item.index), on),
-                                  }
-                                : undefined
-                            }
-                          />
-                        </ListItemContext.Provider>
-                      );
-                    })()
-                  )
-                }
+                    );
+                  }
+                  const item = () => rowOf(entry()) ?? first;
+                  const form = createMemo(() => phone()(item().row));
+                  const target = createMemo(() => props.open?.(item().row));
+                  // a row says its place among the rows of the table: the heads of its groups are no rows
+                  const place = { index: () => item().index, size: () => props.rows.length };
+                  return (
+                    <ListItemContext.Provider value={place}>
+                      <Row
+                        lines={form().lines}
+                        avatar={form().avatar}
+                        time={form().time}
+                        marks={form().marks}
+                        end={form().end}
+                        strong
+                        href={target()?.href}
+                        onNavigate={target()?.onNavigate}
+                        onOpen={target()?.onOpen}
+                        current={props.current !== undefined && props.current === key(item().row, item().index)}
+                        select={
+                          props.select
+                            ? {
+                                selected: selected(item().row, item().index),
+                                onChange: (on) => toggle(key(item().row, item().index), on),
+                              }
+                            : undefined
+                        }
+                      />
+                    </ListItemContext.Provider>
+                  );
+                }}
               />
             </Show>
           </div>

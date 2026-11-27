@@ -16,6 +16,8 @@ declare global {
     __k2More?: () => void;
     /** The rows of the window by key, kept by the test to compare elements after a change. */
     __k2Saved?: Map<string, Element>;
+    /** Gives the list new objects of the same entries, with a new title, as a refresh does. */
+    __k2Renew?: () => void;
   }
 }
 
@@ -33,6 +35,7 @@ window.__k2More = () => {
   setListed((now) => [...now, ...Array.from({ length: 10 }, (_, index) => ({ key: `n${index + 1}`, title: `Neu ${index + 1}` }))]);
   setTabled((now) => [...now, ...Array.from({ length: 10 }, (_, index) => ({ id: `m${index + 1}` }))]);
 };
+window.__k2Renew = () => setListed((now) => now.map((entry) => ({ ...entry, title: `${entry.title} (neu)` })));
 let list: ListController | undefined;
 window.__k2Reveal = (key) => list?.reveal(key) ?? null;
 
@@ -104,7 +107,7 @@ else if (document.body.dataset.case === "groups")
               controller={(handle) => {
                 list = handle;
               }}
-              row={(entry) => <Row lines={[entry.key, "Zweite Zeile"]} href={`#${entry.key}`} />}
+              row={(entry) => <Row lines={[entry().key, "Zweite Zeile"]} href={`#${entry().key}`} />}
             />
           </Pane>
           <Pane label="Tabelle" width={{ min: 240, default: 320 }}>
@@ -136,7 +139,7 @@ else if (document.body.dataset.case === "context")
               label="Einträge"
               items={entries}
               rowKey={(entry) => entry.key}
-              row={(entry) => <Row lines={[entry.title]} href={`#${entry.key}`} />}
+              row={(entry) => <Row lines={[entry().title]} href={`#${entry().key}`} />}
             />
           </Pane>
           <Pane label="Kontext" side={{ from: 1600 }}>
@@ -160,7 +163,7 @@ else
               controller={(handle) => {
                 list = handle;
               }}
-              row={(entry) => <Row lines={[entry.title, "Zweite Zeile"]} href={`#${entry.key}`} />}
+              row={(entry) => <Row lines={[entry().title, "Zweite Zeile"]} href={`#${entry().key}`} />}
             />
           </Pane>
           <Pane label="Tabelle" width={{ min: 240, default: 320 }}>

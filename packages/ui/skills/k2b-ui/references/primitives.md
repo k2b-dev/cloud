@@ -177,7 +177,11 @@ inside it.
 `List` holds `Row`s (`label` names it). A list that can grow without end
 (conversations, records, a log) takes its data instead of written rows:
 `items`, `rowKey(item)` and `row(item, index) => <Row … />`, and `total`
-when more exist than are loaded. Use it by default for every list whose
+when more exist than are loaded. `item` and `index` are accessors: read
+`item()` where the row shows the item. A row is made once per key, so a new
+object with the same key (a refresh, a page more, items mapped anew in a
+memo) keeps the row, its focus and what runs in it, and what reads
+`item()` follows. Use it by default for every list whose
 length you do not control: only the rows in view and a margin around them
 are in the page, the server renders the first rows (no shift on hydration),
 a list of at most 40 entries stays whole as the server sent it, the focused row stays while it scrolls away, and each row says where it

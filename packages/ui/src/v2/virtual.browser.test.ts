@@ -506,3 +506,30 @@ for (const change of ["scroll", "more"] as const)
     },
     TEST_TIMEOUT,
   );
+
+// Review of #4211 (W1b, Files activity): a refresh gave the list new objects of the same entries, and every row in view
+// was made anew, so the focus fell to the page. A row stays while its key stays; what reads `item()` follows.
+test(
+  "a new object of an entry with the same key keeps its row and the focus in it, and the row shows the new words",
+  async () => {
+    await withPage(async (page) => {
+      const link = page.locator('.k2-pane[aria-label="Liste"] a[href="#e3"]');
+      await link.focus();
+      await page.evaluate(() => {
+        window.__k2Saved = new Map([["row", document.activeElement!.closest('[data-k2-part="Row"]')!]]);
+        window.__k2Renew?.();
+      });
+      await settled(page);
+      const kept = await page.evaluate(() => {
+        const row = document.querySelector('.k2-pane[aria-label="Liste"] a[href="#e3"]')!.closest('[data-k2-part="Row"]')!;
+        return {
+          same: row === window.__k2Saved!.get("row"),
+          focused: document.activeElement?.getAttribute("href"),
+          words: row.querySelector(".k2-row-title")?.textContent,
+        };
+      });
+      expect(kept).toEqual({ same: true, focused: "#e3", words: "Eintrag 3 (neu)" });
+    });
+  },
+  TEST_TIMEOUT,
+);
