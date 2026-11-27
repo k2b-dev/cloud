@@ -14,6 +14,7 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { Tooltip, type TooltipPlacement, useLabelTooltip } from "../feedback/Tooltip";
+import { cssColor } from "../internal/color";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { KeyedFor } from "../internal/keyed-for";
 import { optionDescription } from "../internal/option-description";
@@ -469,7 +470,7 @@ function DropdownChoiceRow(props: DropdownChoice): JSX.Element {
         {(image) => <img class="k2b-dropdown__image" src={image()} alt="" />}
       </Show>
       <Show when={props.color}>
-        {(color) => <span class="k2b-dropdown__color" style={{ "--k2b-dropdown-color": color() }} aria-hidden="true" />}
+        {(color) => <span class="k2b-dropdown__color" style={{ "--k2b-dropdown-color": cssColor(color()) }} aria-hidden="true" />}
       </Show>
       <span class="k2b-dropdown__copy">
         <span>{props.label}</span>
