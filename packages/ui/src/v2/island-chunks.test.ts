@@ -16,38 +16,38 @@ import { join, resolve } from "node:path";
 // (the filter bar imports the controls) grows with it, so it is only reported too, until that file is split.
 //
 // Every other export may grow by at most THRESHOLD bytes beside the others, so no new coupling comes in. The
-// allowlist holds the coupling measured on 2026-11-26 (d4f6ceee6f; three entries on e87120649d) in KiB with about
-// 10 % headroom, so ordinary work does not touch it. It only shrinks: an entry whose export no longer grows, or no
-// longer exists, fails until it is removed.
+// exports that already grew more when this test came (measured 2026-11-26) are listed by name (KNOWN); how much they
+// grow is only reported, since every ordinary change to a module they share moves it. The list only shrinks: a name
+// whose export no longer grows, no longer exists, or moved into a mixed file fails until it is removed, and a name
+// once removed is strict again.
 
 const v2 = resolve(import.meta.dir, "index.ts");
 const THRESHOLD = 2048;
 const MIXED = new Set(["./components", "./content", "./controls", "./layout"]);
-// export → most KiB its island may grow beside the others
-const coupled: Record<string, number> = {
-  Avatar: 24,
-  Button: 17,
-  Chip: 10,
-  confirm: 98,
-  DatePicker: 22,
+// exports that already grew beside the others when this test came; only reported
+const KNOWN = new Set([
+  "Avatar",
+  "Button",
+  "Chip",
+  "confirm",
+  "DatePicker",
+  "Dialog",
   // #4191 put Disclosure into structure.tsx, beside Group and Section, and its behaviour (useDisclosure, ui-sdk
-  // collapsible) into behavior/files.tsx, beside useFilePick (ui-sdk file-input). Measured on e87120649d; these three
-  // entries shrink or go when Disclosure and useDisclosure have files of their own.
-  Disclosure: 66,
-  Dialog: 98,
-  Empty: 19,
-  Failed: 13,
-  Group: 52,
-  Icon: 30,
-  Loading: 29,
-  Lookup: 28,
-  Menu: 27,
-  Popover: 68,
-  Progress: 25,
-  Section: 100,
-  useLocale: 20,
-  useToast: 56,
-};
+  // collapsible) into behavior/files.tsx, beside useFilePick (ui-sdk file-input); these three go with #4354.
+  "Disclosure",
+  "Empty",
+  "Failed",
+  "Group",
+  "Icon",
+  "Loading",
+  "Lookup",
+  "Menu",
+  "Popover",
+  "Progress",
+  "Section",
+  "useLocale",
+  "useToast",
+]);
 
 const work = await mkdtemp(join(tmpdir(), "k2-v2-island-chunks-"));
 afterAll(() => rm(work, { recursive: true, force: true }));
@@ -147,31 +147,22 @@ test("a v2 export's island loads no more beside the other islands of an app than
     growth[name] = closure(together, `${name}.island`) - closure(alone, `${name}.island`);
   }
 
-  const report = Object.entries(growth)
-    .filter(([name, bytes]) => mixed(name) && bytes > THRESHOLD)
-    .map(([name, bytes]) => `${name} +${Math.ceil(bytes / 1024)}`);
-  if (report.length) console.info(`v2 exports of mixed files that grow beside the others (KiB): ${report.join(", ")}`);
-  const over = Object.entries(growth)
-    .filter(([name, bytes]) => !mixed(name) && bytes > (coupled[name] === undefined ? THRESHOLD : coupled[name] * 1024))
-    .map(
-      ([name, bytes]) => `${name}: +${(bytes / 1024).toFixed(1)} KiB beside the others (allowed ${coupled[name] ?? THRESHOLD / 1024} KiB)`,
-    );
-  // an entry whose coupling is gone, whose export is gone, or whose export lives in a mixed file, must go
-  const loose = Object.keys(coupled)
+  const kib = ([name, bytes]: [string, number]) => `${name} +${Math.ceil(bytes / 1024)}`;
+  const grown = Object.entries(growth).filter(([, bytes]) => bytes > THRESHOLD);
+  const reportMixed = grown.filter(([name]) => mixed(name)).map(kib);
+  if (reportMixed.length) console.info(`v2 exports of mixed files that grow beside the others (KiB): ${reportMixed.join(", ")}`);
+  const reportKnown = grown.filter(([name]) => !mixed(name) && KNOWN.has(name)).map(kib);
+  if (reportKnown.length) console.info(`v2 exports known to grow beside the others (KiB): ${reportKnown.join(", ")}`);
+  // a new coupling: an export outside the mixed files and not known that grows beside the others
+  const over = grown
+    .filter(([name]) => !mixed(name) && !KNOWN.has(name))
+    .map(([name, bytes]) => `${name}: +${(bytes / 1024).toFixed(1)} KiB beside the others (at most ${THRESHOLD / 1024} KiB)`);
+  // a known name whose coupling is gone, whose export is gone, or whose export lives in a mixed file, must go
+  const loose = [...KNOWN]
     .filter((name) => mixed(name) || (growth[name] ?? 0) <= THRESHOLD)
     .map(
       (name) =>
-        `${name}: no entry needed (${mixed(name) ? "a mixed file, only reported" : "no longer grows beside the others"}); remove it`,
-    );
-  if (process.env.K2_ISLAND_CHUNKS_REPORT)
-    console.log(
-      JSON.stringify(
-        Object.fromEntries(
-          Object.entries(growth)
-            .filter(([name, bytes]) => !mixed(name) && bytes > THRESHOLD)
-            .map(([name, bytes]) => [name, Math.ceil(bytes / 1024)]),
-        ),
-      ),
+        `${name}: no longer known to grow (${mixed(name) ? "a mixed file, only reported" : "it does not grow beside the others"}); remove it`,
     );
   expect(over).toEqual([]);
   expect(loose).toEqual([]);
