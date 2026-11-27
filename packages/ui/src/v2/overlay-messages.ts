@@ -10,12 +10,14 @@ const overlayMessages = i18n.define({
       undo: "Undo",
       retry: "Try again",
       actionsFor: ({ name }: { name: string }) => `Actions for ${name}`,
+      backTo: ({ name }: { name: string }) => `Back to ${name}`,
     },
     de: {
       moreActions: "Weitere Aktionen",
       undo: "Rückgängig",
       retry: "Erneut versuchen",
       actionsFor: ({ name }: { name: string }) => `Aktionen für ${name}`,
+      backTo: ({ name }: { name: string }) => `Zurück zu ${name}`,
     },
   },
 });

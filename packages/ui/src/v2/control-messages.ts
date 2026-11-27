@@ -7,6 +7,7 @@ const controlMessages = i18n.define({
   messages: {
     en: {
       removeValue: ({ label }: { label: string }) => `Remove ${label}`,
+      chooseOne: "Choose at least one option.",
       notAnAddress: ({ text }: { text: string }) => `“${text}” is not an e-mail address.`,
       tooManyAddresses: ({ max, left }: { max: number; left: number }) =>
         `This field takes ${max} addresses at most; ${left === 1 ? "1 was" : `${left} were`} not added.`,
@@ -31,6 +32,7 @@ const controlMessages = i18n.define({
     },
     de: {
       removeValue: ({ label }: { label: string }) => `${label} entfernen`,
+      chooseOne: "Wähle mindestens eine Option.",
       notAnAddress: ({ text }: { text: string }) => `„${text}“ ist keine E-Mail-Adresse.`,
       tooManyAddresses: ({ max, left }: { max: number; left: number }) =>
         `Dieses Feld nimmt höchstens ${max} Adressen; ${left === 1 ? "1 wurde" : `${left} wurden`} nicht übernommen.`,

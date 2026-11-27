@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { transparentIslands } from "../../scripts/v2-island-css";
+import { shippedV2Css } from "../../scripts/v2-island-css";
 import { launchBrowser, settled } from "../../test/browser";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { describeV2Page, measureV2Layout } from "./testing";
@@ -31,7 +31,7 @@ for (const name of recipes) {
   );
 }
 const source = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
-const shipped = transparentIslands(source);
+const shipped = shippedV2Css(source);
 // The style `html()` of @k2b/ssr writes into every page.
 const islandStyle = "solid-client,solid-island{display:contents}";
 const testCss =
