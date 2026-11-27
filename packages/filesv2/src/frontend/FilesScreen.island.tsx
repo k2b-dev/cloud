@@ -75,7 +75,6 @@ import {
   loadActivity,
   loadBatchContext,
   loadChain,
-  loadFavorites,
   loadRecent,
   loadRecovery,
   loadRun,
@@ -86,11 +85,10 @@ import {
 } from "./history-api";
 import { useHistoryMessages } from "./history-messages";
 import { activityRequest, placeDescriber } from "./history-requests";
-import MarkdownPane, { type EditorHead } from "./MarkdownPane";
+import MarkdownPane from "./MarkdownPane";
 import MovedPane from "./MovedPane";
 import { useFilesMessages } from "./messages";
 import OfficePane from "./OfficePane";
-import OverviewPane, { FAVORITES_PREVIEW, RECENT_LINES } from "./OverviewPane";
 import { filesPageScope } from "./page-scope";
 import RunDetail from "./RunDetail";
 import { openShareDialog } from "./ShareDialog";
@@ -99,7 +97,7 @@ import { searchRequest } from "./search-state";
 import { createSeenTiles } from "./seen-tiles";
 import TrashPane from "./TrashPane";
 import { snapshotTitle } from "./trail";
-import { activityUrl, editorUrl, filesUrl, parseActivityFilters, parseActivityRun, screenViewOf } from "./urls";
+import { activityUrl, editorUrl, filesUrl, lastBaseCookie, parseActivityFilters, parseActivityRun, screenViewOf, startBase } from "./urls";
 import { createWorkspaceState, type DirectoryView, type WorkspaceSnapshot } from "./workspace-state";
 
 /** Listings are read again while the tab is visible; Filegate has no change feed yet. */
@@ -169,20 +167,17 @@ export default function FilesScreen(props: {
       const requested = params.get("base");
       const selected = requested
         ? bases.items.find((base) => base.id === requested)
-        : (bases.items.find((base) => base.status === "existing") ?? bases.items[0]);
-      const view = screenViewOf(params, bases.items.length);
+        : startBase(bases.items, cookies.readCookie(lastBaseCookie) ?? undefined);
+      const view = screenViewOf(params);
       if (requested && !selected && view !== "shares") throw new Error(t().missingDescription);
       const filters = view === "activity" ? parseActivityFilters(params) : undefined;
       if (filters === null) throw new Error(t().unavailable);
       // Activity names the storage it filters by; shares and all storage stand above every storage.
-      const chosen =
-        view === "overview"
+      const chosen = filters
+        ? bases.items.find((item) => item.id === filters.baseId)
+        : view === "shares" && !requested
           ? undefined
-          : filters
-            ? bases.items.find((item) => item.id === filters.baseId)
-            : view === "shares" && !requested
-              ? undefined
-              : selected;
+          : selected;
       const now = new Date().toISOString();
       const base = { source, bases, selectedId: chosen?.id ?? null, directory: null, errorCode: null, now };
       if (filters) {
@@ -203,20 +198,6 @@ export default function FilesScreen(props: {
       if (view === "shares") {
         const response = await apiClient.shares.$get({ query: {} }, { init: { signal } });
         return { ...base, shares: response.ok ? await response.json() : null };
-      }
-      if (view === "overview") {
-        const [favorites, recent] = await Promise.all([
-          loadFavorites(signal, b().favoritesFailed)
-            .then((items) => ({ items: items.slice(0, FAVORITES_PREVIEW), more: items.length > FAVORITES_PREVIEW }))
-            .catch(() => null),
-          Promise.all([
-            loadActivity({ actor: "me", limit: String(RECENT_LINES) }, signal, b().recentFailed),
-            loadRecent(signal, b().recentFailed).catch(() => []),
-          ])
-            .then(([page, opened]) => ({ page, opened }))
-            .catch(() => null),
-        ]);
-        return { ...base, favoritesPreview: favorites, recentByYou: recent };
       }
       if (view === "edit") {
         if (selected?.status !== "existing") return base;
@@ -310,14 +291,18 @@ export default function FilesScreen(props: {
   const searching = () => search() !== null;
   const openPath = () => params().get("file");
   // The view in place; an address of another view never stays here, so a folder is the fallback.
-  const screen = () => screenViewOf(params(), snapshot().bases.items.length);
+  const screen = () => screenViewOf(params());
+  // the storage this person works in is where Files opens next time; the server checks it against access again
+  createEffect(() => {
+    const base = selected();
+    if (screen() === "folder" && base?.status === "existing") cookies.writeCookie(lastBaseCookie, base.id);
+  });
   const editing = () => (screen() === "edit" ? (snapshot().editor ?? undefined) : undefined);
   /** The folder the sidebar marks: the open one, or the folder of the file being edited. */
   const navFolder = () => {
     const launch = editing();
     return launch ? parentPath(launch.entry.path) : folder();
   };
-  const hasOverview = () => snapshot().bases.items.length > 1;
   const canCreate = () => directory()?.actions?.create !== false && selected()?.status === "existing";
   const label = (base: NonNullable<ReturnType<typeof selected>>) => baseLabel(base, b(), locale());
   const folderName = (path: string) => path.split("/").at(-1) || (selected() ? label(selected()!) : t().files);
@@ -445,7 +430,8 @@ export default function FilesScreen(props: {
   };
 
   // The way up: Alt+↑, the shell's way up and Backspace in the listing move in place like every other link here.
-  const up = () => (folder() ? folderHref(parentPath(folder())) : hasOverview() ? filesUrl() : null);
+  // up leads to the parent folder; a storage's root has none (no page of all storage above it)
+  const up = () => (folder() ? folderHref(parentPath(folder())) : null);
   const goUp = () => {
     const target = up();
     if (!target) return;
@@ -457,9 +443,9 @@ export default function FilesScreen(props: {
     onCleanup(
       registerContextAwareCommand({
         id: "filesv2.parent-folder",
-        title: folder() ? b().parentRow : b().allStorage,
-        description: folder() ? b().parentFolderUp(folderName(parentPath(folder()))) : b().allStorageUp,
-        icon: folder() ? "ti ti-folder-up" : "ti ti-layout-grid",
+        title: b().parentRow,
+        description: b().parentFolderUp(folderName(parentPath(folder()))),
+        icon: "ti ti-folder-up",
         shortcut: "alt+arrowup",
         action: goUp,
       }),
@@ -699,7 +685,6 @@ export default function FilesScreen(props: {
     void go(activityUrl({ ...activityFilters(), q: words || undefined }));
   };
   // the open Markdown editor's draft state, shown in the head beside the file's name
-  const [editorHead, setEditorHead] = createSignal<EditorHead | null>(null);
   // The editor's way back: its folder with the file open beside it ("‹ Werkstatt" on the phone, as the open detail's).
   const editorBackAction = () => {
     const launch = snapshot().editor;
@@ -937,9 +922,6 @@ export default function FilesScreen(props: {
   const navGroups = createMemo((): NavGroup[] => [
     {
       items: [
-        ...(hasOverview()
-          ? [{ label: b().allStorage, icon: "layout-grid", href: filesUrl(), onNavigate, current: screen() === "overview" }]
-          : []),
         // Activity is "Me" across all storage; inside Activity the entry keeps the filters.
         {
           label: b().activity,
@@ -1016,7 +998,7 @@ export default function FilesScreen(props: {
   // that only repeats the nav). Its name stays on the phone, where the sidebar is away: the phone bar carries it.
   const pathItems = () => {
     const base = selected();
-    if (screen() === "favorites" || screen() === "shares" || screen() === "overview") return [];
+    if (screen() === "favorites" || screen() === "shares") return [];
     if (screen() === "activity") {
       const item = activityFilters().path;
       return item === undefined
@@ -1036,12 +1018,10 @@ export default function FilesScreen(props: {
       return [...(base ? [{ label: label(base), href: folderHref("") }] : []), ...moved.path.split("/").map((part) => ({ label: part }))];
     if (screen() === "trash")
       return [
-        ...(hasOverview() ? [{ label: b().allStorage, href: filesUrl() }] : []),
         // the trash itself is the sidebar's active entry: the path says whose trash it is, not "Papierkorb" again (B)
         ...(base ? [{ label: label(base), href: folderHref("") }] : []),
       ];
     return [
-      ...(hasOverview() ? [{ label: b().allStorage, href: filesUrl() }] : []),
       ...(base ? [{ label: label(base), href: folder() || searching() ? folderHref("") : undefined }] : []),
       ...ancestors(folder()).map((path) => ({
         label: path.split("/").at(-1) ?? path,
@@ -1054,7 +1034,6 @@ export default function FilesScreen(props: {
   const placeName = () => {
     if (screen() === "favorites") return b().favorites;
     if (screen() === "shares") return b().sharesTitle;
-    if (screen() === "overview") return b().allStorage;
     if (screen() === "activity") return b().activity;
     if (screen() === "trash") return b().trashTitle;
     if (screen() === "edit") return snapshot().editor?.entry.name ?? t().files;
@@ -1090,20 +1069,12 @@ export default function FilesScreen(props: {
     return pathItems().length > 0 ? <Path label={b().v2Where} items={pathItems()} /> : undefined;
   };
   const screenHead = () =>
-    screen() === "favorites" || screen() === "shares" || screen() === "overview" ? undefined : (
+    // the editor has no head: its toolbar names the file and says its state (Valentin 27.11.)
+    screen() === "favorites" || screen() === "shares" || screen() === "edit" ? undefined : (
       <Bar
         start={headStart()}
         end={
           <>
-            {/* the draft's state beside the file's name in the one head row; saving ends the editor's own bar */}
-            <Show when={screen() === "edit" && editorHead()}>
-              {(head) => (
-                // a saved draft is the good case and stays neutral; colour only while something waits (B rule 7)
-                <Show when={head().dirty()} fallback={<Chip>{head().state()}</Chip>}>
-                  <Chip status="warn">{head().state()}</Chip>
-                </Show>
-              )}
-            </Show>
             <Show when={screen() === "activity"}>
               <Input
                 type="search"
@@ -1163,17 +1134,6 @@ export default function FilesScreen(props: {
         // an open file on the phone. A view that only the sidebar names has no head row at all: no row without content.
         head={paneHead() ? undefined : screenHead()}
       >
-        <Show when={screen() === "overview"}>
-          <OverviewPane
-            bases={snapshot().bases.items}
-            issues={snapshot().bases.issues}
-            favorites={snapshot().favoritesPreview ?? null}
-            recent={snapshot().recentByYou ?? null}
-            env={history().env}
-            onNavigate={onNavigate}
-            onRetry={() => void go(snapshot().source, true)}
-          />
-        </Show>
         <Show when={screen() === "shares"}>
           <SharesPane initial={snapshot().shares ?? null} bases={snapshot().bases.items} timeZone={timeZone()} onNavigate={onNavigate} />
         </Show>
@@ -1229,7 +1189,6 @@ export default function FilesScreen(props: {
                   onGuard={(guard) => {
                     editorGuard = guard;
                   }}
-                  onHead={(head) => setEditorHead(() => head)}
                 />
               ) : (
                 <OfficePane launch={launch} onBack={editorBack} back={editorBackAction()} />

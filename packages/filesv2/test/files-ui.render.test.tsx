@@ -88,30 +88,12 @@ describe("Filesv2 server-rendered feedback", () => {
       </LocaleProvider>
     ));
 
-  test("all storage, Activity and the shares render on v2 with their data and no loading state on the first picture", () => {
+  test("Activity and the shares render on v2 with their data and no loading state on the first picture", () => {
     const upload = entry({
       action: "file.upload",
       actor: { kind: "user", userId: "valentin", name: "Valentin Kolb" },
       after: live("vertrieb/Angebote/Angebot 2026-118.pdf", { directory: false }),
     });
-    const favorite = {
-      base: { id: team.id, name: team.name, kind: team.kind, area: team.area },
-      entry: { name: "Preise.xlsx", path: "Preise.xlsx", directory: false, size: 1, modified: "2026-10-19T10:00:00.000Z" },
-      markedAt: "2026-10-19T10:00:00.000Z",
-    };
-    const overview = screen("/app/filesv2", {
-      favoritesPreview: { items: [favorite], more: false },
-      recentByYou: { page: page([upload]), opened: [] },
-    });
-    // no statement row that tells nothing to act on ("Today 1 change by you", Valentin 26.11.)
-    expect(overview).not.toContain("change by you");
-    for (const text of ["All storage", "Vertrieb", "Preise.xlsx", "Angebot 2026-118.pdf"]) expect(overview).toContain(text);
-    expect(overview).toContain('aria-label="All storage"');
-    // beside the storages, the viewer's own last changes under their day, in the row design of Activity
-    expect(overview).toContain('aria-label="Recently by you"');
-    expect(overview).toContain('class="k2-list-head"');
-    expect(overview).not.toContain('data-k2-part="Loading"');
-
     const activity = screen("/app/filesv2?view=activity&who=me", {
       activity: { filters: { actor: "me" }, page: page([upload]) },
       marks: [],

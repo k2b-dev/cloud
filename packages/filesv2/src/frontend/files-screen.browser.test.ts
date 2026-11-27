@@ -869,22 +869,8 @@ describe("the views beside the folders on v2", () => {
       await shoot(tab, "13-shares-1440");
       await expectClean(tab);
 
-      await nav.getByRole("link", { name: "Alle Ablagen" }).click();
-      await tab.waitForFunction(() => !new URL(location.href).search);
-      // "fewer but better" (Valentin 27.11.): the overview leads with the viewer's own last changes in the row design of
-      // Activity, under their day; the storages stand in the sidebar and are not listed again
-      const recent = tab.locator("[data-k2-part=List][aria-label='Zuletzt von dir']");
-      await recent.locator("[data-k2-part=Row]").first().waitFor();
-      await tab.locator("[data-k2-part=List][aria-label='Zuletzt geöffnet'] [data-k2-part=Row]").first().waitFor();
-      expect(await tab.locator("[data-k2-part=Workspace] [data-k2-part=List][aria-label='Alle Ablagen']").count()).toBe(0);
-      expect(await recent.innerText()).toContain("Ansicht Front Eiche.jpg");
-      expect(await recent.locator("[data-k2-part=Row] [data-k2-part=Avatar]").count()).toBe(0);
-      expect(await tab.locator("[data-k2-part=Workspace] [data-k2-part=Path]").count()).toBe(0);
-      await shoot(tab, "14-overview-1440");
-      await expectClean(tab);
-
-      await tab.goBack();
-      await tab.waitForFunction(() => new URL(location.href).searchParams.get("view") === "shares");
+      // no page of all storage (Valentin 27.11.): the sidebar leads to the storages themselves
+      expect(await nav.getByRole("link", { name: "Alle Ablagen" }).count()).toBe(0);
       await tab.goBack();
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("view") === "activity");
       await tab.getByText("Ansicht Front Eiche.jpg").first().waitFor();
@@ -1006,21 +992,26 @@ describe("the views beside the folders on v2", () => {
         .evaluate((element) => [getComputedStyle(element).fontSize, getComputedStyle(element).fontFamily]);
       expect(stats[0]).toBe("12px");
       expect(stats[1]).toContain("IBM Plex Sans");
-      // one bar (Valentin 26.11.): the head names the file alone, small, with its draft's state; the place is the
-      // sidebar's active entry; no title row of the editor's own
-      expect((await tab.locator("[data-slot=head] [data-k2-part=Path]").innerText()).trim()).toBe("Notizen.md");
-      expect(await tab.locator("[data-slot=head] [data-k2-part=Chip]").innerText()).toBe("Alles gespeichert");
+      // no head above the editor (Valentin 27.11.): its toolbar stands at the top, names the file at its start and says
+      // the draft's state where saving stands; the place is the sidebar's active entry
+      const toolbar = tab.locator("[role=toolbar]");
+      expect(await tab.locator("[data-slot=head] > .k2-bar").count()).toBe(0);
+      expect((await toolbar.locator(".k2b-markdown-editor__leading").innerText()).trim()).toBe("Notizen.md");
+      expect((await toolbar.locator(".k2b-markdown-editor__state").innerText()).trim()).toBe("Alles gespeichert");
+      const [pane, bar] = [await tab.locator("[data-k2-part=Pane]").first().boundingBox(), await toolbar.boundingBox()];
+      expect(bar!.y - pane!.y).toBeLessThan(12);
       expect(await tab.locator("[data-k2-part=Pane] [data-slot=status]").count()).toBe(0);
-      // saving ends the editor's own bar, which every width shows; saving waits for a change
-      const save = tab.locator("[role=toolbar]").getByRole("button", { name: "Speichern" });
-      expect(await save.isDisabled()).toBe(true);
+      // saving waits for a change: until then its place says the state, then it is the button
+      const save = toolbar.getByRole("button", { name: "Speichern" });
+      expect(await save.count()).toBe(0);
       // no close of its own: the sidebar marks the file's place and leads back there
       expect(await tab.locator("[role=toolbar]").getByRole("button", { name: "Schließen" }).count()).toBe(0);
       expect(await tab.locator("[data-k2-part=Nav] [aria-current=page]").innerText()).toContain("Werkstatt");
       await editor.click();
       await tab.keyboard.type(" Neu.");
-      await tab.getByText("Ungespeicherte Änderungen").first().waitFor();
+      await save.waitFor();
       expect(await save.isDisabled()).toBe(false);
+      expect(await toolbar.locator(".k2b-markdown-editor__state").count()).toBe(0);
       await tab.locator("[data-k2-part=Nav]").getByRole("link", { name: "Favoriten" }).click();
       const question = tab.getByRole("dialog").or(tab.getByRole("alertdialog")).last();
       await question.waitFor();
@@ -1080,24 +1071,20 @@ describe("the views beside the folders on v2", () => {
   for (const address of [
     "/app/filesv2?view=activity&who=me",
     "/app/filesv2?view=shares",
-    "/app/filesv2",
     "/app/filesv2?base=demo&file=Notizen.md&view=edit",
   ])
     test(`${address} fits the phone`, async () => {
       const { context, tab, errors } = await open(phone, address);
       try {
         // the phone bar names the place, as the sidebar's active entry does on the desktop (B)
-        const place = {
-          activity: "Aktivität",
-          shares: "Freigaben",
-          edit: "Notizen.md",
-        }[new URL(address, origin).searchParams.get("view") ?? ""];
-        expect(await tab.locator("[data-shell-title]").innerText()).toBe(place ?? "Alle Ablagen");
-        await shoot(tab, `18-${new URL(address, origin).searchParams.get("view") ?? "overview"}-390`);
+        const view = new URL(address, origin).searchParams.get("view") ?? "";
+        const place: Record<string, string> = { activity: "Aktivität", shares: "Freigaben", edit: "Notizen.md" };
+        expect(await tab.locator("[data-shell-title]").innerText()).toBe(place[view] ?? view);
+        await shoot(tab, `18-${view}-390`);
         if (address.includes("view=edit")) {
-          // the phone's head keeps only its search: saving is in the editor's own bar, the way back above it, as the
-          // open detail's
-          expect(await tab.locator("[role=toolbar]").getByRole("button", { name: "Speichern" }).isVisible()).toBe(true);
+          // no head on the phone either: the toolbar names the file and says its state, the way back stands above it, as
+          // the open detail's
+          expect(await tab.locator("[role=toolbar] .k2b-markdown-editor__state").isVisible()).toBe(true);
           expect(
             await tab
               .locator("[data-k2-part=Back]")
@@ -1115,12 +1102,7 @@ describe("the views beside the folders on v2", () => {
 
   // the editor on the phone waits for #4416: its endless name took the way back's words to nothing
   for (const view of [wide, narrow, phone])
-    for (const address of [
-      "/app/filesv2?view=activity",
-      "/app/filesv2?view=shares",
-      "/app/filesv2",
-      "/app/filesv2?base=demo&file=Notizen.md&view=edit",
-    ])
+    for (const address of ["/app/filesv2?view=activity", "/app/filesv2?view=shares", "/app/filesv2?base=demo&file=Notizen.md&view=edit"])
       (view === phone && address.includes("view=edit") ? test.todo : test)(
         `worst-case ${new URL(address, origin).searchParams.get("view") ?? "overview"} keeps the layout whole at ${view.name}px${view === phone && address.includes("view=edit") ? " (#4416)" : ""}`,
         async () => {
@@ -1146,7 +1128,7 @@ describe("the views beside the folders on v2", () => {
 
   // Nothing yet: each view says so in its place, with its way on, and nothing breaks.
   for (const view of [wide, phone])
-    for (const address of ["/app/filesv2?view=activity&who=me", "/app/filesv2?view=shares", "/app/filesv2"])
+    for (const address of ["/app/filesv2?view=activity&who=me", "/app/filesv2?view=shares"])
       test(`an empty ${new URL(address, origin).searchParams.get("view") ?? "overview"} says so at ${view.name}px`, async () => {
         const { context, tab, errors } = await open(view, address, "empty");
         try {

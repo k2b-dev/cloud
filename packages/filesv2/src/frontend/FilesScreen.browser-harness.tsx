@@ -17,12 +17,10 @@ import {
   fixtureMarkdown,
   fixtureMine,
   fixturePage,
-  fixtureRecent,
   fixtureRun,
   fixtureSearch,
   fixtureShares,
   fixtureSnapshot,
-  fixtureStorages,
   fixtureTrash,
   fixtureWorstFavorites,
   fixtureWorstTrash,
@@ -53,27 +51,16 @@ const snapshot = fixtureSnapshot(`${location.pathname}${location.search}`, direc
 const detail = file ? directory.items.find((item) => item.path === file) : undefined;
 if (detail) snapshot.detail = { base: snapshot.directory!.base, entry: detail, favorite: false };
 // Every other view reads its own first page instead of a folder, as the server does.
-const view = screenViewOf(params, snapshot.bases.items.length);
+const view = screenViewOf(params);
 if (view !== "folder") {
   snapshot.directory = null;
   snapshot.detail = undefined;
-  if (view === "overview" || view === "shares") snapshot.selectedId = null;
+  if (view === "shares") snapshot.selectedId = null;
 }
 // the first data as the server sends it, of the same fixture case the test's API answers with
 if (view === "trash") snapshot.trash = fixture === "worst" ? fixtureWorstTrash : fixtureTrash;
 if (view === "favorites") snapshot.marks = fixture === "worst" ? fixtureWorstFavorites : fixtureFavorites;
 if (view === "shares") snapshot.shares = fixtureShares(fixture);
-if (view === "overview") {
-  snapshot.bases = { ...snapshot.bases, items: fixtureStorages(fixture) };
-  if (fixture === "worst") snapshot.bases.issues = [{ area: "freeipa", code: "unavailable" }];
-  snapshot.favoritesPreview = fixture === "empty" ? { items: [], more: false } : { items: fixtureFavorites, more: false };
-  snapshot.recentByYou =
-    fixture === "empty"
-      ? { page: fixtureActivity("empty"), opened: [] }
-      : fixture === "worst"
-        ? { page: { ...fixtureActivity("worst"), items: fixtureActivity("worst").items.slice(0, 5) }, opened: [] }
-        : fixtureRecent();
-}
 if (view === "activity") {
   const filters = parseActivityFilters(params) ?? {};
   // "Me" shows this person's own changes, as the reader answers it

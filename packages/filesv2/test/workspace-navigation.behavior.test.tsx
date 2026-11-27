@@ -223,67 +223,6 @@ describe("Filesv2 progressive navigation", () => {
     expect(requests[0]!.signal.aborted).toBe(true);
   });
 
-  test("a failing part stays inside the overview and reads again; the storage cards never wait or move", async () => {
-    const dom = createDomTestHarness();
-    dom.window.history.replaceState(null, "", "/app/filesv2");
-    const { Workspace } = modules!;
-    const base = {
-      id: "home",
-      name: "Alice",
-      area: "cloud" as const,
-      kind: "users" as const,
-      status: "existing" as const,
-      reason: null,
-      indexEnabled: false,
-      versioningEnabled: false,
-    };
-    const group = { ...base, id: "ipa", name: "Team", area: "freeipa" as const, kind: "groups" as const };
-    const bases = { items: [base, group], issues: [{ area: "freeipa" as const, code: "unavailable" }], editor: null };
-    const dispose = render(
-      () =>
-        createComponent(Workspace, {
-          initial: {
-            ...initial,
-            source: "/app/filesv2",
-            bases,
-            favoritesPreview: null,
-            recentByYou: null,
-            now: "2026-10-20T12:30:00.000Z",
-          },
-        }),
-      dom.root,
-    );
-    cleanup = () => {
-      dispose();
-      dom.cleanup();
-    };
-    await flush();
-    // The server read every part: nothing asks for itself after the first picture.
-    expect(apiRequests).toHaveLength(0);
-    // the storages, compact, on the page itself (the sidebar is a drawer on narrow screens)
-    const cards = () => dom.root.querySelectorAll('[data-k2-part="List"][aria-label="All storage"] [data-k2-part="Row"]');
-    expect(cards()).toHaveLength(2);
-    const failed = () => [...dom.root.querySelectorAll('[data-k2-part="Failed"]')];
-    expect(failed()).toHaveLength(2);
-    failed()[0]!.querySelector<HTMLButtonElement>("button")!.click();
-    for (let round = 0; round < 4; round++) {
-      await flush();
-      for (const request of apiRequests.splice(0))
-        request.resolve(
-          request.kind === "bases"
-            ? Response.json(bases)
-            : request.kind === "activity"
-              ? Response.json({ items: [], next: null, visibleCount: 0, batches: [], exhausted: true })
-              : Response.json([]),
-        );
-    }
-    await flush();
-    expect(failed()).toHaveLength(0);
-    expect(dom.root.textContent).toContain("No favorites yet.");
-    expect(dom.root.textContent).toContain("No activity of yours yet.");
-    expect(cards()).toHaveLength(2);
-  });
-
   test("the favorites pane loads, links each favorite, removes at once and brings a favorite back when removing fails", async () => {
     const dom = createDomTestHarness();
     const { default: FavoritesPane } = await import("../src/frontend/FavoritesPane");

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { adminHref, parseAdminLocation } from "./admin-location";
 import { searchState } from "./search-state";
-import { filesUrl, pathCrumbs, showsOverview } from "./urls";
+import { filesUrl, namesNoPlace, pathCrumbs, readLastBase, startBase } from "./urls";
 
 test("navigation retains opaque identities and filenames as query values", () => {
   const url = new URL(filesUrl("freeipa:group:123", "Budget #1/über uns?", "next/+="), "https://cloud.test");
@@ -81,27 +81,40 @@ test("a search keeps its query, filters and order instead of the folder's option
   expect(relevance.search).toBe("?base=home&q=report&kind=pdf&size=large&modified=week");
   expect(searchState(new URLSearchParams("kind=image"))).toMatchObject({ q: "", kind: "image" });
   expect(searchState(new URLSearchParams("q=%20%20&kind=unknown&sort=relevance"))).toBeNull();
-  expect(showsOverview(new URLSearchParams("modified=day"), 2)).toBe(false);
+  expect(namesNoPlace(new URLSearchParams("modified=day"))).toBe(false);
 });
 
-test("the plain Files address shows all storage only with multiple roots", () => {
-  for (const count of [0, 1, 2]) expect(showsOverview(new URLSearchParams(), count)).toBe(count > 1);
+test("an address without a place names none, so Files opens the storage used last", () => {
   for (const key of ["base", "path", "file", "q"]) {
-    expect(showsOverview(new URLSearchParams({ [key]: "value" }), 2)).toBe(false);
-    expect(showsOverview(new URLSearchParams({ [key]: "" }), 2)).toBe(true);
+    expect(namesNoPlace(new URLSearchParams({ [key]: "value" }))).toBe(false);
+    expect(namesNoPlace(new URLSearchParams({ [key]: "" }))).toBe(true);
   }
-  expect(showsOverview(new URLSearchParams({ q: " " }), 2)).toBe(true);
-  for (const view of ["", "foo", "edit"]) {
-    expect(showsOverview(new URLSearchParams({ view }), 2)).toBe(true);
-  }
-  expect(showsOverview(new URLSearchParams({ view: "edit", file: "" }), 2)).toBe(true);
-  for (const view of ["trash", "shares", "recent", "favorites"]) {
-    expect(showsOverview(new URLSearchParams({ view }), 2)).toBe(false);
-  }
-  expect(showsOverview(new URLSearchParams({ view: "edit", file: "report.txt" }), 2)).toBe(false);
-  expect(
-    showsOverview(new URLSearchParams({ after: "cursor", sort: "modified", order: "desc", type: "files", groupFolders: "false" }), 2),
-  ).toBe(true);
+  expect(namesNoPlace(new URLSearchParams())).toBe(true);
+  expect(namesNoPlace(new URLSearchParams({ q: " " }))).toBe(true);
+  for (const view of ["", "foo", "edit"]) expect(namesNoPlace(new URLSearchParams({ view }))).toBe(true);
+  expect(namesNoPlace(new URLSearchParams({ view: "edit", file: "" }))).toBe(true);
+  for (const view of ["trash", "shares", "recent", "favorites", "activity"])
+    expect(namesNoPlace(new URLSearchParams({ view }))).toBe(false);
+  expect(namesNoPlace(new URLSearchParams({ view: "edit", file: "report.txt" }))).toBe(false);
+  expect(namesNoPlace(new URLSearchParams({ after: "cursor", sort: "modified", order: "desc" }))).toBe(true);
+});
+
+test("Files starts in the storage used last while this person reaches it, else in their personal one", () => {
+  const bases = [
+    { id: "team", kind: "groups", status: "existing" },
+    { id: "gone", kind: "groups", status: "missing" },
+    { id: "mine", kind: "users", status: "existing" },
+  ];
+  expect(startBase(bases, "team")?.id).toBe("team");
+  // a storage this person no longer reaches, or one that is not there, is never where Files opens
+  expect(startBase(bases, "foreign")?.id).toBe("mine");
+  expect(startBase(bases, "gone")?.id).toBe("mine");
+  expect(startBase(bases)?.id).toBe("mine");
+  expect(startBase(bases.filter((base) => base.kind !== "users"))?.id).toBe("team");
+  expect(startBase([])).toBeUndefined();
+  expect(readLastBase("a=1; filesv2-base=cloud%3Agroups%3Awerkstatt; b=2")).toBe("cloud:groups:werkstatt");
+  expect(readLastBase("filesv2-base=%E0%A4%A")).toBeUndefined();
+  expect(readLastBase(undefined)).toBeUndefined();
 });
 
 test("Activity filters survive the address unchanged and invalid values are refused, not replaced", async () => {
@@ -124,7 +137,7 @@ test("Activity filters survive the address unchanged and invalid values are refu
   for (const bad of ["what=item.explode", "when=8", "who=lukas", "path=Kunden", "base=b&path=../x", "base=b&path=/x"])
     expect(parseActivityFilters(new URLSearchParams(bad))).toBeNull();
   expect(parseActivityFilters(new URLSearchParams("q=%20%20"))).toEqual({});
-  expect(showsOverview(new URLSearchParams("view=activity"), 3)).toBe(false);
+  expect(namesNoPlace(new URLSearchParams("view=activity"))).toBe(false);
 });
 
 test("Activity folder scope survives reload and exact scope remains exact", async () => {

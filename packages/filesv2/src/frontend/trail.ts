@@ -1,6 +1,6 @@
 import type { LayoutBreadcrumb } from "@k2b/cloud/ssr/layout-runtime";
 import { baseLabel } from "./base-label";
-import { filesUrl, pathCrumbs, showsOverview } from "./urls";
+import { filesUrl, pathCrumbs } from "./urls";
 import type { WorkspaceSnapshot } from "./workspace-state";
 
 type TrailBase = { id: string; label: string };
@@ -42,7 +42,6 @@ export const snapshotTitle = (
   locale: string,
 ): LayoutBreadcrumb[] => {
   const params = new URL(snapshot.source, "https://files.invalid").searchParams;
-  if (showsOverview(params, snapshot.bases.items.length)) return [{ title: appName, href: filesUrl() }, { title: messages.allStorage }];
   const view = params.get("view");
   const editor = snapshot.editor;
   if (view === "edit" && editor) {

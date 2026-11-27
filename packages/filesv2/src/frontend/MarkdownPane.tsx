@@ -9,16 +9,11 @@ import { createEditorFill } from "./editor-fill";
 import { apiFailure } from "./file-preview";
 import { uploadFile } from "./uploads";
 
-/** What the workspace's head shows of the editor: its draft's state. */
-export type EditorHead = {
-  state: () => string;
-  dirty: () => boolean;
-};
-
 /**
- * A Markdown file in the Markdown editor, on a v2 frame: the state of the draft in the workspace's head, a problem as a
- * notice with its way out, the editor itself in the rest of the pane, its own bar ending with "Speichern". Leaving with
- * unsaved changes asks first, also for links of the shell; the browser asks before the tab closes.
+ * A Markdown file in the Markdown editor, on a v2 frame without a head of its own: the editor's toolbar stands at the
+ * top, names the file at its start and says the draft's state at its end, where it saves while there are changes. A
+ * problem is a notice with its way out. Leaving with unsaved changes asks first, also for links of the shell; the
+ * browser asks before the tab closes.
  */
 export default function MarkdownPane(props: {
   launch: MarkdownLaunch;
@@ -26,8 +21,6 @@ export default function MarkdownPane(props: {
   onGuard: (guard: (() => Promise<boolean>) | null) => void;
   /** The way back to the file's folder: on the phone, where the head gives way, as "‹ Werkstatt" above the editor. */
   back?: Action;
-  /** The draft's state for the workspace's head, beside the file's name (no title row of its own, Valentin 26.11.). */
-  onHead: (head: EditorHead | null) => void;
 }) {
   const t = useAssetMessages();
   const fill = createEditorFill();
@@ -203,8 +196,6 @@ export default function MarkdownPane(props: {
   });
   const state = () =>
     saving() ? t().saving : dirty() ? t().unsaved : saved() ? t().saved : props.launch.canWrite ? t().v2AllSaved : t().v2ReadOnly;
-  props.onHead({ state, dirty });
-  onCleanup(() => props.onHead(null));
   return (
     <Pane label={props.launch.entry.name} back={props.back}>
       <Show when={error() && ready()}>
@@ -243,6 +234,10 @@ export default function MarkdownPane(props: {
                 saving={saving()}
                 saved={saved()}
                 saveDisabled={!dirty() || !props.launch.canWrite}
+                // the editor stands at the top of the page (Valentin 27.11.): its toolbar names the file at its start and
+                // says the draft's state where saving stands, the same place that saves while there are changes
+                toolbarLeading={props.launch.entry.name}
+                saveState={state()}
               />
             </Show>
           </Show>

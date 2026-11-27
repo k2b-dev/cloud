@@ -18,12 +18,11 @@ import { browseOf, folderQueries, legacyFolderHref, readFolderAddress, searchOf 
 import { RECENT_MOVED_HINT, SELECTION_PILL_HINT } from "./hints";
 import { activityRequest, itemHistoryRequest, itemHistorySource, movedEntry } from "./history-requests";
 import { filesMessages } from "./messages";
-import { FAVORITES_PREVIEW, RECENT_LINES } from "./OverviewPane";
 import { filesPageScope } from "./page-scope";
 import { readRun } from "./run-read";
 import { searchRequest } from "./search-state";
 import { snapshotTitle } from "./trail";
-import { activityUrl, filesUrl, parseActivityFilters, parseActivityRun, showsOverview } from "./urls";
+import { activityUrl, filesUrl, namesNoPlace, parseActivityFilters, parseActivityRun, readLastBase, startBase } from "./urls";
 import type { DirectoryView, WorkspaceSnapshot } from "./workspace-state";
 
 /**
@@ -106,14 +105,22 @@ export default ssr<AuthContext>(async (c) => {
   );
   try {
     initial.bases = await filesService.bases(requestCall(c));
-    const overview = showsOverview(source.searchParams, initial.bases.items.length);
-    const selected = overview
-      ? undefined
-      : activityFilters
-        ? initial.bases.items.find((base) => base.id === activityFilters.baseId)
-        : requestedBase && view !== "shares"
-          ? initial.bases.items.find((base) => base.id === requestedBase)
-          : (initial.bases.items.find((base) => base.status === "existing") ?? initial.bases.items[0]);
+    // No page of all storage (Valentin 27.11.): an address without a place opens the storage this person used last, if
+    // they still reach it, else their personal one. The address keeps its other parameters.
+    const last = readLastBase(c.req.header("cookie"));
+    if (namesNoPlace(url.searchParams)) {
+      const start = startBase(initial.bases.items, last);
+      if (start) {
+        const target = new URL(url);
+        target.searchParams.set("base", start.id);
+        return c.redirect(`${target.pathname}${target.search}`);
+      }
+    }
+    const selected = activityFilters
+      ? initial.bases.items.find((base) => base.id === activityFilters.baseId)
+      : requestedBase && view !== "shares"
+        ? initial.bases.items.find((base) => base.id === requestedBase)
+        : startBase(initial.bases.items, last);
     if (requestedBase && !selected && view !== "shares") throw new FilesError("not_found", 404);
     initial.selectedId = selected?.id ?? null;
     const address = addressFor(selected?.id ?? "");
@@ -139,20 +146,6 @@ export default ssr<AuthContext>(async (c) => {
     // The trash shows its first page in the first picture; a failed read lets the view say so with Try again.
     else if (trashView && selected?.status === "existing")
       initial.trash = await filesService.trash(requestCall(c), { baseId: selected.id }).catch(() => null);
-    else if (overview)
-      // The overview's three parts are in the first picture, so nothing loads or moves after it; each fails alone.
-      [initial.favoritesPreview, initial.recentByYou] = await Promise.all([
-        filesService
-          .favorites(requestCall(c), { limit: FAVORITES_PREVIEW + 1 })
-          .then((items) => ({ items: items.slice(0, FAVORITES_PREVIEW), more: items.length > FAVORITES_PREVIEW }))
-          .catch(() => null),
-        Promise.all([
-          filesService.activity(requestCall(c), { actor: "me", limit: RECENT_LINES }),
-          filesService.recent(requestCall(c)).catch(() => []),
-        ])
-          .then(([page, opened]) => ({ page, opened }))
-          .catch(() => null),
-      ]);
     else if (editView && selected?.status === "existing")
       initial.editor = await filesService.editor(requestCall(c), { baseId: selected.id, path: requestedFile! });
     else if (selected?.status === "existing" && !trashView) {
