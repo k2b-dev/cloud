@@ -1,19 +1,16 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 
 const accept = mock(async (_input: unknown) => new Response(null, { status: 204 }));
-const logout = mock(async () => new Response(null, { status: 204 }));
-if (!isServer)
-  mock.module("@k2b/cloud/clients/core", () => ({
-    apiClient: {
-      auth: {
-        "legal-consent": { $post: accept },
-        logout: { $post: logout },
-      },
-    },
-  }));
+// Signing out (the logout call and clearing this person's data on the device) has its own tests in
+// packages/cloud/src/browser/session.test.ts; here the form only has to sign out its person, then move on.
+const signOut = mock(async (_userId: string | undefined, _errorMessage: string) => {});
+if (!isServer) {
+  mock.module("@k2b/cloud/clients/core", () => ({ apiClient: { auth: { "legal-consent": { $post: accept } } } }));
+  mock.module("@k2b/cloud/browser/session", () => ({ signOutBrowserSession: signOut }));
+}
 const flush = async () => {
   for (let i = 0; i < 40; i++) await Promise.resolve();
 };
@@ -27,12 +24,12 @@ describe("explicit first-login acceptance", () => {
   afterEach(() => {
     cleanup();
     accept.mockClear();
-    logout.mockClear();
+    signOut.mockClear();
   });
   const mount = async () => {
     const dom = createDomTestHarness();
     const { default: Consent } = await import("../src/pages/auth/ConsentForm.island");
-    const dispose = render(() => createComponent(Consent, { version: "a".repeat(64), redirectTo: "/app/contacts" }), dom.root);
+    const dispose = render(() => createComponent(Consent, { userId: "user-1", version: "a".repeat(64), redirectTo: "/app/contacts" }), dom.root);
     cleanup = () => {
       dispose();
       dom.cleanup();
@@ -62,12 +59,15 @@ describe("explicit first-login acceptance", () => {
     await flush();
     expect(dom.root.textContent).toContain("documents have changed");
     expect(dom.root.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+    // the page moves on once signing out has finished
+    const navigated = new Promise<string>((done) => {
+      spyOn(dom.window.location, "assign").mockImplementation((url) => done(String(url)));
+    });
     Array.from(dom.root.querySelectorAll("button"))
       .find((b) => b.textContent?.includes("Cancel and sign out"))!
       .click();
-    await flush();
-    expect(logout).toHaveBeenCalledTimes(1);
-    expect(dom.window.location.pathname).toBe("/auth/login");
+    expect(await navigated).toBe("/auth/login");
+    expect(signOut.mock.calls.map(([userId]) => userId)).toEqual(["user-1"]);
   });
   test("network failure retains the choice and permits a retry without showing success", async () => {
     accept.mockImplementationOnce(async () => {
