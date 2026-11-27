@@ -157,6 +157,7 @@ export const mailWorkspaceMessages = i18n.define({
       failureUnclear: "It is unclear whether the mail server made the change. Check the conversation.",
       failureNotApplied: "The mail server did not make the change.",
       tryAgain: "Try again",
+      countsUnavailable: "The numbers of the views are not available right now.",
       mailboxDetailsFailed: "Could not load the mailbox details",
       // Compose from the mailbox uses the compose page's copy (mail-composer-messages), word for word.
       preparingMessage: "Preparing message...",
@@ -320,6 +321,7 @@ export const mailWorkspaceMessages = i18n.define({
       failureUnclear: "Es ist unklar, ob der Mailserver die Änderung vorgenommen hat. Prüfe die Unterhaltung.",
       failureNotApplied: "Der Mailserver hat die Änderung nicht vorgenommen.",
       tryAgain: "Erneut versuchen",
+      countsUnavailable: "Die Zahlen der Ansichten sind gerade nicht verfügbar.",
       mailboxDetailsFailed: "Die Postfachdetails konnten nicht geladen werden",
       preparingMessage: "Nachricht wird vorbereitet…",
       draftCreateFailed: "Der Entwurf konnte nicht erstellt werden",

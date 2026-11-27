@@ -114,6 +114,27 @@ suite("Mail count cache", () => {
       expect(body.viewCountsPending).toBe(true);
       expect(Object.values(body.viewCounts).every((count) => count === 0)).toBe(true);
       expect(timeouts).toEqual([40, 10]);
+      // the browser asks for the pending counts of that route: 202 while the count still runs …
+      const countsUrl = new URL(`/mailboxes/${mailbox!.short_id}/workspace-counts?${new URLSearchParams({ href })}`, server.url);
+      const headers = { authorization: "Bearer count-timeout-test", "x-forwarded-for": uniqueCallerAddress() };
+      const pending = await fetch(countsUrl, { headers });
+      expect(pending.status).toBe(202);
+      expect(await pending.json()).toEqual({ pending: true });
+      // … and the counts with the groups and the done footer once the cache holds them
+      cold.mockRestore();
+      let answer: Response | undefined;
+      for (const end = performance.now() + 15_000; performance.now() < end; ) {
+        answer = await fetch(countsUrl, { headers: { ...headers, "x-forwarded-for": uniqueCallerAddress() } });
+        if (answer.status === 200) break;
+        await answer.arrayBuffer();
+        await Bun.sleep(200);
+      }
+      expect(answer?.status).toBe(200);
+      expect(await answer!.json()).toMatchObject({
+        viewCounts: { needs_action: 0, done: 0 },
+        assignedGroups: { needsAction: 0, waiting: 0 },
+        doneLeftOut: 0,
+      });
     } finally {
       await server.stop(true);
       cold.mockRestore();

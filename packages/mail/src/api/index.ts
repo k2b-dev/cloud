@@ -212,7 +212,7 @@ import { mailLive } from "../service/live";
 import { mailLiveChannels } from "../service/live-channels";
 import type { AttachmentDownload } from "../service/messages";
 import { discoverMailConfigurations } from "../service/onboarding-discovery";
-import { CountRefreshBusy } from "../service/view-count-cache";
+import { CountRefreshBusy, FIRST_RENDER_COUNT_WAIT_MS } from "../service/view-count-cache";
 import { loadMailboxConversationDetail, loadMailboxListView, loadMailboxPageData, resolveWorkspaceRequest } from "../service/workspace";
 import legacyLiveRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
@@ -345,6 +345,7 @@ const workspaceRouteQuerySchema = z.object({
   /** "keep": the browser already holds the drag's people for this mailbox; the answer then leaves them out (null). */
   dropAssignees: z.enum(["load", "keep"]).default("load"),
 });
+const workspaceCountsQuerySchema = z.object({ href: z.string().trim().min(1).max(MAX_MAIL_WORKSPACE_HREF_LENGTH) });
 const attachmentQuerySchema = z.object({
   inline: z
     .enum(["true", "false"])
@@ -1987,28 +1988,42 @@ const mailOperationsApi = new Hono<MailApiContext>()
       }),
     ),
   )
-  .get(
-    "/mailboxes/:mailboxId/conversation-view-counts",
-    v("param", mailboxParamSchema),
-    // "cached": the counts a workspace snapshot left pending, from the cache its count fills
-    v("query", z.object({ cached: z.enum(["true"]).optional() })),
-    async (c) => {
-      try {
-        return await respondPublic(
-          c,
-          await messages.getConversationViewCounts({
-            context: requestContext(c),
-            mailboxId: internalMailboxId(c),
-            cached: c.req.valid("query").cached === "true",
-          }),
-        );
-      } catch (error) {
-        if (error instanceof CountRefreshBusy)
-          return respond(c, { ok: false, error: error.message, status: 503, code: "MAIL_COUNTS_REFRESHING" });
-        throw error;
-      }
-    },
+  .get("/mailboxes/:mailboxId/conversation-view-counts", v("param", mailboxParamSchema), async (c) =>
+    respondPublic(
+      c,
+      messages.getConversationViewCounts({
+        context: requestContext(c),
+        mailboxId: internalMailboxId(c),
+      }),
+    ),
   )
+  // The counts a workspace snapshot left pending (its wait for cold counts ran out), for that snapshot's route: the views,
+  // the Assigned to me groups and the done conversations its list leaves out. It waits as briefly as the snapshot did
+  // and answers 202 while the count is still running, so the browser asks again a few times and never hangs.
+  .get("/mailboxes/:mailboxId/workspace-counts", v("param", mailboxParamSchema), v("query", workspaceCountsQuerySchema), async (c) => {
+    const mailboxId = internalMailboxId(c);
+    const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, c.req.valid("query").href);
+    const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
+    if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
+    const counts = await messages.getMailboxConversationCountsBy({
+      context: requestContext(c),
+      mailboxId,
+      until: Date.now() + FIRST_RENDER_COUNT_WAIT_MS,
+    });
+    if (!counts.ok) return respondPublic(c, counts);
+    if (!counts.data) return c.json({ pending: true as const }, 202);
+    const folderId = request.requestUrl.searchParams.get("folder");
+    const mine = counts.data.views.mine;
+    const waiting = Math.min(counts.data.mineWaiting, mine);
+    return respondPublic(
+      c,
+      ok({
+        viewCounts: counts.data.views,
+        assignedGroups: { needsAction: mine - waiting, waiting },
+        doneLeftOut: folderId ? (counts.data.doneByFolder[folderId] ?? 0) : counts.data.views.done,
+      }),
+    );
+  })
   .get("/mailboxes/:mailboxId/activity", v("param", mailboxParamSchema), v("query", activityQuerySchema), async (c) => {
     const { kind, actor, ...query } = c.req.valid("query");
     const result = await collaboration.listActivity({

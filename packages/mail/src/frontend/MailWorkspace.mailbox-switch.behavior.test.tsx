@@ -417,37 +417,100 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     expect(scope()).toEqual([{ type: "mail.mailbox", id: "Box002" }]);
   });
 
-  test("pending counts show no number, then load once from the cache and show", async () => {
+  const zero = { needs_action: 0, mine: 0, unassigned: 0, waiting: 0, done: 0, snoozed: 0, send_problems: 0, recently_active: 0, kept: 0 };
+  /** Answers the pending counts with `answers` in turn (a status, or 200 with these needs-action counts). */
+  const countsServer = (answers: (number | "network")[]) => {
     const asked: string[] = [];
     const inner = globalThis.fetch;
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
-        if (url.pathname.endsWith("/conversation-view-counts")) {
-          asked.push(url.search);
-          return Response.json({ ...data.viewCounts, needs_action: 7 });
-        }
-        return inner(input, init);
+        if (!url.pathname.endsWith("/workspace-counts")) return inner(input, init);
+        asked.push(url.searchParams.get("href") ?? "");
+        const answer = answers[Math.min(asked.length - 1, answers.length - 1)]!;
+        if (answer === "network") throw new TypeError("Network unavailable");
+        if (answer === 202) return Response.json({ pending: true }, { status: 202 });
+        if (answer >= 400) return Response.json({ error: "refreshing", code: "MAIL_COUNTS_REFRESHING" }, { status: answer });
+        return Response.json({
+          viewCounts: { ...zero, needs_action: answer },
+          assignedGroups: { needsAction: 0, waiting: 0 },
+          doneLeftOut: 4,
+        });
       },
       { preconnect: originalFetch.preconnect },
     );
-    const zero = {
-      needs_action: 0,
-      mine: 0,
-      unassigned: 0,
-      waiting: 0,
-      done: 0,
-      snoozed: 0,
-      send_problems: 0,
-      recently_active: 0,
-      kept: 0,
-    };
-    const tab = () => dom.root.querySelector(`a[href="/app/mail/${MAILBOX_ID}?view=needs_action"]`)?.textContent ?? "";
+    return asked;
+  };
+  // the count the tab shows, without the hidden width it reserves
+  const needsActionTab = () =>
+    dom.root.querySelector(`a[href="/app/mail/${MAILBOX_ID}?view=needs_action"] .k2b-view-tabs__count > span`)?.textContent ?? "";
+
+  test("pending counts keep their place, then load for this route and show", async () => {
+    const asked = countsServer([7]);
     mount(path, { ...snapshotFor(path), viewCounts: zero, viewCountsPending: true });
-    expect(tab()).not.toMatch(/\d/);
+    expect(needsActionTab()).not.toMatch(/\d/);
     await settle();
-    expect(asked).toEqual(["?cached=true"]);
-    expect(tab()).toContain("7");
+    expect(asked).toEqual([path]);
+    expect(needsActionTab()).toContain("7");
+  });
+
+  test("a count still running answers 202; the browser asks again after a pause and then shows it", async () => {
+    const asked = countsServer([202, 5]);
+    mount(path, { ...snapshotFor(path), viewCounts: zero, viewCountsPending: true });
+    await settle();
+    expect(asked).toHaveLength(1);
+    await Bun.sleep(1_100);
+    expect(asked).toHaveLength(2);
+    expect(needsActionTab()).toContain("5");
+  });
+
+  test("counts that never come end in a dash and a toast that tries again", async () => {
+    const asked = countsServer([503, "network", 503, 9]);
+    mount(path, { ...snapshotFor(path), viewCounts: zero, viewCountsPending: true });
+    await Bun.sleep(3_300);
+    expect(asked).toHaveLength(3);
+    expect(needsActionTab()).toContain("–");
+    const retry = [...document.querySelectorAll("button")].find((button) => button.textContent?.includes("Try again"));
+    expect(retry).toBeDefined();
+    retry!.click();
+    await settle();
+    expect(asked).toHaveLength(4);
+    expect(needsActionTab()).toContain("9");
+  }, 10_000);
+
+  test("an empty list after a done day says all done at once; the done line's ring waits unnamed for the counts", async () => {
+    countsServer([3]);
+    mount(path, {
+      ...snapshotFor(path),
+      listItems: [],
+      doneTodayCounts: { doneToday: 4, doneByAutomation: 1 },
+      viewCounts: zero,
+      viewCountsPending: true,
+    });
+    expect(dom.root.querySelector("[data-mail-all-done]")).not.toBeNull();
+    await settle();
+    expect(dom.root.querySelector("[data-mail-all-done]")).not.toBeNull();
+  });
+
+  test("the done line keeps its ring in place, unnamed while the counts are pending", async () => {
+    countsServer([3]);
+    mount(path, { ...snapshotFor(path), doneTodayCounts: { doneToday: 4, doneByAutomation: 0 }, viewCounts: zero, viewCountsPending: true });
+    const ring = () => dom.root.querySelector("[data-mail-done-line] .k2b-progress-ring");
+    expect(ring()).not.toBeNull();
+    expect(ring()?.getAttribute("role")).toBeNull();
+    await settle();
+    expect(ring()?.getAttribute("aria-label")).toContain("4");
+  });
+
+  test("leaving the mailbox stops the tries for its pending counts", async () => {
+    const asked = countsServer([202]);
+    mount(path, { ...snapshotFor(path), viewCounts: zero, viewCountsPending: true });
+    await settle();
+    expect(asked).toHaveLength(1);
+    dispose();
+    dispose = () => {};
+    await Bun.sleep(1_200);
+    expect(asked).toHaveLength(1);
   });
 
   test("the retained list clears A's bulk selection before B can act", async () => {
