@@ -9,9 +9,9 @@ export const GRIDS_ROUTE_EAGER_BROTLI_BUDGET = 809 * 1024;
 
 const entry = resolve(import.meta.dir, "RecordsScreen.island.tsx");
 
-// The size helper cannot measure an island with the v2 workspace navigation yet (#4332); the budget and the on-demand
-// promises stand and return with its fix.
-test.skip("the records island loads its barcode drawing, Assistant and preview code on demand and stays within its eager budget", async () => {
+// Red until #4336: the size helper cannot measure an island with the v2 workspace navigation yet (#4332). The budget and
+// the on-demand promises stand; once #4336 is in main this becomes `test` again (`bun test --todo` runs it now).
+test.todo("#4336: the records island loads its barcode drawing, Assistant and preview code on demand and stays within its eager budget", async () => {
   for (const language of ["en", "de"]) {
     const size = await islandBundleSize([entry], undefined, cloudLanguageBuild(language));
     console.info(`Grids records eager (${language}): ${size.eagerBrotliBytes}/${GRIDS_ROUTE_EAGER_BROTLI_BUDGET} B Brotli`);

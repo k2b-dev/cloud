@@ -554,12 +554,12 @@ describe("the query of a base on v2", () => {
     try {
       const editor = tab.getByRole("textbox", { name: "GQL-Abfrage" });
       await tab.locator("[aria-label=Quellen] [data-k2-part=Row]", { hasText: "Ersatzteile" }).locator(".k2-row-open").click();
-      await expect(editor.inputValue()).resolves.toBe("from table Ersatzteile");
+      expect(await editor.inputValue()).toBe("from table Ersatzteile");
       await editor.fill("from table Aufträge\nlimit 5");
       await editor.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(19, 19));
       await tab.getByRole("button", { name: "Felder von Aufträge" }).click();
       await tab.getByRole("menuitem", { name: /Status/ }).click();
-      await expect(editor.inputValue()).resolves.toBe("from table AufträgeStatus\nlimit 5");
+      expect(await editor.inputValue()).toBe("from table AufträgeStatus\nlimit 5");
       // the query stays in the address, so reload shows the same
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("q")?.includes("limit 5"));
       expect(errors).toEqual([]);

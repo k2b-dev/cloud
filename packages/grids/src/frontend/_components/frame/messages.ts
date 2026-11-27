@@ -88,7 +88,8 @@ export const frameMessages = i18n.define({
       allBases: "Alle Bases",
       newBase: "Neue Base",
       editMode: "Bearbeiten",
-      doneEditing: "Fertig",
+      // one mode, named once: the head shows its tools, this ends it
+      doneEditing: "Bearbeiten beenden",
       settings: "Einstellungen",
       off: "aus",
       draft: "Entwurf",

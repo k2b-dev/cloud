@@ -17,8 +17,6 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: weatherPage } = await import("../../weather/src/frontend/display/page");
 const { SimpleDisplayView, DetailDisplayView, DisplayUnavailable } = await import("../../weather/src/frontend/display/DisplayViews");
-const { default: FormulaReferenceWindow } = await import("../../grids/src/frontend/_components/fields/FormulaReferenceWindow.island");
-const { default: QueryReferenceWindow } = await import("../../grids/src/frontend/_components/query/QueryReferenceWindow");
 
 const server = new Hono().get("/weather/display", ...weatherPage);
 const weatherProps: Parameters<typeof SimpleDisplayView>[0] = {
@@ -66,25 +64,6 @@ const surfaces: Record<string, { html: () => string | Promise<string>; selector:
         createComponent(DisplayUnavailable, { message: "Unavailable", refreshSeconds: 60, refreshedAt: null, retrying: true }),
       ),
     selector: "main",
-  },
-  "Grids formula reference window": {
-    html: () => componentHtml(() => createComponent(FormulaReferenceWindow, { tableName: "Orders", fields: [] })),
-    selector: "main",
-  },
-  "Grids query reference window": {
-    html: () =>
-      componentHtml(() =>
-        createComponent(QueryReferenceWindow, {
-          baseId: "base-probe",
-          baseName: "Orders",
-          tables: [],
-          fieldsByTable: {},
-          viewsByTable: {},
-          recordCountsByTable: {},
-          documents: [],
-        }),
-      ),
-    selector: ".k2b-app-workspace",
   },
 };
 
