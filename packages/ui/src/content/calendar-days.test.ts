@@ -3,6 +3,7 @@ import { dates } from "@k2b/stdlib";
 import {
   buildDays,
   type CalendarDayHours,
+  capBands,
   clockAt,
   type DayEntry,
   type DayGeometry,
@@ -15,6 +16,7 @@ import {
   dayTopY,
   dayY,
   dayYTerms,
+  drawnMinute,
   freeGaps,
   gapProposal,
   instantInDay,
@@ -303,6 +305,93 @@ describe("lanes and geometry", () => {
       ["a", 0, 2],
       ["b", 1, 2],
       ["c", 0, 1],
+    ]);
+  });
+
+  test("at most two side by side: an entry takes a free place as soon as one is free, the rest go to the +n of their hour", () => {
+    const band = (item: string, start: number, end: number) => ({ item, start, end });
+    const { shown, more } = capBands(
+      [
+        band("a", 600, 720),
+        band("b", 600, 660),
+        band("c", 610, 700),
+        band("d", 620, 680),
+        // b's place is free again at 11:00: e takes it instead of collapsing
+        band("e", 660, 720),
+        band("f", 670, 690),
+        band("g", 800, 860),
+      ],
+      { minimum: 20, max: 2, chip: 28, title: 20 },
+    );
+    expect(shown.map((entry) => [entry.item, entry.lane, entry.lanes, entry.more ?? false, entry.beside ?? false])).toEqual([
+      ["a", 0, 2, true, true],
+      // starts with a: a and b stay side by side also in a narrow column
+      ["b", 1, 2, true, true],
+      // an hour after a: in a narrow column it lies over a, indented
+      ["e", 1, 2, true, false],
+      // alone, with the whole width and no +n beside it
+      ["g", 0, 1, false, false],
+    ]);
+    expect(more.map((entry) => [entry.minute, entry.bands.map((each) => each.item)])).toEqual([
+      [610, ["c", "d"]],
+      [670, ["f"]],
+    ]);
+    // within the cap nothing collapses
+    expect(capBands([band("a", 600, 660), band("b", 610, 670)], { minimum: 20, max: 2, chip: 28, title: 20 }).more).toEqual([]);
+  });
+
+  test('a "+n" is as tall as `chip` minutes: closer ones join it, and a band that its height reaches leaves it room', () => {
+    const band = (item: string, start: number, end: number) => ({ item, start, end });
+    const close = capBands([band("a", 470, 480), band("b", 470, 480), band("c", 470, 480), band("d", 485, 490)], {
+      minimum: 20,
+      max: 2,
+      chip: 28,
+      title: 20,
+    });
+    // d starts 15 minutes after c, inside c's "+n": one "+2" instead of two chips over each other
+    expect(close.more.map((entry) => [entry.minute, entry.bands.map((each) => each.item)])).toEqual([[470, ["c", "d"]]]);
+    const { shown, more } = capBands(
+      [
+        band("a", 600, 610),
+        band("b", 600, 610),
+        band("c", 600, 610),
+        // starts after every entry before it has ended, but where the "+1" from 10:00 is still drawn
+        band("f", 622, 700),
+        band("g", 800, 860),
+      ],
+      { minimum: 20, max: 2, chip: 28, title: 20 },
+    );
+    expect(more.map((entry) => [entry.minute, entry.bands.map((each) => each.item)])).toEqual([[600, ["c"]]]);
+    expect(shown.map((entry) => [entry.item, entry.more ?? false])).toEqual([
+      ["a", true],
+      ["b", true],
+      ["f", true],
+      ["g", false],
+    ]);
+  });
+
+  test('in the open night, drawn at half the height, a "+n" covers twice the minutes', () => {
+    const band = (item: string, start: number, end: number) => ({ item, start, end });
+    // 07:00 to 21:00 awake; 22:00 and 22:40 are 20 drawn minutes apart in the open night, less than a "+n" is tall
+    const night = [900, 900, 900, 940, 940, 940].map((start, index) => band(String.fromCharCode(97 + index), start, start + 30));
+    const options = { minimum: 20, max: 2, chip: 28, title: 20, drawn: (minute: number) => drawnMinute(minute, 840, true) };
+    expect(capBands(night, options).more.map((entry) => [entry.minute, entry.bands.map((each) => each.item)])).toEqual([[900, ["c", "f"]]]);
+  });
+
+  test("where later bands lie over earlier ones, each band knows where the first one over it starts", () => {
+    const band = (item: string, start: number, end: number) => ({ item, start, end });
+    const { shown } = capBands([band("a", 540, 660), band("b", 545, 600), band("c", 600, 690), band("d", 700, 720)], {
+      minimum: 20,
+      max: 2,
+      chip: 33,
+      title: 33,
+    });
+    expect(shown.map((entry) => [entry.item, entry.beside ?? false, entry.coveredAt ?? null])).toEqual([
+      // a and b start together: side by side, until c lies over a at 10:00
+      ["a", true, 600],
+      ["b", true, null],
+      ["c", false, null],
+      ["d", false, null],
     ]);
   });
 
