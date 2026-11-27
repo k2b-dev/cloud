@@ -24,7 +24,7 @@ The reference is the taste study (`v2-taste-study` and `v2-taste-parts` on the C
 - **Do:** keep settings and detail content to 1040 px (a head column of 232 px, 48 px gap, up to 760 px of content). Put an action at the end of the content it acts on.
 - **Don't:** let a short list run across a 1400 px window, with its action 800 px away from its rows.
 - **Why:** the eye loses a line that is too long, and an action far from its object reads as belonging to something else.
-- **In v2:** every `Section` in a pane of 960 px and more takes this measure. A section that holds a table, tiles or a drawing keeps its full width.
+- **In v2:** every `Section` in a pane of 960 px and more takes this measure. A section that holds a large table (with selection or a sticky column), tiles, groups or a drawing keeps its full width.
 
 ### 2. A head says what it is
 

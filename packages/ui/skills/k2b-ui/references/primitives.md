@@ -208,7 +208,7 @@ symbol and verb, also on the phone), `summary` (the one sentence that says
 what it is for, the quiet line right under the title). By default, in a pane
 of 960 px and more, title, summary and buttons stand in a column of 232 px and
 the content 48 px beside it, and the section with its line ends at 1040 px
-(the measure); a section that holds a table, tiles or a drawing keeps its full
+(the measure); a section that holds a large table (with selection or a sticky column), tiles, groups or a drawing keeps its full
 width, and a narrower pane stacks head and content.
 `measure` (its head, sentence and rows keep the reading measure of `Prose`,
 720 px of text, so a short list in a wide pane stays together; its line
