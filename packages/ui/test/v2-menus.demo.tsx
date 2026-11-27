@@ -127,47 +127,47 @@ export function Demo() {
           <Bar
             end={
               <>
-                    <Popover tip="Neu laden">
-                      <Button variant="ghost" icon="refresh" label="Aktualisieren" onClick={did("reload")} />
-                    </Popover>
-                    <Button
-                      onClick={() => {
-                        did("save")();
-                        toast("Auftrag gespeichert", { status: "ok", undo: did("undo") });
-                      }}
-                    >
-                      Speichern
-                    </Button>
-                    <Menu
-                      icon="arrow-back-up"
-                      items={[
-                        {
-                          title: "Antwortart",
-                          choice: kind(),
-                          onChoose: (value) => {
-                            setKind(value);
-                            did(`kind:${value}`)();
-                          },
-                          items: [
-                            { label: "Antworten", value: "reply", icon: "arrow-back-up" },
-                            { label: "Allen antworten", value: "all", icon: "arrow-back-up-double" },
-                            { label: "Weiterleiten", value: "forward", icon: "arrow-forward-up" },
-                          ],
-                        },
-                        {
-                          title: "Absender",
-                          choice: sender(),
-                          onChoose: (value) => {
-                            setSender(value);
-                            did(`sender:${value}`)();
-                          },
-                          items: [{ label: "anna@werkstatt.example" }, { label: "info@werkstatt.example" }],
-                        },
-                        { title: "Entwurf", items: [{ label: "Verwerfen", icon: "trash", danger: true, onClick: did("draft:discard") }] },
-                      ]}
-                    >
-                      Antwort
-                    </Menu>
+                <Popover tip="Neu laden">
+                  <Button variant="ghost" icon="refresh" label="Aktualisieren" onClick={did("reload")} />
+                </Popover>
+                <Button
+                  onClick={() => {
+                    did("save")();
+                    toast("Auftrag gespeichert", { status: "ok", undo: did("undo") });
+                  }}
+                >
+                  Speichern
+                </Button>
+                <Menu
+                  icon="arrow-back-up"
+                  items={[
+                    {
+                      title: "Antwortart",
+                      choice: kind(),
+                      onChoose: (value) => {
+                        setKind(value);
+                        did(`kind:${value}`)();
+                      },
+                      items: [
+                        { label: "Antworten", value: "reply", icon: "arrow-back-up" },
+                        { label: "Allen antworten", value: "all", icon: "arrow-back-up-double" },
+                        { label: "Weiterleiten", value: "forward", icon: "arrow-forward-up" },
+                      ],
+                    },
+                    {
+                      title: "Absender",
+                      choice: sender(),
+                      onChoose: (value) => {
+                        setSender(value);
+                        did(`sender:${value}`)();
+                      },
+                      items: [{ label: "anna@werkstatt.example" }, { label: "info@werkstatt.example" }],
+                    },
+                    { title: "Entwurf", items: [{ label: "Verwerfen", icon: "trash", danger: true, onClick: did("draft:discard") }] },
+                  ]}
+                >
+                  Antwort
+                </Menu>
               </>
             }
           />

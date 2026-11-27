@@ -453,7 +453,6 @@ test("My apps & automations shows only for a person with Code, and ?code=1 seeds
     initial: seed?.page,
     onCreateInChat: () => {},
   });
-  expect(list).toContain("Create in chat");
   expect(list).toContain("Weekly sales report");
   expect(view).toMatch(/href="\/app\/assistant\?code=1"[^>]*aria-current="page"|aria-current="page"[^>]*href="\/app\/assistant\?code=1"/);
 });

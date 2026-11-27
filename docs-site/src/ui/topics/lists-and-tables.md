@@ -50,7 +50,7 @@ One entry: one to three lines, a lead, a time, marks and one action; `current`, 
 
 ### Table
 
-Columns of like things: fixed widths, cut text, dropped columns and two-line rows on the phone.
+Columns of like things: fixed widths, cut text, dropped columns and two-line rows on the phone. One column may show each row's data over time as [`Ticks`](/en/ui/v2/content).
 
 <Props of="Table Column" />
 

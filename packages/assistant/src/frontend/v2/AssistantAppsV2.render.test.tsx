@@ -73,8 +73,8 @@ describe("My apps & automations on v2", () => {
     expect(text).not.toContain("nächster Lauf");
     expect(text).toContain("–");
     // B rule 1: the exceptions stand beside the hero, each with the first one it names; the create action beside them.
-    for (const part of ["1 braucht dich · Stoffpreise prüfen", "1 läuft · Rückfragen sammeln", "1 pausiert", "Im Chat erstellen"])
-      expect(text).toContain(part);
+    // "Im Chat erstellen" stands in the page's head (AssistantPageFrame), not in the status row.
+    for (const part of ["1 braucht dich · Stoffpreise prüfen", "1 läuft · Rückfragen sammeln", "1 pausiert"]) expect(text).toContain(part);
     // Explanations belong to the empty state, not to every day.
     expect(text).not.toContain("Dein Code läuft als du");
   });
@@ -88,7 +88,7 @@ describe("My apps & automations on v2", () => {
 
   test("English names the same parts", () => {
     const text = visible(apps("normal", "en"));
-    for (const part of ["15 runs today", "Create in chat", "1 needs you · Stoffpreise prüfen", "1 running · Rückfragen sammeln"])
+    for (const part of ["15 runs today", "1 needs you · Stoffpreise prüfen", "1 running · Rückfragen sammeln"])
       expect(text).toContain(part);
   });
 
