@@ -1,0 +1,6 @@
+### An open detail ran past the window at 1024 px: the workspace did not count a split inside a column
+
+- **What happened:** In Files and the pairing screen at 1024 px, the open detail ended 3 to 13 px past the window. W1b also saw the grip of its line stand 1 px off a line that looked 3 px wide.
+- **Root cause:** Their workspace holds one column (with a status row) whose content is a `Pane.Split` of a list (400 px) and a detail (320 px). The workspace asks only its top columns what they need, and that column said 400 px. So the sidebar stayed a column at 1024 px, and the split inside had 13 px too little.
+- **Error class:** A measure of room that counts only the parts at its own level, where the parts that need the room stand one level deeper.
+- **Guard:** A split inside a column now tells that column what it needs beside each other (each pane at its minimum, the lines between, and a context column that gives way counts nothing). The column asks the workspace for the larger of that and its own minimum. `packages/ui/src/v2/nested-split.browser.test.ts` checks the Files shape at 1024 to 1440 px and a record's detail with its info column at 1024 to 1920 px: nothing runs past the window, and every grip stands centred on a 1 px line. It failed first at 1024 px (1037 px).

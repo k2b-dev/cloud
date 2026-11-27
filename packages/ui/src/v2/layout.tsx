@@ -385,6 +385,11 @@ type SplitEntry = {
 const SplitContext = createContext<(entry: SplitEntry) => void>();
 /** Whether the split is a main column with one context column after it: then the context gives way where there is no room. */
 const ContextualContext = createContext<Accessor<boolean>>();
+/**
+ * A split inside a column tells that column what it needs beside each other (Files: a list beside its open detail), so
+ * the column asks the workspace for that much, not for 400 px.
+ */
+const InnerContext = createContext<(need: Accessor<number>) => void>();
 
 export type PaneProps = {
   /** The head of this column: a `Bar` (56 px; 52 px for a reader beside a list) or `Tabs`. */
@@ -425,7 +430,10 @@ export type PaneProps = {
    * room of the workspace, so the sidebar never becomes a drawer for it. `{ from }` asks for more room, in px of the
    * split, for a main column that needs it, such as a table (`{ from: 1400 }`: a large screen); never less than the
    * defaults. The rule is a `<style>` beside the split, made from these widths on the server too; a page whose content
-   * security policy allows no inline style keeps the context column beside, as in any other split.
+   * security policy allows no inline style keeps the context column beside, as in any other split, and so does a split
+   * with no place above it that measures (`k2-host`: a Workspace's main column or a pane), such as one in a dialog or a
+   * sidebar. `side` belongs on the inner column only: an outer `Pane detail` with `side` becomes the context column of
+   * the list and moves under it.
    *
    * In any other split (a list, its reader and an info column) it stands beside as every column does and counts
    * toward the room of the workspace. Known: the split's rule asks for its panes as its own children, so a pane that
@@ -460,11 +468,18 @@ export const Pane = (props: PaneProps) => {
   };
   useContext(SplitContext)?.(entry);
   const contextual = useContext(ContextualContext);
-  // a column at the top of a workspace tells it what it needs; panes inside this one are not its columns. A context
-  // column beside a single main column needs nothing: where there is no room beside, it stands under the main column.
+  // what a split inside this column needs beside each other (see `InnerContext`)
+  const [inner, setInner] = createSignal<readonly Accessor<number>[]>([]);
+  const registerInner = (need: Accessor<number>) => {
+    setInner((list) => [...list, need]);
+    onCleanup(() => setInner((list) => list.filter((other) => other !== need)));
+  };
+  // a column at the top of a workspace tells it what it needs; panes inside this one are not its columns, but what a
+  // split inside it needs counts. A context column beside a single main column needs nothing: where there is no room
+  // beside, it stands under the main column.
   useContext(ColumnsContext)?.register({
     get need() {
-      return props.width?.min ?? flexibleMin;
+      return Math.max(props.width?.min ?? flexibleMin, ...inner().map((need) => need()));
     },
     get detail() {
       return props.detail === true;
@@ -537,7 +552,9 @@ export const Pane = (props: PaneProps) => {
         </div>
       </Show>
       <div class="k2-scroll" data-scroll-preserve={props.scrollKey}>
-        <ColumnsContext.Provider value={undefined}>{props.children}</ColumnsContext.Provider>
+        <ColumnsContext.Provider value={undefined}>
+          <InnerContext.Provider value={registerInner}>{props.children}</InnerContext.Provider>
+        </ColumnsContext.Provider>
       </div>
     </section>
   );
@@ -564,6 +581,13 @@ Pane.Split = (props: {
     const [main, context, ...rest] = entries();
     return rest.length === 0 && main !== undefined && !main.side && Boolean(context?.side) && !columns?.empty();
   };
+  // inside a column: what its panes need beside each other, each at its minimum (a column without a width at 400 px)
+  // with the lines between them; a context column that gives way needs nothing
+  if (!columns)
+    useContext(InnerContext)?.(() => {
+      const beside = entries().filter((entry) => !(contextual() && entry.side));
+      return beside.reduce((sum, entry) => sum + (entry.width?.min ?? flexibleMin), 0) + Math.max(0, beside.length - 1);
+    });
   return (
     <SplitContext.Provider value={register}>
       <ContextualContext.Provider value={contextual}>
