@@ -36,6 +36,22 @@ export type MenuItem = {
 };
 
 /**
+ * An entry that only says something, such as a member a space lists: a sign, the words and a quiet hint at the end,
+ * at the contrast of an entry (not dimmed as a disabled one). It is plain text for assistive technology, the keys pass
+ * over it, and a click on it does nothing.
+ */
+export type MenuInfo = {
+  /** Marks the entry as one without a deed. */
+  info: true;
+  /** The words of the entry. */
+  label: string;
+  /** A Tabler icon name without the `ti-` prefix. */
+  icon?: string;
+  /** A quiet hint at the end, such as a role ("Verwaltung"). */
+  meta?: string;
+};
+
+/**
  * Entries under a heading, such as "Antwortart". With `choice` the section is one choice: its entries are options,
  * the one whose `value` (or `label`) is `choice` carries the tick, and choosing one closes the menu and calls
  * `onChoose` with its value. The menu draws a line between a section and what stands around it.
@@ -43,18 +59,19 @@ export type MenuItem = {
 export type MenuSection = {
   /** The quiet heading over the entries, such as "Sortieren nach". */
   title: string;
-  /** The entries under the heading. */
-  items: readonly MenuItem[];
+  /** The entries under the heading; an entry without a deed (`info`) stands among them as text. */
+  items: readonly (MenuItem | MenuInfo)[];
   /** Makes the section one choice: the value of the chosen entry, which carries the tick. */
   choice?: string;
   /** Called with the value of the entry chosen in a section with `choice`; choosing closes the menu. */
   onChoose?: (value: string) => void;
 };
 
-/** An entry, a section of entries under a heading, or a line between groups of entries. */
-export type MenuEntry = MenuItem | MenuSection | "separator";
+/** An entry, an entry without a deed, a section of entries under a heading, or a line between groups of entries. */
+export type MenuEntry = MenuItem | MenuInfo | MenuSection | "separator";
 
 const isSection = (entry: MenuEntry): entry is MenuSection => entry !== "separator" && "title" in entry;
+const isInfo = (entry: MenuEntry): entry is MenuInfo => entry !== "separator" && "info" in entry;
 
 type Variant = "primary" | "secondary" | "ghost" | "text";
 
@@ -91,7 +108,7 @@ export type MenuProps = TriggerProps & {
  */
 export const menuEntries = (entries: readonly MenuEntry[]): MenuEntry[] => {
   const out: MenuEntry[] = [];
-  const danger = (entry: MenuEntry) => entry !== "separator" && !isSection(entry) && !!entry.danger;
+  const danger = (entry: MenuEntry) => entry !== "separator" && !isSection(entry) && !isInfo(entry) && !!entry.danger;
   for (const entry of entries) {
     const last = out.at(-1);
     const apart = last !== undefined && last !== "separator" && entry !== "separator";
@@ -140,7 +157,9 @@ const Entries = (props: { level: MenuLevelParts; entries: readonly MenuEntry[]; 
           ? `separator:${index}`
           : isSection(entry)
             ? `${entry.choice === undefined ? "section" : "choice"}:${entry.title}`
-            : `${kindOf(entry)}:${entry.label}`;
+            : isInfo(entry)
+              ? `info:${entry.label}`
+              : `${kindOf(entry)}:${entry.label}`;
       const count = seen.get(base) ?? 0;
       seen.set(base, count + 1);
       return { key: count ? `${base}#${count}` : base, entry };
@@ -158,6 +177,13 @@ const Entries = (props: { level: MenuLevelParts; entries: readonly MenuEntry[]; 
             return now !== "separator" && isSection(now) ? now : first;
           };
           return <Section level={props.level} section={section()} name={key} lead={lead()} />;
+        }
+        if (isInfo(first)) {
+          const info = () => {
+            const now = entry();
+            return now !== "separator" && isInfo(now) ? now : first;
+          };
+          return <Info item={info()} lead={lead()} />;
         }
         return <Entry level={props.level} kind={kindOf(first)} item={itemOf(entry())} value={key} lead={lead()} />;
       }}
@@ -187,6 +213,7 @@ const Section = (props: { level: MenuLevelParts; section: MenuSection; name: str
     );
   }
   const valueOf = (item: MenuItem) => item.value ?? item.label;
+  const keyOf = (item: MenuItem | MenuInfo) => (isInfo(item) ? `\u0000info:${item.label}` : valueOf(item));
   return (
     <props.level.RadioGroup
       name={props.name}
@@ -196,9 +223,21 @@ const Section = (props: { level: MenuLevelParts; section: MenuSection; name: str
       class="k2-mgroup"
     >
       {heading}
-      <For each={props.section.items.map(valueOf)}>
+      <For each={props.section.items.map(keyOf)}>
         {(value) => {
-          const item = () => props.section.items.find((each) => valueOf(each) === value) ?? { label: value };
+          const found = () => props.section.items.find((each) => keyOf(each) === value);
+          const first = untrack(found);
+          if (first && isInfo(first)) {
+            const info = () => {
+              const now = found();
+              return now && isInfo(now) ? now : first;
+            };
+            return <Info item={info()} lead={props.lead} />;
+          }
+          const item = () => {
+            const now = found();
+            return now && !isInfo(now) ? now : { label: value };
+          };
           return (
             <props.level.RadioItem
               group={props.name}
@@ -232,9 +271,9 @@ type EntryKind = "submenu" | "tick" | "link" | "deed";
 const kindOf = (entry: MenuItem): EntryKind =>
   entry.items ? "submenu" : entry.checked !== undefined ? "tick" : entry.href !== undefined && !entry.disabled ? "link" : "deed";
 
-const itemOf = (entry: MenuEntry): MenuItem => (entry === "separator" || isSection(entry) ? { label: "" } : entry);
+const itemOf = (entry: MenuEntry): MenuItem => (entry === "separator" || isSection(entry) || isInfo(entry) ? { label: "" } : entry);
 
-const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) => (
+const EntryFace = (props: { item: Pick<MenuItem, "label" | "icon" | "meta">; lead: boolean; end?: JSX.Element }) => (
   <>
     <Show when={props.lead}>
       <span class="k2-mi-lead">
@@ -245,6 +284,16 @@ const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) 
     <Show when={props.item.meta}>{(meta) => <span class="k2-mi-meta">{meta()}</span>}</Show>
     {props.end}
   </>
+);
+
+/**
+ * An entry without a deed: no part of the behaviour layer, so the keys and typeahead pass over it and it has no role
+ * of its own (plain text in the menu, inside the group its heading names); it looks as an entry does, at rest.
+ */
+const Info = (props: { item: MenuInfo; lead: boolean }) => (
+  <div class="k2-mi" data-info="">
+    <EntryFace item={props.item} lead={props.lead} />
+  </div>
 );
 
 /** One entry of one kind (submenu, tick, link, deed); its words and states follow the data. */
