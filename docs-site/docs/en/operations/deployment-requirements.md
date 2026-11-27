@@ -27,6 +27,67 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 package, CLI and desktop development tools are not additional server apps in
 this service set.
 
+## Remove the Capabilities application when upgrading
+
+The built-in Capabilities application is removed from this release. Before
+replacing your deployment files, stop and remove `app-capabilities` using the
+previous Compose configuration:
+
+```bash
+docker compose -f compose.prod.yml stop app-capabilities
+docker compose -f compose.prod.yml rm -f app-capabilities
+```
+
+Use your normal environment and infrastructure overlays for both commands.
+Wait at least three minutes after the old service stops, so any remaining
+registry lease expires before Core performs the database cleanup. Then deploy
+the new release. For Kubernetes or a custom deployment, remove the
+Capabilities workload and its service from your manifests. Remove its app-key
+mount and secret from deployment configuration once the old service is gone.
+The new release no longer publishes a Capabilities application image.
+
+There is no application-specific compatibility or registration path. An old
+container is an unknown application handled by the generic registry. Stop it
+before upgrading: graceful shutdown withdraws its routes; otherwise its last
+heartbeat lease expires within three minutes. Until expiry, an old route can
+point to the stopped service and return a gateway error. Other applications
+remain available.
+
+**Upgrading permanently deletes the removed application's own records.**
+Core removes its remembered registration and package assignment, app keys and
+service accounts with their grants, settings and domains, rail entries and
+chooser/consent preferences, notification definitions and deliveries,
+approvals and remembered approval grants, Help/search documents and app Skill
+catalogs, app-owned Code, workflow runs/scopes and their AI admission/budget
+state, event subscriptions/outbox data, and its own capability execution and
+idempotency records. Explicit grants to this app are removed from other
+workloads' mandates; affected active mandates are paused and audited.
+
+Historical audit events, AI inference/quota and structured-run records,
+outgoing-mail messages, logging data and other providers' capability execution
+records stay, including executions called through the removed app. Core writes
+one `app.removed` audit event only when it removes or changes rows; fresh
+installations get no removal event. Direct counts separate deletions from
+changes to surviving rows; foreign-key cascades delete additional dependent
+rows. Revoked mandates owned by other applications stay unchanged. Other
+applications' data stays. Back up the database before upgrading if you need
+removed data.
+
+On large installations this transaction can extend Core startup and hold
+database locks while it deletes the old data. Wait for Core's readiness check
+to pass before starting the remaining applications.
+
+The application had no owned database schema or authored content, so there is
+no application content to export and no separate export command. The database
+schema named `capabilities` belongs to the platform and is kept. Its execution
+history is deleted only where this application was the provider.
+
+The platform capability API, mandates, `cld capabilities`, Assistant and provider
+applications continue to work. Use `cld capabilities catalog` for discovery and
+**Administration → Observability → Capabilities** for administrator inspection.
+Saved links to `/app/capabilities` and calls to its catalog-search Query no
+longer work after removal; update scripts or bookmarks that use that app.
+
 ## Code runner hosts
 
 Production Compose starts the Code runner service. Before starting it, install
@@ -68,6 +129,85 @@ Mail's readiness check succeeds, so Mail can refuse unresolved old sends
 before Studio cleanup begins. A running container alone is insufficient.
 Custom deployments must probe `/_cloud/ready` on Mail before starting
 Assistant; Compose does not enforce this order automatically.
+
+## Remove the FAQ application when upgrading
+
+The built-in FAQ application is removed from this release. **Upgrading
+permanently deletes all FAQ entries**, including translations, audiences and
+their order. Core drops the FAQ schema even when the application is absent.
+Application Help continues to work; the new release publishes no FAQ image.
+
+Before stopping the old service, export your entries with an administrator
+profile connected to the old installation. Choose an unused output filename:
+
+```bash
+cld --profile <admin-profile> faq list --json > faq-export.json
+```
+
+This command returns all entries, including IDs, translations, Markdown answers,
+audiences, positions, and creation timestamps. It needs the old running FAQ app
+and its installed `faq` CLI plugin; after removal, the API and this command are
+unavailable. Keep the JSON export as the complete source copy.
+
+To move the content into Notebooks, create a notebook and copy each question
+and Markdown answer into a note, in the desired order. Keep language variants
+in separate notes or sections. Review the notebook's sharing before copying:
+FAQ audiences are not converted into notebook access. Notebooks requires
+sign-in and notebook access; it does not replace anonymous FAQ publication.
+In-app Help remains application-authored documentation and does not import your
+FAQ entries automatically. Export before upgrading: after the migration,
+the entries can only be recovered from a pre-upgrade backup or export.
+
+Stop and remove the old service using your previous Compose configuration,
+including your normal environment and infrastructure overlays:
+
+```bash
+docker compose -f compose.prod.yml stop app-faq
+docker compose -f compose.prod.yml rm -f app-faq
+```
+
+Wait at least three minutes after the old service stops, so any remaining
+registry lease expires before Core performs the database cleanup. Then deploy
+the new release. For Kubernetes or custom deployments, remove the
+FAQ workload and service from your manifests. Remove its app-key mount and
+secret from deployment configuration after the service is gone. Core also
+deletes the application's remembered registration, package assignment, app
+keys and service accounts with their grants, settings and domains, rail
+entries and chooser/consent preferences, notification definitions and
+deliveries, approvals and remembered approval grants, Help/search documents
+and app Skill catalogs, app-owned Code, workflow runs/scopes and their AI
+admission/budget state, event subscriptions/outbox data, and its own capability
+execution and idempotency records. Explicit FAQ grants are removed from other
+workloads' mandates; affected active mandates are paused and audited.
+
+Historical audit events, AI inference/quota and structured-run records,
+outgoing-mail messages, logging data and other providers' capability execution
+records stay, including executions called through FAQ. Core writes one
+`app.removed` audit event only when it removes or changes rows; fresh
+installations get no removal event. Direct counts separate deletions from
+changes to surviving rows; foreign-key cascades delete additional dependent
+rows. Revoked mandates owned by other applications stay unchanged. Other
+applications' data stays. Back up the database before upgrading if you need
+removed data.
+
+Stopping the old FAQ service first is mandatory: restarting its old container
+would recreate an empty FAQ schema. Remove it from automatic restart and
+deployment configuration before upgrading. On large installations the cleanup
+transaction can extend Core startup and hold database locks. Wait for Core's
+readiness check to pass before starting the remaining applications.
+
+You can remove the cached CLI module with
+`cld --profile <admin-profile> plugins remove faq` after exporting.
+
+There is no application-specific compatibility or registration path. An old
+container is an unknown application handled by the generic registry. Stop it
+before upgrading: graceful shutdown withdraws its live registration; otherwise
+its last heartbeat lease expires within three minutes. The gateway and shell
+then drop its routes and footer link. Until expiry, a stopped service can still return a gateway
+error through an old route; other applications remain available. Core removes
+the remembered FAQ listing during the upgrade.
+Update bookmarks, integrations, and external links to `/faq`, `/admin/faq`, and
+`/api/faq`; those surfaces are removed without a redirect.
 
 ## Applications start with a key file and Core address
 
@@ -309,7 +449,7 @@ See [the migration steps](/en/docs/reference/deprecations-and-migrations#confirm
 
 Applications built with this release may declare Action policies and return
 per-call reviews or receipts. Upgrade Core and every application that calls
-Actions, at least Assistant and Capabilities, to this release or newer first.
+Actions, including Assistant, to this release or newer first.
 Older versions still discover the Actions through derived approval metadata,
 but reject the new response shapes. Existing apps need no migration in this
 release. See [Action contract migration](/en/docs/platform/capabilities#migrate-an-application).
@@ -803,7 +943,6 @@ or mutate real data without approval.
 | [OAuth](/en/apps/oauth) (`oauth`) | Baseline; same database as Core; direct Core origin and an enrolled `oauth` app key (or matching legacy broker secret). Readiness probes Core before OAuth migrations. | Register external clients with exact callbacks and access rules. OAuth needs no workload credential and never receives Core's KEK. | Fetch discovery, then complete a test authorization-code/PKCE flow and refresh a token. For headless CLI sign-in, also approve one `cld login --device` code at `/oauth/device` and, with Cloud Login approval enabled, one `cld login --user` request on a paired device. Discovery alone is insufficient. |
 | [Proxy Auth](/en/apps/proxy-auth) (`proxy-auth`) | Baseline | Configure a proxy-auth client and the external reverse proxy's forward-auth/callback integration. This is not an OAuth-client requirement. | Check denied and permitted access to one test upstream through that reverse proxy. |
 | [API Docs](/en/apps/api-docs) (`api-docs`) | Baseline | Registered applications must publish reachable OpenAPI endpoints to appear as usable sources. | Open `/app/api-docs`, select an installed app, and load its specification. |
-| [Capabilities](/en/apps/capabilities) (`capabilities`) | Baseline | Core's dispatcher and the selected provider apps. The Capabilities app is a UI, not a prerequisite for other apps to call capabilities. | Open `/app/capabilities` and execute a permitted read-only query against an installed provider. |
 | [Dashboard](/en/apps/dashboard) (`dashboard`) | Baseline | Selected widget-provider apps and Core's widget proxy; no fixed requirement to install every provider. | Open `/app/dashboard`; verify a selected provider's widget and its unavailable state when that provider is absent. |
 | [Pulse](/en/apps/pulse) (`pulse`) | Baseline; included in development and production Compose; boots ready before ClickHouse setup | [Dedicated ClickHouse 26.9+](#provide-clickhouse-for-pulse) is required to use Pulse. A Cloud admin connects it under Administration → Pulse. Each base owns a database and read user. Ingestion requires configured sources, source-bound credentials and producers. The release workflow publishes the Pulse image. | Ingest a disposable batch through its source credential and inspect source health. |
 
@@ -812,7 +951,6 @@ or mutate real data without approval.
 | App ID | Startup requirements | Feature dependencies and configuration | Functional check |
 | --- | --- | --- | --- |
 | [Contacts](/en/apps/contacts) (`contacts`) | Baseline | No additional external service for contact books and records. Cross-app use requires whichever consumer/provider is selected. | Create and read a disposable contact in a test book; verify another account's access boundary. |
-| [FAQ](/en/apps/faq) (`faq`) | Baseline | No additional external service for authored FAQ content. | Publish a test entry and verify its intended visibility on `/faq`. |
 | [Files](/en/apps/filesv2) (`filesv2`) | Baseline; application-owned storage assignments | Filegate 7.1.0 with independent roots, backend token, a browser-reachable public origin outside Cloud cookie scope, and exact CORS origins. Personal and group Cloud storage requires local Linux identities; [machine storage](/en/docs/identity/files-machine-storage) uses independent ownership, explicit path grants and the existing Filegate service identity without Unix provisioning. FreeIPA requires valid POSIX identities and root `execution: true` with the explicitly configured Unix-execution daemon privileges. Set `managed: true` only for exclusive Filegate writers; keep it false with external writers. File references survive rename and move only on Filegate 7 roots with `index: true` and `managed: true`. Optional: Collabora Online 26.04 or later with its own browser-reachable address and TLS; Collabora must reach Cloud's public address (or the configured WOPI origin) and Cloud must reach Collabora. Several Collabora instances need sticky routing on `WOPISrc`. | Inspect existing storage in `/admin/filesv2`, browse an authorized directory and download through a lease. Verify external filesystem additions and denied access. With Collabora configured, open one `odt` from two sessions, save, and inspect history according to the root cooldown. Verify conflicts on managed roots; unmanaged roots provide only best-effort conflict checks. Test the real mount and export before production acceptance. |
 | [Grids](/en/apps/grids) (`grids`) | Baseline | Files are stored in Postgres (`grids.max_file_size_mb` controls upload size). Document PDF rendering requires Gotenberg. Workflow email uses notifications as app `core` and requires a [default outgoing mail sender profile](/en/docs/operations/outgoing-mail). Other workflow integrations require their selected providers. | Create a test base/table/record; upload a small file. If documents are enabled, render a test PDF. |
 | [Mail](/en/apps/mail) (`mail`) | Baseline; an unconnected mailbox is not proof of provider readiness | Mailbox synchronization and delivery require configured IMAP/SMTP endpoints, TLS, credentials and network-policy approval. Users connect their own mailboxes through IMAP/SMTP; managed Google/Microsoft browser authorization is not available. Incoming automations need Mail's workload credential and mandates; AI steps need AI configuration, Spaces actions need Spaces. Recipient suggestions and participant contacts need the contact-directory app, Contacts by default (**Administration → Mail → Contact directory** or `cld mail admin contact-directory`). | Verify a test mailbox connection and synchronization; send only to an approved test recipient. Exercise one permitted automation if enabled. |

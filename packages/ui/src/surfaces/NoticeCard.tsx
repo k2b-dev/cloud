@@ -1,9 +1,9 @@
 import { children, For, type JSX, Show, splitProps } from "solid-js";
 import { dialogToneIcon, dialogToneLabel } from "../feedback/dialog-tone";
 import { useUiMessages } from "../intl/messages";
-import type { IntentTone } from "../semantics";
+import { NOTICE_CARD_CLASSES, type NoticeTone } from "./notice-card-classes";
 
-export type NoticeTone = Extract<IntentTone, "neutral" | "info" | "success" | "warning" | "danger"> | "ai";
+export { NOTICE_CARD_CLASSES, type NoticeTone };
 
 type NoticeCardContentProps =
   | { title: JSX.Element; detail?: JSX.Element; meta?: JSX.Element; children?: JSX.Element }
@@ -32,18 +32,6 @@ export type NoticeCardProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" |
     class?: string;
     bodyClass?: string;
   };
-
-export const NOTICE_CARD_CLASSES = {
-  root: "k2b-notice-card",
-  icon: "k2b-notice-card__icon",
-  content: "k2b-notice-card__content",
-  head: "k2b-notice-card__head",
-  title: "k2b-notice-card__title",
-  meta: "k2b-notice-card__meta",
-  description: "k2b-notice-card__description",
-  body: "k2b-notice-card__body",
-  actions: "k2b-notice-card__actions",
-} as const;
 
 /** Whether resolved children render something; a Show whose condition is false, or a boolean, renders nothing. */
 const rendersSomething = (nodes: unknown[]) => nodes.some((node) => node != null && typeof node !== "boolean" && node !== "");

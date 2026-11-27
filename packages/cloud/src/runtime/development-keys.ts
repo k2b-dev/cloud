@@ -23,13 +23,6 @@ export const DEVELOPMENT_APP_KEYS = [
     grants: [],
   },
   {
-    appId: "capabilities",
-    keyId: "7a7c1fe8-48b0-4eef-ab4b-d4d94f77242e",
-    publicKey: "T76iUFJyE_hn5MD0Zb8VhxMIiEDCpUmOH8KGtlPm_YE",
-    fingerprint: "9587282016459418ecafdc875f0b630d",
-    grants: [],
-  },
-  {
     appId: "chat",
     keyId: "2e87fb64-eaa2-4164-a390-158e44e00266",
     publicKey: "vb6ydBFCAYnkxzfWpldrKDLB8FiDUOM88tSCpxrtLWk",
@@ -48,13 +41,6 @@ export const DEVELOPMENT_APP_KEYS = [
     keyId: "19718de2-3aee-4405-a1d7-e9930c846b74",
     publicKey: "I4ah-iyoENwHcOjba2Ah3unNTSlT5j_VFjDVrEb8aPk",
     fingerprint: "38f4aad6bc1c0b49bf7d3b8c8dc0fe84",
-    grants: [],
-  },
-  {
-    appId: "faq",
-    keyId: "596727af-30e0-48e5-aa89-5a61656e28d6",
-    publicKey: "__H2-G8DsH7M_kK6YDeXTqw-rtt5yxK9g1UrB9taXG4",
-    fingerprint: "0bceabad4050b5306bf17054cb94a994",
     grants: [],
   },
   {

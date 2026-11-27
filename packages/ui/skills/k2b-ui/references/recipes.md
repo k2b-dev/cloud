@@ -82,6 +82,23 @@ in its words. Its footer `Bar` saves with a default button.
 - On the phone the form is the page; `back` leads to the list.
 - States: `errors`, `saving`.
 
+## settings.tsx: settings with more than text
+
+![settings at 1440 px](../images/settings-1440.png)
+![settings at 390 px](../images/settings-390.png)
+
+The sign-in settings of an app: a `Field` with an `action` that resets it
+to its default, a `Select` the operator fixed (`disabled`), allowed
+domains in a `TagsInput`, a logo in an `ImageInput`, an accent colour in a
+`ColorInput`, how dark the background is in a `Slider`, a pairing code in a
+`CodeInput`, and two `Disclosure`s with questions in a `Section`.
+
+- A field's deed stands at the end of its label line and never moves the
+  field; it takes the place of `optional`.
+- A choice the person may not change is a dimmed control with the reason
+  in its hint, not a missing one.
+- States: `empty`, `locked`.
+
 ## record.tsx: a record, first tab
 
 ![record at 1440 px](../images/record-1440.png)
@@ -272,6 +289,11 @@ empty (`Empty` with "Text schreiben"), loading (`Loading` rows) and failed
   overlay. It needs the `@k2b/ui` stylesheet and a `.k2b-ui` ancestor, which
   every Cloud page has; with `v2.css` alone a chart has no size (gap), so
   this recipe draws its plan itself.
+- A state timeline (`kind="stateTimeline"`) takes `now` from the page (the
+  server's request time, never a clock in the component) and draws it as a
+  thin line with "Jetzt" on its time axis; runs of seconds stay 3 units wide, centred on their
+  start; a start still to come has `planned: true` and is an outline that
+  says "geplant".
 - With no data, put `Empty` in place of the `Canvas`. `Loading` and
   `Failed` hold rows, not the height of a drawing, so the page moves while a
   chart loads (gap).

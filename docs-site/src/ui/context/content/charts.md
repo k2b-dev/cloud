@@ -193,6 +193,48 @@ keyboard inspection and linked cursors follow the actual plot below the legend.
   series={[{ label: "Orders", data: [{ x: 1, y: 12 }, { x: 2, y: 18 }] }]} />
 ```
 
+## A state timeline
+
+A state with its own `color` fills its intervals and its swatch with that
+colour. The series palette applies only to states without a colour. Give each
+state a `label` as well: the colour and the word name the state together.
+
+The legend stands below the timeline and wraps at any width. It takes at most
+40% of the height that you give the chart. Each lane keeps at least 18 px; a
+legend that needs more room keeps one line and scrolls, and takes the focus for
+that. A height of your own needs room for both: at least three quarters of the
+drawing (about 50 px and 18 px a lane) and 28 px for the legend. In a lower box the
+lanes get less. Each lane
+name starts at the left edge. The label column cuts off a long name with a
+short fade before the plot. The full name stays in the tooltip and in the
+lane's accessible name.
+
+Pass `now` to mark the present moment: a thin line in the accent over the
+lanes, with "Jetzt" on the time axis at that time (axis labels close to it
+give way; the band above the lanes belongs to the zoom controls). The chart reads no clock of its own, so give it
+the time the server answered with; the server and the first picture in the
+browser then draw the same line. Without `now` there is no line. Give `now` in
+the unit and base of your `domain` and `from`/`to` (Unix milliseconds for
+instants); a day that a clock change shortens or lengthens is yours to lay
+out in `domain`.
+
+An interval of a few seconds on a day is still drawn 3 units wide, centred on
+its start, and keeps its link and tooltip. Mark a start still to come with
+`planned: true`: it is an outline in its state's colour over a faint fill,
+not a filled region, its accessible name ends with "geplant" (unless the
+state's own label says so), and the legend adds "Geplant". Give a planned
+state a dark or neutral colour, such as slate: its thin outline must stand
+out from the surface.
+
+```tsx
+<Chart kind="stateTimeline" legend interactive style={{ height: "100%" }} now={requestTime}
+  states={[{ state: "error", label: "Failed", color: "#ef4444" }, { state: "scheduled", label: "Scheduled" }]}
+  rows={[{ label: "worker:files:thumbnails", intervals: [
+    { from: 0, to: 60_000, state: "error" },
+    { from: 7_200_000, to: 7_201_000, state: "scheduled", planned: true },
+  ] }]} />
+```
+
 ## Bar charts
 
 A bar chart labels every category; it never thins or drops category labels.
