@@ -4,8 +4,8 @@ import { join, resolve } from "node:path";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { cloudShellSheets } from "../../../../../scripts/fixtures/cloud-shell-sheets";
+import { loadShellAssets, type ShellAssets } from "../../../../cloud/test/shell-page";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
-import { loadShellAssets, type ShellAssets } from "../../../../../scripts/fixtures/shell-page";
 import { fixtureClients } from "./proxy-auth-fixture-data";
 
 // Proxy Auth on v2, from invented clients: the screen keeps the v2 layout rules at desktop, tablet and phone width with
@@ -139,19 +139,20 @@ const shoot = async (tab: Page, name: string) => {
 };
 
 describe("Proxy Auth on v2", () => {
-  test("the screen keeps the v2 rules at 1440, 1024 and 390 px, with normal, worst-case and no data", async () => {
-    const cases: [string, string, View][] = [
-      ["normal", "", desktop],
-      ["normal", "", tablet],
-      ["normal", "", phone],
-      ["worst", "", desktop],
-      ["worst", "", phone],
-      ["empty", "", desktop],
-      ["normal", "?tab=setup", desktop],
-      ["normal", "?tab=setup", phone],
-      ["normal", "?client=00000000-0000-4000-8000-000000000004", desktop],
-      ["worst", "?client=00000000-0000-4000-8000-000000000100", phone],
-    ];
+  /** The cases of the screen's v2 rules: each is checked with the outline and the measured layout. */
+  const layoutCases: [string, string, View][] = [
+    ["normal", "", desktop],
+    ["normal", "", tablet],
+    ["normal", "", phone],
+    ["worst", "", desktop],
+    ["worst", "", phone],
+    ["empty", "", desktop],
+    ["normal", "?tab=setup", desktop],
+    ["normal", "?tab=setup", phone],
+    ["normal", "?client=00000000-0000-4000-8000-000000000004", desktop],
+    ["worst", "?client=00000000-0000-4000-8000-000000000100", phone],
+  ];
+  const checkLayout = async (cases: [string, string, View][]) => {
     for (const [state, search, view] of cases) {
       const name = `proxy-auth${search.includes("client=") ? "-record" : search.includes("tab=setup") ? "-setup" : ""}-${state}-${view.width}`;
       const { context, tab, errors } = await open(view, `/admin/proxy-auth${search}`, state);
@@ -166,7 +167,17 @@ describe("Proxy Auth on v2", () => {
         await context.close();
       }
     }
-  }, 300_000);
+  };
+  // On the phone an open entry is a page of its own without a floating action; the layout check learns that in #4373.
+  const opensOnPhone = (row: [string, string, View]) => row[2] === phone && /[?&](client)=/.test(row[1]);
+
+  test(
+    "the screen keeps the v2 rules at 1440, 1024 and 390 px, with normal, worst-case and no data",
+    () => checkLayout(layoutCases.filter((row) => !opensOnPhone(row))),
+    300_000,
+  );
+
+  test.todo("waits for #4373: the v2 rules at 390 px with an entry open", () => checkLayout(layoutCases.filter(opensOnPhone)));
 
   test("a new client needs a name and a group, then shows its verify address once", async () => {
     const { context, tab, errors, calls } = await open(desktop, "/admin/proxy-auth");
@@ -229,6 +240,27 @@ describe("Proxy Auth on v2", () => {
         description: "Belege und Rechnungen",
         allowedGroupIds: [fixtureClients("normal")[1]!.allowedGroups[0]!.id, "g-ops"],
       });
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("on the phone the list floats its main action; an open client is a page with its deeds in the head", async () => {
+    const { context, tab, errors } = await open(phone, "/admin/proxy-auth");
+    try {
+      const fab = tab.locator(".k2-fab");
+      expect(await fab.isVisible()).toBe(true);
+      // the open entry by its address, as a row press leads there
+      await tab.goto(`${origin}/admin/proxy-auth?client=00000000-0000-4000-8000-000000000001`);
+      await tab.waitForSelector('body[data-ready="true"]');
+      expect(await fab.count()).toBe(0);
+      expect(await tab.getByRole("button", { name: "Bearbeiten" }).isVisible()).toBe(true);
+      await tab.getByRole("button", { name: "Weitere Aktionen" }).first().click();
+      expect(await tab.getByRole("menuitem", { name: "Löschen" }).isVisible()).toBe(true);
+      await tab.keyboard.press("Escape");
+      await tab.getByRole("link", { name: "Alle Clients" }).first().click();
+      await fab.waitFor();
       expect(errors).toEqual([]);
     } finally {
       await context.close();

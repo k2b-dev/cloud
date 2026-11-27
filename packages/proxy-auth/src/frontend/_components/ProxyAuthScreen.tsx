@@ -157,7 +157,8 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
       toast(t().notDeleted, { status: "bad", retry: () => void remove(client) });
       return;
     }
-    location.assign(LIST);
+    // back to the list as it was, search included
+    location.assign(listHref());
   };
 
   /** A client without groups lets nobody through until it has one: the state as dot and word, no pill. */
@@ -235,18 +236,19 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
           icon="users-group"
           label={t().allowedGroups}
           value={number(client.groups.length)}
-          meta={client.groups.length === 0 ? t().chooseGroups : groupShort(client, STRIP_LINE)}
+          // without a group the red line above says so and offers the way out; the figure only counts
+          meta={client.groups.length === 0 ? undefined : groupShort(client, STRIP_LINE)}
         />
         <Cells.Cell icon="calendar" label={t().created} value={client.created} />
       </Cells>
       <Section title={t().verifyUrl} summary={t().verifySummary}>
         <Facts items={[{ label: t().address, value: verifyUrl(client.clientId), mono: true, copy: verifyUrl(client.clientId) }]} />
       </Section>
-      <Section title={t().allowedGroups} count={client.groups.length}>
-        <Show when={client.groups.length > 0} fallback={<Text muted>{t().noGroups}</Text>}>
+      <Show when={client.groups.length > 0}>
+        <Section title={t().allowedGroups} count={client.groups.length}>
           <For each={client.groups}>{(group) => <Row icon="users-group" lines={[group.label]} />}</For>
-        </Show>
-      </Section>
+        </Section>
+      </Show>
       {/* what an administrator needs to copy; the description stands under the name, created in the strip */}
       <Section title={t().technique}>
         <Facts items={[{ label: t().clientId, value: client.clientId, mono: true, copy: client.clientId }]} />
@@ -402,8 +404,13 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
     <AdminWorkspace
       nav={props.nav}
       detail={props.tab === "clients" && props.open ? 440 : undefined}
-      // the main action on the list, floating at the bottom right on the phone; never over an open client or the setup
-      primary={props.tab === "clients" && !nothingYet() ? { label: t().newClient, icon: "plus", onClick: () => start("new") } : undefined}
+      // the main action of the list, floating on the phone; with a client open there is none, because on the phone the
+      // open client is a page of its own with back and its deeds in its head (the layout check learns this in #4373)
+      primary={
+        props.tab === "clients" && !nothingYet() && !props.open
+          ? { label: t().newClient, icon: "plus", onClick: () => start("new") }
+          : undefined
+      }
       head={
         <Bar
           start={
