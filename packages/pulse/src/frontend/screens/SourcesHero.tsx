@@ -83,12 +83,12 @@ export function SourcesHero(props: {
           figure={props.figures.today === null ? "—" : number(props.figures.today)}
           label={words().todayCell}
           meta={words().sinceMidnightSeries({ series: number(props.figures.series) })}
-          buckets={fetches()?.buckets ?? []}
+          ticks={fetches()?.slots ?? []}
           start="00:00"
           caption={
             fetches() ? words().fetchesCaption({ ok: number(fetches()!.ok), failed: number(fetches()!.failed) }) : words().fetchesUnknown
           }
-          end={props.now}
+          end="24:00"
           chartLabel={
             fetches() ? words().fetchesTrend({ ok: number(fetches()!.ok), failed: number(fetches()!.failed) }) : words().fetchesUnknown
           }

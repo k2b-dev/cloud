@@ -1,7 +1,7 @@
 import { AccessMemberSchema, PermissionLevelSchema, PrincipalSchema, ServiceAccountCredentialSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { BaseColorSchema, BaseIconSchema, BaseTimezoneSchema } from "../base-settings";
-import { FETCH_BUCKET_MINUTES, FETCH_TICKS, METRIC_TYPES, SOURCE_HOUR_MINUTES, SOURCE_KINDS, SOURCE_PAGE_MAX } from "../contracts";
+import { FETCH_TICKS, FETCHES_TODAY_SLOTS, METRIC_TYPES, SOURCE_HOUR_MINUTES, SOURCE_KINDS, SOURCE_PAGE_MAX } from "../contracts";
 
 export { SOURCE_ALERTS_MAX } from "../service/source-alerts";
 export { SOURCE_HISTORY_MAX } from "../service/source-history";
@@ -278,12 +278,13 @@ export const SourceFiguresSchema = z.object({
     .object({
       ok: z.number().int().nonnegative(),
       failed: z.number().int().nonnegative(),
-      buckets: z
-        .array(z.object({ ok: z.number().int().nonnegative(), failed: z.number().int().nonnegative() }))
-        .max((24 * 60) / FETCH_BUCKET_MINUTES + 6),
+      slots: z
+        .array(z.enum(["ok", "bad", "none"]))
+        .length(FETCHES_TODAY_SLOTS)
+        .describe('Half-hour slots from 00:00 in the base\'s zone: "bad" once one fetch failed, "none" without a fetch'),
     })
     .nullable()
-    .describe(`Today's fetches of the metrics sources, per ${FETCH_BUCKET_MINUTES} minutes since midnight in the base's zone`),
+    .describe(`Today's fetches of the metrics sources in ${FETCHES_TODAY_SLOTS} half-hour slots of the base's day`),
 });
 
 export const SourceSchema = z.object({

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
@@ -141,14 +142,24 @@ suiteFor("database", "valkey")("Pulse fetch timeline", () => {
     expect((await sourceHistory({ baseId: otherBaseId, sourceId, user: scope() })).ok).toBe(false);
   });
 
-  test("the figures count today's fetches since midnight in the base's zone, in ten-minute buckets", async () => {
-    const figures = await sourceFigures(baseId, scope(), NOW);
-    if (!figures.ok) throw new Error("The figures are not readable");
-    const today = figures.data.fetchesToday;
-    expect(today).toMatchObject({ ok: 4, failed: 1 });
-    expect(today?.buckets).toHaveLength(65);
-    expect(today?.buckets[64]).toEqual({ ok: 2, failed: 1 });
-    expect(today?.buckets[62]).toEqual({ ok: 1, failed: 0 });
-    expect(today?.buckets[60]).toEqual({ ok: 1, failed: 0 });
+  test("the figures read today's fetches in 48 half-hour slots of the base's day, with one statement per page load", async () => {
+    const meter = await meterSql();
+    try {
+      let figures: Awaited<ReturnType<typeof sourceFigures>> | undefined;
+      const fetchReads = (statements: string[]) => statements.filter((text) => text.includes("pulse:fetches-today"));
+      // the first load reads the day once; a refresh within five minutes reads it from the cache
+      expect(fetchReads(await meter.during(async () => (figures = await sourceFigures(baseId, scope(), NOW))))).toHaveLength(1);
+      expect(fetchReads(await meter.during(() => sourceFigures(baseId, scope(), NOW)))).toHaveLength(0);
+      if (!figures?.ok) throw new Error("The figures are not readable");
+      const today = figures.data.fetchesToday;
+      // 10:42 in Berlin: 10:40 and 10:41 (one failed) in slot 21, 10:20 and 10:00 in slot 20, yesterday 23:30 not today
+      expect(today).toMatchObject({ ok: 4, failed: 1 });
+      expect(today?.slots).toHaveLength(48);
+      expect(today?.slots[21]).toBe("bad");
+      expect(today?.slots[20]).toBe("ok");
+      expect(today?.slots.filter((slot) => slot !== "none")).toHaveLength(2);
+    } finally {
+      await meter.close();
+    }
   });
 });

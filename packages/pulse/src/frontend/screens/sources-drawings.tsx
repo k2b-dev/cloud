@@ -47,8 +47,11 @@ export function SourcesHeroDrawing(props: {
   figure: string;
   label: string;
   meta: string;
-  /** Today's fetches as bars, with the chart's ends and caption; or a `meter` instead. */
-  buckets?: readonly { ok: number; failed: number }[];
+  /**
+   * The state over time as ticks (Hero trend `{ ticks }`), with their ends and caption; or a `meter` instead.
+   * k2b-ui gap: band-size Ticks in the hero (#4360); this draws them until the part lands.
+   */
+  ticks?: readonly FetchSlot[];
   start?: string;
   caption?: string;
   end?: string;
@@ -58,7 +61,7 @@ export function SourcesHeroDrawing(props: {
   exceptions: readonly HeroException[];
 }) {
   const step = 8;
-  const width = () => Math.max(1, props.buckets?.length ?? 0) * step;
+  const width = () => Math.max(1, props.ticks?.length ?? 0) * step;
   const share = () => (props.meter && props.meter.of > 0 ? Math.min(1, props.meter.value / props.meter.of) : 0);
   return (
     <div class="pulse-hero">
@@ -89,17 +92,18 @@ export function SourcesHeroDrawing(props: {
             </>
           )}
         </Show>
-        <Show when={props.buckets}>
+        <Show when={props.ticks}>
+          {/* ok soft in Pulse's colour, bad red and taller, none a low stub on the base line */}
           <svg width="100%" height="44" viewBox={`0 0 ${width()} 44`} preserveAspectRatio="none" role="img" aria-label={props.chartLabel}>
-            <For each={props.buckets}>
-              {(bucket, index) => (
+            <For each={props.ticks}>
+              {(slot, index) => (
                 <rect
                   x={index() * step}
-                  y={bucket.failed > 0 ? 0 : 6}
+                  y={slot === "bad" ? 0 : slot === "ok" ? 6 : 38}
                   width="6"
-                  height={bucket.failed > 0 ? 44 : 38}
+                  height={slot === "bad" ? 44 : slot === "ok" ? 38 : 6}
                   rx="1.5"
-                  style={{ fill: bucket.failed > 0 ? "var(--k2-bad-dot)" : bucket.ok > 0 ? SOFT : "var(--k2-n200)" }}
+                  style={{ fill: slot === "bad" ? "var(--k2-bad-dot)" : slot === "ok" ? SOFT : "var(--k2-n200)" }}
                 />
               )}
             </For>

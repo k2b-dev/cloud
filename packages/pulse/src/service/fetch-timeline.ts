@@ -1,6 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
-import { FETCH_BUCKET_MINUTES, FETCH_TICKS, type FetchesToday, type FetchMinute, type FetchSlot, SOURCE_HOUR_MINUTES } from "../contracts";
+import { FETCH_TICKS, FETCHES_TODAY_SLOTS, type FetchesToday, type FetchMinute, type FetchSlot, SOURCE_HOUR_MINUTES } from "../contracts";
 import { type AccessScope, requireBaseAccess } from "./access-control";
 import { sqlAdmission } from "./sql-admission";
 
@@ -55,41 +55,42 @@ export const sourceHour = async (params: {
 };
 
 /**
- * Today's fetches of a base's sources since midnight in its zone, in FETCH_BUCKET_MINUTES buckets, with how many
- * succeeded and failed. It reads by the sources' ids, so the (source_id, started_at) index carries it. The answer is
+ * Today's fetches of a base's sources in FETCHES_TODAY_SLOTS half-hour slots of the day in its zone, with how many
+ * succeeded and failed. One statement; the slot is the local hour and half hour, so a day with a clock change still
+ * has 48 slots. It reads by the sources' ids, so the (source_id, started_at) index carries it. The answer is
  * kept five minutes (like the values per source), so a base with many sources reads its day once per five minutes,
  * not on every refresh. The caller has required read access to the base.
  */
 export const fetchesToday = async (baseId: string, sourceIds: readonly string[], timezone: string, now: Date): Promise<FetchesToday> => {
-  const key = `fetches:${baseId}:${Math.floor(now.getTime() / 300_000)}`;
+  const key = `fetches-today:${baseId}:${Math.floor(now.getTime() / 300_000)}`;
   const cached = await sqlAdmission.cached(key).catch(() => null);
   if (cached) {
     const value: unknown = JSON.parse(cached);
     if (isFetchesToday(value)) return value;
   }
-  // the day's start joins every fetch, so a day without one still says how many buckets have passed
-  const rows = await sql<{ bucket: number | null; ok: number; failed: number; buckets: number }[]>`
+  // the tag names the statement for the SQL meter: one per page load, none while the answer is kept
+  const rows = await sql<{ slot: number; ok: number; failed: number }[]>`
+    /* pulse:fetches-today */
     WITH day AS (
       SELECT (date_trunc('day', ${now}::timestamptz AT TIME ZONE ${timezone}) AT TIME ZONE ${timezone}) AS start
     )
-    SELECT floor(extract(epoch FROM (s.started_at - day.start)) / ${FETCH_BUCKET_MINUTES * 60})::int AS bucket,
+    SELECT (extract(hour FROM s.started_at AT TIME ZONE ${timezone}) * 2
+        + floor(extract(minute FROM s.started_at AT TIME ZONE ${timezone}) / 30))::int AS slot,
       count(*) FILTER (WHERE s.success)::int AS ok,
-      count(*) FILTER (WHERE NOT s.success)::int AS failed,
-      ceil(extract(epoch FROM (${now}::timestamptz - day.start)) / ${FETCH_BUCKET_MINUTES * 60})::int AS buckets
+      count(*) FILTER (WHERE NOT s.success)::int AS failed
     FROM day
-    LEFT JOIN pulse.source_scrapes s
+    JOIN pulse.source_scrapes s
       ON s.source_id = ANY(${sql.array([...sourceIds], "UUID")})
       AND s.started_at >= day.start AND s.started_at <= ${now}::timestamptz
-    GROUP BY 1, day.start
+    GROUP BY 1
   `;
-  const length = Math.max(1, rows[0]?.buckets ?? 1);
-  const buckets = Array.from({ length }, () => ({ ok: 0, failed: 0 }));
+  const slots = Array.from({ length: FETCHES_TODAY_SLOTS }, (): FetchSlot => "none");
   for (const row of rows)
-    if (row.bucket !== null && row.bucket >= 0 && row.bucket < length) buckets[row.bucket] = { ok: row.ok, failed: row.failed };
+    if (row.slot >= 0 && row.slot < FETCHES_TODAY_SLOTS) slots[row.slot] = row.failed > 0 ? "bad" : row.ok > 0 ? "ok" : "none";
   const today: FetchesToday = {
-    ok: buckets.reduce((sum, bucket) => sum + bucket.ok, 0),
-    failed: buckets.reduce((sum, bucket) => sum + bucket.failed, 0),
-    buckets,
+    ok: rows.reduce((sum, row) => sum + row.ok, 0),
+    failed: rows.reduce((sum, row) => sum + row.failed, 0),
+    slots,
   };
   await sqlAdmission.cache(key, JSON.stringify(today)).catch(() => {});
   return today;
@@ -98,8 +99,9 @@ export const fetchesToday = async (baseId: string, sourceIds: readonly string[],
 const isFetchesToday = (value: unknown): value is FetchesToday =>
   typeof value === "object" &&
   value !== null &&
-  "buckets" in value &&
-  Array.isArray(value.buckets) &&
+  "slots" in value &&
+  Array.isArray(value.slots) &&
+  value.slots.length === FETCHES_TODAY_SLOTS &&
   "ok" in value &&
   typeof value.ok === "number" &&
   "failed" in value &&

@@ -55,8 +55,8 @@ export const SOURCE_PAGE_MAX = 500;
 /** The figures of all of a base's sources; `failing` names the first three, `today` is null while the store cannot answer. */
 /** Minutes of fetches a source row shows, one slot per minute. */
 export const FETCH_TICKS = 30;
-/** The width of one bucket of today's fetches. */
-export const FETCH_BUCKET_MINUTES = 10;
+/** Today's fetches in half-hour slots, 00:00 to 24:00 in the base's zone. */
+export const FETCHES_TODAY_SLOTS = 48;
 /** One minute of a source's fetches: all succeeded, one failed, or none ran. */
 export type FetchSlot = "ok" | "bad" | "none";
 /** Minutes of fetches the open source shows. */
@@ -78,8 +78,11 @@ export type SourceAlert = {
 };
 /** One minute of a source's fetches with the values they brought. */
 export type FetchMinute = { slot: FetchSlot; values: number };
-/** Today's fetches of a base: how many succeeded and failed, per FETCH_BUCKET_MINUTES since midnight in its zone. */
-export type FetchesToday = { ok: number; failed: number; buckets: { ok: number; failed: number }[] };
+/**
+ * Today's fetches of a base: how many succeeded and failed, and FETCHES_TODAY_SLOTS half-hour slots of the day in its
+ * zone: "bad" once one fetch in the slot failed, "ok" when all succeeded, "none" without a fetch (also the hours ahead).
+ */
+export type FetchesToday = { ok: number; failed: number; slots: FetchSlot[] };
 
 export type SourceFigures = {
   total: number;

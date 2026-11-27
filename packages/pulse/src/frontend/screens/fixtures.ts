@@ -1,8 +1,8 @@
 import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import type { AccessEntry } from "@k2b/cloud/contracts";
 import {
-  FETCH_BUCKET_MINUTES,
   FETCH_TICKS,
+  FETCHES_TODAY_SLOTS,
   type FetchesToday,
   type FetchMinute,
   type FetchSlot,
@@ -412,13 +412,14 @@ export const figuresOf = (sources: PulseSource[]): SourceFigures => {
 
 /**
  * Today's fetches as the server sums them: every enabled metrics source fetches once per interval since midnight in
- * the base's zone (10:42 now, so 64 full buckets and two minutes of the next), failing ones fail every time.
+ * the base's zone (10:42 now, so 21 full half hours and 13 minutes of the next), failing ones fail every time.
  */
 const fetchesTodayOf = (sources: PulseSource[]): FetchesToday => {
   const minutes = 10 * 60 + 42;
-  const buckets = Array.from({ length: Math.ceil(minutes / FETCH_BUCKET_MINUTES) }, (_, index) => {
-    // the last bucket counts the minute now too (a fetch at 10:42 is today's), like the minute slots of the list
-    const span = Math.min(FETCH_BUCKET_MINUTES, minutes + 1 - index * FETCH_BUCKET_MINUTES);
+  const SLOT = (24 * 60) / FETCHES_TODAY_SLOTS;
+  const counts = Array.from({ length: FETCHES_TODAY_SLOTS }, (_, index) => {
+    // the slot of now counts the minute now too (a fetch at 10:42 is today's), like the minute slots of the list
+    const span = Math.max(0, Math.min(SLOT, minutes + 1 - index * SLOT));
     const bucket = { ok: 0, failed: 0 };
     for (const source of sources) {
       if (source.kind !== "metrics" || !source.enabled) continue;
@@ -427,7 +428,7 @@ const fetchesTodayOf = (sources: PulseSource[]): FetchesToday => {
       const failsFrom = source.lastErrorAt
         ? (Date.parse(source.lastErrorAt) - Date.parse("2026-11-24T23:00:00.000Z")) / 60_000
         : Number.POSITIVE_INFINITY;
-      const from = index * FETCH_BUCKET_MINUTES;
+      const from = index * SLOT;
       const failedMinutes = Math.max(0, Math.min(span, from + span - failsFrom));
       bucket.ok += Math.round(((span - failedMinutes) * 60) / every);
       bucket.failed += Math.round((failedMinutes * 60) / every);
@@ -435,9 +436,9 @@ const fetchesTodayOf = (sources: PulseSource[]): FetchesToday => {
     return bucket;
   });
   return {
-    ok: buckets.reduce((sum, bucket) => sum + bucket.ok, 0),
-    failed: buckets.reduce((sum, bucket) => sum + bucket.failed, 0),
-    buckets,
+    ok: counts.reduce((sum, bucket) => sum + bucket.ok, 0),
+    failed: counts.reduce((sum, bucket) => sum + bucket.failed, 0),
+    slots: counts.map((bucket) => (bucket.failed > 0 ? "bad" : bucket.ok > 0 ? "ok" : "none")),
   };
 };
 

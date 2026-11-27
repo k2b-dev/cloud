@@ -448,7 +448,8 @@ export default function SourcesScreen(props: SourcesScreenProps) {
                 title: words().fetchesColumn,
                 width: { min: 130, default: 140 },
                 drop: true,
-                // drawn in a Canvas until @k2b/ui has Ticks; push sources record no fetches and leave it empty
+                // k2b-ui gap: Ticks (#4353); becomes <Ticks slots={source.fetches} label={…} /> once it is on main.
+                // Push sources record no fetches and leave the cell empty.
                 cell: (source) =>
                   source.fetches ? (
                     <Canvas label={words().fetchesOf({ name: source.name })}>
