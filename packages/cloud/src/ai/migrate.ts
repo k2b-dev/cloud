@@ -1,12 +1,14 @@
 import { CapabilityActionReviewDataSchema } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
 import { APPROVAL_MAX_WAIT_MS, approvalAssurance, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
+import { buildConcurrentIndexesInBackground } from "../services/concurrent-index";
+import { logger } from "../services/logging";
 import { migrateAiCapabilityTargets } from "./capability-targets-migrate";
 import { migrateAiMaps } from "./map-store";
 import { migrateAiMessageQueue } from "./message-queue";
 import { migrateAiModelAccess } from "./model-access-migrate";
 import { migrateAiNextMessages } from "./next-message-store";
-import { migrateAiQuotas } from "./quotas-migrate";
+import { AI_INFERENCE_TURN_INDEX, migrateAiQuotas } from "./quotas-migrate";
 import { retireChatRoutines } from "./retired-routines-migrate";
 import { withAiShortId } from "./short-id";
 import { migrateAiWakeups } from "./wakeup-store";
@@ -2479,6 +2481,8 @@ export const migrateCloudAi = async (): Promise<void> => {
     ON ai.messages (conversation_id, (meta->>'submittedDraftRevision')) WHERE role = 'user'`.simple();
   console.log("  ✓ ai conversation tables");
   await migrateAiNextMessages();
+  // Built next to live writes after the migration; startup never waits for them, and queries run without them meanwhile.
+  void buildConcurrentIndexesInBackground([AI_INFERENCE_TURN_INDEX], { log: logger("ai:migrate"), purpose: "AI" });
 };
 
 const backfillApprovalRequests = async (): Promise<void> => {

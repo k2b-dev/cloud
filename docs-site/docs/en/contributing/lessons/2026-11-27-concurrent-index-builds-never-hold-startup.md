@@ -1,0 +1,6 @@
+### Startup waited for concurrent index builds
+
+- **What happened:** The AI migration awaited `CREATE INDEX CONCURRENTLY` for `ai.inference_calls_all_turn` while Core started. A concurrent build waits for every older snapshot, so one long transaction, such as a nightly dump, could hold Core's start. A restart during the build could turn into a restart loop. The workflow retention indexes and Core's send log indexes each had their own copy of the build logic, and only Core's started without being awaited.
+- **Root cause:** Each place that needed an index next to live writes wrote its own build. Nothing stopped a migration from awaiting one.
+- **Error class:** A migration awaits work that can wait without bound on other sessions, so a running app's start depends on transactions it does not own.
+- **Guard:** Every concurrent build goes through `packages/cloud/src/services/concurrent-index.ts`. A migration starts it with `buildConcurrentIndexesInBackground` and never awaits it; the helper holds a lease per table across replicas, replaces interrupted builds and never throws. The rule `concurrent-index-builds` fails on `CREATE INDEX CONCURRENTLY` anywhere else. `concurrent-index.integration.test.ts` holds an old snapshot open and checks that `migrateCloudAi` still returns while the build waits.
