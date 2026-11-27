@@ -165,11 +165,14 @@ inside it.
   The second line of two or three is one line, cut with "…" before what
   stands beside it (an address or JSON without a break never runs under the
   marks or a deed). In a `List` the title is one line too (that of a row of
-  one on the desktop; on the phone it may take two), so every row of the
-  list keeps one height. A row of three cuts each line. The title of a
-  `Row` outside a `List` wraps, but stops after two lines with "…". A line
-  that is cut says all of it on hover, measured while the pointer rests on
-  it, also through the link that opens the row; a whole line has no hint.
+  one on the desktop; on the phone it may take two, and its row keeps room
+  for them), so the rows of a list keep one height per kind of row: a row
+  with a deed and a plain row are two kinds. A row of three cuts each line.
+  The title of a `Row` outside a `List` wraps, but stops after two lines
+  with "…". A line that is cut says all of it on hover, measured while the
+  pointer rests on it, also through the link that opens the row, and the
+  hint leaves with the pointer; a whole line has no hint, and neither has
+  the title over the link it names (a screen reader would read it twice).
   Each line runs in the direction of its own text (`dir="auto"`) and keeps
   the page's alignment: an Arabic or Hebrew line in a German page has its
   "…" at its own end.

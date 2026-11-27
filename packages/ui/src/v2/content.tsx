@@ -14,7 +14,7 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { renderSafeMarkdown } from "../content/MarkdownView";
-import { hintAt, showHint } from "../internal/truncated-title";
+import { hintPointer, unhintPart } from "../internal/truncated-title";
 import { useLocale } from "../intl/locale";
 import { useGrip } from "./behavior/resize";
 import { ActionButton, CopyButton } from "./button";
@@ -418,12 +418,20 @@ export const Row = (props: RowProps) => {
   const text = createMemo(() => props.lines);
   const lines = () => text().length;
   // A row of three lines cuts each line with "…" and a row of two its second line. In a list a title is one line too (a
-  // row of one: on the desktop), so every row of the list keeps one height (B rule 4, W7 and W9 26.11.); any other title
+  // row of one: on the desktop), so the rows of a list keep one height per kind (B rule 4, W7 and W9 26.11.); any other title
   // stops after two lines. A line that is cut says all of it on hover, measured while the pointer rests on it, on the
-  // element it hits (the link that opens the row lies over the lines); a line that is whole has no hint a screen reader
-  // would read twice (review of #4328).
+  // element it hits (the link that opens the row lies over the lines). A whole line, or the title over the link it
+  // names, has no hint a screen reader would read twice; the hint leaves with the pointer (review of #4328).
   const hint = (event: PointerEvent & { currentTarget: HTMLElement }) =>
-    showHint(event.target, hintAt(event.currentTarget.querySelectorAll<HTMLElement>(ROW_LINES), event.clientX, event.clientY));
+    hintPointer(
+      event.currentTarget,
+      event.target,
+      event.currentTarget.querySelectorAll<HTMLElement>(ROW_LINES),
+      event.clientX,
+      event.clientY,
+    );
+  // a scroll by the wheel moves no pointer: the row lets go of its hint when the pointer leaves it
+  const unhint = (event: PointerEvent & { currentTarget: HTMLElement }) => unhintPart(event.currentTarget);
   const meta = resolveChildren(() => props.meta);
   const time = resolveChildren(() => props.time);
   const end = resolveChildren(() => props.end);
@@ -434,9 +442,11 @@ export const Row = (props: RowProps) => {
       class="k2-row"
       data-k2-part="Row"
       role={inList ? "listitem" : undefined}
-      // a row of a list keeps one height: the stylesheet asks this, not where the row stands in the page (review of #4328)
+      // a row of a list keeps the height of its kind: the stylesheet asks this, not where the row stands in the page (review of #4328)
       data-in-list={inList ? "" : undefined}
       onPointerMove={hint}
+      onPointerLeave={unhint}
+      onPointerCancel={unhint}
       data-open={props.href !== undefined || props.onOpen ? "" : undefined}
       data-lines={String(lines())}
       data-unread={props.unread ? "" : undefined}

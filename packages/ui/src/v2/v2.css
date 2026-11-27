@@ -93,6 +93,7 @@
   --k2-h-row3: 72px;
   --k2-h-row-phone: 44px;
   --k2-h-row-phone2: 52px;
+  --k2-h-row-phone-list: 56px;
   --k2-h-dense: 32px;
   --k2-h-control: 36px;
   --k2-h-control-small: 28px;
@@ -1154,7 +1155,7 @@
   border-radius: 2px;
 }
 /* a row of three lines cuts each line with "…", its title too, and keeps its 72 px; in a list, a row of two cuts its
-   title as well, so every row of the list keeps one height (B rule 4; W9 26.11.: long names and messages grew a chat
+   title as well, so the rows of a list keep one height per kind (B rule 4; W9 26.11.: long names and messages grew a chat
    list to 52, 68 and 84 px). A row of two on its own, such as a step in a group, keeps two lines of title. */
 .k2-ui .k2-row[data-lines="3"] > .k2-row-l1 > .k2-row-title,
 .k2-ui .k2-row[data-in-list][data-lines="2"] > .k2-row-l1 > .k2-row-title,
@@ -4301,12 +4302,18 @@
   .k2-ui .k2-split > .k2-pane:not([data-width]) {
     min-width: 0;
   }
-  /* a row on the phone: a tap target at least, two lines 52 px as in the approved mockup; one source, the height
-     tokens (27.11.) */
+  /* a row on the phone: a tap target at least, two lines 52 px as in the approved mockup; a row of one line in a list
+     keeps room for two lines of title, so a short and a long title stand at one height (review r2 of #4328); one
+     source, the height tokens (27.11.) */
   .k2-ui .k2-row[data-lines] {
     min-height: var(--k2-h-row-phone);
   }
-  .k2-ui .k2-row:not([data-lines="1"]) {
+  .k2-ui .k2-row[data-in-list][data-lines="1"] {
+    /* two lines of title with their padding, and the row's line (the one hairline, 1 px): a short title stands as high
+       as a long one */
+    min-height: calc(var(--k2-h-row-phone-list) + 1px);
+  }
+  .k2-ui .k2-row[data-lines="2"] {
     min-height: var(--k2-h-row-phone2);
   }
   .k2-ui .k2-row[data-action] {

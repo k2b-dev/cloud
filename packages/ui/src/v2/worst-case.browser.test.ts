@@ -397,6 +397,20 @@ for (const width of [1440, 390])
           { lines: 1, cut: false, hint: "none" },
           { lines: 1, cut: false, hint: "none" },
         ]);
+        // on the phone the rows of one kind stand at one height: a row of one line keeps room for two lines of title,
+        // with a short title, a long one or a deed at its end (review r2 of #4328: 57 / 44 / 45 side by side)
+        if (width < 768) {
+          const kinds = await page.evaluate(() => {
+            const heights: Record<string, number[]> = {};
+            for (const row of document.querySelectorAll<HTMLElement>(".k2-list > .k2-row")) {
+              const kind = row.dataset.lines ?? "";
+              heights[kind] = [...(heights[kind] ?? []), Math.round(row.getBoundingClientRect().height)];
+            }
+            return heights;
+          });
+          for (const heights of Object.values(kinds)) expect(new Set(heights).size).toBe(1);
+          expect(kinds["1"]?.length).toBe(3);
+        }
         const layout = await measureV2Layout(page, { root: "#root" });
         expect(layout.past).toEqual([]);
         expect(layout.squeezed).toEqual([]);
@@ -449,8 +463,9 @@ for (const width of [1440, 1024, 390, 320])
           });
           expect(floor.rows).toBe(floor.token);
         }
-        // a cut line says all of it where the pointer rests on it; a whole one has no hint a screen reader would read twice
-        expect(rows.map((row) => row.hints)).toEqual(rows.map((row) => row.cut.map((cut) => (cut ? "whole" : "none"))));
+        // a cut message says all of it where the pointer rests on it; a whole one has no hint. The name names the link
+        // that opens the row (`aria-labelledby`): a hint of it would be read twice, so it has none (review r2 of #4328)
+        expect(rows.map((row) => row.hints)).toEqual(rows.map((row) => ["none", row.cut[1] ? "whole" : "none"]));
         // the long ones are cut where the column is narrow
         if (width <= 1024)
           expect(rows.slice(0, 3).map((row) => row.cut)).toEqual([
@@ -466,6 +481,46 @@ for (const width of [1440, 1024, 390, 320])
       "chats",
     );
   });
+
+// Review r2 of #4328: the hint stayed on the link after the pointer left (a wheel scroll moves no pointer), and the
+// hint of a cut name became the link's description, the same words as its name. With a real pointer: over a cut
+// message the link says it, over the name it says nothing, and once the pointer left the row nothing is left.
+test("a row's hint leaves with the pointer and never repeats the name of its link", async () => {
+  await withPage(
+    1024,
+    async (page) => {
+      const row = page.locator(".k2-row", { hasText: "Nora Weber" });
+      const link = row.locator(".k2-row-open");
+      const center = async (selector: string) => {
+        const box = (await row.locator(selector).boundingBox())!;
+        return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      };
+      const message = await center(":scope > .k2-row-l2");
+      await page.mouse.move(message.x, message.y);
+      expect(await link.getAttribute("title")).toContain("the invoice lists 12 chairs");
+      // a cut name over the link it names: no hint, the link already says it
+      await settled(page);
+      const long = page.locator(".k2-row", { hasText: "Lieferung KW 49" });
+      const longName = (await long.locator(".k2-row-title").boundingBox())!;
+      await page.mouse.move(longName.x + longName.width / 2, longName.y + longName.height / 2);
+      expect(await long.locator(".k2-row-title").evaluate((title) => title.scrollWidth > title.clientWidth + 1)).toBe(true);
+      expect(await long.locator(".k2-row-open").getAttribute("title")).toBeNull();
+      // back over the cut message of the first row
+      await page.mouse.move(message.x, message.y);
+      expect(await link.getAttribute("title")).not.toBeNull();
+      // away from the row: no hint is left behind
+      await page.mouse.move(2, 2);
+      expect(await link.getAttribute("title")).toBeNull();
+      // the link's name is the row's name, its description never the same words
+      const named = await link.evaluate((element) => {
+        const id = element.getAttribute("aria-labelledby") ?? "";
+        return { name: document.getElementById(id)?.textContent, title: element.getAttribute("title") };
+      });
+      expect(named.title).not.toBe(named.name);
+    },
+    "chats",
+  );
+});
 
 // W9 (Chat break-ui): an Arabic or Hebrew last message ran in the page's direction, so it stood on the left and its
 // "…" fell on the wrong side, over its first words. Each line of a row runs in the direction of its own text.
