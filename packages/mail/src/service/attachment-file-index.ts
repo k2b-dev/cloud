@@ -143,9 +143,13 @@ const lockBackfillBatch = (db: SqlClient, afterId: string) => db<
     COALESCE((SELECT string_agg(id::text, ',') FROM locked), '') AS locked
 `;
 
+/** One statement: index already stored attachments (a subquery of `id`), reading their bodies in SQL. */
+export const indexStoredAttachments = (db: SqlClient, attachments: SqlFragment) =>
+  insertAttachmentFiles(db, attachments, storedBodyReferences());
+
 /** One statement, after the batch is locked: index the locked attachments from a fresh snapshot. */
 const indexBackfillBatch = (db: SqlClient, ids: readonly string[]) =>
-  insertAttachmentFiles(db, sql`SELECT unnest(${toPgUuidArray([...ids])}::uuid[])`, storedBodyReferences());
+  indexStoredAttachments(db, sql`SELECT unnest(${toPgUuidArray([...ids])}::uuid[])`);
 
 /** The two batch steps, for tests that hold a transaction between them. */
 export const attachmentFileBackfillSteps = { lock: lockBackfillBatch, index: indexBackfillBatch };
