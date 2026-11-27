@@ -32,7 +32,7 @@ const markOf = (item: CodeOverviewItem) => {
 /**
  * My apps & automations on v2 (screen brief 1 in the PR, recipe "overview", identity B): the hero says how many runs
  * today, its exceptions stand beside it as the chips that also filter (B rule 1), the day line is the hero's picture,
- * then one line per app (B rule 4). Explanations stand in the empty state only. The same state as v1
+ * then one row per app: its name over its schedule and last run, its state and its next run. Explanations stand in the empty state only. The same state as v1
  * (`createCodeOverview`): the filter in the address, live runs, further pages.
  */
 // Creating in the chat is the page head's action (AssistantPageFrame), so the view takes no callback for it.
@@ -129,19 +129,22 @@ export default function AssistantAppsV2(props: Omit<CodeOverviewProps, "onCreate
             }}
             open={(item) => ({ href: codeHref(item.id) })}
             columns={[
-              // B rule 4: one line per row on the desktop; the schedule is a column of its own, not a second line.
+              // Three columns that keep their words from 1024 px on: what runs and how (its schedule and what it did
+              // last, as the name's second line), whether it needs the person, and when it runs next. Five columns cut
+              // nearly every cell at 1024 (v13 review).
               // k2b-ui gap: #4223 (Column mark): the name leads with Gustav's mark per trigger once a column can carry one;
               // until then the name stands alone on the desktop (the phone row already shows the mark).
-              { title: t().appsColumnName, cell: (item) => item.title, width: { min: 160, default: 240 } },
-              { title: t().appsColumnSchedule, cell: (item) => cardDescription(item, t(), locale()) },
-              { title: t().appsColumnState, cell: (item) => state(cardStatus(item)), width: { min: 210, default: 210 } },
               {
-                title: t().appsColumnLast,
-                // The column head says "Zuletzt"; the cell says what happened, once.
-                cell: (item) => cardLastText(item, cardStatus(item), t(), locale(), props.timeZone, o.now()) ?? t().codeRunUnknown,
-                drop: true,
+                title: t().appsColumnName,
+                cell: (item) => ({
+                  lines: [
+                    item.title,
+                    `${cardDescription(item, t(), locale())} · ${cardLastText(item, cardStatus(item), t(), locale(), props.timeZone, o.now()) ?? t().codeRunUnknown}`,
+                  ],
+                }),
               },
-              { title: t().appsColumnNext, cell: next, align: "end", width: { min: 110, default: 140 } },
+              { title: t().appsColumnState, cell: (item) => state(cardStatus(item)), width: { min: 200, default: 200 } },
+              { title: t().appsColumnNext, cell: next, align: "end", width: { min: 120, default: 140 } },
               // k2b-ui gap: the runs of the last days (B rule 2) come with G's Ticks (#4353).
             ]}
             // On the phone always two lines: the name; its schedule and next run, joined with "·" (B rule 4).
