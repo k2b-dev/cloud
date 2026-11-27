@@ -6,9 +6,10 @@ import { type TimeSegment, useTimeInput } from "./behavior/time-input";
 import { hourCycleOf, timeExample } from "./behavior/time-text";
 import { Button } from "./button";
 import { useDateMessages } from "./date-messages";
+import { WeekWindow } from "./date-week-window";
 import { Icon } from "./marks";
 
-export type DatePickerProps = {
+type DatePickerBase = {
   /** The chosen day as a date key ("2026-11-24"); with `time` the wall time of a minute ("2026-11-24T09:00"). */
   value?: string;
   /**
@@ -35,7 +36,28 @@ export type DatePickerProps = {
   autoFocus?: boolean;
 };
 
+export type DatePickerProps = DatePickerBase &
+  (
+    | {
+        /** Whole months, the default. */
+        view?: "months";
+      }
+    | {
+        /**
+         * Six weeks from the week of `min` onward, as one grid over the ends of months, for a picker of a moment ahead
+         * ("Später", an expiry): no month of days that lie behind. The first day of a month carries its short name; the
+         * keys move the six weeks by whole weeks, the buttons by six.
+         */
+        view: "weeks";
+        /** Required with `weeks`: where the weeks start, usually today in the person's zone, the same on server and browser. */
+        min: string;
+      }
+  );
+
 const monthOf = (key: string) => key.slice(0, 7);
+
+/** What a grid of core lists: the weekdays in column order and its weeks of cells. */
+type GridState = { weekdays?: number[]; weeks?: { date: string; outside: boolean }[][] };
 
 /**
  * Core's time input in one clock: hour and minute as spinbuttons in the locale's clock (24 hours in German), never the
@@ -136,6 +158,7 @@ export const DatePicker = (props: DatePickerProps) => {
     setUnreadableTime(false);
   };
   const timeLabel = createUniqueId();
+  const weeks = () => props.view === "weeks";
   const calendar = useCalendar(() => ({
     value: chosen() ?? null,
     month: month(),
@@ -162,61 +185,88 @@ export const DatePicker = (props: DatePickerProps) => {
     props.onPick(`${key}T${hhmm}`);
   };
   onMount(() => {
-    if (!props.autoFocus) return;
+    if (!props.autoFocus || weeks()) return;
     // core moves the focus into a popup first; the day follows
     setTimeout(() => calendar.focus(chosen()));
   });
   return (
     <div class="k2-dpick" data-k2-part="DatePicker">
-      <calendar.Root class="k2-cal" role="group" aria-label={props.label ?? t().calendar}>
-        <div class="k2-cal-h">
-          <calendar.Previous class="k2-btn" data-variant="ghost" data-icon-only="" aria-label={t().previousMonth} title={t().previousMonth}>
-            <Icon name="chevron-left" />
-          </calendar.Previous>
-          <calendar.Heading class="k2-cal-t">{(state: { label?: string }) => state.label}</calendar.Heading>
-          <calendar.Next class="k2-btn" data-variant="ghost" data-icon-only="" aria-label={t().nextMonth} title={t().nextMonth}>
-            <Icon name="chevron-right" />
-          </calendar.Next>
-        </div>
-        <calendar.Grid class="k2-cal-grid">
-          {(state: { weekdays?: number[]; weeks?: { date: string; outside: boolean }[][] }) => (
-            <>
-              <calendar.Weekdays class="k2-cal-row" data-head="">
-                <For each={state.weekdays ?? []}>
-                  {(_, index) => (
-                    <calendar.Weekday index={index()} class="k2-cal-wd">
-                      {(head: { label?: string }) => head.label}
-                    </calendar.Weekday>
-                  )}
-                </For>
-              </calendar.Weekdays>
-              <For each={(state.weeks ?? []).map((week) => week.map((cell) => cell.date).join(" "))}>
-                {(week) => (
-                  <calendar.Week class="k2-cal-row">
-                    <For each={week.split(" ")}>
-                      {(date) => (
-                        <calendar.Day
-                          value={date}
-                          class="k2-cal-day"
-                          // a day is no submit button: in a form a press on it would send the form
-                          type="button"
-                          // the chosen day again changes nothing in core, but it is a pick all the same: it closes
-                          onClick={() => !props.time && date === chosen() && pickDay(date)}
-                          onKeyDown={(event: KeyboardEvent) =>
-                            !props.time && (event.key === "Enter" || event.key === " ") && date === chosen() && pickDay(date)
-                          }
-                        >
-                          {(cell: { label?: string }) => cell.label}
-                        </calendar.Day>
+      <Show
+        when={props.view === "weeks" ? props.min : undefined}
+        fallback={
+          <calendar.Root class="k2-cal" role="group" aria-label={props.label ?? t().calendar}>
+            <div class="k2-cal-h">
+              <calendar.Previous
+                class="k2-btn"
+                data-variant="ghost"
+                data-icon-only=""
+                aria-label={t().previousMonth}
+                title={t().previousMonth}
+              >
+                <Icon name="chevron-left" />
+              </calendar.Previous>
+              <calendar.Heading class="k2-cal-t">{(state: { label?: string }) => state.label}</calendar.Heading>
+              <calendar.Next class="k2-btn" data-variant="ghost" data-icon-only="" aria-label={t().nextMonth} title={t().nextMonth}>
+                <Icon name="chevron-right" />
+              </calendar.Next>
+            </div>
+            <calendar.Grid class="k2-cal-grid">
+              {(state: GridState) => (
+                <>
+                  <calendar.Weekdays class="k2-cal-row" data-head="">
+                    <For each={state.weekdays ?? []}>
+                      {(_, index) => (
+                        <calendar.Weekday index={index()} class="k2-cal-wd">
+                          {(head: { label?: string }) => head.label}
+                        </calendar.Weekday>
                       )}
                     </For>
-                  </calendar.Week>
-                )}
-              </For>
-            </>
-          )}
-        </calendar.Grid>
-      </calendar.Root>
+                  </calendar.Weekdays>
+                  <For each={(state.weeks ?? []).map((week) => week.map((cell) => cell.date).join(" "))}>
+                    {(week) => (
+                      <calendar.Week class="k2-cal-row">
+                        <For each={week.split(" ")}>
+                          {(date) => (
+                            <calendar.Day
+                              value={date}
+                              class="k2-cal-day"
+                              // a day is no submit button: in a form a press on it would send the form
+                              type="button"
+                              // the chosen day again changes nothing in core, but it is a pick all the same: it closes
+                              onClick={() => !props.time && date === chosen() && pickDay(date)}
+                              onKeyDown={(event: KeyboardEvent) =>
+                                !props.time && (event.key === "Enter" || event.key === " ") && date === chosen() && pickDay(date)
+                              }
+                            >
+                              {(cell: { label?: string }) => cell.label}
+                            </calendar.Day>
+                          )}
+                        </For>
+                      </calendar.Week>
+                    )}
+                  </For>
+                </>
+              )}
+            </calendar.Grid>
+          </calendar.Root>
+        }
+      >
+        {/* six weeks ahead: core's calendar shows months only, so the weeks are one grid of their own */}
+        {(min) => (
+          <WeekWindow
+            chosen={chosen()}
+            min={min()}
+            max={props.max}
+            timeZone={props.timeZone}
+            label={props.label ?? t().calendar}
+            autoFocus={props.autoFocus}
+            onChoose={(key) => {
+              setChosen(key);
+              if (!props.time) pickDay(key);
+            }}
+          />
+        )}
+      </Show>
       <Show when={props.time}>
         <div class="k2-dpick-time">
           <span class="k2-dpick-label" id={timeLabel}>

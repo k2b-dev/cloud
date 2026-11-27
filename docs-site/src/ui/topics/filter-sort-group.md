@@ -45,7 +45,7 @@ The field kinds: `choice` (a listbox with ticks, counts with `counts: true`), `l
 ### Search field
 
 - One text is enough: a name, a number.
-- `Input type="search"` in the head `Bar`; declare it as the query's `search`, so it lives in the address as well.
+- `Input type="search"` in the head `Bar`; declare it as the query's `search`, so it lives in the address as well. Give it `name="q"` and `send={{ action, params, onSearch }}`: without JavaScript the field is a GET form and Enter loads the page with `q` and the rest of the address (`params`: the query's state without its search); where JavaScript runs, `onSearch` searches in place. Never wrap it in a `<form>` of your own, which breaks the head's rules, and never put it inside another `<form>`: forms do not nest, the browser drops the inner one. `describeV2` reports both.
 - No statements, no views.
 
 ## Parts

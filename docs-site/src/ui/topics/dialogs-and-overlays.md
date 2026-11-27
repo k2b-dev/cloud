@@ -41,7 +41,7 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 ### Dialog
 
-The one dialog: 480 px in the middle of the window, a sheet from the bottom below 768 px. Head, content and foot are parts of one thing; the content scrolls, and a hairline shows where more of it lies.
+The one dialog: 480 px in the middle of the window, a sheet from the bottom below 768 px, with a grip on its top edge (a swipe down closes it) and its close button in the head. Head, content and foot are parts of one thing; the content scrolls, and a hairline shows where more of it lies.
 
 <Props of="Dialog" />
 
