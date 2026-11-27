@@ -1835,10 +1835,7 @@
   background: var(--k2-n50);
   height: var(--k2-h-columns);
 }
-/* a person leads a row of the phone form as a small mark, like in the cell */
-.k2-ui .k2-table-phone .k2-row[data-avatar] {
-  column-gap: 8px;
-}
+/* a person leads a row of the phone form as a small mark, like in the cell (12 px after it, as after every lead) */
 .k2-ui .k2-table-phone .k2-row[data-avatar] > .k2-row-lead {
   width: auto;
 }
@@ -2328,6 +2325,15 @@
 }
 .k2-ui .k2-row[data-mark] {
   column-gap: 12px;
+}
+/* a person among things (an owner in a list of files): in a list whose rows lead with marks the person takes the
+   marks' size, so every name starts on one edge (12 px after every lead) */
+.k2-ui .k2-list:has(> .k2-row[data-mark]) > .k2-row[data-avatar] > .k2-row-lead {
+  width: var(--k2-lead, 24px);
+}
+.k2-ui .k2-list:has(> .k2-row[data-mark]) > .k2-row[data-avatar] > .k2-row-lead > .k2-av {
+  width: var(--k2-lead, 24px);
+  height: var(--k2-lead, 24px);
 }
 /* in a selection the box stands before the thing's mark: a file keeps its thumbnail beside its box */
 .k2-ui .k2-row-lead[data-pair] {
@@ -3876,7 +3882,7 @@
 }
 
 /* the actions of a selection stand in the line of the bar; on the phone they float at the bottom (below). From five
-   on, the first three stand and the rest wait in "Mehr". The count is a statement of the row in 14 px, 600. */
+   on, the first three stand and the rest wait in "Mehr", and the last ones also where their words do not fit. The count is a statement of the row in 14 px, 600. */
 .k2-ui .k2-status-actions {
   display: contents;
 }
@@ -5229,6 +5235,14 @@
   }
   .k2-ui .k2-row[data-mark] > .k2-row-lead > .k2-mk > .k2-icon {
     font-size: 22px;
+  }
+  /* a person among things takes the marks' 40 here too */
+  .k2-ui .k2-list:has(> .k2-row[data-mark]) > .k2-row[data-avatar] > .k2-row-lead,
+  .k2-ui .k2-list:has(> .k2-row[data-mark]) > .k2-row[data-avatar] > .k2-row-lead > .k2-av {
+    width: 40px;
+  }
+  .k2-ui .k2-list:has(> .k2-row[data-mark]) > .k2-row[data-avatar] > .k2-row-lead > .k2-av {
+    height: 40px;
   }
 }
 

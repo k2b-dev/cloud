@@ -492,7 +492,8 @@ lines instead of cutting a thing.
   `selection: { count, actions, clear }` (while rows are selected the row
   becomes the bar of what can be done with them; the count stands in 14 px
   600; from five deeds on the first three stand and the rest wait in
-  "Mehr", so give the deeds in their order of use).
+  "Mehr", and where their words do not fit the last ones go there too
+  before a word is cut, so give the deeds in their order of use).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
   head `Bar start` instead of `Tabs`. The last item is the page itself. On
   the phone the path gives way and the shell's phone bar names the page; the

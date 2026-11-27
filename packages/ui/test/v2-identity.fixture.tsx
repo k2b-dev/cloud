@@ -108,6 +108,8 @@ export const IdentityScreen = (props: { onChoice?: (name: string) => void; onCre
           <Row mark={{ icon: "photo", color: "#be185d", image: photo }} lines={["Ansicht Front Eiche.jpg", "4,2 MB · heute 09:42"]} />
           <Row mark={{ icon: "photo", color: "#be185d", image: broken }} lines={["Bestand Küche vorher.jpg", "5,6 MB · gestern"]} />
           <Row mark={{ icon: "file-type-pdf", color: "#dc2626", kind: "PDF", label: "PDF" }} lines={["Angebot 2026-118.pdf", "312 KB"]} />
+          {/* a person among the files (who shares them) starts on their edge */}
+          <Row avatar={{ name: "Jana Berger" }} lines={["Jana Berger", "teilt 4 Dateien"]} />
         </List>
       </Section>
       {/* who or what a thing is, without a picture: a data list and a table of bases keep the mark's 24 */}

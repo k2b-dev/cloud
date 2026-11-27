@@ -31,6 +31,7 @@ type Case =
   | "split-tall-canvas"
   | "invitation"
   | "selection"
+  | "selection-four"
   | "long"
   | "areas"
   | "empty-ways";
@@ -246,6 +247,45 @@ for (const width of [550, 450, 400])
       }
       // the statements keep the room of one statement (240 px) instead of what the end leaves them
       expect(parts.flow.right - parts.flow.left).toBeGreaterThanOrEqual(240);
+    });
+  });
+
+// four deeds with long words and the size of the selection in a column that cannot hold them all: the last deeds go
+// into "Mehr" before any word is cut, and each deed stays reachable once (W1b #4206 r5: "In d…" at 1440)
+for (const column of [900, 760, 640])
+  test(`a selection in a column of ${column} px folds its deeds into "Mehr" before a word is cut`, async () => {
+    await withPage("selection-four", async (page) => {
+      await page.evaluate((width) => {
+        document.getElementById("root")!.style.width = `${width}px`;
+      }, column);
+      await settled(page);
+      await page.waitForTimeout(50);
+      const bar = await page.locator(".k2-bar[data-selecting]").evaluate((element) => {
+        const edge = element.getBoundingClientRect();
+        const parts = [...element.querySelectorAll<HTMLElement>(".k2-bar-start > *, .k2-status-actions > *")].filter(
+          (part) => part.getClientRects().length > 0 && !part.matches(".k2-status-actions"),
+        );
+        return {
+          // nothing runs out of the bar, and no word in it is cut
+          inside: parts.every((part) => part.getBoundingClientRect().right <= edge.right + 0.5),
+          cut: parts
+            .flatMap((part) => [part, ...part.querySelectorAll<HTMLElement>(".k2-btn-label")])
+            .filter((part) => part.scrollWidth > part.clientWidth + 1 && getComputedStyle(part).clipPath === "none")
+            .map((part) => part.textContent),
+          shown: [...element.querySelectorAll(".k2-status-actions > .k2-btn:not([data-menu])")].map(
+            (button) => button.getAttribute("title") ?? button.textContent?.trim(),
+          ),
+        };
+      });
+      expect(bar.inside).toBe(true);
+      expect(bar.cut).toEqual([]);
+      const all = ["Teilen", "Herunterladen", "In den Ordner verschieben", "In den Papierkorb"];
+      expect(all.slice(0, bar.shown.length)).toEqual(bar.shown);
+      if (bar.shown.length < all.length) {
+        await page.locator(".k2-status-actions .k2-btn[data-menu]").click();
+        await settled(page);
+        expect(await page.getByRole("menu").getByRole("menuitem").allTextContents()).toEqual(all.slice(bar.shown.length));
+      }
     });
   });
 
@@ -815,6 +855,48 @@ for (const width of [1440, 1024])
       width,
     );
   });
+
+// the open folder is the last to give way: the places above fold into "…" first, and the page shows with at least
+// its 48 px, cut with "…" only when it alone does not fit, never clipped by what is around it (W1b #4206 r5)
+for (const which of ["path", "path-chip"] as const)
+  for (const width of [1440, 1024, 390])
+    test(`a deep path keeps its open folder in sight at ${width} px (${which})`, async () => {
+      await withPage(
+        which,
+        async (page) => {
+          // on the phone the path gives way to the phone bar of the shell, which names the page: wholly, never a cut
+          // remnant such as "Werk"
+          if (width < 768) {
+            expect(
+              await page.locator(".k2-path[aria-label='Ort']").evaluateAll((paths) => paths.map((path) => path.getClientRects().length)),
+            ).toEqual([0]);
+            return;
+          }
+          const current = await page.evaluate(() => {
+            const page = document.querySelector<HTMLElement>(".k2-path[aria-label='Ort'] > b")!;
+            const box = page.getBoundingClientRect();
+            // every box up to the head that clips: the page lies inside it
+            const clipped: string[] = [];
+            for (let node = page.parentElement; node && !node.matches("[data-slot='head']"); node = node.parentElement) {
+              const style = getComputedStyle(node);
+              if (style.overflowX === "visible") continue;
+              const room = node.getBoundingClientRect();
+              if (box.left < room.left - 0.5 || box.right > room.right + 0.5) clipped.push(node.className);
+            }
+            const cut = page.scrollWidth > page.clientWidth + 1;
+            return {
+              shown: page.getClientRects().length > 0 && box.width > 0,
+              inside: box.left >= -0.5 && box.right <= innerWidth + 0.5,
+              clipped,
+              // cut only with "…" and down to no less than 48 px
+              cut: cut ? getComputedStyle(page).textOverflow === "ellipsis" && Math.round(box.width) >= 48 : true,
+            };
+          });
+          expect(current).toEqual({ shown: true, inside: true, clipped: [], cut: true });
+        },
+        width,
+      );
+    });
 
 test("a deep path with a chip after it gives way before the deeds; the chip is read whole (W1b #4206)", async () => {
   await withPage(

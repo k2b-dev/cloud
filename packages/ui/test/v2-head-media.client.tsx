@@ -33,6 +33,7 @@ declare global {
       | "split-tall-canvas"
       | "invitation"
       | "selection"
+      | "selection-four"
       | "long"
       | "areas"
       | "empty-ways";
@@ -56,8 +57,8 @@ render(
         <AreasMenuScreen />
       ) : which === "empty-ways" ? (
         <EmptyWaysScreen />
-      ) : which === "selection" ? (
-        <SelectionScreen />
+      ) : which === "selection" || which === "selection-four" ? (
+        <SelectionScreen four={which === "selection-four"} />
       ) : which === "long" ? (
         <LongAddressScreen />
       ) : which === "path" || which === "path-chip" ? (

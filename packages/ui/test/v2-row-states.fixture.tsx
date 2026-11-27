@@ -264,7 +264,8 @@ export const AreasMenuScreen = () => (
 );
 
 // A selection with six deeds in a column beside a side column: the first three stand, the rest wait in "Mehr".
-export const SelectionScreen = () => (
+// `four`: four deeds with long words and the size of the selection, as Files shows them (W1b #4206 r5)
+export const SelectionScreen = (props: { four?: boolean }) => (
   <Workspace>
     <Pane.Split>
       <Pane
@@ -273,15 +274,22 @@ export const SelectionScreen = () => (
           <StatusRow
             lead=""
             selection={{
-              count: "3 ausgewählt",
-              actions: [
-                { label: "Teilen", icon: "share" },
-                { label: "Verschieben", icon: "folder-symlink" },
-                { label: "Als ZIP laden", icon: "download" },
-                { label: "Löschen", icon: "trash" },
-                { label: "In Ordner kopieren", icon: "copy" },
-                { label: "PDFs zusammenführen", icon: "stack-2" },
-              ],
+              count: props.four ? "3 ausgewählt · 12,4 MB" : "3 ausgewählt",
+              actions: props.four
+                ? [
+                    { label: "Teilen", icon: "share" },
+                    { label: "Herunterladen", icon: "download" },
+                    { label: "In den Ordner verschieben", icon: "folder-symlink" },
+                    { label: "In den Papierkorb", icon: "trash" },
+                  ]
+                : [
+                    { label: "Teilen", icon: "share" },
+                    { label: "Verschieben", icon: "folder-symlink" },
+                    { label: "Als ZIP laden", icon: "download" },
+                    { label: "Löschen", icon: "trash" },
+                    { label: "In Ordner kopieren", icon: "copy" },
+                    { label: "PDFs zusammenführen", icon: "stack-2" },
+                  ],
               clear: { label: "Auswahl aufheben", onClick: () => {} },
             }}
           />

@@ -1,5 +1,6 @@
 import {
   createComputed,
+  createEffect,
   createMemo,
   createSignal,
   createUniqueId,
@@ -555,7 +556,8 @@ export type StatusRowProps = {
   filters?: JSX.Element;
   /**
    * While entries are selected the row becomes the bar of what can be done with them (rule 6): the count, the
-   * actions, and the way out.
+   * actions, and the way out. From five actions on the first three stand and the rest wait in "Mehr"; where their
+   * words do not fit, the last ones go there too before a word is cut.
    */
   selection?: { count: string; actions: readonly Action[]; clear: Action };
 };
@@ -563,14 +565,61 @@ export type StatusRowProps = {
 /** A selection with more deeds than fit: the first three stand, the rest wait in "Mehr" (as many as the mockup shows). */
 const SELECTION_SHOWN = 3;
 
+/** What of a bar is cut: it runs out of its start, or a word in it (the count, a deed's words) ends in "…". */
+const cutIn = (start: HTMLElement) =>
+  start.scrollWidth > start.clientWidth + 1 ||
+  [...start.querySelectorAll<HTMLElement>(":scope > .k2-status-lead, .k2-btn-label")].some(
+    (words) => words.scrollWidth > words.clientWidth + 1 && getComputedStyle(words).clipPath === "none",
+  );
+
 /** The status row of a pane (52 px): the one lead statement, its loading mark, key figures, filters on the right. */
 
 export const StatusRow = (props: StatusRowProps) => {
   const t = useUiMessages();
   const overlay = useOverlayMessages();
   const filters = resolveChildren(() => props.filters);
+  // How many deeds of a selection stand with their words: as many as the mockup shows, fewer where they do not fit,
+  // the rest in "Mehr", so no word is cut. Measured in the browser (a selection is made there), one deed per frame,
+  // again from the start when the bar changes its width or the selection its words.
+  const [room, setRoom] = createSignal(Number.POSITIVE_INFINITY);
+  const shown = () => {
+    const actions = props.selection?.actions ?? [];
+    return Math.min(actions.length > SELECTION_SHOWN + 1 ? SELECTION_SHOWN : actions.length, room());
+  };
+  let bar: HTMLDivElement | undefined;
+  onMount(() => {
+    if (!bar) return;
+    let frame = 0;
+    const step = () => {
+      frame = 0;
+      const start = bar?.querySelector<HTMLElement>(":scope > .k2-bar-start");
+      const actions = start?.querySelector<HTMLElement>(":scope > .k2-status-actions");
+      // on the phone the deeds float at the bottom, each symbol over its word: nothing to fold
+      if (!props.selection || !start || !actions || getComputedStyle(actions).position === "fixed") return;
+      if (shown() > 0 && cutIn(start)) {
+        setRoom(shown() - 1);
+        frame = requestAnimationFrame(step);
+      }
+    };
+    const again = () => {
+      cancelAnimationFrame(frame);
+      setRoom(Number.POSITIVE_INFINITY);
+      frame = requestAnimationFrame(step);
+    };
+    const sizes = new ResizeObserver(again);
+    sizes.observe(bar);
+    createEffect(() => {
+      props.selection?.count;
+      props.selection?.actions.length;
+      again();
+    });
+    onCleanup(() => {
+      cancelAnimationFrame(frame);
+      sizes.disconnect();
+    });
+  });
   return (
-    <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>
+    <div ref={bar} class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>
       <Show
         when={props.selection}
         fallback={
@@ -623,19 +672,13 @@ export const StatusRow = (props: StatusRowProps) => {
             {/* in a narrow column the actions keep only their symbols, the way out its ×; the words stay their names.
                 On the phone they float at the bottom, in reach of the thumb, each with its symbol over its word. */}
             <span class="k2-status-actions">
-              <For
-                each={
-                  selection().actions.length > SELECTION_SHOWN + 1 ? selection().actions.slice(0, SELECTION_SHOWN) : selection().actions
-                }
-              >
-                {(action) => <ActionButton action={action} titled />}
-              </For>
-              <Show when={selection().actions.length > SELECTION_SHOWN + 1}>
+              <For each={selection().actions.slice(0, shown())}>{(action) => <ActionButton action={action} titled />}</For>
+              <Show when={shown() < selection().actions.length}>
                 <Menu
                   icon="dots"
                   titled
                   items={selection()
-                    .actions.slice(SELECTION_SHOWN)
+                    .actions.slice(shown())
                     .map((action) => ({
                       label: action.label,
                       icon: action.icon,

@@ -69,13 +69,29 @@ test("leading a row or a cell a mark is 24, and 32 where the list or table shows
     // (a row of two lines keeps its 52)
     expect(await sizes("[aria-label='Bases'] > .k2-row > .k2-row-lead > .k2-mk")).toEqual(["24x24 in 44", "24x24 in 52"]);
     expect(await sizes("[aria-label='Tabellen'] td > .k2-cell-lead > .k2-mk")).toEqual(["24x24 in 44", "24x24 in 44"]);
-    // a list with thumbnails or types (files): 32, the table's mark beside them too, as a folder beside files
-    expect(await sizes("[aria-label='Dateien'] > .k2-row[data-lines='1'] > .k2-row-lead > .k2-mk")).toEqual([
-      "32x32 in 44",
-      "32x32 in 44",
-    ]);
+    // a list with thumbnails or types (files): 32 for every mark in it, the folder without a picture too
+    expect(await sizes("[aria-label='Dateien'] > .k2-row[data-lines='1'] > .k2-row-lead > .k2-mk")).toEqual(["32x32 in 44", "32x32 in 44"]);
   });
 });
+
+// the text edge of a list: a row that leads with a thing's mark, one with its thumbnail and one with a person start
+// their names on one edge, 12 px after a lead of one size (W1b #4206 r5)
+for (const width of [1440, 390])
+  test(`at ${width} px a person, a mark and a thumbnail in one list start their names on one edge`, async () => {
+    await withPage(async (page) => {
+      const edges = await page.locator("[aria-label='Dateien'] > .k2-row").evaluateAll((rows) =>
+        rows.map((row) => {
+          const lead = row.querySelector(":scope > .k2-row-lead")!.getBoundingClientRect();
+          const title = row.querySelector(".k2-row-title")!.getBoundingClientRect();
+          return { lead: Math.round(lead.width), gap: Math.round(title.left - lead.right), edge: Math.round(title.left) };
+        }),
+      );
+      expect(edges.length).toBe(6);
+      expect(new Set(edges.map((row) => row.edge)).size).toBe(1);
+      expect(new Set(edges.map((row) => row.gap))).toEqual(new Set([12]));
+      expect(new Set(edges.map((row) => row.lead))).toEqual(new Set([width < 768 ? 40 : 32]));
+    }, width);
+  });
 
 test("a mark takes its size from its place: 20 in the sidebar and a sentence, 32 leading rows of files of 44 px, 36 on a card", async () => {
   await withPage(async (page) => {

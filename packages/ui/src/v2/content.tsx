@@ -511,8 +511,8 @@ export type Column<T> = {
    * mark of the table), rule: each thing its mark.
    */
   mark?: (row: T) => MarkProps;
-  /** The cell leads with a person, such as the owner; the name in the cell names the avatar. */
-  avatar?: (row: T) => Person;
+  /** The cell leads with a person, such as the owner; the name in the cell names the avatar. A row without one leads with nothing. */
+  avatar?: (row: T) => Person | undefined;
   /**
    * A column that can be dragged wider or narrower: its minimum and default in px. The column is exactly its
    * default wide; cut text never widens it.
