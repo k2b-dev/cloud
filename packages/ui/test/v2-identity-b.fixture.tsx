@@ -73,6 +73,39 @@ type Client = {
 
 const clients: readonly Client[] = [
   {
+    id: "wiki",
+    name: "Wiki",
+    icon: "book",
+    color: "#0369a1",
+    kind: "Vertraulich",
+    people: [people.ms, people.jb],
+    connected: 58,
+    usage: [40, 42, 45, 44, 48, 50, 49, 52, 54, 55, 57, 58],
+    last: "vor 3 Min",
+  },
+  {
+    id: "cli",
+    name: "Cloud CLI",
+    icon: "terminal",
+    color: "#111827",
+    kind: "Öffentlich",
+    people: [people.jk, people.ft],
+    connected: 41,
+    usage: [30, 31, 33, 34, 35, 36, 37, 38, 39, 40, 40, 41],
+    last: "vor 2 Min",
+  },
+  {
+    id: "zeit",
+    name: "Zeiterfassung",
+    icon: "clock",
+    color: "#15803d",
+    kind: "Vertraulich",
+    people: [people.ft, people.sy],
+    connected: 31,
+    usage: [28, 29, 29, 30, 30, 31, 30, 31, 31, 31, 31, 31],
+    last: "vor 9 Min",
+  },
+  {
     id: "paperless",
     name: "Paperless",
     icon: "file-invoice",
@@ -115,6 +148,17 @@ const clients: readonly Client[] = [
     connected: 97,
     usage: [80, 82, 85, 88, 90, 91, 93, 94, 95, 96, 96, 97],
     last: "gerade eben",
+  },
+  {
+    id: "drucker",
+    name: "Drucker-Terminal",
+    icon: "printer",
+    color: "#b45309",
+    kind: "Gerät",
+    people: [people.sy, people.ft],
+    connected: 4,
+    usage: [2, 2, 3, 3, 3, 4, 4, 4, 3, 4, 4, 4],
+    last: "heute, 07:12",
   },
   {
     id: "inspector",
@@ -209,7 +253,7 @@ export const OAuthScreen = (props: { list?: boolean }) => (
               width: { min: 108, default: 108 },
               cell: (client) =>
                 client.connected > 0 ? (
-                  <Avatar.Stack people={client.people} max={2} label={`${client.connected} verbunden`} />
+                  <Avatar.Stack people={client.people} max={2} total={client.connected} label={`${client.connected} verbunden`} />
                 ) : (
                   <Text type="meta" muted>
                     {client.kind === "Dienstkonto" ? "Dienstkonto" : "niemand"}
@@ -276,9 +320,23 @@ export const OAuthScreen = (props: { list?: boolean }) => (
           </Section>
           <Section title="Verbunden" count={6} more={{ label: "Alle trennen" }}>
             <List label="Verbunden">
-              <Row avatar={people.ar} lines={["Ada Renz"]} time="vor 1 Std" />
-              <Row avatar={people.jb} lines={["Jana Berger"]} time="vor 3 Std" />
-              <Row avatar={people.to} lines={["Tom Oswald"]} time="gestern, 16:20" />
+              {/* since when, when last, and the one deed of a connection: take it away */}
+              {[
+                { person: people.ar, since: "seit 02.10.", last: "vor 1 Std" },
+                { person: people.jb, since: "seit 02.10.", last: "vor 3 Std" },
+                { person: people.to, since: "seit 09.10.", last: "gestern, 16:20" },
+                { person: people.lh, since: "seit 22.11.", last: "Di., 11:05" },
+                { person: people.ms, since: "seit 22.11.", last: "Mo., 09:12" },
+                { person: people.sy, since: "seit 14.10.", last: "12.11." },
+              ].map((link) => (
+                <Row
+                  avatar={link.person}
+                  lines={[link.person.name]}
+                  meta={link.since}
+                  time={link.last}
+                  end={<Button variant="ghost" icon="plug-connected-x" label={`${link.person.name} trennen`} />}
+                />
+              ))}
             </List>
           </Section>
           <Section title="Verlauf">
