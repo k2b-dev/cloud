@@ -13,6 +13,7 @@ import { describeV2Page, measureV2Layout } from "./testing";
 // the open file, a storage quota in the sidebar, marks in table cells, and settings with their value beside them.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
+const dist = resolve(import.meta.dir, "../../dist");
 const testCss =
   "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; padding: 8px; } .ti { display: inline-block; width: 1em; height: 1em; }";
 
@@ -49,19 +50,32 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (which: Case, run: (page: Page) => Promise<void>, width = 1440, touch = false) => {
+// `plex`: the page draws in IBM Plex from the built package, as a person sees it, for a test that measures whether a text
+// fits (the browser's own font is wider)
+const withPage = async (which: Case, run: (page: Page) => Promise<void>, width = 1440, touch = false, plex = false) => {
   const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: touch });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
+  const fonts = plex ? '<link rel="stylesheet" href="/_ui/plex.css">' : "";
   // a real address, so a sort or filter chosen in the bar can write it
-  await page.route("http://head-media.test/**", (route) =>
-    route.fulfill({
+  await page.route("http://head-media.test/**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.startsWith("/_ui/")) {
+      const file = resolve(dist, `.${path.slice("/_ui".length)}`);
+      return file.startsWith(`${dist}/`) ? route.fulfill({ path: file }) : route.fulfill({ status: 404 });
+    }
+    return route.fulfill({
       contentType: "text/html",
-      body: `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style><script>window.__k2Case = ${JSON.stringify(which)};</script></head><body class="k2-ui"><div id="root"></div></body></html>`,
-    }),
-  );
+      body: `<!doctype html><html lang="de"><head><meta charset="utf-8">${fonts}<style>${css}</style><style>${testCss}</style><script>window.__k2Case = ${JSON.stringify(which)};</script></head><body class="k2-ui"><div id="root"></div></body></html>`,
+    });
+  });
   try {
     await page.goto("http://head-media.test/dateien");
+    if (plex)
+      await page.evaluate(async () => {
+        await Promise.all([400, 500, 600].map((weight) => document.fonts.load(`${weight} 13px "IBM Plex Sans"`)));
+        await document.fonts.ready;
+      });
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
     await page.waitForFunction(() =>
@@ -753,7 +767,8 @@ for (const width of [1440, 700, 390, 320])
         // recipe's outline in Plex checks the phone)
         const short = places.filter((place) => place.name === "Angemeldet bleiben" || place.name === "Neue Apps fragen");
         expect(short.map((place) => ({ name: place.name, whole: place.whole || width < 640, word: place.word }))).toEqual(
-          short.map((place) => ({ name: place.name, whole: true, word: width >= 390 })),
+          // the word gives way below a pane of 384 px (this page's pane is its window less 16 px)
+          short.map((place) => ({ name: place.name, whole: true, word: width - 16 >= 384 })),
         );
         // beside the names the values of all settings stand in one line down the page, a short one too (on the phone a
         // short one stands at the end of its name's line instead)
@@ -762,6 +777,74 @@ for (const width of [1440, 700, 390, 320])
         await page.evaluate(() => window.__k2SettingChange?.(false));
         await settled(page);
         expect(await settingBoxes(page)).toEqual(before);
+      },
+      width,
+    );
+  });
+
+// On a narrow phone (a pane of 360 or 375 px) "geändert" gives way so that a short value before the change ("12 Std.",
+// "Aus") stands whole beside the deed, in the font people see (review r12: at 360–371 px it read "vorher 12 St…").
+for (const pane of [360, 375])
+  test(`a short value before a change stands whole beside the deed on a pane of ${pane} px, in IBM Plex`, async () => {
+    await withPage(
+      "setting-change",
+      async (page) => {
+        await page.evaluate(() => window.__k2SettingChange?.(true));
+        await settled(page);
+        const found = await page.evaluate(() => {
+          const setting = (name: string) =>
+            [...document.querySelectorAll<HTMLElement>("[data-k2-part='Setting']")].find((each) =>
+              each.querySelector(".k2-field-label")?.textContent?.includes(name),
+            )!;
+          const read = (name: string) => {
+            const chip = setting(name).querySelector<HTMLElement>(".k2-field-was > .k2-chip")!;
+            const deed = setting(name).querySelector(".k2-field-action button")!.getBoundingClientRect();
+            return {
+              whole: chip.scrollWidth <= chip.clientWidth + 1,
+              apart: chip.getBoundingClientRect().right <= deed.left + 0.5,
+            };
+          };
+          return {
+            pane: Math.round(setting("Adresse").closest(".k2-pane")!.getBoundingClientRect().width),
+            font:
+              getComputedStyle(setting("Adresse")).fontFamily.includes("IBM Plex Sans") && document.fonts.check('500 12px "IBM Plex Sans"'),
+            hours: read("Angemeldet bleiben"),
+            switch: read("Neue Apps fragen"),
+          };
+        });
+        expect(found).toEqual({ pane, font: true, hours: { whole: true, apart: true }, switch: { whole: true, apart: true } });
+      },
+      pane + 16,
+      false,
+      true,
+    );
+  });
+
+// A setting that never changes in place (no `was`, no `action`) keeps no room for a change: it is as tall as before the
+// room was kept (81b5b40), at each layout of the settings page (review r12: the page grew by 31 % at 1024 px).
+const stillHeights: Record<number, Record<string, number>> = {
+  1440: { Gemeinschaftsrechner: 72, "Neue Apps fragen": 64, Adresse: 72, "Admins koppeln direkt": 64 },
+  1024: { Gemeinschaftsrechner: 76, "Neue Apps fragen": 76, Adresse: 100, "Admins koppeln direkt": 60 },
+  700: { Gemeinschaftsrechner: 72, "Neue Apps fragen": 80, Adresse: 72, "Admins koppeln direkt": 64 },
+  390: { Gemeinschaftsrechner: 76, "Neue Apps fragen": 76, Adresse: 100, "Admins koppeln direkt": 60 },
+};
+for (const width of [1440, 1024, 700, 390])
+  test(`a setting that cannot change keeps no room for a change at ${width} px`, async () => {
+    await withPage(
+      "settings",
+      async (page) => {
+        const found = await page.evaluate(() =>
+          Object.fromEntries(
+            [...document.querySelectorAll<HTMLElement>("[data-k2-part='Setting']")]
+              // the recipe's one setting that changes in place is "Angemeldet bleiben"
+              .filter((setting) => !setting.textContent?.includes("Angemeldet bleiben"))
+              .map((setting) => [
+                setting.querySelector(".k2-field-label")!.textContent,
+                Math.round(setting.getBoundingClientRect().height),
+              ]),
+          ),
+        );
+        expect(found).toEqual(stillHeights[width]!);
       },
       width,
     );

@@ -83,14 +83,16 @@ export const Field = (props: FieldProps) => <FieldFrame field={props} />;
 export type SettingProps = Omit<FieldProps, "optional" | "required"> & {
   /**
    * The value before an unsaved change, such as "12 Std.": the setting then says "geändert · vorher 12 Std." under
-   * its name (beside its help), so a page that saves as a whole shows what will change. Its place is kept while nothing
-   * changed, so it coming or going moves nothing.
+   * its name (beside its help), so a page that saves as a whole shows what will change. A setting that names `was` or
+   * `action`, also as `undefined` while nothing changed, keeps their place (below a pane of 800 px a line under the
+   * value), so they coming or going move nothing; a setting that names neither keeps no room for them.
    */
   was?: string;
   /**
    * One quiet deed for this setting, such as "Auf Standard zurücksetzen" while the value differs from its default: a
    * text button after the value, beside it where the row has room and on the kept line under it where the settings
-   * stand one under the other. The deed coming or going moves nothing, and the Tab key reaches it after the value.
+   * stand one under the other. The deed coming or going moves nothing (name it, as `undefined` while there is none,
+   * as for `was`), and the Tab key reaches it after the value.
    */
   action?: Action;
   /**
@@ -167,6 +169,9 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
   );
   const part = frame.setting ? "Setting" : "Field";
   const setting = frame.setting ? "" : undefined;
+  // A setting that names `was` or `action` (even while they are unset) changes in place: it keeps their room, so they
+  // coming or going move nothing. Read once: whether a setting can change is part of the page, not of its state.
+  const changes = frame.setting && ("was" in props || "action" in props) ? "" : undefined;
   // the deed stands beside the name, never in it: a button inside a <label> would be pressed with it. It comes where
   // it stands, so Tab follows the eye: in a field before the control (on the label's line), in a setting after the
   // value (beside it, or on the line kept under it)
@@ -213,6 +218,7 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       data-action={props.action ? "" : undefined}
       data-was={props.was ? "" : undefined}
       data-compact={props.compact ? "" : undefined}
+      data-changes={changes}
       role="group"
       aria-labelledby={label}
     >
@@ -232,6 +238,7 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       data-action={props.action ? "" : undefined}
       data-was={props.was ? "" : undefined}
       data-compact={props.compact ? "" : undefined}
+      data-changes={changes}
     >
       {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: a pointer shortcut like a native label's; the control it names is the keyboard target. A <label for> would press the button and open its list. */}
       <span class="k2-field-label" id={label} onClick={() => named?.()}>
@@ -250,6 +257,7 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       data-action={props.action ? "" : undefined}
       data-was={props.was ? "" : undefined}
       data-compact={props.compact ? "" : undefined}
+      data-changes={changes}
     >
       <label class="k2-field-label" id={label} for={control}>
         {labelLine}

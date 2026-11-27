@@ -3025,14 +3025,14 @@
   color: var(--k2-subtle);
 }
 /* a field's one deed stands at the end of its label line, in the line's 20 px: the field keeps its height with it */
-.k2-ui .k2-field[data-action] {
+.k2-ui .k2-field[data-action]:not([data-setting]) {
   grid-template-columns: minmax(0, 1fr) auto;
   column-gap: 8px;
 }
-.k2-ui .k2-field[data-action] > :not(.k2-field-label, .k2-field-action) {
+.k2-ui .k2-field[data-action]:not([data-setting]) > :not(.k2-field-label, .k2-field-action) {
   grid-column: 1 / -1;
 }
-.k2-ui .k2-field[data-action] > .k2-field-label {
+.k2-ui .k2-field[data-action]:not([data-setting]) > .k2-field-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3071,13 +3071,14 @@
 }
 /* Setting: a narrow column with the name (13, 500) alone, the control in a column of 300 px beside it, so the names and
    the values of a settings page each stand in one line and are read at a glance; the one line of help under the control
-   (CLEAR AND DENSE f). No line between settings: a section separates them from the next topic. What a setting shows
-   while it is changed ("geändert · vorher …", "Auf Standard zurücksetzen") has its place kept, so it coming or going
-   moves nothing: on a wide row "geändert" under the name beside the help (the line under the value keeps a chip's
-   24 px) and the deed after the value on its line. */
+   (CLEAR AND DENSE f). No line between settings: a section separates them from the next topic. A setting that changes
+   in place (`data-changes`: it names `was` or `action`) keeps the place of what it shows while changed ("geändert ·
+   vorher …", "Auf Standard zurücksetzen"), so it coming or going moves nothing: on a wide row "geändert" under the
+   name beside the help (the line under the value keeps a chip's 24 px) and the deed after the value on its line. A
+   setting that cannot change keeps no room for it. */
 .k2-ui .k2-field[data-setting] {
   grid-template-columns: minmax(0, 240px) minmax(0, 300px) minmax(0, 1fr);
-  grid-template-rows: auto minmax(24px, auto);
+  grid-template-rows: auto auto;
   grid-template-areas: "label control action" "was message message";
   column-gap: 24px;
   row-gap: 0;
@@ -3093,10 +3094,12 @@
   font-weight: 500;
   color: var(--k2-text);
   white-space: normal;
-  /* a long compound breaks inside its column instead of running into the value or being cut */
-  overflow: visible;
+  /* a long compound breaks inside its column instead of running into the value */
   overflow-wrap: anywhere;
   hyphens: auto;
+}
+.k2-ui .k2-field[data-setting][data-changes] {
+  grid-template-rows: auto minmax(24px, auto);
 }
 .k2-ui .k2-field[data-setting] > .k2-field-message {
   grid-area: message;
@@ -3157,11 +3160,11 @@
   margin-top: 0;
 }
 /* By the width of its pane, not of the window. Below 800 px of pane the deed has no room after the value (about 170 px
-   beside the name's 240 and the value's 300), so every setting keeps a line of 24 px under its value and help for what it
-   shows while changed: "geändert" at its start, the deed at its end. The same for every setting, with a deed or
-   without, so the names and values of a page keep one line and the deed coming moves nothing. */
+   beside the name's 240 and the value's 300), so a setting that changes in place keeps a line of 24 px under its value
+   and help for what it shows while changed: "geändert" at its start, the deed at its end. The value keeps its column,
+   so the names and values of a page stay in one line and the deed coming moves nothing. */
 @container k2-pane (max-width: 799.98px) {
-  .k2-ui .k2-field[data-setting] {
+  .k2-ui .k2-field[data-setting][data-changes] {
     grid-template-rows: auto auto minmax(28px, auto);
     grid-template-areas: "label control ." ". message message" ". end end";
   }
@@ -3189,9 +3192,13 @@
 @container k2-pane (max-width: 639.98px) {
   .k2-ui .k2-field[data-setting] {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto auto minmax(24px, auto);
+    grid-template-rows: none;
     grid-template-areas: "label" "message" "control" "end";
     row-gap: 4px;
+  }
+  .k2-ui .k2-field[data-setting][data-changes] {
+    grid-template-rows: auto auto auto minmax(24px, auto);
+    grid-template-areas: "label" "message" "control" "end";
   }
   .k2-ui .k2-field[data-setting] > .k2-field-label {
     align-self: start;
@@ -3203,8 +3210,11 @@
      its hint on the left, the control at the end of the name's line; a short field takes 128 px there. */
   .k2-ui .k2-field[data-setting]:is([data-compact], :has(> .k2-choice)) {
     grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: auto auto minmax(24px, auto);
+    grid-template-rows: none;
     grid-template-areas: "label control" "message control" "end end";
+  }
+  .k2-ui .k2-field[data-setting][data-changes]:is([data-compact], :has(> .k2-choice)) {
+    grid-template-rows: auto auto minmax(24px, auto);
   }
   .k2-ui .k2-field[data-setting]:is([data-compact], :has(> .k2-choice)) > .k2-field-label {
     align-self: end;
@@ -3213,9 +3223,10 @@
     width: 128px;
   }
 }
-/* On a very narrow pane (a phone of 320 px) "geändert" and the deed do not both fit on the kept line: the word
-   "geändert" gives way, read still, and the chip says what it was ("vorher 12 Std.") in the colour of a change. */
-@container k2-pane (max-width: 359.98px) {
+/* On a narrow phone (a pane below 384 px: "geändert · vorher 12 Std." and "Auf Standard zurücksetzen" need about 324 px
+   beside the edges' 40) both do not fit on the kept line: the word "geändert" gives way, read still, and the chip says
+   what it was ("vorher 12 Std.") in the colour of a change. */
+@container k2-pane (max-width: 383.98px) {
   .k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-was > .k2-chip > .k2-field-was-word {
     position: absolute;
     width: 1px;

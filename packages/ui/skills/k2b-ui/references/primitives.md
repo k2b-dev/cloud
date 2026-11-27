@@ -370,8 +370,10 @@ lines instead of cutting a thing.
   "geändert" under the name and the deed beside the value. Below 800 px of
   pane both stand on a line kept under the value ("geändert" at its start,
   the deed at its end); below 640 px the value goes under the name and its
-  hint (by the pane, not the window). Their places are kept, so a change
-  moves nothing, and Tab reaches the deed after the value. `compact` (a
+  hint (by the pane, not the window). A setting that names `was` or
+  `action` (as `undefined` while unchanged) keeps their places, so a
+  change moves nothing; one that names neither keeps no room. Tab reaches
+  the deed after the value. `compact` (a
   number with its unit, a short selection) and a `Check` keep the value
   beside the name also on the phone. A column of settings ends above the
   phone's floating main action. Never stack `Field`s as a settings page.
