@@ -1,27 +1,9 @@
 import { describe, expect, mock, test } from "bun:test";
 import { createRoot, onCleanup, onMount } from "solid-js";
-import { delegateEvents, isServer, render } from "solid-js/web";
+import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
 import { FULL_WIDTH_PREFERENCE_EVENT } from "./detail/events";
 import { readFullWidth, setFullWidth } from "./settings/NotebookSettingsStore";
-
-const openView = (root: HTMLElement) => {
-  // happy-dom has no native top layer. Model only its open state and toggle event.
-  const menu = root.querySelector<HTMLElement>('[role="menu"]')!;
-  let open = false;
-  const matches = menu.matches.bind(menu);
-  Object.defineProperty(menu, "matches", { value: (selector: string) => (selector === ":popover-open" ? open : matches(selector)) });
-  const toggle = (next: boolean) => {
-    open = next;
-    const event = new Event("toggle");
-    Object.defineProperty(event, "newState", { value: next ? "open" : "closed" });
-    menu.dispatchEvent(event);
-  };
-  menu.showPopover = () => toggle(true);
-  menu.hidePopover = () => toggle(false);
-  delegateEvents(["click"], root.ownerDocument);
-  root.querySelector<HTMLButtonElement>(".notebook-view-menu__trigger")!.click();
-};
 
 // happy-dom reflects inline dimensions in computed styles; deliver observed callbacks ourselves.
 const hostLayout = (dom: ReturnType<typeof createDomTestHarness>, initial = 1192) => {
@@ -74,7 +56,6 @@ describe("personal full-width bridge", () => {
     const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
     const { LocaleProvider, useLocale } = await import("@k2b/ui");
     const { notebookWorkspaceMessages } = await import("../messages");
-    const { ViewMenu } = await import("./detail/ViewMenu");
     const { followFullWidth } = await import("./full-width");
     const layout = hostLayout(dom, width);
     if (!namedHost) dom.root.style.containerName = "none";
@@ -91,7 +72,6 @@ describe("personal full-width bridge", () => {
           <div class="notebook-document-surface">
             <div ref={port} />
           </div>
-          <ViewMenu mode="edit" notebookId="book01" noteId="note01" canEdit isRich onToggleRich={() => {}} fullWidth={false} />
         </div>
       );
     }
@@ -103,16 +83,12 @@ describe("personal full-width bridge", () => {
       ),
       dom.root,
     );
-    openView(dom.root);
     const surface = dom.root.querySelector<HTMLDivElement>(".notebook-document-surface");
     if (!surface) throw new Error("Missing reading surface.");
     const command = () => collectContextAwareCommands().find((command) => command.id === "notebooks.view.fullWidth");
     return {
       host: dom.root,
       surface,
-      get toggle() {
-        return dom.root.querySelector<HTMLButtonElement>('[role="menuitemcheckbox"]')!;
-      },
       resize: layout.resize,
       disconnected: layout.disconnected,
       command,
@@ -163,36 +139,29 @@ describe("personal full-width bridge", () => {
   test("switches from the root to a host that gains its container name after mount", async () => {
     const view = await mountReadingSurface(false, 952, false);
     try {
-      expect(view.command()).toBeDefined();
-      expect(view.toggle).not.toBeNull();
+      expect(view.command()?.description).toBe("Nur für dich in diesem Browser");
       view.host.style.containerName = "k2b-app-area";
       view.resize(952);
-      expect(view.command()).toBeUndefined();
-      expect(view.toggle).toBeNull();
+      expect(view.command()?.description).toBe("Wirkt erst in einem breiteren Fenster");
     } finally {
       view.cleanup();
     }
   });
 
-  // Pins host width: a wide window cannot offer a command or option for a narrow app.
-  test("nearest host crossing 64 rem toggles both offers in a wide window", async () => {
+  // Pins host width: in a wide window the command of a narrow app says that it takes effect in a wider one.
+  test("nearest host crossing 64 rem changes what the command says in a wide window", async () => {
     const view = await mountReadingSurface(false, 952);
     try {
       expect(window.innerWidth).toBe(1680);
-      expect(view.command()).toBeUndefined();
-      expect(view.toggle).toBeNull();
+      expect(view.command()?.description).toBe("Wirkt erst in einem breiteren Fenster");
       view.resize(1023.75);
-      expect(view.command()).toBeUndefined();
-      expect(view.toggle).toBeNull();
+      expect(view.command()?.description).toBe("Wirkt erst in einem breiteren Fenster");
       view.resize(1024);
-      expect(view.command()).toBeDefined();
-      expect(view.toggle).not.toBeNull();
+      expect(view.command()?.description).toBe("Nur für dich in diesem Browser");
       view.resize(1023);
-      expect(view.command()).toBeUndefined();
-      expect(view.toggle).toBeNull();
+      expect(view.command()?.description).toBe("Wirkt erst in einem breiteren Fenster");
       view.resize(1192);
-      expect(view.command()).toBeDefined();
-      expect(view.toggle).not.toBeNull();
+      expect(view.command()?.description).toBe("Nur für dich in diesem Browser");
       view.dispose();
       expect(view.disconnected).toHaveBeenCalled();
       view.resize(952);
@@ -202,11 +171,10 @@ describe("personal full-width bridge", () => {
     }
   });
 
-  test("remounts from the cookie and keeps the menu choice and command usable", async () => {
+  test("remounts from the cookie and keeps the command usable", async () => {
     const view = await mountReadingSurface(true);
     try {
       expect(view.surface.hasAttribute("data-full-width")).toBe(true);
-      expect(view.toggle.getAttribute("aria-checked") === "true").toBe(true);
       expect(view.command()?.title).toBe("Volle Breite ausschalten");
       expect(view.keepPosition).toHaveBeenCalledTimes(1);
 
@@ -215,7 +183,6 @@ describe("personal full-width bridge", () => {
         if (typeof action !== "function") throw new Error("Expected a local command.");
         await action();
         expect(view.surface.hasAttribute("data-full-width")).toBe(on);
-        expect(view.toggle.getAttribute("aria-checked") === "true").toBe(on);
         expect(readFullWidth()).toBe(on);
         expect(view.command()?.title).toBe(on ? "Volle Breite ausschalten" : "Volle Breite einschalten");
       }
@@ -231,7 +198,6 @@ describe("personal full-width bridge", () => {
     window.addEventListener(FULL_WIDTH_PREFERENCE_EVENT, notified);
     const expectWidth = (on: boolean) => {
       expect(view.surface.hasAttribute("data-full-width")).toBe(on);
-      expect(view.toggle.getAttribute("aria-checked") === "true").toBe(on);
       expect(view.command()?.title).toBe(on ? "Volle Breite ausschalten" : "Volle Breite einschalten");
     };
     try {
@@ -262,13 +228,11 @@ describe("personal full-width bridge", () => {
       expect(view.keepPosition).toHaveBeenCalledTimes(2);
       expect(notified).not.toHaveBeenCalled();
 
-      const lastToggle = view.toggle;
       view.dispose();
       setFullWidth(false);
       window.dispatchEvent(new Event("focus"));
       document.dispatchEvent(new Event("visibilitychange"));
       expect(view.surface.hasAttribute("data-full-width")).toBe(true);
-      expect(lastToggle.getAttribute("aria-checked") === "true").toBe(true);
       expect(view.command()).toBeUndefined();
       expect(view.keepPosition).toHaveBeenCalledTimes(2);
       expect(notified).not.toHaveBeenCalled();
@@ -285,7 +249,6 @@ describe("personal full-width bridge", () => {
     const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
     const { LocaleProvider, useLocale } = await import("@k2b/ui");
     const { notebookWorkspaceMessages } = await import("../messages");
-    const { ViewMenu } = await import("./detail/ViewMenu");
     const { changeFullWidth, followFullWidth } = await import("./full-width");
     const layout = hostLayout(dom);
     const phases: boolean[] = [];
@@ -310,7 +273,6 @@ describe("personal full-width bridge", () => {
           <div ref={surface} class="notebook-document-surface">
             <div ref={port} />
           </div>
-          <ViewMenu mode="edit" notebookId="book01" noteId="note01" canEdit isRich onToggleRich={() => {}} fullWidth={false} />
         </>
       );
     }
@@ -324,40 +286,33 @@ describe("personal full-width bridge", () => {
     );
     let disposed = false;
     try {
-      openView(dom.root);
-      const toggle = dom.root.querySelector<HTMLButtonElement>('[role="menuitemcheckbox"]')!;
       const command = () => collectContextAwareCommands().find((command) => command.id === "notebooks.view.fullWidth");
       expect(command()?.title).toBe("Volle Breite einschalten");
       const action = command()?.action;
       if (typeof action !== "function") throw new Error("Expected a local command.");
       await action();
       expect(phases).toEqual([false, true]);
-      expect(toggle.getAttribute("aria-checked") === "true").toBe(true);
       expect(readFullWidth()).toBe(true);
       expect(command()?.title).toBe("Volle Breite ausschalten");
 
       // A repeated notification must not capture or restore a position that already matches.
       window.dispatchEvent(new Event(FULL_WIDTH_PREFERENCE_EVENT));
       expect(phases).toEqual([false, true]);
-      toggle.click();
-      expect(dom.root.querySelector(".notebook-view-menu__trigger")?.getAttribute("aria-expanded")).toBe("true");
+      changeFullWidth(false);
       expect(phases).toEqual([false, true, true, false]);
-      expect(toggle.getAttribute("aria-checked") === "true").toBe(false);
       expect(command()?.title).toBe("Volle Breite einschalten");
 
       layout.resize(952);
-      expect(command()).toBeUndefined();
+      expect(command()?.description).toBe("Wirkt erst in einem breiteren Fenster");
       layout.resize(1192);
       expect(command()?.title).toBe("Volle Breite einschalten");
 
-      const lastToggle = dom.root.querySelector<HTMLButtonElement>('[role="menuitemcheckbox"]')!;
       dispose();
       disposed = true;
       expect(command()).toBeUndefined();
       expect(layout.disconnected).toHaveBeenCalled();
       changeFullWidth(true);
       expect(phases).toEqual([false, true, true, false]);
-      expect(lastToggle.getAttribute("aria-checked") === "true").toBe(false);
     } finally {
       if (!disposed) dispose();
       layout.cleanup();

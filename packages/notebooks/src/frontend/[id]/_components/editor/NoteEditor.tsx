@@ -171,12 +171,12 @@ type LoadedNote = {
   eventDetail: SoftNavigatedDetail;
 };
 
-type Props = EditorInstanceProps & {
+export type NoteEditorProps = EditorInstanceProps & {
   initialHref: string;
   initialDetail: SoftNavigatedDetail;
 };
 
-export default function NoteEditor(props: Props) {
+export default function NoteEditor(props: NoteEditorProps) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const { initialHref, initialDetail, ...initialEditorProps } = props;
@@ -1127,8 +1127,8 @@ function EditorInstance(
 
   const onCopy = () => {
     void clipboard.copy(exportContent()).then(
-      () => toast.success(t().contentCopied),
-      () => toast.error(t().contentCopyFailed),
+      () => toast.success(t().contentCopied, { title: t().copiedTitle }),
+      () => toast.error(t().contentCopyFailed, { title: t().copyFailedTitle }),
     );
   };
 

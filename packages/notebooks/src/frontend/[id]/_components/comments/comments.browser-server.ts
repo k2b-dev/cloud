@@ -13,7 +13,7 @@ import { createComponent, renderToString } from "solid-js/web";
 import * as Y from "yjs";
 import type { Annotation, AnnotationProjection } from "../../../../lib/annotation-contracts";
 import { notebooksYjs } from "../../../../lib/yjs";
-import type NoteEditor from "../editor/NoteEditor.client";
+import type NoteEditor from "../editor/NoteEditor";
 import "../detail/ssr-test-plugin";
 
 const { default: NotePreview } = await import("../editor/NotePreview");

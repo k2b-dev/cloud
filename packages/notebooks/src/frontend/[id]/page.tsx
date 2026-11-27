@@ -2,19 +2,16 @@ import { getLiveDictationStatus } from "@k2b/cloud/ai";
 import type { AuthContext } from "@k2b/cloud/server";
 import { getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
-import { AppWorkspace, Placeholder } from "@k2b/ui";
+import { AppWorkspace } from "@k2b/ui";
 import { ssr } from "../../config";
 import { katexStylesHref } from "../../lib/katex-assets";
 import { notebooksPageMessages } from "../messages";
 import { buildNoteUrl } from "../params";
 import BookGraphSurface from "./_components/book/BookGraphSurface";
 import BookSurface from "./_components/book/BookSurface";
-import FloatingEditButton from "./_components/book/FloatingEditButton.island";
-import NotebookDetailPanel from "./_components/detail/NotebookDetailPanel.island";
-import NoteEditor from "./_components/editor/NoteEditor.client";
-import NotePreview from "./_components/editor/NotePreview";
 import NotebookGraph from "./_components/graph/NotebookGraph.island";
 import NotebookCommands from "./_components/NotebookCommands.island";
+import NoteWorkspace from "./_components/NoteWorkspace.island";
 import RememberNotebook from "./_components/RememberNotebook.island";
 import NotebookSidebar from "./_components/sidebar/NotebookSidebar.island";
 import WorkspaceEventBridge from "./_components/sidebar/WorkspaceEventBridge.island";
@@ -134,6 +131,123 @@ export default ssr<AuthContext>(async (c) => {
   const showsEditorToolbar = !!selectedNote && !isVersionsMode && !isGraphMode && !readonlyMode;
   // The microphone shows only where dictation can start: a live model is set up and this person may use it.
   const liveDictation = showsEditorToolbar && (await getLiveDictationStatus(c.get("accessSubject"))).available;
+  const title = [
+    { title: t.start, href: "/" },
+    { title: t.notebooks },
+    // Version history and the graph carry their own way back to the note, so the shell adds none there.
+    { title: notebook.name, ...(isVersionsMode || isGraphMode ? {} : { href: `/app/notebooks/${notebook.id}` }) },
+    ...(selectedNote ? [{ title: selectedNote.title }] : []),
+  ];
+  if (!isVersionsMode && !isGraphMode)
+    return () => (
+      <Layout
+        context={{ scope: { type: "notebooks.notebook", id: data.notebook.id } }}
+        printHint={t.printHint}
+        c={c}
+        fullPage
+        fullWidth
+        ui="v2"
+        title={title}
+      >
+        <link rel="stylesheet" href={katexStylesHref} />
+        <RememberNotebook notebookId={notebook.id} />
+        <NotebookCommands notebookId={notebook.id} notebookName={notebook.name} canWrite={canWrite} ownsSearchNavigation={!selectedNote} />
+        {/* Live changes reach the page through one workspace socket; a note connects its own only while it is edited. */}
+        <WorkspaceEventBridge
+          notebookId={notebook.id}
+          appUrl={appUrl}
+          initialCursor={ctx.workspaceCursor}
+          initialNoteId={selectedNote?.id ?? null}
+        />
+        <NoteWorkspace
+          ctx={ctx}
+          mode={readonlyMode ? "read" : "edit"}
+          canEdit={canWrite && !selectedNote?.lockedAt}
+          emptyText={ctx.sidebarTree.total === 0 ? t.noNotes : t.selectNote}
+          note={
+            selectedNote
+              ? {
+                  editor: {
+                    noteId: selectedNote.id,
+                    noteTitle: selectedNote.title,
+                    notebookId: notebook.id,
+                    noteLockedAt: selectedNote.lockedAt,
+                    historyIncomplete: selectedNote.historyIncomplete,
+                    notebookName: notebook.name,
+                    appUrl,
+                    userId: user.id,
+                    displayName: user.displayName,
+                    initialContent: selectedNote.contentMd,
+                    initialPanelOpen: detailPanelOpen,
+                    initialRichMode: ctx.settings.richMode,
+                    readOnly: readonlyMode,
+                    canWrite,
+                    liveDictation,
+                    initialAnnotations,
+                    initialHref: currentHref,
+                    initialDetail: {
+                      noteAuthors: selectedRouteState?.noteAuthors ?? { createdBy: null, lastEditedBy: null },
+                      noteId: selectedNote.id,
+                      noteTitle: selectedNote.title,
+                      contentMd: selectedNote.contentMd,
+                      createdAt: selectedNote.createdAt,
+                      updatedAt: selectedNote.updatedAt,
+                      lockedAt: selectedNote.lockedAt,
+                      historyIncomplete: selectedNote.historyIncomplete,
+                      isLocked: !!selectedNote.lockedAt,
+                      tocItems,
+                      taskProgress: selectedRouteState?.taskProgress ?? { done: 0, total: 0 },
+                      attachments: panelAttachments,
+                      backlinks,
+                      relations,
+                      namedBlocks,
+                    },
+                  },
+                  preview: {
+                    text: selectedNote.contentMd ?? "",
+                    annotations: initialAnnotations ?? null,
+                    me: user.id,
+                    mode: ctx.settings.richMode,
+                    historyIncomplete: selectedNote.historyIncomplete,
+                  },
+                  details: showDetailPanel
+                    ? {
+                        presentationMode: ctx.presentationMode,
+                        noteAuthors: selectedRouteState?.noteAuthors,
+                        mode: readonlyMode ? "read" : "edit",
+                        initiallyOpen: readonlyMode ? true : detailPanelOpen,
+                        fullWidth: ctx.fullWidth,
+                        tocItems,
+                        taskProgress: selectedRouteState?.taskProgress ?? { done: 0, total: 0 },
+                        attachments: panelAttachments,
+                        backlinks,
+                        relations,
+                        accessVisible,
+                        canManageAccess: data.permission === "admin",
+                        namedBlocks,
+                        currentNotebookId: notebook.id,
+                        notebookId: notebook.id,
+                        noteId: selectedNote.id,
+                        noteTitle: selectedNote.title,
+                        contentMd: selectedNote.contentMd,
+                        createdAt: selectedNote.createdAt,
+                        updatedAt: selectedNote.updatedAt,
+                        lockedAt: selectedNote.lockedAt,
+                        historyIncomplete: selectedNote.historyIncomplete,
+                        isLocked: !!selectedNote.lockedAt,
+                        canWrite,
+                        currentUserId: user.id,
+                        initialCommentsPage: initialCommentsPage ?? undefined,
+                        dateConfig,
+                        now: new Date().toISOString(),
+                      }
+                    : null,
+                }
+              : null
+          }
+        />
+      </Layout>
+    );
   return () => (
     <Layout
       context={{ scope: { type: "notebooks.notebook", id: data.notebook.id } }}
@@ -205,102 +319,8 @@ export default ssr<AuthContext>(async (c) => {
                 now={data.now}
                 timeZone={data.dateConfig.timeZone ?? "UTC"}
               />
-            ) : selectedNote ? (
-              <div
-                class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col"
-                data-full-width={ctx.fullWidth ? "" : undefined}
-                data-comments=""
-                data-detail-open={showDetailPanel && (readonlyMode || detailPanelOpen) ? "" : undefined}
-              >
-                {readonlyMode && (
-                  <FloatingEditButton href={currentHref} mode="readonly" locked={!!selectedNote.lockedAt} canWrite={canWrite} />
-                )}
-                <NoteEditor
-                  noteId={selectedNote.id}
-                  noteTitle={selectedNote.title}
-                  notebookId={notebook.id}
-                  noteLockedAt={selectedNote.lockedAt}
-                  historyIncomplete={selectedNote.historyIncomplete}
-                  notebookName={notebook.name}
-                  appUrl={appUrl}
-                  userId={user.id}
-                  displayName={user.displayName}
-                  initialContent={selectedNote.contentMd}
-                  initialPanelOpen={detailPanelOpen}
-                  initialRichMode={ctx.settings.richMode}
-                  readOnly={readonlyMode}
-                  canWrite={canWrite}
-                  liveDictation={liveDictation}
-                  initialAnnotations={initialAnnotations}
-                  initialHref={currentHref}
-                  initialDetail={{
-                    noteAuthors: selectedRouteState?.noteAuthors ?? { createdBy: null, lastEditedBy: null },
-                    noteId: selectedNote.id,
-                    noteTitle: selectedNote.title,
-                    contentMd: selectedNote.contentMd,
-                    createdAt: selectedNote.createdAt,
-                    updatedAt: selectedNote.updatedAt,
-                    lockedAt: selectedNote.lockedAt,
-                    historyIncomplete: selectedNote.historyIncomplete,
-                    isLocked: !!selectedNote.lockedAt,
-                    tocItems,
-                    taskProgress: selectedRouteState?.taskProgress ?? { done: 0, total: 0 },
-                    attachments: panelAttachments,
-                    backlinks,
-                    relations,
-                    namedBlocks,
-                  }}
-                />
-                <NotePreview
-                  text={selectedNote.contentMd ?? ""}
-                  annotations={initialAnnotations}
-                  me={user.id}
-                  mode={ctx.settings.richMode}
-                  historyIncomplete={selectedNote.historyIncomplete}
-                />
-              </div>
-            ) : (
-              <Placeholder
-                class="flex-1"
-                variant="panel"
-                icon="ti ti-file-text"
-                description={ctx.sidebarTree.total === 0 ? t.noNotes : t.selectNote}
-              />
-            )}
+            ) : null}
           </AppWorkspace.Main>
-
-          {showDetailPanel && selectedNote && (
-            <NotebookDetailPanel
-              presentationMode={ctx.presentationMode}
-              noteAuthors={selectedRouteState?.noteAuthors}
-              mode={readonlyMode ? "read" : "edit"}
-              initiallyOpen={readonlyMode ? true : detailPanelOpen}
-              fullWidth={ctx.fullWidth}
-              tocItems={tocItems}
-              taskProgress={selectedRouteState?.taskProgress ?? { done: 0, total: 0 }}
-              attachments={panelAttachments}
-              backlinks={backlinks}
-              relations={relations}
-              accessVisible={accessVisible}
-              canManageAccess={data.permission === "admin"}
-              namedBlocks={namedBlocks}
-              currentNotebookId={notebook.id}
-              notebookId={notebook.id}
-              noteId={selectedNote.id}
-              noteTitle={selectedNote.title}
-              contentMd={selectedNote.contentMd}
-              createdAt={selectedNote.createdAt}
-              updatedAt={selectedNote.updatedAt}
-              lockedAt={selectedNote.lockedAt}
-              historyIncomplete={selectedNote.historyIncomplete}
-              isLocked={!!selectedNote.lockedAt}
-              canWrite={canWrite}
-              currentUserId={user.id}
-              initialCommentsPage={initialCommentsPage ?? undefined}
-              dateConfig={dateConfig}
-              now={new Date().toISOString()}
-            />
-          )}
         </AppWorkspace.Content>
       </AppWorkspace>
     </Layout>

@@ -1,46 +1,46 @@
-import { CloudAvatar, cloudAvatarSource } from "@k2b/cloud/account/ui";
+import { cloudAvatarSource } from "@k2b/cloud/account/ui";
 import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { SaveFilesButton } from "@k2b/cloud/browser/files";
+import { saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
 import type { AccessMember, NotebookPresenceParticipant } from "@k2b/cloud/contracts";
 import type { NamedBlockSummary } from "@k2b/editor/markdown";
 import { navigateTo } from "@k2b/ssr/nav";
-import { type DateContext, dates, type Paginated } from "@k2b/stdlib";
+import { type DateContext, dates, fileIcons, type Paginated } from "@k2b/stdlib";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
-  type ActivityEntry,
-  ActivityList,
-  AppWorkspace,
-  Button,
-  DetailAccess,
   type DetailAccessEntry,
   type DetailLinkItem,
-  DetailLinks,
-  DetailPanel,
-  DetailPresence,
   type DetailPresencePerson,
-  DetailPresenceSlot,
   type DetailPresenceState,
-  DetailProperties,
-  type DetailProperty,
-  DetailTags,
-  type DropdownItem,
-  FileGrid,
-  FileTypeIcon,
   fileKindLabel,
   formatFileViewSize,
-  IconButton,
-  IconButtonLink,
-  Placeholder,
-  ProgressBar,
-  prompts,
-  Section,
-  Tooltip,
-  toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, Index, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import {
+  Avatar,
+  Band,
+  Bar,
+  Button,
+  Chip,
+  type Fact,
+  Facts,
+  Failed,
+  Inline,
+  Loading,
+  Mark,
+  Menu,
+  type MenuEntry,
+  Notice,
+  Pane,
+  type Person,
+  Progress,
+  Row,
+  Section,
+  Text,
+  useToast,
+} from "@k2b/ui/v2";
+import { createEffect, createMemo, createSignal, For, Index, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicNoteComment } from "@/api/public-resources";
 import { notebookCommandMessages } from "../../../../commands";
@@ -48,12 +48,12 @@ import type { NoteAuthors, NotebookActivityActor } from "../../../../lib/activit
 import type { PresentationMode } from "../../../../lib/presentation-mode";
 import type { Backlink } from "../../../../service/links";
 import type { NoteDetailRelations } from "../../../../service/route-state";
-import { describeNoteActivity, describeNoteActivityEntry, notebookActivityIcon } from "../../../activity-messages";
+import { describeNoteActivity, describeNoteActivityEntry } from "../../../activity-messages";
 import { attachmentPreviewKind, openAttachment } from "../../../lib/attachment-preview";
 import { buildAttachmentContentUrl } from "../../../lib/editor/attachment-url";
 import { buildGraphUrl, buildNoteUrl, buildTagPageUrl, buildVersionsUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
-import type { Attachment } from "../editor/attachments-client";
+import { type Attachment, confirmAndDownload } from "../editor/attachments-client";
 import { CONNECT_SETTLE_MS } from "../editor/sync-state";
 import { setDetailPanelOpen } from "../settings/NotebookSettingsStore";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
@@ -73,7 +73,6 @@ import {
   NAMED_BLOCKS_UPDATE_EVENT,
   NOTE_SOFT_NAVIGATED_EVENT,
   NOTE_TITLE_CHANGED_EVENT,
-  NOTEBOOK_DETAIL_ID,
   OPEN_NOTEBOOK_SETTINGS_EVENT,
   type OpenNotebookSettingsEventDetail,
   PRESENCE_EVENT,
@@ -99,9 +98,8 @@ import { launchNotebookNoteAssistant } from "./notebook-assistant-launch";
 import { useSaveAsTemplate } from "./save-as-template";
 import type { TaskProgress } from "./tasks";
 import type { TocItem } from "./toc";
-import { ViewMenu } from "./ViewMenu";
 
-type Props = {
+export type NoteDetailsProps = {
   presentationMode?: PresentationMode;
   noteAuthors?: NoteAuthors;
   mode: "edit" | "read";
@@ -177,7 +175,8 @@ const NO_AUTHORS: NoteAuthors = { createdBy: null, lastEditedBy: null };
 const isImage = (attachment: Attachment) => attachmentPreviewKind(attachment) === "image";
 /** Words read per minute for the reading time in the properties. */
 const WORDS_PER_MINUTE = 200;
-const countWords = (markdown: string | null) => (markdown ?? "").trim().split(/\s+/).filter(Boolean).length;
+/** Words of the text: Markdown marks such as "#", "-" or "|" between spaces are no words. */
+const countWords = (markdown: string | null) => (markdown ?? "").split(/\s+/).filter((token) => /[\p{L}\p{N}]/u.test(token)).length;
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
 const REFERENCE_ICONS: Partial<Record<NamedBlockSummary["type"], string>> = {
   table: "ti-table",
@@ -202,9 +201,10 @@ const REFERENCE_ICONS: Partial<Record<NamedBlockSummary["type"], string>> = {
  *    current `ytext` rather than the SSR-time `contentMd` snapshot
  *  - readonly rendering falls back to `contentMd` prop directly (no editor present)
  */
-export default function NotebookDetailPanel(props: Props) {
+export default function NoteDetails(props: NoteDetailsProps) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
+  const toast = useToast();
   const duplicateNote = useDuplicateNote(props.notebookId);
   const saveAsTemplate = useSaveAsTemplate(props.notebookId);
   const [open, setOpen] = createSignal(props.initiallyOpen);
@@ -228,6 +228,8 @@ export default function NotebookDetailPanel(props: Props) {
   const offline = () => props.mode === "edit" && !sync().connected;
   const [reconnecting, setReconnecting] = createSignal(false);
   const [activityExpanded, setActivityExpanded] = createSignal(false);
+  // The comment section reports its count; until it does, the server's first page has it.
+  const [commentTotal, setCommentTotal] = createSignal(props.initialCommentsPage?.total ?? 0);
 
   /** What the activity read last asked for, so Retry repeats a failed refresh or a failed older page. */
   let activityRead: "fresh" | "older" = "fresh";
@@ -343,7 +345,7 @@ export default function NotebookDetailPanel(props: Props) {
   // Mirrors the editor's richMode signal — kept in sync via window events.
   // Default `true` matches the editor's initial state, so SSR and the first
   // client render agree even if the editor's broadcast hasn't arrived yet.
-  const [isRich, setIsRich] = createSignal(true);
+  const [_isRich, setIsRich] = createSignal(true);
   const editWithAi = mutations.create<void, void>({
     mutation: async () => {
       const launch = await launchNotebookNoteAssistant({
@@ -353,7 +355,11 @@ export default function NotebookDetailPanel(props: Props) {
       });
       navigateTo(launch.href);
     },
-    onError: (error) => prompts.error(error.message || t().assistantLaunchFailed),
+    // one sentence: the outcome and, when the server gives one, its reason
+    onError: (error) =>
+      void toast(error.message ? t().assistantLaunchFailedBecause({ reason: error.message }) : t().assistantLaunchFailed, {
+        status: "bad",
+      }),
   });
 
   const downloadFilename = () => `${(noteTitle() || "note").trim() || "note"}.md`;
@@ -376,7 +382,7 @@ export default function NotebookDetailPanel(props: Props) {
     window.dispatchEvent(new CustomEvent(DETAIL_PANEL_STATE_EVENT, { detail: { isOpen: open() } }));
   });
 
-  const toggleRichMode = () => {
+  const _toggleRichMode = () => {
     window.dispatchEvent(new CustomEvent(TOGGLE_RICH_MODE_EVENT));
   };
 
@@ -390,8 +396,8 @@ export default function NotebookDetailPanel(props: Props) {
       window.dispatchEvent(new CustomEvent(EDITOR_COPY_EVENT));
     } else {
       void clipboard.copy(exportContent()).then(
-        () => toast.success(t().contentCopied),
-        () => toast.error(t().contentCopyFailed),
+        () => void toast(t().contentCopied, { status: "ok" }),
+        () => void toast(t().contentCopyFailed, { status: "bad" }),
       );
     }
   };
@@ -463,7 +469,7 @@ export default function NotebookDetailPanel(props: Props) {
       );
   });
 
-  const onTocItemClick = (event: MouseEvent, id: string) => {
+  const _onTocItemClick = (event: MouseEvent, id: string) => {
     if (props.mode === "read") return;
     event.preventDefault();
     window.dispatchEvent(new CustomEvent(TOC_SCROLL_EVENT, { detail: { id } }));
@@ -630,7 +636,6 @@ export default function NotebookDetailPanel(props: Props) {
   });
   const outlineBase = () => Math.min(...outline().map((item) => item.level));
 
-  const exact = (value: string) => dates.formatDateTime(value, props.dateConfig);
   const relative = (value: string) => dates.formatDateTimeRelative(value, props.dateConfig);
   const isSelf = (actor: NotebookActivityActor | null | undefined) => actor?.kind === "user" && actor.id === props.currentUserId;
   const actorName = (actor: NotebookActivityActor | null | undefined) => (isSelf(actor) ? t().you : (actor?.displayName ?? ""));
@@ -674,23 +679,10 @@ export default function NotebookDetailPanel(props: Props) {
     }
     return byHeading;
   });
-  const presenceNote = (): JSX.Element => {
-    if (presenceState() === "unavailable") return t().presenceKeepsSaving;
-    if (presenceState() === "offline") {
-      const at = lastLive().at ?? sync().lastSavedAt;
-      return (
-        <>
-          <i class="ti ti-wifi-off" aria-hidden="true" />{" "}
-          {at ? t().presenceOffline({ time: dates.formatTime(at, props.dateConfig) }) : t().offline}
-        </>
-      );
-    }
-    return t().presenceAlone;
-  };
   const copyNoteLink = () =>
     void clipboard.copy(new URL(buildNoteUrl(props.notebookId, noteId()), window.location.origin).href).then(
-      () => toast.success(t().noteLinkCopied),
-      () => toast.error(t().noteLinkCopyFailed),
+      () => void toast(t().noteLinkCopied, { status: "ok" }),
+      () => void toast(t().noteLinkCopyFailed, { status: "bad" }),
     );
 
   // Who has access loads after the first paint, once per page: it covers the whole notebook, not one note, and its
@@ -760,89 +752,7 @@ export default function NotebookDetailPanel(props: Props) {
   });
 
   const words = () => countWords(contentMd());
-  const properties = (): DetailProperty[] => {
-    const creator = authors().createdBy;
-    const editor = lastEditor();
-    const textBytes = new TextEncoder().encode(contentMd() ?? "").length;
-    const attachmentBytes = visibleAttachments().reduce((sum, attachment) => sum + attachment.sizeBytes, 0);
-    return [
-      {
-        id: "created",
-        label: t().created,
-        leading: creator ? <ActorAvatar actor={creator} /> : undefined,
-        value: (
-          <>
-            {creator ? `${actorName(creator)} · ` : ""}
-            <Time value={createdAt()} />
-          </>
-        ),
-      },
-      {
-        id: "edited",
-        label: t().edited,
-        leading: editor ? <ActorAvatar actor={editor} /> : undefined,
-        value: (
-          <>
-            {editor ? `${actorName(editor)} · ` : ""}
-            <Time value={editedAt()} />
-          </>
-        ),
-      },
-      {
-        id: "length",
-        label: t().extent,
-        value: `${t().words({ count: words() })} · ${t().readingMinutes({ count: Math.max(1, Math.round(words() / WORDS_PER_MINUTE)) })}`,
-      },
-      {
-        id: "size",
-        label: t().size,
-        value: t().sizeWithAttachments({
-          text: formatFileViewSize(textBytes, locale()),
-          count: visibleAttachments().length,
-          attachments: formatFileViewSize(attachmentBytes, locale()),
-        }),
-      },
-      { id: "history", label: t().history, value: t().openVersionHistory, href: buildVersionsUrl(props.notebookId, noteId()) },
-    ];
-  };
-
   const cloudId = useCloudIdCopy();
-  const moreItems = (): DropdownItem[] => [
-    {
-      items: [
-        // Immediate: on a phone the clipboard and a download accept the request only during the tap.
-        { label: t().copyContent, icon: "ti ti-copy", action: copyContent, immediate: true },
-        { label: t().downloadAsMarkdown, icon: "ti ti-download", action: downloadContent, immediate: true },
-        { label: t().exportAsPdf, icon: "ti ti-file-type-pdf", action: downloadPdf },
-      ],
-    },
-    {
-      items: [
-        { label: t().versionHistory, icon: "ti ti-history", href: buildVersionsUrl(props.notebookId, noteId()) },
-        { label: t().showInGraph, icon: "ti ti-affiliate", href: buildGraphUrl(props.notebookId, noteId(), props.presentationMode) },
-      ],
-    },
-    ...(props.canWrite
-      ? [
-          {
-            items: [
-              {
-                label: t().duplicate,
-                icon: "ti ti-copy-plus",
-                action: () => window.dispatchEvent(new CustomEvent(DUPLICATE_NOTE_EVENT, { detail: { noteId: noteId() } })),
-              },
-              {
-                label: t().saveAsTemplate,
-                icon: "ti ti-template",
-                action: () => void saveAsTemplate.save({ id: noteId(), title: noteTitle() }),
-              },
-            ],
-          },
-        ]
-      : []),
-    ...cloudId.section({ type: "notebooks.note", id: noteId() }),
-  ];
-
   const activityHref = (item: NoteActivityItem): string | undefined =>
     item.action.startsWith("comment.") ? undefined : buildVersionsUrl(props.notebookId, noteId());
   const revealComment = (item: NoteActivityItem) => {
@@ -855,7 +765,7 @@ export default function NotebookDetailPanel(props: Props) {
   const attachmentHref = (attachment: Attachment) => buildAttachmentContentUrl(props.notebookId, attachment.id);
 
   /** The closed activity's one line: its newest entry, the note's creation, or why new entries are missing. */
-  const activitySummary = () => {
+  const _activitySummary = () => {
     if (noteActivity.error() && activityItems().length === 0) return t().activityLoadShort;
     const newest = activityItems()[0];
     if (newest)
@@ -867,471 +777,525 @@ export default function NotebookDetailPanel(props: Props) {
       : t().createdNote;
   };
 
-  // ── Pieces ────────────────────────────────────────────────────────────
-
-  /** A relative time with its exact date on hover and keyboard focus. */
-  const Time = (timeProps: { value: string; focusable?: boolean }): JSX.Element => (
-    <Tooltip.Anchor content={exact(timeProps.value)} class="notebook-time">
-      <time datetime={timeProps.value} tabIndex={timeProps.focusable ? 0 : undefined}>
-        {relative(timeProps.value)}
-      </time>
-    </Tooltip.Anchor>
-  );
-
-  const ActorAvatar = (avatarProps: { actor: NotebookActivityActor | null }): JSX.Element => (
-    <CloudAvatar
-      username={avatarProps.actor?.displayName ?? "?"}
-      userId={avatarProps.actor?.id}
-      avatarHash={avatarProps.actor?.avatarHash}
-      kind={avatarProps.actor?.kind}
-      size="xs"
-    />
-  );
-
-  /**
-   * "Jana Berger · edited 12 min ago", or the state that matters more: offline, locked, read only. Every sync event
-   * and edit re-reads these states; only a change of branch renders new elements, because each inserted element
-   * restyles the whole page through the shared `:has()` rules.
-   */
-  const metaLine = (): JSX.Element => {
-    const edited = (lead: boolean) => (
-      <>
-        {lead ? t().editedAtStart : t().editedAt} <Time value={editedAt()} focusable />
-      </>
-    );
-    return (
-      <Switch
-        fallback={
-          <Show when={lastEditor()} fallback={edited(true)}>
-            {(person) => (
-              <>
-                <span class="notebook-meta-name">{actorName(person())}</span>
-                {" · "}
-                {edited(false)}
-              </>
-            )}
-          </Show>
-        }
-      >
-        <Match when={offline()}>
-          <span class="notebook-meta-state" data-tone="warning">
-            <i class="ti ti-cloud-off" aria-hidden="true" /> {t().offline}
-          </span>
-          <Show when={sync().lastSavedAt}>
-            {(savedAt) => (
-              <>
-                {" · "}
-                {t().lastSaved} <time datetime={savedAt()}>{dates.formatTime(savedAt(), props.dateConfig)}</time>
-              </>
-            )}
-          </Show>
-        </Match>
-        <Match when={lockedAt()}>
-          {(locked) => (
-            <>
-              <Tooltip.Anchor content={t().lockedSince({ time: exact(locked()) })} class="notebook-meta-state" data-tone="warning">
-                <span tabIndex={0}>
-                  <i class="ti ti-lock" aria-hidden="true" /> {t().locked}
-                </span>
-              </Tooltip.Anchor>
-              {" · "}
-              {edited(false)}
-            </>
-          )}
-        </Match>
-        <Match when={!props.canWrite}>
-          <span class="notebook-meta-state">{t().readOnlyShort}</span>
-          {" · "}
-          {edited(false)}
-        </Match>
-      </Switch>
-    );
-  };
-
   /** Every entry is loaded and shown, so the timeline reaches its start: the note's creation. */
   const activityComplete = () => !noteActivity.hasMore() && (activityExpanded() || hiddenActivity() === 0);
+  const retryActivity = () => void (activityRead === "older" ? noteActivity.loadMore() : noteActivity.refresh());
+
+  // ── Drawing (v2) ──────────────────────────────────────────────────────
+
   /**
-   * The note's timeline: the newest entries, and its creation as the start of the rail once nothing older is left to
-   * show; until then the rail fades out above "Show more" and "Load older". A change links to the versions; a comment
-   * reveals itself in the comments.
+   * The head's one meta line, the last change and who made it: "Bearbeitet vor 12 Min. von Jana Berger" (the time first,
+   * so a long name is what "…" cuts), after the state that matters more (locked, read only); offline it is the problem
+   * itself, in its colour.
    */
-  const activityAvatar = (actor: NotebookActivityActor | null | undefined): ActivityEntry["avatar"] => ({
-    name: actor?.displayName ?? "",
-    kind: actor?.kind === "service_account" ? "service" : actor?.kind === "user" ? (actor.id ? "person" : "deleted") : "system",
-    src:
+  const metaText = (): string => {
+    if (offline()) {
+      const savedAt = sync().lastSavedAt;
+      return savedAt ? `${t().offline} · ${t().lastSaved} ${dates.formatTime(savedAt, props.dateConfig)}` : t().offline;
+    }
+    const editor = lastEditor();
+    const edited = t().editedMeta({ time: relative(editedAt()), name: editor ? actorName(editor) : "", self: isSelf(editor) });
+    if (lockedAt()) return `${t().locked} · ${edited}`;
+    if (!props.canWrite) return `${t().readOnlyShort} · ${edited}`;
+    return edited;
+  };
+  const person = (actor: NotebookActivityActor | null | undefined): Person => ({
+    name: actor?.kind === "system" || !actor ? t().automatic : actor.displayName,
+    image:
       actor?.kind === "user" && actor.id && actor.avatarHash
         ? `/api/accounts/users/${encodeURIComponent(actor.id)}/avatar?rev=${encodeURIComponent(actor.avatarHash)}`
         : undefined,
   });
-  const activityEntries = (): ActivityEntry[] => [
-    ...visibleActivity().map((item): ActivityEntry => {
-      const href = activityHref(item);
-      return {
-        id: item.id,
-        at: item.lastOccurredAt,
-        icon: notebookActivityIcon(item.action),
-        text: `${describeNoteActivityEntry(item.action, locale())}${item.occurrenceCount > 1 ? ` ${t().times({ count: item.occurrenceCount })}` : ""}`,
-        href,
-        onOpen: href ? undefined : () => revealComment(item),
-        actor: item.actor.kind === "system" ? null : actorName(item.actor),
-        avatar: activityAvatar(item.actor),
-        attrs: { "data-activity-id": item.id },
-      };
-    }),
-    ...(activityComplete()
+  const moreMenu = (): MenuEntry[] => [
+    // Immediate: on a phone the clipboard and a download accept the request only during the tap.
+    { label: t().copyContent, icon: "copy", onClick: copyContent },
+    { label: t().downloadAsMarkdown, icon: "download", onClick: downloadContent },
+    { label: t().exportAsPdf, icon: "file-type-pdf", onClick: downloadPdf },
+    "separator",
+    { label: t().versionHistory, icon: "history", href: buildVersionsUrl(props.notebookId, noteId()) },
+    { label: t().showInGraph, icon: "affiliate", href: buildGraphUrl(props.notebookId, noteId(), props.presentationMode) },
+    ...(props.canWrite
       ? [
+          "separator" as const,
           {
-            id: "note.created",
-            at: createdAt(),
-            icon: notebookActivityIcon("note.created"),
-            text: t().createdNote,
-            href: buildVersionsUrl(props.notebookId, noteId()),
-            actor: authors().createdBy ? actorName(authors().createdBy) : null,
-            avatar: activityAvatar(authors().createdBy),
+            label: t().duplicate,
+            icon: "copy-plus",
+            onClick: () => window.dispatchEvent(new CustomEvent(DUPLICATE_NOTE_EVENT, { detail: { noteId: noteId() } })),
           },
+          { label: t().saveAsTemplate, icon: "template", onClick: () => void saveAsTemplate.save({ id: noteId(), title: noteTitle() }) },
         ]
       : []),
+    ...cloudId
+      .section({ type: "notebooks.note", id: noteId() })
+      .flatMap((group): MenuEntry[] => [
+        "separator",
+        ...("items" in group ? group.items : [group]).map((item) => ({ label: item.label, icon: "id", onClick: () => item.action?.() })),
+      ]),
   ];
-  const retryActivity = () => void (activityRead === "older" ? noteActivity.loadMore() : noteActivity.refresh());
+  const presenceText = () => {
+    if (presenceState() === "unavailable") return t().presenceKeepsSaving;
+    if (presenceState() === "offline") {
+      const at = lastLive().at ?? sync().lastSavedAt;
+      return at ? t().presenceOffline({ time: dates.formatTime(at, props.dateConfig) }) : t().offline;
+    }
+    return t().presenceAlone;
+  };
+  /** Who is here, in one line: the others first, then you; at most three names and the rest as a count. */
+  const presenceNames = () => {
+    const people = presencePeople();
+    if (presenceState() === "loading") return t().hereNow;
+    if (people.length === 0) return t().hereNow;
+    const names = [...people.filter((entry) => !entry.self), ...people.filter((entry) => entry.self)].map((entry) =>
+      entry.self ? t().you : entry.name,
+    );
+    return names.length > 3 ? `${names.slice(0, 3).join(", ")} +${names.length - 3}` : names.join(", ");
+  };
+  /** Where the others write: "Jana Berger schreibt · Mengen erfassen"; otherwise that they read. */
+  const presenceWriting = () => {
+    const others = presencePeople().filter((entry) => !entry.self);
+    const writing = others.filter((entry) => entry.activity === "writing");
+    return (writing.length > 0 ? writing : others)
+      .slice(0, 2)
+      .map((entry) => `${entry.shortName} ${presenceLine(entry)}`)
+      .join("; ");
+  };
+  const presenceMenu = (): MenuEntry[] =>
+    presenceState() === "unavailable"
+      ? [{ label: t().retry, icon: "refresh", onClick: () => window.dispatchEvent(new CustomEvent(PRESENCE_RETRY_EVENT)) }]
+      : jumpEntries();
+  /** Jumping to where someone writes, one entry per writing person. */
+  const jumpEntries = (): MenuEntry[] =>
+    presencePeople()
+      .filter((entry) => entry.onSelect)
+      .map((entry) => ({
+        label: entry.place ? `${entry.name} · ${entry.place}` : entry.name,
+        icon: "pencil",
+        onClick: () => entry.onSelect?.(),
+      }));
+  const presenceLine = (entry: DetailPresencePerson) =>
+    [entry.activity === "writing" ? t().presenceWriting : t().presenceReading, entry.place, entry.trailing].filter(Boolean).join(" · ");
+  const accessPerson = (entry: DetailAccessEntry): Person => ({ name: entry.name, image: entry.src ?? undefined });
+  /** The three key facts of the open note, under its meta line: who made it and when, its length, its comments. */
+  // One list for the page's life whose labels and values follow the note: typing, saving and presence never draw its
+  // rows anew.
+  const keyFacts: Fact[] = [
+    {
+      get label() {
+        return t().created;
+      },
+      // plain words, so a long name wraps and the date after it is never cut
+      get value() {
+        const creator = authors().createdBy;
+        const date = dates.formatDate(createdAt(), props.dateConfig);
+        return creator ? `${actorName(creator)} · ${date}` : date;
+      },
+    },
+    {
+      get label() {
+        return t().extent;
+      },
+      get value() {
+        return `${t().words({ count: words() })} · ${t().readingMinutes({ count: Math.max(1, Math.round(words() / WORDS_PER_MINUTE)) })}`;
+      },
+    },
+    {
+      get label() {
+        return t().comments;
+      },
+      get value() {
+        return commentTotal() > 0 ? new Intl.NumberFormat(locale()).format(commentTotal()) : t().noneYet;
+      },
+    },
+  ];
+  /** What the head does not say: the note's size with its attachments (its times are in the head, once). */
+  const facts = () => {
+    const textBytes = new TextEncoder().encode(contentMd() ?? "").length;
+    const attachmentBytes = visibleAttachments().reduce((sum, attachment) => sum + attachment.sizeBytes, 0);
+    return [
+      {
+        label: t().size,
+        value: t().sizeWithAttachments({
+          text: formatFileViewSize(textBytes, locale()),
+          count: visibleAttachments().length,
+          attachments: formatFileViewSize(attachmentBytes, locale()),
+        }),
+      },
+    ];
+  };
+  const attachmentMenu = (attachment: Attachment): MenuEntry[] => [
+    {
+      label: t().downloadNamedAttachment({ filename: attachment.filename }),
+      icon: "download",
+      onClick: () => void confirmAndDownload(attachment.filename, attachmentHref(attachment)),
+    },
+    {
+      label: saveFilesLabel(locale(), { name: attachment.filename }),
+      icon: "cloud-upload",
+      onClick: () => void saveFiles([{ name: attachment.filename, content: attachmentHref(attachment) }]),
+    },
+  ];
+  const attachmentIcon = (attachment: Attachment) =>
+    isImage(attachment)
+      ? "photo"
+      : fileIcons.getFileIcon({ name: attachment.filename, type: "file", mimeType: attachment.mimeType }).replace(/^ti-/, "");
+  const headingRow = (item: TocItem) =>
+    // k2b-ui gap: Row level (Y2) – until `Row level` lands, a sub-heading names its depth with a leading dash; then the
+    // row takes `level={item.level - outlineBase() + 1}` inside its List and the dash goes.
+    `${item.level - outlineBase() > 0 ? "– ".repeat(Math.min(2, item.level - outlineBase())) : ""}${item.text || t().untitled}`;
+  const scrollToHeading = (id: string) => window.dispatchEvent(new CustomEvent(TOC_SCROLL_EVENT, { detail: { id } }));
 
+  // The details stay mounted while closed, so they follow the note through soft navigation and the toggle.
   return (
-    <AppWorkspace.Detail
-      id={NOTEBOOK_DETAIL_ID}
-      // In Write the editor toolbar holds the Details button; Read keeps the workspace's own.
-      toggle={props.mode === "edit" ? false : undefined}
-      open={open()}
-      onOpen={() => {
-        setOpen(true);
-        setDetailPanelOpen(true);
-      }}
-      onClose={closePanel}
-    >
-      <DetailPanel class="notebook-detail-panel">
-        <DetailPanel.Header
-          class="notebook-detail-panel-header"
-          title={noteTitle() || t().untitled}
-          subtitle={metaLine()}
-          menu={moreItems()}
-          menuLabel={t().moreActions}
-          actions={
-            <IconButton label={t().closeNoteDetails} tooltip={t().closeDetails} size="sm" variant="ghost" onClick={closePanel}>
-              <i class="ti ti-x" aria-hidden="true" />
-            </IconButton>
-          }
-          primaryActions={
-            <div class="notebook-detail-primary">
-              <nav aria-label={t().noteActionsLabel} class="notebook-detail-actions">
-                <Show when={canEditWithAi()}>
-                  <Show
-                    when={offline()}
-                    fallback={
-                      <Button
-                        size="sm"
-                        variant="ai"
-                        type="button"
-                        class="notebook-detail-actions__ai"
-                        loading={editWithAi.loading()}
-                        disabled={editWithAi.loading()}
-                        onClick={() => void editWithAi.mutate()}
-                      >
-                        <i class="ti ti-sparkles" aria-hidden="true" /> {t().editWithAi}
-                      </Button>
-                    }
-                  >
-                    <Tooltip.Anchor content={t().needsConnection} class="notebook-detail-actions__ai">
-                      <Button size="sm" variant="ai" type="button" disabled aria-label={`${t().editWithAi}: ${t().needsConnection}`}>
-                        <i class="ti ti-sparkles" aria-hidden="true" /> {t().editWithAi}
-                      </Button>
-                    </Tooltip.Anchor>
-                  </Show>
-                </Show>
-                <ViewMenu
-                  mode={props.mode}
-                  notebookId={props.notebookId}
-                  noteId={noteId()}
-                  canEdit={props.canWrite && !lockedAt()}
-                  isRich={isRich()}
-                  onToggleRich={toggleRichMode}
-                  fullWidth={props.fullWidth}
-                />
-              </nav>
-              {/* Only a connection that will come back promises to resend; an ended session shows the editor's
-                  own recovery bar instead, which this band must not contradict. */}
-              <Show when={offline() && !sync().ended}>
-                <div class="notebook-offline-band" role="status">
-                  <i class="ti ti-alert-triangle" aria-hidden="true" />
-                  <div class="notebook-offline-band__copy">
-                    <strong>{t().offlineTitle}</strong>
-                    <p>{t().offlineDetail}</p>
-                    <Button variant="text" size="xs" class="notebook-offline-band__action" loading={reconnecting()} onClick={reconnect}>
-                      <i class="ti ti-refresh" aria-hidden="true" /> {t().reconnect}
-                    </Button>
-                  </div>
-                </div>
-              </Show>
-            </div>
-          }
-        />
-
-        <DetailPanel.Body scrollPreserveKey="notebook-detail">
-          {/* Order of use: who is here, what people say, what is in the note, what it connects to; rarely needed
-              facts wait under "More about this note". */}
-          <DetailPresence
-            people={presencePeople()}
-            state={presenceState()}
-            note={presenceNote()}
-            onRetry={() => window.dispatchEvent(new CustomEvent(PRESENCE_RETRY_EVENT))}
-            listHint={t().hereNowHint}
-            actions={
-              <Button variant="ghost" size="xs" onClick={copyNoteLink}>
-                <i class="ti ti-link" aria-hidden="true" /> {t().copyNoteLink}
-              </Button>
+    <Show when={open()}>
+      <Pane
+        detail
+        label={t().noteDetails}
+        width={{ min: 300, default: 360 }}
+        // the head below names the note, so the way back says only where it leads, never the same name twice
+        back={{
+          label: t().note,
+          href: buildNoteUrl(props.notebookId, noteId(), props.presentationMode),
+          onNavigate: () => closePanel(),
+        }}
+        scrollKey="notebook-detail"
+        // k2b-ui gap: ObjectHead (DP) – the open note's tinted head (app tint ground, 40 px sign, name 18, meta line and
+        // key facts in one block). Until it lands, the note's mark and name stand in the head bar, and its meta line, three key
+        // facts and its one action in the first band.
+        head={
+          <Bar
+            start={
+              <Inline>
+                <Mark icon="file-text" color="var(--k2-app)" />
+                <Text type="lead">{noteTitle() || t().untitled}</Text>
+              </Inline>
+            }
+            end={
+              <>
+                <Menu label={t().moreActions} items={moreMenu()} />
+                <Button variant="ghost" icon="x" label={t().closeNoteDetails} onClick={closePanel} />
+              </>
             }
           />
-
-          <NoteCommentsSection
-            notebookId={props.notebookId}
-            noteId={noteId()}
-            currentUserId={props.currentUserId}
-            canWrite={props.canWrite}
-            initialCommentsPage={props.initialCommentsPage}
-            dateConfig={props.dateConfig}
-            offline={offline()}
-          />
-
-          <Show when={tasks().total > 0}>
-            <Section
-              title={t().tasks}
-              icon="ti ti-list-check"
-              class="notebook-tasks"
-              meta={t().tasksDone({ done: tasks().done, total: tasks().total })}
-            >
-              <ProgressBar label={t().completedTasks} size="xs" value={(tasks().done / Math.max(1, tasks().total)) * 100} />
-            </Section>
-          </Show>
-
-          <Show when={outline().length >= 2}>
-            <Section
-              title={t().contents}
-              icon="ti ti-list-tree"
-              count={outline().length}
-              collapsible
-              defaultOpen
-              summary={outline().find((item) => item.id === activeHeading())?.text}
-            >
-              <div class="notebook-panel-rows">
-                {/* The editor sends a new outline after each pause in typing. Rows keep their elements and only take the
-                    new values: a row inserted for the same heading would restyle the whole page through `:has()`. Each
-                    row keeps a fixed slot for the people writing there, so presence never moves a title. */}
-                <Index each={outline()}>
-                  {(item) => (
-                    <DetailPanel.Action
-                      href={`#${item().id}`}
-                      class="notebook-outline-row"
-                      data-depth={Math.min(2, item().level - outlineBase())}
-                      current={activeHeading() === item().id}
-                      onClick={(event) => onTocItemClick(event, item().id)}
-                      title={item().text || t().untitled}
-                      trailing={<DetailPresenceSlot people={writersByHeading().get(item().id) ?? []} />}
-                    />
-                  )}
-                </Index>
-              </div>
-            </Section>
-          </Show>
-
-          <DetailTags
-            tags={relations().tags.map((tag) => ({
-              id: tag,
-              label: tag,
-              href: buildTagPageUrl(props.notebookId, tag, props.presentationMode),
-            }))}
-            emptyHint={props.canWrite ? t().tagsHint : undefined}
-          />
-
-          <DetailLinks incoming={backlinks().map(linkItem)} outgoing={relations().outgoing.map(linkItem)} />
-
-          <Show when={visibleAttachments().length > 0 || attachmentMetadata.error()}>
-            <Section
-              title={t().attachments}
-              icon="ti ti-paperclip"
-              count={visibleAttachments().length > 0 ? visibleAttachments().length : undefined}
-              collapsible
-              defaultOpen
-              summary={visibleAttachments()
-                .map((attachment) => attachment.filename)
-                .join(", ")}
-            >
-              <Show
-                when={!attachmentMetadata.error()}
-                fallback={
-                  <Placeholder
-                    state="error"
-                    variant="compact"
-                    align="left"
-                    title={t().attachmentsLoadDescription}
-                    onRetry={() => void attachmentMetadata.refresh()}
-                  />
-                }
-              >
-                <FileGrid
-                  rows={visibleAttachments()}
-                  getRowId={(attachment) => attachment.id}
-                  label={t().attachments}
-                  layout="list"
-                  limit={5}
-                  actionVisibility="progressive"
-                  groups={(rows) => [
-                    { id: "files", label: t().attachmentFiles, rows: rows.filter((attachment) => !isImage(attachment)) },
-                    { id: "images", label: t().attachmentImages, rows: rows.filter(isImage), layout: "tiles" },
-                  ]}
-                  renderPreview={(attachment) =>
-                    isImage(attachment) ? (
-                      <img src={attachmentHref(attachment)} alt="" loading="lazy" decoding="async" />
-                    ) : (
-                      <FileTypeIcon name={attachment.filename} mediaType={attachment.mimeType} />
-                    )
-                  }
-                  renderLabel={(attachment) => attachment.filename}
-                  renderMeta={(attachment) =>
-                    `${fileKindLabel({ name: attachment.filename, mediaType: attachment.mimeType }, locale())} · ${formatFileViewSize(attachment.sizeBytes, locale())}`
-                  }
-                  renderActions={(attachment) => (
-                    <>
-                      <Tooltip.Anchor content={t().downloadNamedAttachment({ filename: attachment.filename })}>
-                        <IconButtonLink
-                          size="sm"
-                          variant="ghost"
-                          href={attachmentHref(attachment)}
-                          download={attachment.filename}
-                          label={t().downloadNamedAttachment({ filename: attachment.filename })}
-                        >
-                          <i class="ti ti-download" aria-hidden="true" />
-                        </IconButtonLink>
-                      </Tooltip.Anchor>
-                      <SaveFilesButton
-                        size="sm"
-                        variant="ghost"
-                        files={() => [{ name: attachment.filename, content: attachmentHref(attachment) }]}
-                      />
-                    </>
-                  )}
-                  onOpen={(attachment) => openAttachment(props.notebookId, attachment, visibleAttachments())}
-                />
+        }
+      >
+        {/* The rest of the note's head (see the gap above); the band takes the tinted ground once DP has it. */}
+        <Band label={t().noteKeyFacts}>
+          {/* Offline the meta line is the problem and offers to reconnect; only a connection that will come back
+              promises to resend, so an ended session leaves this to the editor's own bar. Nothing below moves when the
+              connection comes and goes. */}
+          <Bar
+            start={
+              <Text type="meta" tone={offline() ? "bad" : undefined}>
+                {metaText()}
+              </Text>
+            }
+            end={
+              <Show when={offline() && !sync().ended}>
+                <Button
+                  variant="text"
+                  icon="refresh"
+                  busy={reconnecting()}
+                  disabled={reconnecting()}
+                  title={`${t().offlineTitle}. ${t().offlineDetail}`}
+                  onClick={reconnect}
+                >
+                  {t().reconnect}
+                </Button>
               </Show>
-            </Section>
+            }
+          />
+          <Facts items={keyFacts} />
+          {/* The note's one action closes its head block; in the study it stands in the head row, which a 360 px pane
+              cannot give it without cutting the note's name. */}
+          <Show when={canEditWithAi()}>
+            <Bar
+              start={
+                <Button
+                  icon="sparkles"
+                  busy={editWithAi.loading()}
+                  disabled={offline()}
+                  title={offline() ? t().needsConnection : undefined}
+                  onClick={() => void editWithAi.mutate()}
+                >
+                  {t().editWithAi}
+                </Button>
+              }
+            />
           </Show>
+        </Band>
 
-          <Show when={namedBlocks().length > 0}>
-            <Section
-              title={t().references}
-              icon="ti ti-at"
-              count={namedBlocks().length}
-              collapsible
-              summary={namedBlocks()
-                .map((block) => `@${block.name}`)
-                .join(", ")}
+        <Section
+          icon="users"
+          title={t().hereNow}
+          count={presencePeople().length || undefined}
+          actions={[{ label: t().copyNoteLink, icon: "link", onClick: copyNoteLink }]}
+        >
+          {/* One row whatever happens: people coming and going, or the connection failing, never move what is below. */}
+          <Row
+            icon={presenceState() === "live" ? "users" : presenceState() === "loading" ? "loader-2" : "wifi-off"}
+            // Three lines, each cut with "…": long names never wrap and the row never grows (the marks share the third).
+            lines={[
+              presenceNames(),
+              presenceState() === "live" && presencePeople().length > 1 ? presenceWriting() : presenceText(),
+              // a no-break space keeps the third line as high as when it holds the hint
+              jumpEntries().length > 0 ? t().hereNowHint : "\u00a0",
+            ]}
+            // Marks are always there (also empty), so the row keeps its three-line height when people come and go.
+            marks={
+              <For each={presencePeople().slice(0, 5)}>
+                {(entry) => <Avatar name={entry.name} image={entry.src ?? undefined} color={entry.color ?? undefined} />}
+              </For>
+            }
+            // Always the same "…": the jumps to where people write, or a retry while presence is unavailable; with nothing
+            // to offer it is disabled, so the row keeps its shape.
+            end={
+              <Menu
+                label={t().hereNowHint}
+                icon="map-pin"
+                disabled={presenceMenu().length === 0}
+                items={presenceMenu().length > 0 ? presenceMenu() : [{ label: t().retry, disabled: true }]}
+              />
+            }
+          />
+        </Section>
+
+        <NoteCommentsSection
+          notebookId={props.notebookId}
+          noteId={noteId()}
+          currentUserId={props.currentUserId}
+          canWrite={props.canWrite}
+          initialCommentsPage={props.initialCommentsPage}
+          dateConfig={props.dateConfig}
+          offline={offline()}
+          onTotal={setCommentTotal}
+        />
+
+        <Show when={tasks().total > 0}>
+          <Section icon="list-check" title={t().tasks}>
+            {/* in a section the bar is inline: Inline gives it the text edge of the rows around it */}
+            <Inline>
+              <Progress value={tasks().done} of={tasks().total} label={t().tasksDone({ done: tasks().done, total: tasks().total })} />
+            </Inline>
+          </Section>
+        </Show>
+
+        <Show when={outline().length >= 2}>
+          <Section icon="list-tree" title={t().contents} count={outline().length}>
+            {/* The editor sends a new outline after each pause in typing; rows keep their elements and take new values. */}
+            <Index each={outline()}>
+              {(item) => (
+                <Row
+                  lines={[headingRow(item())]}
+                  current={activeHeading() === item().id}
+                  href={`#${item().id}`}
+                  onNavigate={(nav) => {
+                    nav.event.preventDefault();
+                    scrollToHeading(item().id);
+                  }}
+                  // who writes here, as a quiet note on the same line: presence never makes a heading's row taller
+                  meta={(writersByHeading().get(item().id) ?? []).map((writer) => writer.shortName).join(", ") || undefined}
+                />
+              )}
+            </Index>
+          </Section>
+        </Show>
+
+        <Section icon="hash" title={t().tags} count={relations().tags.length || undefined}>
+          <Show
+            when={relations().tags.length > 0}
+            fallback={
+              <Show when={props.canWrite}>
+                <Text type="meta" muted>
+                  {t().tagsHint}
+                </Text>
+              </Show>
+            }
+          >
+            <Inline>
+              <For each={relations().tags}>
+                {(tag) => (
+                  <Chip tag href={buildTagPageUrl(props.notebookId, tag, props.presentationMode)}>
+                    {`#${tag}`}
+                  </Chip>
+                )}
+              </For>
+            </Inline>
+          </Show>
+        </Section>
+
+        <Section icon="link" title={t().noteLinks} count={backlinks().length + relations().outgoing.length || undefined}>
+          <Show
+            when={backlinks().length > 0 || relations().outgoing.length > 0}
+            fallback={
+              <Text type="meta" muted>
+                {t().noneYet}
+              </Text>
+            }
+          >
+            <For each={backlinks().map(linkItem)}>
+              {(link) => (
+                <Row
+                  icon="arrow-back-up"
+                  lines={link.trailing ? [link.title, link.trailing] : [link.title]}
+                  meta={t().linkedBy}
+                  href={link.href}
+                />
+              )}
+            </For>
+            <For each={relations().outgoing.map(linkItem)}>
+              {(link) => (
+                <Row icon="arrow-forward-up" lines={link.trailing ? [link.title, link.trailing] : [link.title]} href={link.href} />
+              )}
+            </For>
+          </Show>
+        </Section>
+
+        <Show when={visibleAttachments().length > 0 || attachmentMetadata.error()}>
+          <Section icon="paperclip" title={t().attachments} count={visibleAttachments().length || undefined}>
+            <Show
+              when={!attachmentMetadata.error()}
+              fallback={<Failed text={t().attachmentsLoadDescription} onRetry={() => void attachmentMetadata.refresh()} />}
             >
-              <div class="notebook-panel-rows">
-                {/* Like the outline: the editor sends new summaries after each pause in typing. */}
-                <Index each={namedBlocks()}>
-                  {(block) => (
-                    <DetailPanel.Action
-                      type="button"
-                      onClick={() => scrollToNamedBlock(block())}
-                      leading={<i class={`ti ${REFERENCE_ICONS[block().type] ?? "ti-at"}`} aria-hidden="true" />}
-                      title={<code class="notebook-reference-name">@{block().name}</code>}
-                      trailing={t().referenceType({ type: block().type })}
+              {/* k2b-ui gap: a Row has no image thumbnail (Mark thumbnail #4208); an image shows its kind's symbol. */}
+              <For each={visibleAttachments()}>
+                {(attachment) => (
+                  <Menu.Context items={attachmentMenu(attachment)}>
+                    <Row
+                      icon={attachmentIcon(attachment)}
+                      lines={[
+                        attachment.filename,
+                        `${fileKindLabel({ name: attachment.filename, mediaType: attachment.mimeType }, locale())} · ${formatFileViewSize(attachment.sizeBytes, locale())}`,
+                      ]}
+                      onOpen={() => openAttachment(props.notebookId, attachment, visibleAttachments())}
+                      end={<Menu label={t().attachmentActions({ filename: attachment.filename })} items={attachmentMenu(attachment)} />}
                     />
-                  )}
-                </Index>
-              </div>
-            </Section>
-          </Show>
+                  </Menu.Context>
+                )}
+              </For>
+            </Show>
+          </Section>
+        </Show>
 
-          {/* The log has no count: it is a stream, not a finite set. It loads after the first paint and is the last
-              section, so nothing above it moves when it arrives. Closed, its one line names the newest entry; the
-              version history stays in "More actions". */}
-          <DetailPanel.Group title={t().moreAboutNote}>
-            {/* Read-only for everyone with access of their own; public-link readers never get the list. */}
-            <Show when={props.accessVisible}>
-              <DetailAccess
-                entries={accessEntries()}
-                state={access().state === "ready" ? "ready" : access().state === "error" ? "error" : "loading"}
-                onRetry={() => void loadAccess()}
-                note={t().accessWholeNotebook}
-                manage={
-                  props.canManageAccess
-                    ? {
-                        label: t().manageAccess,
-                        onClick: () =>
-                          window.dispatchEvent(
-                            new CustomEvent<OpenNotebookSettingsEventDetail>(OPEN_NOTEBOOK_SETTINGS_EVENT, { detail: { tab: "access" } }),
-                          ),
-                      }
-                    : undefined
+        <Show when={namedBlocks().length > 0}>
+          <Section icon="at" title={t().references} count={namedBlocks().length}>
+            <Index each={namedBlocks()}>
+              {(block) => (
+                <Row
+                  icon={(REFERENCE_ICONS[block().type] ?? "ti-at").replace(/^ti-/, "")}
+                  lines={[`@${block().name}`]}
+                  meta={t().referenceType({ type: block().type })}
+                  onOpen={() => scrollToNamedBlock(block())}
+                />
+              )}
+            </Index>
+          </Section>
+        </Show>
+
+        {/* Read-only for everyone with access of their own; public-link readers never get the list. */}
+        <Show when={props.accessVisible}>
+          <Section
+            icon="lock-access"
+            title={t().access}
+            summary={t().accessWholeNotebook}
+            actions={
+              props.canManageAccess
+                ? [
+                    {
+                      label: t().manageAccess,
+                      onClick: () =>
+                        window.dispatchEvent(
+                          new CustomEvent<OpenNotebookSettingsEventDetail>(OPEN_NOTEBOOK_SETTINGS_EVENT, { detail: { tab: "access" } }),
+                        ),
+                    },
+                  ]
+                : undefined
+            }
+          >
+            <Switch>
+              <Match when={access().state === "error"}>
+                <Failed text={t().accessLoadFailed} onRetry={() => void loadAccess()} />
+              </Match>
+              <Match when={access().state !== "ready"}>
+                <Loading rows={2} lines={2} />
+              </Match>
+              <Match when={true}>
+                <For each={accessEntries()}>
+                  {(entry) => (
+                    <Row avatar={accessPerson(entry)} lines={[entry.name, entry.detail ? `${entry.role} · ${entry.detail}` : entry.role]} />
+                  )}
+                </For>
+              </Match>
+            </Switch>
+          </Section>
+        </Show>
+
+        <Section
+          icon="info-circle"
+          title={t().properties}
+          more={{ label: t().openVersionHistory, href: buildVersionsUrl(props.notebookId, noteId()) }}
+        >
+          <Facts items={facts()} />
+        </Section>
+
+        {/* The log loads after the first paint and is the last section, so nothing above it moves when it arrives. */}
+        <Section
+          icon="activity"
+          title={t().activity}
+          more={
+            !noteActivity.error() && noteActivity.hasMore() && (activityExpanded() || hiddenActivity() === 0)
+              ? {
+                  label: t().loadOlder,
+                  onClick: () => {
+                    setActivityExpanded(true);
+                    activityRead = "older";
+                    void noteActivity.loadMore();
+                  },
                 }
+              : activityExpanded() || hiddenActivity() > 0
+                ? {
+                    label: activityExpanded() ? t().showLess : t().showMore({ count: hiddenActivity() }),
+                    onClick: () => setActivityExpanded(!activityExpanded()),
+                  }
+                : undefined
+          }
+        >
+          <Show when={noteActivity.error() && activityItems().length === 0}>
+            <Failed text={t().activityLoadShort} onRetry={retryActivity} />
+          </Show>
+          <Show
+            when={!noteActivity.loading() || activityItems().length > 0 || noteActivity.error()}
+            fallback={<Loading rows={3} lines={2} />}
+          >
+            <For each={visibleActivity()}>
+              {(item) => (
+                <Row
+                  avatar={person(item.actor)}
+                  lines={[
+                    person(item.actor).name,
+                    `${describeNoteActivityEntry(item.action, locale())}${item.occurrenceCount > 1 ? ` ${t().times({ count: item.occurrenceCount })}` : ""}`,
+                  ]}
+                  time={relative(item.lastOccurredAt)}
+                  href={activityHref(item)}
+                  onOpen={activityHref(item) ? undefined : () => revealComment(item)}
+                />
+              )}
+            </For>
+            <Show when={activityComplete()}>
+              <Row
+                avatar={person(authors().createdBy)}
+                lines={[person(authors().createdBy).name, t().createdNote]}
+                time={relative(createdAt())}
+                href={buildVersionsUrl(props.notebookId, noteId())}
               />
             </Show>
-            <DetailProperties
-              items={properties()}
-              summary={t().propertiesSummary({ words: t().words({ count: words() }), created: relative(createdAt()) })}
-            />
-            <Section title={t().activity} icon="ti ti-activity" class="notebook-activity" collapsible summary={activitySummary()}>
-              <div class="notebook-panel-rows" aria-busy={noteActivity.loading() ? "true" : undefined}>
-                {/* Without rows the error is all there is; with rows it stands where "Load older" was. */}
-                <Show when={noteActivity.error() && activityItems().length === 0}>
-                  <div class="notebook-activity-alert">
-                    <ActivityList.Error text={t().activityLoadShort} onReload={retryActivity} />
-                  </div>
-                </Show>
-                <Show
-                  when={!noteActivity.loading() || activityItems().length > 0 || noteActivity.error()}
-                  fallback={<ActivityList.Loading label={t().loadingActivity} />}
-                >
-                  <ActivityList
-                    entries={activityEntries()}
-                    now={props.now}
-                    dateConfig={props.dateConfig}
-                    label={t().activity}
-                    more={!activityComplete()}
-                  />
-                </Show>
-                {/* An older page that failed keeps the loaded rows and says so where "Load older" was. */}
-                <Show when={noteActivity.error() && activityItems().length > 0}>
-                  <div class="notebook-activity-alert">
-                    <ActivityList.Error text={t().activityLoadShort} onReload={retryActivity} />
-                  </div>
-                </Show>
-                {/* Older pages stay reachable even when the loaded rows all fit, for example after a sparse page. */}
-                <Show when={!noteActivity.error() && noteActivity.hasMore() && (activityExpanded() || hiddenActivity() === 0)}>
-                  <DetailPanel.Action
-                    type="button"
-                    leading={<i class={`ti ${noteActivity.loadingMore() ? "ti-loader-2 k2b-spin" : "ti-dots"}`} aria-hidden="true" />}
-                    title={t().loadOlder}
-                    disabled={noteActivity.loadingMore()}
-                    onClick={() => {
-                      // Loaded older rows should show, so a collapsed list opens first.
-                      setActivityExpanded(true);
-                      activityRead = "older";
-                      void noteActivity.loadMore();
-                    }}
-                  />
-                </Show>
-                <Show when={activityExpanded() || hiddenActivity() > 0}>
-                  <DetailPanel.Action
-                    type="button"
-                    aria-expanded={activityExpanded()}
-                    leading={<i class={`ti ${activityExpanded() ? "ti-chevron-up" : "ti-chevron-down"}`} aria-hidden="true" />}
-                    title={activityExpanded() ? t().showLess : t().showMore({ count: hiddenActivity() })}
-                    onClick={() => setActivityExpanded(!activityExpanded())}
-                  />
-                </Show>
-              </div>
-            </Section>
-          </DetailPanel.Group>
-        </DetailPanel.Body>
-      </DetailPanel>
-    </AppWorkspace.Detail>
+          </Show>
+          <Show when={noteActivity.error() && activityItems().length > 0}>
+            <Notice tone="bad" actions={[{ label: t().reload, onClick: retryActivity }]}>
+              {t().activityLoadShort}
+            </Notice>
+          </Show>
+        </Section>
+      </Pane>
+    </Show>
   );
 }

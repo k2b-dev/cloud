@@ -1,5 +1,6 @@
 import type { NotebookPresenceParticipant } from "@k2b/cloud/contracts";
-import { AppWorkspace, LocaleProvider } from "@k2b/ui";
+import { LocaleProvider } from "@k2b/ui";
+import { Nav, Pane, Prose, Workspace } from "@k2b/ui/v2";
 import { render } from "solid-js/web";
 import type { PublicNoteComment } from "../../../../api/public-resources";
 import type { NoteAuthors } from "../../../../lib/activity-actions";
@@ -12,11 +13,11 @@ import {
   type PresenceStatusEventDetail,
   SYNC_STATE_EVENT,
 } from "./events";
-import NotebookDetailPanel from "./NotebookDetailPanel.island";
+import NoteDetails from "./NoteDetails";
 import type { TocItem } from "./toc";
 
 /**
- * The note side panel in the floating workspace detail, with synthetic data. The page's server answers the panel's
+ * The note details as the v2 detail pane beside a note, with synthetic data. The page's server answers the panel's
  * activity and avatar requests; `?state=` picks one of the states the panel has to cover.
  */
 export type DetailPanelHarness = {
@@ -24,6 +25,8 @@ export type DetailPanelHarness = {
   presenceStatus: (status: PresenceStatusEventDetail["status"]) => void;
   offline: (on: boolean) => void;
   heading: (id: string | null) => void;
+  /** The comments the panel starts with, newest first as the API pages them. */
+  comments: () => PublicNoteComment[];
 };
 
 declare const window: Omit<Window, "harness"> & { harness: DetailPanelHarness };
@@ -159,7 +162,7 @@ const presence = (count: number) => {
 const offline = (on: boolean) =>
   window.dispatchEvent(new CustomEvent(SYNC_STATE_EVENT, { detail: { connected: !on, lastSavedAt: on ? minutesAgo(6) : null } }));
 const heading = (id: string | null) => window.dispatchEvent(new CustomEvent(ACTIVE_HEADING_EVENT, { detail: { id } }));
-window.harness = { presence, presenceStatus, offline, heading };
+window.harness = { presence, presenceStatus, offline, heading, comments: () => [...comments].reverse() };
 
 const title =
   state === "longtitle"
@@ -169,18 +172,24 @@ const title =
 render(
   () => (
     <LocaleProvider locale="de">
-      <AppWorkspace mobileSurface="flush" class="h-full" resizable={false}>
-        <AppWorkspace.Sidebar defaultSize={256} label="Handbuch Logistik">
-          <div style="padding: 1rem; font-size: 0.8125rem">Handbuch Logistik</div>
-        </AppWorkspace.Sidebar>
-        <AppWorkspace.Content>
-          <AppWorkspace.Main scroll={false}>
-            <div style="padding: 2.5rem 3rem; font-size: 0.9375rem; line-height: 1.6">
-              <h1 style="font-size: 1.75rem; font-weight: 700; margin: 0 0 1rem">Wareneingang</h1>
-              <p>Der Wareneingang ist die erste Station im Lager. Hier prüfen wir jede Lieferung, bevor sie ins System gebucht wird.</p>
-            </div>
-          </AppWorkspace.Main>
-          <NotebookDetailPanel
+      <Workspace
+        sidebar={
+          <Nav
+            title="Handbuch Logistik"
+            icon="notebook"
+            groups={[{ items: [{ label: "Wareneingang", icon: "file-text", current: true }] }]}
+          />
+        }
+      >
+        <Pane.Split>
+          <Pane label="Wareneingang">
+            <Prose
+              markdown="# Wareneingang
+
+Der Wareneingang ist die erste Station im Lager. Hier prüfen wir jede Lieferung, bevor sie ins System gebucht wird."
+            />
+          </Pane>
+          <NoteDetails
             mode={state === "readonly" ? "read" : "edit"}
             fullWidth={false}
             initiallyOpen
@@ -285,8 +294,8 @@ render(
             dateConfig={{ locale: "de", timeZone: "Europe/Berlin", ...{ base: "2026-10-16T19:30:00.000Z" } }}
             now="2026-10-16T19:30:00.000Z"
           />
-        </AppWorkspace.Content>
-      </AppWorkspace>
+        </Pane.Split>
+      </Workspace>
     </LocaleProvider>
   ),
   document.getElementById("root")!,

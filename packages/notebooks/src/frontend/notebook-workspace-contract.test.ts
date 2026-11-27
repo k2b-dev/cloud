@@ -2,10 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 
 describe("Notebooks workspace contract", () => {
-  test("inherits the cookie-backed workspace layout rendered by Cloud", async () => {
+  test("a note opens in the v2 workspace; Cloud's layout state stays the shell's", async () => {
     const source = await Bun.file(resolve(import.meta.dir, "[id]/page.tsx")).text();
 
-    expect(source).toMatch(/<AppWorkspace\b[^>]*class="notebooks-workspace flex-1 min-h-0"/);
+    expect(source).toContain("<NoteWorkspace");
+    expect(source).toContain('ui="v2"');
     expect(source).not.toContain("initialWorkspaceLayout");
     expect(source).not.toContain("layoutState={() =>");
   });
@@ -30,10 +31,10 @@ describe("Notebooks workspace contract", () => {
     expect(openSettings).toContain("openNotebookSettingsDialog");
   });
 
-  test("uses the shared presence section", async () => {
-    const source = await Bun.file(resolve(import.meta.dir, "[id]/_components/detail/NotebookDetailPanel.island.tsx")).text();
+  test("the details show who is here as their own section", async () => {
+    const source = await Bun.file(resolve(import.meta.dir, "[id]/_components/detail/NoteDetails.tsx")).text();
 
-    expect(source).toContain("<DetailPresence");
+    expect(source).toContain("title={t().hereNow}");
   });
 
   test("uses shared tree rows and action visibility for note navigation", async () => {

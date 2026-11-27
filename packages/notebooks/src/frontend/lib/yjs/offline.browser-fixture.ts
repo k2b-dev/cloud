@@ -24,7 +24,7 @@ export async function startOfflineNotebookFixture() {
         name: "solid-offline-notebook",
         setup(builder) {
           builder.onResolve({ filter: /\/offline$/ }, ({ importer }) =>
-            importer.endsWith("NoteEditor.client.tsx") ? { path: resolve(import.meta.dir, "offline.browser-controller.ts") } : undefined,
+            importer.endsWith("NoteEditor.tsx") ? { path: resolve(import.meta.dir, "offline.browser-controller.ts") } : undefined,
           );
           builder.onResolve({ filter: /^@k2b\/ui$/ }, () => ({ path: resolve(ui, "src/index.ts") }));
           builder.onResolve({ filter: /^@k2b\/ui\/text-editor$/ }, () => ({ path: resolve(ui, "src/text-editor.ts") }));

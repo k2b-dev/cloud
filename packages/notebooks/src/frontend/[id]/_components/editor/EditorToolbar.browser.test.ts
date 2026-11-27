@@ -118,26 +118,6 @@ const open = async (device: BrowserContextOptions, options: { keyboard?: boolean
   return page;
 };
 
-// The note page draws no workspace head: the toolbar's navigation button is the workspace's sidebar button from a
-// 48 rem window, where it opens the overlay navigation, and phones keep the header's menu. The shared controller runs
-// it (packages/ui workspace-app-toggles.browser.test.ts).
-for (const [width, visible] of [
-  [900, true],
-  [390, false],
-] as const)
-  test(`the navigation button in the editor toolbar ${visible ? "shows" : "stays hidden"} at ${width} px`, async () => {
-    const page = await open({ viewport: { width, height: 900 } });
-    try {
-      const toggle = page.locator(".notebooks-editor-toolbar .notebooks-navigation-toggle button");
-      expect(await toggle.isVisible()).toBe(visible);
-      expect(await toggle.getAttribute("aria-label")).toBe("Navigation");
-      expect(await toggle.getAttribute("aria-controls")).toBe("notebook-navigation");
-      expect(await toggle.getAttribute("data-app-workspace-sidebar-toggle")).toBe("");
-    } finally {
-      await page.context().close();
-    }
-  });
-
 const load = (page: Page, doc: string) =>
   page.evaluate(async (doc) => {
     const harness = window.toolbarHarness;
@@ -983,7 +963,7 @@ test("every control icon in the editor toolbar has the same size", async () => {
       icons.filter((icon) => icon.getClientRects().length > 0).map((icon) => `${icon.className}: ${getComputedStyle(icon).fontSize}`),
     );
     expect(sizes.length).toBeGreaterThan(10);
-    expect(sizes).toContain("ti ti-book: 14px");
+    expect(sizes).toContain("ti ti-message-circle text-sm: 14px");
     expect(sizes.filter((size) => !size.endsWith(": 14px"))).toEqual([]);
   } finally {
     await page.context().close();

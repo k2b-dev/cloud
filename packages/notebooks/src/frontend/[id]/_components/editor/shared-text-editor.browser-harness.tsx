@@ -1,6 +1,6 @@
 import { caretIntoTableCell, createEditor, tableCellCompletions } from "@k2b/editor";
 /**
- * The Notebook editor composition from NoteEditor.client.tsx around the shared
+ * The Notebook editor composition from NoteEditor.tsx around the shared
  * @k2b/ui TextEditor, with an in-page server and a second person instead of
  * the WebSocket provider. Keep the extension list in step with NoteEditor.
  */
@@ -172,7 +172,7 @@ function Harness() {
       localChartPreviews(markdown ?? ytext.toString(), locale, notebookChartOptions, (diagnostic) => diagnostic.code),
   });
 
-  // Same order and modes as NoteEditor.client.tsx.
+  // Same order and modes as NoteEditor.tsx.
   let openTablePicker = () => {};
   const extensions = createEditor();
   extensions.use(blockPreviews.listener);

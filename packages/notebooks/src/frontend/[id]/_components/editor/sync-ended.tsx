@@ -8,7 +8,6 @@ import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { YjsProviderError } from "../../../lib/yjs/provider";
 import { notebookWorkspaceMessages } from "../../messages";
 import { resolveSameNotebookNoteTarget } from "./note-navigation";
-import { DetailsButton, NavigationButton } from "./workspace-buttons";
 
 export type SyncEnded = { code: YjsProviderError["code"]; unsent: boolean };
 /** Pending text this device still holds for a stopped note: keep it read-only here, or discard it. */
@@ -180,10 +179,9 @@ export function SyncEndedBar(props: {
       row.querySelector<HTMLButtonElement>(".k2b-toolbar__action")?.focus();
   });
   return (
-    // One red pill replaces the toolbar pills; it keeps the workspace's navigation and Details buttons.
+    // One red pill replaces the toolbar pills; the workspace head keeps the Details button.
     <div ref={row} class="notebooks-editor-toolbar text-base" data-sync-ended={props.ended.code}>
       <Toolbar label={t().syncStopped} variant="floating" tone="danger">
-        <NavigationButton />
         {/* The save state leads; a narrow phone row drops the reason, never whether text is lost. */}
         <Toolbar.Label detail={`. ${title()}`}>
           <i class={iconFor(props.ended.code)} aria-hidden="true" />
@@ -215,7 +213,6 @@ export function SyncEndedBar(props: {
         <Show when={!signIn() && !props.recovery}>
           <Toolbar.Action label={t().reload} icon="ti ti-refresh" priority={1} onClick={() => void onReload()} />
         </Show>
-        <DetailsButton />
       </Toolbar>
     </div>
   );

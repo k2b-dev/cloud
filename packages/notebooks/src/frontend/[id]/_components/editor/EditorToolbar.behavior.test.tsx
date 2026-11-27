@@ -297,62 +297,6 @@ describe("editor toolbar pointer and keyboard focus", () => {
   });
 });
 
-describe("editor toolbar navigation toggle", () => {
-  if (isServer) {
-    test.skip("runs with browser export conditions", () => {});
-    return;
-  }
-
-  test("the first toolbar button is the workspace's navigation button and keeps focus in the note", async () => {
-    const dom = createDomTestHarness();
-    const { LocaleProvider } = await import("@k2b/ui");
-    const { default: EditorToolbar } = await import("./EditorToolbar");
-    const dispose = render(
-      () => (
-        <LocaleProvider locale="de">
-          <EditorToolbar
-            connected
-            editor={editorFor()}
-            notebookId="notebook-1"
-            noteId="note-1"
-            format={{
-              bold: false,
-              italic: false,
-              strikethrough: false,
-              highlight: false,
-              list: null,
-              heading: 0,
-              indent: false,
-              outdent: false,
-            }}
-            onUndo={() => {}}
-            onRedo={() => {}}
-          />
-        </LocaleProvider>
-      ),
-      dom.root,
-    );
-
-    try {
-      const buttons = Array.from(dom.document.querySelectorAll<HTMLButtonElement>(".notebooks-editor-toolbar .k2b-icon-button"));
-      const toggle = buttons[0]!;
-      // Navigation stays outside the formatting toolbar. The shared workspace controller shows, hides or opens the
-      // navigation and states it in aria-expanded (packages/ui workspace-app-toggles.browser.test.ts).
-      expect(toggle.getAttribute("aria-label")).toBe("Navigation");
-      expect(toggle.getAttribute("aria-controls")).toBe("notebook-navigation");
-      expect(toggle.hasAttribute("data-app-workspace-sidebar-toggle")).toBe(true);
-      expect(toggle.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }))).toBe(false);
-      // The Details button belongs to the workspace in the same way.
-      const details = buttons.find((button) => button.getAttribute("aria-label") === "Detailbereich")!;
-      expect(details.getAttribute("aria-controls")).toBe("k2b-workspace-detail-notebook-detail");
-      expect(details.hasAttribute("data-app-workspace-detail-toggle")).toBe(true);
-    } finally {
-      dispose();
-      dom.cleanup();
-    }
-  });
-});
-
 describe("editor toolbar formats and shortcuts", () => {
   if (isServer) {
     test.skip("needs browser export conditions", () => {});

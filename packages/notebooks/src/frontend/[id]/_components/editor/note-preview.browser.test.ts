@@ -9,7 +9,7 @@ import * as Y from "yjs";
 import { launchBrowser } from "../../../../../../ui/test/browser";
 import { renderNotebookBook } from "../../../../lib/book-renderer";
 import { notebooksYjs } from "../../../../lib/yjs";
-import type NoteEditor from "./NoteEditor.client";
+import type NoteEditor from "./NoteEditor";
 import "../detail/ssr-test-plugin";
 import { NOTE_PREVIEW_BUDGET, NOTE_PREVIEW_ID, notePreviewChart, notePreviewLines } from "./note-preview";
 
