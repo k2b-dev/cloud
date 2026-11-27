@@ -38,6 +38,12 @@ export type SectionProps = {
   /** One sentence under the head that sums the section up. */
   summary?: JSX.Element;
   /**
+   * Its head, its sentence and its rows stay at the reading measure of `Prose` (720 px of text), so in a wide pane a
+   * short list stays together instead of its words standing at the left edge and its deeds at the right. The section's
+   * line still reaches the edges of its column. Below the measure it changes nothing.
+   */
+  measure?: boolean;
+  /**
    * The way to all of it ("All deliveries ›"): under the rows, its words on their text edge (after the symbol where the
    * section has one), never at the right. In a side column it is a row of its own.
    */
@@ -53,7 +59,7 @@ export type SectionProps = {
 export const Section = (props: SectionProps) => {
   const summary = resolveChildren(() => props.summary);
   return (
-    <section class="k2-sec" data-k2-part="Section" aria-label={props.title}>
+    <section class="k2-sec" data-k2-part="Section" aria-label={props.title} data-measure={props.measure ? "" : undefined}>
       <div class="k2-sh">
         <Show when={props.icon}>
           {(name) => (
