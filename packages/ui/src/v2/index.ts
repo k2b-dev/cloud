@@ -17,6 +17,8 @@ export { addressOf } from "./addresses";
 // News for assistive technology that the page shows nowhere as it happens (a run that changed its state).
 export { announce } from "./announce";
 export { Button, type ButtonProps } from "./button";
+export { CodeInput, type CodeInputProps } from "./code-input";
+export { ColorInput, type ColorInputProps } from "./color-input";
 // Layer 2: components made of the primitives.
 export {
   Digest,
@@ -55,8 +57,6 @@ export {
   List,
   type ListProps,
   type OpenTarget,
-  Prose,
-  type ProseProps,
   Row,
   type RowLines,
   type RowProps,
@@ -67,42 +67,33 @@ export {
   Text,
   type TextProps,
 } from "./content";
+// The form controls. A control with behaviour of its own has a module of its own, so a page that uses it only in a
+// lazy part keeps that behaviour out of its first chunk (lazy-chunks.bundle.test.ts).
 export {
   Check,
   type CheckProps,
   Choice,
   type ChoiceOption,
   type ChoiceProps,
-  CodeInput,
-  type CodeInputProps,
-  ColorInput,
-  type ColorInputProps,
-  DateInput,
-  type DateInputProps,
   Field,
   type FieldProps,
-  ImageInput,
-  type ImageInputProps,
   Input,
   type InputProps,
   type InputSend,
-  Select,
-  type SelectOption,
-  type SelectProps,
-  Slider,
-  type SliderProps,
-  TagsInput,
-  type TagsInputProps,
 } from "./controls";
+export { DateInput, type DateInputProps } from "./date-input";
 // A month of days to pick one from (with a time for points in time); DateInput opens it.
 export { DatePicker, type DatePickerProps } from "./date-picker";
 export { type DescribeV2Options, describeV2 } from "./describe";
+export { Disclosure, type DisclosureProps } from "./disclosure";
 // the error fallback of every island: a module of its own, which loads no other part
 export { Failed, type FailedProps } from "./failed";
 // Lists people filter, sort and group: the statements of a `defineListQuery` declaration, and values that load.
 export { FilterBar, type FilterBarProps, type FilterBarViews, ListOrder, type ListOrderProps, viewIcon } from "./filter-bar";
+export { Group, type GroupProps } from "./group";
 // A year of days as a picture: what happened per day, in tones of one colour.
 export { Heat, type HeatDay, type HeatProps } from "./heat";
+export { ImageInput, type ImageInputProps } from "./image-input";
 // Layer 1: the primitives.
 export {
   Band,
@@ -141,8 +132,12 @@ export type { NavTree, NavTreeNode } from "./nav-tree";
 // The overlays: v2 shapes on the behaviour layer.
 export { type ConfirmOptions, confirm, Dialog, type DialogProps } from "./overlays";
 export { Popover, type PopoverPanelProps, type PopoverProps, type PopoverTipProps } from "./popover";
+export { Prose, type ProseProps } from "./prose";
+export { Select, type SelectOption, type SelectProps } from "./select";
+export { Slider, type SliderProps } from "./slider";
 export { Empty, type EmptyProps, Loading, type LoadingProps } from "./states";
-export { Disclosure, type DisclosureProps, Group, type GroupProps, Section, type SectionProps } from "./structure";
+export { Section, type SectionProps } from "./structure";
+export { TagsInput, type TagsInputProps } from "./tags-input";
 export { type ShowToast, type ToastOptions, useToast } from "./toast";
 export { fontWeights, gripTolerance, hairline, heights, radii, type TypeRole, textEdge, typeRoles } from "./tokens";
 export type { Action, OnNavigate, Person, Status, TwoActions, Width } from "./types";

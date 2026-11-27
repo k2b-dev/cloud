@@ -1,5 +1,6 @@
 import { createSignal, For, type JSX, Show } from "solid-js";
-import { type TreeParts, useListbox, useTree } from "../../src/v2/behavior/lists";
+import { useListbox } from "../../src/v2/behavior/lists";
+import { type TreeParts, useTree } from "../../src/v2/behavior/tree";
 
 const mails = [
   { value: "m1", label: "Angebot Eichenplatten" },

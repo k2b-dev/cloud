@@ -1,5 +1,5 @@
 import { createComputed, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
-import { type TreeParts, useTree } from "./behavior/lists";
+import { type TreeParts, useTree } from "./behavior/tree";
 import { announceText } from "./behavior/treegrid";
 import { Dot, Icon } from "./marks";
 import { Menu, type MenuEntry, PointerMenu } from "./menu";
