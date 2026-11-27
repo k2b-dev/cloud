@@ -15,7 +15,7 @@ declare global {
     /** What the head's search sent with Enter. */
     __k2Searched?: string;
     /** What the chat's menu opened. */
-    __k2Opened?: string;
+    __k2HeadOpened?: string;
   }
 }
 
@@ -45,7 +45,7 @@ render(
               {kind === "chat" || kind === "bare" ? (
                 <Menu
                   label="Aktionen des Chats"
-                  items={[{ label: "In diesem Chat", icon: "layout-list", onClick: () => (window.__k2Opened = "context") }]}
+                  items={[{ label: "In diesem Chat", icon: "layout-list", onClick: () => (window.__k2HeadOpened = "context") }]}
                 />
               ) : null}
               {kind !== "bare" ? (

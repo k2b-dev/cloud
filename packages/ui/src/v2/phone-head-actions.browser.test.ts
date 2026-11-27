@@ -56,7 +56,7 @@ test("390: a chat's head with its menu keeps its height, and the menu opens and 
     expect(await page.locator('[data-slot="head"] .k2-path').isVisible()).toBe(false);
     await page.getByRole("button", { name: "Aktionen des Chats" }).click();
     await page.getByRole("menuitem", { name: "In diesem Chat" }).click();
-    expect(await page.evaluate(() => window.__k2Opened)).toBe("context");
+    expect(await page.evaluate(() => window.__k2HeadOpened)).toBe("context");
     expect(await describeV2Page(page)).not.toContain("primary buttons");
   });
 }, 30_000);
@@ -83,7 +83,7 @@ test("390: a head without a start keeps its menu ⋯ at its height, and the menu
     expect(await headHeight(page)).toBeGreaterThan(40);
     await page.getByRole("button", { name: "Aktionen des Chats" }).click();
     await page.getByRole("menuitem", { name: "In diesem Chat" }).click();
-    expect(await page.evaluate(() => window.__k2Opened)).toBe("context");
+    expect(await page.evaluate(() => window.__k2HeadOpened)).toBe("context");
   });
 }, 30_000);
 
