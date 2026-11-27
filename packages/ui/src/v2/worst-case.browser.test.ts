@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Browser, Page } from "playwright";
+import type { Browser, Locator, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-worst.client";
@@ -255,7 +255,7 @@ test("a phone row of a large table keeps its long name on one line", async () =>
             height: Math.round(row.getBoundingClientRect().height),
             lines: Math.round(title.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(title).lineHeight)),
             cut: title.scrollWidth > title.clientWidth + 1,
-            hint: window.__k2HintOf?.(title) === title.textContent,
+            hint: window.__k2HintOf?.(title) === title.textContent?.trim(),
           };
         }),
       );
@@ -383,7 +383,7 @@ for (const width of [1440, 390])
               lines: Math.round(title.getBoundingClientRect().height / line),
               cut: title.scrollHeight > title.clientHeight + 1 || title.scrollWidth > title.clientWidth + 1,
               // the whole text on hover where the title can be cut; no hint a screen reader would read twice where not
-              hint: ((said) => (said === null ? "none" : said === title.textContent ? "whole" : "other"))(
+              hint: ((said) => (said === null ? "none" : said === title.textContent?.trim() ? "whole" : "other"))(
                 window.__k2HintOf?.(title) ?? null,
               ),
             };
@@ -436,7 +436,9 @@ for (const width of [1440, 1024, 390, 320])
             const text = row.querySelector<HTMLElement>(":scope > .k2-row-l2")!;
             const meta = row.querySelector<HTMLElement>(".k2-row-meta");
             const hint = (part: HTMLElement) =>
-              ((said) => (said === null ? "none" : said === part.textContent ? "whole" : "other"))(window.__k2HintOf?.(part) ?? null);
+              ((said) => (said === null ? "none" : said === part.textContent?.trim() ? "whole" : "other"))(
+                window.__k2HintOf?.(part) ?? null,
+              );
             const name = title.getBoundingClientRect();
             const count = meta?.getBoundingClientRect();
             return {
@@ -463,9 +465,9 @@ for (const width of [1440, 1024, 390, 320])
           });
           expect(floor.rows).toBe(floor.token);
         }
-        // a cut message says all of it where the pointer rests on it; a whole one has no hint. The name names the link
-        // that opens the row (`aria-labelledby`): a hint of it would be read twice, so it has none (review r2 of #4328)
-        expect(rows.map((row) => row.hints)).toEqual(rows.map((row) => ["none", row.cut[1] ? "whole" : "none"]));
+        // a cut line says all of it where the pointer rests on it, the name too (its description stays empty, see the
+        // test of the link's name below); a whole one has no hint
+        expect(rows.map((row) => row.hints)).toEqual(rows.map((row) => row.cut.map((cut) => (cut ? "whole" : "none"))));
         // the long ones are cut where the column is narrow
         if (width <= 1024)
           expect(rows.slice(0, 3).map((row) => row.cut)).toEqual([
@@ -489,38 +491,79 @@ test("a row's hint leaves with the pointer and never repeats the name of its lin
   await withPage(
     1024,
     async (page) => {
+      // the link's accessible name and description by the rules of accname: `aria-labelledby` names it, and
+      // `aria-describedby` describes it before its `title` does
+      const accessible = (link: Locator) =>
+        link.evaluate((element) => {
+          const text = (ids: string | null) =>
+            (ids ?? "")
+              .split(/\s+/)
+              .filter(Boolean)
+              .map((id) => document.getElementById(id)?.textContent?.trim() ?? "")
+              .join(" ");
+          const describedBy = element.getAttribute("aria-describedby");
+          return {
+            name: text(element.getAttribute("aria-labelledby")),
+            description: describedBy !== null ? text(describedBy) : (element.getAttribute("title") ?? ""),
+            hint: element.getAttribute("title"),
+          };
+        });
       const row = page.locator(".k2-row", { hasText: "Nora Weber" });
       const link = row.locator(".k2-row-open");
       const center = async (selector: string) => {
         const box = (await row.locator(selector).boundingBox())!;
         return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
       };
+      // over a cut message: the link says it on hover, and it describes the link (words its name lacks)
       const message = await center(":scope > .k2-row-l2");
       await page.mouse.move(message.x, message.y);
-      expect(await link.getAttribute("title")).toContain("the invoice lists 12 chairs");
-      // a cut name over the link it names: no hint, the link already says it
+      const overMessage = await accessible(link);
+      expect(overMessage.name).toBe("Nora Weber");
+      expect(overMessage.description).toContain("the invoice lists 12 chairs");
+      // over a cut name: the pointer sees the whole name, and its description stays empty, never the name again
       await settled(page);
       const long = page.locator(".k2-row", { hasText: "Lieferung KW 49" });
       const longName = (await long.locator(".k2-row-title").boundingBox())!;
       await page.mouse.move(longName.x + longName.width / 2, longName.y + longName.height / 2);
       expect(await long.locator(".k2-row-title").evaluate((title) => title.scrollWidth > title.clientWidth + 1)).toBe(true);
-      expect(await long.locator(".k2-row-open").getAttribute("title")).toBeNull();
-      // back over the cut message of the first row
-      await page.mouse.move(message.x, message.y);
-      expect(await link.getAttribute("title")).not.toBeNull();
-      // away from the row: no hint is left behind
+      const overName = await accessible(long.locator(".k2-row-open"));
+      expect(overName.hint).toBe(overName.name);
+      expect(overName.description).toBe("");
+      // in Chromium the browser's own tree says the same
+      if (page.context().browser()?.browserType().name() === "chromium") {
+        const cdp = await page.context().newCDPSession(page);
+        // the protocol's own types: the tree of the page as the browser hands it to assistive technology
+        const { nodes } = await cdp.send("Accessibility.getFullAXTree");
+        const node = nodes.find((each) => each.role?.value === "link" && each.name?.value === overName.name);
+        expect(node).toBeDefined();
+        expect(node?.description?.value ?? "").toBe("");
+      }
+      // away from the row: no hint and no description are left behind
       await page.mouse.move(2, 2);
+      expect(await long.locator(".k2-row-open").getAttribute("title")).toBeNull();
+      expect(await long.locator(".k2-row-open").getAttribute("aria-describedby")).toBeNull();
       expect(await link.getAttribute("title")).toBeNull();
-      // the link's name is the row's name, its description never the same words
-      const named = await link.evaluate((element) => {
-        const id = element.getAttribute("aria-labelledby") ?? "";
-        return { name: document.getElementById(id)?.textContent, title: element.getAttribute("title") };
-      });
-      expect(named.title).not.toBe(named.name);
     },
     "chats",
   );
 });
+
+// Review r3 of #4328: a conversation without a preview (Mail passes " ") was shorter than the others, 72 beside 73 on
+// the desktop and 57 beside 73 on the phone. A row of three lines keeps its three lines, so both stand at one height.
+for (const width of [1440, 390])
+  test(`a row of three lines without a third one stands as high as the others at ${width} px`, async () => {
+    await withPage(
+      width,
+      async (page) => {
+        const heights = await page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>(".k2-row")).map((row) => Math.round(row.getBoundingClientRect().height)),
+        );
+        expect(heights).toHaveLength(2);
+        expect(new Set(heights).size).toBe(1);
+      },
+      "mail",
+    );
+  });
 
 // W9 (Chat break-ui): an Arabic or Hebrew last message ran in the page's direction, so it stood on the left and its
 // "…" fell on the wrong side, over its first words. Each line of a row runs in the direction of its own text.

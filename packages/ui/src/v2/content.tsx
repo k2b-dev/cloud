@@ -420,8 +420,8 @@ export const Row = (props: RowProps) => {
   // A row of three lines cuts each line with "…" and a row of two its second line. In a list a title is one line too (a
   // row of one: on the desktop), so the rows of a list keep one height per kind (B rule 4, W7 and W9 26.11.); any other title
   // stops after two lines. A line that is cut says all of it on hover, measured while the pointer rests on it, on the
-  // element it hits (the link that opens the row lies over the lines). A whole line, or the title over the link it
-  // names, has no hint a screen reader would read twice; the hint leaves with the pointer (review of #4328).
+  // element it hits (the link that opens the row lies over the lines); a whole line has none, the hint leaves with the
+  // pointer, and over the link it names the title describes nothing, so it is never read twice (review of #4328).
   const hint = (event: PointerEvent & { currentTarget: HTMLElement }) =>
     hintPointer(
       event.currentTarget,

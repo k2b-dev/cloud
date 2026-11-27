@@ -95,9 +95,28 @@ const chats = [
     text: "המשלוח נדחה ליום שני בגלל תקלה במחסן, נא לעדכן את הלקוחות ואת לוח הזמנים של ההזמנות הפתוחות לפני סוף השבוע. ".repeat(3),
   },
 ];
+// `<body data-case="mail">`: conversations of Mail, one without a preview (Mail passes " "): one height for both
+if (scenario === "mail")
+  render(
+    () => (
+      <Workspace>
+        <Pane label="Spalte">
+          <List label="Unterhaltungen">
+            <Row
+              avatar={{ name: "Ada Renz" }}
+              lines={["Ada Renz", "Angebot Küche", "Die Maße passen, bitte noch die Griffe."]}
+              time="09:12"
+            />
+            <Row avatar={{ name: "Bruno Keller" }} lines={["Bruno Keller", "Rechnung November", " "]} time="08:40" />
+          </List>
+        </Pane>
+      </Workspace>
+    ),
+    root,
+  );
 // `<body data-case="deeds">`: endpoints of Tools with their one deed and the time they were last called (W1b): on the
 // phone the time and the deed share the line under the text
-if (scenario === "deeds")
+else if (scenario === "deeds")
   render(
     () => (
       <Workspace>

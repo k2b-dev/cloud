@@ -1264,8 +1264,10 @@
 .k2-ui .k2-row[data-lines="2"] {
   min-height: var(--k2-h-row2);
 }
+/* three lines and the row's line (the one hairline, 1 px): a row whose third line is empty (a mail without a preview)
+   stands as high as the others (review r3 of #4328: 72 beside 73) */
 .k2-ui .k2-row[data-lines="3"] {
-  min-height: var(--k2-h-row3);
+  min-height: calc(var(--k2-h-row3) + 1px);
 }
 .k2-ui .k2-row[data-lines="3"] > .k2-row-lead {
   align-self: start;
@@ -4315,6 +4317,10 @@
   }
   .k2-ui .k2-row[data-lines="2"] {
     min-height: var(--k2-h-row-phone2);
+  }
+  /* a row of three lines keeps its three lines on the phone too (a mail without a preview: 57 beside 73) */
+  .k2-ui .k2-row[data-lines="3"] {
+    min-height: calc(var(--k2-h-row3) + 1px);
   }
   .k2-ui .k2-row[data-action] {
     grid-template-areas: "lead l1" "lead l2" "lead time";

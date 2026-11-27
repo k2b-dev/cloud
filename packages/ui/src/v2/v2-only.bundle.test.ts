@@ -19,7 +19,7 @@ const allowed: Record<string, number> = {
   "content/markdown-info-blocks.ts": 7_200,
   "content/markdown-links.ts": 3_600,
   "content/markdown-reference-messages.ts": 700,
-  "internal/truncated-title.ts": 1030, // the measured hint of a cut line, taken back when the pointer leaves (Row)
+  "internal/truncated-title.ts": 1770, // the measured hint of a cut line, taken back when the pointer leaves (Row)
   "inputs/date-input.ts": 6_600, // formatDateInput, parseDateInput
   "inputs/date-picker.ts": 450, // dateKey, isCalendarDay, isDateKey
   "surfaces/notice-card-classes.ts": 370, // the notice classes of Markdown's info blocks

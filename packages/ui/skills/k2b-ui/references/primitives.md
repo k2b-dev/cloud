@@ -171,8 +171,10 @@ inside it.
   The title of a `Row` outside a `List` wraps, but stops after two lines
   with "…". A line that is cut says all of it on hover, measured while the
   pointer rests on it, also through the link that opens the row, and the
-  hint leaves with the pointer; a whole line has no hint, and neither has
-  the title over the link it names (a screen reader would read it twice).
+  hint leaves with the pointer; a whole line has no hint. Over the link it
+  names, the cut title shows its words too, but describes nothing (its
+  `aria-describedby` points at an empty element), so a screen reader does
+  not read the name twice.
   Each line runs in the direction of its own text (`dir="auto"`) and keeps
   the page's alignment: an Arabic or Hebrew line in a German page has its
   "…" at its own end.
