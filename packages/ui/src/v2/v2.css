@@ -1149,15 +1149,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* on the desktop a row of one line in a list cuts its title too (W7 26.11.: a long chat name took three lines in
-   "Alle Chats"); on the phone it keeps two lines of title */
-@media (min-width: 768px) {
-  .k2-ui .k2-list > .k2-row[data-lines="1"] > .k2-row-l1 > .k2-row-title {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+/* a row of one line in a list cuts its title too (W7 26.11.: a long chat name took three lines in "Alle Chats"); on
+   the phone it keeps two lines of title (see below) */
+.k2-ui .k2-list > .k2-row[data-lines="1"] > .k2-row-l1 > .k2-row-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .k2-ui .k2-row-time,
 .k2-ui .k2-row-end,
@@ -4242,6 +4240,11 @@
     grid-area: time;
     justify-content: flex-start;
     padding: 8px 0 4px;
+  }
+  /* a row of one line in a list keeps two lines of title on the phone, then "…" */
+  .k2-ui .k2-list > .k2-row[data-lines="1"] > .k2-row-l1 > .k2-row-title {
+    display: -webkit-box;
+    white-space: normal;
   }
   /* with a time as well, the time is a quiet line of its own under the text and the deed comes under it, so the two
      never lie on one another (W1b 26.11.) */
