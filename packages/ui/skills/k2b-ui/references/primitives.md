@@ -338,12 +338,16 @@ lines instead of cutting a thing.
   of a list that shows its data over time; never decoration.
 - `Heat`: `days` (`{ date, count }` per day, at most the 53 weeks shown, from
   one bounded aggregate), `today` (a date key from the server: the last day,
-  marked), `label` ("Mails pro Tag"), `unit` (a count in the app's words:
-  ``(count) => `${count} Mails` ``), `color` (data colour; default the app). One
-  column per week, newest at the end of the writing direction; four tones
-  by quarters of the days with a count. Fits its place, days up to 12 px,
-  never cuts the newest weeks. The arrows walk the days; each says count and
-  date. Over it a line that sums it up, as a `detailEmpty` `hero`.
+  marked), `label` ("Mails pro Tag"), `unit` (a count in the app's words),
+  `detail` (a second tip line per date, such as "6 eingehend · 4 gesendet"),
+  `summary` (the line above, from the total and the days shown, such as
+  "… Mails in den letzten 12 Monaten · Ø 6 pro Tag"), `color` (a data colour
+  that keeps 3:1 at its strongest; default the app's ink). One column per
+  week, newest at the end of the writing direction; four tones over the
+  distinct counts, the busiest day always the strongest. Fits its place,
+  days up to 12 px, never cuts the newest weeks. The arrows walk the days;
+  one shared tip shows day and count on hover and focus. As a
+  `detailEmpty` `hero`, made once in the component.
 
 ## Controls
 

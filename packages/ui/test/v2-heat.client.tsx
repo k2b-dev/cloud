@@ -10,6 +10,8 @@ declare global {
   interface Window {
     __k2Mounted?: boolean;
     __k2Heat?: "usual" | "none" | "huge";
+    /** How often the hero was made: once, however often the workspace reads `detailEmpty`. */
+    __k2HeroBuilds?: number;
   }
 }
 
@@ -25,8 +27,15 @@ const days: HeatDay[] =
         const count = usual(index, index % 7);
         return { date: addDays(first, index), count: window.__k2Heat === "huge" ? count * 1234 : count };
       }).filter((day) => day.count > 0);
-const total = days.reduce((sum, day) => sum + day.count, 0);
 const number = new Intl.NumberFormat("de-DE");
+const counts = new Map(days.map((day) => [day.date, day.count]));
+// six in ten of a day's mails came in, the rest went out
+const detail = (date: string) => {
+  const count = counts.get(date);
+  if (!count) return undefined;
+  const incoming = Math.ceil(count * 0.6);
+  return `${number.format(incoming)} eingehend · ${number.format(count - incoming)} gesendet`;
+};
 
 const root = document.getElementById("root");
 if (!root) throw new Error("heat: #root is missing");
@@ -37,14 +46,24 @@ render(
       detailEmpty={{
         icon: "mail",
         text: "Keine Nachricht ausgewählt",
-        hero: (
-          <>
-            <Text type="body">
-              {total === 0 ? "Noch keine Mails in den letzten 12 Monaten" : `${number.format(total)} Mails in den letzten 12 Monaten`}
-            </Text>
-            <Heat days={days} today={today} label="Mails pro Tag" unit={(count) => `${number.format(count)} Mails`} />
-          </>
-        ),
+        // written inline on purpose: the getter makes the hero on every read, and the workspace must read it once
+        hero: (() => {
+          window.__k2HeroBuilds = (window.__k2HeroBuilds ?? 0) + 1;
+          return (
+            <Heat
+              days={days}
+              today={today}
+              label="Mails pro Tag"
+              unit={(count) => `${number.format(count)} Mails`}
+              detail={detail}
+              summary={({ total, days: span }) =>
+                total === 0
+                  ? "Noch keine Mails in den letzten 12 Monaten"
+                  : `${number.format(total)} Mails in den letzten 12 Monaten · Ø ${number.format(Math.round(total / span))} pro Tag`
+              }
+            />
+          );
+        })(),
       }}
       head={<Bar start={<Text type="lead">Posteingang</Text>} />}
     >
