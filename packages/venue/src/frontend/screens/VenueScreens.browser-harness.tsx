@@ -4,14 +4,18 @@ import type { VenueView } from "../_components/venue-workspace/types";
 import { parseCalendarView, parseShiftSelection } from "../schedule-url";
 import {
   emptyDashboard,
+  FIXTURE_NOW,
   fixtureDashboard,
-  fixtureNextShifts,
+  fixtureOverviewVenues,
   fixtureSettings,
   fixtureTemplates,
+  fixtureUpcomingShifts,
   fixtureVenue,
   fixtureVenues,
+  overviewVenue,
   venueProps,
   worstDashboard,
+  worstUpcomingShifts,
 } from "./fixtures";
 import VenueOverviewScreen from "./VenueOverviewScreen";
 import VenueScreen from "./VenueScreen";
@@ -47,15 +51,34 @@ const venues =
 const screen = () => {
   const path = location.pathname;
   const params = new URLSearchParams(location.search);
-  if (path === "/app/venue")
+  if (path === "/app/venue") {
+    // as the server answers: a page of at most 100 venues by name, with "more" when another page follows
+    const listed =
+      variant === "worst"
+        ? [
+            overviewVenue(worst[0]!, { kind: "opens", at: "2026-11-28T09:00:00.000Z" }),
+            overviewVenue(worst[1]!, { kind: "staffed" }),
+            overviewVenue(worst[2]!, { kind: "open", until: "2026-11-25T23:00:00.000Z" }),
+            ...fixtureOverviewVenues,
+          ]
+        : params.get("q") === "nichts"
+          ? []
+          : venues.slice(0, 100).map((venue) => overviewVenue(venue));
+    const none = { entries: [], total: 0, venues: 0, next: null };
+    const shifts =
+      variant === "worst" ? worstUpcomingShifts(listed) : variant === "empty" || variant === "noshifts" ? none : fixtureUpcomingShifts();
     return (
       <VenueOverviewScreen
-        venues={venues}
-        nextShifts={fixtureNextShifts}
+        now={FIXTURE_NOW}
+        venues={variant === "empty" ? [] : listed}
+        morePages={venues.length > 100}
+        page={1}
+        shifts={shifts}
         templates={fixtureTemplates}
         initialQuery={params.get("q") ?? ""}
       />
     );
+  }
   const view = (path.split("/")[4] ?? "shifts") as VenueView | "settings";
   if (view === "settings") {
     const tab =

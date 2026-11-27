@@ -21,28 +21,49 @@ export type PageData<T> = { kind: "ok"; props: T } | { kind: "redirect"; to: str
 
 const log = logger("venue:workspace");
 
-/** The venues a person works at, with their next shift at each (one read for all venues). */
+/** The venues the overview lists per page, by name. */
+export const OVERVIEW_VENUES = 100;
+/** The next shifts the overview shows, and how far ahead it looks. */
+export const OVERVIEW_SHIFTS = 12;
+export const OVERVIEW_SHIFT_DAYS = 14;
+
+/**
+ * The person's next shifts across their venues, then a page of their venues (`q` searches them, `page` pages them),
+ * each with how it stands now. Four statements whatever the number of venues and shifts: the shifts with their faces,
+ * the page of venues with their permissions, their public ids, their hours.
+ */
 export const loadVenueOverview = async <T extends AuthContext>(c: Context<T>): Promise<PageData<VenueOverviewProps>> => {
   const actor = expectUserBackedActor(c);
-  const venues = await venueService.venues.list(actor);
-  const [publicVenues, next] = await Promise.all([
-    venueService.publicResources.projectVenues(venues),
-    venueService.myNextShifts(
-      venues.map((venue) => venue.id),
-      actor,
-      new Date(),
-    ),
+  const now = new Date();
+  const query = (c.req.query("q") ?? "").trim().slice(0, 200);
+  const page = Math.max(1, Math.min(1000, Number.parseInt(c.req.query("page") ?? "", 10) || 1));
+  const [found, shifts] = await Promise.all([
+    // one more than a page says whether another page follows
+    venueService.venues.discover(actor, { query, limit: OVERVIEW_VENUES + 1, offset: (page - 1) * OVERVIEW_VENUES }),
+    venueService.myUpcomingShifts(actor, now, { days: OVERVIEW_SHIFT_DAYS, limit: OVERVIEW_SHIFTS }),
   ]);
-  // keyed by the venue's public id, as the page knows it (the projection keeps the order)
-  const nextShifts = Object.fromEntries(
-    publicVenues.flatMap((venue, index) => {
-      const shift = next.get(venues[index]!.id);
-      return shift ? [[venue.id, shift]] : [];
-    }),
-  );
-  const templates = venueService.venueTemplates.list(getLocale(c));
-  const initialQuery = (c.req.query("q") ?? "").trim();
-  return { kind: "ok", props: { venues: publicVenues, nextShifts, templates, initialQuery } };
+  const venues = found.slice(0, OVERVIEW_VENUES);
+  const [projected, states] = await Promise.all([venueService.publicResources.projectVenues(venues), venueService.openStates(venues, now)]);
+  return {
+    kind: "ok",
+    props: {
+      now: now.toISOString(),
+      // the island gets what the list shows: the sign, the name and how it stands (no descriptions, no images)
+      venues: projected.map((venue, index) => ({
+        id: venue.id,
+        name: venue.name,
+        icon: venue.icon,
+        accentColor: venue.accentColor,
+        timezone: venue.timezone,
+        state: states.get(venues[index]!.id) ?? { kind: "closed" },
+      })),
+      morePages: found.length > OVERVIEW_VENUES,
+      page,
+      shifts,
+      templates: venueService.venueTemplates.list(getLocale(c)),
+      initialQuery: query,
+    },
+  };
 };
 
 const parseCalendarDate = (value: string | null): string => {

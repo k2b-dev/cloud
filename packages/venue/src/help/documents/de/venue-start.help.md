@@ -6,7 +6,7 @@ description: Grundbegriffe, Einrichtung und öffentliche Seite.
 order: 100
 ---
 
-Standorte verwaltet Orte mit Personalplanung, öffentlichem Öffnungsstatus, Schichtplan, öffentlichen Inhalten und Feedback von Besuchern. Die Übersicht zeigt alle zugänglichen Standorte. Dort lässt sich ein leerer Standort oder eine Vorlage auswählen.
+Standorte verwaltet Orte mit Personalplanung, öffentlichem Öffnungsstatus, Schichtplan, öffentlichen Inhalten und Feedback von Besuchern. Die Übersicht zeigt deine nächsten Schichten der kommenden 14 Tage über alle deine Standorte, nach Tagen und mit den Personen, die mitarbeiten; ein Klick öffnet die Schicht im Schichtplan ihres Standorts. Darunter listet **Standorte** alle zugänglichen Standorte, 100 je Seite, mit dem Öffnungsstatus nach Öffnungszeiten und Abweichungen. Die Suche oben durchsucht alle.
 
 ## Überblick {icon="layout-grid"}
 
@@ -20,7 +20,7 @@ Standorte verwaltet Orte mit Personalplanung, öffentlichem Öffnungsstatus, Sch
 ## Sinnvoller Einstieg {icon="route"}
 
 :::reference
-- **Standort erstellen:** Solange es keinen Standort gibt, bietet die Übersicht die Vorlagen und **Leer beginnen** direkt an; später bietet **Neuer Standort** dasselbe. Du gibst nur einen Namen ein. Der Kurzname folgt dem Namen, und du kannst ihn unter **Erweitert** ändern. Nutzt ein anderer Standort den Kurznamen schon, sagt das Feld es, und deine Eingaben bleiben erhalten.
+- **Standort erstellen:** **Neuer Standort** am Kopf von **Standorte** öffnet das Formular; solange es keinen Standort gibt, bietet die Übersicht es mitten auf der Seite an. Du gibst einen Namen ein und wählst, wo es Vorlagen gibt, unter **Vorlage** eine aus (vorgegeben ist **Leerer Standort**). Der Kurzname folgt dem Namen, bis du ihn änderst. Nutzt ein anderer Standort den Kurznamen schon, sagt das Feld es, und deine Eingaben bleiben erhalten.
 - **Einrichtungsschritte folgen:** Solange ein Standort keine Schichten hat, zeigt sein Schichtplan Admins **Standort einrichten**: Öffnungszeiten oder Schichten festlegen, Schichten anlegen, wenn Besetzung den Standort öffnet, und dem Team Zugriff geben. Jeder Schritt öffnet den passenden Tab der Einstellungen. Die Liste verschwindet, sobald der Standort Schichten hat oder alle Schritte erledigt sind. Alle anderen lesen **Hier sind noch keine Schichten geplant.**
 - **Zurechtfinden:** Die Seitenleiste hat dieselben Einträge, egal wie viele Inhalte der Standort hat: **Schicht übernehmen** für Mitarbeitende, **Schichtplan**, **Meine Schichten**, **Feedback** für „Mitarbeit“ und „Admin“, **Öffentliche Seite** und, nur für Admins, ganz unten **Standorteinstellungen**.
 - **Zeitplan einrichten:** In den Einstellungen, die nur Admins öffnen, enthält **Allgemein** den Schalter für die öffentliche Seite, wie sich Mitarbeitende eintragen, die Zeitzone und die Logik für den Öffnungsstatus. **Schichtplan** enthält die wöchentlichen und abweichenden Öffnungszeiten sowie die Schichten. Eine neue wöchentliche Schicht kann mehrere Wochentage auf einmal abdecken und wird zu einer Schicht pro Wochentag; eine einmalige Schicht gilt für einen Tag.

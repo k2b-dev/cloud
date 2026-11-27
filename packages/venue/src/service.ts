@@ -32,7 +32,7 @@ import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { dates } from "@k2b/stdlib";
 import type { z } from "zod";
 import { permissionFromVenueScopes, type VenueAccessScope } from "./access-control";
-import { buildPublicAvailability, templateOccursOn } from "./availability";
+import { buildPublicAvailability, OPEN_STATE_DAYS, openStateAt, templateOccursOn } from "./availability";
 import type {
   DateOverride,
   DateOverrideInput,
@@ -40,7 +40,6 @@ import type {
   FeedbackInputSchema,
   FeedbackSummary,
   FreeSignupInputSchema,
-  MyNextShift,
   OpeningRule,
   OpeningRuleInput,
   PublicSection,
@@ -52,10 +51,12 @@ import type {
   ShiftTemplate,
   ShiftTemplateInput,
   TemplateSignupInputSchema,
+  UpcomingShifts,
   UpcomingSlot,
   Venue,
   VenueDashboard,
   VenueInput,
+  VenueOpenState,
   VenueTemplateCreateInput,
   VenueTemplateSummary,
 } from "./contracts";
@@ -551,12 +552,16 @@ const discoverVenues = async (subjectInput: UserLike | VenueAccessSubject, optio
   const pattern = venueSearchPattern(options.query);
   const limit = Math.min(101, Math.max(1, options.limit ?? 25));
   const offset = Math.max(0, options.offset ?? 0);
-  const rows = await sql<DbVenue[]>`
-    SELECT DISTINCT
+  // The highest of the grants that match is the subject's permission (as `getEffectivePermission` reads it for one
+  // venue: the same principal condition, and a `none` grant never outranks another), so the page of venues and each
+  // permission come in one statement instead of two more per venue.
+  const rows = await sql<(DbVenue & { permission: PermissionLevel })[]>`
+    SELECT
       v.id, v.slug, v.name, v.icon, v.description, v.timezone, v.open_mode, v.signup_mode,
       v.public_enabled, v.feedback_enabled, v.accent_color,
       NULL::text AS logo_base64, NULL::text AS banner_base64,
-      v.created_at, v.updated_at
+      v.created_at, v.updated_at,
+      (array_agg(a.permission ORDER BY CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 ELSE 1 END DESC))[1] AS permission
     FROM venue.venues v
     JOIN venue.venue_access va ON va.venue_id = v.id
     JOIN auth.access a ON a.id = va.access_id
@@ -565,14 +570,17 @@ const discoverVenues = async (subjectInput: UserLike | VenueAccessSubject, optio
       AND ${bindingMatch}
       AND (${pattern}::text IS NULL OR v.name ILIKE ${pattern} ESCAPE '\\' OR v.slug ILIKE ${pattern} ESCAPE '\\'
         OR COALESCE(v.description, '') ILIKE ${pattern} ESCAPE '\\')
+    GROUP BY v.id
     ORDER BY v.name, v.id
     LIMIT ${limit}
     OFFSET ${offset}
   `;
 
-  const venues: Venue[] = [];
-  for (const row of rows) venues.push(mapVenue(row, await getPermission(row.id, subject)));
-  return venues.filter((venue) => venue.permission && venue.permission !== "none");
+  // a service account reaches no more than its credential's scopes allow (as `grantedPermission` caps it)
+  const cap = subject.subject.type === "service_account" ? permissionFromVenueScopes(subject.serviceAccountScopes) : null;
+  return rows
+    .map((row) => mapVenue(row, cap ? minPermission(row.permission, cap) : row.permission))
+    .filter((venue) => venue.permission && venue.permission !== "none");
 };
 
 const discoverPublicVenues = async (options: VenueDiscoveryOptions = {}): Promise<Venue[]> => {
@@ -1818,27 +1826,162 @@ const countMyShifts = async (venue: Venue, user: UserLike | null) =>
     : 0;
 
 /**
- * Each venue's next shift of this person that has not ended, and how many they have there from now on: one read over
- * all given venues, keyed by venue id, so a list of venues does not ask once per row.
+ * The person's next shifts over every venue they still reach: those that have not ended and start within `days`,
+ * soonest first, at most `limit`, each with up to four of the people in it (a shift's others in the same slot; free
+ * time's others at the venue while it lasts, from sign-ups that began at most a day before) and how many they are.
+ * `total` and `venues` count the whole window, also past the limit. One statement for all venues and faces: the
+ * person's sign-ups read by `idx_venue_shift_assignments_user_time`, the faces by the template or the venue index.
  */
-const myNextShifts = async (venueIds: readonly string[], user: UserLike, now: Date): Promise<Map<string, MyNextShift>> => {
-  if (venueIds.length === 0) return new Map();
-  const rows = await sql<{ venue_id: string; starts_at: Date; ends_at: Date; title: string | null; upcoming: number }[]>`
-    SELECT DISTINCT ON (sa.venue_id)
-      sa.venue_id, sa.starts_at, sa.ends_at, st.title,
-      COUNT(*) OVER (PARTITION BY sa.venue_id)::int AS upcoming
-    FROM venue.shift_assignments sa
-    LEFT JOIN venue.shift_templates st ON st.id = sa.template_id
-    WHERE sa.user_id = ${user.id}::uuid
-      AND sa.venue_id = ANY(${sql.array([...venueIds], "UUID")})
-      AND sa.ends_at > ${now}
-    ORDER BY sa.venue_id, sa.starts_at
+const myUpcomingShifts = async (user: UserLike, now: Date, options: { days: number; limit: number }): Promise<UpcomingShifts> => {
+  const principalMatch = buildAccessPrincipalCondition({
+    subject: toAccessSubject(user).subject,
+    columns: {
+      userId: sql`a.user_id`,
+      groupId: sql`a.group_id`,
+      serviceAccountId: sql`a.service_account_id`,
+      authenticatedOnly: sql`a.authenticated_only`,
+    },
+  });
+  const horizon = new Date(now.getTime() + options.days * 86_400_000);
+  const rows = await sql<
+    {
+      short_id: string;
+      starts_at: Date;
+      ends_at: Date;
+      title: string | null;
+      venue_short_id: string;
+      venue_name: string;
+      venue_icon: string;
+      venue_accent_color: string;
+      venue_timezone: string;
+      total: number;
+      venues: number;
+      coworker_names: string[];
+      coworker_count: number;
+      next_venue_short_id: string | null;
+      next_venue_name: string | null;
+    }[]
+  >`
+    WITH mine AS (
+      SELECT sa.id, sa.short_id, sa.venue_id, sa.template_id, sa.starts_at, sa.ends_at
+      FROM venue.shift_assignments sa
+      WHERE sa.user_id = ${user.id}::uuid
+        AND sa.ends_at > ${now}
+        AND sa.starts_at < ${horizon}
+        AND EXISTS (
+          SELECT 1 FROM venue.venue_access va JOIN auth.access a ON a.id = va.access_id
+          WHERE va.venue_id = sa.venue_id AND a.permission <> 'none' AND ${principalMatch}
+        )
+    ), shown AS (
+      SELECT * FROM mine ORDER BY starts_at, id LIMIT ${options.limit}
+    )
+    SELECT s.short_id, s.starts_at, s.ends_at, st.title,
+      v.short_id AS venue_short_id, v.name AS venue_name, v.icon AS venue_icon, v.accent_color AS venue_accent_color,
+      v.timezone AS venue_timezone,
+      (SELECT count(*) FROM mine)::int AS total,
+      (SELECT count(DISTINCT venue_id) FROM mine)::int AS venues,
+      COALESCE(w.names, '{}') AS coworker_names,
+      COALESCE(w.count, 0)::int AS coworker_count,
+      nv.short_id AS next_venue_short_id, nv.name AS next_venue_name
+    FROM shown s
+    JOIN venue.venues v ON v.id = s.venue_id
+    LEFT JOIN venue.venues nv ON nv.id = (SELECT venue_id FROM mine ORDER BY starts_at, id OFFSET ${options.limit} LIMIT 1)
+    LEFT JOIN venue.shift_templates st ON st.id = s.template_id
+    LEFT JOIN LATERAL (
+      SELECT (array_agg(p.name ORDER BY p.name))[1:4] AS names, count(*) AS count
+      FROM (
+        SELECT DISTINCT o.user_id, COALESCE(NULLIF(u.display_name, ''), u.uid) AS name
+        FROM (
+          SELECT o.user_id FROM venue.shift_assignments o
+          WHERE s.template_id IS NOT NULL AND o.template_id = s.template_id AND o.starts_at = s.starts_at
+          UNION ALL
+          SELECT o.user_id FROM venue.shift_assignments o
+          WHERE s.template_id IS NULL AND o.venue_id = s.venue_id
+            AND o.starts_at >= s.starts_at - INTERVAL '1 day' AND o.starts_at < s.ends_at AND o.ends_at > s.starts_at
+        ) o
+        JOIN auth.users u ON u.id = o.user_id
+        WHERE o.user_id <> ${user.id}::uuid
+      ) p
+    ) w ON true
+    ORDER BY s.starts_at, s.id
+  `;
+  return {
+    entries: rows.map((row) => ({
+      id: row.short_id,
+      venue: {
+        id: row.venue_short_id,
+        name: row.venue_name,
+        icon: row.venue_icon,
+        accentColor: row.venue_accent_color,
+        timezone: row.venue_timezone,
+      },
+      startsAt: row.starts_at.toISOString(),
+      endsAt: row.ends_at.toISOString(),
+      title: row.title,
+      coworkers: { names: row.coworker_names, count: row.coworker_count },
+    })),
+    total: rows[0]?.total ?? 0,
+    venues: rows[0]?.venues ?? 0,
+    next:
+      rows[0]?.next_venue_short_id && rows[0].next_venue_name
+        ? { venueId: rows[0].next_venue_short_id, venueName: rows[0].next_venue_name }
+        : null,
+  };
+};
+
+/**
+ * How each venue stands now by its regular hours and date exceptions (see `openStateAt`): one read of the hours of all
+ * given venues and their exceptions in the days that can matter, by `idx_venue_opening_rules_venue_weekday` and
+ * `idx_venue_date_overrides_venue_date`. Keyed by venue id.
+ */
+const openStates = async (venues: readonly Venue[], now: Date): Promise<Map<string, VenueOpenState>> => {
+  if (venues.length === 0) return new Map();
+  const ids = sql.array(
+    venues.map((venue) => venue.id),
+    "UUID",
+  );
+  // every time zone's today lies within a day of UTC's
+  const from = dates.formatDateKey(new Date(now.getTime() - 86_400_000), { timeZone: "UTC" });
+  const to = dates.formatDateKey(new Date(now.getTime() + (OPEN_STATE_DAYS + 1) * 86_400_000), { timeZone: "UTC" });
+  const rows = await sql<
+    {
+      venue_id: string;
+      date: string | null;
+      kind: "rule" | "open" | "closed";
+      weekday: number | null;
+      start_time: string | null;
+      end_time: string | null;
+    }[]
+  >`
+    SELECT venue_id, NULL::text AS date, 'rule' AS kind, weekday,
+      to_char(start_time, 'HH24:MI') AS start_time, to_char(end_time, 'HH24:MI') AS end_time
+    FROM venue.opening_rules
+    WHERE venue_id = ANY(${ids})
+    UNION ALL
+    SELECT venue_id, to_char(date, 'YYYY-MM-DD'), kind, NULL,
+      to_char(start_time, 'HH24:MI'), to_char(end_time, 'HH24:MI')
+    FROM venue.date_overrides
+    WHERE venue_id = ANY(${ids}) AND date >= ${from}::date AND date <= ${to}::date
   `;
   return new Map(
-    rows.map((row) => [
-      row.venue_id,
-      { startsAt: row.starts_at.toISOString(), endsAt: row.ends_at.toISOString(), title: row.title, upcoming: row.upcoming },
-    ]),
+    venues.map((venue) => {
+      const own = rows.filter((row) => row.venue_id === venue.id);
+      return [
+        venue.id,
+        openStateAt({
+          venue,
+          now,
+          openingRules: own.flatMap((row) =>
+            row.kind === "rule" && row.weekday !== null && row.start_time && row.end_time
+              ? [{ weekday: row.weekday, startTime: row.start_time, endTime: row.end_time }]
+              : [],
+          ),
+          overrides: own.flatMap((row) =>
+            row.kind !== "rule" && row.date ? [{ date: row.date, kind: row.kind, startTime: row.start_time, endTime: row.end_time }] : [],
+          ),
+        }),
+      ];
+    }),
   );
 };
 
@@ -2029,7 +2172,8 @@ export const venueService = {
   publicStatus,
   dashboard,
   navFacts,
-  myNextShifts,
+  myUpcomingShifts,
+  openStates,
   publicResources: { resolve: resolvePublicId, resolveMany: resolvePublicIds, resolveOwned: resolveVenuePublicId, ...publicProjection },
   ical: {
     getOrCreateToken: getOrCreateIcalToken,

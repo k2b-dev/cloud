@@ -1,14 +1,18 @@
 import type {
-  MyNextShift,
   PublicStatus,
   ShiftAssignment,
   ShiftTemplate,
+  UpcomingShift,
+  UpcomingShifts,
   UpcomingSlot,
   Venue,
   VenueDashboard,
+  VenueOpenState,
+  VenueSign,
   VenueTemplateSummary,
 } from "../../contracts";
 import type { VenueWorkspaceProps } from "../_components/venue-workspace/types";
+import type { OverviewVenue } from "./VenueOverviewScreen";
 import type { VenueSettingsContext } from "./VenueSettingsScreen";
 
 /** Invented data for the v2 screens' tests and previews; the page pins its clock to `FIXTURE_NOW`. */
@@ -455,9 +459,121 @@ export const worstDashboard = (): VenueDashboard => {
   return { ...dashboard, slots: dashboard.slots.map((slot) => (slot.template.id === "Temp01" ? crowded : slot)) };
 };
 
-/** The viewer's next shift at some of the venues: the café this week (five in all), the bar and the garden next week. */
-export const fixtureNextShifts: Record<string, MyNextShift> = {
-  Cafe01: { startsAt: "2026-11-25T13:00:00.000Z", endsAt: "2026-11-25T16:00:00.000Z", title: "Inventur", upcoming: 5 },
-  Bar002: { startsAt: "2026-11-27T19:00:00.000Z", endsAt: "2026-11-27T23:00:00.000Z", title: "Theke", upcoming: 1 },
-  Gar005: { startsAt: "2026-12-02T15:00:00.000Z", endsAt: "2026-12-02T17:00:00.000Z", title: null, upcoming: 2 },
+const signOf = (venue: Venue): VenueSign => ({
+  id: venue.id,
+  name: venue.name,
+  icon: venue.icon,
+  accentColor: venue.accentColor,
+  timezone: venue.timezone,
+});
+
+/** How each venue stands on Wednesday 25 Nov at 10:00 in Berlin (`FIXTURE_NOW`). */
+const fixtureStates: Record<string, VenueOpenState> = {
+  Cafe01: { kind: "open", until: "2026-11-25T15:00:00.000Z" },
+  Bar002: { kind: "opens", at: "2026-11-25T19:00:00.000Z" },
+  Lab003: { kind: "open", until: "2026-11-25T17:00:00.000Z" },
+  Lib004: { kind: "open", until: "2026-11-25T21:00:00.000Z" },
+  Gar005: { kind: "opens", at: "2026-11-28T09:00:00.000Z" },
+  Kit006: { kind: "closed" },
+  Inf007: { kind: "open", until: "2026-11-25T14:00:00.000Z" },
+};
+
+/** A venue as the overview lists it: its sign and how it stands. */
+export const overviewVenue = (venue: Venue, state: VenueOpenState = fixtureStates[venue.id] ?? { kind: "closed" }): OverviewVenue => ({
+  ...signOf(venue),
+  state,
+});
+
+export const fixtureOverviewVenues: OverviewVenue[] = fixtureVenues.map((venue) => overviewVenue(venue));
+
+const venueById = (id: string) => fixtureVenues.find((venue) => venue.id === id) ?? fixtureVenues[0]!;
+const upcoming = (
+  id: string,
+  venueId: string,
+  startsAt: string,
+  endsAt: string,
+  title: string | null,
+  names: string[],
+  count = names.length,
+): UpcomingShift => ({ id, venue: signOf(venueById(venueId)), startsAt, endsAt, title, coworkers: { names, count } });
+
+/**
+ * The viewer's next shifts at four venues, as the mockup shows them: the bar tonight, lunch at the café tomorrow (the
+ * schedule's Temp01), the inventory next Wednesday, free time in the garden and the reading room's evening on Saturday.
+ */
+export const fixtureUpcomingShifts = (): UpcomingShifts => ({
+  entries: [
+    upcoming("Mine10", "Bar002", "2026-11-25T19:00:00.000Z", "2026-11-25T23:00:00.000Z", "Theke", ["Nora Weiß"]),
+    upcoming("Mine11", "Cafe01", lunchTimes.startsAt, lunchTimes.endsAt, "Mittagstheke", ["Lena Hofmann", "Tom Berger"]),
+    upcoming("Mine12", "Cafe01", "2026-12-02T13:00:00.000Z", "2026-12-02T16:00:00.000Z", "Inventur", ["Lena Hofmann", "Tom Berger"]),
+    upcoming("Mine13", "Gar005", "2026-12-05T09:00:00.000Z", "2026-12-05T11:00:00.000Z", null, ["Jonas Kern", "Mia Sommer", "Rita Ernst"]),
+    upcoming(
+      "Mine14",
+      "Lib004",
+      "2026-12-05T17:00:00.000Z",
+      "2026-12-05T21:00:00.000Z",
+      "Abendaufsicht",
+      ["Anna Roth", "Ben Ito", "Clara Weber", "Deniz Aydın"],
+      6,
+    ),
+  ],
+  total: 5,
+  venues: 4,
+  next: null,
+});
+
+/**
+ * The worst case for the overview (break-ui): endless shift and venue names, emoji and non-Latin text, a shift without a
+ * title, a crowd working along, a venue that opens only while staffed, and more shifts than the list shows.
+ */
+export const worstUpcomingShifts = (venues: OverviewVenue[]): UpcomingShifts => {
+  const long = venues[0]!;
+  const kana = venues[1]!;
+  const one = venues[2]!;
+  const crowd = ["Maximiliane Theodora von Hohenstein-Liebenfels", "李小龍", "Ö", "Ada 🧁 Lovelace"];
+  const at = (
+    venue: OverviewVenue,
+    id: string,
+    startsAt: string,
+    endsAt: string,
+    title: string | null,
+    names: string[],
+    count = names.length,
+  ) => ({
+    id,
+    venue: { id: venue.id, name: venue.name, icon: venue.icon, accentColor: venue.accentColor, timezone: venue.timezone },
+    startsAt,
+    endsAt,
+    title,
+    coworkers: { names, count },
+  });
+  return {
+    entries: [
+      at(
+        long,
+        "Wrst01",
+        "2026-11-25T08:00:00.000Z",
+        "2026-11-25T16:00:00.000Z",
+        "Mittagstheke mit Kaffeeausschank, Kuchenverkauf, Pfandrücknahme und Fundsachen im Erdgeschoss Nordflügel",
+        crowd,
+        48,
+      ),
+      at(kana, "Wrst02", "2026-11-25T19:00:00.000Z", "2026-11-25T23:00:00.000Z", "夜のシフト 🌙", ["李小龍"]),
+      at(one, "Wrst03", "2026-11-26T08:00:00.000Z", "2026-11-26T09:00:00.000Z", "X", []),
+      at(long, "Wrst04", "2026-11-27T10:00:00.000Z", "2026-11-27T12:00:00.000Z", null, crowd, 4),
+      ...Array.from({ length: 8 }, (_, index) =>
+        at(
+          one,
+          `Wrst${String(index + 10)}`,
+          `2026-12-0${(index % 8) + 1}T09:00:00.000Z`,
+          `2026-12-0${(index % 8) + 1}T11:00:00.000Z`,
+          `Schicht ${index + 1}`,
+          [],
+        ),
+      ),
+    ],
+    total: 87,
+    venues: 3,
+    next: { venueId: long.id, venueName: long.name },
+  };
 };

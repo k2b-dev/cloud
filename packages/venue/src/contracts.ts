@@ -30,8 +30,39 @@ export const VenueSchema = z.object({
 });
 export type Venue = z.infer<typeof VenueSchema>;
 
-/** A person's next shift at one venue, with how many shifts they have there from now on. */
-export type MyNextShift = { startsAt: string; endsAt: string; title: string | null; upcoming: number };
+/** How a venue stands now by its regular hours and date exceptions, as instants; the screen words it. */
+export type VenueOpenState =
+  | { kind: "open"; until: string }
+  | { kind: "opens"; at: string }
+  | { kind: "closed" }
+  /** Opens only while its shifts are staffed: its hours say nothing. */
+  | { kind: "staffed" };
+
+/** The sign of a venue beside a shift or in a list: its public id, name, symbol, colour and time zone. */
+export type VenueSign = { id: string; name: string; icon: string; accentColor: string; timezone: string };
+
+/** One of a person's next shifts, across their venues, with the people who work at the same time. */
+export type UpcomingShift = {
+  /** The sign-up's public id. */
+  id: string;
+  venue: VenueSign;
+  startsAt: string;
+  endsAt: string;
+  title: string | null;
+  /** Up to four of the others in it; `count` counts all of them. */
+  coworkers: { names: string[]; count: number };
+};
+
+/**
+ * A person's next shifts: the first ones, how many there are in the window at how many venues, and the venue of the
+ * first one past them (where the way to the rest leads), if any.
+ */
+export type UpcomingShifts = {
+  entries: UpcomingShift[];
+  total: number;
+  venues: number;
+  next: { venueId: string; venueName: string } | null;
+};
 
 /** A venue slug: 2 to 80 lowercase letters or digits, with single dashes between them. */
 export const VENUE_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

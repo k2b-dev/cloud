@@ -1,6 +1,6 @@
 // fallow-ignore-file unused-file
 import { describe, expect, test } from "bun:test";
-import { buildPublicAvailability, upcomingPublicExceptions } from "./availability";
+import { buildPublicAvailability, openStateAt, upcomingPublicExceptions } from "./availability";
 import type { DateOverride, OpeningRule, ShiftAssignment, ShiftTemplate } from "./contracts";
 
 const timestamp = "2026-07-01T00:00:00.000Z";
@@ -360,5 +360,47 @@ describe("upcomingPublicExceptions", () => {
     expect(result.upcomingExceptions).toEqual([
       { date: "2026-07-20", kind: "closed", startTime: null, endTime: null, note: "Summer break" },
     ]);
+  });
+});
+
+describe("openStateAt", () => {
+  // Wednesday 25 Nov 2026, 11:00 in Berlin
+  const now = new Date("2026-11-25T10:00:00.000Z");
+  const berlin = { openMode: "combined" as const, timezone: "Europe/Berlin" };
+  const rule = (weekday: number, startTime: string, endTime: string) => ({ weekday, startTime, endTime });
+
+  test("open now runs to the end of back-to-back openings", () => {
+    expect(
+      openStateAt({ venue: berlin, now, openingRules: [rule(3, "08:00", "12:00"), rule(3, "12:00", "16:00")], overrides: [] }),
+    ).toEqual({ kind: "open", until: "2026-11-25T15:00:00.000Z" });
+  });
+
+  test("closed now names the next opening: later today, or on a day of the coming week", () => {
+    expect(openStateAt({ venue: berlin, now, openingRules: [rule(3, "20:00", "23:00")], overrides: [] })).toEqual({
+      kind: "opens",
+      at: "2026-11-25T19:00:00.000Z",
+    });
+    expect(openStateAt({ venue: berlin, now, openingRules: [rule(6, "10:00", "12:00")], overrides: [] })).toEqual({
+      kind: "opens",
+      at: "2026-11-28T09:00:00.000Z",
+    });
+  });
+
+  test("a closed day today says closed, a special opening opens, and staffed venues have no hours to say", () => {
+    const closedToday = { date: "2026-11-25", kind: "closed" as const, startTime: null, endTime: null };
+    expect(openStateAt({ venue: berlin, now, openingRules: [rule(3, "20:00", "23:00")], overrides: [closedToday] })).toEqual({
+      kind: "closed",
+    });
+    const special = { date: "2026-11-25", kind: "open" as const, startTime: "10:00", endTime: "14:00" };
+    expect(openStateAt({ venue: { ...berlin, openMode: "staffed" }, now, openingRules: [], overrides: [special] })).toEqual({
+      kind: "open",
+      until: "2026-11-25T13:00:00.000Z",
+    });
+    expect(
+      openStateAt({ venue: { ...berlin, openMode: "staffed" }, now, openingRules: [rule(3, "08:00", "16:00")], overrides: [] }),
+    ).toEqual({
+      kind: "staffed",
+    });
+    expect(openStateAt({ venue: berlin, now, openingRules: [], overrides: [] })).toEqual({ kind: "closed" });
   });
 });

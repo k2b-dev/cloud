@@ -7,6 +7,7 @@ import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { loadVenueOverview, loadVenueSettings, loadVenueWorkspace } from "./page-data";
+import type { VenueOverviewProps } from "./screens/VenueOverviewScreen";
 
 /**
  * What each Venue page costs on the server: the statements of its one SSR load and the size of what its island
@@ -14,6 +15,10 @@ import { loadVenueOverview, loadVenueSettings, loadVenueWorkspace } from "./page
  */
 suiteFor("database", "valkey")("Venue page loads", () => {
   let user: User, venueId: string, accessId: string;
+  // someone at 105 venues with six shifts among people: the overview costs what it costs for one venue
+  let busy: User,
+    busyVenueIds: string[] = [],
+    busyAccessId: string;
   const venue = newShortId();
   beforeAll(async () => {
     const suffix = crypto.randomUUID();
@@ -65,10 +70,46 @@ suiteFor("database", "valkey")("Venue page loads", () => {
         VALUES (${venueId}::uuid, ${rating}, ${comment}, '2026-11-24T15:00:00Z'::timestamptz)`;
     await sql`INSERT INTO venue.public_sections (short_id, venue_id, kind, title, content, position)
       VALUES (${newShortId()}, ${venueId}::uuid, 'markdown', 'Willkommen', '{"markdown":"Schön, dass du da bist."}'::jsonb, 0)`;
+
+    const [busyRow] = await sql<{ id: string }[]>`
+      INSERT INTO auth.users (uid, provider, profile, display_name)
+      VALUES (${`venue-page-busy-${suffix}`}, 'local', 'user', 'Venue page busy') RETURNING id`;
+    busy = { ...user, id: busyRow!.id, uid: `venue-page-busy-${suffix}`, displayName: "Venue page busy" };
+    const [busyGrant] = await sql<{ id: string }[]>`
+      INSERT INTO auth.access (user_id, permission) VALUES (${busy.id}::uuid, 'write') RETURNING id`;
+    busyAccessId = busyGrant!.id;
+    // one grant shared by 105 venues, each with weekday hours; a closed day today at every tenth
+    const busyVenues = await sql<{ id: string }[]>`
+      INSERT INTO venue.venues (short_id, slug, name)
+      SELECT substr(md5(${suffix} || n::text), 1, 6), ${`page-busy-${suffix}-`} || n, 'Ort ' || lpad(n::text, 3, '0')
+      FROM generate_series(1, 105) AS n
+      RETURNING id`;
+    busyVenueIds = busyVenues.map((row) => row.id);
+    await sql`INSERT INTO venue.venue_access (venue_id, access_id)
+      SELECT unnest(${sql.array(busyVenueIds, "UUID")}::uuid[]), ${busyAccessId}::uuid`;
+    await sql`INSERT INTO venue.opening_rules (short_id, venue_id, weekday, start_time, end_time)
+      SELECT substr(md5(${suffix} || v::text || d::text), 1, 6), v, d, '08:00', '18:00'
+      FROM unnest(${sql.array(busyVenueIds, "UUID")}::uuid[]) AS v, generate_series(1, 5) AS d`;
+    await sql`INSERT INTO venue.date_overrides (short_id, venue_id, date, kind)
+      SELECT substr(md5(${suffix} || v::text || 'closed'), 1, 6), v, CURRENT_DATE, 'closed'
+      FROM unnest(${sql.array(
+        busyVenueIds.filter((_, index) => index % 10 === 0),
+        "UUID",
+      )}::uuid[]) AS v`;
+    // six shifts at three venues in the coming days, each with the member working along
+    for (const [index, venueIndex] of [0, 0, 1, 1, 2, 2].entries())
+      for (const who of [busy.id, user.id])
+        await sql`
+          INSERT INTO venue.shift_assignments (short_id, venue_id, user_id, starts_at, ends_at)
+          VALUES (${newShortId()}, ${busyVenueIds[venueIndex]!}::uuid, ${who}::uuid,
+            now() + ${`${index + 1} days`}::interval, now() + ${`${index + 1} days 3 hours`}::interval)`;
   });
   afterAll(async () => {
     if (venueId) await sql`DELETE FROM venue.venues WHERE id=${venueId}::uuid`;
+    if (busyVenueIds.length) await sql`DELETE FROM venue.venues WHERE id = ANY(${sql.array(busyVenueIds, "UUID")}::uuid[])`;
     if (accessId) await sql`DELETE FROM auth.access WHERE id=${accessId}::uuid`;
+    if (busyAccessId) await sql`DELETE FROM auth.access WHERE id=${busyAccessId}::uuid`;
+    if (busy) await sql`DELETE FROM auth.users WHERE id=${busy.id}::uuid`;
     if (user) await sql`DELETE FROM auth.users WHERE id=${user.id}::uuid`;
   });
 
@@ -77,13 +118,13 @@ suiteFor("database", "valkey")("Venue page loads", () => {
    * first request fills the caches a running Cloud keeps warm (settings, the calendar link); the second is measured,
    * as an ordinary page load costs.
    */
-  const measure = async (pattern: string, path: string, loader: (c: Context<AuthContext>) => Promise<unknown>) => {
+  const measure = async (pattern: string, path: string, loader: (c: Context<AuthContext>) => Promise<unknown>, member: User = user) => {
     let result: unknown;
     const load = () =>
       new Hono<AuthContext>()
         .use("*", async (c, next) => {
-          c.set("actor", { kind: "user", user });
-          c.set("accessSubject", { type: "user", userId: user.id });
+          c.set("actor", { kind: "user", user: member });
+          c.set("accessSubject", { type: "user", userId: member.id });
           await next();
         })
         .get(pattern, async (c) => {
@@ -105,6 +146,7 @@ suiteFor("database", "valkey")("Venue page loads", () => {
     const week = "cv=week&cd=2026-11-25";
     const pages = {
       overview: await measure("/app/venue", "/app/venue", loadVenueOverview),
+      busyOverview: await measure("/app/venue", "/app/venue", loadVenueOverview, busy),
       shifts: await measure("/app/venue/:id/:view", `/app/venue/${venue}/shifts?${week}`, loadVenueWorkspace),
       myShifts: await measure("/app/venue/:id/:view", `/app/venue/${venue}/my-shifts?${week}`, loadVenueWorkspace),
       feedback: await measure("/app/venue/:id/:view", `/app/venue/${venue}/feedback?${week}`, loadVenueWorkspace),
@@ -114,7 +156,8 @@ suiteFor("database", "valkey")("Venue page loads", () => {
     };
     // the statements of one load with warm caches (27.11.2026); a new read per row or a repeated read shows up here
     const pinned: Record<keyof typeof pages, number> = {
-      overview: 5,
+      overview: 4,
+      busyOverview: 4,
       shifts: 22,
       myShifts: 22,
       feedback: 24,
@@ -132,5 +175,16 @@ suiteFor("database", "valkey")("Venue page loads", () => {
       expect(page.bytes).toBeLessThan(32_000);
     }
     expect(Object.fromEntries(Object.entries(pages).map(([name, page]) => [name, page.statements.length]))).toEqual(pinned);
+    // the busy member sees a page of 100 venues with the way to the next, and all six shifts with who works along
+    const busyProps = (pages.busyOverview.result as { props: VenueOverviewProps }).props;
+    expect({ venues: busyProps.venues.length, more: busyProps.morePages, first: busyProps.venues[0]?.name }).toEqual({
+      venues: 100,
+      more: true,
+      first: "Ort 001",
+    });
+    expect(busyProps.shifts.entries.map((shift) => shift.coworkers)).toEqual(
+      Array.from({ length: 6 }, () => ({ names: ["Venue page member"], count: 1 })),
+    );
+    console.info(`venue overview: ${pages.overview.bytes} bytes for 1 venue, ${pages.busyOverview.bytes} bytes for 100 of 105 venues`);
   }, 60_000);
 });

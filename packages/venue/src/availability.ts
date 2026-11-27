@@ -8,6 +8,7 @@ import {
   type ShiftAssignment,
   type ShiftTemplate,
   type Venue,
+  type VenueOpenState,
 } from "./contracts";
 import { venueMessages } from "./messages";
 import { formatVenueDateTime, formatVenueTimeRange } from "./time-format";
@@ -96,7 +97,11 @@ const isActiveAt = (opening: PublicOpening, now: Date): boolean => new Date(open
  */
 export const regularWindowsOn = (
   date: string,
-  input: Pick<PublicAvailabilityInput, "venue" | "openingRules" | "overrides">,
+  input: {
+    venue: Pick<Venue, "openMode" | "timezone">;
+    openingRules: readonly Pick<OpeningRule, "weekday" | "startTime" | "endTime">[];
+    overrides: readonly Pick<DateOverride, "date" | "kind" | "startTime" | "endTime">[];
+  },
 ): { startsAt: string; endsAt: string }[] => {
   const override = input.overrides.find((entry) => entry.date === date);
   if (override?.kind === "closed") return [];
@@ -110,6 +115,34 @@ export const regularWindowsOn = (
     startsAt: instantFor(date, window.startTime, input.venue.timezone).toISOString(),
     endsAt: instantFor(date, window.endTime, input.venue.timezone).toISOString(),
   }));
+};
+
+/** How far ahead the overview looks for a venue's next opening: a week, so every weekday appears once. */
+export const OPEN_STATE_DAYS = 7;
+
+/**
+ * How a venue stands at `now` by its regular hours and date exceptions, in its time zone: open until the end of the
+ * opening it is in (back-to-back openings count as one), else its next opening within {@link OPEN_STATE_DAYS}. A
+ * closed day today, or no opening that week, is closed. A venue that opens only while staffed has no hours to say.
+ */
+export const openStateAt = (input: Parameters<typeof regularWindowsOn>[1] & { now: Date }): VenueOpenState => {
+  const { venue, now } = input;
+  const today = dateKeyAt(now, venue.timezone);
+  const windows = Array.from({ length: OPEN_STATE_DAYS + 1 }, (_, offset) =>
+    regularWindowsOn(dateKeyAfterDays(today, offset, venue.timezone), input),
+  )
+    .flat()
+    .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  const current = windows.find((window) => new Date(window.startsAt) <= now && now < new Date(window.endsAt));
+  if (current) {
+    let until = current.endsAt;
+    for (const window of windows) if (window.startsAt <= until && window.endsAt > until) until = window.endsAt;
+    return { kind: "open", until };
+  }
+  if (input.overrides.some((entry) => entry.date === today && entry.kind === "closed")) return { kind: "closed" };
+  const next = windows.find((window) => new Date(window.startsAt) > now);
+  if (next) return { kind: "opens", at: next.startsAt };
+  return venue.openMode === "staffed" ? { kind: "staffed" } : { kind: "closed" };
 };
 
 export const buildPublicAvailability = (input: PublicAvailabilityInput): PublicAvailability => {

@@ -6,7 +6,6 @@ import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 import {
   emptyDashboard,
-  evening,
   FIXTURE_NOW,
   fixtureDashboard,
   fixturePreview,
@@ -152,6 +151,8 @@ const answer = async (route: Route, calls: Call[]) => {
   const call: Call = { method: request.method(), path: url.pathname, body: request.postData() ? JSON.parse(request.postData()!) : null };
   calls.push(call);
   if (call.method === "POST" && call.path === "/api/venue/venues") return route.fulfill({ status: 201, json: { id: "New001" } });
+  if (call.method === "POST" && call.path.startsWith("/api/venue/templates/"))
+    return route.fulfill({ status: 201, json: { id: "New002" } });
   if (call.path.endsWith("/dashboard"))
     return route.fulfill({ json: variant === "worst" ? worstDashboard() : variant === "empty" ? emptyDashboard() : fixtureDashboard() });
   if (call.method === "POST" && call.path.includes("/signup-weeks")) return route.fulfill({ status: 201, json: [{}, {}, {}] });
@@ -218,25 +219,90 @@ const detail = (tab: Page) => tab.locator('[data-k2-part="Pane"][data-detail]');
 const shiftInUrl = (tab: Page) => new URL(tab.url()).searchParams.get("shift");
 
 describe("Venue on v2", () => {
-  test("the venue list filters as it is typed and creates a venue from the head", async () => {
-    const { context, tab, errors, calls } = await open(desktop, "/app/venue");
+  test("the overview lists the next shifts by day and the venues with how they stand; a shift opens in its schedule", async () => {
+    const { context, tab, errors } = await open(desktop, "/app/venue");
     try {
-      await shoot(tab, "venues-1440");
-      await tab.getByRole("searchbox", { name: "Standorte durchsuchen" }).fill("keller");
-      await tab.waitForFunction(() => location.search === "?q=keller");
-      expect(await tab.getByText("1 von 7").isVisible()).toBe(true);
-      await tab.getByRole("button", { name: "Neuer Standort" }).first().click();
-      await tab.getByRole("menuitem", { name: /Leerer Standort/ }).click();
-      const dialog = tab.getByRole("dialog");
-      await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("Mensa Süd");
-      await dialog.getByRole("button", { name: "Erstellen" }).click();
-      await tab.waitForURL(`${origin}/app/venue/New001`);
-      expect(writes(calls)[0]).toMatchObject({ method: "POST", path: "/api/venue/venues", body: { name: "Mensa Süd", slug: "mensa-sud" } });
+      expect(await tab.getByText("5 Schichten in den nächsten 14 Tagen").isVisible()).toBe(true);
+      expect((await tab.locator('[data-k2-part="StatusRow"]').innerText()).replace(/\s+/g, " ")).toContain("an 4 Standorten");
+      // Wednesday 25 Nov is today: tonight's bar, tomorrow's lunch, then the days by name with their date
+      const day = (name: string) => tab.getByRole("region", { name, exact: true });
+      expect(await day("Heute").innerText()).toContain("Mi., 25. Nov.");
+      expect(await day("Heute").getByRole("link", { name: "Theke" }).isVisible()).toBe(true);
+      expect(await day("Heute").innerText()).toContain("20:00–00:00 · Kellerbar");
+      expect(await day("Morgen").innerText()).toContain("Mittagstheke");
+      expect(await day("Mittwoch").innerText()).toContain("2. Dez.");
+      expect(await day("Samstag").innerText()).toContain("Freier Zeitraum");
+      // four of six faces have names; the stack counts all of them
+      expect(
+        await day("Samstag").getByRole("img", { name: "Mit Anna Roth, Ben Ito, Clara Weber, Deniz Aydın und 2 weiteren" }).count(),
+      ).toBe(1);
+      const venues = tab.getByRole("region", { name: "Standorte", exact: true });
+      for (const words of ["Geöffnet bis 16:00", "Öffnet heute um 20:00", "Öffnet Sa. um 10:00", "Heute geschlossen"])
+        expect(await venues.getByText(words).count()).toBe(1);
+      expect(await venues.getByRole("link", { name: "Kellerbar" }).getAttribute("href")).toBe("/app/venue/Bar002");
+      await day("Heute").getByRole("link", { name: "Theke" }).click();
+      await tab.waitForURL(`${origin}/app/venue/Bar002/shifts?cd=2026-11-25&shift=a:Mine10`);
       expect(errors).toEqual([]);
     } finally {
       await context.close();
     }
   }, 60_000);
+
+  test("“Neuer Standort” in the venues' head creates a blank venue or one from a template", async () => {
+    const { context, tab, errors, calls } = await open(desktop, "/app/venue");
+    try {
+      const venues = tab.getByRole("region", { name: "Standorte", exact: true });
+      await venues.getByRole("button", { name: "Neuer Standort" }).click();
+      const dialog = tab.getByRole("dialog");
+      await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("Mensa Süd");
+      await dialog.getByRole("button", { name: "Erstellen" }).click();
+      await tab.waitForURL(`${origin}/app/venue/New001`);
+      expect(writes(calls)[0]).toMatchObject({ method: "POST", path: "/api/venue/venues", body: { name: "Mensa Süd", slug: "mensa-sud" } });
+      await tab.goto(`${origin}/app/venue`);
+      await tab.waitForSelector('body[data-ready="true"]');
+      await tab.getByRole("region", { name: "Standorte", exact: true }).getByRole("button", { name: "Neuer Standort" }).click();
+      await tab.getByRole("dialog").getByRole("combobox", { name: "Vorlage" }).click();
+      await tab.getByRole("option", { name: "Café" }).click();
+      await tab.getByRole("dialog").getByRole("button", { name: "Erstellen" }).click();
+      await tab.waitForURL(`${origin}/app/venue/New002`);
+      expect(writes(calls)[1]).toMatchObject({ method: "POST", path: "/api/venue/templates/cafe", body: { slug: "cafe" } });
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("the search looks through all venues on the server; no match and no shifts each say so with a way on", async () => {
+    const { context, tab, errors } = await open(desktop, "/app/venue");
+    try {
+      await tab.getByRole("searchbox", { name: "Standorte durchsuchen" }).fill("nichts");
+      await tab.keyboard.press("Enter");
+      await tab.waitForURL(`${origin}/app/venue?q=nichts`);
+      await tab.waitForSelector('body[data-ready="true"]');
+      expect(await tab.getByText("Keine passenden Standorte").isVisible()).toBe(true);
+      expect(await tab.getByRole("link", { name: "Suche löschen" }).getAttribute("href")).toBe("/app/venue");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+    const quiet = await open(desktop, "/app/venue", { variant: "noshifts" });
+    try {
+      expect(await quiet.tab.getByText("Keine Schicht in den nächsten 14 Tagen").isVisible()).toBe(true);
+      expect(await quiet.tab.getByRole("link", { name: "Zum Schichtplan" }).getAttribute("href")).toBe("/app/venue/Cafe01/shifts");
+      expect(quiet.errors).toEqual([]);
+    } finally {
+      await quiet.context.close();
+    }
+    const first = await open(desktop, "/app/venue", { variant: "empty" });
+    try {
+      expect(await first.tab.getByText("Noch keine Standorte").isVisible()).toBe(true);
+      await first.tab.getByRole("button", { name: "Neuer Standort" }).click();
+      expect(await first.tab.getByRole("dialog").isVisible()).toBe(true);
+      expect(first.errors).toEqual([]);
+    } finally {
+      await first.context.close();
+    }
+  }, 90_000);
 
   test("a shift opens beside the calendar from one click, Back closes it and Forward opens it again", async () => {
     const { context, tab, errors } = await open(desktop, schedule);
@@ -542,6 +608,7 @@ describe("Venue on v2", () => {
         ["worst", "/app/venue"],
         ["worst", `${schedule}&shift=${lunchId}`],
         ["empty", "/app/venue"],
+        ["noshifts", "/app/venue"],
         ["empty", schedule],
         ["empty", "/app/venue/Cafe01/my-shifts"],
         ["empty", "/app/venue/Cafe01/feedback"],
@@ -561,12 +628,16 @@ describe("Venue on v2", () => {
     expect(found).toEqual([]);
   }, 180_000);
 
-  test("1,000 venues are ready in time", async () => {
+  test("1,000 venues are ready in time, 100 to a page", async () => {
     const { context, tab, errors, ready } = await open(desktop, "/app/venue", { variant: "huge" });
     try {
       const nodes = await tab.evaluate(() => document.querySelectorAll("*").length);
       console.log(`[scale] /app/venue: ready ${ready} ms, ${nodes} elements`);
       expect(ready).toBeLessThan(1500);
+      // the server sends a page of 100 by name; the next page is one link away
+      const venues = tab.getByRole("region", { name: "Standorte", exact: true });
+      expect(await venues.locator('[data-k2-part="Row"]').count()).toBe(100);
+      expect(await venues.getByRole("link", { name: "Weitere Standorte" }).getAttribute("href")).toBe("/app/venue?page=2");
       expect(errors).toEqual([]);
     } finally {
       await context.close();
