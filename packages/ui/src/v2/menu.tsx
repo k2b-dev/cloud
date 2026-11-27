@@ -516,18 +516,13 @@ export const HeadFoldContext = createContext<Accessor<readonly MenuEntry[]>>();
 
 const MenuRoot = (props: MenuRootProps) => {
   const folded = useContext(HeadFoldContext);
-  // on the phone, where the head folds them, the "…" of a head also holds the deeds that kept their words
-  const [phone, setPhone] = createSignal(false);
+  // on the phone (`usePhone`, below), where the head folds them, the "…" of a head also holds the deeds that kept
+  // their words: the first "…" right in the head's end
   const [first, setFirst] = createSignal(false);
   onMount(() => {
-    if (!folded || !iconOnly() || typeof matchMedia === "undefined") return;
+    if (!folded || !iconOnly()) return;
     const end = trigger?.parentElement;
     setFirst(!!end?.classList.contains("k2-bar-end") && end.querySelector(":scope > [data-head-menu]") === trigger);
-    const wide = matchMedia("(min-width: 768px)");
-    const follow = () => setPhone(!wide.matches);
-    follow();
-    wide.addEventListener("change", follow);
-    onCleanup(() => wide.removeEventListener("change", follow));
   });
   const t = useOverlayMessages();
   const words = resolveChildren(() => props.children);
