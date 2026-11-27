@@ -456,6 +456,14 @@ for (const mode of ["unit", "webkit", "integration"] as const) {
         expect(shard.reduce((sum, suite) => sum + suiteWeight(suite.name, observed), 0)).toBeLessThanOrEqual(targetMinutes * 60);
       }
     }
+    if (mode === "unit") {
+      // A suite that outgrows its share fills a shard alone: @k2b/ui rest grew from 693 s to 1000 s by measure,
+      // its shard took up to 18.8 min in green runs and stopped at the 20-minute budget (#4386). The slowest shard
+      // stays within a tenth of the even share; a suite that pushes it further splits into `test:part:*` scripts.
+      const loads = selected.map((shard) => shard.reduce((sum, suite) => sum + suiteWeight(suite.name, weights), 0));
+      const even = loads.reduce((sum, load) => sum + load, 0) / loads.length;
+      expect(Math.max(...loads)).toBeLessThanOrEqual(even * 1.1);
+    }
     if (mode === "integration") {
       // A suite above two thirds of the target leaves a shard no room to balance: Mail as one suite
       // was weighted 13.6 min, took up to 19 min and stopped its shard at the budget (#2055).
@@ -555,6 +563,7 @@ test("a package's test parts run every file: the rest part excludes exactly what
   for (const [workspace, name] of [
     ["packages/cloud", "@k2b/cloud"],
     ["packages/mail", "@k2b/cloud-app-mail"],
+    ["packages/notebooks", "@k2b/cloud-app-notebooks"],
     ["packages/ui", "@k2b/ui"],
   ] as const) {
     const { scripts } = (await Bun.file(join(workspaceRoot, workspace, "package.json")).json()) as { scripts: Record<string, string> };

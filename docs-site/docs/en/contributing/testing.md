@@ -1399,13 +1399,14 @@ optional jobs; failed or cancelled jobs fail the full gate. The `ci-gate`
 rule and its tests check the job list, exact draft and path conditions,
 the red draft gate, skip allowances, event triggers, and concurrency policy.
 
-Unit tests run in thirteen shards, WebKit tests in twenty-two, and integration tests
+Unit tests run in fourteen shards, WebKit tests in twenty-two, and integration tests
 in six. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
 suite counts as the median of its table. The browser table contains WebKit
 measurements; Chromium runs inside the unit suites. Equal weights use the suite
 name to order suites; the least-loaded shard wins, with suite count and shard
-index breaking load ties. Integration keeps the Grids exclusion;
+index breaking load ties. The slowest unit shard stays within a tenth of the even share. A
+suite that pushes it further splits into `test:part:*` scripts of its package. Integration keeps the Grids exclusion;
 Grids certification runs in its own path-filtered job. Every integration shard
 gets fresh service containers, and `gate` requires the whole matrix to succeed.
 Stalwart starts on every integration shard because suite assignment changes with

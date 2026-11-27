@@ -197,19 +197,21 @@ jobs:
       # longest first; unknown suites use the median. Choose the smallest count
       # with a predicted slowest shard <= 15 min for unit/integration;
       # WebKit reserves more headroom as described below.
-      # Unit timings are maxima from runs 45486435794 (main merge queue) and
-      # 45498231860 (#4105, slow), with @k2b/cloud SSR, AI and code split into
-      # test:part:* suites. The code and rest weights come from the file-group
-      # times of @k2b/cloud rest in run 45486435794 (src/code 262.9 s of
-      # 983.6 s, plus 1 s process overhead for the new part). Thirteen shards
-      # need at most 14.65 min (@k2b/cloud-app-notebooks alone; the others
-      # <= 13.80 min); twelve need 15.14 min and miss the 15-min target.
+      # Unit timings are maxima from the green merge-group runs 45924282705,
+      # 45924281140, 45924280021, 45924278090 and 45924177089 and the
+      # stopped run 45919933131 (#4386). Split by their file times:
+      # @k2b/ui v2 (403 s of files) out of @k2b/ui rest, @k2b/cloud
+      # access-browser-approvals (338 s) out of @k2b/cloud rest, and
+      # @k2b/cloud-app-notebooks frontend-lib (216 s) from its rest; each part
+      # carries its build or 1 s process overhead. Fourteen shards need at most
+      # 14.31 min (@k2b/ui layout-content alone; the others <= 13.95 min);
+      # thirteen need 15.02 min and miss the 15-min target.
       # --max-minutes 20 fails above 2/3 of the job limit. The last third covers
       # setup and GitHub finalization, which counts against timeout-minutes and
       # took up to about 5 min during the Actions incident of 19 October 2026.
       # strategy.job-total keeps the --shard divisor in sync with the matrix.
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
     # API-level unit tests go through the rate limiter, whose Bun redis client
     # waits for a server; a throwaway Valkey keeps them honest and fast.
     services:
