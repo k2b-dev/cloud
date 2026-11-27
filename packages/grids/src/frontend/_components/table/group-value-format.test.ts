@@ -40,6 +40,31 @@ describe("group value formatting", () => {
         spec: { fieldId: date.id, granularity: "month" } as GroupBySpec,
         value: "2026-07-01T00:00:00.000Z",
       }),
+    ).toBe("July 2026");
+    expect(
+      formatGroupValue({
+        field: date,
+        spec: { fieldId: date.id, granularity: "year" } as GroupBySpec,
+        value: "2026-01-01T00:00:00.000Z",
+        locale: "de",
+      }),
+    ).toBe("2026");
+    expect(
+      formatGroupValue({
+        field: date,
+        spec: { fieldId: date.id, granularity: "day" } as GroupBySpec,
+        value: "2026-07-14T00:00:00.000Z",
+        locale: "de",
+      }),
+    ).toBe("14.07.2026");
+    // a chosen date format keeps its form, also for a month bucket
+    expect(
+      formatGroupValue({
+        field: date,
+        spec: { fieldId: date.id, granularity: "month", format: { kind: "date", format: "iso" } } as GroupBySpec,
+        value: "2026-07-01T00:00:00.000Z",
+        locale: "de",
+      }),
     ).toBe("2026-07-01");
   });
 
