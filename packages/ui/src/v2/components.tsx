@@ -16,7 +16,7 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useLocale } from "../intl/locale";
-import { useUiMessages } from "../intl/messages";
+import { type UiMessages, useUiMessages } from "../intl/messages";
 import { watchFold } from "./bar-fold";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
@@ -331,6 +331,11 @@ export type Tab = {
   icon?: string;
   /** A quiet count after the name: a number in the page's language and in full (12.345, never cut to "9.999+"); words such as "99+" stay as given. */
   count?: number | string;
+  /**
+   * The state of what the tab opens, as a nav entry shows it: a dot after the name, `"ok"` in order, `"warn"` needs a
+   * look, `"bad"` a problem. Its word ("Warnung") is part of the tab's name for assistive technology.
+   */
+  dot?: Status;
   /** The tab leads to this page … */
   href?: string;
   /** … opens it in place on a plain click, while the link still opens in a new tab (see `OnNavigate`) … */
@@ -354,13 +359,20 @@ export type TabsProps = {
   label: string;
 };
 
-/** The words of a tab: its symbol, its name and its count. */
+/** The word of a state dot, for assistive technology and for a tab that hides in the menu of further views. */
+const stateWord = (status: Status, t: UiMessages) =>
+  status === "ok" ? t.stateOk : status === "warn" ? t.stateWarn : t.stateBad;
+
+/** The words of a tab: its symbol, its name, its state and its count. */
 const TabFace = (props: { tab: Tab }) => {
   const locale = useLocale();
+  const t = useUiMessages();
   return (
     <>
       <Show when={props.tab.icon}>{(name) => <Icon name={name()} />}</Show>
       {props.tab.label}
+      {/* the nav entry's dot in the same place, before the count; its word joins the tab's name */}
+      <Show when={props.tab.dot}>{(status) => <Dot status={status()} label={stateWord(status(), t())} />}</Show>
       <Show when={props.tab.count !== undefined}>
         <span class="k2-tab-count">{countIn(props.tab.count ?? "", locale())}</span>
       </Show>
@@ -368,11 +380,14 @@ const TabFace = (props: { tab: Tab }) => {
   );
 };
 
-/** A tab that hides for lack of room, as an entry of the menu of further views. */
-const asEntry = (tab: Tab, locale: string): MenuEntry => ({
+/** A tab that hides for lack of room, as an entry of the menu of further views; its state stays in words. */
+const asEntry = (tab: Tab, locale: string, t: UiMessages): MenuEntry => ({
   label: tab.label,
   icon: tab.icon,
-  meta: tab.count === undefined ? undefined : countIn(tab.count, locale),
+  meta:
+    [tab.dot ? stateWord(tab.dot, t) : undefined, tab.count === undefined ? undefined : countIn(tab.count, locale)]
+      .filter(Boolean)
+      .join(" · ") || undefined,
   href: tab.href,
   onNavigate: tab.href !== undefined ? tab.onNavigate : undefined,
   onClick: tab.onClick,
@@ -458,7 +473,7 @@ export const Tabs = (props: TabsProps) => {
     });
   });
   const hidden = () => plain().slice(fit());
-  const more = () => hidden().map((tab) => asEntry(tab, locale()));
+  const more = () => hidden().map((tab) => asEntry(tab, locale(), t()));
   return (
     <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
       <div class="k2-tabs" ref={row}>

@@ -15,6 +15,7 @@ const { Pane, Workspace } = await import("./layout");
 const { Input } = await import("./controls");
 const { Text } = await import("./content");
 const { Heat } = await import("./heat");
+const { Tabs } = await import("./components");
 
 const split = (more: JSX.Element) =>
   renderToString(() =>
@@ -167,4 +168,22 @@ test("a heat sends every day of its 53 weeks, today marked, in the server's mark
   expect(markup.match(/tabindex="0"/g)).toHaveLength(1);
   // one day with a count is the strongest tone
   expect(markup).toMatch(/data-tone="4" aria-label="Fri, Nov 27 · 3 Mails" aria-current="date"/);
+});
+
+// Gateway Ops (C): the areas of a record carry the state of what they open, as nav entries do. The server sends the dot
+// and its word, so the first picture shows and says the state.
+test("a tab sends the dot of its state with its word, and a tab without a state none", () => {
+  const markup = renderToString(() =>
+    createComponent(Tabs, {
+      label: "Infrastruktur",
+      items: [
+        { label: "Postgres", dot: "warn", current: true, href: "/postgres" },
+        { label: "Valkey", dot: "ok", href: "/valkey" },
+        { label: "NATS", href: "/nats" },
+      ],
+    }),
+  );
+  expect(markup.match(/class="k2-dot"/g)).toHaveLength(2);
+  expect(markup).toMatch(/data-status="warn"[^>]*aria-label="Warning"/);
+  expect(markup).toMatch(/data-status="ok"[^>]*aria-label="All clear"/);
 });

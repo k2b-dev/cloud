@@ -67,7 +67,7 @@ The app's places in the sidebar: groups with a heading and a deed, counts, dots,
 
 ### Tabs
 
-Views of one thing; a menu tab at the end holds the views without a tab of their own.
+Views of one thing; a menu tab at the end holds the views without a tab of their own. A tab can carry the state of what it opens with `dot` (`"ok"`, `"warn"`, `"bad"`), as a nav entry does: a dot after the name whose word ("Warnung") is part of the tab's name, also in the menu when the tab has no room. A change of state moves nothing.
 
 <Props of="Tabs Tab" />
 

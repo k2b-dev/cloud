@@ -515,8 +515,9 @@ lines instead of cutting a thing.
 - Counts of `Nav` and `Tabs`: a number is written in the page's language and
   in full (12.345 in German, 12,345 in English), never cut to "9.999+"; words
   you give (`"99+"`, `"+8"`) stay as they are.
-- `Tabs`: `label`, `items: { label, icon?, count?, href?, onClick?,
-  current?, menu? }[]`. In a head `Bar start` they share the bar with actions; as a `Pane`
+- `Tabs`: `label`, `items: { label, icon?, count?, dot?, href?, onClick?,
+  current?, menu? }[]`. `dot` (`"ok"`, `"warn"`, `"bad"`) is the state of
+  what the tab opens, as on a nav entry; its word joins the tab's name. In a head `Bar start` they share the bar with actions; as a `Pane`
   head they are their own 44 px bar. `menu` takes the entries of a `Menu`:
   the tab ("Weitere +8") opens the views that have no tab of their own; it
   stands at the end and its `count` counts its own entries. A tab is never
