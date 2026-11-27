@@ -22,9 +22,7 @@ const markup = [
   renderToString(() => createComponent(Button, { label: "Öffnen: Hausordnung", children: "Öffnen" })),
   renderToString(() => createComponent(Button, { children: "Teilen" })),
   renderToString(() => createComponent(Button, { icon: "x", label: "Schließen" })),
-  renderToString(() =>
-    createComponent(Button, { label: "Lesen: ganzes Kapitel", about: "kapitel", children: "Lesen", title: "Lesen" }),
-  ),
+  renderToString(() => createComponent(Button, { label: "Lesen: ganzes Kapitel", about: "kapitel", children: "Lesen", title: "Lesen" })),
 ].join("");
 
 let browser: Browser;
