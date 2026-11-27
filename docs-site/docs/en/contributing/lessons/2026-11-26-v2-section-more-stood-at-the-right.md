@@ -1,0 +1,6 @@
+### A section's way to all of it stood at the right
+
+- **What happened:** In the v2 recipes a section's link to all of it ("Alle Ereignisse ›") stood at the right end of its section, far from the rows it leads on from. The maintainer marked it on the list-detail recipe: it belongs on the left, in the cell.
+- **Root cause:** `Section` placed its `more` link with `align-self: flex-end` and a right margin, as a quiet button at the end of a bar. It is the last line of the section's content, though, and reads with the rows above it.
+- **Error class:** A part placed by analogy with another part (a bar's end button) instead of by what it reads with (the rows' text).
+- **Guard:** The link now stands under the rows, its words on their text edge: `--k2-edge`, or `--k2-edge-icon` where the section has a symbol, less its own 8 px of padding. In a side column it stays a row of its own. `packages/ui/src/v2/section-more.browser.test.ts` checks at 1440 and 390 px, in Chromium and WebKit, that the link's words start where the rows' text starts, with and without a symbol, that the side column's link starts at its edge, and that `measureV2Layout` reports no problems. Without the side-column exception, that case is red.

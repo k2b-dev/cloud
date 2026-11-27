@@ -404,6 +404,8 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* the place of a split at the top, as wide as it: a split's own rule asks it (see `Pane side`) */
+  container: k2-host / inline-size;
 }
 .k2-ui .k2-ws-main > * {
   flex: none;
@@ -608,6 +610,8 @@
 .k2-ui .k2-pane-back > .k2-pane-back-name {
   flex: 0 1 auto;
   min-width: 0;
+  /* an endless name leaves the way back a few letters and "…" (break-ui): it never takes the last 6em of the bar */
+  max-width: calc(100% - 6em);
   margin-inline-start: 8px;
   overflow: hidden;
   font: var(--k2-t-row);
@@ -665,6 +669,11 @@
 }
 .k2-ui .k2-scroll > .k2-split {
   flex: 1 0 auto;
+}
+/* A main column with its context column (`Pane side`): the reach of a grip (its `::after`) stays inside its line, so
+   the split, which scrolls where the context gives way, never grows by it and ends at its content. */
+.k2-ui .k2-split[data-context] > .k2-seam {
+  overflow-y: clip;
 }
 
 /* ── Bar: fixed height by place, line below, places start and end ──────────────────────────────────────────── */
@@ -2097,6 +2106,15 @@
 .k2-ui .k2-chip[data-status="bad"] {
   background: var(--k2-bad-tint);
   color: var(--k2-bad);
+}
+/* a quiet state: its dot and its word in the ink of the text, without the tinted round, for a column of states in a
+   dense table or list; the height stays, so a chip and a quiet state stand on one line */
+.k2-ui .k2-chip[data-quiet] {
+  gap: 6px;
+  padding: 0;
+  background: none;
+  color: var(--k2-text);
+  font-weight: 400;
 }
 .k2-ui .k2-chip[data-kind="ai"] {
   background: var(--k2-ai-tint);
@@ -4110,19 +4128,25 @@
   color: var(--k2-c, var(--k2-n600));
 }
 
-/* The way to all of a section, at its end: a quiet text button on the right ("All deliveries ›") … */
+/* A section's way to all of it stands under its rows, its words on their text edge (Valentin 26.11.: at the start, not
+   the end; logical margins, so a page written right to left has it at the right), after a symbol where the section has
+   one; its 8 px of padding stand before the edge, as a text button's */
 .k2-ui .k2-sec-link {
-  align-self: flex-end;
+  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   gap: 4px;
   height: var(--k2-h-control-small);
-  margin: 4px var(--k2-edge) 0 0;
+  margin-block: 4px 0;
+  margin-inline: calc(var(--k2-edge) - 8px) 0;
   padding: 0 8px;
   border-radius: var(--k2-r-control);
   font: var(--k2-t-meta);
   font-weight: 500;
   color: var(--k2-muted);
+}
+.k2-ui .k2-pane:not([data-side]) .k2-sec:has(> .k2-sh > :is(.k2-icon, .k2-stile)) > .k2-sec-link {
+  margin-inline-start: calc(var(--k2-edge-icon) - 8px);
 }
 .k2-ui .k2-sec-link > b {
   font-weight: 500;
@@ -5151,8 +5175,9 @@
    What simply has no room changes with the column, not the window: a large table becomes rows and drops columns,
    fields of a row, cells and the way of steps stand one under the other, and no column of a table is dragged. What
    is about touch and the page (rows of 60 px, the phone bar, columns as pages, the text edge) stays with the window. */
+/* a pane is also the place (`k2-host`) of a split inside it, as wide as that split (see `Pane side`) */
 .k2-ui .k2-pane {
-  container: k2-pane / inline-size;
+  container: k2-pane k2-host / inline-size;
 }
 @container k2-pane (max-width: 479px) {
   /* an entry of a digest puts its date, title, state and text one under the other: beside each other the text would
