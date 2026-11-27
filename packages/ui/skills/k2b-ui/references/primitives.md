@@ -32,6 +32,8 @@ The working surface of an app: one per screen.
 - `detail` (`true` or the detail's minimum, default 400) when a detail opens
   beside the columns; `detailEmpty={{ icon, text }}` stands in its place while
   none is open, so nothing moves when it opens. Keep the list's `width`.
+  `detailEmpty.hero` stands above its sentence: a picture of the place as a
+  whole, such as a `Heat` with a line that sums it up.
 - Tablet: where the sidebar at its default does not fit beside every column
   at its minimum, it becomes a drawer with a button at the start of the head.
 - Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`. In
@@ -353,7 +355,7 @@ One line of things with the one gap of 8 px, such as chips after a count
 in a `Bar start`. In a column narrower than 480 px it wraps onto more
 lines instead of cutting a thing.
 
-### Icon, Avatar, Chip, Progress, Ticks
+### Icon, Avatar, Chip, Progress, Ticks, Heat
 
 - `Icon`: `name`, `label` (without one it is decoration), `tone`.
 - `Avatar`: a `Person`; the place sets the size. With `image` the picture
@@ -379,6 +381,18 @@ lines instead of cutting a thing.
   keeps the strip at its start). Ok is soft, a failure red and taller, a
   slot without data a low stub; 140 × 20 px in a table cell. The one column
   of a list that shows its data over time; never decoration.
+- `Heat`: `days` (`{ date, count }` per day, at most the 53 weeks shown, from
+  one bounded aggregate), `today` (a date key from the server: the last day,
+  marked), `label` ("Mails pro Tag"), `unit` (a count in the app's words),
+  `detail` (a second tip line per date, such as "6 eingehend · 4 gesendet"),
+  `summary` (the line above, from the total and the days shown, such as
+  "… Mails in den letzten 12 Monaten · Ø 6 pro Tag"), `color` (a data colour
+  that keeps 3:1 at its strongest; default the app's ink). One column per
+  week, newest at the end of the writing direction; four tones over the
+  distinct counts, the busiest day always the strongest. Fits its place,
+  days up to 12 px, never cuts the newest weeks. The arrows walk the days;
+  one shared tip shows day and count on hover and focus. As a
+  `detailEmpty` `hero`, made once in the component.
 
 ## Controls
 
@@ -620,9 +634,11 @@ lines instead of cutting a thing.
   `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
   `items` (a submenu to the side), or `panel` (`(close) => …`, a panel
-  beside the entry such as a `DatePicker`: a dialog of its own over the
-  menu, with its own keys and focus, that calls `close` once it picked;
-  Escape closes it first), and `current` (the value set through that
+  such as a `DatePicker` as the next step: a dialog of its own that takes
+  the place of the menu the entry stands in, under a head that leads
+  back; its own keys and focus, so the arrows stay with the calendar;
+  Escape and the back button lead back; it calls `close` once it
+  picked), and `current` (the value set through that
   submenu or panel, such as a reminder's time: at the end in the app's
   colour and part of the entry's name; it takes the place of `meta`); or
   `"separator"` between groups; or a section `{ title, items }` under a
@@ -654,6 +670,14 @@ lines instead of cutting a thing.
   (`bad` is announced at once).
   A toast reports a deed; it never replaces `Failed` or a `Notice` at the
   place of a problem.
+- `announce(text, { assertive? })`: news for assistive technology that no
+  element shows as it happens, such as a run that changed its state or new
+  mail. It goes to the live region that `Workspace` brings in its server
+  markup (also from another island; with several, the first one shown);
+  the same news twice is said twice, a burst within 250 ms as its last
+  news and at least once a second, and said news leaves after five
+  seconds; `assertive` only for news that cannot wait, such as a run that
+  failed.
 
 ## States
 

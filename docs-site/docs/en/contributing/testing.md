@@ -1399,20 +1399,24 @@ optional jobs; failed or cancelled jobs fail the full gate. The `ci-gate`
 rule and its tests check the job list, exact draft and path conditions,
 the red draft gate, skip allowances, event triggers, and concurrency policy.
 
-Unit tests run in thirteen shards, WebKit tests in twenty-two, and integration tests
-in six. Each mode uses its own measured seconds per suite in
+Unit tests run in fourteen shards, WebKit tests in twenty-two, and integration
+tests in six. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
 suite counts as the median of its table. The browser table contains WebKit
 measurements; Chromium runs inside the unit suites. Equal weights use the suite
 name to order suites; the least-loaded shard wins, with suite count and shard
-index breaking load ties. Integration keeps the Grids exclusion;
-Grids certification runs in its own path-filtered job. Every integration shard
-gets fresh service containers, and `gate` requires the whole matrix to succeed.
-Stalwart starts on every integration shard because suite assignment changes with
-the weights and file set. Its startup overlaps installation; immediately before
-the tests, CI waits up to 90 seconds for `/jmap/session` to return `200` (the
-measured 60-second startup plus 30 seconds of reserve). Nightly uses the same
-server and readiness check in each Postgres matrix entry.
+index breaking load ties. No unit suite weighs more than nine tenths of the
+15-minute target; a larger one splits into `test:part:*` scripts of its package.
+A shard names each suite that ran more than 1.2 times its weight, so the table
+is refreshed before the shard reaches its budget. Integration keeps the Grids
+exclusion; Grids certification runs in its own path-filtered job. Every
+integration shard gets fresh service containers, and `gate` requires the whole
+matrix to succeed. Stalwart starts on every integration shard because suite
+assignment changes with the weights and file set. Its startup overlaps
+installation; immediately before the tests, CI waits up to 90 seconds for
+`/jmap/session` to return `200` (the measured 60-second startup plus 30 seconds
+of reserve). Nightly uses the same server and readiness check in each Postgres
+matrix entry.
 
 The path-filtered `stdlib` job runs when `packages/stdlib` changed. It checks
 the finance generators of `@k2b/stdlib` against independent validators: the

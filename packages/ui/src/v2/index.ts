@@ -14,6 +14,8 @@
 export { useLocale } from "../intl/locale";
 // The bare address of a display form such as `"Berg, Anna" <anna@example.org>`, as an address field reads it.
 export { addressOf } from "./addresses";
+// News for assistive technology that the page shows nowhere as it happens (a run that changed its state).
+export { announce } from "./announce";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {
@@ -101,6 +103,8 @@ export { type DescribeV2Options, describeV2 } from "./describe";
 export { Failed, type FailedProps } from "./failed";
 // Lists people filter, sort and group: the statements of a `defineListQuery` declaration, and values that load.
 export { FilterBar, type FilterBarProps, type FilterBarViews, ListOrder, type ListOrderProps, viewIcon } from "./filter-bar";
+// A year of days as a picture: what happened per day, in tones of one colour.
+export { Heat, type HeatDay, type HeatProps } from "./heat";
 // Layer 1: the primitives.
 export {
   Band,

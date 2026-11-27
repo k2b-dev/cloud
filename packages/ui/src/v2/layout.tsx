@@ -16,6 +16,7 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
+import { Announcer } from "./announce";
 import { type Fold, watchFold } from "./bar-fold";
 import { useDrawer } from "./behavior/overlays";
 import { type GripOptions, useGrip } from "./behavior/resize";
@@ -165,9 +166,10 @@ export type WorkspaceProps = {
   /**
    * What stands in the detail's place while none is open, such as `{ icon: "mail", text: "Keine Nachricht
    * ausgewählt" }`; "Nothing selected" in the language of the page when not set. Not on the phone, where the list is
-   * the page.
+   * the page. `hero` stands above the sentence: a picture of the place as a whole, such as a `Heat` of the mails
+   * received per day with a line that sums it up.
    */
-  detailEmpty?: { icon: string; text: string };
+  detailEmpty?: { icon: string; text: string; hero?: JSX.Element };
   /**
    * A `Pane` or `Pane.Split`, written inside the Workspace: its columns tell it their widths, so it knows when the
    * sidebar becomes a drawer. A column made before the Workspace (kept in a variable) is not counted.
@@ -189,7 +191,9 @@ type Column = { readonly need: number; readonly detail: boolean; readonly away?:
  * The columns of a workspace register here: the panes at its top, alone or side by side in a `Pane.Split`. The split
  * at the top also learns what stands in the place of a declared detail while none is open.
  */
-type Columns = { register: (column: Column) => void; empty: () => { icon: string; text: string } | undefined };
+/** What stands in a declared detail's place while none is open. */
+type DetailEmpty = { icon: string; text: string; hero?: JSX.Element };
+type Columns = { register: (column: Column) => void; empty: () => DetailEmpty | undefined };
 const ColumnsContext = createContext<Columns | undefined>();
 
 /**
@@ -211,6 +215,9 @@ export const Workspace = (props: WorkspaceProps) => {
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
   const sidebar = resolveChildren(() => props.sidebar);
   const head = resolveChildren(() => props.head);
+  // `detailEmpty` written as an object in JSX is a getter that makes its hero anew on every read: read it once here.
+  const detailEmpty = createMemo(() => props.detailEmpty);
+  const emptyHero = resolveChildren(() => detailEmpty()?.hero);
   const [columns, setColumns] = createSignal<readonly Column[]>([]);
   const register = (column: Column) => {
     setColumns((list) => [...list, column]);
@@ -218,10 +225,12 @@ export const Workspace = (props: WorkspaceProps) => {
   };
   // the detail the workspace declares, at its minimum; it counts open or closed
   const declared = () => (props.detail === undefined ? undefined : props.detail === true ? flexibleMin : props.detail);
+  // Read where it is drawn, never ahead: on the server the panes register their columns while they render, after this
+  // line, so a value computed here would not know an open detail yet.
   const empty = () =>
     declared() === undefined || columns().some((column) => column.detail)
       ? undefined
-      : (props.detailEmpty ?? { icon: "click", text: t().nothingSelected });
+      : { icon: detailEmpty()?.icon ?? "click", text: detailEmpty()?.text ?? t().nothingSelected, hero: emptyHero() };
   // The room the sidebar needs beside the columns: its default, every column's minimum and the lines between them, in
   // the workspace's content box (inside its edge), which the container query measures. A declared detail counts at
   // its declared minimum, open or closed, so the room stays the same when it opens.
@@ -368,6 +377,8 @@ export const Workspace = (props: WorkspaceProps) => {
       <ConfirmDialog host={() => element} />
       {/* the one toaster of the page: every `useToast` shows here, also one called above the Workspace */}
       <Toasts />
+      {/* the page's one live region: `announce` says its news here, also from another island */}
+      <Announcer />
     </div>
   );
 };
@@ -586,7 +597,7 @@ Pane.Split = (props: {
  */
 const SplitBody = (props: {
   entries: readonly SplitEntry[];
-  empty: { icon: string; text: string } | undefined;
+  empty: DetailEmpty | undefined;
   /** One main column and one context column after it (see `Pane side`). */
   contextual: boolean;
   children: JSX.Element;
@@ -689,6 +700,9 @@ const SplitBody = (props: {
           {(empty) => (
             <section class="k2-pane" data-k2-part="Pane" data-detail-empty="" aria-label={empty().text}>
               <div class="k2-scroll">
+                <Show when={empty().hero}>
+                  <div class="k2-detail-hero">{empty().hero}</div>
+                </Show>
                 <Empty icon={empty().icon} text={empty().text} />
               </div>
             </section>
@@ -718,7 +732,8 @@ export type BarProps = {
  * The start keeps a least: its name at `--k2-start-least` (16ch; its whole content, where narrower), or its open
  * tab. Where the end does not fit beside the whole start (six actions beside tabs on the phone), the end folds first:
  * its buttons that do not fit move into a menu "…" at its end, in their order, the last first. Where the end's last
- * plain `Menu` "…" is followed only by parts that never fold, they are that menu's first section; an end made outside
+ * `Menu` "…" (no symbol of its own, whatever its `label`) is followed only by parts that never fold (the primary, a
+ * closing ×, a menu with a symbol or words of its own), they are that menu's first section; an end made outside
  * the bar (an island of its own) gets the bar's own "…" instead. The primary action, a closing ×, a menu and a search
  * never fold. Only when nothing more can fold does the start shorten its words with "…", down to its least. The
  * browser measures the fold once the page is alive; before that the bar stands as it does when nothing folds (the end
