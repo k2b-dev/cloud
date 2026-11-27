@@ -52,6 +52,8 @@ describe("Spaces overview navigation", () => {
       expect(upcoming.getAttribute("aria-current")).toBe("page");
       expect(today.getAttribute("aria-current")).toBeNull();
     } finally {
+      // The focus above starts @k2b/ui's preload of its prompt form fields; it finishes while the window still exists.
+      await (await import("../../ui/dist/browser/feedback/prompt-form-loader.js")).loadPromptForm();
       dispose();
       dom.cleanup();
       if (previousCss) Object.defineProperty(globalThis, "CSS", previousCss);
