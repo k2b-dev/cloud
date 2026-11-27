@@ -178,7 +178,7 @@ describe("version history restore", () => {
   };
   const button = (label: string) =>
     Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((element) => element.textContent?.trim() === label);
-  const primary = () => button("Restore this version");
+  const primary = () => button("Restore");
   const select = async () => {
     await waitFor(() => dom.root.querySelector("article")?.textContent?.trim() === "Saved content");
   };

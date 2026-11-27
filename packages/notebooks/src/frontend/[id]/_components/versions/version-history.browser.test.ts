@@ -95,9 +95,9 @@ const viewports: { name: string; options: BrowserContextOptions }[] = [
   { name: "phone", options: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, colorScheme: "light" } },
 ];
 const labels = {
-  en: { primary: "Restore this version", copy: "Restore as copy", menu: "More restore options", locked: "Locked", back: "Saved versions" },
+  en: { primary: "Restore", copy: "Restore as copy", menu: "More restore options", locked: "Locked", back: "Saved versions" },
   de: {
-    primary: "Diese Version wiederherstellen",
+    primary: "Wiederherstellen",
     copy: "Als Kopie wiederherstellen",
     menu: "Weitere Optionen zum Wiederherstellen",
     locked: "Gesperrt",

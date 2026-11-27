@@ -488,6 +488,8 @@ const renderEditorPage = async (
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
   spies.push(spyOn(notebooksService.notebook, "graphView").mockResolvedValue({ nodes: [], edges: [] }));
+  // edits of the note over 30 days: quiet, then three on the last day
+  spies.push(spyOn(notebooksService.activity, "noteEditDays").mockResolvedValue({ perDay: [...Array(29).fill(0), 3], people: 2 }));
   const versionsList = spyOn(notebooksService.note.versions, "list");
   spies.push(
     options.versions
@@ -583,6 +585,13 @@ test("version history is a v2 workspace whose address names the open version", a
   );
   // nothing is open: no detail, and its place says how to open one
   expect(await select(list, '[data-k2-part="Pane"][data-detail]')).toEqual([]);
+  // the hero comes with the first picture: the note's edits in 30 days with their days, and the saved versions
+  const [hero] = await select(list, '[data-k2-part="Cells"]');
+  expect(hero).toBeDefined();
+  expect(list).toContain("Bearbeitungen, 30 Tage");
+  expect(list).toContain("3 Bearbeitungen in 30 Tagen, heute 3");
+  expect(list).toContain("von 2 Personen");
+  expect(await select(list, '[data-k2-part="Spark"] i')).toHaveLength(30);
   const opened = await renderEditorPage({ mode: "versions", versions, query: "&version=Version02" });
   expect(await select(opened, '[data-k2-part="Pane"][data-detail]')).toHaveLength(1);
   expect((await select(opened, '[data-k2-part="Row"][data-current]')).length).toBe(1);

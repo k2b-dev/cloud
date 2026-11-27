@@ -14,6 +14,7 @@ import * as links from "./links";
 import * as notePaths from "./note-paths";
 import * as noteQuery from "./note-query";
 import * as noteRefs from "./note-refs";
+import * as notebookFigures from "./notebook-figures";
 import * as notebooks from "./notebooks";
 import * as notes from "./notes";
 import * as pageList from "./page-list";
@@ -44,6 +45,7 @@ export const notebooksService = {
     list: activity.list,
     record: activity.record,
     noteAuthors: activity.noteAuthors,
+    noteEditDays: activity.noteEditDays,
   },
   notebook: {
     list: async (config: {
@@ -281,6 +283,11 @@ export const notebooksService = {
   /** The pages as one list a person filters: all, favorites, a tag, a search (replaces the tag page). */
   pages: {
     list: pageList.listPages,
+  },
+  /** The key figures in the head of a notebook's workspace screens: changes per day, notes, attachments. */
+  figures: {
+    notes: notebookFigures.notesFigures,
+    attachments: notebookFigures.attachmentFigures,
   },
   tag: {
     listForNotebook: tags.listForNotebook,

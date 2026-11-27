@@ -8,10 +8,14 @@ import {
   Bar,
   Button,
   Canvas,
+  Cells,
   Chip,
   Empty,
   Failed,
+  Inline,
+  List,
   Loading,
+  Mark,
   Menu,
   type MenuEntry,
   Pane,
@@ -27,6 +31,7 @@ import { diffLines } from "diff";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { renderNotebookBook } from "@/lib/book-renderer";
+import type { NoteEditDays } from "../../../../service/activity";
 import { buildNoteUrl, buildVersionsUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { readErrorMessage } from "../settings/utils";
@@ -66,6 +71,8 @@ export type VersionsWorkspaceProps = {
   initialTotal?: number;
   /** The version in the address (`?version=`), open from the first picture on. */
   initialVersionId: string | null;
+  /** The note's edits per day over 30 days, for the hero; absent when they could not be read. */
+  edits?: NoteEditDays;
 };
 
 const PER_PAGE = 20;
@@ -182,6 +189,8 @@ export default function VersionsWorkspace(props: VersionsWorkspaceProps) {
   });
 
   const formatDate = (iso: string) => dates.formatDateTime(iso, props.dateConfig);
+  const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
+  const editsTotal = () => (props.edits?.perDay ?? []).reduce((sum, count) => sum + count, 0);
   const selectedVersionMeta = () => versions().find((version) => version.id === selectedVersionId()) ?? null;
 
   // ── Comparison ──
@@ -315,6 +324,30 @@ export default function VersionsWorkspace(props: VersionsWorkspaceProps) {
         : undefined,
   });
 
+  /** One row per saved version: its date, how long ago, and who changed the note in it. */
+  const versionRows = () => (
+    <For each={versions()}>
+      {(version) => (
+        <Row
+          icon="history"
+          lines={[formatDate(version.createdAt), dates.formatDateTimeRelative(version.createdAt, props.dateConfig)]}
+          current={selectedVersionId() === version.id}
+          href={versionUrl(version.id)}
+          onNavigate={({ push }) => {
+            open(version.id);
+            push();
+          }}
+          // the list's one data column: who changed the note in this version
+          marks={
+            <Show when={(version.contributors?.length ?? 0) > 0}>
+              <Avatar.Stack people={version.contributors!.map(contributor)} />
+            </Show>
+          }
+        />
+      )}
+    </For>
+  );
+
   return (
     <>
       {/* k2b-ui gap: Nav tree – the phone menu keeps the v1 navigation with the whole tree and its note menus. */}
@@ -337,6 +370,27 @@ export default function VersionsWorkspace(props: VersionsWorkspaceProps) {
       >
         <Pane.Split>
           <Pane label={t().savedVersions} width={{ min: 260, default: 320 }} scrollKey="notebook-versions">
+            {/* k2b-ui gap: hero band (the one figure in type 30 and the app colour beside its real trend, exceptions
+                below) – lane DP. Until it lands, the figure and its 30 days stand in the nearest part, a cell with its
+                spark, beside the number of saved versions. */}
+            <Show when={props.edits}>
+              {(edits) => (
+                <Cells>
+                  <Cells.Cell
+                    icon="pencil"
+                    color="var(--k2-app)"
+                    label={t().editsThirtyDays}
+                    value={number(editsTotal())}
+                    meta={edits().people > 0 ? t().editsPeople({ count: edits().people }) : undefined}
+                    trend={{
+                      values: edits().perDay,
+                      label: t().editsTrend({ total: number(editsTotal()), today: number(edits().perDay.at(-1) ?? 0) }),
+                    }}
+                  />
+                  <Cells.Cell icon="history" label={t().savedVersions} value={number(pagination()?.total ?? initialTotal())} />
+                </Cells>
+              )}
+            </Show>
             <Show
               when={versions().length > 0}
               fallback={
@@ -352,30 +406,17 @@ export default function VersionsWorkspace(props: VersionsWorkspaceProps) {
                 </Show>
               }
             >
-              <Section title={t().savedVersions} count={pagination()?.total}>
-                <For each={versions()}>
-                  {(version) => (
-                    <Row
-                      icon="history"
-                      lines={[formatDate(version.createdAt), dates.formatDateTimeRelative(version.createdAt, props.dateConfig)]}
-                      current={selectedVersionId() === version.id}
-                      href={versionUrl(version.id)}
-                      onNavigate={({ push }) => {
-                        open(version.id);
-                        push();
-                      }}
-                      marks={
-                        <Show when={(version.contributors?.length ?? 0) > 0}>
-                          <For each={version.contributors!.slice(0, 3)}>{(entry) => <Avatar {...contributor(entry)} />}</For>
-                          <Show when={version.contributors!.length > 3}>
-                            <Text type="meta">+{version.contributors!.length - 3}</Text>
-                          </Show>
-                        </Show>
-                      }
-                    />
-                  )}
-                </For>
-              </Section>
+              {/* the hero above names and counts the versions once; without it the section head does */}
+              <Show
+                when={props.edits}
+                fallback={
+                  <Section title={t().savedVersions} count={pagination()?.total}>
+                    {versionRows()}
+                  </Section>
+                }
+              >
+                <List label={t().savedVersions}>{versionRows()}</List>
+              </Show>
               {/* An older page that failed keeps the loaded versions and says so after them, with the retry. */}
               <Show when={versionPages.error()}>
                 <Failed text={versionPages.error()!.message} onRetry={() => void versionPages.loadMore()} />
@@ -405,8 +446,13 @@ export default function VersionsWorkspace(props: VersionsWorkspaceProps) {
               }}
               head={
                 <Bar
+                  // k2b-ui gap: tinted object head (40 px sign, name 18, meta line) – lane DP; the version's mark and
+                  // date stand in the head bar until it lands.
                   start={
-                    <Text weight="strong">{selectedVersionMeta() ? formatDate(selectedVersionMeta()!.createdAt) : t().versionPreview}</Text>
+                    <Inline>
+                      <Mark icon="history" color="var(--k2-app)" />
+                      <Text type="lead">{selectedVersionMeta() ? formatDate(selectedVersionMeta()!.createdAt) : t().versionPreview}</Text>
+                    </Inline>
                   }
                   end={
                     <Show

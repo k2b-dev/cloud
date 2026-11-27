@@ -19,13 +19,16 @@ import {
 } from "@k2b/ui";
 import {
   Avatar,
+  Band,
   Bar,
   Button,
   Chip,
+  type Fact,
   Facts,
   Failed,
   Inline,
   Loading,
+  Mark,
   Menu,
   type MenuEntry,
   Notice,
@@ -172,7 +175,8 @@ const NO_AUTHORS: NoteAuthors = { createdBy: null, lastEditedBy: null };
 const isImage = (attachment: Attachment) => attachmentPreviewKind(attachment) === "image";
 /** Words read per minute for the reading time in the properties. */
 const WORDS_PER_MINUTE = 200;
-const countWords = (markdown: string | null) => (markdown ?? "").trim().split(/\s+/).filter(Boolean).length;
+/** Words of the text: Markdown marks such as "#", "-" or "|" between spaces are no words. */
+const countWords = (markdown: string | null) => (markdown ?? "").split(/\s+/).filter((token) => /[\p{L}\p{N}]/u.test(token)).length;
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
 const REFERENCE_ICONS: Partial<Record<NamedBlockSummary["type"], string>> = {
   table: "ti-table",
@@ -224,6 +228,8 @@ export default function NoteDetails(props: NoteDetailsProps) {
   const offline = () => props.mode === "edit" && !sync().connected;
   const [reconnecting, setReconnecting] = createSignal(false);
   const [activityExpanded, setActivityExpanded] = createSignal(false);
+  // The comment section reports its count; until it does, the server's first page has it.
+  const [commentTotal, setCommentTotal] = createSignal(props.initialCommentsPage?.total ?? 0);
 
   /** What the activity read last asked for, so Retry repeats a failed refresh or a failed older page. */
   let activityRead: "fresh" | "older" = "fresh";
@@ -630,7 +636,6 @@ export default function NoteDetails(props: NoteDetailsProps) {
   });
   const outlineBase = () => Math.min(...outline().map((item) => item.level));
 
-  const exact = (value: string) => dates.formatDateTime(value, props.dateConfig);
   const relative = (value: string) => dates.formatDateTimeRelative(value, props.dateConfig);
   const isSelf = (actor: NotebookActivityActor | null | undefined) => actor?.kind === "user" && actor.id === props.currentUserId;
   const actorName = (actor: NotebookActivityActor | null | undefined) => (isSelf(actor) ? t().you : (actor?.displayName ?? ""));
@@ -778,18 +783,21 @@ export default function NoteDetails(props: NoteDetailsProps) {
 
   // ── Drawing (v2) ──────────────────────────────────────────────────────
 
-  /** "Jana Berger · bearbeitet vor 12 Min.", or the state that matters more: offline, locked, read only. */
+  /**
+   * The head's one meta line, the last change and who made it: "Bearbeitet vor 12 Min. von Jana Berger" (the time first,
+   * so a long name is what "…" cuts), after the state that matters more (locked, read only); offline it is the problem
+   * itself, in its colour.
+   */
   const metaText = (): string => {
-    const edited = `${t().editedAt} ${relative(editedAt())}`;
     if (offline()) {
       const savedAt = sync().lastSavedAt;
       return savedAt ? `${t().offline} · ${t().lastSaved} ${dates.formatTime(savedAt, props.dateConfig)}` : t().offline;
     }
-    const locked = lockedAt();
-    if (locked) return `${t().locked} · ${edited}`;
-    if (!props.canWrite) return `${t().readOnlyShort} · ${edited}`;
     const editor = lastEditor();
-    return editor ? `${actorName(editor)} · ${edited}` : `${t().editedAtStart} ${relative(editedAt())}`;
+    const edited = t().editedMeta({ time: relative(editedAt()), name: editor ? actorName(editor) : "", self: isSelf(editor) });
+    if (lockedAt()) return `${t().locked} · ${edited}`;
+    if (!props.canWrite) return `${t().readOnlyShort} · ${edited}`;
+    return edited;
   };
   const person = (actor: NotebookActivityActor | null | undefined): Person => ({
     name: actor?.kind === "system" || !actor ? t().automatic : actor.displayName,
@@ -867,18 +875,43 @@ export default function NoteDetails(props: NoteDetailsProps) {
   const presenceLine = (entry: DetailPresencePerson) =>
     [entry.activity === "writing" ? t().presenceWriting : t().presenceReading, entry.place, entry.trailing].filter(Boolean).join(" · ");
   const accessPerson = (entry: DetailAccessEntry): Person => ({ name: entry.name, image: entry.src ?? undefined });
+  /** The three key facts of the open note, under its meta line: who made it and when, its length, its comments. */
+  // One list for the page's life whose labels and values follow the note: typing, saving and presence never draw its
+  // rows anew.
+  const keyFacts: Fact[] = [
+    {
+      get label() {
+        return t().created;
+      },
+      // plain words, so a long name wraps and the date after it is never cut
+      get value() {
+        const creator = authors().createdBy;
+        const date = dates.formatDate(createdAt(), props.dateConfig);
+        return creator ? `${actorName(creator)} · ${date}` : date;
+      },
+    },
+    {
+      get label() {
+        return t().extent;
+      },
+      get value() {
+        return `${t().words({ count: words() })} · ${t().readingMinutes({ count: Math.max(1, Math.round(words() / WORDS_PER_MINUTE)) })}`;
+      },
+    },
+    {
+      get label() {
+        return t().comments;
+      },
+      get value() {
+        return commentTotal() > 0 ? new Intl.NumberFormat(locale()).format(commentTotal()) : t().noneYet;
+      },
+    },
+  ];
+  /** What the head does not say: the note's size with its attachments (its times are in the head, once). */
   const facts = () => {
-    const creator = authors().createdBy;
-    const editor = lastEditor();
     const textBytes = new TextEncoder().encode(contentMd() ?? "").length;
     const attachmentBytes = visibleAttachments().reduce((sum, attachment) => sum + attachment.sizeBytes, 0);
     return [
-      { label: t().created, value: `${creator ? `${actorName(creator)} · ` : ""}${relative(createdAt())}`, hint: exact(createdAt()) },
-      { label: t().edited, value: `${editor ? `${actorName(editor)} · ` : ""}${relative(editedAt())}`, hint: exact(editedAt()) },
-      {
-        label: t().extent,
-        value: `${t().words({ count: words() })} · ${t().readingMinutes({ count: Math.max(1, Math.round(words() / WORDS_PER_MINUTE)) })}`,
-      },
       {
         label: t().size,
         value: t().sizeWithAttachments({
@@ -917,15 +950,24 @@ export default function NoteDetails(props: NoteDetailsProps) {
         detail
         label={t().noteDetails}
         width={{ min: 300, default: 360 }}
+        // the head below names the note, so the way back says only where it leads, never the same name twice
         back={{
-          label: noteTitle() || t().untitled,
+          label: t().note,
           href: buildNoteUrl(props.notebookId, noteId(), props.presentationMode),
           onNavigate: () => closePanel(),
         }}
         scrollKey="notebook-detail"
+        // k2b-ui gap: ObjectHead (DP) – the open note's tinted head (app tint ground, 40 px sign, name 18, meta line and
+        // key facts in one block). Until it lands, the note's mark and name stand in the head bar, and its meta line, three key
+        // facts and its one action in the first band.
         head={
           <Bar
-            start={<Text weight="strong">{noteTitle() || t().untitled}</Text>}
+            start={
+              <Inline>
+                <Mark icon="file-text" color="var(--k2-app)" />
+                <Text type="lead">{noteTitle() || t().untitled}</Text>
+              </Inline>
+            }
             end={
               <>
                 <Menu label={t().moreActions} items={moreMenu()} />
@@ -934,11 +976,18 @@ export default function NoteDetails(props: NoteDetailsProps) {
             }
           />
         }
-        // Offline the state line offers to reconnect; only a connection that will come back promises to resend, so an
-        // ended session leaves this to the editor's own bar. Nothing below moves when the connection comes and goes.
-        status={
+      >
+        {/* The rest of the note's head (see the gap above); the band takes the tinted ground once DP has it. */}
+        <Band label={t().noteKeyFacts}>
+          {/* Offline the meta line is the problem and offers to reconnect; only a connection that will come back
+              promises to resend, so an ended session leaves this to the editor's own bar. Nothing below moves when the
+              connection comes and goes. */}
           <Bar
-            start={<Text type="meta">{metaText()}</Text>}
+            start={
+              <Text type="meta" tone={offline() ? "bad" : undefined}>
+                {metaText()}
+              </Text>
+            }
             end={
               <Show when={offline() && !sync().ended}>
                 <Button
@@ -954,24 +1003,25 @@ export default function NoteDetails(props: NoteDetailsProps) {
               </Show>
             }
           />
-        }
-      >
-        {/* Only a connection that will come back promises to resend; an ended session shows the editor's own bar. */}
-        <Show when={canEditWithAi()}>
-          <Bar
-            start={
-              <Button
-                icon="sparkles"
-                busy={editWithAi.loading()}
-                disabled={offline()}
-                title={offline() ? t().needsConnection : undefined}
-                onClick={() => void editWithAi.mutate()}
-              >
-                {t().editWithAi}
-              </Button>
-            }
-          />
-        </Show>
+          <Facts items={keyFacts} />
+          {/* The note's one action closes its head block; in the study it stands in the head row, which a 360 px pane
+              cannot give it without cutting the note's name. */}
+          <Show when={canEditWithAi()}>
+            <Bar
+              start={
+                <Button
+                  icon="sparkles"
+                  busy={editWithAi.loading()}
+                  disabled={offline()}
+                  title={offline() ? t().needsConnection : undefined}
+                  onClick={() => void editWithAi.mutate()}
+                >
+                  {t().editWithAi}
+                </Button>
+              }
+            />
+          </Show>
+        </Band>
 
         <Section
           icon="users"
@@ -1018,11 +1068,15 @@ export default function NoteDetails(props: NoteDetailsProps) {
           initialCommentsPage={props.initialCommentsPage}
           dateConfig={props.dateConfig}
           offline={offline()}
+          onTotal={setCommentTotal}
         />
 
         <Show when={tasks().total > 0}>
           <Section icon="list-check" title={t().tasks}>
-            <Progress value={tasks().done} of={tasks().total} label={t().tasksDone({ done: tasks().done, total: tasks().total })} />
+            {/* in a section the bar is inline: Inline gives it the text edge of the rows around it */}
+            <Inline>
+              <Progress value={tasks().done} of={tasks().total} label={t().tasksDone({ done: tasks().done, total: tasks().total })} />
+            </Inline>
           </Section>
         </Show>
 
