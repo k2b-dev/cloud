@@ -6927,14 +6927,12 @@ const specialistCommands = {
         );
         if (response.status === 409) {
           // Every refused update keeps the submitted content as a recovery copy and names the current revision.
-          const refused = z
-            .object({ message: z.string(), revision: z.number().int() })
-            .safeParse(
-              await response
-                .clone()
-                .json()
-                .catch(() => null),
-            );
+          const refused = z.object({ message: z.string(), revision: z.number().int() }).safeParse(
+            await response
+              .clone()
+              .json()
+              .catch(() => null),
+          );
           if (refused.success)
             throw new Error(
               `409 ${refused.data.message} ${localizeCloudCliText(ctx.options.locale, {

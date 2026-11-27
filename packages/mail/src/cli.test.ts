@@ -5896,11 +5896,20 @@ test("an occupied reply box names the update at its current revision, and a refu
     if (path.endsWith("/sender-identities")) return api([{ id: IDENTITY_ID, isDefault: true, status: "verified" }]);
     if (path.endsWith("/drafts") && request.method === "POST")
       return api(
-        { code: "DRAFT_REPLY_BOX_OCCUPIED", message: `Reply draft ${DRAFT_ID} already exists.`, draftId: DRAFT_ID, revision: 3, intent: "reply" },
+        {
+          code: "DRAFT_REPLY_BOX_OCCUPIED",
+          message: `Reply draft ${DRAFT_ID} already exists.`,
+          draftId: DRAFT_ID,
+          revision: 3,
+          intent: "reply",
+        },
         { status: 409 },
       );
     if (path.endsWith(`/drafts/${DRAFT_ID}`) && request.method === "PUT")
-      return api({ code: "CONFLICT", message: "Draft changed; the submitted content was saved as a recovery copy", revision: 4 }, { status: 409 });
+      return api(
+        { code: "CONFLICT", message: "Draft changed; the submitted content was saved as a recovery copy", revision: 4 },
+        { status: 409 },
+      );
     return api({ message: "unexpected" }, { status: 500 });
   });
   servers.push(server);

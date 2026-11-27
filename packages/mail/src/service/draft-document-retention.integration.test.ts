@@ -931,9 +931,9 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
       await marker(other.draftId);
       const topic = mailDraftDocumentLog.topic();
       // The snapshot reconcile covers an idle draft up to the head without recording a new revision.
-      expect(await draftDocumentSnapshotStore.advance(target.draftId, { from: base.durable.cursor!, to: await topic.head(), latest: null })).toBe(
-        true,
-      );
+      expect(
+        await draftDocumentSnapshotStore.advance(target.draftId, { from: base.durable.cursor!, to: await topic.head(), latest: null }),
+      ).toBe(true);
       await retire(other);
       await drainDraftDocumentPruning();
       await pruneDraftDocumentLog();
@@ -949,8 +949,13 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
       );
       expect(updated.revision).toBe(shown.revision + 1);
       expect(updated.body).toBe("Written by the CLI");
-      expect(value(await getDraft(context, mailboxId, target.draftId))).toMatchObject({ revision: updated.revision, body: "Written by the CLI" });
-      const [copies] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM mail.draft_recovery_copies WHERE draft_id=${target.draftId}::uuid`;
+      expect(value(await getDraft(context, mailboxId, target.draftId))).toMatchObject({
+        revision: updated.revision,
+        body: "Written by the CLI",
+      });
+      const [copies] = await sql<
+        { count: number }[]
+      >`SELECT count(*)::int AS count FROM mail.draft_recovery_copies WHERE draft_id=${target.draftId}::uuid`;
       expect(copies?.count).toBe(0);
     } finally {
       await retire(target, other);

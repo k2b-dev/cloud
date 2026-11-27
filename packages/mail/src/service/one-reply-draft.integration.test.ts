@@ -366,6 +366,8 @@ suite("one reply draft per conversation", () => {
       expect(conflictBody).toMatchObject({
         code: "DRAFT_REPLY_BOX_OCCUPIED",
         draftId: first.id,
+        revision: first.revision,
+        intent: first.intent,
         message: expect.stringContaining(first.id),
       });
       for (const supplied of [{ body: "New text" }, { subject: "New subject" }, { to: [{ address: "new@example.test" }] }]) {
@@ -378,7 +380,19 @@ suite("one reply draft per conversation", () => {
         body: JSON.stringify({ intent: "reply_all", expectedRevision: first.revision }),
       });
       expect(switched.status).toBe(200);
-      expect(draftSchema.parse(await switched.json()).intent).toBe("reply_all");
+      const current = draftSchema.parse(await switched.json());
+      expect(current.intent).toBe("reply_all");
+      // A refused update names the current revision, so a client can reread and retry.
+      const refused = await api.request(`/mailboxes/${mailboxShortId}/drafts/${first.id}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          expectedRevision: current.revision + 50,
+          draft: { senderIdentityId: identityShortId, subject: "Unknown base", body: "Kept as a recovery copy", format: "plain" },
+        }),
+      });
+      expect(refused.status).toBe(409);
+      expect(await refused.json()).toMatchObject({ code: "CONFLICT", revision: current.revision });
     } finally {
       token.mockRestore();
     }

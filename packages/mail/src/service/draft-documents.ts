@@ -677,7 +677,10 @@ export const lockDraftDocumentInTransaction = async (
       } catch {
         return recovery("Draft revision edit could not be merged within its request budget");
       }
-      return acceptUpdate({ update, baseCursor: anchor.cursor, generation: input.generation, signal: requestSignal }, input.expectedRevision);
+      return acceptUpdate(
+        { update, baseCursor: anchor.cursor, generation: input.generation, signal: requestSignal },
+        input.expectedRevision,
+      );
     },
     async freeze(input) {
       const ready = await assertWritable(input.generation);
