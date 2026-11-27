@@ -4,19 +4,8 @@ import { Layout } from "@k2b/cloud/ssr";
 import { notebooksService } from "@/service";
 import { ssr } from "../config";
 import NotebooksStart from "./_components/overview/NotebooksStart.island";
-import { parseLastNotebookId } from "./[id]/_components/settings/NotebookSettingsStore";
 import { notebooksPageMessages } from "./messages";
-
-/** The notebook used last while this person still reaches it through a grant: that one notebook and its access. */
-const lastReached = async (userId: string, shortId: string | null) => {
-  const notebook = shortId ? await notebooksService.notebook.getByShortId({ shortId }) : null;
-  if (!notebook) return null;
-  return (await notebooksService.notebook.permission.get({ notebookId: notebook.id, userId })) === "none" ? null : notebook.shortId;
-};
-
-/** The first notebook this person reaches, by name: one row, not every notebook. */
-const firstReached = async (userId: string) =>
-  (await notebooksService.notebook.list({ userId, pagination: { page: 1, perPage: 1 } })).items[0]?.shortId ?? null;
+import { startTarget } from "./start-target";
 
 /** The templates a first start offers as cards, in this order: a diary, recipes, a reading list. */
 const START_ORDER = ["daily-notes", "recipe-collector", "reading-list"];
@@ -30,8 +19,7 @@ const rank = (id: string) => (START_ORDER.includes(id) ? START_ORDER.indexOf(id)
 export default ssr<AuthContext>(async (c) => {
   const user = expectUserBackedActor(c);
   const { t } = notebooksPageMessages.resolve([getLocale(c)]);
-  const target =
-    (await lastReached(user.id, parseLastNotebookId(c.req.raw.headers.get("Cookie") ?? undefined))) ?? (await firstReached(user.id));
+  const target = await startTarget(user.id, c.req.raw.headers.get("Cookie") ?? undefined);
   if (target) {
     // A command link ("New note" from another app) lands here; the notebook page takes it over. `recent` is the
     // rail's former link, still in bookmarks, and means what this redirect does anyway.
