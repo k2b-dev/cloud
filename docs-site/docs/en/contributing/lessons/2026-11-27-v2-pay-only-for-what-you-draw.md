@@ -1,0 +1,6 @@
+### Every Nav and every Menu paid for a tree and a calendar panel
+
+- **What happened:** Chat's first v2 chunk grew by 53 KB without a change in Chat, over its measured budget. A bisect over main found two causes. The nav tree (#4187) added 41 KB to every island with a `Nav`, and the menu's panel (#4157) added 7.5 KB to every island with a `Menu`. Neither drew a tree or a panel there.
+- **Root cause:** `components.tsx` imported the tree's view statically, and `menu.tsx` held the panel's entry with its popover behaviour. A feature behind an optional prop still sat in the module every caller loads, so the bundler could not drop it.
+- **Error class:** An optional part of a primitive whose code lives in the primitive's own module: everyone pays for what a few draw.
+- **Guard:** The tree comes with `navTree(…)` and the panel with `menuPanel(…)`, from modules of their own; `Nav` and `Menu` only know their types. `packages/ui/src/v2/v2-only.bundle.test.ts` builds an island with `Workspace`, `Nav` and `Menu`. It fails when `nav-tree.tsx` or `menu-panel.tsx` is in it, or when its own code grows beyond the measured 56,971 bytes plus a tenth. A second test shows that `navTree` and `menuPanel` bring them along.
