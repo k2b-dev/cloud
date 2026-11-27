@@ -14,9 +14,15 @@
  * The meter is a loopback proxy in front of the test database. It reads the
  * frontend protocol and records each executed statement (simple `Query` or
  * extended `Execute`, including `BEGIN` and `COMMIT`) as its first 120
- * characters of SQL text, never its parameters. It rebinds the platform's
- * `sql` handle through itself and back on `close()`; pools created earlier
- * keep their direct connection and are not counted.
+ * characters of SQL text, never its parameters. The first open meter rebinds
+ * the platform's `sql` handle through the proxy, and the last `close()` binds
+ * it to the database directly again; pools created while no meter is open keep
+ * their direct connection and are not counted.
+ *
+ * The proxy stays for the whole process, so any number of meters can open and
+ * close in one file, also overlapping ones (#4494). A pool that a module
+ * creates lazily while a meter is open keeps the proxy address after `close()`
+ * and still reaches the database; its statements count in later windows too.
  *
  * Rebinding closes the earlier pool: background work in flight at that moment
  * loses its connection between two statements. Stop such work around
@@ -27,13 +33,13 @@
  * including background work such as timers that fire in that window. That is
  * the real cost of the path; keep the window to the event under test.
  */
-import { connect, createServer, type Socket } from "node:net";
+import { connect, createServer } from "node:net";
 import { initializeTestPlatform } from "./test-infra";
 
 export type SqlMeter = {
   /** The statements this process executed while `run` was pending. */
   during(run: () => Promise<unknown>): Promise<string[]>;
-  /** Stops counting and binds the platform's `sql` handle to the database directly again. */
+  /** Stops counting; the last open meter binds the platform's `sql` handle to the database directly again. */
   close(): Promise<void>;
 };
 
@@ -42,17 +48,15 @@ const sslRequest = 80877103;
 
 const statementText = (sql: string) => sql.replace(/\s+/g, " ").trim().slice(0, 120);
 
-export const meterSql = async (): Promise<SqlMeter> => {
-  const direct = process.env.DATABASE_URL;
-  if (!direct) throw new Error("meterSql() needs the test database (testFor('database'))");
-  const target = new URL(direct);
-  let recording: string[] | null = null;
-  const record = (sql: string) => recording?.push(statementText(sql));
-  const sockets = new Set<Socket>();
+// The open `during()` windows of every meter; each records every statement.
+const windows = new Set<string[]>();
+const record = (sql: string) => {
+  for (const statements of windows) statements.push(statementText(sql));
+};
 
+const listen = (host: string, port: number): Promise<number> => {
   const proxy = createServer((client) => {
-    const upstream = connect(Number(target.port || 5432), target.hostname);
-    sockets.add(client).add(upstream);
+    const upstream = connect(port, host);
     client.setNoDelay(true);
     upstream.setNoDelay(true);
     let pending = Buffer.alloc(0);
@@ -89,42 +93,76 @@ export const meterSql = async (): Promise<SqlMeter> => {
     });
     client.on("error", () => upstream.destroy());
     upstream.on("error", () => client.destroy());
-    client.on("close", () => {
-      sockets.delete(client);
-      upstream.destroy();
-    });
-    upstream.on("close", () => {
-      sockets.delete(upstream);
-      client.destroy();
-    });
+    client.on("close", () => upstream.destroy());
+    upstream.on("close", () => client.destroy());
     client.pipe(upstream);
     upstream.pipe(client);
   });
-  await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
-  const address = proxy.address();
-  if (!address || typeof address === "string") throw new Error("meterSql() could not listen on loopback");
-  const metered = new URL(direct);
-  metered.hostname = "127.0.0.1";
-  metered.port = String(address.port);
-  process.env.DATABASE_URL = metered.href;
-  await initializeTestPlatform();
+  // The proxy must not keep the test process alive after its last test.
+  proxy.unref();
+  return new Promise((resolve, reject) => {
+    proxy.once("error", reject);
+    proxy.listen(0, "127.0.0.1", () => {
+      const address = proxy.address();
+      if (!address || typeof address === "string") reject(new Error("meterSql() could not listen on loopback"));
+      else resolve(address.port);
+    });
+  });
+};
 
+// One proxy per database server for the process, never closed: a pool may hold its address (#4494).
+const proxies = new Map<string, Promise<number>>();
+let open = 0;
+// The direct URL while any meter is open; a meter opened meanwhile must not take the proxy URL for it.
+let direct = "";
+
+export const meterSql = async (): Promise<SqlMeter> => {
+  const current = process.env.DATABASE_URL;
+  if (!current) throw new Error("meterSql() needs the test database (testFor('database'))");
+  const base = open > 0 ? direct : current;
+  const target = new URL(base);
+  const server = `${target.hostname}:${target.port || 5432}`;
+  let port = proxies.get(server);
+  if (!port) proxies.set(server, (port = listen(target.hostname, Number(target.port || 5432))));
+  const metered = new URL(base);
+  metered.hostname = "127.0.0.1";
+  metered.port = String(await port);
+  if (open === 0) direct = current;
+  open += 1;
+  if (process.env.DATABASE_URL !== metered.href) {
+    process.env.DATABASE_URL = metered.href;
+    try {
+      await initializeTestPlatform();
+    } catch (error) {
+      open -= 1;
+      process.env.DATABASE_URL = current;
+      throw error;
+    }
+  }
+
+  let recording: string[] | null = null;
+  let closed = false;
   return {
     async during(run) {
       if (recording) throw new Error("meterSql() measures one window at a time");
-      recording = [];
+      const statements: string[] = [];
+      recording = statements;
+      windows.add(statements);
       try {
         await run();
-        return recording;
+        return statements;
       } finally {
+        windows.delete(statements);
         recording = null;
       }
     },
     async close() {
+      if (closed) return;
+      closed = true;
+      open -= 1;
+      if (open > 0) return;
       process.env.DATABASE_URL = direct;
       await initializeTestPlatform();
-      for (const socket of sockets) socket.destroy();
-      await new Promise<void>((resolve) => proxy.close(() => resolve()));
     },
   };
 };
