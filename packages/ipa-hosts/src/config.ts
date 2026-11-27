@@ -1,6 +1,9 @@
 import { appAccess, defineApp } from "@k2b/cloud";
 
-/** The colour of the host mirror: the shell around and its own figures carry it. */
+/**
+ * The colour of the host mirror: the shell around and its own figures carry it. The same colour as `appearance.accent` below, which stays a literal: the
+ * shell-gradient check reads it from the source.
+ */
 export const ACCENT = "#7e22ce";
 
 export const app = defineApp({
@@ -21,7 +24,7 @@ export const app = defineApp({
       },
     },
   },
-  appearance: { accent: ACCENT, background: { from: "#9333ea", to: "#7e22ce", angle: 135 } },
+  appearance: { accent: "#7e22ce", background: { from: "#9333ea", to: "#7e22ce", angle: 135 } },
   basePath: "/admin/ipa-hosts",
   baseUrl: "http://app-ipa-hosts:3000",
   adminHref: "/admin/ipa-hosts",
