@@ -604,7 +604,7 @@ describe("AccessDialog", () => {
         .click();
       await waitFor(() => !field(ui), "the handle field to close");
     };
-    const empty = "No service account yet. Code of a mailbox or a base gets access here like a person.";
+    const empty = "No service account yet.";
     const note =
       "Code runs as the service account of its object. Whoever manages “Einkauf 2027” gives it access here, like a person. Whoever edits the code acts with this right.";
 
@@ -705,9 +705,7 @@ describe("AccessDialog", () => {
       expect(accessDialogMessages.resolve(["de"]).t.serviceAccountNote({ name: "Der Einkauf" })).toBe(
         "Code läuft als Dienstkonto seines Objekts. Wer „Der Einkauf“ verwaltet, gibt ihm hier Zugriff wie einer Person. Wer den Code bearbeitet, handelt mit diesem Recht.",
       );
-      expect(accessDialogMessages.resolve(["de"]).t.serviceAccountsEmpty).toBe(
-        "Noch kein Dienstkonto. Code eines Postfachs oder einer Base bekommt hier Zugriff wie eine Person.",
-      );
+      expect(accessDialogMessages.resolve(["de"]).t.serviceAccountsEmpty).toBe("Noch kein Dienstkonto.");
       expect(accessDialogMessages.resolve(["de"]).t.serviceAccountHandlePlaceholder).toBe(
         "Kennung von der Code-Seite, etwa code-7k2q9m4xwt",
       );
