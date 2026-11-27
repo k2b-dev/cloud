@@ -4498,11 +4498,12 @@
   .k2-ui .k2-grip {
     display: none;
   }
-  /* A nav whose list is the phone's page (a `NavGroup` `list` with `phone: "page"`): while no detail is open, the
-     sidebar is the page after the workspace's head, its search over its list; the title, the other groups and the foot
-     are in the platform's menu, and the main action floats. An open detail is the page in its place. */
+  /* A nav whose list is the phone's page (`Nav` `list` with `phone: "page"`): while the main column holds no pane
+     (only the place of a detail that is not open), the sidebar is the page after the workspace's head, its search over
+     its list; the title, the groups and the foot are in the platform's menu, and the main action floats. Any pane in
+     the main column, an open detail or a page of its own, is the page in its place. */
   .k2-ui
-    .k2-ws:has(> .k2-ws-side > .k2-nav > .k2-nav-list[data-phone="page"]):not(:has(> .k2-ws-main .k2-pane[data-detail]))
+    .k2-ws:has(> .k2-ws-side > .k2-nav > .k2-nav-list[data-phone="page"]):not(:has(> .k2-ws-main .k2-pane:not([data-detail-empty])))
     > .k2-ws-side {
     display: flex;
     order: 1;
@@ -4511,7 +4512,7 @@
     min-width: 0;
   }
   .k2-ui
-    .k2-ws:has(> .k2-ws-side > .k2-nav > .k2-nav-list[data-phone="page"]):not(:has(> .k2-ws-main .k2-pane[data-detail]))
+    .k2-ws:has(> .k2-ws-side > .k2-nav > .k2-nav-list[data-phone="page"]):not(:has(> .k2-ws-main .k2-pane:not([data-detail-empty])))
     > .k2-ws-main {
     flex: none;
   }

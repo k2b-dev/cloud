@@ -81,13 +81,13 @@ levels; the open file is `current`, so its folder starts open).
 
 `Nav` with the app's name, `search` and `primary` ("Neuer Chat") under it,
 a plain group with the filters ("Ungelesen" with its count, "Für dich",
-"Kanäle entdecken"), a group with `list` (the conversations as a `List`
-of two-line `Row`s; the open one is `current`) and `phone: "page"`, and
+"Kanäle entdecken"), its `list` (the conversations as a `List` of
+two-line `Row`s; the open one is `current`) with `phone: "page"`, and
 "Archiv" at the foot; the open conversation is the `Pane detail` beside
 it, with its way back. Two columns: no list pane of its own, no head bar.
 
 - The list scrolls on its own between the filters and the foot; it is
-  made once, so a count that changes keeps its rows and its scroll.
+  made once, so a new count or a new group keeps its rows and its scroll.
 - On the phone the list with its search is the page and "Neuer Chat"
   floats (`Workspace` `primary`); a conversation that opens is the page in
   its place, and its way back returns to the list.

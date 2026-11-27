@@ -124,7 +124,7 @@ for (const width of [1440, 1024])
     });
   }, 30_000);
 
-test("a group array built again keeps the list, its rows and its scroll; the search writes back", async () => {
+test("groups built again, a new count and a group put before the others, keep the list, its rows and its scroll; the search writes back", async () => {
   await withPage(1440, async (page) => {
     const list = page.locator(".k2-ws-side .k2-nav-list");
     await list.evaluate((element) => {
@@ -132,14 +132,18 @@ test("a group array built again keeps the list, its rows and its scroll; the sea
       element.firstElementChild?.setAttribute("data-kept", "");
     });
     const made = await page.evaluate(() => window.__navListMade);
+    const kept = () => list.evaluate((element) => [element.scrollTop, element.firstElementChild?.hasAttribute("data-kept")]);
     await page.evaluate(() => window.__navListUnread?.());
     await settled(page);
     expect(await page.locator(".k2-ws-side .k2-ni", { hasText: "Ungelesen" }).innerText()).toContain("4");
     expect(await page.evaluate(() => window.__navListMade)).toBe(made!);
-    expect(await list.evaluate((element) => [element.scrollTop, element.firstElementChild?.hasAttribute("data-kept")])).toEqual([
-      300,
-      true,
-    ]);
+    expect(await kept()).toEqual([300, true]);
+    // a group before the others (a pinned place that comes live): the list is the same list, at the same place
+    await page.evaluate(() => window.__navListAddGroup?.());
+    await settled(page);
+    expect(await page.locator(".k2-ws-side .k2-nav-label", { hasText: "Angeheftet" }).count()).toBe(1);
+    expect(await page.evaluate(() => window.__navListMade)).toBe(made!);
+    expect(await kept()).toEqual([300, true]);
     await page.getByRole("searchbox", { name: "Chats durchsuchen" }).fill("Nora");
     expect(await page.evaluate(() => window.__navListSearch)).toBe("Nora");
   });
@@ -169,5 +173,50 @@ test("on the phone the list with its search is the page; an open detail is the p
     await page.evaluate(() => window.__navListClose?.());
     await settled(page);
     expect((await box(page, ".k2-ws-side .k2-nav-list")).visible).toBe(true);
+  });
+}, 30_000);
+
+test("on the phone a pane of its own (no detail) is the page in the list's place, and its way back returns to the list", async () => {
+  await withPage(390, async (page) => {
+    await page.evaluate(() => window.__navListPage?.());
+    await settled(page);
+    expect((await box(page, ".k2-ws-side")).visible).toBe(false);
+    const pane = page.locator(".k2-pane", { hasText: "Ankündigungen" });
+    expect(await pane.isVisible()).toBe(true);
+    const shown = await box(page, ".k2-pane:not([data-detail-empty])");
+    expect(shown.top).toBeLessThan(800);
+    const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+    expect(layout.problems).toEqual([]);
+    await page
+      .getByRole("link", { name: "Chats" })
+      .or(page.getByRole("button", { name: "Chats" }))
+      .first()
+      .click();
+    await settled(page);
+    expect((await box(page, ".k2-ws-side .k2-nav-list")).visible).toBe(true);
+  });
+}, 30_000);
+
+test("on the phone the way back from a chat returns to the list where it was, the focus on the chat that was open", async () => {
+  await withPage(390, async (page) => {
+    const list = page.locator(".k2-ws-side .k2-nav-list");
+    // the phone's page scrolls the list on its own, as in the sidebar
+    await list.evaluate((element) => {
+      element.scrollTop = 600;
+    });
+    const opener = page.locator(".k2-ws-side .k2-nav-list .k2-row").nth(14).locator("button, a").first();
+    await opener.scrollIntoViewIfNeeded();
+    const scrolled = await list.evaluate((element) => element.scrollTop);
+    await opener.click();
+    await settled(page);
+    expect(await page.locator(".k2-pane[data-detail]").isVisible()).toBe(true);
+    await page
+      .getByRole("button", { name: "Chats" })
+      .or(page.getByRole("link", { name: "Chats" }))
+      .first()
+      .click();
+    await settled(page);
+    expect(await list.evaluate((element) => element.scrollTop)).toBe(scrolled);
+    expect(await opener.evaluate((element) => element === document.activeElement)).toBe(true);
   });
 }, 30_000);
