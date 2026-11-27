@@ -160,8 +160,8 @@ export default function EntryDetail(props: EntryDetailProps) {
   return (
     <Pane
       detail
-      // the quiet sections of a record's info column, so its own sections and the link and version parts read alike
-      side
+      // no `side` here: a side pane is a context column, which gives way below its main column; the quiet sections of
+      // the record's info column belong to the detail's own side pane (who reaches it and what happened)
       label={head()?.name ?? props.path.split("/").at(-1) ?? props.path}
       back={{ label: props.folderName, href: props.closeHref, onNavigate: props.onNavigate }}
       head={
@@ -170,6 +170,7 @@ export default function EntryDetail(props: EntryDetailProps) {
           start={
             <Inline>
               {/* the name as the Files recipe's detail head: the record's title, with its star */}
+              {/* cut at its end for now: `Cut` cuts a name twice and scrambles right-to-left names (reported) */}
               <Text type="lead">{head()?.name ?? props.path.split("/").at(-1)}</Text>
               {/* the star and "…" keep their place while the entry reads again; they wait until it is there */}
               <Button
@@ -277,139 +278,147 @@ function Loaded(
     else props.actions.preview(props.item);
   };
   const folderHref = (path: string) => filesUrl(props.base.id, path);
+  // Under the one head, what the entry is (its preview, deeds and facts) beside who reaches it and what happened to it
+  // (B: a detail grows on a large screen, never its rows). The split stands in two columns from 720 px of the detail
+  // and in this reading order below that, on the phone too.
   return (
-    <>
-      <Show when={hasPreview()}>
-        {/* The preview leads the detail; a press on it opens it large. Its own viewers keep their behaviour. */}
-        <Band>
-          {/* a picture takes its 240 px; a text preview is as tall as its lines, so no gap stands under it */}
-          <Canvas label={t().expand} height={pictured() ? 240 : undefined}>
-            <Show
-              when={pictured()}
-              fallback={
-                <div style={{ padding: "16px var(--k2-edge)" }}>
-                  <FilePreview
-                    variant="plain"
-                    pdfFit="page"
-                    previewLines={5}
-                    onExpandPreview={() => props.actions.preview(props.item)}
-                    baseId={props.base.id}
-                    locationKey={props.base.locationKey}
-                    entry={props.item}
-                    onDownload={() => props.actions.startDownload([props.item])}
-                  />
-                </div>
-              }
-            >
-              <Show keyed when={JSON.stringify([props.base.id, props.base.locationKey, props.item.path, previewRevision(props.item)])}>
-                <button type="button" onClick={() => props.actions.preview(props.item)} aria-label={t().expand}>
-                  <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={props.item} large hero />
-                </button>
+    <Pane.Split>
+      <Pane label={t().v2DetailWhat}>
+        <Show when={hasPreview()}>
+          {/* The preview leads the detail; a press on it opens it large. Its own viewers keep their behaviour. */}
+          <Band>
+            {/* a picture takes its 240 px; a text preview is as tall as its lines, so no gap stands under it */}
+            <Canvas label={t().expand} height={pictured() ? 240 : undefined}>
+              <Show
+                when={pictured()}
+                fallback={
+                  <div style={{ padding: "16px var(--k2-edge)" }}>
+                    <FilePreview
+                      variant="plain"
+                      pdfFit="page"
+                      previewLines={5}
+                      onExpandPreview={() => props.actions.preview(props.item)}
+                      baseId={props.base.id}
+                      locationKey={props.base.locationKey}
+                      entry={props.item}
+                      onDownload={() => props.actions.startDownload([props.item])}
+                    />
+                  </div>
+                }
+              >
+                <Show keyed when={JSON.stringify([props.base.id, props.base.locationKey, props.item.path, previewRevision(props.item)])}>
+                  <button type="button" class="filesv2-hero-open" onClick={() => props.actions.preview(props.item)} aria-label={t().expand}>
+                    <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={props.item} large hero />
+                  </button>
+                </Show>
               </Show>
-            </Show>
-          </Canvas>
-        </Band>
-      </Show>
-      {/* the one action row of the entry, under its preview; the rarer deeds wait behind "…" in the head. As an Inline
+            </Canvas>
+          </Band>
+        </Show>
+        {/* the one action row of the entry, under its preview; the rarer deeds wait behind "…" in the head. As an Inline
           the row wraps in a narrow detail instead of running into what the file is */}
-      <Bar
-        start={
-          <Inline>
-            <Show
-              when={props.item.directory}
-              fallback={
-                <Button icon={editable() ? "pencil" : "eye"} disabled={busy()} onClick={open}>
-                  {editable() ? (readOnly() ? t().openReadOnly : t().edit) : t().preview}
+        <Bar
+          start={
+            <Inline>
+              <Show
+                when={props.item.directory}
+                fallback={
+                  <Button icon={editable() ? "pencil" : "eye"} disabled={busy()} onClick={open}>
+                    {editable() ? (readOnly() ? t().openReadOnly : t().edit) : t().preview}
+                  </Button>
+                }
+              >
+                <Button icon="folder-open" href={folderHref(props.item.path)} onNavigate={props.onNavigate}>
+                  {t().open}
                 </Button>
-              }
-            >
-              <Button icon="folder-open" href={folderHref(props.item.path)} onNavigate={props.onNavigate}>
-                {t().open}
+              </Show>
+              <Button icon="download" disabled={busy()} onClick={() => props.actions.startDownload([props.item])}>
+                {f().download}
               </Button>
+              <Show when={props.item.actions?.share !== false}>
+                <Button icon="share" disabled={busy()} onClick={() => props.onShare([props.item.path])}>
+                  {t().share}
+                </Button>
+              </Show>
+            </Inline>
+          }
+          end={
+            // a file only read says so at the end of its deeds; what the file is stands among its facts, so the deeds
+            // keep one line (B)
+            <Show when={readOnly()}>
+              <Chip icon="lock">{t().readOnly}</Chip>
             </Show>
-            <Button icon="download" disabled={busy()} onClick={() => props.actions.startDownload([props.item])}>
-              {f().download}
-            </Button>
-            <Show when={props.item.actions?.share !== false}>
-              <Button icon="share" disabled={busy()} onClick={() => props.onShare([props.item.path])}>
-                {t().share}
-              </Button>
-            </Show>
-          </Inline>
-        }
-        end={
-          // a file only read says so at the end of its deeds; what the file is stands among its facts, so the deeds
-          // keep one line (B)
-          <Show when={readOnly()}>
-            <Chip icon="lock">{t().readOnly}</Chip>
-          </Show>
-        }
-      />
-      {/* the key facts as pairs: who changed it last and when, what it is, and where it lies. The tinted object head
-          (name 18, one meta line, three key facts) waits for the shared part; these move into it then. */}
-      <Facts
-        items={[
-          { label: f().modified, value: changedBy() ? `${changedBy()} · ${modified()}` : modified() },
-          ...(props.item.directory
-            ? []
-            : [
-                {
-                  label: f().size,
-                  value: `${fileKindLabel({ name: props.item.name }, locale())} · ${formatFileViewSize(props.item.size, locale())}`,
-                },
-              ]),
-          {
-            label: t().location,
-            value: [baseLabel(props.base, t(), locale()), ...props.item.path.split("/").slice(0, -1)].join(" › "),
-          },
-        ]}
-      />
-      <Show when={props.item.directory}>
-        <FolderContents
-          base={props.base}
-          folder={props.item}
-          actions={props.actions}
-          onNavigate={props.onNavigate}
-          env={props.history?.env}
+          }
         />
-      </Show>
-      <Show when={props.history}>
-        {(history) => (
-          <EntryLinksSection links={links} env={history().env} base={props.base} writable={!readOnly()} onNavigate={props.onNavigate} />
-        )}
-      </Show>
-      <Show when={!props.item.directory}>
-        <EntryVersions
+        {/* the key facts as pairs: who changed it last and when, what it is, and where it lies. The tinted object head
+          (name 18, one meta line, three key facts) waits for the shared part; these move into it then. */}
+        <Facts
+          items={[
+            { label: f().modified, value: changedBy() ? `${changedBy()} · ${modified()}` : modified() },
+            ...(props.item.directory
+              ? []
+              : [
+                  {
+                    label: f().size,
+                    value: `${fileKindLabel({ name: props.item.name }, locale())} · ${formatFileViewSize(props.item.size, locale())}`,
+                  },
+                ]),
+            {
+              label: t().location,
+              value: [baseLabel(props.base, t(), locale()), ...props.item.path.split("/").slice(0, -1)].join(" › "),
+            },
+          ]}
+        />
+        <Show when={props.item.directory}>
+          <FolderContents
+            base={props.base}
+            folder={props.item}
+            actions={props.actions}
+            onNavigate={props.onNavigate}
+            env={props.history?.env}
+          />
+        </Show>
+      </Pane>
+      {/* no `width` yet: a nested split's grip draws off its line (reported); without one the side pane is 400 px */}
+      <Pane side label={t().v2DetailWho}>
+        <Show when={props.history}>
+          {(history) => (
+            <EntryLinksSection links={links} env={history().env} base={props.base} writable={!readOnly()} onNavigate={props.onNavigate} />
+          )}
+        </Show>
+        <Show when={!props.item.directory}>
+          <EntryVersions
+            base={props.base}
+            entry={props.item}
+            busy={busy()}
+            onChanged={(path) => void props.onChanged(path)}
+            onOpen={(item) => (item.directory ? undefined : props.actions.preview(item))}
+            locale={locale()}
+            env={props.history?.env}
+            versions={versions}
+            currentAuthor={changedBy()}
+          />
+        </Show>
+        {/* the item's history, its changes and the links' use as one list */}
+        <EntryHistory
           base={props.base}
           entry={props.item}
+          resourceId={props.result.resourceId}
           busy={busy()}
           onChanged={(path) => void props.onChanged(path)}
           onOpen={(item) => (item.directory ? undefined : props.actions.preview(item))}
           locale={locale()}
-          env={props.history?.env}
+          history={props.history}
           versions={versions}
-          currentAuthor={changedBy()}
+          currentAuthor={currentAuthor()}
+          links={links}
+          // the versions' list in this detail, found by its name
+          onShowVersions={() =>
+            document.querySelector(`[data-k2-part="List"][aria-label="${CSS.escape(t().versions)}"]`)?.scrollIntoView({ block: "nearest" })
+          }
         />
-      </Show>
-      {/* the item's history, its changes and the links' use as one list */}
-      <EntryHistory
-        base={props.base}
-        entry={props.item}
-        resourceId={props.result.resourceId}
-        busy={busy()}
-        onChanged={(path) => void props.onChanged(path)}
-        onOpen={(item) => (item.directory ? undefined : props.actions.preview(item))}
-        locale={locale()}
-        history={props.history}
-        versions={versions}
-        currentAuthor={currentAuthor()}
-        links={links}
-        // the versions' list in this detail, found by its name
-        onShowVersions={() =>
-          document.querySelector(`[data-k2-part="List"][aria-label="${CSS.escape(t().versions)}"]`)?.scrollIntoView({ block: "nearest" })
-        }
-      />
-    </>
+      </Pane>
+    </Pane.Split>
   );
 }
 

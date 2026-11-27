@@ -1,11 +1,11 @@
 import { query } from "@k2b/stdlib/solid";
 import { toast, useLocale } from "@k2b/ui";
-import { Button, Failed, Icon, Inline, type OnNavigate, Pane, StatusRow, Table, Text } from "@k2b/ui/v2";
+import { Bar, Button, Failed, type OnNavigate, Pane, Table, Text } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { MarkedEntry } from "../contracts";
 import { useBrowserMessages } from "./browser-messages";
-import { entryIcon } from "./entry-icon";
+import { entryMark } from "./entry-mark";
 import { favoritePlace } from "./favorite-place";
 import { apiFailure } from "./file-preview";
 import { formatWhen } from "./history-actions";
@@ -62,7 +62,8 @@ export default function FavoritesPane(props: {
       label={b().favorites}
       scrollKey="filesv2-favorites"
       status={
-        <StatusRow lead={favorites.data() ? b().v2Favorites({ count: rows().length }) : b().favorites} loading={favorites.loading()} />
+        // the sidebar names the favorites (B: no title that repeats it): their count is meta in the toolbar
+        <Bar start={<Text type="meta">{favorites.data() ? b().v2Favorites({ count: rows().length }) : ""}</Text>} />
       }
     >
       <Show
@@ -76,17 +77,18 @@ export default function FavoritesPane(props: {
           loading={favorites.data() ? undefined : { rows: 6, lines: 2 }}
           empty={{ icon: "star", text: b().noFavoritesText }}
           open={(item) => ({ href: favoriteHref(item), onNavigate: props.onNavigate })}
-          phone={(item) => ({ lines: [item.entry.name, favoritePlace(item, props.bases)], time: when(item) })}
+          phone={(item) => ({
+            lines: [item.entry.name, favoritePlace(item, props.bases)],
+            mark: entryMark(item.entry),
+            time: when(item),
+          })}
           columns={[
             {
               title: b().v2Name,
               width: { min: 200, default: 300 },
-              cell: (item) => (
-                <Inline>
-                  <Icon name={entryIcon(item.entry)} />
-                  <Text>{item.entry.name}</Text>
-                </Inline>
-              ),
+              // the entry's mark as every file list shows it, and its name as words the table cuts with "…" (break-ui)
+              mark: (item) => entryMark(item.entry),
+              cell: (item) => item.entry.name,
             },
             { title: b().v2Place, width: { min: 160, default: 260 }, drop: true, cell: (item) => favoritePlace(item, props.bases) },
             { title: b().v2Changed, width: { min: 110, default: 150 }, drop: true, cell: when },

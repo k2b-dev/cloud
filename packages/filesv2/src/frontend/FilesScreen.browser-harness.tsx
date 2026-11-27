@@ -22,6 +22,8 @@ import {
   fixtureStorageFacts,
   fixtureStorages,
   fixtureTrash,
+  fixtureWorstFavorites,
+  fixtureWorstTrash,
 } from "./files-screen.fixture";
 import { browseOf, folderQueries, readFolderAddress, searchOf } from "./folder-query";
 import { parseActivityFilters, screenViewOf } from "./urls";
@@ -55,8 +57,9 @@ if (view !== "folder") {
   snapshot.detail = undefined;
   if (view === "overview" || view === "shares") snapshot.selectedId = null;
 }
-if (view === "trash") snapshot.trash = fixtureTrash;
-if (view === "favorites") snapshot.marks = fixtureFavorites;
+// the first data as the server sends it, of the same fixture case the test's API answers with
+if (view === "trash") snapshot.trash = fixture === "worst" ? fixtureWorstTrash : fixtureTrash;
+if (view === "favorites") snapshot.marks = fixture === "worst" ? fixtureWorstFavorites : fixtureFavorites;
 if (view === "shares") snapshot.shares = fixtureShares(fixture);
 if (view === "overview") {
   snapshot.bases = { ...snapshot.bases, items: fixtureStorages(fixture) };

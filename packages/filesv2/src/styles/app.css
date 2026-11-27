@@ -111,6 +111,19 @@
     transition: none;
   }
 }
+/* the detail's preview opens large on a press: the button is the whole picture, so a kind's sign without a drawn
+   preview stands in its middle, not at the edge (break-ui) */
+.filesv2-hero-open {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
 .filesv2-thumbnail--large {
   width: 100%;
   height: 100%;

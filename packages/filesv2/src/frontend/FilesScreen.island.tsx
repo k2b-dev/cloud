@@ -1022,8 +1022,8 @@ export default function FilesScreen(props: {
     if (screen() === "trash")
       return [
         ...(hasOverview() ? [{ label: b().allStorage, href: filesUrl() }] : []),
+        // the trash itself is the sidebar's active entry: the path says whose trash it is, not "Papierkorb" again (B)
         ...(base ? [{ label: label(base), href: folderHref("") }] : []),
-        { label: b().trashTitle },
       ];
     return [
       ...(hasOverview() ? [{ label: b().allStorage, href: filesUrl() }] : []),
@@ -1475,6 +1475,7 @@ export default function FilesScreen(props: {
                           sort: sortTarget("name"),
                           // a photo shows itself as its mark, once the preview service has drawn it
                           mark: (row) => ({ ...entryMark(row.entry), image: thumbnail(row.entry, "small") }),
+                          // cut at its end for now: `Cut` cuts a name twice and scrambles right-to-left names (reported)
                           cell: (row) => (searching() ? { lines: [row.entry.name, placeOf(row.entry)] } : row.entry.name),
                         },
                         {
