@@ -169,10 +169,10 @@
   },
   "scripts": {
     "test": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*'",
-    "test:part:ssr": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' src/ssr",
-    "test:part:ai": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' src/ai",
-    "test:part:code": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' src/code",
-    "test:part:access-browser-approvals": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' src/access src/browser src/approvals",
+    "test:part:ssr": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' ./src/ssr",
+    "test:part:ai": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' ./src/ai",
+    "test:part:code": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' ./src/code",
+    "test:part:access-browser-approvals": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' ./src/access ./src/browser ./src/approvals",
     "test:part:rest": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' --path-ignore-patterns 'src/ssr/**' --path-ignore-patterns 'src/ai/**' --path-ignore-patterns 'src/code/**' --path-ignore-patterns 'src/access/**' --path-ignore-patterns 'src/browser/**' --path-ignore-patterns 'src/approvals/**'",
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false"
   },
