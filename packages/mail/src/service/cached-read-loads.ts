@@ -13,8 +13,9 @@ export const cachedReadLoadLimit = (): number => Math.max(1, (sql.options.max ??
 /** How many run now. */
 export const cachedReadLoadsRunning = (): number => running.size;
 
-/** Settles when one of the running counts settles (at once when none runs). */
-export const cachedReadLoadSettled = (): Promise<unknown> => Promise.race([...running].map((task) => task.catch(() => undefined)));
+/** Settles when one of the running counts settles, or at once when none runs. */
+export const cachedReadLoadSettled = (): Promise<unknown> =>
+  running.size === 0 ? Promise.resolve() : Promise.race([...running].map((task) => task.catch(() => undefined)));
 
 /** Runs one count and keeps it in the shared budget while it runs. The caller checks the budget first. */
 export const trackCachedReadLoad = async <T>(load: () => Promise<T>): Promise<T> => {
