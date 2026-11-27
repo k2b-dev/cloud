@@ -34,8 +34,9 @@
   min-height: 0;
   flex: 1;
 }
-/* k2b-ui gap: a Canvas cannot fill its pane. The note's editing surface keeps its own scroller (reading position, the
-   comment margin and the floating pills measure it), so its one Canvas takes the pane's height. */
+/* k2b-ui gap: #4356 (Canvas height="fill"). Until it lands, a Canvas cannot fill its pane. The note's editing surface
+   keeps its own scroller (reading position, the comment margin and the floating pills measure it), so its one Canvas
+   takes the pane's height. When #4356 lands, the editor's Canvas takes height="fill" and this rule goes. */
 [data-k2-canvas]:has(> .notebook-document-surface) {
   display: flex;
   flex-direction: column;
@@ -139,21 +140,29 @@
   font-weight: 400;
 }
 
-/* Quick filters stay on one line and scroll sideways when the sidebar is narrow, so choosing a long tag never moves
-   the tree. The scrolling row would clip an outer focus ring, so the ring sits inside the chip. */
+/* Quick filters stay on one line, so choosing a long tag never moves the tree. Chips that do not fit shorten their
+   labels (the label's own fade; k2b-ui gap: a chip that ends its label with "…", G), each down to its symbol and
+   about three characters (`3ch` plus the chip's padding,
+   symbol and gap; the tag chip also keeps its chevron); none is cut at the sidebar's edge. */
 .notebook-sidebar-chips {
   display: flex;
   min-width: 0;
   flex: none;
   gap: 0.25rem;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.notebook-sidebar-chips::-webkit-scrollbar {
-  display: none;
 }
 .k2b-ui .notebook-sidebar-chip.k2b-button {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: calc(3ch + 2rem);
+}
+/* The tag chip takes the shortage first (its label is the one that grows), so choosing a long tag moves neither
+   Favoriten nor Zuletzt; they shorten only once the tag chip stands at its least. */
+.notebook-sidebar-chip-host {
+  flex: 0 1000 auto;
+  min-width: calc(3ch + 3rem);
+}
+.k2b-ui .notebook-sidebar-chip-host > .notebook-sidebar-chip.k2b-button {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 /* Quick filters read like FilterChip: the field edge at rest, drawn as the button's border at the edge width, so a
    state never changes the chip's size. Hover darkens the edge a step; focus turns it blue and adds the ring. */
@@ -173,6 +182,7 @@
   outline: none;
 }
 .notebook-sidebar-chip > span {
+  min-width: 0;
   max-width: 8rem;
   overflow: hidden;
 }

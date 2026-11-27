@@ -10,12 +10,15 @@ export const attachmentsPageMessages = i18n.define({
       uploadsTrend: ({ days, count, today }: { days: number; count: string; today: string }) =>
         `${count} uploaded in ${days} days, ${today} today`,
       storage: "Storage",
+      /** The head field's placeholder: short, so it is never cut; its name stays "Search attachments". */
+      search: "Search",
     },
     de: {
       attachmentsFigure: "Anhänge",
       addedIn: ({ count, days }) => `${count} neu in ${days} Tagen`,
       uploadsTrend: ({ days, count, today }) => `${count} hochgeladen in ${days} Tagen, heute ${today}`,
       storage: "Speicher",
+      search: "Suchen",
     },
   },
 });
