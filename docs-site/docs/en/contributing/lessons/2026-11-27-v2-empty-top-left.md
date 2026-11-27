@@ -1,0 +1,6 @@
+### A head with only actions left the top left of the page empty
+
+- **What happened:** Mail's administration (Postfächer, Sicherheit) gave its workspace a head with only a search and "…". The head stood as a row of its own above the hero and the tabs, empty at the left. The last section of the page also drew a line under itself, with nothing below it.
+- **Root cause:** A `Workspace head` always took its own row, whatever stood in it. The last part of a pane drew its line like any other part (only a pane in a split on the phone dropped it).
+- **Error class:** A layout slot that renders even when its main place is empty, and a separator drawn where there is nothing left to separate.
+- **Guard:** A `Bar` without `start` in a `Workspace head` hands its actions to the first pane. They end the pane's own head row, or stand beside its first part (its hero) when the pane has no head, the same on the server and in the browser. The last part of a pane draws no line, on every width. `measureV2Layout` reports a head row at the start of the main column whose start is empty while its end shows actions ("empty start"). `packages/ui/src/v2/empty-head.browser.test.ts` checks both rules at 390, 1440 and 1920 px. The `k2b-ui` skill names the rule "the top left is never empty".

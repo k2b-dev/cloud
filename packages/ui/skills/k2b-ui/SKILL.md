@@ -155,7 +155,9 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
    inputs and tiles are round; panes, bands, sections, groups are square.
 9. **Lines separate groups, not entries or the parts of one thing.** No
    line under a section head, none between its entries, none inside a
-   `Group`.
+   `Group`, and none under the last part of a pane.
+10. **The top left is never empty.** A `Workspace head` `Bar` with only
+    `end` joins the first pane's first row; never add a filler title.
 
 One primary action per page: the filled `Button variant="primary"` in the
 head, mirrored as `Workspace primary` so the phone shows it. A form page
@@ -251,6 +253,7 @@ Details, the outline format and use outside the monorepo:
 | `Table … wider than its column` | give the table `phone(row)`; give a `Pane detail` beside it a `width` |
 | `Group … stands in another Group` | flatten: one `Section`, several `Group`s |
 | a line under a section head | remove your own divider; `Section` draws the one line |
+| `head … has an empty start while its end shows actions` | leave out the start: a `Workspace head` `Bar` with only `end` joins the first pane's row |
 | icon button without a name (type error) | give `label="…"` |
 
 More, with before and after: [mistakes](references/mistakes.md).

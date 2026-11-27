@@ -1,10 +1,13 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
+import { sentVsLive } from "../../test/sent-vs-live";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-empty-head.client";
+import type { EmptyHeadCase } from "../../test/v2-empty-head.fixture";
 import { measureV2Layout } from "./testing/measure-v2-layout";
 
 // Never an empty top left (Valentin on Mail's administration, v9: "ganz oben links darf es nicht weiß sein"): a
@@ -19,22 +22,34 @@ const widths = [390, 1440, 1920] as const;
 
 let browser: Browser;
 let client: string;
+let server: (which: EmptyHeadCase) => { html: string; script: string };
+const temp = mkdtempSync(resolve(tmpdir(), "k2-v2-empty-head-"));
 beforeAll(async () => {
+  const serverFile = resolve(temp, "server.js");
+  await Bun.write(serverFile, await bundleV2Entry("v2-empty-head.server.tsx", "ssr"));
+  ({ render: server } = await import(serverFile));
   [client, browser] = await Promise.all([bundleV2Entry("v2-empty-head.client.tsx", "dom"), launchBrowser()]);
 }, launchHookMs);
 afterAll(async () => {
   await browser?.close();
+  rmSync(temp, { recursive: true, force: true });
 });
 
-const withPage = async (which: "hero" | "tabs" | "none", width: number, run: (page: Page) => Promise<void>) => {
+/** `hydrate`: the page starts from what the server sent and keeps a copy of it (`window.__k2Sent`). */
+const withPage = async (which: EmptyHeadCase, width: number, run: (page: Page) => Promise<void>, hydrate = false) => {
   const page = await browser.newPage({ viewport: { width, height: 800 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
+  const sent = hydrate ? server(which) : { html: "", script: "" };
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
+      `<!doctype html><html lang="de"><head><meta charset="utf-8">${sent.script}<style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root">${sent.html}</div></body></html>`,
     );
-    await page.addScriptTag({ content: `window.__k2Case = ${JSON.stringify(which)};` });
+    await page.addScriptTag({ content: `window.__k2Case = ${JSON.stringify(which)}; window.__k2Hydrate = ${hydrate};` });
+    if (hydrate)
+      await page.evaluate(() => {
+        window.__k2Sent = document.getElementById("root")!.cloneNode(true);
+      });
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
     await settled(page);
@@ -61,6 +76,10 @@ const shape = (page: Page) =>
     const search = [...document.querySelectorAll(".k2-input[data-search]")].find(shown) ?? null;
     const pane = document.querySelector(".k2-ws-main .k2-pane");
     const lead = document.querySelector(".k2-band > .k2-t-lead");
+    // the hero's first line (on the phone the lead may take two)
+    const words = document.createRange();
+    if (lead) words.selectNodeContents(lead);
+    const first = lead ? words.getClientRects()[0] : undefined;
     const nav = document.querySelector('.k2-pane > [data-slot="head"] > .k2-tabs-nav');
     const actions = search?.closest(".k2-bar") ?? null;
     // the hero's words beside the actions: none of them runs under them
@@ -73,7 +92,7 @@ const shape = (page: Page) =>
       // bars that stand in the workspace's own head
       headBars: [...document.querySelectorAll('.k2-ws-main > [data-slot="head"] > .k2-bar')].filter(shown).length,
       search: middle(search),
-      lead: middle(lead),
+      lead: first ? Math.round(first.top + first.height / 2) : null,
       tabs: middle(nav),
       paneTop: box(pane)?.top ?? null,
       bandTop: box(document.querySelector(".k2-band"))?.top ?? null,
@@ -81,6 +100,8 @@ const shape = (page: Page) =>
       nav: box(nav),
       list: box(pane),
       under,
+      // tabs that went into "Mehr"
+      hiddenTabs: document.querySelectorAll(".k2-tab[data-overflow]").length,
     };
   });
 
@@ -107,7 +128,7 @@ for (const width of widths) {
       expect(found.headBars).toBe(0);
       // the hero is the first row of the page, and the search stands on its first line
       expect(found.bandTop).toBe(found.paneTop);
-      expect(found.search).toBe(found.lead);
+      expect(Math.abs(found.search! - found.lead!)).toBeLessThanOrEqual(1);
       expect(found.under).toBe(0);
       expect(found.actions!.right).toBeLessThanOrEqual(found.list!.right);
     });
@@ -121,6 +142,8 @@ for (const width of widths) {
       // one row with one line under it: the actions' bar ends where the tabs end, inside the list's column
       expect(found.actions!.bottom).toBe(found.nav!.bottom);
       expect(found.actions!.right).toBeLessThanOrEqual(found.list!.right);
+      // beside a list of 640 px the actions give way first (the search narrows), so the three tabs keep their place
+      if (width > 390) expect(found.hiddenTabs).toBe(0);
     });
   });
 
@@ -131,6 +154,18 @@ for (const width of widths) {
       });
   });
 }
+
+for (const which of ["hero", "tabs", "none"] as const)
+  test(`hydration (${which}): the server already sends the head's actions in the first row, and the live page is what it sent`, async () => {
+    await withPage(
+      which,
+      1440,
+      async (page) => {
+        expect(await page.evaluate(sentVsLive)).toEqual([]);
+      },
+      true,
+    );
+  });
 
 test("a head with only an end that no pane takes stays, and the layout measure names its empty start", async () => {
   await withPage("none", 1440, async (page) => {

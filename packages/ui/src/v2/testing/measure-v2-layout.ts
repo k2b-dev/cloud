@@ -93,6 +93,8 @@ export type V2Layout = {
   grips: V2GripMeasure[];
   /** Pseudo-elements the helper could not measure without changing the page; each one is a problem, never a pass. */
   pseudo: string[];
+  /** Head rows at the start of the main column with an empty start while their end shows actions (an empty top left). */
+  head: string[];
   /** How many hairlines and tinted bands were measured, so a test can tell an empty page from a clean one. */
   measured: { lines: number; bands: number; texts: number };
   /** Every problem as one readable line; empty when the page keeps the rules. */
@@ -120,6 +122,7 @@ type DomResult = {
   grip: string[];
   grips: { grip: string; dom: number; rect: Rect; line: { x0: number; x1: number } | null }[];
   pseudo: string[];
+  head: string[];
   measured: V2Layout["measured"];
 };
 
@@ -134,6 +137,7 @@ function measureInPage(options: InPage): DomResult {
     grip: [],
     grips: [],
     pseudo: [],
+    head: [],
     measured: { lines: 0, bands: 0, texts: 0 },
   };
   const root = document.querySelector(options.root);
@@ -509,6 +513,28 @@ function measureInPage(options: InPage): DomResult {
       );
     }
 
+    // 4b2. The top left of a page is never empty: a head row at the start of the main column (the workspace's head, the
+    // head of its first pane) whose start is empty while its end shows something. A workspace head with only
+    // actions joins the first pane's row instead (`Bar`); the actions that joined a pane's head are no row of their own.
+    const head: string[] = [];
+    const shows = (element: Element | null | undefined) =>
+      !!element && [element, ...Array.from(element.querySelectorAll("*"))].some((part) => part.children.length === 0 && visible(part));
+    for (const bar of Array.from(root.querySelectorAll('[data-slot="head"] > .k2-bar')).filter(visible)) {
+      const slot = bar.parentElement;
+      if (slot?.hasAttribute("data-k2-lent") && (slot.parentElement?.matches(".k2-scroll") || bar !== slot.firstElementChild)) continue;
+      const main = bar.closest(".k2-ws-main");
+      if (main && Math.abs(bar.getBoundingClientRect().left - main.getBoundingClientRect().left) > 1) continue;
+      // the drawer's button stands at the start of the workspace's head: then the start is not empty
+      const before = Array.from(slot?.children ?? []).filter((part) => part !== bar && shows(part));
+      // a start that the phone hides on purpose (a path that gives way to the shell's bar) is not empty
+      const start = bar.querySelector(":scope > .k2-bar-start");
+      if (before.length || (start && (start.children.length > 0 || start.textContent?.trim()))) continue;
+      if (shows(bar.querySelector(":scope > .k2-bar-end")))
+        head.push(
+          `head ${name(bar)} has an empty start while its end shows actions: the top left stays empty; give it a start, or make the workspace head a Bar without start so its actions join the first row`,
+        );
+    }
+
     // 4c. Cut text: a control's label that leaves its box or is clipped, a one-line text that wraps.
     const cut: string[] = [];
     const labelOf = (element: Element) => (element.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
@@ -730,6 +756,7 @@ function measureInPage(options: InPage): DomResult {
       grip,
       grips,
       pseudo,
+      head,
       measured: { lines: horizontal.length + vertical.length, bands, texts },
     };
   } finally {
@@ -877,8 +904,9 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
       if (JSON.stringify(now) !== JSON.stringify(then))
         grip.push("the grips moved between the DOM measurement and the screenshots; measure a page that holds still");
     }
-    const problems = [...dom.pseudo, ...dom.edge, ...dom.double, ...dom.inside, ...dom.cut, ...dom.type, ...grip];
+    const problems = [...dom.pseudo, ...dom.edge, ...dom.double, ...dom.inside, ...dom.head, ...dom.cut, ...dom.type, ...grip];
     return {
+      head: dom.head,
       edge: dom.edge,
       double: dom.double,
       inside: dom.inside,
