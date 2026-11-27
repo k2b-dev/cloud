@@ -153,6 +153,8 @@ const foreignVariables = new Set([
   // the inks of an owner's colour, worked out for a hex colour and set inline on its pane (`ownerStyle`)
   "--k2-owner-ink",
   "--k2-owner-ink-dark",
+  "--k2-owner-line",
+  "--k2-owner-line-dark",
   "--k2-owner-soft",
   "--k2-owner-soft-dark",
   "--color-picker-color",

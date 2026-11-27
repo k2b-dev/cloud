@@ -2240,8 +2240,9 @@ for (const width of [1440, 1024, 800, 390])
     );
   });
 
-// the contrast of two computed colours, from rgb() or color(srgb …) as color-mix() leaves them
-const contrastIn = (page: Page, pairs: [string, string][]) =>
+// the contrast of two computed colours, from rgb() or color(srgb …) as color-mix() leaves them: a part's colour, its
+// background or its fill, against the surface or the background of the place it stands in
+const contrastIn = (page: Page, pairs: [string, "color" | "background" | "fill", string][]) =>
   page.evaluate((list) => {
     const channels = (color: string) => {
       const srgb = color.match(/color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)/);
@@ -2260,12 +2261,12 @@ const contrastIn = (page: Page, pairs: [string, string][]) =>
       });
       return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
     };
-    return list.map(([selector, against]) => {
+    return list.map(([selector, part, against]) => {
       const element = document.querySelector(selector)!;
       const style = getComputedStyle(element);
-      const fore = against === "background" ? style.backgroundColor : style.color;
+      const fore = part === "background" ? style.backgroundColor : part === "fill" ? style.fill : style.color;
       const back =
-        against === "surface" || against === "background"
+        against === "surface"
           ? getComputedStyle(document.body).getPropertyValue("--k2-surface").trim() || "rgb(255, 255, 255)"
           : getComputedStyle(element.closest(against)!).backgroundColor;
       const [light, dark] = [luminance(fore), luminance(back)].sort((x, y) => y - x);
@@ -2273,26 +2274,28 @@ const contrastIn = (page: Page, pairs: [string, string][]) =>
     });
   }, pairs);
 
-for (const color of ["eab308", "f59e0b", "06b6d4", "84cc16"])
+// the owner's colours at their hardest (the yellow of Notebooks, amber, cyan, lime) and at the extremes (near black, near
+// white, pure red): the figure and the open row's name keep 4.5:1, the strong mark of data (the bar of now) and the soft
+// marks (ticks that worked) keep 3:1, on the surface and on the owner's tint (the open row)
+for (const color of ["eab308", "f59e0b", "06b6d4", "84cc16", "0a0a0a", "fafafa", "ff0000"])
   for (const theme of ["light", "dark"] as const)
-    test(`identity B, owner #${color} ${theme}: the figure keeps 3:1, the open row's name 4.5:1 on its tint, the soft data 3:1`, async () => {
+    test(`identity B, owner #${color} ${theme}: figure and name 4.5:1, the bar of now and the soft data 3:1, also on the tint`, async () => {
       await withPage(
         `owner-${color}`,
         async (page) => {
           if (theme === "dark") await page.evaluate(() => document.body.setAttribute("data-theme", "dark"));
           await settled(page);
-          const [figure, name, ticks] = await contrastIn(page, [
-            ["[data-k2-type='figure']", "surface"],
-            [".k2-table tr[aria-current] > td:first-child", "td"],
-            [".k2-table tbody tr:not([aria-current]) .k2-spark > i:first-child", "background"],
+          const [figure, name, now, soft, softOnTint] = await contrastIn(page, [
+            ["[data-k2-type='figure']", "color", "surface"],
+            [".k2-table tr[aria-current] > td:first-child", "color", "td"],
+            [".k2-hero-draw > rect[data-tone='now']", "fill", "surface"],
+            [".k2-table tbody tr:not([aria-current]) .k2-ticks > i[data-s='ok']", "background", "surface"],
+            [".k2-table tbody tr[aria-current] .k2-ticks > i[data-s='ok']", "background", "td"],
           ]);
-          expect({ color, theme, figure: figure! >= 3, name: name! >= 4.5, ticks: ticks! >= 3 }).toEqual({
-            color,
-            theme,
-            figure: true,
-            name: true,
-            ticks: true,
-          });
+          const measured = { figure, name, now, soft, softOnTint };
+          const need = { figure: 4.5, name: 4.5, now: 3, soft: 3, softOnTint: 3 };
+          const short = Object.entries(measured).filter(([part, ratio]) => ratio! < need[part as keyof typeof need]);
+          expect({ color, theme, short }).toEqual({ color, theme, short: [] });
         },
         1440,
       );

@@ -772,14 +772,16 @@
 /* ── Identity B: the owner's colour, the hero, the head of an open thing, ticks ─────────────────────────────── */
 /* The colour of the app a thing belongs to (`Pane owner`) holds for its content: hero, drawings, the open row and the
    head of the open thing; the shell keeps the colour of the app one is in. A custom property mixes where it is
-   declared, so the tint is made again in the owner's scope. Its ink (4.5:1 against its tint) and its soft colour of
-   data (3:1 against the surface) are worked out for a hex colour and set on the scope (`ownerStyle`); another colour
-   falls back to the mix, and data to the ink, never to a soft colour nobody checked. */
+   declared, so the tint is made again in the owner's scope. Its ink (4.5:1), the strong mark of its data (3:1) and the
+   soft colour of its data (3:1), all against its tint, are worked out for a hex colour and set on the scope
+   (`ownerStyle`); another colour falls back to the mix, and data to the ink, never to a colour nobody checked; a colour
+   that is none (`var(--missing)`) leaves the tint of v2. */
 .k2-ui [data-k2-owner] {
   --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 80%, #000000);
   --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 7%, var(--k2-surface));
-  --k2-app-text: var(--k2-owner-ink, var(--k2-app-ink-mix));
-  --k2-app-tint: var(--k2-app-tint-mix);
+  --k2-app-text: var(--k2-owner-ink, var(--k2-app-ink-mix, var(--k2-blue-ink)));
+  --k2-app-tint: var(--k2-app-tint-mix, var(--k2-blue-tint));
+  --k2-app-line: var(--k2-owner-line, var(--k2-app-text));
   --k2-app-soft: var(--k2-owner-soft, var(--k2-app-text));
 }
 .dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) [data-k2-owner],
@@ -788,7 +790,8 @@
   --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 55%, #ffffff);
   /* 18 % in dark, as Y's rows (#4355): the quiet text of a tinted row keeps 4.5:1 */
   --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 18%, var(--k2-surface));
-  --k2-app-text: var(--k2-owner-ink-dark, var(--k2-app-ink-mix));
+  --k2-app-text: var(--k2-owner-ink-dark, var(--k2-app-ink-mix, var(--k2-blue-ink)));
+  --k2-app-line: var(--k2-owner-line-dark, var(--k2-app-text));
   --k2-app-soft: var(--k2-owner-soft-dark, var(--k2-app-text));
 }
 /* The hero: the figure and its history side by side, what falls out of line in one line under them, one line below. */
@@ -842,8 +845,9 @@
 .k2-ui .k2-hero-draw > rect {
   fill: var(--k2-app-soft, var(--k2-app-text));
 }
+/* the bar of now and the line of an area in the owner's strong mark (3:1 on the surface and on its tint) */
 .k2-ui .k2-hero-draw > rect[data-tone="now"] {
-  fill: var(--k2-app, var(--k2-blue));
+  fill: var(--k2-app-line, var(--k2-app-text));
 }
 .k2-ui .k2-hero-draw > rect[data-tone="none"] {
   fill: var(--k2-n200);
@@ -857,7 +861,7 @@
 }
 .k2-ui .k2-hero-line {
   fill: none;
-  stroke: var(--k2-app, var(--k2-blue));
+  stroke: var(--k2-app-line, var(--k2-app-text));
   stroke-width: 1.5;
   stroke-linejoin: round;
 }
@@ -1019,6 +1023,21 @@
 .k2-ui[data-theme="dark"] .k2-ticks {
   --k2-ticks-mix: 62%;
 }
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-ticks > i[data-s="ok"],
+.k2-ui.dark .k2-ticks > i[data-s="ok"],
+.k2-ui[data-theme="dark"] .k2-ticks > i[data-s="ok"] {
+  background: var(
+    --k2-c-soft-dark,
+    var(
+      --k2-app-soft,
+      color-mix(
+        in srgb,
+        var(--k2-c, var(--k2-app, var(--k2-blue))) calc(var(--k2-ticks-mix) + var(--k2-ticks-lift, 0%)),
+        var(--k2-surface)
+      )
+    )
+  );
+}
 /* across its place between the text edges, such as a detail, as dense as a data picture: 2 px apart, each slot grows
    with the room up to 12 px; a wider place does not spread it further, the strip keeps that width at the start */
 .k2-ui .k2-ticks[data-stretch] {
@@ -1038,11 +1057,19 @@
   height: 12px;
   border-radius: 1px;
 }
+/* ok in the checked soft colour: of its own colour (`color`), else of the owner it belongs to (3:1 on the surface and
+   on its tint, `ownerStyle`); the mix only where neither is known */
 .k2-ui .k2-ticks > i[data-s="ok"] {
-  background: color-mix(
-    in srgb,
-    var(--k2-c, var(--k2-app, var(--k2-blue))) calc(var(--k2-ticks-mix) + var(--k2-ticks-lift, 0%)),
-    var(--k2-surface)
+  background: var(
+    --k2-c-soft,
+    var(
+      --k2-app-soft,
+      color-mix(
+        in srgb,
+        var(--k2-c, var(--k2-app, var(--k2-blue))) calc(var(--k2-ticks-mix) + var(--k2-ticks-lift, 0%)),
+        var(--k2-surface)
+      )
+    )
   );
 }
 /* in the selected or open row of a table, ok stands a little darker, on the row's tint */

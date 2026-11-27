@@ -107,21 +107,28 @@ const OWNER_TINT_DARK = 0.18;
 
 /**
  * The style values of the colour of the app a content belongs to (`Pane owner`): the colour as `--k2-app`, and for a
- * hex colour the ink of its figure and words, 4.5:1 against its own tint (so also in the open row), and the soft colour
- * of its data over time, 3:1 against the surface, light and dark. A value that points back to the app's colour
- * (`var(--k2-app…)`) is no owner: it would name itself.
+ * hex colour, light and dark, all measured against its own tint (the open row, the head), which is the harder ground
+ * beside the surface:
+ * - `--k2-owner-ink`: its figure and words, 4.5:1;
+ * - `--k2-owner-line`: the strong mark of its data (the bar of now, the line of an area), 3:1;
+ * - `--k2-owner-soft`: the quiet marks of its data over time (bars, ticks), as light as 3:1 allows.
+ * A value that points back to the app's colour (`var(--k2-app…)`) is no owner: it would name itself.
  */
 export const ownerStyle = (value: string | undefined): Record<string, string> | undefined => {
   const color = safeColor(value);
   if (color === undefined || /^var\(--k2-app/i.test(color)) return undefined;
   const rgb = rgbOf(color);
   if (!rgb) return { "--k2-app": color };
+  const tint = mix(rgb, OWNER_TINT, SURFACE_LIGHT);
+  const tintDark = mix(rgb, OWNER_TINT_DARK, SURFACE_DARK);
   return {
     "--k2-app": color,
-    "--k2-owner-ink": hexOf(towards(rgb, BLACK, mix(rgb, OWNER_TINT, SURFACE_LIGHT), 4.5)),
-    "--k2-owner-ink-dark": hexOf(towards(rgb, WHITE, mix(rgb, OWNER_TINT_DARK, SURFACE_DARK), 4.5)),
-    "--k2-owner-soft": hexOf(softest(rgb, SURFACE_LIGHT, BLACK, 3)),
-    "--k2-owner-soft-dark": hexOf(softest(rgb, SURFACE_DARK, WHITE, 3)),
+    "--k2-owner-ink": hexOf(towards(rgb, BLACK, tint, 4.5)),
+    "--k2-owner-ink-dark": hexOf(towards(rgb, WHITE, tintDark, 4.5)),
+    "--k2-owner-line": hexOf(towards(rgb, BLACK, tint, 3)),
+    "--k2-owner-line-dark": hexOf(towards(rgb, WHITE, tintDark, 3)),
+    "--k2-owner-soft": hexOf(softest(rgb, tint, BLACK, 3)),
+    "--k2-owner-soft-dark": hexOf(softest(rgb, tintDark, WHITE, 3)),
   };
 };
 
