@@ -510,7 +510,7 @@ describe("a user's record on v2", () => {
     }
   }, 90_000);
 
-  test("a person in 1,200 groups opens quickly with a bounded page, and more rows come on request", async () => {
+  test("a person in 1,200 groups opens quickly with one page of a hundred, and the next page is a link", async () => {
     const { context, tab, errors } = await open(wide, `${page}?tab=groups`, "huge");
     try {
       const rows = tab.locator("[data-k2-part=Section][aria-label='" + r.memberOf + "'] [data-k2-part=Row]");
@@ -519,12 +519,12 @@ describe("a user's record on v2", () => {
       expect(Number(await tab.evaluate(() => document.documentElement.dataset.ready))).toBeLessThan(1500);
       expect(await rows.count()).toBe(100);
       expect(await tab.evaluate(() => document.querySelectorAll("*").length)).toBeLessThan(4000);
-      await visible(tab, "button", r.showMore({ count: 100 })).click();
-      await tab.waitForFunction(
-        (label) => document.querySelectorAll(`[aria-label="${label}"] [data-k2-part=Row]`).length === 200,
-        r.memberOf,
-      );
       await expectClean(tab);
+      // the next page is a link: the server sends the next hundred, the address names the page
+      await visible(tab, "link", r.nextPage({ page: 2, pages: 12 })).click();
+      await tab.waitForURL(/[?&]page=2/);
+      await tab.getByText("Projekt 101", { exact: true }).first().waitFor();
+      expect(await rows.count()).toBe(100);
       await shoot(tab, "huge-groups-light-1440");
       expect(errors).toEqual([]);
     } finally {

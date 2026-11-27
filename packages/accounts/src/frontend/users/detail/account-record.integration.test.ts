@@ -56,6 +56,7 @@ const purpose = (statement: string): string => {
     [/^SELECT c\.id, c\.service_account_id/, "API keys: first page"],
     [/audit\.events/, "activity: newest five, no count"],
     [/^SELECT id, name, kind, status, delegated_user_id/, "a service account by id"],
+    [/^SELECT ug\.group_id FROM auth\.user_groups_v2/, "groups: direct group ids"],
     [/avatar_kind, avatar_config/, "agent picture"],
     [/kind IN \('standalone','agent'\)/, "directory access: the agent check"],
     [/auth\.directory_shares/, "directory access: count"],
@@ -104,15 +105,20 @@ suite("the account record's statement budget on its real route (integration)", (
     const [agent] = await sql<{ id: string }[]>`
       INSERT INTO auth.service_accounts (name, kind, created_by) VALUES (${`Wochenbericht ${tag}`}, 'agent', ${adminId}::uuid) RETURNING id`;
     accounts.push(agent!.id);
+    const [resource] = await sql<{ id: string }[]>`
+      INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
+      VALUES (${`Inventar ${tag}`}, 'resource_bound', 'pulse', 'base', ${`inventar-${tag}`}) RETURNING id`;
+    accounts.push(resource!.id);
     const headers = { cookie: `session_token=${await createTestSession(adminId)}`, "x-forwarded-for": uniqueCallerAddress() };
     const rail = stubRailSnapshot();
     try {
       const report: Record<string, string[]> = {};
-      for (const tab of ["", "?tab=groups", "?tab=keys", "?tab=devices"])
+      for (const tab of ["", "?tab=groups", "?tab=groups&recursive=true", "?tab=keys", "?tab=devices"])
         report[`person ${tab || "overview"}`] = (await statementsOf(`/app/accounts/users/${personId}${tab}`, headers, `Milan ${tag}`))
           .map(purpose)
           .sort();
       report.agent = (await statementsOf(`/app/accounts/users/${agent!.id}`, headers, `Wochenbericht ${tag}`)).map(purpose).sort();
+      report.resource = (await statementsOf(`/app/accounts/users/${resource!.id}`, headers, `Inventar ${tag}`)).map(purpose).sort();
       expect(report).toEqual(EXPECTED);
     } finally {
       rail.mockRestore();
@@ -121,36 +127,36 @@ suite("the account record's statement budget on its real route (integration)", (
 });
 
 /**
- * Every tab of a person's record reads the same: the record is one page whose tabs only choose what shows. v1 read the
- * same list without the activity (16); the activity adds its one statement. An agent reads 12; v1's agent page read 8
- * (session, preferences, badge, the account, its picture, its creator, keys count and page): the record first asks
- * whether the id is a person (1), and the directory access, which v1 showed on another page, adds its check, count and
- * page (3).
+ * A person's record reads the head (the person, the badge, the account categories, plus the session person and the
+ * screen preferences of every page) and only the open tab, in two rounds: the person and the badge, then the rest at
+ * once. v1 read every area on every load: 16 statements. The agent kind reads 12 (v1's agent page 8: the record
+ * first asks whether the id is a person, and its directory access, which v1 showed elsewhere, adds three), the API key
+ * kind 7; both in three rounds (person and badge, the account, its areas).
  */
-const PERSON = [
-  "API keys: count",
-  "API keys: first page",
-  "Cloud app devices",
-  "Linux identity",
-  "a person by id",
-  "activity: newest five, no count",
-  "groups: direct group ids",
-  "groups: one page (member or managed)",
-  "groups: one page (member or managed)",
-  "nav: open requests badge",
-  "session: the signed-in person",
-  "settings: account categories",
-  "settings: one uncached setting",
-  "settings: sign-in app",
-  "settings: sign-in app",
-  "shell: screen preferences",
-  "sign-in devices",
-];
+const HEAD = ["a person by id", "nav: open requests badge", "session: the signed-in person", "settings: account categories", "shell: screen preferences"];
+const sorted = (list: string[]) => [...list].sort();
 const EXPECTED: Record<string, string[]> = {
-  "person overview": PERSON,
-  "person ?tab=groups": PERSON,
-  "person ?tab=keys": PERSON,
-  "person ?tab=devices": PERSON,
+  // 9: the direct groups' first page with their number, the Linux identity, the newest activity, one setting
+  "person overview": sorted([
+    ...HEAD,
+    "Linux identity",
+    "activity: newest five, no count",
+    "groups: one page (member or managed)",
+    "settings: one uncached setting",
+  ]),
+  // 7: one page of the direct groups and one of the managed groups
+  "person ?tab=groups": sorted([...HEAD, "groups: one page (member or managed)", "groups: one page (member or managed)"]),
+  // 8: with inherited groups, the memberships' page and which of them are direct
+  "person ?tab=groups&recursive=true": sorted([
+    ...HEAD,
+    "groups: one page (member or managed)",
+    "groups: one page (member or managed)",
+    "groups: direct group ids",
+  ]),
+  // 7: the key section's first page and its count
+  "person ?tab=keys": sorted([...HEAD, "API keys: count", "API keys: first page"]),
+  // 9: both kinds of device and the sign-in app's settings
+  "person ?tab=devices": sorted([...HEAD, "Cloud app devices", "settings: sign-in app", "settings: sign-in app", "sign-in devices"]),
   agent: [
     "API keys: count",
     "API keys: first page",
@@ -165,4 +171,13 @@ const EXPECTED: Record<string, string[]> = {
     "session: the signed-in person",
     "shell: screen preferences",
   ],
+  resource: sorted([
+    "API keys: count",
+    "API keys: first page",
+    "a person by id",
+    "a service account by id",
+    "nav: open requests badge",
+    "session: the signed-in person",
+    "shell: screen preferences",
+  ]),
 };

@@ -22,13 +22,13 @@ export const isAgentRecordKind = (account: Pick<ServiceAccount, "kind">): boolea
  * API keys and of its directory access (both through the services their sections page with), and who created it.
  * The caller resolved the account and checked its kind.
  */
-export const renderAgentRecord = async <E extends AuthContext>(c: Context<E>, account: ServiceAccount) => {
+export const renderAgentRecord = async <E extends AuthContext>(c: Context<E>, account: ServiceAccount, pendingRequests: number) => {
   const { locale, t } = accountsMessages.resolve([getLocale(c)]);
   const timeZone = getTimeZone(c);
   const actor = expectUserBackedActor(c);
   const now = new Date();
-  const [pendingRequests, picture, creator, modelsAvailable, keys, directory] = await Promise.all([
-    accountsService.accountRequest.countPending(),
+  // the open requests badge came with the record's first round
+  const [picture, creator, modelsAvailable, keys, directory] = await Promise.all([
     getServiceAccountAvatarState({ id: account.id }),
     account.createdBy ? accountsService.user.get({ id: account.createdBy }) : Promise.resolve(null),
     coreSettings.get<boolean>("ai.openai_api_enabled"),

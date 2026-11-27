@@ -1,6 +1,17 @@
 import type { User } from "@/contracts";
 import { agentKeys, worstKeys } from "../../service-accounts/keys-and-new-user.fixture";
-import type { LinuxSnapshot, UserGroupView, UserRecordView } from "./user-view";
+import {
+  GROUPS_PAGE,
+  type GroupsArea,
+  type KeysArea,
+  type LinuxSnapshot,
+  type OverviewArea,
+  type UserAppDeviceView,
+  type UserGroupView,
+  type UserRecordView,
+  type UserSignInDeviceView,
+  type UserTab,
+} from "./user-view";
 
 // Invented records for the browser test: a usual local account, the worst case a real directory produces (long and
 // unbreakable names, non-Latin text, many groups, an expired FreeIPA account, devices that could not be loaded) and an
@@ -10,6 +21,20 @@ export const USER_ID = "22222222-2222-4222-8222-222222222222";
 export const GROUP_ID = (index: number) => `33333333-3333-4333-8333-${String(index).padStart(12, "0")}`;
 export const DEVICE_ID = (index: number) => `66666666-6666-4666-8666-${String(index).padStart(12, "0")}`;
 export const PHONE_ID = (index: number) => `77777777-7777-4777-8777-${String(index).padStart(12, "0")}`;
+
+/** Everything of a record on every tab at once, from which `fixtureRecord` cuts what one address shows. */
+type Full = Omit<UserRecordView, "area"> &
+  Pick<OverviewArea, "facts" | "sshFingerprints" | "linux" | "activity"> &
+  Pick<GroupsArea, "memberships" | "managed"> &
+  Pick<KeysArea, "keys" | "modelsAvailable" | "timeZone"> & {
+    directCount: number;
+    allCount: number;
+    memberGroupIds: string[];
+    signInDevices: UserSignInDeviceView[] | null;
+    appDevices: UserAppDeviceView[] | null;
+    signInPairHref: string | null;
+    cloud: string;
+  };
 
 export type FixtureName = "sample" | "worst" | "empty" | "optional-email" | "huge";
 
@@ -67,7 +92,7 @@ const group = (
   direct,
 });
 
-const sample = (): UserRecordView => {
+const sample = (): Full => {
   const memberships = [
     group(1, "Verkauf", "Ankauf und Verkauf im Laden und online"),
     group(2, "Büro", null),
@@ -123,7 +148,8 @@ const sample = (): UserRecordView => {
       { id: PHONE_ID(4), name: "iPad Werkstatt", platform: "ios", paired: "02.10.2026, 09:00", lastUsed: "25.11.2026, 17:20" },
     ],
     signInPairHref: `/me/security/pair?userId=${base.id}`,
-    cloudApp: { blocked: false, administrator: "Ada Admin", cloud: "Solberg Cloud", name: base.displayName },
+    cloudApp: { blocked: false, administrator: "Ada Admin", name: base.displayName },
+    cloud: "Solberg Cloud",
     freeIpaEnabled: true,
     localEmailOptional: false,
   };
@@ -141,7 +167,7 @@ const NAMES = [
   "werkstatt-restaurierung-moebel-und-uhren-nord-sued-ost-west",
 ];
 
-const worst = (): UserRecordView => {
+const worst = (): Full => {
   const user: User = {
     ...base,
     uid: "aleksandra.wisniewska-kowalczy",
@@ -221,11 +247,12 @@ const worst = (): UserRecordView => {
       { id: PHONE_ID(3), name: "Tab", platform: "other", paired: "12.09.2026, 10:00", lastUsed: "23.11.2026, 08:00" },
     ],
     signInPairHref: null,
-    cloudApp: { blocked: true, administrator: "Jo", cloud: "Solberg & Kramer Antiquitäten Cloud", name: LONG_NAME },
+    cloudApp: { blocked: true, administrator: "Jo", name: LONG_NAME },
+    cloud: "Solberg & Kramer Antiquitäten Cloud",
   };
 };
 
-const empty = (): UserRecordView => ({
+const empty = (): Full => ({
   ...sample(),
   user: { ...base, mail: null, profile: "guest" },
   title: "milan.horvat",
@@ -246,7 +273,7 @@ const empty = (): UserRecordView => ({
 });
 
 /** A person in 1,200 groups who manages 1,000: the record must stay light and quick. */
-const huge = (): UserRecordView => {
+const huge = (): Full => {
   const memberships = Array.from({ length: 1200 }, (_, index) =>
     group(1000 + index, `Projekt ${index + 1}`, index % 2 ? `Arbeitsgruppe ${index + 1}` : null),
   );
@@ -260,7 +287,7 @@ const huge = (): UserRecordView => {
   };
 };
 
-export const fixtureRecord = (name: FixtureName): UserRecordView =>
+const fullOf = (name: FixtureName): Full =>
   name === "huge"
     ? huge()
     : name === "worst"
@@ -270,3 +297,59 @@ export const fixtureRecord = (name: FixtureName): UserRecordView =>
         : name === "optional-email"
           ? { ...sample(), localEmailOptional: true }
           : sample();
+
+/**
+ * The record as the server sends it for one address: the head on every tab and the open tab's data only, one page of
+ * `GROUPS_PAGE` memberships on the groups tab.
+ */
+export const fixtureRecord = (name: FixtureName, tab: UserTab = "overview", options: { recursive?: boolean; page?: number } = {}): UserRecordView => {
+  const full = fullOf(name);
+  const head = {
+    user: full.user,
+    title: full.title,
+    image: full.image,
+    kinds: full.kinds,
+    expired: full.expired,
+    status: full.status,
+    lastSignIn: full.lastSignIn,
+    expires: full.expires,
+    cloudApp: full.cloudApp,
+    freeIpaEnabled: full.freeIpaEnabled,
+    localEmailOptional: full.localEmailOptional,
+  };
+  const direct = full.memberships.filter((group) => group.direct);
+  if (tab === "groups") {
+    const all = options.recursive ? full.memberships : direct;
+    const page = options.page ?? 1;
+    return {
+      ...head,
+      area: {
+        tab,
+        memberships: all.slice((page - 1) * GROUPS_PAGE, page * GROUPS_PAGE),
+        total: all.length,
+        page,
+        pages: Math.max(1, Math.ceil(all.length / GROUPS_PAGE)),
+        managed: full.managed.slice(0, GROUPS_PAGE),
+        managedTotal: full.managed.length,
+      },
+    };
+  }
+  if (tab === "keys") return { ...head, area: { tab, keys: full.keys, modelsAvailable: full.modelsAvailable, timeZone: full.timeZone } };
+  if (tab === "devices")
+    return {
+      ...head,
+      area: { tab, signInDevices: full.signInDevices, appDevices: full.appDevices, signInPairHref: full.signInPairHref, cloud: full.cloud },
+    };
+  return {
+    ...head,
+    area: {
+      tab: "overview",
+      facts: full.facts,
+      sshFingerprints: full.sshFingerprints,
+      linux: full.linux,
+      directGroups: direct.slice(0, 6),
+      directCount: direct.length,
+      activity: full.activity,
+    },
+  };
+};

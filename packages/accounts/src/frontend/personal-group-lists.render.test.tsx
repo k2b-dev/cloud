@@ -96,7 +96,8 @@ test("old personal-group list URLs use normal discovery and retain ordinary list
 
 test("direct and indirect user memberships hide personal groups and keep normal groups", async () => {
   const list = spyOn(services.accountsAppService.group, "list").mockImplementation(async (input) =>
-    page(input.scope?.ids ? [personal, team] : input.scope?.mode === "member" ? [team, inherited] : []),
+    // like the service: direct groups and memberships leave personal groups out
+    page(input.scope?.mode === "direct" ? [team] : input.scope?.mode === "member" ? [team, inherited] : []),
   );
   const spies = [
     list,
@@ -132,7 +133,12 @@ test("direct and indirect user memberships hide personal groups and keep normal 
       expect(html).toContain(`/app/accounts/groups/${team.id}`);
       expect(html).not.toContain(`/app/accounts/groups/${personal.id}`);
       expect(html.includes(`/app/accounts/groups/${inherited.id}`)).toBe(query !== "");
-      expect(list).toHaveBeenCalledWith({ pagination: { page: 1, perPage: 1000 }, scope: { userId: user.id, mode: "member" } });
+      // the overview reads the direct groups only; the groups tab with inherited ones reads the memberships
+      expect(list).toHaveBeenCalledWith(
+        query
+          ? { pagination: { page: 1, perPage: 100 }, scope: { userId: user.id, mode: "member" } }
+          : { pagination: { page: 1, perPage: 6 }, scope: { userId: user.id, mode: "direct" } },
+      );
     }
   } finally {
     for (const spy of spies) spy.mockRestore();

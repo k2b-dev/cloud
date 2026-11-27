@@ -990,7 +990,7 @@ export const accountsAppService = {
     list: async (config: {
       pagination?: PageParams;
       filter?: { search?: string };
-      scope?: { userId?: string; ids?: string[]; provider?: UserProvider; mode?: "all" | "member" | "managed" };
+      scope?: { userId?: string; ids?: string[]; provider?: UserProvider; mode?: "all" | "member" | "managed" | "direct" };
     }): Promise<Paginated<BaseGroup>> => {
       const { page, perPage } = paginate(config.pagination);
       const result = await groups.list({

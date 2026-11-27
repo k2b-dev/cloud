@@ -52,8 +52,6 @@ const area = { access: "#4f46e5", groups: "#2563eb", keys: "#8e1b6f", devices: "
 
 /** Rows of direct groups the overview shows before "All groups". */
 const OVERVIEW_GROUPS = 6;
-/** Rows a long list shows at first and adds per press, so the page stays light with a thousand memberships. */
-const REVEAL = 100;
 
 type Props = {
   record: UserRecordView;
@@ -84,32 +82,44 @@ export default function UserScreen(props: Props) {
   const { showChanges, openPage } = usePageSwap();
   const record = () => props.record;
   const n = (count: number) => number(count, locale());
-  /** All of the person's active keys, also those beyond the first page; 0 while they could not be read. */
-  const keysTotal = () => record().keys?.total ?? 0;
-  /** Both kinds of device, or null when either list could not be loaded. */
-  const deviceCount = () => {
-    const signIn = record().signInDevices;
-    const app = record().appDevices;
-    return signIn && app ? signIn.length + app.length : null;
+  // the data of the open tab; the server sends no other tab's
+  const overviewData = () => {
+    const open = record().area;
+    return open.tab === "overview" ? open : null;
   };
+  const groupsData = () => {
+    const open = record().area;
+    return open.tab === "groups" ? open : null;
+  };
+  const keysData = () => {
+    const open = record().area;
+    return open.tab === "keys" ? open : null;
+  };
+  const devicesData = () => {
+    const open = record().area;
+    return open.tab === "devices" ? open : null;
+  };
+  /** The direct groups this page knows, which the add dialog leaves out (the server refuses the others too). */
+  const knownDirect = () =>
+    overviewData()?.directGroups.map((group) => group.id) ??
+    groupsData()
+      ?.memberships.filter((group) => group.direct)
+      .map((group) => group.id) ??
+    [];
   const user = () => props.record.user;
   const can = () => userActionAvailability(user(), record().freeIpaEnabled);
-  const href = (tab: UserTab, recursive = false) => userRecordHref(user().id, props.list, { tab, recursive });
+  const href = (tab: UserTab, recursive = false, page?: number) => userRecordHref(user().id, props.list, { tab, recursive, page });
   const [dialog, setDialog] = createSignal<Dialogs>({ kind: "none" });
   const [busy, setBusy] = createSignal<string | null>(null);
   /** Why the last deed failed, in the server's words: it stays at the top of the record until it is dismissed. */
   const [failure, setFailure] = createSignal<string | null>(null);
-  const [shown, setShown] = createSignal({ memberships: REVEAL, managed: REVEAL });
-  /** "Show more" at the end of a list that holds more rows than it shows. */
-  const moreOf = (list: "memberships" | "managed", total: number) => {
-    const rest = total - shown()[list];
-    return rest > 0
-      ? {
-          label: r().showMore({ count: Math.min(REVEAL, rest) }),
-          onClick: () => setShown((now) => ({ ...now, [list]: now[list] + REVEAL })),
-        }
-      : undefined;
-  };
+  /** The way to the next and the earlier pages of memberships, as links: each page loads on the server. */
+  const pagerOf = (data: { page: number; pages: number }) =>
+    data.page < data.pages
+      ? { label: r().nextPage({ page: data.page + 1, pages: data.pages }), href: href("groups", props.recursive, data.page + 1), forward: true }
+      : data.page > 1
+        ? { label: r().firstPage, href: href("groups", props.recursive) }
+        : undefined;
   const closed = (changed: boolean) => {
     setDialog({ kind: "none" });
     if (changed) void showChanges();
@@ -365,6 +375,8 @@ export default function UserScreen(props: Props) {
   const noGroups = () => <Empty icon="users-group" text={t().noGroupMemberships} action={addAction()} />;
 
   const overview = () => (
+    <Show when={overviewData()}>
+      {(data) => (
     <>
       <Show when={record().expired && record().expires}>
         {(date) => <Notice tone="warn">{r().expiredNotice({ date: date() })}</Notice>}
@@ -391,26 +403,18 @@ export default function UserScreen(props: Props) {
           icon="users-group"
           color={area.groups}
           label={t().groups}
-          value={r().directCount({ count: record().directCount })}
-          meta={
-            record().managed.length > 0
-              ? r().managesCount({ count: record().managed.length })
-              : r().withInherited({ count: record().allCount })
-          }
+          value={r().directCount({ count: data().directCount })}
+          meta={r().directMeta}
           href={href("groups")}
         />
-        <Cells.Cell icon="key" color={area.keys} label={t().apiKeys} value={n(keysTotal())} meta={r().keysMeta} href={href("keys")} />
+        {/* the newest change, its person and its time: what happened to the account lately */}
         <Cells.Cell
-          icon="devices"
-          color={area.devices}
-          label={r().devices}
-          value={
-            record().signInDevices && record().appDevices
-              ? n((record().signInDevices?.length ?? 0) + (record().appDevices?.length ?? 0))
-              : "–"
-          }
-          meta={record().signInDevices && record().appDevices ? r().devicesMeta : r().notLoaded}
-          href={href("devices")}
+          icon="activity"
+          color={area.access}
+          label={r().lastChange}
+          value={data().activity?.[0]?.action ?? "–"}
+          meta={data().activity?.[0] ? `${data().activity?.[0]?.actor} · ${data().activity?.[0]?.when}` : r().noActivity}
+          href={can().auditOnUserHref}
         />
       </Cells>
       <Pane.Split>
@@ -419,15 +423,15 @@ export default function UserScreen(props: Props) {
             icon="users-group"
             color={area.groups}
             title={r().directGroupsTitle}
-            count={n(record().directCount)}
+            count={n(data().directCount)}
             actions={[addAction()]}
-            more={record().directCount > OVERVIEW_GROUPS ? { label: r().allMemberships, href: href("groups"), forward: true } : undefined}
+            more={data().directCount > OVERVIEW_GROUPS ? { label: r().allMemberships, href: href("groups"), forward: true } : undefined}
           >
-            <Show when={record().directCount > 0} fallback={noGroups()}>
-              <For each={directGroups().slice(0, OVERVIEW_GROUPS)}>{(group) => groupRow(group, false)}</For>
+            <Show when={data().directCount > 0} fallback={noGroups()}>
+              <For each={data().directGroups}>{(group) => groupRow(group, false)}</For>
             </Show>
           </Section>
-          <Show when={record().linux}>{(linux) => <LinuxIdentitySection initial={linux()} />}</Show>
+          <Show when={data().linux}>{(linux) => <LinuxIdentitySection initial={linux()} />}</Show>
         </Pane>
         <Pane side label={r().details} width={{ min: 280, default: 360 }}>
           {/* what was done to the account lately, as sentences with the person who did it */}
@@ -435,9 +439,9 @@ export default function UserScreen(props: Props) {
             icon="activity"
             color={area.access}
             title={r().activity}
-            more={record().activity?.length ? { label: r().allActivity, href: can().auditOnUserHref, forward: true } : undefined}
+            more={data().activity?.length ? { label: r().allActivity, href: can().auditOnUserHref, forward: true } : undefined}
           >
-            <Show when={record().activity} fallback={<Text muted>{r().activityFailed}</Text>}>
+            <Show when={data().activity} fallback={<Text muted>{r().activityFailed}</Text>}>
               {(entries) => (
                 <Show when={entries().length > 0} fallback={<Text muted>{r().noActivity}</Text>}>
                   <Digest
@@ -458,7 +462,7 @@ export default function UserScreen(props: Props) {
           </Section>
           <Section icon="id" color={area.access} title={t().account}>
             <Facts
-              items={record().facts.map((fact) => ({
+              items={data().facts.map((fact) => ({
                 label: fact.label,
                 value: fact.overdue ? (
                   <Text tone="bad" weight="medium">
@@ -474,31 +478,33 @@ export default function UserScreen(props: Props) {
               }))}
             />
           </Section>
-          <Show when={record().sshFingerprints.length > 0}>
-            <Section icon="key" color={area.keys} title={r().sshKeys} count={n(record().sshFingerprints.length)}>
+          <Show when={data().sshFingerprints.length > 0}>
+            <Section icon="key" color={area.keys} title={r().sshKeys} count={n(data().sshFingerprints.length)}>
               <Facts
-                items={record().sshFingerprints.map((value, index) => ({ label: String(index + 1), value, mono: true, copy: value }))}
+                items={data().sshFingerprints.map((value, index) => ({ label: String(index + 1), value, mono: true, copy: value }))}
               />
             </Section>
           </Show>
         </Pane>
       </Pane.Split>
     </>
+      )}
+    </Show>
   );
-  // the overview lists direct groups even while the address asks for inherited ones on the groups tab
-  const directGroups = () => record().memberships.filter((group) => group.direct);
 
   const groups = () => (
+    <Show when={groupsData()}>
+      {(data) => (
     <>
       <Section
         icon="users-group"
         color={area.groups}
         title={r().memberOf}
-        count={n(record().memberships.length)}
+        count={n(data().total)}
         summary={
           props.recursive
-            ? t().membershipsIncludingInherited({ count: record().memberships.length })
-            : t().directMemberships({ count: record().memberships.length })
+            ? t().membershipsIncludingInherited({ count: data().total })
+            : t().directMemberships({ count: data().total })
         }
         actions={[
           props.recursive
@@ -506,59 +512,66 @@ export default function UserScreen(props: Props) {
             : { label: r().includeInherited, icon: "git-branch", href: href("groups", true) },
           addAction(),
         ]}
-        more={moreOf("memberships", record().memberships.length)}
+        more={pagerOf(data())}
       >
-        <Show when={record().memberships.length > 0} fallback={noGroups()}>
-          {/* k2b-ui gap: virtualized list (lane MW); until then the rows come in steps of REVEAL. */}
-          <For each={record().memberships.slice(0, shown().memberships)}>{(group) => groupRow(group, true)}</For>
+        <Show when={data().memberships.length > 0} fallback={noGroups()}>
+          {/* k2b-ui gap: virtualized list (lane MW); until then the server sends one page of GROUPS_PAGE rows. */}
+          <For each={data().memberships}>{(group) => groupRow(group, true)}</For>
         </Show>
       </Section>
-      <Show when={record().managed.length > 0}>
+      <Show when={data().managed.length > 0}>
         <Section
           icon="shield"
           color={area.groups}
           title={t().manages}
-          count={n(record().managed.length)}
-          summary={t().manageableGroups({ count: record().managed.length })}
-          more={moreOf("managed", record().managed.length)}
+          count={n(data().managedTotal)}
+          summary={t().manageableGroups({ count: data().managedTotal })}
         >
-          {/* k2b-ui gap: virtualized list (lane MW); until then the rows come in steps of REVEAL. */}
-          <For each={record().managed.slice(0, shown().managed)}>{(group) => groupRow(group, false)}</For>
+          {/* at most one page of managed groups; the count says how many there are */}
+          <For each={data().managed}>{(group) => groupRow(group, false)}</For>
         </Section>
       </Show>
     </>
+      )}
+    </Show>
   );
 
   // the person's own keys: the section every account shows, paging the API itself (lane C)
   const keys = () => (
-    <ApiKeysSection
-      account={{ kind: "person", userId: user().id, name: record().title, active: !record().expired }}
-      first={record().keys}
-      modelsAvailable={record().modelsAvailable}
-      timeZone={record().timeZone}
-    />
+    <Show when={keysData()}>
+      {(data) => (
+        <ApiKeysSection
+          account={{ kind: "person", userId: user().id, name: record().title, active: !record().expired }}
+          first={data().keys}
+          modelsAvailable={data().modelsAvailable}
+          timeZone={data().timeZone}
+        />
+      )}
+    </Show>
   );
 
   const devices = () => (
+    <Show when={devicesData()}>
+      {(data) => (
     <>
       <Section
         icon="login"
         color={area.devices}
         title={t().cloudLogin}
-        count={record().signInDevices?.length}
+        count={data().signInDevices?.length}
         summary={t().cloudLoginDescription}
         actions={
-          record().signInPairHref ? [{ label: t().pairAppDevice, icon: "device-mobile", href: record().signInPairHref ?? "" }] : undefined
+          data().signInPairHref ? [{ label: t().pairAppDevice, icon: "device-mobile", href: data().signInPairHref ?? "" }] : undefined
         }
       >
         <Switch>
-          <Match when={record().signInDevices === null}>
+          <Match when={data().signInDevices === null}>
             <Failed text={t().devicesUnavailable} onRetry={() => void showChanges()} />
           </Match>
-          <Match when={record().signInDevices?.length === 0}>
+          <Match when={data().signInDevices?.length === 0}>
             <Empty icon="device-mobile" text={t().noPairedDevices} />
           </Match>
-          <Match when={record().signInDevices}>
+          <Match when={data().signInDevices}>
             {(list) => (
               <For each={list()}>
                 {(device) => (
@@ -600,8 +613,8 @@ export default function UserScreen(props: Props) {
         icon="apps"
         color={area.devices}
         title={t().cloudApp}
-        count={record().appDevices?.length}
-        summary={t().cloudAppDescription({ cloud: record().cloudApp.cloud })}
+        count={data().appDevices?.length}
+        summary={t().cloudAppDescription({ cloud: data().cloud })}
         actions={[{ label: t().cloudAppPair, icon: "qrcode", onClick: pairing.start, disabled: record().cloudApp.blocked }]}
       >
         <Show when={record().cloudApp.blocked}>
@@ -610,13 +623,13 @@ export default function UserScreen(props: Props) {
           </Notice>
         </Show>
         <Switch>
-          <Match when={record().appDevices === null}>
+          <Match when={data().appDevices === null}>
             <Failed text={t().appDevicesUnavailable} onRetry={() => void showChanges()} />
           </Match>
-          <Match when={record().appDevices?.length === 0}>
+          <Match when={data().appDevices?.length === 0}>
             <Empty icon="device-mobile" text={t().cloudAppEmpty} />
           </Match>
-          <Match when={record().appDevices}>
+          <Match when={data().appDevices}>
             {(list) => (
               <For each={list()}>
                 {(device) => (
@@ -652,6 +665,8 @@ export default function UserScreen(props: Props) {
         </Switch>
       </Section>
     </>
+      )}
+    </Show>
   );
   const platformName = (platform: "ios" | "android" | "other") =>
     platform === "ios" ? t().platformIos : platform === "android" ? t().platformAndroid : t().platformOther;
@@ -690,15 +705,13 @@ export default function UserScreen(props: Props) {
               {
                 label: t().groups,
                 icon: "users-group",
-                count: n(record().directCount),
                 href: href("groups", props.recursive),
                 current: props.tab === "groups",
               },
-              { label: t().apiKeys, icon: "key", count: n(keysTotal()), href: href("keys"), current: props.tab === "keys" },
+              { label: t().apiKeys, icon: "key", href: href("keys"), current: props.tab === "keys" },
               {
                 label: r().devices,
                 icon: "devices",
-                count: deviceCount() === null ? undefined : n(deviceCount() ?? 0),
                 href: href("devices"),
                 current: props.tab === "devices",
               },
@@ -713,7 +726,7 @@ export default function UserScreen(props: Props) {
             </Notice>
           )}
         </Show>
-        {areas[props.tab]()}
+        {areas[record().area.tab]()}
       </Pane>
       {/* each dialog starts fresh: it exists only while it is open */}
       <Show when={dialog().kind === "edit"}>
@@ -733,7 +746,7 @@ export default function UserScreen(props: Props) {
         <ExpiryDialog user={user()} open close={closed} />
       </Show>
       <Show when={dialog().kind === "groups"}>
-        <AddToGroupsDialog user={user()} exclude={record().memberGroupIds} open close={closed} />
+        <AddToGroupsDialog user={user()} exclude={knownDirect()} open close={closed} />
       </Show>
       <Show when={credential()}>
         {(open) => (

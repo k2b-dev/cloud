@@ -12,7 +12,8 @@ import { posix } from "./posix";
 
 type DbRow = Record<string, unknown>;
 
-type GroupListScope = "all" | "member" | "managed";
+/** `direct`: the groups a user is in directly (no inherited ones), the same rows `users.getGroupIds` reads. */
+type GroupListScope = "all" | "member" | "managed" | "direct";
 
 const getGroup = async (id: string): Promise<BaseGroup | null> => {
   const [row] = await sql<DbRow[]>`
@@ -72,6 +73,7 @@ const listCanonical = async (params: {
         OR ${params.userId ?? null}::uuid IS NULL
         OR (${scope === "member"} = true AND ${buildMemberGroupScopeCondition({ userId: scopeUserId, groupProvider: sql`g.provider` })})
         OR (${scope === "managed"} = true AND ${buildManagedGroupScopeCondition({ userId: scopeUserId, groupProvider: sql`g.provider` })})
+        OR (${scope === "direct"} = true AND g.id IN (SELECT ug.group_id FROM auth.user_groups_v2 ug WHERE ug.user_id = ${scopeUserId}::uuid))
       )
       AND (
         ${pattern}::text IS NULL

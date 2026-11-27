@@ -152,8 +152,8 @@ const server = (options: Options = {}) => {
     spyOn(services.audit, "latest").mockResolvedValue([]),
     spyOn(services.accountsAppService.group, "list").mockImplementation(async (input) =>
       page(
-        input.scope?.ids
-          ? [personal, sales, office]
+        input.scope?.mode === "direct"
+          ? [sales, office]
           : input.scope?.mode === "member"
             ? [sales, office, inherited]
             : input.scope?.mode === "managed"
@@ -214,6 +214,10 @@ const render = async (address: string, options: Options = {}) => {
 const measure = (html: string) => ({
   elements: html.match(/<[a-zA-Z][^\s/>]*/g)?.length ?? 0,
   loaders: (html.match(/data-k2-part="Loading"|animate-spin|aria-busy="true"/g) ?? []).length,
+  // the record island's serialized props, the bytes the browser receives for it
+  islandBytes: [...html.matchAll(/data-props="([^"]*)"[^>]*data-file="(?:User|Agent|Resource)Screen\.island\.tsx"/g)]
+    .map((match) => new TextEncoder().encode(match[1]!.replaceAll("&quot;", '"').replaceAll("&amp;", "&").replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&#39;", "'")).length)
+    .reduce((sum, size) => sum + size, 0),
 });
 const record = `/app/accounts/users/${person.id}`;
 
@@ -234,10 +238,14 @@ test("a person's record renders every area on the server, with no loading state 
     expect(status, html).toBe(200);
     for (const text of expected) expect(html).toContain(text);
     for (const text of absent) expect(html).not.toContain(text);
+    // a tab reads only its own data: the other tabs' never reach the page
+    if (tab.startsWith("?tab=groups")) expect(html).not.toContain("Backup-Skript");
+    if (tab === "?tab=keys") expect(html).not.toContain("Pixel 8");
     // the personal Linux group never shows as a membership
     expect(html).not.toContain(`/app/accounts/groups/${personal.id}`);
     sizes[tab || "overview"] = measure(html);
     expect(sizes[tab || "overview"]!.loaders).toBe(0);
+    expect(sizes[tab || "overview"]!.islandBytes).toBeGreaterThan(0);
   }
   // evidence for the migration report: elements per area on the server (v1 rendered every area on one page: 765)
   console.log("MEASURE", JSON.stringify(sizes));
@@ -265,6 +273,7 @@ test("an agent or standalone account opens as the agent kind of the same record"
     expect(html).toContain("Wochenbericht");
     expect(html).toContain("API Keys");
     expect(measure(html).loaders).toBe(0);
+    console.log("MEASURE", JSON.stringify(measure(html)));
   }
 });
 
@@ -275,6 +284,7 @@ test("an app's API key account opens with its app, its resource and its keys alo
   // no person's areas and no agent's directory access
   for (const text of ["Überblick", "Verzeichniszugriff", "Linux-Identität"]) expect(html).not.toContain(text);
   expect(measure(html).loaders).toBe(0);
+  console.log("MEASURE resource", JSON.stringify(measure(html)));
 });
 
 test("kinds no page opened and unknown ids stay a 404", async () => {

@@ -1,7 +1,7 @@
 import type { ServiceAccount } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { getLocale, getTimeZone } from "@k2b/cloud/server";
-import { accountsAppService as accountsService, coreSettings } from "@k2b/cloud/services";
+import { coreSettings } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import type { Context } from "hono";
 import AccountsNavigation from "../../AccountsNavigation.island";
@@ -18,11 +18,11 @@ export const isResourceRecordKind = (account: Pick<ServiceAccount, "kind">): boo
  * the first page read through the service the key section pages with. The caller resolved the account (the same
  * permission-aware read as for an agent, on the administrators' route) and checked its kind.
  */
-export const renderResourceRecord = async <E extends AuthContext>(c: Context<E>, account: ServiceAccount) => {
+export const renderResourceRecord = async <E extends AuthContext>(c: Context<E>, account: ServiceAccount, pendingRequests: number) => {
   const { locale, t } = accountsMessages.resolve([getLocale(c)]);
   const timeZone = getTimeZone(c);
-  const [pendingRequests, modelsAvailable, keys] = await Promise.all([
-    accountsService.accountRequest.countPending(),
+  // the open requests badge came with the record's first round
+  const [modelsAvailable, keys] = await Promise.all([
     coreSettings.get<boolean>("ai.openai_api_enabled"),
     firstKeyPage({ kind: "resource", id: account.id }, { locale, timeZone, now: new Date() }, c.req.query("key")),
   ]);
