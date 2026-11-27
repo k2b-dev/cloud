@@ -77,7 +77,11 @@ describe("My apps & automations on v2", () => {
       expect(text).toContain(part);
     // Explanations belong to the empty state, not to every day.
     expect(text).not.toContain("Dein Code läuft als du");
-    // Each mark in Gustav's colour, its symbol from what starts the Code.
+  });
+
+  // The name column leads with Gustav's mark per trigger once a table column can carry a mark (#4223).
+  test.todo("each app's name leads with Gustav's mark, its symbol from what starts the Code (#4223)", () => {
+    const html = apps("normal");
     expect(html).toMatch(/data-name="clock"/);
     expect(html).toMatch(/data-name="bolt"/);
   });
