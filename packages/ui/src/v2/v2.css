@@ -3163,6 +3163,30 @@
   outline: none;
   box-shadow: 0 0 0 3px var(--k2-blue-ring);
 }
+/* The nav's search and main action stand under the app's name, each across the column, before the groups */
+.k2-ui .k2-nav-search,
+.k2-ui .k2-nav-primary {
+  display: flex;
+  flex: none;
+  min-width: 0;
+}
+.k2-ui .k2-nav-search > .k2-input,
+.k2-ui .k2-nav-primary > .k2-btn {
+  flex: 1;
+  min-width: 0;
+}
+.k2-ui .k2-nav-primary {
+  margin-bottom: 8px;
+}
+/* A group's own rows (an app's list, such as Chat's conversations): they reach the column's edges and scroll on their
+   own between the groups and the foot, as a tree does; the foot keeps its place at the bottom */
+.k2-ui .k2-nav-list {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  margin: 0 -12px;
+}
 .k2-ui .k2-nav-foot {
   margin-top: auto;
   padding-top: 8px;
@@ -4473,6 +4497,40 @@
   .k2-ui .k2-ws > .k2-seam,
   .k2-ui .k2-grip {
     display: none;
+  }
+  /* A nav whose list is the phone's page (a `NavGroup` `list` with `phone: "page"`): while no detail is open, the
+     sidebar is the page after the workspace's head, its search over its list; the title, the other groups and the foot
+     are in the platform's menu, and the main action floats. An open detail is the page in its place. */
+  .k2-ui
+    .k2-ws:has(> .k2-ws-side > .k2-nav > .k2-nav-list[data-phone="page"]):not(:has(> .k2-ws-main .k2-pane[data-detail]))
+    > .k2-ws-side {
+    display: flex;
+    order: 1;
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+  .k2-ui
+    .k2-ws:has(> .k2-ws-side > .k2-nav > .k2-nav-list[data-phone="page"]):not(:has(> .k2-ws-main .k2-pane[data-detail]))
+    > .k2-ws-main {
+    flex: none;
+  }
+  .k2-ui .k2-ws-side > .k2-nav:has(> .k2-nav-list[data-phone="page"]) {
+    padding: 0;
+    gap: 0;
+  }
+  .k2-ui
+    .k2-ws-side
+    > .k2-nav:has(> .k2-nav-list[data-phone="page"])
+    > :is(.k2-nav-title, .k2-nav-primary, .k2-nav-label, .k2-ni, .k2-ni-row, .k2-nav-fold, .k2-nt, .k2-nav-foot) {
+    display: none;
+  }
+  .k2-ui .k2-ws-side > .k2-nav:has(> .k2-nav-list[data-phone="page"]) > .k2-nav-search {
+    padding: 8px var(--k2-edge);
+  }
+  .k2-ui .k2-ws-side > .k2-nav > .k2-nav-list[data-phone="page"] {
+    flex: 1;
+    margin: 0;
   }
   .k2-ui .k2-split {
     flex-direction: column;

@@ -46,6 +46,14 @@ const fixture = (opened: string[], clicked: string[]) => {
       // no name, and its first entry is nested: it has no entry to stand under, so it stands on its own
       items: [{ label: "Planen", icon: "calendar", nested: true, onClick: () => void clicked.push("planen") }],
     },
+    // the app's own rows (conversations) are no places of the menu: the menu leaves them out and never makes them
+    {
+      label: "Chats",
+      phone: "page",
+      list: () => {
+        throw new Error("the menu made a list's rows");
+      },
+    },
   ];
   const foot: NavItem[] = [{ label: "Ausgeblendet (2)", icon: "eye-off" }];
   return { groups, foot };

@@ -435,7 +435,16 @@ lines instead of cutting a thing.
 
 ## Components
 
-- `Nav`: `title`, `icon`, `groups: { label?, action?, items }[]`, `foot`.
+- `Nav`: `title`, `icon`, `search?`, `primary?`, `groups: { label?, action?, items }[]`, `foot`.
+  `search` (`{ label, value, onInput, onKeyDown? }`) and `primary` (an
+  `Action`, such as "Neuer Chat") stand under the name, each across the
+  column; pass the same action as `Workspace` `primary`, which floats on the
+  phone. A group with `list: () => JSX.Element` in the place of `items`
+  holds the app's own rows (a `List` of `Row`s, such as conversations):
+  made once, they reach the column's edges and scroll on their own between
+  the groups and the foot; virtualize a long list. With `phone: "page"`
+  the list with the search is the phone's page while no detail is open; the
+  title, the other groups and the foot are then in the platform's menu.
   A group's `action` is one quiet icon button, or `{ label, items }`: a "…"
   with the group's deeds ("Neues Postfach", "Gelöschte Postfächer").
   An item: `label`, `icon`, `href` or `onClick`, `count`, `current`,
