@@ -119,12 +119,15 @@ for (const width of [1440, 390])
       await page.keyboard.press("Enter");
       await settled(page);
       expect(await page.evaluate(() => window.__k2TilePresses)).toBe(2);
+      // a name too long even for two lines on the phone ends in "…" after its second line; wide, after its first
       const cut = await button.evaluate((element) => ({
         overflow: getComputedStyle(element).textOverflow,
-        fits: element.scrollWidth <= element.clientWidth,
+        clamp: getComputedStyle(element).webkitLineClamp,
+        tooLong: element.scrollHeight > element.clientHeight + 1 || element.scrollWidth > element.clientWidth + 1,
       }));
       expect(cut.overflow).toBe("ellipsis");
-      if (width === 390) expect(cut.fits).toBe(false);
+      expect(cut.tooLong).toBe(true);
+      if (width === 390) expect(cut.clamp).toBe("2");
     });
   });
 
@@ -145,3 +148,20 @@ test("a preview column with align end sets its head and cells at the end with fi
     expect(found.cell[2]?.figures).toBe("tabular-nums");
   });
 });
+
+// The approved first start (mockup v4): on the phone, where four cards stand 2 × 2, a name such as "Private Finanzen"
+// takes a second line before it is cut; on a wide screen it stays one line.
+for (const width of [390, 1440])
+  test(`at ${width} px a card's name in a row of cards reads whole`, async () => {
+    await withPage({ width, height: 900 }, false, async (page) => {
+      const names = await page.locator(".k2-tiles > .k2-tile .k2-tile-title > .k2-row-open").evaluateAll((all) =>
+        all.map((name) => ({
+          text: name.textContent,
+          cut: name.scrollWidth > name.clientWidth + 1 || name.scrollHeight > name.clientHeight + 1,
+          lines: Math.round(name.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(name).lineHeight)),
+        })),
+      );
+      expect(names.filter((name) => name.cut)).toEqual([]);
+      if (width === 1440) for (const name of names) expect(name.lines).toBe(1);
+    });
+  });

@@ -1163,6 +1163,19 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* on the phone, where cards share a row of half (2 × 2), a card's name takes a second line before it is cut: a name
+   such as "Leeres Notizbuch" reads whole, as the approved first start draws it */
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-tiles[data-variant="card"][data-per-row] .k2-tile-title,
+  .k2-ui .k2-tiles[data-variant="card"][data-per-row] .k2-tile-title > .k2-row-open {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
 .k2-ui .k2-tile-top > .k2-tile-name > .k2-tile-title > .k2-row-open::after,
 .k2-ui .k2-tile-name > .k2-tile-title > .k2-row-open::after {
   border-radius: var(--k2-r-control);
