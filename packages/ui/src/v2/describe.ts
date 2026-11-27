@@ -321,7 +321,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
             .filter(inSight)
             .map((chip) => `[${chip.getAttribute("data-status") ? `${chip.getAttribute("data-status")} ` : ""}${quote(chip.textContent)}]`);
           const select = element.querySelector(".k2-mark, [data-k2-mark]") ? " select-all" : "";
-          if (element.hasAttribute("data-selecting")) return `StatusRow selecting ${quote(lead)}: ${start ? words(start).join(" ") : ""}`;
+          if (element.hasAttribute("data-selecting")) return `StatusRow selecting ${quote(lead)}: ${end ? words(end).join(" ") : ""}`;
           return `StatusRow ${quote(lead)}${marks.length ? ` ${marks.join(" ")}` : ""}${facts.length ? ` · ${facts.join(" · ")}` : ""}${select}${end ? ` | ${words(end).join(" ")}` : ""}`;
         }
         const startWords = start ? words(start) : [];
@@ -387,7 +387,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         const state = flags(element, ["unread", "current", "selected", "yours", "strong"]);
         const opens = element.tagName === "A" ? " opens link" : element.tagName === "BUTTON" ? " opens" : "";
         const tail = kidsMatching(element, ".k2-row-end, .k2-row-marks").flatMap(words);
-        return `Row${leadWord} ${lineTexts.join(" / ")}${meta ? ` (${clip(meta, 20)})` : ""}${time ? ` · ${clip(time, 20)}` : ""}${state.length ? ` [${state.join(", ")}]` : ""}${opens}${tail.length ? ` ${tail.join(" ")}` : ""}`;
+        const level = element.getAttribute("data-level");
+        return `Row${level ? ` L${level}` : ""}${leadWord} ${lineTexts.join(" / ")}${meta ? ` (${clip(meta, 20)})` : ""}${time ? ` · ${clip(time, 20)}` : ""}${state.length ? ` [${state.join(", ")}]` : ""}${opens}${tail.length ? ` ${tail.join(" ")}` : ""}`;
       }
       case "Table": {
         const table = element.querySelector("table");

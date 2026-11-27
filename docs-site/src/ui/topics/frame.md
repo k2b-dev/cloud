@@ -34,7 +34,9 @@ The workspace decides from its own width, on the server's page too, so nothing j
 ### Path
 
 - Where a sub-page stands: "Lager › Halle 1"; the last item is the page itself.
-- It stands in the head `Bar start` instead of tabs.
+- It stands in the head `Bar start` instead of tabs, and takes the room the actions leave; the actions keep their words.
+- Without room the places before the page shorten first, each down to its own width or 12 characters; the page itself shortens last, with "…".
+- When the places do not fit even at that least, they go into a "…" that opens them as a menu: first the ones between the first place and the parent (from four places on), then all of them. The server sends every place, shortened; only a path without room even so folds, once, in the browser.
 - On the phone the head with a path is hidden, and the shell's bar names the page.
 
 ## Parts
@@ -55,7 +57,7 @@ A column that scrolls, with no padding: a head, a status that stays, a `width` i
 
 ### Bar
 
-A bar of fixed height with one line below and two places, `start` and `end`; its height comes from its place. The `start` keeps a least: its name at `--k2-start-least` (16ch), or its open tab. Buttons of the `end` that do not fit beside the whole `start` move into a menu "…" at its end, in their order, or into the end's own plain `Menu` "…" as its first section (an end made outside the `Bar`, in an island of its own, gets the bar's "Mehr in dieser Leiste" instead); the primary action, a closing ×, a menu and a search stay. Only when nothing more can fold does the `start` shorten its words with "…", down to its least, never to nothing.
+A bar of fixed height with one line below and two places, `start` and `end`; its height comes from its place. The `start` keeps a least: its name at `--k2-start-least` (16ch), or its open tab. Buttons of the `end` that do not fit beside the whole `start` move into a menu "…" at its end, in their order, or into the end's own `Menu` "…" (one without a symbol of its own, whatever its `label`) as its first section, so a bar never shows two "…" (an end made outside the `Bar`, in an island of its own, gets the bar's "Mehr in dieser Leiste" instead); the primary action, a closing ×, a menu and a search stay. Only when nothing more can fold does the `start` shorten its words with "…", down to its least, never to nothing.
 
 <Props of="Bar" />
 
