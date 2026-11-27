@@ -609,9 +609,11 @@ lines instead of cutting a thing.
   `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
   `items` (a submenu to the side), or `panel` (`(close) => …`, a panel
-  beside the entry such as a `DatePicker`: a dialog of its own over the
-  menu, with its own keys and focus, that calls `close` once it picked;
-  Escape closes it first), and `current` (the value set through that
+  such as a `DatePicker` as the next step: a dialog of its own that takes
+  the place of the menu the entry stands in, under a head that leads
+  back; its own keys and focus, so the arrows stay with the calendar;
+  Escape and the back button lead back; it calls `close` once it
+  picked), and `current` (the value set through that
   submenu or panel, such as a reminder's time: at the end in the app's
   colour and part of the entry's name; it takes the place of `meta`); or
   `"separator"` between groups; or a section `{ title, items }` under a

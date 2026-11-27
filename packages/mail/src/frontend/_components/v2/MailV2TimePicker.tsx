@@ -4,28 +4,33 @@ import { createSignal } from "solid-js";
 
 /**
  * "Datum und Uhrzeit …" of "Später anzeigen" and "Erinnere mich": the v2 calendar with a time, in the person's time
- * zone, from today on. It starts at the time set now, else at 8:00; a time already past is refused under the calendar.
+ * zone, from today on. It starts at the time set now, else at an offered time (tomorrow at 8:00), so its month shows
+ * the days that matter and "Übernehmen" works at once; a time already past is refused under the calendar.
  */
 export const MailV2TimePicker = (props: {
   label: string;
   timeZone: string;
   /** The time set now, as an instant. */
   current: string | null;
+  /** Where the calendar starts without a time set now: an offered time, as an instant; without one it starts empty. */
+  suggested?: string;
   pastError: string;
   onPick: (at: string) => void;
 }) => {
   const [error, setError] = createSignal<string>();
   const today = dates.instantToZonedInput(new Date(Date.now()), props.timeZone).slice(0, 10);
-  const current =
-    props.current && Date.parse(props.current) > Date.now() ? dates.instantToZonedInput(props.current, props.timeZone) : undefined;
+  const start = props.current && Date.parse(props.current) > Date.now() ? props.current : props.suggested;
+  const value = start ? dates.instantToZonedInput(start, props.timeZone) : undefined;
   return (
     <DatePicker
       time
       label={props.label}
       timeZone={props.timeZone}
+      // a moment ahead: six weeks from this week, no month of days that lie behind (on the phone and the desktop alike)
+      view="weeks"
       min={today}
       defaultTime="08:00"
-      {...(current ? { value: current } : {})}
+      {...(value ? { value } : {})}
       {...(error() ? { error: error() } : {})}
       autoFocus
       onPick={(wall) => {
