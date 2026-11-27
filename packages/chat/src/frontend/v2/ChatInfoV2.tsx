@@ -1,7 +1,6 @@
 import { isManagerEntry } from "@k2b/cloud/access/ui";
 import {
   Band,
-  Canvas,
   Choice,
   Empty,
   Failed,
@@ -14,14 +13,15 @@ import {
   Notice,
   Row,
   Section,
+  Select,
   Text,
 } from "@k2b/ui/v2";
 import { For, type JSX, Show } from "solid-js";
 import type { z } from "zod";
-import type { MemberSchema, PermissionSchema } from "../../service/contracts";
+import type { MemberSchema, PermissionSchema, SharedItem } from "../../service/contracts";
 import { type ChatInfoPanelProps, createMemberList } from "../ChatInfoPanel";
 import { type ChatNotificationSettingsProps, createNotificationChoice, NOTIFICATION_SETTINGS_HREF } from "../ChatNotificationSettings";
-import ChatSharedSection from "../ChatSharedSection";
+import { type ChatSharedSectionProps, createSharedList, SHARED_KINDS, sharedRowView } from "../ChatSharedSection";
 
 type Member = z.infer<typeof MemberSchema>;
 type Permission = z.infer<typeof PermissionSchema>;
@@ -92,6 +92,93 @@ function NotificationsV2(props: ChatNotificationSettingsProps): JSX.Element {
         {(following) => <Text type="meta">{t().followingSummary({ name: following().first!.name, more: following().count - 1 })}</Text>}
       </Show>
     </Band>
+  );
+}
+
+/** One shared item: its symbol, title and who shared it when; it jumps to its message. */
+function SharedRowV2(props: { item: SharedItem; meta: string; cards: ChatSharedSectionProps["cards"]; onJump: () => void }): JSX.Element {
+  const row = sharedRowView(props);
+  return (
+    <Row
+      icon={row.icon().replace(/^ti ti-/, "")}
+      lines={[
+        row.title() || " ",
+        row.unavailable()
+          ? `${row.t().noAccess} · ${props.meta}`
+          : row.view()?.status
+            ? `${row.view()?.status} · ${props.meta}`
+            : props.meta,
+      ]}
+      onOpen={props.onJump}
+    />
+  );
+}
+
+/**
+ * What the chat shared on v2: the kind and, in a chat with threads, the thread as two choices, then the items newest
+ * first, each jumping to its message. A failed read says so with "Try again"; more come a page at a time.
+ */
+function SharedV2(props: ChatSharedSectionProps): JSX.Element {
+  const shared = createSharedList(props);
+  const t = shared.t;
+  return (
+    <Section
+      title={t().shared}
+      more={
+        shared.cursor() && !shared.incomplete()
+          ? {
+              label: t().showMoreShared,
+              icon: "dots",
+              disabled: shared.status() !== "ready" || shared.loadingMore(),
+              onClick: () => shared.more(),
+            }
+          : undefined
+      }
+    >
+      <Field.Row>
+        <Field label={t().sharedKinds}>
+          <Select
+            value={shared.kind()}
+            options={SHARED_KINDS.map((entry) => ({ value: entry.kind, label: t()[entry.label] }))}
+            onChange={(value) => {
+              const chosen = SHARED_KINDS.find((entry) => entry.kind === value);
+              if (chosen) shared.setKind(chosen.kind);
+            }}
+          />
+        </Field>
+        <Show when={(props.threads?.items.length ?? 0) > 0}>
+          <Field label={t().sharedThread}>
+            <Select
+              value={shared.thread()}
+              options={shared.threadOptions().map((option) => ({ value: option.value, label: option.label }))}
+              onChange={(value) => shared.setThread(value || "all")}
+            />
+          </Field>
+        </Show>
+      </Field.Row>
+      <Show when={shared.incomplete() && shared.status() === "ready"}>
+        <Notice tone="warn" actions={[{ label: t().retry, onClick: () => shared.refresh() }]}>
+          {t().discussionsIncomplete}
+        </Notice>
+      </Show>
+      <Show when={shared.status() === "failed"}>
+        <Failed text={t().sharedFailed} onRetry={() => shared.refresh()} />
+      </Show>
+      <Show when={shared.status() === "loading"}>
+        <Loading rows={3} lines={2} />
+      </Show>
+      <Show when={shared.status() === "ready" && shared.items().length === 0 && !shared.incomplete()}>
+        <Empty icon="share" text={shared.kind() === "all" && shared.thread() === "all" ? t().nothingShared : t().nothingForFilter} />
+      </Show>
+      <Show when={shared.status() !== "loading" && shared.items().length > 0}>
+        {/* k2b-ui gap (DP Tiles media): images show as rows with a symbol until tiles can show a picture. */}
+        <List label={t().shared}>
+          <For each={shared.items()}>
+            {(item) => <SharedRowV2 item={item} meta={shared.meta(item)} cards={props.cards} onJump={() => props.onJump(item)} />}
+          </For>
+        </List>
+      </Show>
+    </Section>
   );
 }
 
@@ -240,16 +327,7 @@ export default function ChatInfoV2(props: ChatInfoPanelProps): JSX.Element {
           </Show>
         </Section>
       </Show>
-      <Show when={props.sharedProps}>
-        {(shared) => (
-          // k2b-ui gap: what the chat shared (files, links, elements with their filters and pages) still draws v1.
-          <Band label={t().shared}>
-            <Canvas label={t().shared}>
-              <ChatSharedSection {...shared()} />
-            </Canvas>
-          </Band>
-        )}
-      </Show>
+      <Show when={props.sharedProps}>{(shared) => <SharedV2 {...shared()} />}</Show>
     </>
   );
 }
