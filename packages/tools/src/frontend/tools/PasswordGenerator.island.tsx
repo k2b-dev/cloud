@@ -187,15 +187,16 @@ export default function PasswordGenerator() {
                       "user-select": "all",
                     }}
                   >
-                    {/* three steps by length keep the 120 px drawing whole, the short ones as the figure of the page (30); no
-                        step is wider than the drawing (100cqw) allows for one line of mono signs (0.7 em, room for any mono face), so 20 signs stay
-                        on one line on a phone instead of leaving one sign alone; anything longer scrolls inside */}
+                    {/* three steps by length keep the 120 px drawing whole, the short ones as the figure of the page (30). No
+                        step is wider than the drawing (100cqw) allows for one line of signs at 0.8 em each: room for a
+                        fallback face whose M and W are wider than a mono sign (seen on the test VM), so 20 signs stay on
+                        one line on a phone instead of leaving signs alone; anything longer scrolls inside */}
                     <span
                       style={{
-                        "font-family": "var(--k2-font-mono)",
+                        "font-family": '"IBM Plex Mono", var(--k2-font-mono)',
                         "font-weight": 600,
                         "line-height": 1.3,
-                        "font-size": `min(${password().length <= 20 ? 30 : password().length <= 40 ? 22 : 16}px, max(16px, calc(100cqw / ${Math.max(1, Math.min(password().length, 20)) * 0.7})))`,
+                        "font-size": `min(${password().length <= 20 ? 30 : password().length <= 40 ? 22 : 16}px, max(16px, calc(100cqw / ${Math.max(1, Math.min(password().length, 20)) * 0.8})))`,
                       }}
                     >
                       <For each={password().split("")}>{(char) => <span style={{ color: tone(mode(), char) }}>{char}</span>}</For>
