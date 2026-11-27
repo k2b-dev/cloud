@@ -207,6 +207,19 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
             ? { items: [item], total: 4, page: 1, pageSize: 1, totalPages: 4 }
             : { items: [item], total: 1, page: 1, pageSize: 50, totalPages: 1 };
         },
+        // The board reads all its columns in one batch; each column names its filter and, when filtered, its unfiltered one.
+        listFilteredBatch: async (params: {
+          lists: { filter: { tagIds?: string[]; columnIds?: string[]; pageSize?: number }; unfiltered?: { pageSize?: number } }[];
+        }) =>
+          params.lists.map((list) => {
+            listedFilter = list.filter;
+            listedFilters.push(list.filter, ...(list.unfiltered ? [list.unfiltered] : []));
+            return {
+              result: { items: [item], total: 1, page: 1, pageSize: 30, totalPages: 1 },
+              // An unfiltered count request sees the whole column.
+              ...(list.unfiltered ? { unfilteredTotal: 4 } : {}),
+            };
+          }),
         get: async (params: { id: string }) => {
           calls.push("item.get");
           if (params.id === OVERRIDE_ID) return loadedOverride;

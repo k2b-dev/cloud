@@ -1205,17 +1205,16 @@ export const list = async (params: { spaceId: string; includeCompleted?: boolean
   return hydrateRelations(rows.map(mapToItem), params.viewer);
 };
 
-/**
- * List items with full filtering, sorting, and pagination
- * Uses parameterized queries to prevent SQL injection
- */
-export const listFiltered = async (params: {
+type ItemListParams = {
   spaceId: string;
   filter: ItemFilter;
   viewer?: ReactionViewer;
   currentUserId?: string;
   dateConfig?: DateContext;
-}): Promise<ItemListResult> => {
+};
+
+/** The WHERE and ORDER BY of one filtered list, shared by a single list and the board's columns read together. */
+const itemListSql = (params: Omit<ItemListParams, "viewer">) => {
   const { spaceId, filter, currentUserId } = params;
   const {
     itemIds,
@@ -1233,8 +1232,6 @@ export const listFiltered = async (params: {
     sort,
     sortDesc,
     groupBy,
-    page,
-    pageSize,
   } = filter;
 
   // Build WHERE conditions as SQL fragments (safe from injection)
@@ -1412,6 +1409,16 @@ export const listFiltered = async (params: {
       break;
     }
   }
+  return { conditions, orderClause, sortClause, groupKey };
+};
+
+/**
+ * List items with full filtering, sorting, and pagination
+ * Uses parameterized queries to prevent SQL injection
+ */
+export const listFiltered = async (params: ItemListParams): Promise<ItemListResult> => {
+  const { groupBy, page, pageSize } = params.filter;
+  const { conditions, orderClause, sortClause, groupKey } = itemListSql(params);
 
   let groupCounts: Record<string, number> | undefined;
   if (groupBy !== "none") {
@@ -1473,6 +1480,70 @@ export const listFiltered = async (params: {
     totalPages,
     ...(groupCounts ? { groupCounts } : {}),
   };
+};
+
+/**
+ * Several ungrouped lists of one Space at once, such as the board's columns. One statement counts every list (and,
+ * when asked, its size without the board's filter), one statement reads each list's page as its own windowed
+ * subquery, and one hydration covers all rows. Each list keeps listFiltered's WHERE, order and paging, so the cost no
+ * longer grows with the number of lists.
+ */
+export const listFilteredBatch = async (params: {
+  spaceId: string;
+  lists: { filter: ItemFilter; unfiltered?: ItemFilter }[];
+  viewer?: ReactionViewer;
+  currentUserId?: string;
+  dateConfig?: DateContext;
+}): Promise<{ result: ItemListResult; unfilteredTotal?: number }[]> => {
+  if (params.lists.length === 0) return [];
+  const context = { spaceId: params.spaceId, currentUserId: params.currentUserId, dateConfig: params.dateConfig };
+  const lists = params.lists.map((list) => ({
+    filter: list.filter,
+    query: itemListSql({ ...context, filter: list.filter }),
+    unfiltered: list.unfiltered ? itemListSql({ ...context, filter: list.unfiltered }).conditions : null,
+  }));
+  const counted = lists.flatMap((list) => (list.unfiltered ? [list.query.conditions, list.unfiltered] : [list.query.conditions]));
+  const [counts] = await sql<{ totals: number[] }[]>`
+    SELECT ARRAY[${counted
+      .map((conditions) => sql`COUNT(*) FILTER (WHERE ${conditions})::int`)
+      .reduce((acc, count) => sql`${acc}, ${count}`)}] AS totals
+    FROM spaces.items i
+    WHERE i.space_id = ${params.spaceId}
+  `;
+  const pages = lists.map(
+    ({ filter, query }, index) => sql`(
+      SELECT ${index}::int AS list, ROW_NUMBER() OVER (ORDER BY ${query.orderClause}) AS position, i.id
+      FROM spaces.items i
+      LEFT JOIN spaces.columns c ON i.column_id = c.id
+      WHERE ${query.conditions}
+      ORDER BY ${query.orderClause}
+      LIMIT ${filter.pageSize} OFFSET ${(filter.page - 1) * filter.pageSize}
+    )`,
+  );
+  const rows = await sql<(DbItem & { list: number })[]>`
+    SELECT page.list, i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at,
+           i.all_day, i.deadline, i.deadline_date::text AS deadline_date, i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
+           i.rank::text AS rank,
+           i.completed_at,
+           i.created_by, i.created_by_workload, i.created_at, i.updated_at
+    FROM (${pages.reduce((acc, page) => sql`${acc} UNION ALL ${page}`)}) page
+    JOIN spaces.items i ON i.id = page.id
+    ORDER BY page.list, page.position
+  `;
+  const items = await hydrateRelations(rows.map(mapToItem), params.viewer);
+  const byList = lists.map((): SpaceItem[] => []);
+  rows.forEach((row, index) => byList[row.list]!.push(items[index]!));
+  const totals = Array.from(counts?.totals ?? [], Number);
+  let next = 0;
+  return lists.map((list, index) => {
+    const total = totals[next++] ?? 0;
+    const unfilteredTotal = list.unfiltered ? (totals[next++] ?? 0) : undefined;
+    const { page, pageSize } = list.filter;
+    return {
+      result: { items: byList[index]!, total, page, pageSize, totalPages: Math.ceil(total / pageSize) },
+      ...(unfilteredTotal === undefined ? {} : { unfilteredTotal }),
+    };
+  });
 };
 
 /**

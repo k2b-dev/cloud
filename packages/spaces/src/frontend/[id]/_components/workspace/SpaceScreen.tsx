@@ -101,6 +101,7 @@ export default function SpaceScreen(props: SpaceScreenProps) {
       initialDetail: state.selectedItemDetail,
       canWrite: state.canWrite,
       accessVisible: state.accessVisible,
+      initialAccess: state.accessMembers,
     },
     (message) => toast(message, { status: "bad" }),
   );

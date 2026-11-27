@@ -1,4 +1,4 @@
-import { CloudResourceViewSchema } from "@k2b/cloud/contracts";
+import { AccessMemberSchema, CloudResourceViewSchema } from "@k2b/cloud/contracts";
 import { dates as calendar, type DateContext } from "@k2b/stdlib";
 import { z } from "zod";
 import {
@@ -148,6 +148,8 @@ const SpacesWorkspaceStateSchema = z.discriminatedUnion("kind", [
     calendarWeather: z.record(z.string(), DayWeatherSchema),
     calendarTray: CalendarTraySchema,
     selectedItemDetail: SpaceItemDetailSchema.nullable(),
+    /** Who has access, read with the open item so its first picture shows the list; null without an open item or access. */
+    accessMembers: z.array(AccessMemberSchema).nullable().optional(),
     wormholes: z.array(SpaceWormholeSchema),
   }),
 ]);

@@ -1,3 +1,4 @@
+import { toAccessMember } from "@k2b/cloud/contracts";
 import type { RequestAuthority } from "@k2b/cloud/server";
 import { logger, weatherService } from "@k2b/cloud/services";
 import { dates as calendar, type DateContext } from "@k2b/stdlib";
@@ -218,51 +219,48 @@ const loadKanbanBuckets = async (params: {
   const board = orderBoardColumns(params.space.columns, params.space.virtualColumns);
   const virtualKinds = new Set(params.space.virtualColumns.map((virtual) => virtual.kind));
 
-  const loadBucket = async (config: Omit<KanbanBucketInitial, "items" | "page" | "totalPages" | "total">): Promise<KanbanBucketInitial> => {
-    const list = (filter: FilterState, pageSize: number) =>
-      spacesService.item.listFiltered({
-        spaceId: params.spaceId,
-        filter: kanbanBucketFilter({ bucket: config, virtualKinds, filter, page: 1, pageSize }),
-        currentUserId: params.userId,
-        viewer: { kind: "user", id: params.userId },
-        dateConfig: params.dateConfig,
-      });
-    // A filtered column also reports its unfiltered size, so the count says what the filter hides.
-    const [result, unfiltered] = await Promise.all([
-      list(params.filter, KANBAN_PAGE_SIZE),
-      filtered ? list(defaultFilter, 1) : Promise.resolve(null),
-    ]);
+  const buckets: Omit<KanbanBucketInitial, "items" | "page" | "totalPages" | "total">[] = board.map((entry) =>
+    entry.kind === "column"
+      ? {
+          key: `column:${entry.column.id}`,
+          label: entry.column.name,
+          color: entry.column.color,
+          kind: "column",
+          columnId: entry.column.id,
+          isDone: entry.column.isDone,
+        }
+      : {
+          key: `virtual:${entry.kind}`,
+          label: entry.kind === "blocked" ? t.blockedColumn : t.overdueColumn,
+          color: null,
+          kind: entry.kind,
+          columnId: null,
+          isDone: false,
+        },
+  );
+  // Every column's first page in one batch, so the board costs the same few statements however many columns it has.
+  // A filtered column also reports its unfiltered size, so the count says what the filter hides.
+  const pages = await spacesService.item.listFilteredBatch({
+    spaceId: params.spaceId,
+    lists: buckets.map((bucket) => ({
+      filter: kanbanBucketFilter({ bucket, virtualKinds, filter: params.filter, page: 1, pageSize: KANBAN_PAGE_SIZE }),
+      ...(filtered ? { unfiltered: kanbanBucketFilter({ bucket, virtualKinds, filter: defaultFilter, page: 1, pageSize: 1 }) } : {}),
+    })),
+    currentUserId: params.userId,
+    viewer: { kind: "user", id: params.userId },
+    dateConfig: params.dateConfig,
+  });
+  return buckets.map((bucket, index) => {
+    const { result, unfilteredTotal } = pages[index]!;
     return {
-      ...config,
+      ...bucket,
       items: result.items,
       page: result.page,
       totalPages: result.totalPages,
       total: result.total,
-      ...(unfiltered ? { unfilteredTotal: unfiltered.total } : {}),
+      ...(unfilteredTotal === undefined ? {} : { unfilteredTotal }),
     };
-  };
-
-  return Promise.all(
-    board.map((entry) =>
-      entry.kind === "column"
-        ? loadBucket({
-            key: `column:${entry.column.id}`,
-            label: entry.column.name,
-            color: entry.column.color,
-            kind: "column",
-            columnId: entry.column.id,
-            isDone: entry.column.isDone,
-          })
-        : loadBucket({
-            key: `virtual:${entry.kind}`,
-            label: entry.kind === "blocked" ? t.blockedColumn : t.overdueColumn,
-            color: null,
-            kind: entry.kind,
-            columnId: null,
-            isDone: false,
-          }),
-    ),
-  );
+  });
 };
 
 const resolveCalendarRange = (params: {
@@ -337,28 +335,31 @@ const loadCalendarTray = async (params: {
 }): Promise<CalendarTray | null> => {
   const queries = taskTrayFilters(params.filter);
   if (!queries) return null;
-  const load = async (query: FilterState | null) => {
-    if (!query) return { items: [], total: 0 };
-    const { items, total } = await spacesService.item.listFiltered({
-      spaceId: params.spaceId,
-      filter: { ...toListFilter(query), pageSize: TASK_TRAY_SIZE },
-      currentUserId: params.userId,
-      viewer: { kind: "user", id: params.userId },
-      dateConfig: params.dateConfig,
-    });
-    return { items, total };
+  // Both lists in one batch: one count, one page read and one hydration for the tray's rows together.
+  const chosen = [queries.overdue, queries.undated].flatMap((query) => (query ? [query] : []));
+  const pages = await spacesService.item.listFilteredBatch({
+    spaceId: params.spaceId,
+    lists: chosen.map((query) => ({ filter: { ...toListFilter(query), pageSize: TASK_TRAY_SIZE } })),
+    currentUserId: params.userId,
+    viewer: { kind: "user", id: params.userId },
+    dateConfig: params.dateConfig,
+  });
+  const read = (query: FilterState | null) => {
+    const page = query ? pages[chosen.indexOf(query)]?.result : undefined;
+    return page ? { items: page.items, total: page.total } : { items: [], total: 0 };
   };
-  const [overdue, undated] = await Promise.all([load(queries.overdue), load(queries.undated)]);
-  return { overdue, undated };
+  return { overdue: read(queries.overdue), undated: read(queries.undated) };
 };
 
 const projectCalendarTray = async (tray: CalendarTray | null): Promise<CalendarTray | null> => {
   if (!tray) return null;
-  const [overdue, undated] = await Promise.all([
-    spacesPublicResources.projectItems(tray.overdue.items),
-    spacesPublicResources.projectItems(tray.undated.items),
-  ]);
-  return { overdue: { ...tray.overdue, items: overdue }, undated: { ...tray.undated, items: undated } };
+  // Both lists in one projection, as they were read in one batch.
+  const items = await spacesPublicResources.projectItems([...tray.overdue.items, ...tray.undated.items]);
+  const split = tray.overdue.items.length;
+  return {
+    overdue: { ...tray.overdue, items: items.slice(0, split) },
+    undated: { ...tray.undated, items: items.slice(split) },
+  };
 };
 
 const loadCalendarState = async (params: {
@@ -937,12 +938,16 @@ export const loadSpacesWorkspaceState = async (params: WorkspaceRequest): Promis
     authorizationHeader: params.authorizationHeader,
     authority: params.authority,
   });
-  const [publicItemsResult, publicKanbanBuckets, publicCalendarItems, publicCalendarTray, publicWormholes] = await Promise.all([
+  const [publicItemsResult, publicKanbanBuckets, publicCalendarItems, publicCalendarTray, publicWormholes, accessMembers] = await Promise.all([
     spacesPublicResources.projectItemListResult(itemsResult, route.filter.groupBy),
     projectKanbanBuckets(kanbanBuckets, columnIds),
     spacesPublicResources.projectCalendarItems(calendarState.calendarItems),
     projectCalendarTray(calendarState.calendarTray),
     spacesPublicResources.projectWormholes(wormholes),
+    // The open item shows who has access to the space; its first picture carries the list instead of loading it.
+    selectedItemDetail && memberPermission !== "none"
+      ? spacesService.access.list({ spaceId: params.spaceId }).then((entries) => entries.items.map(toAccessMember))
+      : Promise.resolve(null),
   ]);
 
   return {
@@ -971,6 +976,7 @@ export const loadSpacesWorkspaceState = async (params: WorkspaceRequest): Promis
     calendarWeather: calendarState.calendarWeather,
     calendarTray: publicCalendarTray,
     selectedItemDetail,
+    accessMembers,
     wormholes: publicWormholes,
   };
 };

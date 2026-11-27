@@ -25,6 +25,8 @@ export type ItemDetailRouteProps = {
   canWrite: boolean;
   /** Whether the person may read who has access to the space; decided on the server. */
   accessVisible: boolean;
+  /** Who has access, when the server opened an item: the list then needs no load after the first picture. */
+  initialAccess?: AccessMember[] | null;
 };
 
 type DetailHistory = "push" | "replace" | "none";
@@ -119,10 +121,12 @@ export function useItemDetailRoute(props: ItemDetailRouteProps, onError: (messag
       subscribeToSpacesDataInvalidation(["wormholes"], (invalidation) => (props.canWrite ? invalidate(invalidation) : Promise.resolve())),
   });
 
-  // Who has access belongs to the space, not the item: it loads once, when the first item opens after the first paint.
+  // Who has access belongs to the space, not the item: an item the server opened brings it; otherwise it loads once,
+  // when the first item opens after the first paint.
   const [accessWanted, setAccessWanted] = createSignal(false);
   const accessQuery = query.create<string, AccessMember[]>({
     source: () => props.spaceId,
+    initial: props.initialAccess ? { source: props.spaceId, data: props.initialAccess } : undefined,
     enabled: () => props.accessVisible && accessWanted(),
     load: async (spaceId, { abortSignal }) => {
       const response = await apiClient[":id"].access.members.$get({ param: { id: spaceId } }, { init: { signal: abortSignal } });

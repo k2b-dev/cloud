@@ -190,6 +190,8 @@ export const spacesService = {
       return paginateItems(filtered, config.pagination);
     },
     listFiltered: items.listFiltered,
+    /** Several ungrouped lists of one Space in a fixed number of statements, such as the board's columns. */
+    listFilteredBatch: items.listFilteredBatch,
     listAssignableUsers: items.listAssignableUsers,
     /** Single-query cross-space search used by the global search dialog. */
     searchAcross: items.searchAcross,
