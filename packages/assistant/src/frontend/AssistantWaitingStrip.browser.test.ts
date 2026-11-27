@@ -123,7 +123,7 @@ const message = (id: string, seq: number, role: "user" | "assistant", text: stri
 });
 
 /** The server state the routes answer from; a test changes it and tells the page through `window.live`. */
-type State = { locale: Locale; scenario: Scenario };
+type State = { locale: Locale; scenario: Scenario; /** The chat has a web page left open beside it. */ tabs?: boolean };
 
 const tools = (locale: Locale) => {
   const fixtures = aiQuestionFixtures(locale);
@@ -256,6 +256,19 @@ const propsOf = (state: State, url: URL) => {
     initialWorkspaceHref: `${url.pathname}${url.search}`,
     initialDetail: detail,
     initialContext: null,
+    initialTabs: state.tabs
+      ? {
+          chatId: id,
+          snapshot: {
+            revision: 1,
+            state: {
+              tabs: [{ id: "web-1", key: JSON.stringify(["web", id, "https://lieferant.example.org/katalog"]), title: "Lieferant" }],
+              layout: null,
+              front: "web-1",
+            },
+          },
+        }
+      : null,
     projects: [],
     initialProject: null,
     initialProjectChats: null,
@@ -532,6 +545,25 @@ const moreLabel = (page: Page) =>
     );
 
 describe("Waiting for you", () => {
+  // One pane at a time on the phone and in the panel, as in v1: a stored tab stays behind the chat, still mounted.
+  for (const view of [desktop, phone, panel])
+    test(`at ${view.name} a chat with a stored tab shows ${view === desktop ? "both side by side" : "only the chat"}`, async () => {
+      const { page, errors, unrouted, close } = await open(view, { locale: "de", scenario: "none", tabs: true });
+      try {
+        const chat = page.locator('[data-k2-part="Pane"][aria-label="Chat"]');
+        const tabs = page.locator('[data-k2-part="Pane"][aria-label="Offene Tabs des Chats"]');
+        await chat.waitFor();
+        await tabs.waitFor({ state: "attached" });
+        expect(await tabs.isVisible()).toBe(view === desktop);
+        const composer = await page.locator(".assistant-chat-composer").boundingBox();
+        expect(composer !== null && composer.y + composer.height <= view.height).toBe(true);
+        expect(errors).toEqual([]);
+        expect(unrouted).toEqual([]);
+      } finally {
+        await close();
+      }
+    }, 60_000);
+
   for (const view of [desktop, phone, panel])
     for (const theme of ["light", "dark"] as const)
       test(`3, 2 and none pending at ${view.name} in ${theme}: one row above the field, no Approve all`, async () => {

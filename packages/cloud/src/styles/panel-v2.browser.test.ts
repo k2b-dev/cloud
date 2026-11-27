@@ -25,7 +25,7 @@ for (const theme of ["light", "dark"] as const)
       try {
         await page.setContent(
           `<html class="${theme === "dark" ? "dark" : ""}"><head><style>${css}</style></head><body class="k2b-ui">` +
-            `<div class="cloud-panel-page k2-ui" data-cloud-panel-page="" data-ui="v2"><p id="edge" style="padding-left: var(--k2-edge)">Text</p><div class="k2-group" id="group"></div></div>` +
+            `<div class="cloud-panel-page k2-ui" data-cloud-panel-page="" data-ui="v2"><p id="edge" style="padding-left: var(--k2-edge)">Text</p><div class="k2-scroll"><div class="k2-group" id="group"></div></div><div class="k2-dialog-body"><div class="k2-group" id="nested"></div></div></div>` +
             `<div class="k2-ui" id="elsewhere"><p style="padding-left: var(--k2-edge)">Text</p></div>` +
             `</body></html>`,
         );
@@ -41,6 +41,7 @@ for (const theme of ["light", "dark"] as const)
               getComputedStyle(document.getElementById("group")!).marginLeft,
               getComputedStyle(document.getElementById("group")!).marginRight,
             ],
+            nested: getComputedStyle(document.getElementById("nested")!).marginLeft,
             elsewhere: getComputedStyle(document.querySelector("#elsewhere > p")!).paddingLeft,
             fill: getComputedStyle(panel).backgroundColor,
             surface: getComputedStyle(probe).backgroundColor,
@@ -49,6 +50,8 @@ for (const theme of ["light", "dark"] as const)
         expect(result.edge).toBe("16px");
         // a group stands on the same edge
         expect(result.group).toEqual(["16px", "16px"]);
+        // a group inside a dialog of the panel keeps v2's own margin: the rule reaches only a pane's groups
+        expect(result.nested).toBe("20px");
         // a v2 page outside the panel keeps its own edge, so the rule is the panel's alone
         expect(result.elsewhere).toBe(width < 768 ? "16px" : "20px");
         expect(result.fill).toBe(result.surface);

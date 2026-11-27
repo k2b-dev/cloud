@@ -1,10 +1,17 @@
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { useLocale } from "@k2b/ui";
 import { Canvas, Pane, Workspace } from "@k2b/ui/v2";
-import { Show } from "solid-js";
+import { createEffect, onCleanup, Show } from "solid-js";
+import { assistantCommandMessages } from "../../commands";
+import { assistantSearchOptions } from "../assistant-search";
 import type { AssistantWorkspaceParts } from "../assistant-workspace";
+import { assistantMessages } from "../messages";
 import { assistantV2Messages } from "./assistant-v2-messages";
 
-/** The chat and its tabs scroll inside themselves and fill the Canvas without asking for their own height. */
+/**
+ * The chat and its tabs scroll inside themselves and fill the Canvas without asking for their own height.
+ * k2b-ui gap: #4407: a fill Canvas on the phone grows its pane with the drawing, so the drawing is laid out from its edges.
+ */
 const drawing = { position: "absolute", inset: "0", display: "flex", "flex-direction": "column", "min-height": "0" } as const;
 
 /**
@@ -20,10 +27,29 @@ export default function AssistantPanelFrameV2(frame: { w: AssistantWorkspacePart
   // The tabs' pane has the one way back; v1's own button above the tabs stays away.
   w.setTabsBackToChat(false);
   const focused = () => w.artifactWorkspace.mobile() === "workspace";
+  const tabsOpen = () => w.artifactWorkspace.state().tabs.length > 0;
+  // The search of every chat on mod+shift+k while no chat is open, as v1's panel sidebar registered it; an open chat
+  // registers the search of that chat on the same keys.
+  createEffect(() => {
+    if (w.chat.activeConversationId()) return;
+    const commands = assistantCommandMessages.resolve([locale()]).t;
+    onCleanup(
+      registerContextAwareCommand({
+        id: "assistant.search",
+        title: assistantMessages.resolve([locale()]).t.searchChats,
+        description: commands.searchChatsDescription,
+        icon: "ti ti-search",
+        shortcut: "mod+shift+k",
+        action: { search: assistantSearchOptions(locale()) },
+      }),
+    );
+  });
   return (
     <Workspace>
       <Pane.Split>
-        <Pane label={v2().chatPane}>
+        {/* One pane at a time in the panel, as in v1: the pane in front is the detail, and v2 hides the other one (still
+            mounted, so a run or an editor in a tab keeps its state). */}
+        <Pane label={v2().chatPane} detail={tabsOpen() && !focused()}>
           <Canvas label={v2().chatPane} height="fill">
             {/* The chat's own layout reads its width from this container (`assistant-chat`). */}
             <div class="assistant-chat-pane" style={drawing}>
@@ -31,8 +57,7 @@ export default function AssistantPanelFrameV2(frame: { w: AssistantWorkspacePart
             </div>
           </Canvas>
         </Pane>
-        <Show when={w.artifactWorkspace.state().tabs.length > 0}>
-          {/* k2b-ui gap (Z2, gap a): only the pane in front should stand in a narrow split. */}
+        <Show when={tabsOpen()}>
           <Pane
             label={v2().tabsPane}
             detail={focused()}
