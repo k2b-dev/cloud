@@ -1,4 +1,5 @@
 import { createSignal, type JSX, onCleanup, onMount, Show, splitProps } from "solid-js";
+import { cssColor } from "../internal/color";
 import { NoticeCard, type NoticeTone } from "./NoticeCard";
 
 export type NoticeRowProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" | "class"> & {
@@ -67,7 +68,7 @@ export function NoticeRow(props: NoticeRowProps): JSX.Element {
       <article {...articleProps} class={`k2b-notice-card ${local.class ?? ""}`} data-tone={local.tone ?? "neutral"} data-row="">
         <Show when={local.tile}>
           {(tile) => (
-            <span class="k2b-notice-card__tile k2b-icon-tile" style={{ color: local.tileColor }} aria-hidden="true">
+            <span class="k2b-notice-card__tile k2b-icon-tile" style={{ color: cssColor(local.tileColor) }} aria-hidden="true">
               <i class={tile()} />
             </span>
           )}
@@ -98,7 +99,7 @@ export function NoticeRow(props: NoticeRowProps): JSX.Element {
     });
   });
   return (
-    <div class="k2b-notice-card-container" ref={host} style={{ "--k2b-notice-tile-color": local.tileColor }}>
+    <div class="k2b-notice-card-container" ref={host} style={{ "--k2b-notice-tile-color": cssColor(local.tileColor) }}>
       <NoticeCard
         {...articleProps}
         class={local.class}

@@ -1,7 +1,7 @@
 /* Scoped scan: only this app's own .ts/.tsx. Cloud-lib classes (UI components,
    layout primitives, etc.) come in via global.css. Apps must NEVER scan each
    other's source. */
-@import "@k2b/speedtest/styles.css";
+@import "./speedtest.css";
 @import "tailwindcss/utilities.css" layer(utilities);
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
@@ -14,64 +14,6 @@
 .tools-tool-icon {
   width: 2rem;
   height: 2rem;
-}
-
-.tools-qr-root {
-  container-type: inline-size;
-}
-
-.tools-qr-workbench {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(15rem, 0.85fr);
-  grid-template-areas:
-    "input preview"
-    "advanced preview";
-  gap: var(--ui-space-section);
-  align-items: start;
-}
-
-.tools-qr-input {
-  grid-area: input;
-}
-
-.tools-qr-preview {
-  grid-area: preview;
-  align-self: stretch;
-}
-
-.tools-qr-advanced {
-  grid-area: advanced;
-}
-
-.tools-qr-preview-frame {
-  display: flex;
-  min-height: 18rem;
-  flex: 1 1 auto;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  padding: 1rem;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-surface);
-  background: var(--ui-surface);
-}
-
-.tools-qr-image {
-  display: block;
-  width: min(100%, 20rem);
-  height: auto;
-  aspect-ratio: 1;
-}
-
-.tools-local-note {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.25rem;
-  padding-inline: 0.25rem;
-  color: var(--ui-text-dimmed);
-  font-size: 0.6875rem;
-  line-height: 1rem;
 }
 
 .tools-image-converter-export .k2b-split-button {
@@ -146,20 +88,6 @@
   .tools-image-converter-card__actions,
   .tools-image-converter-card img {
     transition: none;
-  }
-}
-
-@container (max-width: 42rem) {
-  .tools-qr-workbench {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      "input"
-      "preview"
-      "advanced";
-  }
-
-  .tools-qr-preview-frame {
-    min-height: 15rem;
   }
 }
 
