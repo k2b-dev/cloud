@@ -53,6 +53,18 @@ test("a stack shows three people and '+n', named once with every name", () => {
   expect(html(Avatar.Stack, { people, label: "Werkstatt-Team" })).toContain('aria-label="Werkstatt-Team"');
 });
 
+test("a stack of the first few of many counts the rest of all of them", () => {
+  const people = ["Felix Thal", "Jonas Kern", "Mira Solberg"].map((name) => ({ name }));
+  const stack = html(Avatar.Stack, { people, total: 12, max: 2 });
+  expect(stack.match(/class="k2-av"/g)?.length).toBe(2);
+  expect(stack.match(/data-visible="(\d)" aria-hidden="true">(\+\d+)</g)).toEqual([
+    'data-visible="1" aria-hidden="true">+11<',
+    'data-visible="2" aria-hidden="true">+10<',
+  ]);
+  // with all of them shown the full stack has no count, as without a total (narrower places keep theirs)
+  expect(html(Avatar.Stack, { people, total: 3, max: 3 })).not.toContain('data-visible="3"');
+});
+
 test("a spark scales its bars to the highest value and keeps a sliver for a zero", () => {
   const spark = html(Spark, { values: [0, 5, 10], label: "Änderungen" });
   expect(spark).toContain('role="img"');

@@ -124,6 +124,11 @@ export type AvatarStackProps = {
   people: readonly Person[];
   /** How many show before "+n" takes the rest: 3 when not set. */
   max?: number;
+  /**
+   * How many people there are in all, when `people` holds only the first of them (a server that names a few of many):
+   * "+n" counts the rest of all of them. Without it, the number of `people`.
+   */
+  total?: number;
   /** A name for the whole stack, for assistive technology; without one the names of all the people. */
   label?: string;
 };
@@ -137,13 +142,14 @@ const AvatarStack = (props: AvatarStackProps) => {
   const shown = () => props.people.slice(0, Math.min(5, Math.max(1, props.max ?? 3)));
   // "+n" for each number of faces the place may leave visible: the stylesheet shows the one that matches, so the count
   // is always right and always whole, from the server's first render on
+  const all = () => Math.max(props.people.length, props.total ?? 0);
   const counts = () =>
     shown()
-      .map((_, index) => ({ visible: index + 1, rest: props.people.length - (index + 1) }))
+      .map((_, index) => ({ visible: index + 1, rest: all() - (index + 1) }))
       .filter((count) => count.rest > 0);
   // The stack's room when nothing is narrow: its faces (24 px, each over the one before by 4 px) and a count of up to
   // three signs, the measure the stylesheet hides faces by; one face alone needs no room for a count.
-  const room = () => (shown().length === 1 ? 24 + (props.people.length > 1 ? 30 : 0) : 54 + 20 * (shown().length - 1));
+  const room = () => (shown().length === 1 ? 24 + (all() > 1 ? 30 : 0) : 54 + 20 * (shown().length - 1));
   return (
     <span
       class="k2-avs"
