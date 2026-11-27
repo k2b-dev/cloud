@@ -1,5 +1,6 @@
 import postcss from "postcss";
 import selectorParser, { type Node, type Selector } from "postcss-selector-parser";
+import { v2Parts } from "./v2-parts";
 
 // An island (`<solid-island>`, `<solid-client>` from @k2b/ssr) is a `display: contents` wrapper: boxes ignore it, but
 // selectors do not. `.k2-bar-end > .k2-btn`, `:last-child` and `+` see the wrapper as the child or sibling, so a button
@@ -20,7 +21,10 @@ import selectorParser, { type Node, type Selector } from "postcss-selector-parse
 // - `:has(> …)`, `:has(+ …)` and `:has(~ …)` look through a wrapper below the anchor, never past the anchor's own wrapper;
 // - `:nth-child(1 of S)` and `:nth-last-child(1 of S)` count like `:first-child` and `:last-child` among the siblings that
 //   match S;
-// - a compound without a class, id, attribute or tag (`*`, `:not(.x)`) never matches the wrapper itself;
+// - a compound without a class, id, attribute or tag (`*`, `:not(.x)`) never matches the wrapper itself; an `:is()` or
+//   `:where()` whose every selector names one counts as naming one;
+// - an inner part of a primitive (`parts`, from scripts/v2-parts.ts) is never in a wrapper: a relation to it, from it
+//   in a sibling relation, and its first or last place need no wrapper's way;
 // - a run of compounds holds at most one sibling relation.
 // Every added part sits in `:where()`, so specificity, and with it the cascade, stays exactly as written; without a
 // wrapper on the page every rule matches exactly what it matched before. A rule's selector becomes a list of whole
@@ -29,10 +33,11 @@ import selectorParser, { type Node, type Selector } from "postcss-selector-parse
 // rule whose subject is one `:is()` of several selectors it checks against every element that changes. And it checks
 // a `:has()` whose argument counts siblings with `:nth-*-child(… of S)` again on every change of the page. Both made
 // WebKit style a page that redraws an SVG of 300 nodes (the Notebooks graph) about 20 times as long as with the plain
-// sheet; now it takes about three times as long, most of it for the child relation through a wrapper itself, which
-// a redraw of 300 nodes fits into a frame. `src/v2/island-css-cost.browser.test.ts` holds it to that (its comment has
-// the measured ratios). So a `:has()` whose last-child question is about the app's content, not about parts of one
-// primitive, asks it outside the `:has()` (the last but phone forms of a table). A form this cannot make transparent
+// sheet. Without them it takes less than three times as long, most of it for the ways through a wrapper themselves,
+// and a redraw of 300 nodes still fits into a frame; leaving out the ways an inner part never needs saves a fifth of
+// that. `src/v2/island-css-cost.browser.test.ts` holds it there (its comment has the measured ratios). So a `:has()`
+// whose last-child question is about the app's content, not about parts of one primitive, asks it outside the
+// `:has()` (the last but phone forms of a table). A form this cannot make transparent
 // (`:nth-*`, `:*-of-type`, `:empty`, a sibling relation inside `:has()` after its first step, also inside `:is()`,
 // a `:has()` before a sibling relation, two sibling relations in a row, an escaped pseudo-class)
 // fails the build;
@@ -53,8 +58,9 @@ const LOGICAL = new Set([":is", ":where", ":not", ":matches", ":-webkit-any", ":
 const PSEUDO_ELEMENTS = new Set([":before", ":after", ":first-line", ":first-letter"]);
 
 /** `internal`: the comment before the rule begins `one primitive:`, so its `+` relates two parts of one primitive. */
-type Context = { inHas: boolean; placeholder: boolean; internal: boolean; rule: string };
-type Compound = { body: string; pseudoElement: string; hasHas: boolean };
+type Context = { inHas: boolean; placeholder: boolean; internal: boolean; rule: string; parts: ReadonlySet<string> };
+/** `part`: the compound names an inner part of a primitive (`parts`), which no wrapper ever holds. */
+type Compound = { body: string; pseudoElement: string; hasHas: boolean; part: boolean };
 type Relation = ">" | "+" | "~";
 type Variant = "direct" | "wrapped" | "left" | "both";
 /** How one relation crosses wrappers; `gap`: the empty wrappers a `+` steps over. */
@@ -66,10 +72,25 @@ const fail = (context: Context, reason: string): never => {
   throw new Error(`v2.css: ${reason} cannot see through an island wrapper in \`${context.rule}\``);
 };
 
+/** Whether a selector's subject names a class, id, tag or attribute, which a wrapper never has (or one of its own). */
+const namesSomething = (selector: Selector): boolean => {
+  const nodes = selector.nodes;
+  let start = nodes.length;
+  while (start > 0 && nodes[start - 1]!.type !== "combinator") start--;
+  return nodes.slice(start).some((node) => {
+    if (node.type === "class" || node.type === "id" || node.type === "attribute") return true;
+    if (node.type === "tag") return !/^solid-(island|client)$/i.test(node.value);
+    return node.type === "pseudo" && /^:(is|where|matches|-webkit-any)$/i.test(node.value) && node.nodes.every(namesSomething);
+  });
+};
+
 const compound = (nodes: Node[], context: Context, argument = false): Compound => {
   let body = "";
   let pseudoElement = "";
   let positive = false;
+  // an inner part of a primitive is never in a wrapper: its place needs no wrapper's place beside it
+  const part = nodes.some((node) => node.type === "class" && context.parts.has(node.value));
+  const inWrapper = (place: string) => (part ? "" : `:where(:not(${WRAPPER}>*),${WRAPPER}${place}>*)`);
   for (const node of nodes) {
     if (node.type === "comment") continue;
     if (pseudoElement) {
@@ -86,8 +107,8 @@ const compound = (nodes: Node[], context: Context, argument = false): Compound =
       }
       if (STRUCTURAL.has(name)) {
         // inside `:has()` the plain pseudo-class: there skipping empty wrappers would cost every change of the page
-        const place = context.inHas ? name : PLACE[name];
-        body += `${place}:where(:not(${WRAPPER}>*),${WRAPPER}${place}>*)`;
+        const place = context.inHas ? name : PLACE[name]!;
+        body += `${place}${inWrapper(place)}`;
         continue;
       }
       // `:nth-child(1 of S)` and `:nth-last-child(1 of S)`: first or last among the siblings that match S, as
@@ -95,7 +116,7 @@ const compound = (nodes: Node[], context: Context, argument = false): Compound =
       const among = /^:nth-(last-)?child\(\s*1\s+of\s+([\s\S]+)\)$/.exec(String(node).trim());
       if (among) {
         const place = `:nth-${among[1] ?? ""}child(1 of :is(${among[2]}):not(${EMPTY}))`;
-        body += `${place}:where(:not(${WRAPPER}>*),${WRAPPER}${place}>*)`;
+        body += `${place}${inWrapper(place)}`;
         continue;
       }
       if (/^:nth-|-of-type$|^:empty$/.test(name)) {
@@ -104,6 +125,8 @@ const compound = (nodes: Node[], context: Context, argument = false): Compound =
         continue;
       }
       if (LOGICAL.has(name)) {
+        // `:is(.a, .b)` and `:where(…)` match only what each of their selectors names: a wrapper only if one of them can
+        if (name !== ":not" && node.nodes.every(namesSomething)) positive = true;
         body += `${node.value}(${node.nodes.map((inner) => complex(inner, context, true)).join(",")})`;
         continue;
       }
@@ -127,7 +150,7 @@ const compound = (nodes: Node[], context: Context, argument = false): Compound =
   }
   // The subject of an argument (`:not(:hover)`) is the element of the compound around it, which decides.
   if (!positive && !argument) body += NOT_WRAPPER;
-  return { body, pseudoElement, hasHas: body.includes(":has(") };
+  return { body, pseudoElement, hasHas: body.includes(":has("), part };
 };
 
 type Parsed = { lead?: Relation | " "; compounds: Node[][]; combinators: string[] };
@@ -161,6 +184,8 @@ const run = (compounds: Compound[], relations: Relation[], context: Context, lea
   // Two sibling relations in a row would need the middle compound in or out of a wrapper on both sides at once.
   if (relations.filter((relation) => relation !== ">").length > 1) fail(context, "two sibling relations in a row");
   const choices = all.map((relation, index): Step[] => {
+    // an inner part of a primitive stands where its primitive put it, never in a wrapper
+    if (relation === ">" && compounds[index + offset]?.part) return [{ variant: "direct", gap: 0 }];
     if (relation === ">")
       return [
         { variant: "direct", gap: 0 },
@@ -171,7 +196,14 @@ const run = (compounds: Compound[], relations: Relation[], context: Context, lea
     const left = compounds[index + offset - 1];
     // The left side in a wrapper needs `:has()` around it, and `:has()` does not nest.
     if (left?.hasHas && !context.inHas) fail(context, ":has() before a sibling relation");
-    const variants: Variant[] = left && !context.inHas ? ["direct", "wrapped", "left", "both"] : ["direct", "wrapped"];
+    const right = compounds[index + offset];
+    // a side that is an inner part of a primitive is never in a wrapper
+    const variants = (
+      left && !context.inHas ? (["direct", "wrapped", "left", "both"] as Variant[]) : (["direct", "wrapped"] as Variant[])
+    ).filter(
+      (variant) =>
+        !(right?.part && (variant === "wrapped" || variant === "both")) && !(left?.part && (variant === "left" || variant === "both")),
+    );
     const gaps = relation === "+" && !context.internal ? Array.from({ length: MAX_EMPTY + 1 }, (_, gap) => gap) : [0];
     return variants.flatMap((variant) => gaps.map((gap) => ({ variant, gap })));
   });
@@ -281,8 +313,11 @@ const ruleSelectors = (selector: Selector, context: Context): string[] => {
   );
 };
 
-/** v2.css as it ships: every relation also holds through one island wrapper. */
-export const transparentIslands = (css: string): string => {
+/** v2.css as it ships: every relation also holds through one island wrapper, except where an inner part needs none. */
+export const shippedV2Css = (css: string): string => transparentIslands(css, v2Parts());
+
+/** `css` with every relation also through one island wrapper; `parts`: the inner parts of primitives, which need none. */
+export const transparentIslands = (css: string, parts: ReadonlySet<string> = new Set()): string => {
   const root = postcss.parse(css);
   root.walkRules((rule) => {
     if (rule.parent?.type === "atrule" && /keyframes$/i.test((rule.parent as postcss.AtRule).name)) return;
@@ -292,7 +327,7 @@ export const transparentIslands = (css: string): string => {
     rule.selector = selectors.nodes
       .flatMap((selector) => {
         const text = String(selector).trim();
-        return ruleSelectors(selector, { inHas: false, placeholder: text.includes(".k2-skel"), internal, rule: text });
+        return ruleSelectors(selector, { inHas: false, placeholder: text.includes(".k2-skel"), internal, rule: text, parts });
       })
       .join(",\n");
   });
