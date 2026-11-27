@@ -10,9 +10,7 @@ import {
   Check,
   Field,
   Icon,
-  Inline,
   Input,
-  Mark,
   Menu,
   type NavProps,
   Notice,
@@ -21,7 +19,6 @@ import {
   Row,
   Section,
   Select,
-  Setting,
   Table,
   Text,
   useLocale,
@@ -96,7 +93,6 @@ export default function BudgetsScreen(props: { nav: NavProps; data: AiBudgetsDat
   const spend = () => props.data.spend;
   /** Active chat models without prices: budgets never limit them, as the rules editor always said. */
   const unpriced = () => props.data.models.filter((model) => !model.priced).map((model) => model.label);
-  const days = () => spend()?.days ?? [];
 
   return (
     <AdminWorkspace
@@ -133,11 +129,7 @@ export default function BudgetsScreen(props: { nav: NavProps; data: AiBudgetsDat
               label={t().spend30}
               value={spend() ? (spend()!.cost === null ? t().noDataShort : money(spend()!.cost)) : t().noDataShort}
               meta={spend() ? t().spendMeta({ p: spend()!.accounts.toLocaleString(locale()) }) : t().loadFailed}
-              trend={
-                days().length > 1
-                  ? { values: days(), label: t().spendTrend({ from: money(days()[0]!), to: money(days().at(-1)!) }) }
-                  : undefined
-              }
+              // slot for #4208/#4223 (DP): Cells trend, the 30 days of spend (spend().days) as a spark with t().spendTrend
               href={aiAreaHref({ sec: "budgets", rule: "people" })}
             />
             <Cells.Cell
@@ -180,7 +172,8 @@ export default function BudgetsScreen(props: { nav: NavProps; data: AiBudgetsDat
             more={{ label: t().peopleUsage, href: aiAreaHref({ sec: "budgets", rule: "people" }), forward: true }}
           >
             {/* every rule on or off at once; it stands with the rules, so the phone keeps it too */}
-            <Setting label={t().budgetsOn} hint={t().budgetsOnHint}>
+            {/* slot for #4208/#4223 (DP): this field becomes a Setting row (name left, value at a fixed width) */}
+            <Field label={t().budgetsOn} hint={t().budgetsOnHint}>
               <Check
                 switch
                 label={config().enabled ? t().on : t().off}
@@ -188,7 +181,7 @@ export default function BudgetsScreen(props: { nav: NavProps; data: AiBudgetsDat
                 disabled={toggling()}
                 onChange={(enabled) => void toggle(enabled)}
               />
-            </Setting>
+            </Field>
             <Table
               label={t().rules}
               rows={config().rules}
@@ -201,7 +194,7 @@ export default function BudgetsScreen(props: { nav: NavProps; data: AiBudgetsDat
                 action: { label: t().addRule, icon: "plus", href: aiAreaHref({ sec: "budgets", rule: "new" }) },
               }}
               phone={(rule) => ({
-                mark: { icon: rule.scope === "*" ? "stack-2" : "cube", color: AI_COLOR },
+                // slot for #4208/#4223 (DP): the scope's mark (stack-2 for all, cube for one) in AI_COLOR leads the phone row
                 lines: [scopeName(rule.scope), `${grantLine(t(), rule, grantName, money)} · ${period(t(), rule.hours)}`],
                 time: (rule.peopleAtLimit ?? 0) > 0 ? t().atLimitShort({ p: rule.peopleAtLimit ?? 0 }) : undefined,
               })}
@@ -209,7 +202,7 @@ export default function BudgetsScreen(props: { nav: NavProps; data: AiBudgetsDat
                 {
                   title: t().ruleScope,
                   width: { min: 150, default: 190 },
-                  mark: (rule) => ({ icon: rule.scope === "*" ? "stack-2" : "cube", color: AI_COLOR }),
+                  // slot for #4208/#4223 (DP): Column mark, stack-2 for all models or cube for one, in AI_COLOR
                   cell: (rule) => scopeName(rule.scope),
                 },
                 { title: t().rulePeriod, width: { min: 90, default: 110 }, drop: true, cell: (rule) => period(t(), rule.hours) },
@@ -231,7 +224,8 @@ export default function BudgetsScreen(props: { nav: NavProps; data: AiBudgetsDat
           </Section>
           <Section icon="clock-bolt" title={t().jobs}>
             <Row
-              mark={{ icon: "user-cog", color: AI_COLOR }}
+              icon="user-cog"
+              color={AI_COLOR}
               lines={[
                 t().persBudget,
                 props.data.personalizationTokens
@@ -367,11 +361,8 @@ function BudgetDetail(props: { config: AiBudgetConfig; rule: string; models: Mod
       head={
         <Bar
           start={
-            // k2b-ui gap: tinted object head (ObjectHead, #4360)
-            <Inline>
-              <Mark icon={brake() ? "hand-stop" : rule().scope === "*" ? "stack-2" : "cube"} color={AI_COLOR} />
-              <Text type="body">{title()}</Text>
-            </Inline>
+            // slot for #4208/#4223 (DP): the tinted object head (ObjectHead, #4360) with the mark (hand-stop, stack-2 or cube) in AI_COLOR; the name stands in
+            <Text type="body">{title()}</Text>
           }
           end={
             <>
@@ -482,27 +473,28 @@ function BudgetDetail(props: { config: AiBudgetConfig; rule: string; models: Mod
       >
         <Show when={!missing()} fallback={<Notice tone="bad">{t().ruleMissing}</Notice>}>
           <Section icon="settings" title={t().ruleSettings}>
-            <Setting label={t().ruleScope} error={!scopeAvailable() ? t().scopeUsed : undefined}>
+            {/* slot for #4208/#4223 (DP): the fields of this rule and its grants become Setting rows (name left, value at a fixed width) */}
+            <Field label={t().ruleScope} error={!scopeAvailable() ? t().scopeUsed : undefined}>
               <Select
                 value={rule().scope}
                 options={scopeOptions()}
                 disabled={!isNew() || saving()}
                 onChange={(next) => setRule((current) => ({ ...current, scope: next }))}
               />
-            </Setting>
-            <Setting label={t().rulePeriod}>
+            </Field>
+            <Field label={t().rulePeriod}>
               <Select
                 value={String(rule().hours)}
                 disabled={saving()}
                 options={[...new Set([...PERIODS, rule().hours])].map((hours) => ({ value: String(hours), label: period(t(), hours) }))}
                 onChange={(value) => setRule((current) => ({ ...current, hours: Number(value) }))}
               />
-            </Setting>
+            </Field>
           </Section>
           <Section icon="users" title={t().ruleGrants} count={rule().grants.length}>
             <For each={rule().grants}>
               {(grant, index) => (
-                <Setting
+                <Field
                   label={principalLabel(grant, locale())}
                   action={{
                     label: t().delete,
@@ -522,7 +514,7 @@ function BudgetDetail(props: { config: AiBudgetConfig; rule: string; models: Mod
                     end={<Text type="meta">{unit()}</Text>}
                     onInput={(value) => updateGrant(index(), value.trim() === "" ? null : Number(value))}
                   />
-                </Setting>
+                </Field>
               )}
             </For>
             {/* k2b-ui gap: no person and group picker in v2; the v1 picker stands in */}

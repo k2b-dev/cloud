@@ -13,10 +13,8 @@ import {
   Facts,
   Failed,
   Icon,
-  Inline,
   List,
   Loading,
-  Mark,
   Menu,
   type NavProps,
   Notice,
@@ -37,10 +35,8 @@ import { openSkillAccess, readError } from "./content-access";
 import type { AiSkillRow, AiSkillsData } from "./content-data";
 import { aiContentMessages } from "./content-messages";
 import { type ContentAddress, ContentPager, ContentSearch, contentHref } from "./content-parts";
-import { AI_COLOR, aiAreaLink, aiSectionLabel } from "./frame";
+import { aiAreaLink, aiSectionLabel } from "./frame";
 import SkillDiff from "./SkillDiff";
-
-const skillMark = { icon: "wand", color: AI_COLOR };
 
 /**
  * Skills on v2: the shared Skills of the platform as a table with search and pages, the open Skill beside it with its
@@ -103,7 +99,11 @@ export default function SkillsScreen(props: { nav: NavProps; data: AiSkillsData 
   const sourceCell = (skill: AiSkillRow) => {
     const source = skill.source;
     if (!source) return "";
-    const quiet = [appName(source), source.status === "modified" ? s().appSkillCustomized : "", source.available ? "" : s().appSkillUnavailable]
+    const quiet = [
+      appName(source),
+      source.status === "modified" ? s().appSkillCustomized : "",
+      source.available ? "" : s().appSkillUnavailable,
+    ]
       .filter(Boolean)
       .join(" · ");
     return source.status === "update_available" ? (
@@ -132,152 +132,155 @@ export default function SkillsScreen(props: { nav: NavProps; data: AiSkillsData 
 
   /** The list; beside an open entry it keeps its width and a grip, alone it takes the page (no empty half). */
   const listPane = (split: boolean) => (
-        <Pane
-          label={t().skillsList}
-          width={split ? { min: 420, default: 600 } : undefined}
-          scrollKey="admin-ai-skills"
-          status={
-            // k2b-ui gap: Hero figure (#4360); the summary's count is the statement until the figure type exists
-            <StatusRow
-              lead={data().search ? t().matches({ count: data().summary.total, search: data().search }) : t().skillsLead({ count: data().summary.total })}
-              facts={[
-                { value: data().summary.totalAccess.toLocaleString(locale()), after: t().accessAfter },
-                ...(pages() > 1 ? [{ value: t().pageOf({ page: data().page, pages: pages() }) }] : []),
-              ]}
-              filters={<ContentPager address={address()} pages={pages()} t={t()} />}
-            />
+    <Pane
+      label={t().skillsList}
+      width={split ? { min: 420, default: 600 } : undefined}
+      scrollKey="admin-ai-skills"
+      status={
+        // k2b-ui gap: Hero figure (#4360); the summary's count is the statement until the figure type exists
+        <StatusRow
+          lead={
+            data().search
+              ? t().matches({ count: data().summary.total, search: data().search })
+              : t().skillsLead({ count: data().summary.total })
           }
-        >
-          <Show when={data().summary.unmanaged > 0}>
-            <Notice tone="bad" title={t().skillsUnmanaged({ count: data().summary.unmanaged })}>
-              {t().unmanagedText}
-            </Notice>
-          </Show>
-          <Table
-            label={t().skillsList}
-            rows={data().skills}
-            rowKey={(skill) => skill.shortId}
-            current={data().open ?? undefined}
-            open={(skill) => ({ href: contentHref({ ...address(), open: skill.shortId }) })}
-            empty={
-              data().search
-                ? {
-                    icon: "filter-off",
-                    text: s().noSkillsMatch({ search: data().search }),
-                    action: { label: t().showAll, href: contentHref({ sec: "skills", search: "", page: 1 }) },
-                  }
-                : { icon: "wand", text: s().noSkills }
-            }
-            phone={(skill) => ({
-              mark: skillMark,
-              lines: [
-                skill.name,
-                <>
-                  <Show when={orphan(skill)} fallback={adminsText(skill)}>
-                    <Text tone="bad">
-                      <Icon name="point-filled" /> {s().noAdmins}
-                    </Text>
-                  </Show>
-                  {skill.source ? ` · ${appName(skill.source)}` : ""}
-                </>,
-              ],
-              time: skill.updated,
-            })}
-            columns={[
-              { title: s().skill, width: { min: 180, default: 260 }, mark: () => skillMark, cell: (skill) => skill.name },
-              // the one problem column stands right after the name, so it stays in view beside an open Skill
-              { title: s().admins, width: { min: 140, default: 180 }, cell: adminsCell },
-              { title: s().access, width: { min: 72, default: 84 }, align: "end", cell: (skill) => skill.accessCount.toLocaleString(locale()) },
-              { title: s().skillSource, width: { min: 140, default: 260 }, drop: true, cell: sourceCell },
-              { title: s().updated, drop: true, cell: (skill) => skill.updated },
-            ]}
-          />
-          <Show when={data().appSkillIssues.length > 0}>
-            <AppSkillIssues issues={data().appSkillIssues} appName={appName} reload={reload} />
-          </Show>
-        </Pane>
+          facts={[
+            { value: data().summary.totalAccess.toLocaleString(locale()), after: t().accessAfter },
+            ...(pages() > 1 ? [{ value: t().pageOf({ page: data().page, pages: pages() }) }] : []),
+          ]}
+          filters={<ContentPager address={address()} pages={pages()} t={t()} />}
+        />
+      }
+    >
+      <Show when={data().summary.unmanaged > 0}>
+        <Notice tone="bad" title={t().skillsUnmanaged({ count: data().summary.unmanaged })}>
+          {t().unmanagedText}
+        </Notice>
+      </Show>
+      <Table
+        label={t().skillsList}
+        rows={data().skills}
+        rowKey={(skill) => skill.shortId}
+        current={data().open ?? undefined}
+        open={(skill) => ({ href: contentHref({ ...address(), open: skill.shortId }) })}
+        empty={
+          data().search
+            ? {
+                icon: "filter-off",
+                text: s().noSkillsMatch({ search: data().search }),
+                action: { label: t().showAll, href: contentHref({ sec: "skills", search: "", page: 1 }) },
+              }
+            : { icon: "wand", text: s().noSkills }
+        }
+        phone={(skill) => ({
+          // slot for #4208/#4223 (DP): the Skill's mark leads the phone row
+          lines: [
+            skill.name,
+            <>
+              <Show when={orphan(skill)} fallback={adminsText(skill)}>
+                <Text tone="bad">
+                  <Icon name="point-filled" /> {s().noAdmins}
+                </Text>
+              </Show>
+              {skill.source ? ` · ${appName(skill.source)}` : ""}
+            </>,
+          ],
+          time: skill.updated,
+        })}
+        columns={[
+          {
+            title: s().skill,
+            width: { min: 180, default: 260 },
+            // slot for #4208/#4223 (DP): Column mark "wand" in AI_COLOR
+            cell: (skill) => skill.name,
+          },
+          // the one problem column stands right after the name, so it stays in view beside an open Skill
+          { title: s().admins, width: { min: 140, default: 180 }, cell: adminsCell },
+          { title: s().access, width: { min: 72, default: 84 }, align: "end", cell: (skill) => skill.accessCount.toLocaleString(locale()) },
+          { title: s().skillSource, width: { min: 140, default: 260 }, drop: true, cell: sourceCell },
+          { title: s().updated, drop: true, cell: (skill) => skill.updated },
+        ]}
+      />
+      <Show when={data().appSkillIssues.length > 0}>
+        <AppSkillIssues issues={data().appSkillIssues} appName={appName} reload={reload} />
+      </Show>
+    </Pane>
   );
   /** The open entry beside the list; on the phone it is the page, with the way back to the list. */
   const detailPane = (skill: AiSkillRow) => (
-            <Pane
-              detail
-              label={skill.name}
-              back={{ label: t().skillsList, href: listHref() }}
-              head={
-                <Bar
-                  start={
-                    // k2b-ui gap: tinted object head (ObjectHead, #4360); mark and name stand in
-                    <Inline>
-                      <Mark {...skillMark} />
-                      <Text type="body" weight="strong">
-                        {skill.name}
-                      </Text>
-                    </Inline>
-                  }
-                  end={
-                    <>
-                      <Button icon="shield" busy={accessBusy()} onClick={() => void editAccess(skill)}>
-                        {s().permissions}
-                      </Button>
-                      <Menu
-                        label={s().actionsFor({ name: skill.name })}
-                        disabled={deleting()}
-                        items={[
-                          ...(skill.source ? [{ label: s().compareWithApp, icon: "git-compare", onClick: () => setComparing(skill) }] : []),
-                          { label: s().deleteSkill, icon: "trash", danger: true, onClick: () => void remove(skill) },
-                        ]}
-                      />
-                      <Button variant="ghost" icon="x" label={t().closeDetail} href={listHref()} />
-                    </>
-                  }
-                />
-              }
-            >
-              <Show when={orphan(skill)}>
-                <Notice
-                  tone="bad"
-                  title={t().noAdminTitle}
-                >
-                  {t().skillNoAdminText}
-                </Notice>
-              </Show>
-              <Show when={skill.source?.status === "update_available"}>
-                <Notice
-                  tone="warn"
-                  title={s().appSkillUpdate}
-                  actions={[{ label: s().compareWithApp, icon: "git-compare", onClick: () => setComparing(skill) }]}
-                >
-                  {t().updateText}
-                </Notice>
-              </Show>
-              <Show when={skill.description}>
-                <Text>{skill.description}</Text>
-              </Show>
-              <Section icon="info-circle" title={t().details}>
-                <Facts
-                  items={[
-                    { label: s().skillSource, value: sourceText(skill) },
-                    // an update stands as the notice above; the fact says only a quieter state
-                    ...(skill.source && skill.source.status !== "update_available"
-                      ? [
-                          {
-                            label: t().state,
-                            value: skill.source?.status === "modified" ? s().appSkillCustomized : s().appSkillCurrent,
-                            hint: skill.source?.available ? undefined : s().appSkillUnavailable,
-                          },
-                        ]
-                      : []),
-                    { label: s().access, value: t().entries({ count: skill.accessCount }) },
-                    // no admin stands as the notice above; the fact says it only once
-                    ...(orphan(skill) ? [] : [{ label: s().admins, value: adminsText(skill) }]),
-                    { label: t().references, value: skill.referenceCount.toLocaleString(locale()) },
-                    { label: s().updated, value: skill.updated },
-                    { label: t().created, value: skill.created },
-                    { label: t().id, value: skill.shortId, mono: true, copy: skill.shortId },
-                  ]}
-                />
-              </Section>
-            </Pane>
+    <Pane
+      detail
+      label={skill.name}
+      back={{ label: t().skillsList, href: listHref() }}
+      head={
+        <Bar
+          start={
+            // slot for #4208/#4223 (DP): the tinted object head (ObjectHead, #4360) with the mark "wand" in AI_COLOR; the name stands in
+            <Text type="body" weight="strong">
+              {skill.name}
+            </Text>
+          }
+          end={
+            <>
+              <Button icon="shield" busy={accessBusy()} onClick={() => void editAccess(skill)}>
+                {s().permissions}
+              </Button>
+              <Menu
+                label={s().actionsFor({ name: skill.name })}
+                disabled={deleting()}
+                items={[
+                  ...(skill.source ? [{ label: s().compareWithApp, icon: "git-compare", onClick: () => setComparing(skill) }] : []),
+                  { label: s().deleteSkill, icon: "trash", danger: true, onClick: () => void remove(skill) },
+                ]}
+              />
+              <Button variant="ghost" icon="x" label={t().closeDetail} href={listHref()} />
+            </>
+          }
+        />
+      }
+    >
+      <Show when={orphan(skill)}>
+        <Notice tone="bad" title={t().noAdminTitle}>
+          {t().skillNoAdminText}
+        </Notice>
+      </Show>
+      <Show when={skill.source?.status === "update_available"}>
+        <Notice
+          tone="warn"
+          title={s().appSkillUpdate}
+          actions={[{ label: s().compareWithApp, icon: "git-compare", onClick: () => setComparing(skill) }]}
+        >
+          {t().updateText}
+        </Notice>
+      </Show>
+      <Show when={skill.description}>
+        <Text>{skill.description}</Text>
+      </Show>
+      <Section icon="info-circle" title={t().details}>
+        <Facts
+          items={[
+            { label: s().skillSource, value: sourceText(skill) },
+            // an update stands as the notice above; the fact says only a quieter state
+            ...(skill.source && skill.source.status !== "update_available"
+              ? [
+                  {
+                    label: t().state,
+                    value: skill.source?.status === "modified" ? s().appSkillCustomized : s().appSkillCurrent,
+                    hint: skill.source?.available ? undefined : s().appSkillUnavailable,
+                  },
+                ]
+              : []),
+            { label: s().access, value: t().entries({ count: skill.accessCount }) },
+            // no admin stands as the notice above; the fact says it only once
+            ...(orphan(skill) ? [] : [{ label: s().admins, value: adminsText(skill) }]),
+            { label: t().references, value: skill.referenceCount.toLocaleString(locale()) },
+            { label: s().updated, value: skill.updated },
+            { label: t().created, value: skill.created },
+            { label: t().id, value: skill.shortId, mono: true, copy: skill.shortId },
+          ]}
+        />
+      </Section>
+    </Pane>
   );
 
   return (
@@ -301,14 +304,7 @@ export default function SkillsScreen(props: { nav: NavProps; data: AiSkillsData 
         )}
       </Show>
       <Show when={comparing()}>
-        {(skill) => (
-          <AppVersionDialog
-            skill={skill()}
-            appName={sourceApp(skill())}
-            onClose={() => setComparing(null)}
-            onReset={reload}
-          />
-        )}
+        {(skill) => <AppVersionDialog skill={skill()} appName={sourceApp(skill())} onClose={() => setComparing(null)} onReset={reload} />}
       </Show>
     </AdminWorkspace>
   );
@@ -349,12 +345,17 @@ function AppSkillIssues(props: { issues: AiAppSkillIssue[]; appName: (issue: AiA
       <Chip>{s().appSkillDeleted}</Chip>
     );
   return (
-    <Section icon="plug-x" title={s().appSkillsNotInstalled} count={t().issuesCount({ count: props.issues.length })} summary={s().appSkillsNotInstalledDescription}>
+    <Section
+      icon="plug-x"
+      title={s().appSkillsNotInstalled}
+      count={t().issuesCount({ count: props.issues.length })}
+      summary={s().appSkillsNotInstalledDescription}
+    >
       <List label={s().appSkillsNotInstalled}>
         <For each={props.issues}>
           {(issue) => (
             <Row
-              mark={{ icon: "wand" }}
+              icon="wand"
               lines={[
                 issue.name,
                 [
@@ -365,7 +366,8 @@ function AppSkillIssues(props: { issues: AiAppSkillIssue[]; appName: (issue: AiA
                   .filter(Boolean)
                   .join(" · "),
               ]}
-              states={stateChip(issue)}
+              // slot for #4208/#4223 (DP): Row states, the state chip under the lines; until then it stands among the marks
+              marks={stateChip(issue)}
               end={
                 issue.state === "invalid" ? undefined : (
                   <Menu
@@ -377,7 +379,9 @@ function AppSkillIssues(props: { issues: AiAppSkillIssue[]; appName: (issue: AiA
                         icon: "restore",
                         onClick: () => void run(issue, "restore"),
                       },
-                      ...(issue.state === "name_taken" ? [{ label: s().adoptAppSkill, icon: "link", onClick: () => void run(issue, "adopt") }] : []),
+                      ...(issue.state === "name_taken"
+                        ? [{ label: s().adoptAppSkill, icon: "link", onClick: () => void run(issue, "adopt") }]
+                        : []),
                     ]}
                   />
                 )
@@ -455,7 +459,10 @@ function AppVersionDialog(props: { skill: AiSkillRow; appName: string; onClose: 
     >
       <Text muted>{s().compareWithAppSubtitle({ app: props.appName })}</Text>
       <Show when={!version.loading()} fallback={<Loading rows={4} />}>
-        <Show when={version.data()} fallback={<Failed text={version.error()?.message ?? s().appVersionFailed} onRetry={() => void version.refresh()} />}>
+        <Show
+          when={version.data()}
+          fallback={<Failed text={version.error()?.message ?? s().appVersionFailed} onRetry={() => void version.refresh()} />}
+        >
           {(answer) => (
             <Show when={answer().app} fallback={<Empty icon="plug-off" text={s().appVersionMissing} />}>
               <Show when={files().length > 0} fallback={<Empty icon="check" text={s().appVersionMatches} />}>

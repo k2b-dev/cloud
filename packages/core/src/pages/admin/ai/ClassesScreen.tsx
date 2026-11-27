@@ -9,6 +9,7 @@ import {
   type AiModelVariant,
   aiModelClassFallbackChain,
   aiModelSupportsSlot,
+  aiProviderMark,
 } from "@k2b/cloud/shared";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import {
@@ -17,8 +18,6 @@ import {
   Canvas,
   Facts,
   Icon,
-  Inline,
-  Mark,
   Menu,
   type MenuEntry,
   type NavProps,
@@ -36,8 +35,7 @@ import { createSignal, For, Show } from "solid-js";
 import { aiAreaHref } from "./area";
 import type { AiClassesData } from "./catalog-data";
 import { type AiAdminConflict, aiAdminApi, asAiConflict, readAiAdmin, reloadAiArea } from "./client";
-import { AI_COLOR, aiAreaLink, aiSectionLabel } from "./frame";
-import { modelMark } from "./marks";
+import { aiAreaLink, aiSectionLabel } from "./frame";
 import { aiAreaMessages } from "./messages";
 import {
   type AiAreaMessages,
@@ -52,20 +50,7 @@ import {
 import { effortLabel } from "./variants";
 
 const TOOLS: AiModelSlot[] = ["vision", "audio", "liveAudio", "decision"];
-const SLOT_ICON: Record<AiModelSlot, string> = {
-  fast: "bolt",
-  balanced: "scale",
-  thorough: "microscope",
-  maximum: "rocket",
-  vision: "photo",
-  audio: "microphone",
-  liveAudio: "microphone-2",
-  decision: "route",
-};
 const NONE = "__none";
-
-/** A class or tool: the AI area's sign with the slot's symbol. */
-const slotMark = (slot: AiModelSlot) => ({ icon: SLOT_ICON[slot], color: AI_COLOR });
 
 const slotHint = (t: AiAreaMessages, slot: AiModelSlot) =>
   isAiModelClass(slot)
@@ -173,7 +158,7 @@ export default function ClassesScreen(props: { nav: NavProps; data: AiClassesDat
             phone={(slot) => {
               const found = find(assigned(slot));
               return {
-                mark: slotMark(slot),
+                // slot for #4208/#4223 (DP): the slot's mark in AI_COLOR leads the phone row
                 lines: [
                   aiSlotLabel(t(), slot),
                   found ? `${aiVariantName(found.model, found.variant, data().variants)} · ${found.provider.label}` : emptyText(slot),
@@ -184,7 +169,7 @@ export default function ClassesScreen(props: { nav: NavProps; data: AiClassesDat
               {
                 title: t().colSlot,
                 width: { min: 150, default: 180 },
-                mark: slotMark,
+                // slot for #4208/#4223 (DP): Column mark, the slot's symbol in AI_COLOR (fast bolt, balanced scale, thorough microscope, maximum rocket, vision photo, audio microphone, liveAudio microphone-2, decision route)
                 cell: (slot) => aiSlotLabel(t(), slot),
               },
               {
@@ -193,10 +178,8 @@ export default function ClassesScreen(props: { nav: NavProps; data: AiClassesDat
                 cell: (slot) => {
                   const found = find(assigned(slot));
                   return found ? (
-                    <Inline>
-                      <Mark {...modelMark(found.model, found.provider)} />
-                      <Text>{aiVariantName(found.model, found.variant, data().variants)}</Text>
-                    </Inline>
+                    // slot for #4208/#4223 (DP): the model's mark (its picture, or its kind's symbol in its provider's colour) before the name
+                    <Text>{aiVariantName(found.model, found.variant, data().variants)}</Text>
                   ) : (
                     <Text
                       tone={isAiModelClass(slot) && !overview().effective[slot]?.class ? "bad" : undefined}
@@ -321,7 +304,7 @@ function SlotDetail(props: { slot: AiModelSlot; data: AiClassesData; appNames: R
             return {
               value: variant.id,
               label: aiVariantName(model, variant, props.data.variants),
-              color: modelMark(model, provider).color,
+              color: aiProviderMark(provider).color,
               meta: [
                 variant.reasoningEffort ? t().variantFallback({ p: effortLabel(t(), variant.reasoningEffort) }) : "",
                 others.map((slot) => aiSlotLabel(t(), slot)).join(", "),
@@ -369,11 +352,8 @@ function SlotDetail(props: { slot: AiModelSlot; data: AiClassesData; appNames: R
       head={
         <Bar
           start={
-            // k2b-ui gap: tinted object head (ObjectHead, #4360)
-            <Inline>
-              <Mark {...slotMark(props.slot)} />
-              <Text type="body">{aiSlotLabel(t(), props.slot)}</Text>
-            </Inline>
+            // slot for #4208/#4223 (DP): the tinted object head (ObjectHead, #4360) with the slot's mark in AI_COLOR; the name stands in
+            <Text type="body">{aiSlotLabel(t(), props.slot)}</Text>
           }
           end={<Button variant="ghost" icon="x" label={t().close} href={aiAreaHref({ sec: "classes" })} />}
         />

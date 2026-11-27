@@ -294,7 +294,7 @@ test("policy, groups and effective rights render their rows with values and sour
   expect(words).toContain("Für andere sichtbar");
   expect(words).not.toContain("silent: shared");
   expect(words).toContain("Braucht immer einen Menschen");
-  expect(policy).toContain('data-k2-part="Setting"');
+  expect(policy).toContain('data-k2-part="Field"');
   expect(policy).toContain('href="/admin/code?sec=history"');
   const groups = text(render({ sec: "groups", id: data.FIXTURE_GROUPS.buchhaltung }));
   expect(groups).toContain("Buchhaltung");
@@ -347,7 +347,7 @@ test("cleanup shows deletion jobs and retries, while access stays in the target'
 
 test("limits are settings with their value beside them, grouped; runners show places, queue and waiting time", () => {
   const limits = render({ sec: "limits" });
-  expect(limits).toContain('data-k2-part="Setting"');
+  expect(limits).toContain('data-k2-part="Field"');
   for (const label of [
     "Wanduhr je Lauf (ms)",
     "Brückenaufrufe je Lauf",

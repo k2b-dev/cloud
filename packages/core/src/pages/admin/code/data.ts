@@ -76,12 +76,6 @@ export function ownerLabel(t: CodeAdminMessages, owner: CodeOwner, ownerName: st
   return ownerName ?? t.ownerHidden({ app: apps[appId]?.name ?? t.ownerUnknown });
 }
 
-/** The mark of an automation: the Code sign in the colour of the app it belongs to; personal Code in Code's own colour. */
-export const automationMark = (owner: CodeOwner, apps: Record<string, CodeApp>) => {
-  const appId = ownerAppId(owner);
-  return { icon: "code", color: (appId ? apps[appId]?.color : undefined) ?? CODE_COLOR };
-};
-
 /** Why an admin is asked, in words: what the strictest rows let it do, and which policy says so. */
 export function approvalReason(r: CodeReviewMessages, detail: CodeAdminApprovalDetail): string {
   if (!detail.why.length) return r.reasonNone;

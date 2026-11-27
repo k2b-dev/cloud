@@ -9,8 +9,6 @@ import {
   Facts,
   Failed,
   Icon,
-  Inline,
-  Mark,
   type NavProps,
   Pane,
   Path,
@@ -28,7 +26,6 @@ import type { AiProvidersData } from "./catalog-data";
 import { type AiDeleteTarget, DeleteDialog } from "./delete";
 import { aiAreaLink, aiSectionLabel } from "./frame";
 import ModelDetail, { aiMoney } from "./ModelDetail";
-import { modelMark, providerMark } from "./marks";
 import { aiAreaMessages } from "./messages";
 import {
   type AiAreaMessages,
@@ -144,7 +141,7 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
         action: { label: t().addProvider, icon: "plus", onClick: () => setAdding("provider") },
       }}
       phone={(entry) => ({
-        mark: providerMark(entry),
+        // slot for #4208/#4223 (DP): the provider's mark leads the phone row
         lines: [
           entry.label,
           <>
@@ -154,7 +151,12 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
         ],
       })}
       columns={[
-        { title: t().colProvider, width: { min: 160, default: 220 }, mark: providerMark, cell: (entry) => entry.label },
+        {
+          title: t().colProvider,
+          width: { min: 160, default: 220 },
+          // slot for #4208/#4223 (DP): Column mark, the provider's kind (server-2 for ollama and vllm, plug-connected for openai-compatible, else cloud) in aiProviderMark(provider).color
+          cell: (entry) => entry.label,
+        },
         {
           title: t().colState,
           width: { min: 120, default: 150 },
@@ -188,14 +190,14 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
         action: { label: t().addModels, icon: "plus", onClick: () => setAdding("models") },
       }}
       phone={(model) => ({
-        mark: modelMark(model, entry),
+        // slot for #4208/#4223 (DP): the model's mark leads the phone row
         lines: [model.label, [kindLabel(model), classes(model), model.enabled ? "" : t().disabled].filter(Boolean).join(" · ")],
       })}
       columns={[
         {
           title: t().modelLabel,
           width: narrow ? { min: 180, default: 220 } : { min: 140, default: 170 },
-          mark: (model) => modelMark(model, entry),
+          // slot for #4208/#4223 (DP): Column mark, the model's uploaded picture, else its kind (microphone for transcription, route for decision, message-2 for chat) in its provider's colour
           cell: (model) => model.label,
         },
         ...(narrow
@@ -224,11 +226,8 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
         head={
           <Bar
             start={
-              // k2b-ui gap: tinted object head (ObjectHead, #4360); the provider's sign and name stand in the head
-              <Inline>
-                <Mark {...providerMark(detail.entry)} />
-                <Text type="body">{detail.entry.label}</Text>
-              </Inline>
+              // slot for #4208/#4223 (DP): the tinted object head (ObjectHead, #4360) with the provider's mark; the name stands in
+              <Text type="body">{detail.entry.label}</Text>
             }
             end={
               <>

@@ -187,19 +187,25 @@ export default function PeopleScreen(props: { nav: NavProps; data: AiPeopleData 
             />
           }
           end={
-            <Input
-              type="search"
-              icon="search"
-              label={t().search}
-              placeholder={t().searchShort}
-              value={q().search}
-              onKeyDown={(event) => {
-                if (event.isComposing) return;
-                const input = event.currentTarget as HTMLInputElement;
-                if (event.key === "Enter") search(input.value);
-                if (event.key === "Escape" && input.value) search("");
-              }}
-            />
+            <>
+              <Input
+                type="search"
+                icon="search"
+                label={t().search}
+                placeholder={t().searchShort}
+                value={q().search}
+                onKeyDown={(event) => {
+                  if (event.isComposing) return;
+                  const input = event.currentTarget as HTMLInputElement;
+                  if (event.key === "Enter") search(input.value);
+                  if (event.key === "Escape" && input.value) search("");
+                }}
+              />
+              {/* slot for #4208/#4223 (DP): FilterBar end, where this refresh stands at the end of the filter row; until then it stands in the head */}
+              <Button variant="ghost" icon="refresh" href={href({ until: undefined })}>
+                {t().refresh}
+              </Button>
+            </>
           }
         />
       }
@@ -216,11 +222,6 @@ export default function PeopleScreen(props: { nav: NavProps; data: AiPeopleData 
               onChange={change}
               timeZone={props.data.timeZone}
               results={t().accountsCount({ count: n(report().total) })}
-              end={
-                <Button variant="ghost" icon="refresh" href={href({ until: undefined })}>
-                  {t().refresh}
-                </Button>
-              }
             />
           }
         >
@@ -232,14 +233,7 @@ export default function PeopleScreen(props: { nav: NavProps; data: AiPeopleData 
               label={`${t().costShort} (${unit()})`}
               value={amount(report().overview.cost)}
               meta={quotaRangeLabel(t(), q().range)}
-              trend={
-                report().timeline.some((point) => (point.cost ?? 0) > 0)
-                  ? {
-                      values: report().timeline.map((point) => point.cost ?? 0),
-                      label: t().costTrend({ range: quotaRangeLabel(t(), q().range), total: amount(report().overview.cost), unit: unit() }),
-                    }
-                  : undefined
-              }
+              // slot for #4208/#4223 (DP): Cells trend, the cost per step (report().timeline cost) as a spark with t().costTrend
             />
             <Cells.Cell
               icon="users"
@@ -290,9 +284,14 @@ export default function PeopleScreen(props: { nav: NavProps; data: AiPeopleData 
                 {
                   title: t().account,
                   width: { min: 180, default: 240 },
-                  avatar: (row) => ({ name: row.label }),
+                  // slot for #4208/#4223 (DP): Column avatar of the account (it replaces the Avatar in the cell)
                   sort: sorted("label"),
-                  cell: (row) => row.label,
+                  cell: (row) => (
+                    <Inline>
+                      <Avatar name={row.label} decorative />
+                      {row.label}
+                    </Inline>
+                  ),
                 },
                 {
                   title: t().costShort,

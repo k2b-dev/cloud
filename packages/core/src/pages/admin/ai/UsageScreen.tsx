@@ -11,6 +11,7 @@ import {
 } from "@k2b/cloud/shared";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import {
+  Avatar,
   Bar,
   Button,
   Canvas,
@@ -21,6 +22,7 @@ import {
   type Fact,
   Facts,
   FilterBar,
+  Inline,
   type NavProps,
   Notice,
   type OnNavigate,
@@ -180,10 +182,9 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
     { label: t().errors, points: points((point) => point.failed) },
   ];
   const tokenSeries = () => [{ label: t().tokens, points: points((point) => point.tokens) }];
-  const costTrend = () => report().timeline.map((point) => point.cost ?? 0);
 
   /** The key figures of a cohort as one strip: runs, tokens, costs, negative ratings, each with what is measured. */
-  const figures = (stats: AiUsageStats, trend?: number[]) => (
+  const figures = (stats: AiUsageStats) => (
     // k2b-ui gap: Hero figure (#4360); the strip of key figures leads until the figure type 30 exists.
     <Cells>
       <Cells.Cell
@@ -192,11 +193,7 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
         label={`${t().cost} (${unit()})`}
         value={cost(stats.cost)}
         meta={`${coverage(stats.costCoverage)} ${t().measured}`}
-        trend={
-          trend && trend.some((value) => value > 0)
-            ? { values: trend, label: t().costTrend({ range: usageRangeLabel(t(), q().range), total: cost(stats.cost), unit: unit() }) }
-            : undefined
-        }
+        // slot for #4208/#4223 (DP): Cells trend, the cost per step (report().timeline cost) as a spark with t().costTrend
       />
       <Cells.Cell icon="player-play" label={t().runs} value={n(stats.runs)} meta={t().errorsCount({ count: n(stats.failed) })} />
       <Cells.Cell icon="coins" label={t().tokens} value={n(stats.tokens)} meta={`${coverage(stats.tokenCoverage)} ${t().measured}`} />
@@ -251,12 +248,18 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
             {
               title,
               width: { min: 180, default: 240 },
-              ...(dimension === "users" ? { avatar: (row: AiUsageGroup) => ({ name: label(row) }) } : {}),
-              ...(dimension === "models" ? { mark: () => ({ icon: "cube", color: AI_COLOR }) } : {}),
+              // slot for #4208/#4223 (DP): Column avatar for people (it replaces the Avatar in the cell), Column mark "cube" in AI_COLOR for models
               cell: (row) =>
-                row.providerModel || (dimension === "workflows" && row.appId)
-                  ? { lines: [label(row), row.providerModel ?? row.appId ?? ""] }
-                  : label(row),
+                row.providerModel || (dimension === "workflows" && row.appId) ? (
+                  { lines: [label(row), row.providerModel ?? row.appId ?? ""] }
+                ) : dimension === "users" ? (
+                  <Inline>
+                    <Avatar name={label(row)} decorative />
+                    {label(row)}
+                  </Inline>
+                ) : (
+                  label(row)
+                ),
             },
             { title: t().runs, width: { min: 80, default: 96 }, align: "end", sort: sortBy("runs"), cell: (row) => n(row.runs) },
             {
@@ -445,13 +448,19 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
             />
           }
           end={
-            <Show when={q().userId && q().userId !== "unassigned" ? q().userId : undefined}>
-              {(userId) => (
-                <Button variant="text" icon="gauge" href={aiQuotaHref({ identity: userId(), identityType: "user", range: q().range })}>
-                  {t().allowances}
-                </Button>
-              )}
-            </Show>
+            <>
+              <Show when={q().userId && q().userId !== "unassigned" ? q().userId : undefined}>
+                {(userId) => (
+                  <Button variant="text" icon="gauge" href={aiQuotaHref({ identity: userId(), identityType: "user", range: q().range })}>
+                    {t().allowances}
+                  </Button>
+                )}
+              </Show>
+              {/* slot for #4208/#4223 (DP): FilterBar end, where this refresh stands at the end of the filter row; until then it stands in the head */}
+              <Button variant="ghost" icon="refresh" href={link({ until: undefined })}>
+                {t().refresh}
+              </Button>
+            </>
           }
         />
       }
@@ -469,16 +478,11 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
               names={names()}
               timeZone={props.data.timeZone}
               results={results()}
-              end={
-                <Button variant="ghost" icon="refresh" href={link({ until: undefined })}>
-                  {t().refresh}
-                </Button>
-              }
             />
           }
         >
           <Show when={q().view === "overview"}>
-            {figures(report().overview, costTrend())}
+            {figures(report().overview)}
             <Section icon="chart-line" color={AI_COLOR} title={t().costOverTime} count={unit()} summary={usageRangeLabel(t(), q().range)}>
               <Canvas label={t().costOverTime} height={220}>
                 <Show when={hasPoints(costSeries())} fallback={<Empty icon="chart-line" text={t().noCosts} />}>
@@ -590,8 +594,13 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
                   {
                     title: t().user,
                     width: { min: 140, default: 180 },
-                    avatar: (row) => ({ name: person(row.userId, row.userLabel) }),
-                    cell: (row) => person(row.userId, row.userLabel),
+                    // slot for #4208/#4223 (DP): Column avatar of the person (it replaces the Avatar in the cell)
+                    cell: (row) => (
+                      <Inline>
+                        <Avatar name={person(row.userId, row.userLabel)} decorative />
+                        {person(row.userId, row.userLabel)}
+                      </Inline>
+                    ),
                   },
                   {
                     title: t().reason,

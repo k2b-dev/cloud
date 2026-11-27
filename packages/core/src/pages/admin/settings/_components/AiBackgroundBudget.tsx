@@ -1,6 +1,6 @@
 import { coreClient } from "@k2b/cloud/clients/core";
 import type { AiQuotaConfig } from "@k2b/cloud/shared";
-import { Check, Facts, Input, Notice, Section, Setting, Text, useLocale } from "@k2b/ui/v2";
+import { Check, Facts, Field, Input, Notice, Section, Text, useLocale } from "@k2b/ui/v2";
 import { createSignal, onMount, Show } from "solid-js";
 import { aiAreaMessages } from "../../ai/messages";
 
@@ -117,10 +117,11 @@ export default function AiBackgroundBudget(props: {
         />
       </Section>
       <Section icon="hand-stop" title={t().brake}>
-        <Setting label={t().accountingUnit} hint={t().unitHint}>
+        {/* slot for #4208/#4223 (DP): the fields of the brake become Setting rows (name left, value at a fixed width) */}
+        <Field label={t().accountingUnit} hint={t().unitHint}>
           <Input value={unit()} disabled={props.disabled} onInput={(value) => props.change({ ...props.config, unit: value })} />
-        </Setting>
-        <Setting label={t().brakeSwitch} hint={t().brakeSwitchHint}>
+        </Field>
+        <Field label={t().brakeSwitch} hint={t().brakeSwitchHint}>
           <Check
             switch
             label={budget().enabled ? t().on : t().off}
@@ -128,9 +129,9 @@ export default function AiBackgroundBudget(props: {
             disabled={props.disabled}
             onChange={(enabled) => update({ enabled })}
           />
-        </Setting>
+        </Field>
         <Show when={budget().enabled}>
-          <Setting label={t().budgetWarning} hint={t().optional}>
+          <Field label={t().budgetWarning} hint={t().optional}>
             <Input
               type="number"
               min={0}
@@ -139,8 +140,8 @@ export default function AiBackgroundBudget(props: {
               end={<Text type="meta">{unit()}</Text>}
               onInput={(value) => update({ warnAt: value.trim() === "" ? null : Number(value) })}
             />
-          </Setting>
-          <Setting label={t().budgetStop} hint={t().brakeStopHint}>
+          </Field>
+          <Field label={t().budgetStop} hint={t().brakeStopHint}>
             <Input
               type="number"
               min={0}
@@ -151,7 +152,7 @@ export default function AiBackgroundBudget(props: {
                 if (value.trim() !== "") update({ stopAt: Number(value) });
               }}
             />
-          </Setting>
+          </Field>
         </Show>
       </Section>
       <Text type="meta" muted>

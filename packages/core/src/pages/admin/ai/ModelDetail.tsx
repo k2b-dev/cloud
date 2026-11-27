@@ -25,14 +25,12 @@ import {
   ImageInput,
   Inline,
   Input,
-  Mark,
   Menu,
   Notice,
   Pane,
   Popover,
   Row,
   Section,
-  Setting,
   Table,
   Text,
   useLocale,
@@ -43,7 +41,6 @@ import { z } from "zod";
 import { aiAreaHref } from "./area";
 import { type AiAdminConflict, aiAdminApi, asAiConflict, readAiAdmin, reloadAiArea } from "./client";
 import { ConflictNotice } from "./conflict";
-import { modelMark } from "./marks";
 import { aiAreaMessages } from "./messages";
 import { type AiAreaMessages, aiProviderState, aiSlotLabel, isAiModelClass } from "./presentation";
 import { AiProviderNotice } from "./provider-notice";
@@ -210,7 +207,6 @@ export default function ModelDetail(props: {
   const unit = () => props.accountingUnit ?? "EUR";
   const update = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }));
   const dirty = () => JSON.stringify(draft()) !== JSON.stringify(toDraft(base()));
-  const providerSign = () => ({ id: props.provider.id, label: props.provider.label });
 
   const patchFrom = (value: Draft) => {
     let extraBody: Record<string, unknown> | null = null;
@@ -335,11 +331,8 @@ export default function ModelDetail(props: {
       head={
         <Bar
           start={
-            // k2b-ui gap: tinted object head (ObjectHead, #4360); the model's sign and name stand in the head
-            <Inline>
-              <Mark {...modelMark({ kind: draft().kind, icon: draft().icon }, providerSign())} />
-              <Text type="body">{props.model.label}</Text>
-            </Inline>
+            // slot for #4208/#4223 (DP): the tinted object head (ObjectHead, #4360) with the model's mark (its picture, or its kind's symbol in its provider's colour); the name stands in
+            <Text type="body">{props.model.label}</Text>
           }
           end={
             <>
@@ -530,7 +523,8 @@ export default function ModelDetail(props: {
       </Show>
 
       <Section icon="user" title={t().forPeople}>
-        <Setting label={t().active} hint={t().activeHint}>
+        {/* slot for #4208/#4223 (DP): the fields of this section and of the prices become Setting rows (name left, value at a fixed width) */}
+        <Field label={t().active} hint={t().activeHint}>
           <Check
             switch
             label={draft().enabled ? t().on : t().off}
@@ -538,11 +532,11 @@ export default function ModelDetail(props: {
             disabled={saving()}
             onChange={(enabled) => update({ enabled })}
           />
-        </Setting>
-        <Setting label={t().displayName}>
+        </Field>
+        <Field label={t().displayName}>
           <Input value={draft().label} disabled={saving()} onInput={(label) => update({ label })} />
-        </Setting>
-        <Setting label={t().iconLabel} hint={t().iconHelp}>
+        </Field>
+        <Field label={t().iconLabel} hint={t().iconHelp}>
           <Choice
             name="model-icon"
             value={iconKind()}
@@ -558,9 +552,9 @@ export default function ModelDetail(props: {
               if (kind === "emoji" && draft().icon.kind !== "emoji") update({ icon: { kind: "emoji", emoji: "✨" } });
             }}
           />
-        </Setting>
+        </Field>
         <Show when={iconKind() === "emoji"}>
-          <Setting label={t().chooseEmoji}>
+          <Field label={t().chooseEmoji}>
             {/* k2b-ui gap: no emoji picker in v2; the v1 picker stands in a v2 popover */}
             <Popover
               label={t().chooseEmoji}
@@ -569,10 +563,10 @@ export default function ModelDetail(props: {
             >
               {emojiOf(draft().icon)}
             </Popover>
-          </Setting>
+          </Field>
         </Show>
         <Show when={iconKind() === "image"}>
-          <Setting label={t().iconUpload}>
+          <Field label={t().iconUpload}>
             <ImageInput
               value={imageOf(draft().icon)}
               accept="image/png,image/jpeg,image/webp,image/svg+xml"
@@ -587,9 +581,9 @@ export default function ModelDetail(props: {
               }}
               onChange={(dataUrl) => update({ icon: dataUrl ? { kind: "image", dataUrl } : { kind: "provider" } })}
             />
-          </Setting>
+          </Field>
         </Show>
-        <Setting
+        <Field
           label={t().description}
           hint={`${t().descHelp} ${draft().description.length}/160`}
           error={!audio() && !draft().description.trim() ? t().noSubtitle : undefined}
@@ -601,12 +595,12 @@ export default function ModelDetail(props: {
             disabled={saving()}
             onInput={(description) => update({ description })}
           />
-        </Setting>
+        </Field>
       </Section>
 
       <Section icon="coin" title={t().prices} summary={audio() ? t().audioNoPrice : t().pricesSub}>
         <Show when={!audio()}>
-          <Setting label={t().setPrices}>
+          <Field label={t().setPrices}>
             <Check
               switch
               label={draft().priced ? t().on : t().off}
@@ -614,9 +608,9 @@ export default function ModelDetail(props: {
               disabled={saving()}
               onChange={(priced) => update({ priced })}
             />
-          </Setting>
+          </Field>
           <Show when={draft().priced} fallback={<Notice tone="warn">{t().unpricedWarn}</Notice>}>
-            <Setting label={t().inPrice} hint={example()}>
+            <Field label={t().inPrice} hint={example()}>
               <Input
                 type="number"
                 min={0}
@@ -625,8 +619,8 @@ export default function ModelDetail(props: {
                 end={<Text type="meta">{t().perMillion({ unit: unit() })}</Text>}
                 onInput={(value) => update({ inputPerMillion: numberOf(value) })}
               />
-            </Setting>
-            <Setting label={t().outPrice}>
+            </Field>
+            <Field label={t().outPrice}>
               <Input
                 type="number"
                 min={0}
@@ -635,7 +629,7 @@ export default function ModelDetail(props: {
                 end={<Text type="meta">{t().perMillion({ unit: unit() })}</Text>}
                 onInput={(value) => update({ outputPerMillion: numberOf(value) })}
               />
-            </Setting>
+            </Field>
           </Show>
           <Show when={unpricedChat()}>
             <Notice tone="note">{t().automationPriceRequired}</Notice>
@@ -721,7 +715,8 @@ export default function ModelDetail(props: {
       </Section>
 
       <Section icon="cpu" title={t().modelSec}>
-        <Setting label={t().providerModelId}>
+        {/* slot for #4208/#4223 (DP): the fields of this section and its advanced part become Setting rows (name left, value at a fixed width) */}
+        <Field label={t().providerModelId}>
           <Input
             value={draft().providerModel}
             spellcheck={false}
@@ -729,8 +724,8 @@ export default function ModelDetail(props: {
             disabled={saving()}
             onInput={(providerModel) => update({ providerModel })}
           />
-        </Setting>
-        <Setting label={t().kind}>
+        </Field>
+        <Field label={t().kind}>
           <Choice
             name="model-kind"
             value={draft().kind}
@@ -741,17 +736,17 @@ export default function ModelDetail(props: {
               if (kind === "chat" || kind === "decision" || kind === "transcription" || kind === "live-transcription") update({ kind });
             }}
           />
-        </Setting>
+        </Field>
         <Show when={!audio()}>
-          <Setting label={t().caps} hint={draft().kind === "decision" ? t().decisionHelp : t().capsHelp}>
+          <Field label={t().caps} hint={draft().kind === "decision" ? t().decisionHelp : t().capsHelp}>
             <Inline>
               <Show when={chat()}>
                 <Check label={t().capTools} checked={draft().tools} disabled={saving()} onChange={(tools) => update({ tools })} />
               </Show>
               <Check label={t().capVision} checked={draft().vision} disabled={saving()} onChange={(vision) => update({ vision })} />
             </Inline>
-          </Setting>
-          <Setting label={t().ctx}>
+          </Field>
+          <Field label={t().ctx}>
             <Input
               type="number"
               min={1}
@@ -761,9 +756,9 @@ export default function ModelDetail(props: {
               end={<Text type="meta">{t().tokens}</Text>}
               onInput={(value) => update({ contextWindow: numberOf(value) })}
             />
-          </Setting>
+          </Field>
           <Show when={chat()}>
-            <Setting label={t().maxOut} hint={t().maxOutHelp}>
+            <Field label={t().maxOut} hint={t().maxOutHelp}>
               <Input
                 type="number"
                 min={1}
@@ -773,7 +768,7 @@ export default function ModelDetail(props: {
                 end={<Text type="meta">{t().tokens}</Text>}
                 onInput={(value) => update({ maxOutputTokens: numberOf(value) })}
               />
-            </Setting>
+            </Field>
           </Show>
         </Show>
         <Facts items={[{ label: t().modelId, value: base().id, mono: true, copy: base().id, hint: t().modelIdHelp }]} />
@@ -781,7 +776,7 @@ export default function ModelDetail(props: {
 
       <Show when={chat()}>
         <Disclosure title={t().advanced}>
-          <Setting label={t().temperature} hint={t().temperatureHelp}>
+          <Field label={t().temperature} hint={t().temperatureHelp}>
             <Input
               type="number"
               min={0}
@@ -791,8 +786,8 @@ export default function ModelDetail(props: {
               disabled={saving()}
               onInput={(value) => update({ temperature: numberOf(value) })}
             />
-          </Setting>
-          <Setting label={t().toolLoaded}>
+          </Field>
+          <Field label={t().toolLoaded}>
             <Input
               type="number"
               min={0}
@@ -801,8 +796,8 @@ export default function ModelDetail(props: {
               disabled={saving()}
               onInput={(value) => update({ maxLoadedTools: numberOf(value) })}
             />
-          </Setting>
-          <Setting label={t().toolRounds}>
+          </Field>
+          <Field label={t().toolRounds}>
             <Input
               type="number"
               min={0}
@@ -811,8 +806,8 @@ export default function ModelDetail(props: {
               disabled={saving()}
               onInput={(value) => update({ maxToolRounds: numberOf(value) })}
             />
-          </Setting>
-          <Setting label={t().extraParams} hint={t().extraParamsHelp} error={jsonError() || undefined}>
+          </Field>
+          <Field label={t().extraParams} hint={t().extraParamsHelp} error={jsonError() || undefined}>
             <Input
               multiline
               value={draft().extraBody}
@@ -821,7 +816,7 @@ export default function ModelDetail(props: {
               disabled={saving()}
               onInput={(extraBody) => update({ extraBody })}
             />
-          </Setting>
+          </Field>
         </Disclosure>
       </Show>
     </Pane>

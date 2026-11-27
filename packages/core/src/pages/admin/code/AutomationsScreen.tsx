@@ -3,6 +3,7 @@ import { codeRunName } from "@k2b/cloud/ssr/code-page/targets";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import {
   type Action,
+  Avatar,
   Bar,
   Button,
   Canvas,
@@ -11,7 +12,6 @@ import {
   Facts,
   FilterBar,
   Inline,
-  Mark,
   Notice,
   Pane,
   Progress,
@@ -32,7 +32,7 @@ import { CodePageReportPageSchema } from "../../../code/page-report-contracts";
 import StateWord from "../_area/StateWord";
 import { codeAreaHref } from "./area";
 import { CodeAdminRequestError, postCodeAdmin, reloadCodeArea } from "./client";
-import { automationMark, type CodeScreenBase, type Loaded, ok, ownerAppId, ownerLabel, statusText } from "./data";
+import { type CodeScreenBase, type Loaded, ok, ownerAppId, ownerLabel, statusText } from "./data";
 import { createDatabaseDelete, databaseExportHref } from "./database";
 import { codeListHref, codeListQuery } from "./list-query";
 import { CodeHead, CodeStatus, LoadFailed, Missing, useCodeText } from "./parts";
@@ -262,7 +262,7 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
             }
       }
       phone={(code) => ({
-        mark: automationMark(code.owner, props.apps),
+        // slot for #4208/#4223 (DP): the automation's mark leads the phone row
         // a problem state leads the meta line in its words (identity B, phone); a good one stays quiet
         lines: [code.title, `${owner(code)} · ${statusText(t(), code)} · ${code.lastRun ? ago(code.lastRun.at) : t().neverRun}`],
       })}
@@ -270,7 +270,7 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
         {
           title: t().automation,
           width: { min: 160, default: open ? 200 : 240 },
-          mark: (code) => automationMark(code.owner, props.apps),
+          // slot for #4208/#4223 (DP): Column mark, the Code sign "code" in the colour of the app it belongs to (else CODE_COLOR)
           cell: (code) => code.title,
         },
         ...(open
@@ -280,11 +280,17 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
                 title: t().owner,
                 width: { min: 140, default: 190 },
                 drop: true,
-                avatar: (code: CodeAdminCode) => ({
-                  name: owner(code),
-                  ...(code.owner.kind !== "person" ? { color: props.apps[ownerAppId(code.owner) ?? ""]?.color } : {}),
-                }),
-                cell: (code: CodeAdminCode) => owner(code),
+                // slot for #4208/#4223 (DP): Column avatar of the owner (it replaces the Avatar in the cell)
+                cell: (code: CodeAdminCode) => (
+                  <Inline>
+                    <Avatar
+                      name={owner(code)}
+                      color={code.owner.kind !== "person" ? props.apps[ownerAppId(code.owner) ?? ""]?.color : undefined}
+                      decorative
+                    />
+                    {owner(code)}
+                  </Inline>
+                ),
               },
             ]),
         { title: t().status, width: { min: 140, default: 160 }, drop: true, cell: (code) => <CodeStatus code={code} /> },
@@ -324,13 +330,10 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
         head={
           <Bar
             start={
-              // k2b-ui gap: the tinted object head (ObjectHead, #4360); the automation's mark and name stand in
-              <Inline>
-                <Mark {...automationMark(code.owner, props.apps)} />
-                <Text type="body" weight="strong">
-                  {code.title}
-                </Text>
-              </Inline>
+              // slot for #4208/#4223 (DP): the tinted object head (ObjectHead, #4360) with the automation's mark; the name stands in
+              <Text type="body" weight="strong">
+                {code.title}
+              </Text>
             }
             end={
               <>

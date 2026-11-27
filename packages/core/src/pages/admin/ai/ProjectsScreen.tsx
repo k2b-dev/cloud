@@ -7,8 +7,6 @@ import {
   Dialog,
   Facts,
   Icon,
-  Inline,
-  Mark,
   Menu,
   type NavProps,
   Notice,
@@ -27,10 +25,7 @@ import { openProjectAccess, readError } from "./content-access";
 import type { AiProjectRow, AiProjectsData } from "./content-data";
 import { aiContentMessages } from "./content-messages";
 import { type ContentAddress, ContentPager, ContentSearch, contentHref } from "./content-parts";
-import { AI_COLOR, aiAreaLink, aiSectionLabel } from "./frame";
-
-/** A Project's own symbol ("ti ti-briefcase") in the AI colour; Projects without one show folders. */
-const projectMark = (project: AiProjectRow) => ({ icon: project.icon.replace(/^ti\s+/, "").replace(/^ti-/, "") || "folders", color: AI_COLOR });
+import { aiAreaLink, aiSectionLabel } from "./frame";
 
 /**
  * Projects on v2: the shared AI Projects as a table with search and pages, the open Project beside it with its facts
@@ -65,10 +60,16 @@ export default function ProjectsScreen(props: { nav: NavProps; data: AiProjectsD
   const [deleting, setDeleting] = createSignal(false);
   const remove = async (project: AiProjectRow) => {
     // k2b-ui gap: a destructive question asks with a red button once #4275 lands (danger: true).
-    const agreed = await Dialog.confirm({ title: s().deleteProject, description: s().deleteProjectConfirm({ name: project.name }), confirm: s().delete });
+    const agreed = await Dialog.confirm({
+      title: s().deleteProject,
+      description: s().deleteProjectConfirm({ name: project.name }),
+      confirm: s().delete,
+    });
     if (!agreed) return;
     setDeleting(true);
-    const response = await coreClient.admin.core["ai-projects"][":projectId"].$delete({ param: { projectId: project.shortId } }).catch(() => null);
+    const response = await coreClient.admin.core["ai-projects"][":projectId"]
+      .$delete({ param: { projectId: project.shortId } })
+      .catch(() => null);
     if (response?.ok) return navigateTo(listHref());
     setDeleting(false);
     toast(response ? await readError(response, s().deleteProjectFailed) : s().deleteProjectFailed, { status: "bad" });
@@ -82,129 +83,133 @@ export default function ProjectsScreen(props: { nav: NavProps; data: AiProjectsD
 
   /** The list; beside an open entry it keeps its width and a grip, alone it takes the page (no empty half). */
   const listPane = (split: boolean) => (
-        <Pane
-          label={t().projectsList}
-          width={split ? { min: 420, default: 560 } : undefined}
-          scrollKey="admin-ai-projects"
-          status={
-            // k2b-ui gap: Hero figure (#4360); the summary's count is the statement until the figure type exists
-            <StatusRow
-              lead={
-                data().search
-                  ? t().matches({ count: data().summary.total, search: data().search })
-                  : t().projectsLead({ count: data().summary.total })
-              }
-              facts={[
-                { value: data().summary.totalAccess.toLocaleString(locale()), after: t().accessAfter },
-                ...(pages() > 1 ? [{ value: t().pageOf({ page: data().page, pages: pages() }) }] : []),
-              ]}
-              filters={<ContentPager address={address()} pages={pages()} t={t()} />}
-            />
+    <Pane
+      label={t().projectsList}
+      width={split ? { min: 420, default: 560 } : undefined}
+      scrollKey="admin-ai-projects"
+      status={
+        // k2b-ui gap: Hero figure (#4360); the summary's count is the statement until the figure type exists
+        <StatusRow
+          lead={
+            data().search
+              ? t().matches({ count: data().summary.total, search: data().search })
+              : t().projectsLead({ count: data().summary.total })
           }
-        >
-          <Show when={data().summary.unmanaged > 0}>
-            <Notice tone="bad" title={t().projectsUnmanaged({ count: data().summary.unmanaged })}>
-              {t().unmanagedText}
-            </Notice>
-          </Show>
-          <Table
-            label={t().projectsList}
-            rows={data().projects}
-            rowKey={(project) => project.shortId}
-            current={data().open ?? undefined}
-            open={(project) => ({ href: contentHref({ ...address(), open: project.shortId }) })}
-            empty={
-              data().search
-                ? {
-                    icon: "filter-off",
-                    text: s().noProjectsMatch({ search: data().search }),
-                    action: { label: t().showAll, href: contentHref({ sec: "projects", search: "", page: 1 }) },
-                  }
-                : { icon: "folders", text: s().noProjects }
-            }
-            phone={(project) => ({
-              mark: projectMark(project),
-              lines: [
-                project.name,
-                <>
-                  <Show when={project.adminCount === 0} fallback={adminsText(project)}>
-                    {noAdmins()}
-                  </Show>
-                  {` · ${t().entries({ count: project.accessCount })}`}
-                </>,
-              ],
-              time: project.updated,
-            })}
-            columns={[
-              { title: s().project, width: { min: 180, default: 300 }, mark: projectMark, cell: (project) => project.name },
-              {
-                title: s().admins,
-                width: { min: 140, default: 180 },
-                cell: (project) => (project.adminCount === 0 ? noAdmins() : adminsText(project)),
-              },
-              { title: s().access, width: { min: 72, default: 84 }, align: "end", cell: (project) => project.accessCount.toLocaleString(locale()) },
-              { title: s().updated, drop: true, cell: (project) => project.updated },
-            ]}
-          />
-        </Pane>
+          facts={[
+            { value: data().summary.totalAccess.toLocaleString(locale()), after: t().accessAfter },
+            ...(pages() > 1 ? [{ value: t().pageOf({ page: data().page, pages: pages() }) }] : []),
+          ]}
+          filters={<ContentPager address={address()} pages={pages()} t={t()} />}
+        />
+      }
+    >
+      <Show when={data().summary.unmanaged > 0}>
+        <Notice tone="bad" title={t().projectsUnmanaged({ count: data().summary.unmanaged })}>
+          {t().unmanagedText}
+        </Notice>
+      </Show>
+      <Table
+        label={t().projectsList}
+        rows={data().projects}
+        rowKey={(project) => project.shortId}
+        current={data().open ?? undefined}
+        open={(project) => ({ href: contentHref({ ...address(), open: project.shortId }) })}
+        empty={
+          data().search
+            ? {
+                icon: "filter-off",
+                text: s().noProjectsMatch({ search: data().search }),
+                action: { label: t().showAll, href: contentHref({ sec: "projects", search: "", page: 1 }) },
+              }
+            : { icon: "folders", text: s().noProjects }
+        }
+        phone={(project) => ({
+          // slot for #4208/#4223 (DP): the Project's mark leads the phone row
+          lines: [
+            project.name,
+            <>
+              <Show when={project.adminCount === 0} fallback={adminsText(project)}>
+                {noAdmins()}
+              </Show>
+              {` · ${t().entries({ count: project.accessCount })}`}
+            </>,
+          ],
+          time: project.updated,
+        })}
+        columns={[
+          {
+            title: s().project,
+            width: { min: 180, default: 300 },
+            // slot for #4208/#4223 (DP): Column mark, the Project's own symbol (project.icon without "ti ti-", else "folders") in AI_COLOR
+            cell: (project) => project.name,
+          },
+          {
+            title: s().admins,
+            width: { min: 140, default: 180 },
+            cell: (project) => (project.adminCount === 0 ? noAdmins() : adminsText(project)),
+          },
+          {
+            title: s().access,
+            width: { min: 72, default: 84 },
+            align: "end",
+            cell: (project) => project.accessCount.toLocaleString(locale()),
+          },
+          { title: s().updated, drop: true, cell: (project) => project.updated },
+        ]}
+      />
+    </Pane>
   );
   /** The open entry beside the list; on the phone it is the page, with the way back to the list. */
   const detailPane = (project: AiProjectRow) => (
-            <Pane
-              detail
-              label={project.name}
-              back={{ label: t().projectsList, href: listHref() }}
-              head={
-                <Bar
-                  start={
-                    // k2b-ui gap: tinted object head (ObjectHead, #4360); mark and name stand in
-                    <Inline>
-                      <Mark {...projectMark(project)} />
-                      <Text type="body" weight="strong">
-                        {project.name}
-                      </Text>
-                    </Inline>
-                  }
-                  end={
-                    <>
-                      <Button icon="shield" busy={accessBusy()} onClick={() => void editAccess(project)}>
-                        {s().permissions}
-                      </Button>
-                      <Menu
-                        label={s().actionsFor({ name: project.name })}
-                        disabled={deleting()}
-                        items={[{ label: s().deleteProject, icon: "trash", danger: true, onClick: () => void remove(project) }]}
-                      />
-                      <Button variant="ghost" icon="x" label={t().closeDetail} href={listHref()} />
-                    </>
-                  }
-                />
-              }
-            >
-              <Show when={project.adminCount === 0}>
-                <Notice
-                  tone="bad"
-                  title={t().noAdminTitle}
-                >
-                  {t().projectNoAdminText}
-                </Notice>
-              </Show>
-              <Show when={project.description}>
-                <Text>{project.description}</Text>
-              </Show>
-              <Section icon="info-circle" title={t().details}>
-                <Facts
-                  items={[
-                    { label: s().access, value: t().entries({ count: project.accessCount }) },
-                    // no admin stands as the notice above; the fact says it only once
-                    ...(project.adminCount === 0 ? [] : [{ label: s().admins, value: adminsText(project) }]),
-                    { label: s().updated, value: project.updated },
-                    { label: t().created, value: project.created },
-                    { label: t().id, value: project.shortId, mono: true, copy: project.shortId },
-                  ]}
-                />
-              </Section>
-            </Pane>
+    <Pane
+      detail
+      label={project.name}
+      back={{ label: t().projectsList, href: listHref() }}
+      head={
+        <Bar
+          start={
+            // slot for #4208/#4223 (DP): the tinted object head (ObjectHead, #4360) with the Project's mark; the name stands in
+            <Text type="body" weight="strong">
+              {project.name}
+            </Text>
+          }
+          end={
+            <>
+              <Button icon="shield" busy={accessBusy()} onClick={() => void editAccess(project)}>
+                {s().permissions}
+              </Button>
+              <Menu
+                label={s().actionsFor({ name: project.name })}
+                disabled={deleting()}
+                items={[{ label: s().deleteProject, icon: "trash", danger: true, onClick: () => void remove(project) }]}
+              />
+              <Button variant="ghost" icon="x" label={t().closeDetail} href={listHref()} />
+            </>
+          }
+        />
+      }
+    >
+      <Show when={project.adminCount === 0}>
+        <Notice tone="bad" title={t().noAdminTitle}>
+          {t().projectNoAdminText}
+        </Notice>
+      </Show>
+      <Show when={project.description}>
+        <Text>{project.description}</Text>
+      </Show>
+      <Section icon="info-circle" title={t().details}>
+        <Facts
+          items={[
+            { label: s().access, value: t().entries({ count: project.accessCount }) },
+            // no admin stands as the notice above; the fact says it only once
+            ...(project.adminCount === 0 ? [] : [{ label: s().admins, value: adminsText(project) }]),
+            { label: s().updated, value: project.updated },
+            { label: t().created, value: project.created },
+            { label: t().id, value: project.shortId, mono: true, copy: project.shortId },
+          ]}
+        />
+      </Section>
+    </Pane>
   );
 
   return (
@@ -214,7 +219,9 @@ export default function ProjectsScreen(props: { nav: NavProps; data: AiProjectsD
       detail={open() ? 440 : undefined}
       head={
         <Bar
-          start={<Path label={aiAreaLink(locale()).label} items={[aiAreaLink(locale()), { label: aiSectionLabel(locale(), "projects") }]} />}
+          start={
+            <Path label={aiAreaLink(locale()).label} items={[aiAreaLink(locale()), { label: aiSectionLabel(locale(), "projects") }]} />
+          }
           end={<ContentSearch address={address()} label={s().searchAiProjects} placeholder={t().searchPlaceholder} />}
         />
       }

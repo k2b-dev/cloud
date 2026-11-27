@@ -1,6 +1,24 @@
 import { formatDateTime } from "@k2b/cloud/shared";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
-import { Bar, Button, Dialog, Digest, Empty, Facts, Icon, Lookup, Pane, Row, Section, StatusRow, Table, Text, useLocale } from "@k2b/ui/v2";
+import {
+  Avatar,
+  Bar,
+  Button,
+  Dialog,
+  Digest,
+  Empty,
+  Facts,
+  Icon,
+  Inline,
+  Lookup,
+  Pane,
+  Row,
+  Section,
+  StatusRow,
+  Table,
+  Text,
+  useLocale,
+} from "@k2b/ui/v2";
 import type { LookupItem } from "@k2b/ui/v2/list-query";
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { z } from "zod";
@@ -180,8 +198,13 @@ export default function PolicyScreen(props: PolicyScreenProps) {
                 {
                   title: t().group,
                   width: { min: 160, default: open ? 220 : 260 },
-                  avatar: (entry) => ({ name: entry.name }),
-                  cell: (entry) => entry.name,
+                  // slot for #4208/#4223 (DP): Column avatar of the group (it replaces the Avatar in the cell)
+                  cell: (entry) => (
+                    <Inline>
+                      <Avatar name={entry.name} decorative />
+                      {entry.name}
+                    </Inline>
+                  ),
                 },
                 { title: t().rules, width: { min: 80, default: 100 }, align: "end", drop: true, cell: (entry) => num(entry.rules) },
                 ...(open
@@ -358,14 +381,12 @@ export default function PolicyScreen(props: PolicyScreenProps) {
           {(page) => (
             <Show when={page().items.length} fallback={<Empty icon="history-off" text={t().historyEmptySub} />}>
               <Section icon="history" title={t().historyChanges} count={page().items.length}>
-                <Digest
-                  label={t().historyChangesLabel}
-                  activity={page().items.map((entry) => ({
-                    person: { name: entry.by ?? t().unknownAuthor },
-                    text: sentence(entry),
-                    time: when(entry.at),
-                  }))}
-                />
+                {/* slot for #4208/#4223 (DP): Digest activity, one entry per change (who, the sentence, when) */}
+                <Digest label={t().historyChangesLabel}>
+                  <For each={page().items}>
+                    {(entry) => <Row avatar={{ name: entry.by ?? t().unknownAuthor }} lines={[sentence(entry), when(entry.at)]} />}
+                  </For>
+                </Digest>
               </Section>
               <Show when={page().nextPage}>
                 {(next) => (

@@ -1,11 +1,11 @@
 import { formatRelative } from "@k2b/cloud/shared";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
-import { Bar, Button, Chip, Icon, Inline, Mark, Menu, Pane, StatusRow, Table, Tabs, Text, useLocale } from "@k2b/ui/v2";
+import { Avatar, Bar, Button, Chip, Icon, Inline, Menu, Pane, StatusRow, Table, Tabs, Text, useLocale } from "@k2b/ui/v2";
 import { type JSX, Show } from "solid-js";
 import type { CodeAdminApproval, CodeAdminApprovalDetail, CodeAdminDecided, CodeAdminSummary } from "../../../code/admin";
 import StateWord from "../_area/StateWord";
 import { codeAreaHref } from "./area";
-import { approvalReason, automationMark, type CodeScreenBase, type Loaded, ok, ownerLabel } from "./data";
+import { approvalReason, type CodeScreenBase, type Loaded, ok, ownerLabel } from "./data";
 import { LoadFailed, Missing, useCodeText } from "./parts";
 import {
   type CodeReviewProps,
@@ -171,7 +171,7 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
         action: { label: t().viewPolicy, icon: "table-options", href: codeAreaHref({ sec: "policy" }) },
       }}
       phone={(entry) => ({
-        mark: automationMark(entry.owner ?? { kind: "app", appId: "" }, props.apps),
+        // slot for #4208/#4223 (DP): the automation's mark leads the phone row
         lines: [
           entry.title,
           [entry.author.name ?? t().unknownAuthor, entry.reason ? t().rowLabel({ row: entry.reason.row }) : null, ago(entry.submittedAt)]
@@ -184,8 +184,7 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
         {
           title: t().automation,
           width: { min: 160, default: 200 },
-          // the automation in the colour of the app it belongs to (the content shows whose it is), with its version
-          mark: (entry) => automationMark(entry.owner ?? { kind: "app", appId: "" }, props.apps),
+          // slot for #4208/#4223 (DP): Column mark, the Code sign "code" in the colour of the app it belongs to (else CODE_COLOR)
           cell: (entry): JSX.Element => (
             <>
               {entry.title}{" "}
@@ -199,8 +198,13 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
           title: t().submitter,
           width: { min: 120, default: 140 },
           drop: true,
-          avatar: (entry) => ({ name: entry.author.name ?? t().unknownAuthor }),
-          cell: (entry) => entry.author.name ?? t().unknownAuthor,
+          // slot for #4208/#4223 (DP): Column avatar of the submitter (it replaces the Avatar in the cell)
+          cell: (entry) => (
+            <Inline>
+              <Avatar name={entry.author.name ?? t().unknownAuthor} decorative />
+              {entry.author.name ?? t().unknownAuthor}
+            </Inline>
+          ),
         },
         ...(open
           ? []
@@ -258,7 +262,7 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
       open={(entry) => ({ href: codeAreaHref({ sec: "approvals", id: entry.versionId }) })}
       empty={{ icon: "history", text: rt().emptyDecided }}
       phone={(entry) => ({
-        mark: automationMark(entry.owner, props.apps),
+        // slot for #4208/#4223 (DP): the automation's mark leads the phone row
         lines: [entry.title, `${rt().version({ n: entry.number })} · ${ago(entry.decidedAt)}`],
         marks: entry.outcome === "changes_requested" ? <Chip status="warn">{rt().statusChanges}</Chip> : undefined,
       })}
@@ -266,7 +270,7 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
         {
           title: t().automation,
           width: { min: 160, default: 200 },
-          mark: (entry) => automationMark(entry.owner, props.apps),
+          // slot for #4208/#4223 (DP): Column mark, the Code sign "code" in the colour of the app it belongs to (else CODE_COLOR)
           cell: (entry): JSX.Element => (
             <>
               {entry.title}{" "}
@@ -283,8 +287,13 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
                 title: t().submitter,
                 width: { min: 120, default: 140 },
                 drop: true,
-                avatar: (entry: CodeAdminDecided) => ({ name: entry.author.name ?? t().unknownAuthor }),
-                cell: (entry: CodeAdminDecided) => entry.author.name ?? t().unknownAuthor,
+                // slot for #4208/#4223 (DP): Column avatar of the submitter (it replaces the Avatar in the cell)
+                cell: (entry: CodeAdminDecided) => (
+                  <Inline>
+                    <Avatar name={entry.author.name ?? t().unknownAuthor} decorative />
+                    {entry.author.name ?? t().unknownAuthor}
+                  </Inline>
+                ),
               },
             ]),
         { title: t().decision, width: { min: 180, default: 240 }, drop: true, cell: outcome },
@@ -330,13 +339,10 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
         head={
           <Bar
             start={
-              // k2b-ui gap: the tinted object head (ObjectHead, #4360); the automation's mark and name stand in
-              <Inline>
-                <Mark {...automationMark(detail!.code.owner, props.apps)} />
-                <Text type="body" weight="strong">
-                  {p.title}
-                </Text>
-              </Inline>
+              // slot for #4208/#4223 (DP): the tinted object head (ObjectHead, #4360) with the automation's mark; the name stands in
+              <Text type="body" weight="strong">
+                {p.title}
+              </Text>
             }
             end={
               <>

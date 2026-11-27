@@ -1,4 +1,4 @@
-import { Bar, Button, Chip, Notice, Row, Section, Select, Setting, useToast } from "@k2b/ui/v2";
+import { Bar, Button, Chip, Field, Notice, Row, Section, Select, useLocale, useToast } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { z } from "zod";
 import {
@@ -11,6 +11,7 @@ import {
   codePolicyContracts,
   codePolicyPreset,
 } from "../../../code/policy-contracts";
+import { areaFormMessages } from "../_area/messages";
 import { CODE_POLICY_ROW_GROUPS } from "./area";
 import { CodeAdminRequestError, postCodeAdmin, reloadCodeArea } from "./client";
 import { useCodeText } from "./parts";
@@ -56,6 +57,8 @@ const withCell = (definition: CodePolicyDefinition, groupId: string | null, row:
  */
 export default function CodePolicyEditor(props: CodePolicyEditorProps) {
   const t = useCodeText();
+  const locale = useLocale();
+  const f = () => areaFormMessages.resolve([locale()]).t;
   const toast = useToast();
   const [revision, setRevision] = createSignal(props.revision);
   const [baseline, setBaseline] = createSignal<CodePolicyDefinition>(props.definition);
@@ -252,10 +255,14 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
       </Show>
       <Show when={!props.groupId}>
         <Section icon="adjustments" title={t().appliesToAll}>
-          <Setting
+          {/* slot for #4208/#4223 (DP): this field becomes a Setting row with `was`; until then the unsaved change's old value stands in the hint */}
+          <Field
             label={t().presets}
-            hint={presetSub(draft().preset)}
-            was={draft().preset !== baseline().preset ? presetLabel(baseline().preset) : undefined}
+            hint={
+              draft().preset !== baseline().preset
+                ? `${presetSub(draft().preset)} · ${f().changedWas({ value: presetLabel(baseline().preset) })}`
+                : presetSub(draft().preset)
+            }
           >
             <Select
               options={(["off", "admin", "open", "custom"] as const).map((preset) => ({
@@ -270,7 +277,7 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
                 if (preset === "off" || preset === "admin" || preset === "open") edit(codePolicyPreset(preset));
               }}
             />
-          </Setting>
+          </Field>
         </Section>
       </Show>
       <For each={tableGroups()}>
@@ -279,12 +286,15 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
             <For each={group.rows}>
               {(row) => {
                 const changed = () => changedRows().includes(row);
+                const hint = () => `${t().rowExample({ row })} · ${t().automationCount({ n: props.usage[row] ?? 0 })}`;
                 return (
-                  <Setting
+                  // slot for #4208/#4223 (DP): this field becomes a Setting row with `was`; until then the unsaved change's old value stands in the hint
+                  <Field
                     name={`code-policy-${row}`}
                     label={t().rowLabel({ row })}
-                    hint={`${t().rowExample({ row })} · ${t().automationCount({ n: props.usage[row] ?? 0 })}`}
-                    was={changed() ? cellLabel(cellOf(baseline(), props.groupId, row)) : undefined}
+                    hint={
+                      changed() ? `${hint()} · ${f().changedWas({ value: cellLabel(cellOf(baseline(), props.groupId, row)) })}` : hint()
+                    }
                   >
                     <Select
                       options={columns().map((cell) => ({ value: cell, label: cellLabel(cell) }))}
@@ -295,7 +305,7 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
                         if (cell) edit(withCell(draft(), props.groupId, row, cell));
                       }}
                     />
-                  </Setting>
+                  </Field>
                 );
               }}
             </For>

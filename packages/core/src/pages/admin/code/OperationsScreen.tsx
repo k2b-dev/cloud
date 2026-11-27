@@ -89,7 +89,7 @@ export default function OperationsScreen(props: OperationsScreenProps) {
                 open={(job) => ({ href: codeAreaHref({ sec: "code", id: job.codeId }) })}
                 empty={{ icon: "recycle", text: t().emptyCleanupSub }}
                 phone={(job) => ({
-                  mark: { icon: job.kind === "database.delete" ? "database-x" : "trash", color: CODE_COLOR },
+                  // slot for #4208/#4223 (DP): the job's mark leads the phone row
                   lines: [
                     job.title,
                     `${job.kind === "database.delete" ? t().jobDeleteDatabase : t().jobDelete} · ${t().jobState({ s: job.state })}`,
@@ -99,7 +99,7 @@ export default function OperationsScreen(props: OperationsScreenProps) {
                   {
                     title: t().code,
                     width: { min: 180, default: 220 },
-                    mark: (job) => ({ icon: job.kind === "database.delete" ? "database-x" : "trash", color: CODE_COLOR }),
+                    // slot for #4208/#4223 (DP): Column mark, "database-x" for database.delete else "trash", in CODE_COLOR
                     cell: (job) => job.title,
                   },
                   {
@@ -168,7 +168,7 @@ export default function OperationsScreen(props: OperationsScreenProps) {
                 rowKey={(row) => row.codeId}
                 empty={{ icon: "database", text: t().noUnusedDatabases }}
                 phone={(row) => ({
-                  mark: { icon: "database", color: CODE_COLOR },
+                  // slot for #4208/#4223 (DP): the database's mark leads the phone row
                   lines: [row.title, `${row.owner} · ${size(row.bytes)} · ${row.deleteAt ? when(row.deleteAt) : t().deletionOff}`],
                 })}
                 open={(row) => ({ href: codeAreaHref({ sec: "code", id: row.codeId }) })}
@@ -176,7 +176,7 @@ export default function OperationsScreen(props: OperationsScreenProps) {
                   {
                     title: t().code,
                     width: { min: 140, default: 180 },
-                    mark: () => ({ icon: "database", color: CODE_COLOR }),
+                    // slot for #4208/#4223 (DP): Column mark "database" in CODE_COLOR
                     cell: (row) => row.title,
                   },
                   { title: t().owner, width: { min: 100, default: 120 }, drop: true, cell: (row) => row.owner },
@@ -280,7 +280,7 @@ export default function OperationsScreen(props: OperationsScreenProps) {
                       rows={current().runners}
                       rowKey={(runner) => runner.instanceId}
                       phone={(runner) => ({
-                        mark: { icon: "server-2", color: CODE_COLOR },
+                        // slot for #4208/#4223 (DP): the runner's mark leads the phone row
                         lines: [
                           t().runnerName({ n: current().runners.indexOf(runner) + 1 }),
                           `${t().slotsFreeOf({ free: runner.freeSlots, total: runner.freeSlots + (runner.busySlots ?? 0) })} · ${ago(runner.lastSeenAt)}`,
@@ -290,7 +290,7 @@ export default function OperationsScreen(props: OperationsScreenProps) {
                         {
                           title: t().runner,
                           width: { min: 120, default: 140 },
-                          mark: () => ({ icon: "server-2", color: CODE_COLOR }),
+                          // slot for #4208/#4223 (DP): Column mark "server-2" in CODE_COLOR
                           cell: (runner) => t().runnerName({ n: current().runners.indexOf(runner) + 1 }),
                         },
                         // k2b-ui gap: a monospace table cell for identifiers; the short instance ID stands as quiet text

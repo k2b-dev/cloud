@@ -55,8 +55,8 @@ test("the sections stand under KI in the admin bar and lead with the state that 
   expect(await nav.locator('[aria-current="page"]').innerText()).toBe("Allgemein");
   expect(await page.locator('main [data-k2-part="StatusRow"]').innerText()).toContain("KI ist an");
   // the AI area's own words, in German, for fields the registry words in English
-  expect(await page.locator('main [data-k2-part="Setting"]').getByText("KI in dieser Cloud", { exact: true }).count()).toBe(1);
-  expect(await page.locator('main [data-k2-part="Setting"]').getByText("Globale Anweisungen", { exact: true }).count()).toBe(1);
+  expect(await page.locator('main [data-k2-part="Field"]').getByText("KI in dieser Cloud", { exact: true }).count()).toBe(1);
+  expect(await page.locator('main [data-k2-part="Field"]').getByText("Globale Anweisungen", { exact: true }).count()).toBe(1);
 
   await goto("sec=jobs", 1440, "de");
   expect(await page.locator('main [data-k2-part="StatusRow"]').innerText()).toContain("12 Chats warten auf Anreicherung");

@@ -1,9 +1,8 @@
 import type { AiModel, AiProvider } from "@k2b/cloud/shared";
-import { Bar, Button, Facts, Field, Inline, Input, Mark, Menu, Notice, Pane, Section, Text, useLocale, useToast } from "@k2b/ui/v2";
+import { Bar, Button, Facts, Field, Input, Menu, Notice, Pane, Section, Text, useLocale, useToast } from "@k2b/ui/v2";
 import { createSignal, onMount, Show } from "solid-js";
 import { type AiAdminConflict, aiAdminApi, asAiConflict, readAiAdmin, reloadAiArea } from "./client";
 import { ConflictNotice } from "./conflict";
-import { providerMark } from "./marks";
 import { aiAreaMessages } from "./messages";
 import { aiProviderState, aiProviderTypeInfo, aiProviderTypeLabel } from "./presentation";
 import { BoundaryField, HeaderRows } from "./provider-dialogs";
@@ -140,11 +139,8 @@ export default function ConnectionDetail(props: {
       head={
         <Bar
           start={
-            // k2b-ui gap: tinted object head (ObjectHead, #4360)
-            <Inline>
-              <Mark {...providerMark(base())} />
-              <Text type="body">{t().connectionOf({ p: base().label })}</Text>
-            </Inline>
+            // slot for #4208/#4223 (DP): the tinted object head (ObjectHead, #4360) with the provider's mark (its kind's symbol in its colour); the name stands in
+            <Text type="body">{t().connectionOf({ p: base().label })}</Text>
           }
           end={
             <>
