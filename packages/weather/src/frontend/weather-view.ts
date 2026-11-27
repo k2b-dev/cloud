@@ -2,25 +2,35 @@ import type { GeoProvenance } from "@k2b/cloud/contracts";
 import { weatherUiService } from "@k2b/cloud/services/weather/ui";
 import type { WeatherDataPayload } from "../contracts";
 import { type WeatherMessages, weatherConditionLabel } from "../messages";
+import { type WeatherTone, weatherTone } from "./weather-scale";
 
 /** A saved location in the sidebar: its symbol and temperature come from its current weather, if any. */
 export type WeatherPlace = { id: string; name: string; state: string | null; icon: string; temperature: string | null };
 
-/** `degrees` and `rainChance` are the plain numbers behind the words, for the temperature curve and the rain bars. */
+/**
+ * `degrees` and `rainChance` are the plain numbers behind the words, for the day's curve and its rain bars; `tone` is
+ * the colour of the sign, `night` whether the hour lies in the dark (the provider's night sign).
+ */
 export type WeatherHour = {
   time: string;
   icon: string;
+  tone: WeatherTone;
   condition: string;
   temperature: string;
   degrees: number;
+  night: boolean;
   rain: string;
   rainChance: number | null;
 };
+/** `low` and `high` are the plain numbers behind `range`, for the week's bars on one scale. */
 export type WeatherDay = {
   day: string;
   icon: string;
+  tone: WeatherTone;
   condition: string;
   range: string;
+  low: number;
+  high: number;
   rain: string;
   rainChance: number | null;
   sunshine: string;
@@ -29,8 +39,11 @@ export type WeatherDay = {
 /** The weather of the open location, every value already in the reader's words and numbers. */
 export type WeatherNow = {
   icon: string;
+  tone: WeatherTone;
   condition: string;
   temperature: string;
+  /** The plain number behind `temperature`, for its colour. */
+  degrees: number;
   station: string;
   humidity: string;
   clouds: string;
@@ -125,8 +138,10 @@ export const weatherFormat = (locale: string, t: WeatherMessages, now: Date) => 
     ];
     return {
       icon: weatherUiService.getTablerIcon(current.icon),
+      tone: weatherTone(current.icon),
       condition: weatherConditionLabel(current.icon, t),
       temperature: degrees(current.temperature),
+      degrees: current.temperature,
       station: current.stationName,
       humidity: current.humidity == null ? missing : percent(current.humidity),
       clouds: percent(current.cloudCover),
@@ -141,17 +156,22 @@ export const weatherFormat = (locale: string, t: WeatherMessages, now: Date) => 
       hourly: data.hourly.map((entry, index) => ({
         time: hour(entry.timestamp, index === 0),
         icon: weatherUiService.getTablerIcon(entry.icon),
+        tone: weatherTone(entry.icon),
         condition: weatherConditionLabel(entry.icon, t),
         temperature: degrees(entry.temperature),
         degrees: entry.temperature,
+        night: entry.icon.endsWith("-night"),
         rain: entry.precipitationProbability ? percent(entry.precipitationProbability) : missing,
         rainChance: entry.precipitationProbability || null,
       })),
       daily: data.daily.map((entry) => ({
         day: day(entry.date),
         icon: weatherUiService.getTablerIcon(entry.icon),
+        tone: weatherTone(entry.icon),
         condition: weatherConditionLabel(entry.icon, t),
         range: `${degrees(entry.tempMin)} / ${degrees(entry.tempMax)}`,
+        low: entry.tempMin,
+        high: entry.tempMax,
         rain: entry.precipitationProbability ? percent(entry.precipitationProbability) : missing,
         rainChance: entry.precipitationProbability || null,
         sunshine: `${number(entry.sunshine / 60, 1)} h`,

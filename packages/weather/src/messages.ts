@@ -143,7 +143,9 @@ export const weatherMessages = i18n.define({
       high: "High",
       low: "Low",
       nextHours: "Next 12 hours",
-      temperatureCurve: ({ from, to }: { from: string; to: string }) => `Temperature from ${from} to ${to}`,
+      dayAhead: ({ now, from, to }: { now: string; from: string; to: string }) =>
+        `Now ${now}. The next hours: temperature from ${from} to ${to}, with the chance of rain for each hour.`,
+      rangeLabel: ({ low, high }: { low: string; high: string }) => `${low} to ${high}`,
       measuredNow: "Measured now",
       stateLabel: "State",
       invalidKeys: "Invalid keys",
@@ -323,7 +325,9 @@ export const weatherMessages = i18n.define({
       high: "Hoch",
       low: "Tief",
       nextHours: "Nächste 12 Stunden",
-      temperatureCurve: ({ from, to }: { from: string; to: string }) => `Temperatur von ${from} bis ${to}`,
+      dayAhead: ({ now, from, to }: { now: string; from: string; to: string }) =>
+        `Jetzt ${now}. Die nächsten Stunden: Temperatur von ${from} bis ${to}, mit der Regenwahrscheinlichkeit jeder Stunde.`,
+      rangeLabel: ({ low, high }: { low: string; high: string }) => `${low} bis ${high}`,
       measuredNow: "Jetzt gemessen",
       stateLabel: "Bundesland",
       invalidKeys: "Ungültige Einstellungen",
