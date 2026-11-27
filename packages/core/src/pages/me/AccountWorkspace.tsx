@@ -58,7 +58,7 @@ export default function AccountWorkspace(props: {
       <V2WorkspaceNavigation
         label={
           groups()
-            .flatMap((group) => group.items)
+            .flatMap((group) => group.items ?? [])
             .find((item) => item.current)?.label ?? t().account
         }
         groups={groups()}

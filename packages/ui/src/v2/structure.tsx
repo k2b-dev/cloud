@@ -90,13 +90,7 @@ export const Section = (props: SectionProps) => {
     </>
   );
   return (
-    <section
-      class="k2-sec"
-      data-k2-part="Section"
-      id={props.id}
-      aria-label={props.title}
-      data-measure={props.measure ? "" : undefined}
-    >
+    <section class="k2-sec" data-k2-part="Section" id={props.id} aria-label={props.title} data-measure={props.measure ? "" : undefined}>
       <div class="k2-sh">
         <Show when={props.icon}>
           {(name) => (

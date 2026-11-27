@@ -159,7 +159,8 @@ describe("account deeds on v2", () => {
       "POST /api/me/password": [{ status: 500, json: { code: "SIGN_OUT_OTHERS_FAILED" } }],
     });
     try {
-      await tab.getByRole("button", { name: "Change", exact: true }).click();
+      // the row's button is heard with what it is about: "Change Password"
+      await tab.getByRole("button", { name: "Change Password", exact: true }).click();
       const fields = dialog(tab).locator('input[type="password"]');
       await fields.nth(0).fill("old-secret-1");
       await fields.nth(1).fill("A-new-and-long-secret-42");
