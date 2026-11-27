@@ -162,5 +162,7 @@ export function useNotebookWorkspaceState(ctx: NotebookContext, sort: () => Side
     workspaceError: () => workspace.error() ?? refreshError() ?? tree.error() ?? list.error(),
     workspaceRefreshing: () => workspace.refreshing() || refreshing(),
     refreshWorkspace,
+    /** Reads only the snapshot again (notebook, favorites, tags, attachment count), not the tree or the list. */
+    refreshSnapshot: () => workspace.refresh(),
   };
 }

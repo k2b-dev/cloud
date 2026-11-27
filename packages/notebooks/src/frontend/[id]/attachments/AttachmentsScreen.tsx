@@ -37,6 +37,7 @@ import NotebookSidebarBody from "../_components/sidebar/NotebookSidebarBody";
 import { useNotebookSidebar } from "../_components/sidebar/notebook-sidebar-state";
 import type { NotebookContext } from "../_components/sidebar/types";
 import { notebookWorkspaceMessages } from "../messages";
+import { withoutAttachment } from "./attachment-figures";
 import { attachmentsPageMessages } from "./messages";
 
 export type AttachmentsScreenProps = {
@@ -87,7 +88,9 @@ export default function AttachmentsScreen(props: AttachmentsScreenProps) {
   const t = createMemo(() => notebookWorkspaceMessages.resolve([locale()]).t);
   const words = createMemo(() => attachmentsPageMessages.resolve([locale()]).t);
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
-  const days = () => props.figures.days.length;
+  // the head's figures follow a delete here, so the count, the bytes and the uploads never wait for a reload
+  const [figures, setFigures] = createSignal(props.figures);
+  const days = () => figures().days.length;
   const toast = useToast();
   const sidebar = useNotebookSidebar({ ctx: props.ctx, current: "attachments", graphBack: props.graphBack });
   const notebookId = () => props.ctx.notebook.id;
@@ -132,6 +135,9 @@ export default function AttachmentsScreen(props: AttachmentsScreenProps) {
       });
     }
     setItems((current) => current.filter((entry) => entry.id !== attachment.id));
+    setFigures((current) => withoutAttachment(current, attachment, props.now, props.ctx.dateConfig.timeZone ?? "UTC"));
+    // the sidebar's attachments badge reads the notebook's count again
+    void sidebar.refreshSnapshot();
   };
 
   const menu = (attachment: Attachment): MenuEntry[] => {
@@ -190,18 +196,18 @@ export default function AttachmentsScreen(props: AttachmentsScreenProps) {
                 <Cells.Cell
                   icon="paperclip"
                   label={words().attachmentsFigure}
-                  value={number(props.figures.count)}
-                  meta={words().addedIn({ count: number(props.figures.added), days: days() })}
+                  value={number(figures().count)}
+                  meta={words().addedIn({ count: number(figures().added), days: days() })}
                   trend={{
-                    values: props.figures.days,
+                    values: figures().days,
                     label: words().uploadsTrend({
                       days: days(),
-                      count: number(props.figures.added),
-                      today: number(props.figures.days.at(-1) ?? 0),
+                      count: number(figures().added),
+                      today: number(figures().days.at(-1) ?? 0),
                     }),
                   }}
                 />
-                <Cells.Cell icon="database" label={words().storage} value={formatBytes(props.figures.bytes)} />
+                <Cells.Cell icon="database" label={words().storage} value={formatBytes(figures().bytes)} />
               </Cells>
               {/* the count of a search: what the search found, once; without one the figure above says it */}
               <Show when={props.search}>

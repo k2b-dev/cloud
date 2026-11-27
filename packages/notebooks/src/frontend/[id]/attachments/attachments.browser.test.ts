@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describeV2Page } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../../ui/test/browser";
+import { notesContext, sampleNotes } from "../notes/notes-list.fixture";
 
 // The attachments page in a real browser: a row opens the preview, its menu deletes after asking (and names the notes
 // that still show the file), the search writes the address, and the phone shows the worst case without sideways
@@ -116,6 +117,12 @@ const open = async (view: View, address: string, options: { sample?: string; per
       deleted.push(one[1]!);
       return route.fulfill({ json: { success: true } });
     }
+    // after a delete the sidebar reads the notebook's snapshot again: the server counts one file fewer
+    if (url.pathname === "/api/notebooks/Lager1/workspace-state") {
+      const ctx = notesContext(sampleNotes());
+      const { notebook, favoriteNoteIds, tags, pageTemplates } = ctx;
+      return route.fulfill({ json: { notebook, favoriteNoteIds, tags, pageTemplates, attachmentCount: 14 - deleted.length } });
+    }
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
     if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
@@ -153,6 +160,7 @@ describe("the attachments page on v2", () => {
       expect(await names(tab)).toHaveLength(14);
       await expectOutlineClean(tab);
       await shoot(tab, "light-1440");
+      const before = await tab.locator('[data-k2-part="Cells.Cell"] .k2-cell-value').nth(1).textContent();
       await tab.getByRole("button", { name: "Aktionen für Lageplan_Halle_2.pdf" }).click();
       await tab.getByRole("menuitem", { name: "Anhang löschen" }).click();
       const question = tab.getByRole("alertdialog");
@@ -161,6 +169,14 @@ describe("the attachments page on v2", () => {
       await tab.waitForFunction(() => document.querySelectorAll('[data-k2-part="List"] [data-k2-part="Row"]').length === 13);
       expect(deleted).toEqual(["Att001"]);
       expect(await names(tab)).not.toContain("Lageplan_Halle_2.pdf");
+      // the head and the sidebar follow at once: one file, its bytes and today's upload fewer, and the badge
+      const cells = tab.locator('[data-k2-part="Cells.Cell"] .k2-cell-value');
+      await tab.waitForFunction(() => document.querySelector('[data-k2-part="Cells.Cell"] .k2-cell-value')?.textContent?.trim() === "13");
+      expect(await cells.nth(1).textContent()).not.toBe(before);
+      await tab
+        .getByRole("link", { name: /Anhänge/ })
+        .getByText("13")
+        .waitFor();
       expect(errors).toEqual([]);
     } finally {
       await context.close();
