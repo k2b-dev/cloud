@@ -7,25 +7,22 @@ import { type CreateItemProps, createItemController } from "./create-item";
 /** The "+" menu lives in its own module, so a page can offer it without the create dialog. */
 export { CreateMenu } from "./CreateMenu";
 
-/** The v1 "+" of a board column (inside its drawing): the create menu on a small button. */
+/**
+ * The create menu on a small button. A board column (`variant="column"`) shows it as a quiet "+" in its head beside the
+ * column's other actions, so the screen keeps one visible create cue and the column still offers its own.
+ */
 export default function CreateItemButton(props: CreateItemProps) {
   const t = useSpaceMessages();
   const controller = createItemController(props);
   const column = () => props.columns.find((candidate) => candidate.id === props.defaultColumnId);
   const kind = () => controller.defaultType();
   const icon = () => (controller.pending() ? "ti ti-loader-2 animate-spin" : "ti ti-plus");
+  const title = () => (column() ? t.createMenuInColumn({ column: column()!.name }) : undefined);
 
   return (
-    <CreateMenu
-      kind={kind()}
-      templates={props.templates ?? []}
-      choose={controller.choose}
-      title={column() ? t.createMenuInColumn({ column: column()!.name }) : undefined}
-      disabled={controller.pending()}
-      class={props.variant === "inline" ? "w-full" : undefined}
-    >
+    <CreateMenu kind={kind()} templates={props.templates ?? []} choose={controller.choose} title={title()} disabled={controller.pending()}>
       <Show
-        when={props.variant === "inline"}
+        when={props.variant === "column"}
         fallback={
           <Dropdown.Trigger size="sm">
             <i class={icon()} aria-hidden="true" />
@@ -34,18 +31,15 @@ export default function CreateItemButton(props: CreateItemProps) {
           </Dropdown.Trigger>
         }
       >
-        {/* The chevron shows on hover, focus, and while open; it is always there, so the row never changes width. */}
         <Dropdown.Trigger
-          variant="ghost"
+          iconOnly
           size="xs"
-          class="group w-full justify-start text-left text-[11px] text-dimmed hover:text-primary [&_.k2b-button__label]:w-full [&_.k2b-button__label]:justify-start"
+          variant="ghost"
+          class="spaces-kanban-column-create h-6 w-6 text-dimmed"
+          label={title() ?? controller.label()}
+          data-spaces-kanban-column-create
         >
-          <i class={`${icon()} text-xs`} aria-hidden="true" />
-          <span>{kind() === "event" ? t.addEvent : t.addTask}</span>
-          <i
-            class="ti ti-chevron-down ml-auto text-xs opacity-0 group-hover:opacity-70 group-focus-visible:opacity-70 group-aria-expanded:opacity-70"
-            aria-hidden="true"
-          />
+          <i class={`${icon()} text-sm`} aria-hidden="true" />
         </Dropdown.Trigger>
       </Show>
     </CreateMenu>

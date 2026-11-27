@@ -198,34 +198,39 @@
 .k2b-ui .spaces-card-reactions :is(.k2b-reaction-bar__chip, .k2b-reaction-bar__add) { pointer-events: auto; }
 
 /* Kanban on the workspace's surface: no column trays, groups apart by space and a clear head (dot, name, count).
-   A card is an object you drag and open, so it is an island (layers and shadows, layer 1): a light 1 px edge and
-   the island shadow on the island surface, flat columns around it. Its first tag tints it 6 % (10 % dark), and the
-   tag's name always stands in the footer. State changes only paint. */
+   Each column takes the board's whole height; a subtle hairline in the middle of the gap shows where one ends, so the
+   room under short columns reads as the column's own and not as padding (identity study B: very subtle lines between
+   columns). Outside the flow, so nothing moves.
+   k2b-ui gap: no primitive draws lines between board columns, and an app stylesheet may not read the v2 line tokens
+   (css rule), so the line is v1's border; v2 also has only one line weight, none finer for such lines; owner Y. */
 .spaces-kanban-columns { --spaces-kanban-gap: 1rem; gap: var(--spaces-kanban-gap); }
 /* The cards (6 px inside their column) start at the pane's text edge, clear of the sidebar's line and its grip. */
 .spaces-kanban-columns { padding-inline: 0.875rem; }
+.spaces-kanban-columns > section + section::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: calc(var(--spaces-kanban-gap) / -2);
+  width: 1px;
+  background: var(--k2b-border);
+  pointer-events: none;
+}
+/* A hairline that scrolls up to the pane's edge would stand beside the pane's own line (no double lines): the board
+   shows nothing in its outer 8 px. Its ends carry 14 px of padding, so a card is never cut there. */
+.spaces-kanban-scroll { clip-path: inset(0 0.5rem); }
 .spaces-kanban-column { width: 17.5rem; }
+/* A card is an object you drag and open: one flat neutral surface with a 1 px edge (study B: no shadow, no tint);
+   colour on it stands only in its dots and an overdue deadline. The surface uses the island tokens, which the drag
+   ghost (a clone on the body, outside the v2 page) still has.
+   k2b-ui gap: v2 has no card surface for a draggable object on a canvas (edge, hover, selected, held, ghost); owner DP. */
 .k2b-ui .spaces-kanban-card {
-  /* KanbanBoard sets the first tag's colour inline on a tinted card. */
-  --spaces-card-tag: transparent;
   --spaces-card-fill: var(--k2b-island-surface);
   --spaces-card-fill-hover: color-mix(in srgb, var(--k2b-text) 4%, var(--k2b-island-surface));
   --spaces-card-edge: color-mix(in srgb, var(--k2b-border) 72%, transparent);
   --spaces-card-ring: 0 0 #0000;
   background: var(--spaces-card-fill);
-  box-shadow: inset 0 0 0 1px var(--spaces-card-edge), var(--spaces-card-ring), var(--k2b-island-shadow);
+  box-shadow: inset 0 0 0 1px var(--spaces-card-edge), var(--spaces-card-ring);
   transition: background-color 120ms ease-out, box-shadow 120ms ease-out;
-}
-.k2b-ui .spaces-kanban-card[data-spaces-kanban-card-tint] {
-  --spaces-card-fill: color-mix(in srgb, var(--spaces-card-tag) 6%, var(--k2b-island-surface));
-  --spaces-card-fill-hover: color-mix(in srgb, var(--spaces-card-tag) 10%, var(--k2b-island-surface));
-  --spaces-card-edge: color-mix(in srgb, var(--spaces-card-tag) 20%, var(--k2b-surface));
-}
-.dark .k2b-ui .spaces-kanban-card[data-spaces-kanban-card-tint],
-.k2b-ui.dark .spaces-kanban-card[data-spaces-kanban-card-tint] {
-  --spaces-card-fill: color-mix(in srgb, var(--spaces-card-tag) 10%, var(--k2b-island-surface));
-  --spaces-card-fill-hover: color-mix(in srgb, var(--spaces-card-tag) 14%, var(--k2b-island-surface));
-  --spaces-card-edge: color-mix(in srgb, var(--spaces-card-tag) 24%, var(--k2b-surface));
 }
 .k2b-ui .spaces-kanban-card:hover { background: var(--spaces-card-fill-hover); }
 .k2b-ui .spaces-kanban-card[data-spaces-kanban-card-state="selected"] {
@@ -238,17 +243,53 @@
 body.k2b-ui > .spaces-kanban-card[aria-hidden="true"] {
   --stdlib-dnd-ghost-shadow: var(--k2b-shadow-float);
 }
-.k2b-ui .spaces-kanban-card-title { color: var(--k2b-text); }
+/* Study B type steps: the title is a row (13/20, medium), everything under it meta (12/16) in the meta tone. The values
+   are written out on v1 tokens: an app stylesheet may not read the v2 type and tone tokens (css rule), and the drag
+   ghost lies outside the v2 page anyway.
+   k2b-ui gap: no v2 card primitive carries these steps for a board card; owner DP. */
+.k2b-ui .spaces-kanban-card-title { color: var(--k2b-text); font-size: 13px; line-height: 20px; font-weight: 500; }
 /* A title without a break opportunity, such as a long URL, breaks inside its card. "anywhere" also lowers the
-   title's min-content width, which "break-word" leaves at the whole word, so the flex row beside a priority icon
-   shrinks it instead of pushing it past the card's edge. */
+   title's min-content width, which "break-word" leaves at the whole word. */
 .spaces-kanban-card-title { min-width: 0; overflow-wrap: anywhere; }
+/* One line of facts, "·" between them, the people last: it never wraps, a long tag name gives way first. */
+.spaces-kanban-card-facts {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.25rem;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--k2b-text-muted);
+}
+/* Beside the reactions the line leaves room for "Add reaction" (24 px and the gap), which waits there unseen until
+   hover: a wide line never pushes it to a second row, so only real chips can grow a card. */
+.spaces-kanban-card-facts:has(+ * > .spaces-card-reactions) { max-width: calc(100% - 1.75rem); }
+.spaces-kanban-card-fact + .spaces-kanban-card-fact::before { content: "·"; margin-inline-end: 0.25rem; color: var(--k2b-text-muted); }
+.spaces-kanban-card-fact + :not(.spaces-kanban-card-fact) { margin-inline-start: 0.25rem; }
+/* What gives way, in order: the tag name first (down to nothing, its dot and "·" with it), then the date; never the
+   people. */
+/* Against the tag's weight the date's share stays below a layout unit while the tag can still give way (a sub-pixel
+   share would already turn its last digits into "…"); once the tag is gone, the date, at weight 1, takes the whole
+   rest and ends in "…". A weight below 1 would not: flex then leaves most of the rest unshrunk. */
+.spaces-kanban-card-facts > [data-spaces-kanban-card-tag] { flex-shrink: 1000000; overflow: hidden; }
+.spaces-kanban-card-urgency-dot { background: var(--k2b-border-strong); }
+/* Amber as the warning dot of study B; no v1 token names a dot colour. */
+[data-spaces-kanban-card-urgency="urgent"] > .spaces-kanban-card-urgency-dot { background: #f59e0b; }
+/* An empty column says one quiet sentence at the cards' text edge; its "+" stands in the head. */
+.spaces-kanban-column-empty { font-size: 12px; line-height: 16px; color: var(--k2b-text-muted); }
+/* Red only for a deadline that has passed. */
+.spaces-kanban-card-fact[data-overdue] { color: var(--k2b-danger-text); }
 .k2b-ui .spaces-kanban-card-status { background: color-mix(in srgb, var(--k2b-text) 6%, transparent); }
 @media (prefers-reduced-motion: reduce) { .k2b-ui .spaces-kanban-card { transition: none; } }
 /* Phone: one column at a time with a look at the next, so it is clear the board goes on. */
 @media not all and (min-width: 48rem) {
   .spaces-kanban-columns { --spaces-kanban-gap: 0.75rem; padding-inline: 0.625rem; }
   .spaces-kanban-column { width: calc(100vw - 4.5rem); max-width: 20rem; }
+  /* On the phone the floating New task is the one create action. */
+  .k2b-ui .spaces-kanban-column .spaces-kanban-column-create { display: none; }
 }
 
 /* In the v2 screens the calendar is the content of its pane: the grid lies flat in the drawing, without an edge or

@@ -19,7 +19,7 @@ export type CreateItemProps = {
   tags: SpaceTag[];
   templates?: SpaceItemTemplate[];
   dateConfig?: DateContext;
-  variant?: "chip" | "inline";
+  variant?: "chip" | "column";
   defaultType?: ItemType;
   defaultColumnId?: string;
 };

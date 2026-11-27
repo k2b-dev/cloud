@@ -2109,6 +2109,80 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
       }
     }
   }, 30_000);
+
+  test("cards keep one height whatever their meta, urgency is a word on an untinted card, and an empty column says one sentence", async () => {
+    const tent = { id: "Tag009", spaceId: "Space1", name: "Warehouse", color: "#f59e0b" };
+    const mixed = [
+      item("Mix01", "Col001", "Order the tents", { deadline: "2026-10-20", deadlineAllDay: true, tags: [tent], assignees: [me] }),
+      item("Mix02", "Col001", "Call the band"),
+      item("Mix03", "Col001", "Fix the gate", {
+        priority: "urgent",
+        deadline: "2026-10-12",
+        deadlineAllDay: true,
+        tags: [tent, { ...tent, id: "Tag010", name: "Gates" }],
+        assignees: [me, kim, { ...kim, id: "55555555-5555-4555-8555-555555555555", displayName: "Mia Example" }],
+      }),
+      item("Mix04", "Col001", "Set up the stage", {
+        startsAt: "2026-10-21T08:00:00.000Z",
+        endsAt: "2026-10-21T10:00:00.000Z",
+        assignees: [me, kim],
+      }),
+      item("Mix05", "Col001", "Rent the chairs", { priority: "high", assignees: [kim, me] }),
+    ];
+    const buckets = columns.map((column) =>
+      bucket(
+        { key: `column:${column.id}`, label: column.name, color: column.color, kind: "column", columnId: column.id, isDone: column.isDone },
+        column.id === "Col001" ? mixed : [],
+      ),
+    );
+    for (const javaScript of [false, true]) {
+      const page = await open(desktop, { locale: "en", now: reactionNow, buckets }, { javaScript });
+      try {
+        await settled(page);
+        const board = await page.evaluate(() => {
+          const cards = Array.from(document.querySelectorAll<HTMLElement>('[data-spaces-kanban-column="column:Col001"] article'));
+          const plain = getComputedStyle(cards[1]!).backgroundColor;
+          const urgent = cards[2]!;
+          const done = document.querySelector('[data-spaces-kanban-column="column:Col004"]')!;
+          const body = done.querySelector(":scope > header ~ div")! as HTMLElement;
+          return {
+            cards: cards.length,
+            heights: cards.map((card) => `${card.querySelector("[data-item-id]")!.getAttribute("data-item-id")} ${card.getBoundingClientRect().height}`),
+            urgentTinted: getComputedStyle(urgent).backgroundColor !== plain,
+            urgentSays: urgent.querySelector('[id^="spaces-kanban-card-meta-"]')?.textContent?.includes("Urgent"),
+            emptyColumn: { text: body.innerText.trim(), controls: body.querySelectorAll("button, a, [role='button']").length },
+            columnCreate: done.querySelectorAll("header [data-spaces-kanban-column-create]").length,
+            // The meta line gives way in its words, never in its people: every face stands whole inside it.
+            cutPeople: cards
+              .filter((card) => {
+                const line = card.querySelector('[id^="spaces-kanban-card-meta-"]')!.getBoundingClientRect();
+                return Array.from(card.querySelectorAll('[id^="spaces-kanban-card-meta-"] [title] > div > *')).some(
+                  (face) => face.getBoundingClientRect().right > line.right + 0.5,
+                );
+              })
+              .map((card) => card.querySelector("[data-item-id]")!.getAttribute("data-item-id")),
+            // The tag name gives way before the date does.
+            dateCut: (() => {
+              const date = cards[0]!.querySelector<HTMLElement>("[data-spaces-kanban-card-when] > span")!;
+              return date.scrollWidth > date.clientWidth;
+            })(),
+          };
+        });
+        expect(board).toEqual({
+          cards: 5,
+          heights: board.heights.map((entry) => `${entry.split(" ")[0]} ${board.heights[1]!.split(" ")[1]}`),
+          urgentTinted: false,
+          urgentSays: true,
+          emptyColumn: { text: "No items", controls: 0 },
+          columnCreate: 1,
+          cutPeople: [],
+          dateCut: false,
+        });
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 30_000);
 });
 
 describePart("columns", "Spaces Kanban board in a browser", () => {
