@@ -579,3 +579,18 @@ test("nav tree: the menu key on a place leaves the menu to the context menu even
     expect(await page.getByRole("menu").count()).toBe(1);
   });
 });
+
+// ── NavTreeNode color (from DR's #4229) ──────────────────────────────────────────────────────────────────────────
+
+test("server markup: a place with a data colour leads with its mark; a colour that is no colour never reaches the page", () => {
+  const nav = markup.slice(markup.indexOf('role="tree"'), markup.indexOf('role="treegrid"'));
+  const row = (key: string) => {
+    const start = nav.indexOf(`-item-${key}"`);
+    return nav.slice(start, nav.indexOf('class="k2-ni-name', start));
+  };
+  expect(row("projekte")).toContain('data-k2-part="Mark"');
+  expect(row("projekte")).toContain("--k2-c:#ca8a04");
+  // the invalid colour is dropped: the place keeps its plain symbol and no style of the value
+  expect(row("archiv")).not.toContain("example.test");
+  expect(row("archiv")).not.toContain("--k2-c");
+});

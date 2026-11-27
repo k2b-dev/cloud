@@ -106,14 +106,67 @@ fields. A message in a thread is one `Band`.
 
 2–4 equal cells with a line between; stacked on the phone. A cell:
 `icon`, `color` (data colour of its area), `label`, `value`, `meta`,
-`href` (adds a chevron), `loading` (a bar lies on value and `meta`;
+`href` (adds a chevron), `trend` (a `Spark` at the end of the value, such
+as orders per day this week), `loading` (a bar lies on value and `meta`;
 what is there keeps its room unseen under it, a value not there yet is one
-line; symbol and label stay). Use for the key statements of a record.
+line; symbol and label stay). Use for the key statements of a record or
+the home of a place.
 
 ### Tiles
 
 Like things to press, such as attachments: `items: { icon, title, meta?,
-href? }[]`, `more` (an action after them), `label`. Never nested.
+href?, onNavigate?, color? }[]`, `more` (an action after them), `label`.
+
+`variant="media"`: photos, pages and videos in a grid of at least 160 px.
+A tile adds `image` (its picture, 4:3), `kind` (`PDF`, a video's length),
+`people` (the first is the owner, 16 px), `sign` (`{ icon, label }` at the
+end of its quiet line, such as the sharing state) and `key`. `select: {
+selected, onChange(key, on) }` puts a box on each picture; it shows under
+the pointer, with the focus, on touch, and on all tiles while one is
+selected; a selected tile is blue with a line inside its edge.
+Never nested. With `color` the symbol becomes the thing's `Mark`.
+
+`variant="card"`: each thing a card in a grid (at least 240 px a card) for
+an overview of things with a face, such as the bases of Grids. A card
+adds `stats` (`{ icon?, label, status?, yours? }`: "6 Tabellen", "8 knapp"
+in `warn`), `people` (an `Avatar.Stack` at the foot), `foot` (quiet words
+at its end: "Felix · vor 2 Min") and `trend` (a `Spark` at the top end, in
+the card's colour). The whole card opens its `href`. `create` adds the last
+card that makes a new thing: dashed, `title`, `meta`, `href` or `onClick`,
+and `choices` as round chips (templates). Cards hold no box and no line.
+
+A media grid (`variant="media"`) is one Tab stop: arrows go to the nearest
+tile (by the screen, also right to left), Space selects (with `select`
+the grid is a listbox whose tiles say `aria-selected`; Space never
+scrolls), Enter opens, and a tile's `menu` (its
+deeds, such as "Verschieben nach …") opens from a "…" on the picture, a
+right-click, Shift+F10 or the menu key. `drag` makes its tiles drag onto
+folders (see below).
+
+### Dragging onto folders (`drag`)
+
+`Table` (with `rowKey`), media `Tiles` and a `Nav` group's `tree` take
+`drag: DragMove`: `scope` (lists of one scope take each other's entries:
+the table, the tiles and the folder tree of Files), `label(key)`,
+`draggable?(key)`, `target?(key)` (folders), `accepts?(keys, target)`,
+`onDrop?(keys, target)`, `onFiles?(files, target)` (files from the
+computer). A dragged entry that is selected takes the whole selection;
+what a drag carries is fixed when it is lifted. A folder takes it only
+when every entry may be dragged (a selection with one that cannot moves
+nothing), none of them is the folder or a folder it lies in (a tree and a
+table tree know their levels; `accepts` must refuse levels no list
+shows), and `accepts` agrees; that is asked again at the drop. Only the
+folders of the same `scope` count, also when another list uses the same
+keys. A folder from the computer is refused and named so.
+Mouse and pen drag after a few pixels; a finger never drags (it scrolls,
+and a long press stays the context menu's). While a drag is under way a
+chip with the name follows the pointer, a folder that takes it is tinted,
+one that refuses it shows "not allowed", a closed folder the pointer
+rests on (700 ms) opens, and a place at the bottom says "Hier loslassen:
+nichts passiert" (it wins over a folder under it). Escape cancels. Nothing changes before `onDrop`.
+Dragging is a shortcut: give every entry a menu entry "Verschieben nach …"
+for keys and touch (a media tile takes `menu`: a "…" on the picture, a
+right-click, Shift+F10).
 
 ### Canvas
 
@@ -171,7 +224,9 @@ inside it.
 
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
-- lead: `icon` + `color`, or `avatar`, or a dot when `unread`.
+- lead: `mark` (the thing's `Mark`: a base, a file with its thumbnail, a
+  table; 24 px on one line, 32 px on two or three), or `avatar`, or a
+  quiet `icon` for a plain place or deed, or a dot when `unread`.
 - `meta` (quiet note after the title, a count), `time` (top right). Title
   and `meta` share the first line in equal parts, and each takes only what
   it needs: a count or a number stays whole, a long note is cut with "…",
@@ -179,6 +234,10 @@ inside it.
 - `marks` (chips, icons, avatars bottom right): use them with 3 lines; on a
   2-line row they add a third line. The third line shares its width with
   the marks, so keep it a preview text that may be cut, never an amount.
+- `states` (chips that must be read whole, such as the checks of a domain:
+  colour, symbol, word): under the lines on the title's text edge; they
+  wrap to more lines instead of being cut, on the phone too, and the row
+  grows only when they are there.
 - `action` (one framed button at the end; under the text on the phone; its
   name is its words and then the row's title, "Ansehen Angebot Küche", so
   rows with the same deed are told apart: name nothing yourself; on the
@@ -214,7 +273,10 @@ lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `href` stays in the address there; offer another order on the phone in the
 page itself if it needs one. The last column takes the rest. Chips,
 `Progress`, text buttons are fine in cells. `open(row) => { href } | {
-onOpen }` makes each row open its entry.
+onOpen }` makes each row open its entry. A column's `mark(row)` leads its
+cell with the thing's `Mark` (a file's thumbnail or type, 24 px), its
+`avatar(row)` with a person (the name in the cell names it); `phone(row)`
+takes a `mark` as well.
 
 A large table (Grids, a work list) adds, all optional: `rowKey(row)` (needed
 for the next three), `select: { selected, onChange, all, row }` (a box
@@ -309,6 +371,29 @@ lines instead of cutting a thing.
   active filter. Never a colour without a word. There is no neutral status:
   "Pausiert" is `warn` or a plain chip.
 - `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
+- `Mark`: what a thing looks like. `icon` + `color` (its data colour, or
+  the colour of its kind: table, form, PDF), `image` (a thumbnail over the
+  symbol; while it loads and when it fails the symbol shows), `kind` (the
+  type on its corner: `PDF`), `label` (without one it is decoration beside
+  its name). The place sets the size: 20 in the sidebar and in a sentence,
+  24 leading a row of one line, 32 leading a row of two or three, 36 on a
+  card. In a sentence write `<Mark {...table} /><Text weight="strong">Aufträge</Text>`.
+- `Avatar.Stack`: `people`, `max` (3, at most 5), `label`. People over each
+  other with a ring and "+n"; one picture with every name. In a narrow
+  place (a 90 px column) it shows the faces it holds whole and counts the
+  rest; the count is always right and never cut, from the first render.
+- `Spark`: `values` (oldest first), `label`: what the bars say as one
+  sentence ("Werkstatt: in 7 Tagen von 12 auf 41 Änderungen gestiegen"),
+  never only the title of the data. A few bars of a short history, the
+  last strongest; beside a number, never instead of it.
+- Data colours (`color` of `Mark`, `Avatar`, `Chip tag`, `Nav`, `Tiles`,
+  `Section`, `Cells.Cell`, `Digest`, `Preview`) are validated: a hex colour, an
+  `oklch()` or `var(--…)`; anything else renders neutral. For a hex colour
+  the primitives derive readable foregrounds themselves (symbols and bars
+  3:1, type 4.5:1, light and dark), so a pale yellow works too.
+- `Preview`: `label`, `icon`, `color`, `image`, `kind`. The large picture of
+  the open thing at the top of its detail, 4:3 from text edge to text edge;
+  the symbol stands while it loads, fails or is missing.
 - `Ticks`: `slots` (`"ok" | "bad" | "none"` per time slot, oldest first, in
   the writing direction; at most 60 in a table cell, more are cut at its
   end), `label` (always "what, period: what happened", such as
@@ -335,6 +420,15 @@ lines instead of cutting a thing.
   in a head on the phone), `title` (a hint under the pointer, for a button
   whose words give way to its symbol in a narrow place). Without children
   it needs `label`.
+- `Setting`: `label`, `name`, `hint`, `error`, `was` ("12 Std.": an unsaved
+  change says "geändert · vorher 12 Std." under its control), `action`
+  (one quiet deed at the end of the name's line, such as "Auf Standard
+  zurücksetzen" while the value differs from its default, as `Field
+  action`), one control as child. One setting of a settings page: the name
+  (13, 500) and its hint on the left, the control in a column of 300 px
+  beside them, no line between settings; one column when its pane is
+  narrower than 600 px (by the pane, not the window). Never stack `Field`s
+  as a settings page.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
   such as "Sekunden", or "optional"), `action` (one quiet deed at the end
@@ -427,14 +521,18 @@ lines instead of cutting a thing.
   under the pointer and with the focus; Tab always reaches it),
   `nested`, `dot` (`"ok"` for something new, `"warn"`/`"bad"` for a
   problem there, `"running"` for work that runs now: a small turning mark
-  in the dot's place that says "Läuft"). An item with `items` instead of `icon` and a link folds
+  in the dot's place that says "Läuft"), `color` (the place's data colour: its symbol becomes its
+  `Mark`, the same as in its rows and on its card). `quota: { label, value,
+  of, text }` shows what the open place uses above the foot ("Werkstatt ·
+  38,2 von 100 GB" over a bar; amber from 75 %, red from 90 %). An item with `items` instead of `icon` and a link folds
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.
   A group with `tree` in place of `items` holds places in levels (the
   folders of Files, the pages of a notebook): `tree: { label, items,
   current?, expanded?, onExpandedChange?, load?, more?, loadMore? }`, each
-  place a `NavTreeNode`: `key`, `label`, `icon?`, `href` (+ `onNavigate`),
+  place a `NavTreeNode`: `key`, `label`, `icon?`, `color?` (a data colour: the
+  symbol becomes its `Mark`; no colour, no mark), `href` (+ `onNavigate`),
   `count?`, `dot?`, `children?` (loaded so far), `branch` (children that
   load on the first open through `load(key, { signal })`), `more` (`true`
   or a count: a last entry "Weitere laden" calls `loadMore(key | null)`),
@@ -484,7 +582,12 @@ lines instead of cutting a thing.
   consequence). Use it for errors with a way out instead of "try again"
   buttons of your own.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
-  title, state: { icon, label, tone? }, text, href? }[]`.
+  title, state: { icon, label, tone? }, text, href? }[]`, or `activity`:
+  who did what, `{ person, text, time, place?, href?, onNavigate? }[]`
+  (`onNavigate` opens the thing in place, as on rows). The sentence
+  names the person in `<Text weight="strong">` and the thing with its
+  `Mark` and name; place and time stand quiet under it. A form or a
+  workflow that did something is a person with its name ("Webformular").
 - `FilterBar`: the filters of a list as statements, in `Pane status` above
   its `StatusRow`: `query` (from `defineListQuery`), `state`, `onChange`;
   optional `base` (the view's state, where "Zurücksetzen" returns),
@@ -492,7 +595,18 @@ lines instead of cutting a thing.
   `timeZone` (of points in time, "UTC" by default), `views` (`{ stores,
   current?: { key, label, query, scope? }, onSaved?, onRemoved? }`), `results` ("9 Artikel"
   for the phone sheet). It writes the address itself. See
-  [list queries](list-queries.md).
+  [list queries](list-queries.md). `end` (the `ListOrder` and a choice of
+  display such as list or grid) makes the bar the one status row of its
+  list (52 px) with `results` in quiet words before it: the page head then
+  has two rows, path and deeds, then this bar. `display` (`MenuSection`s,
+  such as "Darstellung" with list and grid, or a colour choice) puts each
+  section as a menu of its own in the end on the desktop; on the phone,
+  where the end has no room, sort, grouping and these sections fold into
+  one menu "Ansicht" at the end of the bar. Give every choice that changes
+  how the list shows to `display`, never to `end` alone, so the phone keeps
+  it. While entries are selected a
+  `StatusRow selection` takes its place at the same height; on the phone the
+  selection's actions float at the bottom, symbol over word.
 - `ListOrder`: `query`, `state`, `onChange`; the sort and the grouping in
   words, for `StatusRow filters`.
 - `Lookup`: `label`, `value`, `onChange`, `load`, `resolve?`, `known?`,

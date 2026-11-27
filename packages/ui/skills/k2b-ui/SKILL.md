@@ -28,7 +28,7 @@ code, one hero with its real trend, the app's colour where it means
 something, one data picture per row, a tinted head for the open object, and
 a large screen that uses its room. Run its wireframe check on your pictures
 before you call a screen ready: a screen that fails it is not done, however
-clean it is.
+clean it is. Dense, clear, with faces: the nine rules are in [recipes](references/recipes.md#how-a-screen-looks-dense-clear-with-faces).
 
 ## Start here
 
@@ -79,17 +79,21 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | You want to show | Use | Recipe |
 | --- | --- | --- |
 | an app's frame: sidebar, head, columns | `Workspace` with `sidebar`, `head`, `primary` | all |
-| the app's sections in the sidebar | `Nav` | `list-detail.tsx` |
-| folders or pages in levels in the sidebar | a `Nav` group with `tree` (`load`, `loadMore` for what opens) | `tree.tsx` |
-| rows in levels (a folder's content as a tree) | `Table` with `rowKey` and `tree` | `tree.tsx` |
+| the app's sections in the sidebar; folders or pages in levels | `Nav`; a group's `tree` (`load`, `loadMore`) | `list-detail.tsx`, `tree.tsx` |
 | views of the page, or areas of a record | `Tabs` (in the head `Bar`, or as `Pane` head) | `mail.tsx`, `record.tsx` |
 | where a sub-page stands | `Path` in the head `Bar start` | – |
 | the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |
 | many like things, one per line | `List` of `Row` | `mail.tsx` |
-| many like things with columns | `Table` | `table.tsx` |
+| a thing with a face (a base, a file, a table, a storage) | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`) | `overview.tsx` |
+| an overview of things with figures, people and a history | `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
+| who did what; several people at once (a team, who has access) | `Digest activity`; `Avatar.Stack` | `overview.tsx`, `home.tsx` |
+| a short history beside a number | `Spark`; in a cell `Cells.Cell trend` | `home.tsx` |
+| many like things with columns; rows in levels | `Table`; with `rowKey` and `tree` | `table.tsx`, `tree.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
 | rows the person sorts by a column | a column's `sort` (`href` to the sorted page) and the table's `sort` (the column sorted now) | – |
-| a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`), then `FilterBar` in `Pane status` above the `StatusRow` and `ListOrder` in its `filters` | `filtered-table.tsx` |
+| a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`), then `FilterBar` in `Pane status` with `results` and `ListOrder` in its `end` (one row; a `StatusRow selection` takes its place while selecting) | `files.tsx`, `filtered-table.tsx` |
+| files, photos, pages: a list, a grid, the open one | `Table` column `mark` (thumbnail), `Tiles variant="media"` with `select`, `Preview` in the detail, `Nav quota` | `files.tsx` |
+| a settings page | `Cells` for the state, `Setting` rows (`was` for an unsaved change) | `settings-page.tsx` |
 | filter values that load (people, customers) | a `lookup` field: `FilterBar` opens `Lookup`; in a form, `Lookup` itself | `filtered-table.tsx` |
 | saved views of a list | `FilterBar views` with the app's `ViewStore`s (cookie, own table, none); leave it out and nothing is saved | – |
 | a list beside the open entry | `Pane.Split` with a `Pane detail` | `list-detail.tsx` |
@@ -109,7 +113,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | a field that goes back to its default | `Field action` ("Auf Standard zurücksetzen") | `settings.tsx` |
 | an answer that opens in place (a question in a FAQ) | `Disclosure` | `settings.tsx` |
 | reading text, an email body, a page of Markdown | `Prose` | `content.tsx`, `mail.tsx` |
-| attachments, media files, like things to press | `Tiles` | `content.tsx`, `mail.tsx` |
+| attachments, media files, like things to press; things dragged onto folders | `Tiles`; `drag` + `menu` on media `Tiles`, `Table`, a `Nav` `tree` | `content.tsx`, `mail.tsx` |
 | a state, tag, amount, count | `Chip` | `table.tsx` |
 | a person's or agent's picture | `Person image` on `Avatar`, `RecordHead avatar`, `Row avatar` (initials stay while it loads or fails) | – |
 | a deed under way (saving, sending) | `Button busy`; a deed that cannot be taken now: `disabled` | `actions.tsx` |
@@ -180,11 +184,11 @@ a `Notice` that names the deed.
   (`tone`), `Cells`, `Tiles`, `Canvas`.
 - **Structure:** `Section`, `Group`, `Disclosure`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
-  body, lead), `Prose`, `Inline`, `Icon`, `Avatar`, `Chip`, `Progress`,
-  `Ticks`, `Steps`.
-- **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
+  body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
+  `Chip`, `Progress`, `Spark`, `Ticks`, `Steps`.
+- **Controls:** `Button`, `Field`, `Field.Row`, `Setting`, `Input`, `Select`,
   `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`, `ImageInput`,
-  `CodeInput`, `Slider`, `ColorInput`.
+  `CodeInput`, `Slider`, `ColorInput`. **Media:** `Preview`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,

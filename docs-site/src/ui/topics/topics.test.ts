@@ -43,10 +43,11 @@ describe("recipes", () => {
 });
 
 describe("topic pages", () => {
-  test("there are the nine topics of the concept, in order", () => {
+  test("there are the ten topics of the concept, in order", () => {
     expect(topics.map((topic) => topic.slug)).toEqual([
       "frame",
       "lists-and-tables",
+      "identity",
       "filter-sort-group",
       "record-and-detail",
       "forms-and-input",

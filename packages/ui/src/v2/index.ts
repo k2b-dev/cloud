@@ -15,6 +15,7 @@ export { useLocale } from "../intl/locale";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {
+  type ActivityEntry,
   Digest,
   type DigestEntry,
   type DigestProps,
@@ -84,6 +85,8 @@ export {
   Select,
   type SelectOption,
   type SelectProps,
+  Setting,
+  type SettingProps,
   Slider,
   type SliderProps,
   TagsInput,
@@ -92,6 +95,7 @@ export {
 // A month of days to pick one from (with a time for points in time); DateInput opens it.
 export { DatePicker, type DatePickerProps } from "./date-picker";
 export { type DescribeV2Options, describeV2 } from "./describe";
+export type { DragMove } from "./drag";
 // Lists people filter, sort and group: the statements of a `defineListQuery` declaration, and values that load.
 export { FilterBar, type FilterBarProps, type FilterBarViews, ListOrder, type ListOrderProps, viewIcon } from "./filter-bar";
 // Layer 1: the primitives.
@@ -107,6 +111,8 @@ export {
   Pane,
   type PaneProps,
   type Tile,
+  type TileCreate,
+  type TileStat,
   Tiles,
   type TilesProps,
   Workspace,
@@ -116,12 +122,19 @@ export { Lookup, type LookupLoad, type LookupProps, type LookupResolve } from ".
 export {
   Avatar,
   type AvatarProps,
+  type AvatarStackProps,
   Chip,
   type ChipProps,
   Icon,
   type IconProps,
+  Mark,
+  type MarkProps,
+  Preview,
+  type PreviewProps,
   Progress,
   type ProgressProps,
+  Spark,
+  type SparkProps,
   type TickState,
   Ticks,
   type TicksProps,

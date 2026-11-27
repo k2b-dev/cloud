@@ -50,9 +50,21 @@ Values with their labels; `mono` and `copy` make a key, a token or an ID easy to
 
 ### Tiles
 
-Like things to press, such as attachments and media files; each opens its file.
+Like things to press, such as attachments and media files; each opens its file. `variant="media"` shows photos, pages and videos as a grid of pictures that people select: one Tab stop (arrows go to the nearest tile, Space selects, Enter opens), `menu` on a tile (its "…", a right-click, Shift+F10) and `drag` onto folders.
 
 <Props of="Tiles Tile" />
+
+### DragMove
+
+Dragging onto folders, the same for `Table` rows, media `Tiles` and a `Nav` tree: a `scope` joins lists, `target` names folders, `accepts` says what a folder takes, `onDrop` and `onFiles` act after the drop only.
+
+<Props of="DragMove" />
+
+### Preview
+
+The large picture of the open thing at the top of its detail, 4:3; its symbol stands while the picture loads, fails or is missing.
+
+<Props of="Preview" />
 
 ### Canvas
 
