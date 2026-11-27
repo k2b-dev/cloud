@@ -160,7 +160,7 @@ href? }[]`, `more` (an action after them), `label`. Never nested.
 `perRow={n}`: at most n tiles share a row and grow with its width; a tile
 never gets narrower than 240 px for it. Where n do not fit, a row holds
 half of them (four as 2 × 2, never 3 + 1), and below that one under the
-other.
+other. On the phone a row always holds half of them, even below 240 px.
 
 ### Canvas
 
