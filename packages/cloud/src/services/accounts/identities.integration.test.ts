@@ -134,7 +134,31 @@ suite("public account identity reads against isolated Postgres", () => {
     await db`DELETE FROM auth.user_groups_v2 WHERE group_id=${direct}::uuid`;
     expect((await service.groups(actor)).items.map((item) => item.id)).toEqual([external]);
   });
-  test("members cover nested groups once and only groups the reader belongs to, named and counted, in bounded batches", async () => {
+  test("member counts cover nested groups once and only groups the reader belongs to, in bounded batches", async () => {
+    const actor = await user("reader");
+    const colleague = await user("colleague");
+    const helper = await user("helper");
+    const workshop = await group("werkstatt");
+    const apprentices = await group("azubis");
+    const foreign = await group("privat");
+    await db`INSERT INTO auth.user_groups_v2 VALUES
+      (${actor.user.id}::uuid,${workshop}::uuid),(${colleague.user.id}::uuid,${workshop}::uuid),
+      (${colleague.user.id}::uuid,${apprentices}::uuid),(${helper.user.id}::uuid,${apprentices}::uuid),
+      (${colleague.user.id}::uuid,${foreign}::uuid),(${helper.user.id}::uuid,${foreign}::uuid)`;
+    // the apprentices belong to the workshop; a cycle back must not count anyone twice
+    await db`INSERT INTO auth.group_groups_v2 VALUES(${workshop}::uuid,${apprentices}::uuid),(${apprentices}::uuid,${workshop}::uuid)`;
+    expect(await service.groupMemberCounts(actor, [workshop, foreign])).toEqual([{ groupId: workshop, members: 3 }]);
+    // an expired account no longer counts
+    await db`UPDATE auth.users SET account_expires=now() - interval '1 day' WHERE id=${helper.user.id}::uuid`;
+    expect(await service.groupMemberCounts(actor, [workshop])).toEqual([{ groupId: workshop, members: 2 }]);
+    await expect(service.groupMemberCounts(actor, ["not-a-group"])).rejects.toMatchObject({ code: "invalid_group_id" });
+    // a group the reader is not in says nothing, not even that it is empty
+    expect(await service.groupMemberCounts(await user("outsider"), [workshop, foreign])).toEqual([]);
+    expect(await service.groupMemberCounts(actor, [])).toEqual([]);
+    const many = Array.from({ length: 51 }, () => crypto.randomUUID());
+    await expect(service.groupMemberCounts(actor, many)).rejects.toMatchObject({ code: "too_many_groups" });
+  });
+  test("with names, members cover nested groups once and only groups the reader belongs to, named and counted", async () => {
     const named = async (uid: string, name: string | null) => {
       const person = await user(uid);
       await db`UPDATE auth.users SET display_name=${name},mail=${`${uid}@example.test`} WHERE id=${person.user.id}::uuid`;
@@ -153,23 +177,25 @@ suite("public account identity reads against isolated Postgres", () => {
       (${colleague.user.id}::uuid,${foreign}::uuid),(${helper.user.id}::uuid,${foreign}::uuid)`;
     // the apprentices belong to the workshop; a cycle back must not count or name anyone twice
     await db`INSERT INTO auth.group_groups_v2 VALUES(${workshop}::uuid,${apprentices}::uuid),(${apprentices}::uuid,${workshop}::uuid)`;
-    expect(await service.groupMembers(actor, [workshop, foreign])).toEqual([
+    expect(await service.groupMemberCounts(actor, [workshop, foreign], { names: true })).toEqual([
       { groupId: workshop, members: 3, people: [{ name: "helper" }, { name: "Jonas Kern" }, { name: "Mira Solberg" }] },
     ]);
     // an expired account no longer counts and is not named
     await db`UPDATE auth.users SET account_expires=now() - interval '1 day' WHERE id=${helper.user.id}::uuid`;
-    expect(await service.groupMembers(actor, [workshop])).toEqual([
+    expect(await service.groupMemberCounts(actor, [workshop], { names: true })).toEqual([
       { groupId: workshop, members: 2, people: [{ name: "Jonas Kern" }, { name: "Mira Solberg" }] },
     ]);
-    await expect(service.groupMembers(actor, ["not-a-group"])).rejects.toMatchObject({ code: "invalid_group_id" });
+    await expect(service.groupMemberCounts(actor, ["not-a-group"], { names: true })).rejects.toMatchObject({ code: "invalid_group_id" });
     // a group the reader is not in says nothing, not even that it is empty: no count and no name
-    expect(await service.groupMembers(await user("outsider"), [workshop, foreign])).toEqual([]);
-    expect(await service.groupMembers(colleague, [workshop, foreign]).then((rows) => rows.map((row) => row.groupId).sort())).toEqual(
-      [workshop, foreign].sort(),
-    );
-    expect(await service.groupMembers(actor, [])).toEqual([]);
+    expect(await service.groupMemberCounts(await user("outsider"), [workshop, foreign], { names: true })).toEqual([]);
+    expect(
+      await service
+        .groupMemberCounts(colleague, [workshop, foreign], { names: true })
+        .then((rows) => rows.map((row) => row.groupId).sort()),
+    ).toEqual([workshop, foreign].sort());
+    expect(await service.groupMemberCounts(actor, [], { names: true })).toEqual([]);
     const many = Array.from({ length: 51 }, () => crypto.randomUUID());
-    await expect(service.groupMembers(actor, many)).rejects.toMatchObject({ code: "too_many_groups" });
+    await expect(service.groupMemberCounts(actor, many, { names: true })).rejects.toMatchObject({ code: "too_many_groups" });
   });
   test("a guest member keeps the count but never reads a name, as guests cannot list a group's members", async () => {
     const member = await user("member");
@@ -183,8 +209,11 @@ suite("public account identity reads against isolated Postgres", () => {
     };
     const team = await group("projekt");
     await db`INSERT INTO auth.user_groups_v2 VALUES(${member.user.id}::uuid,${team}::uuid),(${row!.id}::uuid,${team}::uuid)`;
-    expect(await service.groupMembers(guest, [team])).toEqual([{ groupId: team, members: 2, people: [] }]);
-    expect((await service.groupMembers(member, [team]))[0]?.people).toEqual([{ name: "Jonas Kern" }, { name: "visitor" }]);
+    expect(await service.groupMemberCounts(guest, [team], { names: true })).toEqual([{ groupId: team, members: 2, people: [] }]);
+    expect((await service.groupMemberCounts(member, [team], { names: true }))[0]?.people).toEqual([
+      { name: "Jonas Kern" },
+      { name: "visitor" },
+    ]);
   });
   test("a large group names only its first five people by name and counts all of them", async () => {
     const team = await group("grosses-team");
@@ -193,7 +222,7 @@ suite("public account identity reads against isolated Postgres", () => {
     for (const [index, member] of members.entries())
       await db`UPDATE auth.users SET display_name=${people[index]!} WHERE id=${member.user.id}::uuid`;
     await db`INSERT INTO auth.user_groups_v2 ${db(members.map((member) => ({ user_id: member.user.id, group_id: team })))}`;
-    expect(await service.groupMembers(members[0]!, [team])).toEqual([
+    expect(await service.groupMemberCounts(members[0]!, [team], { names: true })).toEqual([
       { groupId: team, members: 7, people: ["Nils", "Olga", "Paul", "Rita", "Sami"].map((name) => ({ name })) },
     ]);
   });

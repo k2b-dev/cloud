@@ -21,8 +21,8 @@ export type AccountIdentityUser = {
 export type AccountIdentityGroup = { id: string; provider: UserProvider; name: string; gidNumber: number | null; personal: boolean };
 export type AccountIdentityPage<T> = { items: T[]; nextCursor: string | null };
 export type AccountIdentityAvailability = { localLinuxEnabled: boolean; freeipaEnabled: boolean };
-/** How many people belong to a group, and the first five of them by name. */
-export type AccountGroupMembers = { groupId: string; members: number; people: { name: string }[] };
+/** How many people belong to a group; with `names`, also the first five of them by name. */
+export type AccountGroupMemberCount = { groupId: string; members: number; people?: { name: string }[] };
 /** A group names this many of its people: the five faces an avatar stack shows at most; the count covers the rest. */
 const GROUP_MEMBER_NAMES = 5;
 type InventoryFilter = { provider: UserProvider; after?: string; id?: string; name?: string };
@@ -313,21 +313,26 @@ export const createAccountIdentityService = (injectedDb?: typeof sql, upstreamId
       );
     },
     /**
-     * Who belongs to each of the given groups: how many people, members of nested groups of the same provider counted
-     * once, and the first five of them by name (the display name, else the account name; never a mail address) for a
-     * full account; a guest, who cannot list a group's members, gets the count alone. An expired account neither counts
-     * nor is named.
-     * Only groups the actor belongs to themselves are read; any other group is left out, so neither a count nor a name
-     * ever tells about a group the actor is not in. One statement for at most 50 groups per call.
+     * How many people belong to each of the given groups, members of nested groups of the same provider counted once;
+     * an expired account does not count.
+     * Only groups the actor belongs to themselves are counted; any other group is left out, so a count never tells
+     * about a group the actor is not in. At most `PAGE_SIZE` groups per call.
+     * With `names`, each group also names its first five people (`people`: the display name, else the account name;
+     * never a mail address), by the same rule and in the same one statement; a guest, who cannot list a group's members,
+     * gets an empty `people`. Without it the result is counts only.
      */
-    async groupMembers(actor: RequestActor, groupIds: readonly string[]): Promise<AccountGroupMembers[]> {
+    async groupMemberCounts(
+      actor: RequestActor,
+      groupIds: readonly string[],
+      options: { names?: boolean } = {},
+    ): Promise<AccountGroupMemberCount[]> {
       const { row, state } = await requireUser(actor);
       if (groupIds.length > PAGE_SIZE) throw new AccountIdentityError("too_many_groups", 400);
       if (!groupIds.every((id) => groupIdSchema.safeParse(id).success)) throw new AccountIdentityError("invalid_group_id", 400);
       const ids = [...new Set(groupIds)];
       if (!ids.length) return [];
       // a guest may not list a group's members (the directory gives guests no relation filters): the count, never a name
-      const named = row.profile === "user";
+      const named = options.names === true && row.profile === "user";
       const rows = await db()<{ group_id: string; members: number; names: string[] }[]>`
         WITH RECURSIVE wanted AS (
           SELECT g.id AS root_id, g.id AS group_id, g.provider
@@ -355,7 +360,7 @@ export const createAccountIdentityService = (injectedDb?: typeof sql, upstreamId
       return rows.map((value) => ({
         groupId: value.group_id,
         members: value.members,
-        people: value.names.map((name) => ({ name })),
+        ...(options.names ? { people: value.names.map((name) => ({ name })) } : {}),
       }));
     },
     inventory,

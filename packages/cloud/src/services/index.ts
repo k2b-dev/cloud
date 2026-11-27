@@ -11,7 +11,7 @@ export type {
   AccountIdentityGroup,
   AccountIdentityPage,
   AccountIdentityAvailability,
-  AccountGroupMembers,
+  AccountGroupMemberCount,
 } from "./accounts/identities";
 export type { AccountIdentityReconciliation } from "./accounts/identity-reconciliation";
 export { getAppWorkloadCredential } from "../_internal/workload-credential";

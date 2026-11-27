@@ -1833,15 +1833,17 @@ export function createFilesService(
       const batch = groups.slice(start, start + MEMBER_COUNT_BATCH);
       const read = new Map(
         (
-          await deps.identities.groupMembers(
+          await deps.identities.groupMemberCounts(
             call.actor,
             batch.map((item) => item.identity_id),
+            { names: true },
           )
         ).map((row) => [row.groupId, row]),
       );
       for (const item of batch) {
         const group = read.get(item.identity_id);
-        if (group) counted.push({ baseId: `${item.area}:${item.kind}:${item.identity_id}`, members: group.members, people: group.people });
+        if (group)
+          counted.push({ baseId: `${item.area}:${item.kind}:${item.identity_id}`, members: group.members, people: group.people ?? [] });
       }
     }
     return counted;
