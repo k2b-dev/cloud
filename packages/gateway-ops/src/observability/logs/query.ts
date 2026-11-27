@@ -42,6 +42,8 @@ export const LOGS_PER_PAGE = 100;
 /** Longest free search and request ID. A longer text is dropped and reported, never cut silently. */
 export const LOG_SEARCH_MAX = 200;
 export const LOG_REQUEST_MAX = 128;
+/** Whether a request ID fits the request filter: the page and the API refuse a longer one, so no action offers it. */
+export const fitsRequestFilter = (id: string) => id.trim() !== "" && id.length <= LOG_REQUEST_MAX;
 /** Most sources one filter names. */
 export const LOG_SOURCES_MAX = 20;
 /** Longest custom range; the list API allowed 31 days of lookback before v2. */

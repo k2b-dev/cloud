@@ -53,7 +53,8 @@ A column that scrolls, with no padding: everything in it reaches both edges.
 - `width={{ min, default }}`: only inside `Pane.Split`; puts a grip on its
   line. A drag or the keys (arrows 8 px, Shift 64 px, Home and End to the
   limits, Enter back to the default) move the width; a reload starts at the
-  default again. The sidebar's grip works the same.
+  default again. The sidebar's grip works the same. A grip shows only under the
+  pointer, on keyboard focus and while dragged (on touch screens it stays).
 - `detail`: the reader beside a list. What is open belongs in the address:
   render the detail only while the address names an entry. On the phone
   the detail is the page, and the title in its head is never cut: beside the
@@ -120,10 +121,22 @@ The only place for own drawing and own CSS (a map, a chart). `label`
 (required), `height` in px. It must stand directly in a primitive
 (`<Band><Canvas …/></Band>` or directly in a `Pane`), never as a
 component's root and never in a plain element. A `Chart` of `@k2b/ui`
-fills it (`style={{ height: "100%" }}`) with `v2.css` alone. While the
+fills it (`style={{ height: "100%" }}`) with `v2.css` alone. A `Calendar`
+of `@k2b/ui` in a `Canvas` lies flat: no edge or corners of its own, never a
+card in the screen; write no CSS for that. While the
 drawing loads, fails or has no data, put `Loading`, `Failed` or `Empty`
 inside the `Canvas`: with a `height` it keeps that height, so nothing
-moves.
+moves. `height="fill"`: the drawing is the whole pane (an editor, a frame
+of another page). Directly in its `Pane`, it takes the height left under
+head and status by layout alone, from the first render (never measure it
+in a script); below 240 px the pane scrolls. In a `Pane.Split` on the
+phone, where the panes stand one under the other, its pane takes the
+height that is left, so the drawing still fills it. The pane asks only for
+the drawing's 240 px, never for what the drawing holds: one drawing that
+asks for no height of its own (a chat column) takes the whole height, and
+what is taller (its history) scrolls inside it, the composer stays in sight.
+No absolute positioning is needed. A fill `Canvas` holds one child, the
+drawing: a second child stands in a row of its own under it and is cut away.
 
 ## Structure
 
@@ -131,7 +144,9 @@ moves.
 
 A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
 `actions` (≤ 2 text buttons in the head), `summary` (one sentence),
-`more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
+`measure` (its head, sentence and rows keep the reading measure of `Prose`,
+720 px of text, so a short list in a wide pane stays together; its line
+still reaches the column's edges), `more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
 `Pane side`, where the link becomes a row), children. No line under
 the head or between entries, one line at the end. Put `Row`s directly in a
 section, or a `Digest`, `Facts`, `Group`s.
@@ -192,7 +207,7 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 `columns: Column<T>[]`, `rows: T[]`, `label`. A column: `title`, `cell(row)`
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
-never widens it, a grip in the head that a drag or the keys move), `wrap` (one text column may take 3
+never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer, on focus and while dragged; on touch screens it stays), `wrap` (one text column may take 3
 lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
@@ -215,6 +230,24 @@ Give every table whose column widths add up to more than a phone (about
 350 px after the dropped ones) a `phone(row)`; otherwise its last columns
 are cut off at 390 px (the outline reports it). A phone row opens what
 `open(row)` names; a row's other deeds live on the page it opens.
+
+Rows in levels (Files, a page tree): `tree: { children(row), branch(row),
+expanded?, onExpandedChange?, load?, more?, loadMore? }` with `rowKey`, not
+with `group`. `rows` are the top level; an open row's `children` stand under
+it, 20 px further in per level (at most eight steps). `children(row)` is
+`undefined` while not loaded; `load(row, { signal })` fetches them the first
+time the row opens (the arrow turns, a rejection leaves a red mark, opening
+again retries). `more(row | null)` says that more children (or top rows)
+exist (`true` or a count), and a last row "Weitere laden" calls
+`loadMore(row | null)`; the focus goes on to the first new row. The table
+is then a treegrid: one Tab stop, Up/Down/Home/End move, Right opens and
+enters, Left closes (also a row that is still loading: its late answer
+opens nothing) and goes to the parent, Enter opens the row, Space selects
+with `select` (the boxes are no Tab stops). A level that pages says its
+whole size (`aria-setsize`, -1 while `more` is `true`); a page that
+fails says so on its "Weitere laden" row, and Enter tries again; the focus
+follows the new rows only while it waited on that row. `expanded` left out: the table keeps it, starting
+with the way to `current`. On the phone only the top level shows.
 
 `loading` (`true` or `{ rows?, lines? }`): the head stays and placeholder
 rows hold the place of the rows. `empty` (`{ icon, text, action? }`): with
@@ -253,8 +286,11 @@ inline. Emphasis is a weight, never a size.
 ### Prose
 
 Reading text (14/22, measure 720): `markdown` (rendered safely: no images,
-safe links only) or children. `compact` for short text a person wrote (a
-comment): tables become lines of text, headings stay at the text's size.
+safe links only) or children. A Markdown table reads like a small table
+(cells 12 px apart, the head as a Table head); align a column of numbers
+right (`--:`) and its figures line up. `compact` for short text a person
+wrote (a comment): tables become lines of text, headings stay at the
+text's size.
 
 ### Inline
 
@@ -262,7 +298,7 @@ One line of things with the one gap of 8 px, such as chips after a count
 in a `Bar start`. In a column narrower than 480 px it wraps onto more
 lines instead of cutting a thing.
 
-### Icon, Avatar, Chip, Progress
+### Icon, Avatar, Chip, Progress, Ticks
 
 - `Icon`: `name`, `label` (without one it is decoration), `tone`.
 - `Avatar`: a `Person`; the place sets the size. With `image` the picture
@@ -275,6 +311,15 @@ lines instead of cutting a thing.
   active filter. Never a colour without a word. There is no neutral status:
   "Pausiert" is `warn` or a plain chip.
 - `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
+- `Ticks`: `slots` (`"ok" | "bad" | "none"` per time slot, oldest first, in
+  the writing direction; at most 60 in a table cell, more are cut at its
+  end), `label` (always "what, period: what happened", such as
+  "postgres-haupt, letzte 30 Minuten: 3 von 30 Abrufen fehlgeschlagen"),
+  `color` (the data colour of what it belongs to; default the app),
+  `stretch` (in a detail: slots 2 px apart grow up to 12 px, a wider place
+  keeps the strip at its start). Ok is soft, a failure red and taller, a
+  slot without data a low stub; 140 × 20 px in a table cell. The one column
+  of a list that shows its data over time; never decoration.
 
 ## Controls
 
@@ -388,6 +433,18 @@ lines instead of cutting a thing.
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.
+  A group with `tree` in place of `items` holds places in levels (the
+  folders of Files, the pages of a notebook): `tree: { label, items,
+  current?, expanded?, onExpandedChange?, load?, more?, loadMore? }`, each
+  place a `NavTreeNode`: `key`, `label`, `icon?`, `href` (+ `onNavigate`),
+  `count?`, `dot?`, `children?` (loaded so far), `branch` (children that
+  load on the first open through `load(key, { signal })`), `more` (`true`
+  or a count: a last entry "Weitere laden" calls `loadMore(key | null)`),
+  `menu` (a "…" under the pointer, a right-click, Shift+F10). A press on a
+  place opens its page; the arrow, Right and Left fold it without leaving
+  the page. The way to `current` stands open (also when `current` changes);
+  give the loaded nodes down to it. The tree is one Tab stop and scrolls on
+  its own in the sidebar; levels step 12 px in, at most six steps.
 - Counts of `Nav` and `Tabs`: a number is written in the page's language and
   in full (12.345 in German, 12,345 in English), never cut to "9.999+"; words
   you give (`"99+"`, `"+8"`) stay as they are.
@@ -401,13 +458,23 @@ lines instead of cutting a thing.
   holds them. Known: while tabs hide, a gap of less than one tab may stand
   before the menu tab.
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"; cut with "…"
-  where it does not fit before the filters), `loading` (results
+  first where it does not fit, its whole words as a hint on hover),
+  `loading` (results
   refresh in place: `true` turns a quiet mark after the lead; pass `false`
   while idle so its 16 px stay reserved and nothing moves; leave it out where
-  the row never refreshes), `facts: { before?, value?, after? }[]` (where
-  they do not fit before the filters, the later ones give way whole, so the
-  filters keep their words; they go on the phone; put what must stay in
-  `lead`),
+  the row never refreshes), `facts: { before?, value?, after? }[]` (they
+  share the room before the filters with the lead, each up to its own width:
+  beside a short lead they take the rest, beside a long lead they keep their
+  width and the lead is cut; where both are long the lead keeps 40 % (60 %
+  below 600 px, where the controls fold) and the later figures give way
+  whole, so the filters keep their words; they go on the phone; put what must
+  stay in `lead`),
+  `marks` (tinted chips of the statement, an exception such as
+  `<Chip status="bad">1 ohne Zugriff</Chip>`: after the lead, they keep their
+  width while the lead is cut, stay on the phone, and give way whole only
+  where about a word of the lead no longer fits; a chip that must never leave
+  belongs in `lead`; chips only, no buttons, as a chip that gave way still
+  takes the focus; `cond && <Chip/>` is fine, `false` draws nothing),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`, each with an `icon`; below 600 px of row
@@ -472,13 +539,23 @@ lines instead of cutting a thing.
   Promise keeps the menu open and the entry busy), `href`, `danger`,
   `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
-  `items` (a submenu to the side); or `"separator"` between groups; or a
-  section `{ title, items }` under a quiet heading. A section with
-  `choice` and `onChoose` is one choice (reply kind, sender, order): its
-  entries are options (`value`, else `label`), the chosen one carries the
-  tick, choosing closes the menu. Lines around sections and before the
+  `items` (a submenu to the side), or `panel` (`(close) => …`, a panel
+  beside the entry such as a `DatePicker`: a dialog of its own over the
+  menu, with its own keys and focus, that calls `close` once it picked;
+  Escape closes it first), and `current` (the value set through that
+  submenu or panel, such as a reminder's time: at the end in the app's
+  colour and part of the entry's name; it takes the place of `meta`); or
+  `"separator"` between groups; or a section `{ title, items }` under a
+  quiet heading. A section with `choice` and `onChoose` is one choice
+  (reply kind, sender, order): its entries are options (`value`, else
+  `label`), the chosen one carries the tick, choosing another closes the
+  menu and calls `onChoose`, choosing the ticked one only closes it. A
+  choice whose options say enough by themselves may have the `title` ""
+  (no heading). Lines around sections and before the
   first `danger` entry come by themselves. The menu lines up with
-  its button; there is no `align`.
+  its button; there is no `align`. On the phone it is a sheet from the
+  bottom with entries of 44 px; a submenu is the sheet's next step under
+  its entry, which leads back, and a panel is a sheet of its own.
 - `Menu.Context`: `items`, and one element as child, such as a `Row`. A
   right-click or a long press opens the menu at the pointer, Shift+F10 at
   the element. It adds no wrapper, so a `Row` stays a child of its `List`.
