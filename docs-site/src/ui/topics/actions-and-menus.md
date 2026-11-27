@@ -45,7 +45,9 @@ The one button: `primary` once per page, framed by default, `ghost` and `text` f
 
 More deeds behind a button or behind "…": items, sections, one choice, toggles and submenus. An entry whose `onClick` returns a Promise keeps the menu open and turns until it settles.
 
-<Props of="Menu MenuItem MenuSection" />
+A menu can also list things that have no deed, such as the members of a space: an entry with `info: true` shows its sign, words and `meta` at the full contrast of an entry. The arrows pass over it and a click does nothing. Put such entries in a section: its group names them as its description, so a screen reader hears them once as it enters the group. Use `disabled` only for a deed that cannot run now; a disabled entry reads dimmed.
+
+<Props of="Menu MenuItem MenuInfo MenuSection" />
 
 ### Menu.Context
 

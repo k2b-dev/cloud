@@ -26,17 +26,18 @@ const fromNav = (groups: readonly NavGroup[], foot: readonly NavItem[]): V2Navig
   const navigate = new Map<string, OnNavigate>();
   const click = new Map<string, () => void>();
   // a menu's entries as deeds of a row or a section: links stay links, the rest run their onClick (a choice its
-  // onChoose); a submenu is left out, the sidebar keeps it
+  // onChoose); a submenu is left out, the sidebar keeps it, and so is an entry without a deed (`info`)
   const deeds = (entries: readonly MenuEntry[], prefix: string): NavigationItem[] =>
     entries.flatMap((entry, index): NavigationItem[] => {
-      if (entry === "separator") return [];
+      if (entry === "separator" || "info" in entry) return [];
       if ("title" in entry) {
         const section = entry;
         return deeds(
-          section.items.map((item) => ({
-            ...item,
-            onClick: section.onChoose ? () => section.onChoose?.(item.value ?? item.label) : item.onClick,
-          })),
+          section.items.flatMap((item) =>
+            "info" in item
+              ? []
+              : [{ ...item, onClick: section.onChoose ? () => section.onChoose?.(item.value ?? item.label) : item.onClick }],
+          ),
           `${prefix}:${index}`,
         );
       }

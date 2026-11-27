@@ -1,4 +1,15 @@
-import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  type JSX,
+  onCleanup,
+  children as resolveChildren,
+  Show,
+  untrack,
+} from "solid-js";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
@@ -36,6 +47,22 @@ export type MenuItem = {
 };
 
 /**
+ * An entry that only says something, such as a member a space lists: a sign, the words and a quiet hint at the end,
+ * at the contrast of an entry (not dimmed as a disabled one). It is plain text for assistive technology, the keys pass
+ * over it, and a click on it does nothing.
+ */
+export type MenuInfo = {
+  /** Marks the entry as one without a deed. */
+  info: true;
+  /** The words of the entry. */
+  label: string;
+  /** A Tabler icon name without the `ti-` prefix. */
+  icon?: string;
+  /** A quiet hint at the end, such as a role ("Verwaltung"). */
+  meta?: string;
+};
+
+/**
  * Entries under a heading, such as "Antwortart". With `choice` the section is one choice: its entries are options,
  * the one whose `value` (or `label`) is `choice` carries the tick, and choosing one closes the menu and calls
  * `onChoose` with its value. The menu draws a line between a section and what stands around it.
@@ -43,18 +70,19 @@ export type MenuItem = {
 export type MenuSection = {
   /** The quiet heading over the entries, such as "Sortieren nach". */
   title: string;
-  /** The entries under the heading. */
-  items: readonly MenuItem[];
+  /** The entries under the heading; an entry without a deed (`info`) stands among them as text. */
+  items: readonly (MenuItem | MenuInfo)[];
   /** Makes the section one choice: the value of the chosen entry, which carries the tick. */
   choice?: string;
   /** Called with the value of the entry chosen in a section with `choice`; choosing closes the menu. */
   onChoose?: (value: string) => void;
 };
 
-/** An entry, a section of entries under a heading, or a line between groups of entries. */
-export type MenuEntry = MenuItem | MenuSection | "separator";
+/** An entry, an entry without a deed, a section of entries under a heading, or a line between groups of entries. */
+export type MenuEntry = MenuItem | MenuInfo | MenuSection | "separator";
 
 const isSection = (entry: MenuEntry): entry is MenuSection => entry !== "separator" && "title" in entry;
+const isInfo = (entry: MenuEntry): entry is MenuInfo => entry !== "separator" && "info" in entry;
 
 type Variant = "primary" | "secondary" | "ghost" | "text";
 
@@ -91,7 +119,7 @@ export type MenuProps = TriggerProps & {
  */
 export const menuEntries = (entries: readonly MenuEntry[]): MenuEntry[] => {
   const out: MenuEntry[] = [];
-  const danger = (entry: MenuEntry) => entry !== "separator" && !isSection(entry) && !!entry.danger;
+  const danger = (entry: MenuEntry) => entry !== "separator" && !isSection(entry) && !isInfo(entry) && !!entry.danger;
   for (const entry of entries) {
     const last = out.at(-1);
     const apart = last !== undefined && last !== "separator" && entry !== "separator";
@@ -127,7 +155,13 @@ export const alignTo = (element: HTMLElement | undefined): "start" | "end" => {
 const hasLead = (entries: readonly MenuEntry[]): boolean =>
   entries.some((entry) => entry !== "separator" && (isSection(entry) ? hasLead(entry.items) : !!entry.icon));
 
-const Entries = (props: { level: MenuLevelParts; entries: readonly MenuEntry[]; lead?: boolean }) => {
+const Entries = (props: {
+  level: MenuLevelParts;
+  entries: readonly MenuEntry[];
+  lead?: boolean;
+  /** The id of an entry without a deed, so the group around it can name it as its description. */
+  infoId?: (info: MenuInfo) => string | undefined;
+}) => {
   const lead = () => props.lead ?? hasLead(props.entries);
   // Keyed by kind and words, not by object or place: new data for an open menu (a tick that flipped, an entry that
   // came in before it) keeps every entry's element, so the highlight and the focus stay. An entry that turns into
@@ -140,7 +174,9 @@ const Entries = (props: { level: MenuLevelParts; entries: readonly MenuEntry[]; 
           ? `separator:${index}`
           : isSection(entry)
             ? `${entry.choice === undefined ? "section" : "choice"}:${entry.title}`
-            : `${kindOf(entry)}:${entry.label}`;
+            : isInfo(entry)
+              ? `info:${entry.label}`
+              : `${kindOf(entry)}:${entry.label}`;
       const count = seen.get(base) ?? 0;
       seen.set(base, count + 1);
       return { key: count ? `${base}#${count}` : base, entry };
@@ -159,6 +195,13 @@ const Entries = (props: { level: MenuLevelParts; entries: readonly MenuEntry[]; 
           };
           return <Section level={props.level} section={section()} name={key} lead={lead()} />;
         }
+        if (isInfo(first)) {
+          const info = () => {
+            const now = entry();
+            return now !== "separator" && isInfo(now) ? now : first;
+          };
+          return <Info item={info()} lead={lead()} id={props.infoId?.(info())} />;
+        }
         return <Entry level={props.level} kind={kindOf(first)} item={itemOf(entry())} value={key} lead={lead()} />;
       }}
     </For>
@@ -167,9 +210,19 @@ const Entries = (props: { level: MenuLevelParts; entries: readonly MenuEntry[]; 
 
 /**
  * A section: its heading names the group for assistive technology too. A choice is a radio group of core: arrows walk
- * it, the chosen one is `aria-checked`, choosing closes the menu.
+ * it, the chosen one is `aria-checked`, choosing closes the menu. Entries without a deed are the group's description:
+ * the keys pass over them, so a screen reader hears them once as the group is entered.
  */
 const Section = (props: { level: MenuLevelParts; section: MenuSection; name: string; lead: boolean }) => {
+  const base = createUniqueId();
+  const infoIds = createMemo(() => {
+    const ids = new Map<MenuInfo, string>();
+    props.section.items.forEach((item, index) => {
+      if (isInfo(item)) ids.set(item, `${base}-${index}`);
+    });
+    return ids;
+  });
+  const described = () => [...infoIds().values()].join(" ") || undefined;
   // Core names a group by its heading once the heading is on the page. Its radio group listens to its value only and
   // misses that moment, so the heading's id is handed to it here, once the heading is there.
   const [headingId, setHeadingId] = createSignal<string>();
@@ -180,25 +233,39 @@ const Section = (props: { level: MenuLevelParts; section: MenuSection; name: str
   );
   if (untrack(() => props.section.choice) === undefined) {
     return (
-      <props.level.Group id={props.name} class="k2-mgroup">
+      <props.level.Group id={props.name} class="k2-mgroup" aria-describedby={described()}>
         {heading}
-        <Entries level={props.level} entries={props.section.items} lead={props.lead} />
+        <Entries level={props.level} entries={props.section.items} lead={props.lead} infoId={(info) => infoIds().get(info)} />
       </props.level.Group>
     );
   }
   const valueOf = (item: MenuItem) => item.value ?? item.label;
+  const keyOf = (item: MenuItem | MenuInfo) => (isInfo(item) ? `\u0000info:${item.label}` : valueOf(item));
   return (
     <props.level.RadioGroup
       name={props.name}
       value={props.section.choice}
       onValueChange={(value: string) => props.section.onChoose?.(value)}
       aria-labelledby={headingId()}
+      aria-describedby={described()}
       class="k2-mgroup"
     >
       {heading}
-      <For each={props.section.items.map(valueOf)}>
+      <For each={props.section.items.map(keyOf)}>
         {(value) => {
-          const item = () => props.section.items.find((each) => valueOf(each) === value) ?? { label: value };
+          const found = () => props.section.items.find((each) => keyOf(each) === value);
+          const first = untrack(found);
+          if (first && isInfo(first)) {
+            const info = () => {
+              const now = found();
+              return now && isInfo(now) ? now : first;
+            };
+            return <Info item={info()} lead={props.lead} id={infoIds().get(info())} />;
+          }
+          const item = () => {
+            const now = found();
+            return now && !isInfo(now) ? now : { label: value };
+          };
           return (
             <props.level.RadioItem
               group={props.name}
@@ -232,9 +299,9 @@ type EntryKind = "submenu" | "tick" | "link" | "deed";
 const kindOf = (entry: MenuItem): EntryKind =>
   entry.items ? "submenu" : entry.checked !== undefined ? "tick" : entry.href !== undefined && !entry.disabled ? "link" : "deed";
 
-const itemOf = (entry: MenuEntry): MenuItem => (entry === "separator" || isSection(entry) ? { label: "" } : entry);
+const itemOf = (entry: MenuEntry): MenuItem => (entry === "separator" || isSection(entry) || isInfo(entry) ? { label: "" } : entry);
 
-const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) => (
+const EntryFace = (props: { item: Pick<MenuItem, "label" | "icon" | "meta">; lead: boolean; end?: JSX.Element }) => (
   <>
     <Show when={props.lead}>
       <span class="k2-mi-lead">
@@ -245,6 +312,31 @@ const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) 
     <Show when={props.item.meta}>{(meta) => <span class="k2-mi-meta">{meta()}</span>}</Show>
     {props.end}
   </>
+);
+
+/**
+ * An entry without a deed: no part of the behaviour layer, so the keys and typeahead pass over it and it has no role
+ * of its own (plain text in the menu); its section's group names it as its description. It looks as an entry does, at
+ * rest; hidden marks part its words and its hint, and it from the next, where a screen reader reads them in one go.
+ */
+const Info = (props: { item: MenuInfo; lead: boolean; id?: string }) => (
+  <div class="k2-mi" data-info="" id={props.id}>
+    <Show when={props.lead}>
+      <span class="k2-mi-lead">
+        <Show when={props.item.icon}>{(name) => <Icon name={name()} />}</Show>
+      </span>
+    </Show>
+    <span class="k2-mi-label">{props.item.label}</span>
+    <Show when={props.item.meta}>
+      {(meta) => (
+        <>
+          <span class="k2-hidden-text">, </span>
+          <span class="k2-mi-meta">{meta()}</span>
+        </>
+      )}
+    </Show>
+    <span class="k2-hidden-text">;</span>
+  </div>
 );
 
 /** One entry of one kind (submenu, tick, link, deed); its words and states follow the data. */

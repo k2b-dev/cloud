@@ -13,7 +13,11 @@ const fixture = (opened: string[], clicked: string[]) => {
       // the group's "…": its deeds follow the group's entries in the menu
       action: {
         label: "Postfächer verwalten",
-        items: [{ label: "Neues Postfach", icon: "mail-plus", onClick: () => void clicked.push("new") }],
+        items: [
+          { label: "Neues Postfach", icon: "mail-plus", onClick: () => void clicked.push("new") },
+          // entries without a deed (who shares the mailboxes) stay out of the sidebar's deeds
+          { title: "Freigegeben für", items: [{ info: true, label: "Anna Berger", icon: "user", meta: "Lesen" }] },
+        ],
       },
       items: [
         {
@@ -22,7 +26,11 @@ const fixture = (opened: string[], clicked: string[]) => {
           href: "/app/demo/box",
           onNavigate: (nav) => void opened.push(`box ${nav.href}`),
           // the entry's "…": its row's menu
-          menu: [{ label: "Ausblenden", icon: "eye-off", onClick: () => void clicked.push("hide") }, "separator"],
+          menu: [
+            { label: "Ausblenden", icon: "eye-off", onClick: () => void clicked.push("hide") },
+            { info: true, label: "3 Regeln" },
+            "separator",
+          ],
         },
         // a link relative to the page, as a view or a folder of the open mailbox can be
         {

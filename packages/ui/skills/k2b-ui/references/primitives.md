@@ -472,7 +472,11 @@ lines instead of cutting a thing.
   `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
   `items` (a submenu to the side); or `"separator"` between groups; or a
-  section `{ title, items }` under a quiet heading. A section with
+  section `{ title, items }` under a quiet heading; or an entry without a
+  deed `{ info: true, label, icon, meta }` (members a space lists): full
+  contrast, the keys pass over it; put it in a section, whose group names
+  its info entries as its description for screen readers. `disabled` is only for a
+  deed that cannot run now. A section with
   `choice` and `onChoose` is one choice (reply kind, sender, order): its
   entries are options (`value`, else `label`), the chosen one carries the
   tick, choosing closes the menu. Lines around sections and before the
