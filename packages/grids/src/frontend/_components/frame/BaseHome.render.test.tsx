@@ -3,6 +3,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { PublicTable } from "../../../api/public-dto";
 import type { PublicOkWorkspaceState } from "../workspace/workspace-public-state-model";
+import type { HomeActivity } from "./base-activity-model";
 import "../ssr-test-plugin";
 
 const { default: BaseHome } = await import("./BaseHome.island.tsx");
@@ -76,7 +77,14 @@ const fixture = (options: { edit?: boolean; groups?: boolean; route?: "overview"
   return state;
 };
 
-const renderHome = (options: Parameters<typeof fixture>[0] & { address?: string; locale?: string; tab?: "groups" | "resources" } = {}) => {
+const renderHome = (
+  options: Parameters<typeof fixture>[0] & {
+    address?: string;
+    locale?: string;
+    tab?: "groups" | "resources";
+    activity?: HomeActivity;
+  } = {},
+) => {
   const locale = options.locale ?? "en";
   return renderToString(() =>
     createComponent(LocaleProvider, {
@@ -86,13 +94,62 @@ const renderHome = (options: Parameters<typeof fixture>[0] & { address?: string;
           state: fixture(options),
           query: resourcesQuery(locale).parse(options.address ?? "").state,
           tab: options.tab ?? "resources",
+          activity: options.activity,
         });
       },
     }),
   );
 };
 
+const activity: HomeActivity = {
+  total: 1_654,
+  points: [3, 5, 4, 6, 1, 0, 7, 9, 6, 8, 5, 1, 0, 23],
+  tables: { TABLE2: { total: 1_284, points: [2, 4, 3, 5, 1, 0, 6, 8, 5, 7, 4, 1, 0, 20] } },
+  pendingFinalizations: 3,
+  failedRuns24h: 2,
+  recent: [
+    {
+      tableId: "TABLE2",
+      recordShortId: "REC001",
+      title: "Kitchen front oak",
+      updatedAt: "2026-08-20T10:00:00.000Z",
+      person: { name: "Mira Solberg" },
+    },
+    { tableId: "TABLE2", recordShortId: "REC002", title: null, updatedAt: "2026-08-20T09:00:00.000Z", person: null },
+  ],
+};
+
 describe("Grids base home on v2", () => {
+  test("leads with new records today, their trend and the exceptions, and names who changed what last", () => {
+    const html = renderHome({ activity });
+    // the hero: the figure with its real trend, the records of the base, what waits and what failed
+    expect(html).toContain("23 new today");
+    expect(html).toContain("1,654 records in 1 table");
+    expect(html).toContain("3 finalizations waiting");
+    expect(html).toContain("2 runs failed (24 h)");
+    expect(html).toContain("New records per day over 14 days, 78 in all");
+    // a table row carries its records and its days
+    expect(html).toContain("Table · 1,284 records");
+    expect(html).toContain("new records in 14 days");
+    // the last changes: a person's face and name, a change without a person, the record's table
+    expect(html).toContain("Recently changed");
+    expect(html).toContain("Kitchen front oak");
+    expect(html).toContain("Record REC002");
+    expect(html).toContain('href="/app/grids/BASE01/table/TABLE2?record=REC001"');
+  });
+
+  test("writes large exception counts with the locale's separators", () => {
+    const html = renderHome({ activity: { ...activity, pendingFinalizations: 1_204, failedRuns24h: 1_087 } });
+    expect(html).toContain("1,204 finalizations waiting");
+    expect(html).toContain("1,087 runs failed (24 h)");
+  });
+
+  test("says nothing of activity it was not given", () => {
+    const html = renderHome();
+    expect(html).not.toContain("new today");
+    expect(html).not.toContain("Recently changed");
+  });
+
   test("lists what the base holds by kind with the base's places in the sidebar", () => {
     const html = renderHome();
     expect(html).toContain('data-k2-part="Workspace"');

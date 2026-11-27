@@ -1,11 +1,14 @@
+import { dates } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Bar, Empty, FilterBar, Input, List, Menu, Notice, Pane, Row, Section, Tabs, Text } from "@k2b/ui/v2";
+import { Bar, Empty, FilterBar, Input, List, Menu, Notice, Pane, Row, Section, Spark, Tabs, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { navigationReferenceKey } from "../../../navigation-contracts";
 import { workspaceMessages } from "../workspace/messages";
 import { type NavigationResource, navigationResources, navigationState } from "../workspace/navigation-catalog";
 import type { PublicOkWorkspaceState } from "../workspace/workspace-public-state-model";
+import type { HomeActivity } from "./base-activity-model";
 import GridsFrame, { LiveNotice, useGridsFrame } from "./GridsFrame";
+import GridsHero, { type HeroException } from "./GridsHero";
 import { kindMark, type MarkedKind } from "./kind-marks";
 import { frameMessages } from "./messages";
 import { filterResources, RESOURCE_TYPES, type ResourcesState, resourcesQuery } from "./resources-query";
@@ -17,6 +20,8 @@ export type BaseHomeProps = {
   /** What the address narrows the entries to, parsed on the server with `resourcesQuery`. */
   query: ResourcesState;
   tab: "groups" | "resources";
+  /** What happens in the base: new records, the exceptions, who changed what last (real data, from the server). */
+  activity?: HomeActivity;
 };
 
 /**
@@ -177,19 +182,36 @@ function HomeList(props: HomeProps) {
 
   const row = (resource: NavigationResource) => {
     const status = resource.status === "disabled" ? t().off : resource.status === "draft" ? t().draft : undefined;
-    const second = [kinds()[resource.type], resource.context, status].filter(Boolean).join(" · ");
+    // a table carries its records and its new records of the last days: the busy and the quiet ones stand apart
+    const data = resource.type === "table" ? props.activity?.tables[resource.id] : undefined;
+    const records = data ? t().recordCount({ count: data.total, formatted: number(data.total) }) : undefined;
+    const second = [kinds()[resource.type], records, resource.context, status].filter(Boolean).join(" · ");
     const edit = resource.type === "form" ? frame.nav.editForm(resource.id) : undefined;
     // k2b-ui gap: a Row's second line does not cut an unbreakable word (a long table name) and runs past the pane
     // edge; a long Section title is cut without "…" on the phone. No app-side fix without CSS; reported to lane MW/Y.
+    const points = data?.points;
     return (
       <Row
         mark={kindMark(MARKED_KIND[resource.type], resource.icon)}
-        // one line: the name, then kind and source as its quiet note (k2b-ui slot, MW: a second line only on the phone)
+        // one line: the name, then kind and source as its quiet note (k2b-ui slot, MW #4328: a second line on the phone)
         lines={[resource.name]}
         meta={second}
         href={resource.href}
         onOpen={resource.href ? undefined : () => frame.nav.fillOut(resource.id)}
-        end={edit ? <Menu label={t().editForm} items={[{ label: t().editForm, icon: "pencil", onClick: edit }]} /> : undefined}
+        end={
+          edit ? (
+            <Menu label={t().editForm} items={[{ label: t().editForm, icon: "pencil", onClick: edit }]} />
+          ) : points ? (
+            <Spark
+              values={points}
+              label={t().tableTrend({
+                name: resource.name,
+                days: points.length,
+                total: number(points.reduce((sum, value) => sum + value, 0)),
+              })}
+            />
+          ) : undefined
+        }
       />
     );
   };
@@ -236,7 +258,63 @@ function HomeList(props: HomeProps) {
       ? t().resourcesOf({ count: number(shown().length), total: number(all.length) })
       : t().resourcesCount({ count: number(all.length) });
 
-  return (
+  /** The hero: new records today with the trend of the last days, and what waits or went wrong, from real data. */
+  const hero = (activity: HomeActivity) => {
+    const today = activity.points.at(-1) ?? 0;
+    const tables = Object.keys(activity.tables).length;
+    const exceptions: HeroException[] = [
+      ...(activity.pendingFinalizations > 0
+        ? [
+            {
+              status: "warn" as const,
+              text: t().pendingFinalizations({ count: activity.pendingFinalizations, formatted: number(activity.pendingFinalizations) }),
+            },
+          ]
+        : []),
+      ...(activity.failedRuns24h > 0
+        ? [{ status: "bad" as const, text: t().failedRuns({ count: activity.failedRuns24h, formatted: number(activity.failedRuns24h) }) }]
+        : []),
+    ];
+    return (
+      <GridsHero
+        label={t().newRecords}
+        figure={t().newToday({ count: today, formatted: number(today) })}
+        meta={t().recordsInTables({ records: number(activity.total), tables: number(tables) })}
+        trend={{
+          values: activity.points,
+          label: t().newPerDayTrend({
+            days: activity.points.length,
+            total: number(activity.points.reduce((sum, value) => sum + value, 0)),
+          }),
+        }}
+        exceptions={exceptions}
+      />
+    );
+  };
+  const tableName = (id: string) => catalog.tables.find((table) => table.id === id)?.name ?? "";
+  const relative = (value: string) => dates.formatDateTimeRelative(value, { locale: locale(), timeZone: props.state.dateConfig?.timeZone });
+  /** Who changed what last: the person's face, the record's name, its table, when. */
+  const recentPane = (activity: HomeActivity) => (
+    <Pane side label={t().recentlyChanged} width={{ min: 280, default: 360 }}>
+      <Section icon="clock" title={t().recentlyChanged}>
+        <List label={t().recentlyChanged}>
+          <For each={activity.recent}>
+            {(change) => (
+              <Row
+                avatar={change.person ?? undefined}
+                mark={change.person ? undefined : { icon: "robot" }}
+                lines={[change.title || t().recordNumbered({ id: change.recordShortId }), tableName(change.tableId)]}
+                time={relative(change.updatedAt)}
+                href={`/app/grids/${props.state.base.id}/table/${change.tableId}?record=${change.recordShortId}`}
+              />
+            )}
+          </For>
+        </List>
+      </Section>
+    </Pane>
+  );
+
+  const main = () => (
     <Pane
       label={props.state.base.name}
       scrollKey={`grids-home-${props.state.base.id}`}
@@ -245,6 +323,7 @@ function HomeList(props: HomeProps) {
     >
       <LiveNotice />
       <Show when={!frame.revoked()}>
+        <Show when={props.activity}>{(activity) => hero(activity())}</Show>
         <Show when={emptyRouteNote()}>{(note) => <Notice tone="note">{note()}</Notice>}</Show>
         <Show
           when={props.tab === "groups"}
@@ -276,5 +355,16 @@ function HomeList(props: HomeProps) {
         </Show>
       </Show>
     </Pane>
+  );
+  // the last changes stand beside the places, once there are any (the phone stacks them under the list)
+  return (
+    <Show when={props.activity?.recent.length ? props.activity : undefined} fallback={main()}>
+      {(activity) => (
+        <Pane.Split>
+          {main()}
+          {recentPane(activity())}
+        </Pane.Split>
+      )}
+    </Show>
   );
 }

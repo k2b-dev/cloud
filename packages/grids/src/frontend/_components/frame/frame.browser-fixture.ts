@@ -6,6 +6,7 @@
 import type { PublicBase, PublicTable } from "../../../api/public-dto";
 import type { BasesOverviewProps } from "../overview/BasesOverview";
 import type { PublicOkWorkspaceState } from "../workspace/workspace-public-state-model";
+import type { HomeActivity } from "./base-activity-model";
 
 export type FixtureVariant = "plain" | "worst" | "huge";
 
@@ -246,4 +247,66 @@ export const baseHomeFixture = (variant: FixtureVariant, options: { edit: boolea
       ] as unknown as PublicOkWorkspaceState["catalog"]["sidebarDocumentTemplates"],
     },
   } as unknown as PublicOkWorkspaceState;
+};
+
+/** Fourteen days of new records with a working week's rhythm: quiet weekends, a busier Monday. */
+const fortnight = (scale: number, offset = 0) =>
+  Array.from({ length: 14 }, (_, day) => {
+    const weekday = (day + offset) % 7;
+    return weekday >= 5 ? Math.round(scale * 0.15) : Math.round(scale * (0.6 + ((day * 37 + offset * 11) % 9) / 10));
+  });
+
+/**
+ * What happens in the base for its home: new records with their days, the exceptions and who changed what last,
+ * shaped like the server's HomeActivity (public table ids).
+ */
+export const homeActivityFixture = (variant: FixtureVariant): HomeActivity => {
+  const tables = tablesOf(variant);
+  if (variant === "huge")
+    return {
+      total: 48_210,
+      points: fortnight(180),
+      tables: Object.fromEntries(
+        tables.map((table, index) => [
+          table.id,
+          { total: (index * 37) % 400, points: index < 200 ? fortnight((index % 9) + 1, index) : null },
+        ]),
+      ),
+      pendingFinalizations: 0,
+      failedRuns24h: 0,
+      recent: [],
+    };
+  const orders = fortnight(variant === "worst" ? 3_400 : 9);
+  const parts = fortnight(variant === "worst" ? 40 : 3, 2);
+  const people = ["Mira Solberg", "Jonas Kern", "Felix Thal", "Sami Yilmaz"];
+  return {
+    total: variant === "worst" ? 128_345_210 : 1_654,
+    points: orders.map((value, day) => value + (parts[day] ?? 0)),
+    tables: {
+      [tables[0]!.id]: { total: variant === "worst" ? 128_340_118 : 1_284, points: orders },
+      [tables[1]!.id]: { total: variant === "worst" ? 5_092 : 312, points: parts },
+      ...(tables[2] ? { [tables[2].id]: { total: 58, points: Array.from({ length: 14 }, () => 0) } } : {}),
+    },
+    pendingFinalizations: variant === "worst" ? 1_204 : 3,
+    failedRuns24h: variant === "worst" ? 87 : 2,
+    recent: [
+      ["Küchenfront Eiche", 0, 4],
+      ["Hebebühne Wartung", 1, 18],
+      [
+        variant === "worst" ? "Wartungsprotokoll-der-Hebebühnen-und-Druckluftanlagen-im-Werk-Süd-2026-final" : "Druckluftanlage Halle 3",
+        0,
+        42,
+      ],
+      [null, 1, 75],
+      ["Empfangstresen", 0, 130],
+      ["Regal Archiv", 0, 260],
+    ].map(([title, table, minutes], index) => ({
+      tableId: tables[Number(table)]?.id ?? tables[0]!.id,
+      recordShortId: `REC${String(index + 1).padStart(3, "0")}`,
+      title: title as string | null,
+      updatedAt: minutesAgo(Number(minutes)),
+      // a change by an import or a workflow has no person
+      person: variant === "worst" && index === 3 ? null : { name: people[index % people.length]! },
+    })),
+  };
 };

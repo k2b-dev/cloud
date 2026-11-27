@@ -3,7 +3,7 @@ import { render } from "solid-js/web";
 import BasesOverview from "../overview/BasesOverview";
 import { basesQuery, parseBasesAddress } from "../overview/bases-query";
 import BaseHome from "./BaseHome";
-import { baseHomeFixture, basesFixture, type FixtureVariant } from "./frame.browser-fixture";
+import { baseHomeFixture, basesFixture, type FixtureVariant, homeActivityFixture } from "./frame.browser-fixture";
 import { homeTab, resourcesQuery } from "./resources-query";
 
 /**
@@ -28,6 +28,7 @@ render(
               state={state}
               query={resourcesQuery("de").parse(params).state}
               tab={homeTab(params, (state.navigation?.groups.length ?? 0) > 0)}
+              activity={homeActivityFixture(variant)}
             />
           );
         })()

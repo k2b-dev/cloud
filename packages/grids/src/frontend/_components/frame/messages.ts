@@ -9,6 +9,19 @@ export const frameMessages = i18n.define({
       sidebarWidth: "Width of the sidebar",
       baseActions: "Base actions",
       overview: "Overview",
+      newRecords: "New records",
+      newToday: ({ count, formatted }: { count: number; formatted: string }) => (count === 1 ? "1 new today" : `${formatted} new today`),
+      recordsInTables: ({ records, tables }: { records: string; tables: string }) =>
+        `${records} ${records === "1" ? "record" : "records"} in ${tables} ${tables === "1" ? "table" : "tables"}`,
+      newPerDayTrend: ({ days, total }: { days: number; total: string }) => `New records per day over ${days} days, ${total} in all`,
+      tableTrend: ({ name, days, total }: { name: string; days: number; total: string }) => `${name}: ${total} new records in ${days} days`,
+      pendingFinalizations: ({ count, formatted }: { count: number; formatted: string }) =>
+        count === 1 ? "1 finalization waiting" : `${formatted} finalizations waiting`,
+      failedRuns: ({ count, formatted }: { count: number; formatted: string }) =>
+        count === 1 ? "1 run failed (24 h)" : `${formatted} runs failed (24 h)`,
+      recentlyChanged: "Recently changed",
+      recordNumbered: ({ id }: { id: string }) => `Record ${id}`,
+      recordCount: ({ count, formatted }: { count: number; formatted: string }) => (count === 1 ? "1 record" : `${formatted} records`),
       query: "Query",
       tables: "Tables",
       forms: "Forms",
@@ -75,6 +88,18 @@ export const frameMessages = i18n.define({
       sidebarWidth: "Breite der Seitenleiste",
       baseActions: "Aktionen für die Base",
       overview: "Übersicht",
+      newRecords: "Neue Datensätze",
+      newToday: ({ count, formatted }) => (count === 1 ? "1 neu heute" : `${formatted} neu heute`),
+      recordsInTables: ({ records, tables }) =>
+        `${records} ${records === "1" ? "Datensatz" : "Datensätze"} in ${tables} ${tables === "1" ? "Tabelle" : "Tabellen"}`,
+      newPerDayTrend: ({ days, total }) => `Neue Datensätze pro Tag in ${days} Tagen, zusammen ${total}`,
+      tableTrend: ({ name, days, total }) => `${name}: ${total} neue Datensätze in ${days} Tagen`,
+      pendingFinalizations: ({ count, formatted }) => (count === 1 ? "1 Freigabe offen" : `${formatted} Freigaben offen`),
+      failedRuns: ({ count, formatted }) =>
+        count === 1 ? "1 Lauf fehlgeschlagen (24 Std.)" : `${formatted} Läufe fehlgeschlagen (24 Std.)`,
+      recentlyChanged: "Zuletzt geändert",
+      recordNumbered: ({ id }) => `Datensatz ${id}`,
+      recordCount: ({ count, formatted }) => (count === 1 ? "1 Datensatz" : `${formatted} Datensätze`),
       query: "Abfrage",
       tables: "Tabellen",
       forms: "Formulare",

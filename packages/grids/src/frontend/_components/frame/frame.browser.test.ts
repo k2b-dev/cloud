@@ -317,4 +317,8 @@ describe("a base home on v2", () => {
       await context.close();
     }
   }, 60_000);
+
+  // #4196, k2b-ui gap (Row, lane MW): a two-line Row wraps its quiet second line, so a long table name under a recent
+  // change grows the row past 52 px; a three-line Row already cuts each line with an ellipsis.
+  test.todo("#4196: a recent change keeps one quiet line for a long table name");
 });
