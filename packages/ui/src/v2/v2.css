@@ -2924,11 +2924,12 @@
 
 /* Path: where the page stands, in the start of its head. The bar's fold (bar-fold.ts) owns the order: the end folds
    first, against the path laid out at its least (below), and only then does the path give way. Once the bar is
-   fitted, the path takes the room the end leaves. The places before the page shorten first, each to its least (its
+   fitted (or where it has no end, so nothing folds), the path takes the room the end leaves, never while it is
+   measured. The places before the page shorten first, each to its least (its
    own width or 12 characters); then the page, down to `--k2-start-least` and never below; only the server's page,
    where nothing folds yet, cuts places further. Folded places stay in the page, out of the flow, out of sight and out
    of the tab order, so the path can measure what they would need. */
-.k2-ui .k2-bar[data-k2-fitted] > .k2-bar-start:has(> .k2-path) {
+.k2-ui .k2-bar:is([data-k2-fitted], :not(:has(> .k2-bar-end))):not([data-k2-measuring]) > .k2-bar-start:has(> .k2-path) {
   flex: 1 1 0;
   min-width: 0;
 }
@@ -3001,7 +3002,7 @@
   max-width: 12ch;
 }
 .k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-path > .k2-icon {
-  width: auto;
+  width: 1em;
 }
 .k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-path > b {
   width: var(--k2-start-least);
