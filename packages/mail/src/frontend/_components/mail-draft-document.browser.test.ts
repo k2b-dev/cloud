@@ -538,12 +538,12 @@ test("input the open draft refuses becomes its recovery copy once, and the reloa
     await editor.click();
     await page.keyboard.press("Control+Home");
     await page.keyboard.insertText("Refused ");
-    // The refusal settles either as a recovery copy or, before the fix, as "Dieser Entwurf hat sich geändert …".
+    // Recovery settles either as a recovery copy or, before the fix, failed with "Dieser Entwurf hat sich geändert …".
     const settled = () =>
       page.waitForFunction(() => {
         const state = window.mailSharedFixture?.state();
         return Boolean(
-          state && ((state.ready && !window.mailSharedFixture.unsent()) || (state.terminal && (state.restCopied || state.error))),
+          state && ((state.ready && !window.mailSharedFixture.unsent()) || (state.terminal && (state.restCopied || state.restFailed))),
         );
       });
     await settled();
