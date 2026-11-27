@@ -98,6 +98,7 @@ for (const width of [390, 1024, 1440])
         "Seite lang 5",
         "Ort mittel",
         "Ort kurz",
+        "Ort und Aktionen",
       ]);
       for (const path of found)
         expect([path.name, path.inside, path.kept, path.over, path.ends]).toEqual([path.name, true, true, false, "ellipsis"]);
@@ -160,6 +161,69 @@ test("390 px: the one change coming alive may make is a path without room that f
     expect(await page.evaluate(() => document.querySelectorAll('nav[aria-label="Ort mittel"] [data-folded]').length)).toBe(0);
     await live(page);
     expect((await named(page))["Ort mittel"]).toMatchObject({ places: ["Spaces", "Küche"], more: ["Weitere Orte"] });
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+});
+
+// The fold of a bar (bar-fold.ts) owns the order beside a path: the end folds first, the path only after that.
+const crowded = (page: Page) =>
+  page.evaluate(() => {
+    const nav = document.querySelector<HTMLElement>('nav[aria-label="Ort und Aktionen"]')!;
+    const bar = nav.closest<HTMLElement>(".k2-bar")!;
+    const probe = document.createElement("span");
+    probe.style.cssText = "position:absolute;visibility:hidden;width:var(--k2-start-least)";
+    const current = nav.querySelector<HTMLElement>("b")!;
+    current.append(probe);
+    const least = probe.offsetWidth;
+    probe.remove();
+    const foldable = [...bar.querySelectorAll<HTMLElement>(":scope > .k2-bar-end .k2-btn[data-variant='ghost']")];
+    const room = bar.getBoundingClientRect();
+    const end = bar.querySelector<HTMLElement>(":scope > .k2-bar-end")!;
+    return {
+      fold: nav.getAttribute("data-fold"),
+      endFolded: foldable.filter((button) => button.hasAttribute("data-k2-folded")).length,
+      foldable: foldable.length,
+      page: Math.round(current.getBoundingClientRect().width),
+      least,
+      inside: current.getBoundingClientRect().right <= nav.getBoundingClientRect().right + 0.5,
+      endInside: end.getBoundingClientRect().right <= room.right + 4.5,
+      primary: (() => {
+        const primary = bar.querySelector<HTMLElement>(".k2-btn[data-variant='primary']")!;
+        const box = primary.getBoundingClientRect();
+        return box.width > 0 && box.right <= room.right + 4.5;
+      })(),
+    };
+  });
+
+for (const width of [390, 800, 1024])
+  test(`${width} px: beside a crowded end the end folds first, and the page is never cut below its least`, async () => {
+    await withPage(width, async (page) => {
+      const found = await crowded(page);
+      // the path folds only when every button that may fold is in the end's "…"
+      if (found.fold !== "0") expect(found.endFolded).toBe(found.foldable);
+      expect([found.inside, found.endInside, found.primary, found.page >= found.least - 1]).toEqual([true, true, true, true]);
+    });
+  });
+
+test("1024 px: where nothing folds, the crowded bar's server page and live page are the same", async () => {
+  const page = await open(1024, true);
+  const errors = pageErrors(page);
+  try {
+    await settled(page);
+    const at = () =>
+      page.evaluate(() => {
+        const bar = document.querySelector<HTMLElement>('nav[aria-label="Ort und Aktionen"]')!.closest<HTMLElement>(".k2-bar")!;
+        return [...bar.querySelectorAll<HTMLElement>(".k2-path-step, b, .k2-bar-end .k2-btn")].map((part) => {
+          const box = part.getBoundingClientRect();
+          return `${part.textContent?.slice(0, 10) || part.getAttribute("aria-label")} ${Math.round(box.x)} ${Math.round(box.width)}`;
+        });
+      });
+    const sent = await at();
+    await live(page);
+    expect((await crowded(page)).endFolded).toBe(0);
+    expect(await at()).toEqual(sent);
     expect(errors).toEqual([]);
   } finally {
     await page.close();

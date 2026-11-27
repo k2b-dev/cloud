@@ -2922,12 +2922,13 @@
   box-shadow: inset 0 -2px 0 var(--k2-blue);
 }
 
-/* Path: where the page stands, in the start of its head. Beside the head's actions it takes the room they leave
-   (#4392's fold measures with the path at its least, below). The places before the page shorten first, each down to
-   its least (its own width or 12 characters); the page itself shortens last, with "…". The server's page lays this
-   out the same way. Folded places stay in the page, out of the flow, out of sight and out of the tab order, so the
-   path can measure what they would need. */
-.k2-ui .k2-bar:not([data-k2-measuring]) > .k2-bar-start:has(> .k2-path) {
+/* Path: where the page stands, in the start of its head. The bar's fold (bar-fold.ts) owns the order: the end folds
+   first, against the path laid out at its least (below), and only then does the path give way. Once the bar is
+   fitted, the path takes the room the end leaves. The places before the page shorten first, each to its least (its
+   own width or 12 characters); then the page, down to `--k2-start-least` and never below; only the server's page,
+   where nothing folds yet, cuts places further. Folded places stay in the page, out of the flow, out of sight and out
+   of the tab order, so the path can measure what they would need. */
+.k2-ui .k2-bar[data-k2-fitted] > .k2-bar-start:has(> .k2-path) {
   flex: 1 1 0;
   min-width: 0;
 }
@@ -2944,10 +2945,10 @@
 .k2-ui .k2-bar-start > .k2-path {
   flex: 1 1 0;
 }
-/* a place starts at its least (12 characters, never more than its own width), never shrinks below it, and grows to its
-   own width while there is room; only the page itself shrinks */
+/* a place starts at its least (12 characters, never more than its own width) and grows to its own width while there
+   is room; it shrinks below its least only after the page has given way to its own */
 .k2-ui .k2-path-step {
-  flex: 1000 0 12ch;
+  flex: 1000 1 12ch;
   max-width: max-content;
   min-width: 0;
   overflow: hidden;
@@ -2955,9 +2956,11 @@
   color: var(--k2-subtle);
   text-decoration: none;
 }
+/* the page gives way before any place goes below its least (a thousand times faster), and never below
+   `--k2-start-least`: a shorter name keeps that room after it, where nothing follows */
 .k2-ui .k2-path > b {
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: 0 1000 auto;
+  min-width: var(--k2-start-least);
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 600;
@@ -2985,19 +2988,26 @@
   display: inline-flex;
   flex: none;
 }
-/* While #4392's fold measures a bar, a path counts at its least: "…", the chevron and its page, at most
-   `--k2-start-least`.
-   The end folds until that least has room, and the path folds the rest itself. */
-.k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-path > :is(.k2-path-step, .k2-icon:not(:has(+ b))) {
-  display: none;
-}
-.k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-path > .k2-path-fold {
+/* While the bar's fold measures, a path stands at its least without folding anything: every place at its least
+   (its own width or 12 characters), the page at `--k2-start-least`, no "…". The end folds until that has room; the
+   path folds only after that, in the room it is given. */
+.k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-path > :is(.k2-path-step, .k2-icon, b) {
   position: static;
-  width: auto;
+  flex: none;
   visibility: visible;
 }
+.k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-path > .k2-path-step {
+  width: max-content;
+  max-width: 12ch;
+}
+.k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-path > .k2-icon {
+  width: auto;
+}
 .k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-path > b {
-  max-width: var(--k2-start-least);
+  width: var(--k2-start-least);
+}
+.k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-path > :is(.k2-path-fold, .k2-icon:has(+ .k2-path-fold)) {
+  display: none;
 }
 /* the status row turns into the bar of what can be done with the selected entries (rule 6) */
 .k2-ui .k2-bar[data-selecting] {

@@ -17,6 +17,20 @@ const deep = [
   { label: "Space-Einstellungen" },
 ];
 
+// a crowded end beside a deep path: seven buttons that may fold and the primary, which never does
+const crowded = (
+  <>
+    <Button variant="ghost" icon="share" label="Teilen" />
+    <Button variant="ghost" icon="printer" label="Drucken" />
+    <Button variant="ghost" icon="download" label="Exportieren" />
+    <Button variant="ghost" icon="history" label="Verlauf" />
+    <Button variant="ghost" icon="copy" label="Duplizieren" />
+    <Button variant="ghost" icon="star" label="Favorit" />
+    <Button variant="ghost" icon="archive" label="Archivieren" />
+    <Button variant="primary" label="Neu" />
+  </>
+);
+
 export function Demo() {
   return (
     <Workspace
@@ -68,6 +82,7 @@ export function Demo() {
             />
           }
         />
+        <Bar start={<Path label="Ort und Aktionen" items={deep} />} end={crowded} />
       </Pane>
     </Workspace>
   );
