@@ -651,12 +651,20 @@ export default function OAuthScreen(props: OAuthScreenProps) {
           {
             title: t().client,
             mark: (client) => markOf(client),
+            // in the cell's own text flow, not an Inline: the cell cuts a long name with “…”, a flex row would clip it bare
             cell: (client) => (
-              <Inline>
+              <>
                 <Text weight="strong">{badge(client) && !props.open ? inLine(client.name) : client.name}</Text>
                 {/* beside an open client the list is narrow; the open one says its kind in its head */}
-                <Show when={!props.open && badge(client)}>{(word) => <Chip>{word()}</Chip>}</Show>
-              </Inline>
+                <Show when={!props.open && badge(client)}>
+                  {(word) => (
+                    <>
+                      {" "}
+                      <Chip>{word()}</Chip>
+                    </>
+                  )}
+                </Show>
+              </>
             ),
           },
           {
