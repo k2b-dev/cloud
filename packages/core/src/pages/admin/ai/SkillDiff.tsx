@@ -4,7 +4,7 @@ import type { SkillFileDiff } from "../settings/_components/skill-diff";
 /**
  * The line differences of a Skill against its app version, one block per file: lines only in this Skill (−), lines
  * from the app (+), unchanged runs folded. k2b-ui gap: v2 has no diff or code view, so this drawing stands in a
- * `Canvas`, the one place for own markup; the screen places it.
+ * `Canvas`, the one place for own markup; the screen places it, and the drawing keeps the 20 px text edge itself.
  */
 export default function SkillDiff(props: {
   files: readonly SkillFileDiff[];
@@ -12,7 +12,7 @@ export default function SkillDiff(props: {
   unchanged: (count: number) => string;
 }) {
   return (
-    <div class="flex flex-col gap-5">
+    <div class="flex flex-col gap-5 px-5">
       <For each={props.files}>
         {(file) => (
           <section class="flex min-w-0 flex-col gap-1" aria-label={file.path}>

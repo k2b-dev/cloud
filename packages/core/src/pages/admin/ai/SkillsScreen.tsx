@@ -120,7 +120,7 @@ export default function SkillsScreen(props: { nav: NavProps; data: AiSkillsData 
   /** No admin is a problem only for a Skill of its own; an app's Skill is managed by the app. */
   const orphan = (skill: AiSkillRow) => skill.adminCount === 0 && !skill.source;
   const adminsText = (skill: AiSkillRow) =>
-    skill.adminCount === 0 ? (skill.source ? s().managedByApp : s().noAdmins) : s().adminCount({ count: skill.adminCount });
+    skill.adminCount === 0 ? (skill.source ? s().managedByApp : s().noAdmins) : t().admins({ count: skill.adminCount });
   const adminsCell = (skill: AiSkillRow) =>
     orphan(skill) ? (
       <Text tone="bad" weight="medium">
@@ -141,7 +141,7 @@ export default function SkillsScreen(props: { nav: NavProps; data: AiSkillsData 
             <StatusRow
               lead={data().search ? t().matches({ count: data().summary.total, search: data().search }) : t().skillsLead({ count: data().summary.total })}
               facts={[
-                { value: data().summary.totalAccess, after: t().accessAfter },
+                { value: data().summary.totalAccess.toLocaleString(locale()), after: t().accessAfter },
                 ...(pages() > 1 ? [{ value: t().pageOf({ page: data().page, pages: pages() }) }] : []),
               ]}
               filters={<ContentPager address={address()} pages={pages()} t={t()} />}
@@ -187,7 +187,7 @@ export default function SkillsScreen(props: { nav: NavProps; data: AiSkillsData 
               { title: s().skill, width: { min: 180, default: 260 }, mark: () => skillMark, cell: (skill) => skill.name },
               // the one problem column stands right after the name, so it stays in view beside an open Skill
               { title: s().admins, width: { min: 140, default: 180 }, cell: adminsCell },
-              { title: s().access, width: { min: 72, default: 84 }, align: "end", cell: (skill) => String(skill.accessCount) },
+              { title: s().access, width: { min: 72, default: 84 }, align: "end", cell: (skill) => skill.accessCount.toLocaleString(locale()) },
               { title: s().skillSource, width: { min: 140, default: 260 }, drop: true, cell: sourceCell },
               { title: s().updated, drop: true, cell: (skill) => skill.updated },
             ]}
@@ -237,7 +237,6 @@ export default function SkillsScreen(props: { nav: NavProps; data: AiSkillsData 
                 <Notice
                   tone="bad"
                   title={t().noAdminTitle}
-                  primary={{ label: s().permissions, icon: "shield", onClick: () => void editAccess(skill) }}
                 >
                   {t().skillNoAdminText}
                 </Notice>
@@ -269,8 +268,9 @@ export default function SkillsScreen(props: { nav: NavProps; data: AiSkillsData 
                         ]
                       : []),
                     { label: s().access, value: t().entries({ count: skill.accessCount }) },
-                    { label: s().admins, value: adminsText(skill) },
-                    { label: t().references, value: String(skill.referenceCount) },
+                    // no admin stands as the notice above; the fact says it only once
+                    ...(orphan(skill) ? [] : [{ label: s().admins, value: adminsText(skill) }]),
+                    { label: t().references, value: skill.referenceCount.toLocaleString(locale()) },
                     { label: s().updated, value: skill.updated },
                     { label: t().created, value: skill.created },
                     { label: t().id, value: skill.shortId, mono: true, copy: skill.shortId },
@@ -288,7 +288,7 @@ export default function SkillsScreen(props: { nav: NavProps; data: AiSkillsData 
       head={
         <Bar
           start={<Path label={aiAreaLink(locale()).label} items={[aiAreaLink(locale()), { label: aiSectionLabel(locale(), "skills") }]} />}
-          end={<ContentSearch address={address()} label={s().searchAiSkills} placeholder={s().searchAiSkills} />}
+          end={<ContentSearch address={address()} label={s().searchAiSkills} placeholder={t().searchPlaceholder} />}
         />
       }
     >

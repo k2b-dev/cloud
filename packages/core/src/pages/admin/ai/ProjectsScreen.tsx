@@ -73,7 +73,7 @@ export default function ProjectsScreen(props: { nav: NavProps; data: AiProjectsD
     setDeleting(false);
     toast(response ? await readError(response, s().deleteProjectFailed) : s().deleteProjectFailed, { status: "bad" });
   };
-  const adminsText = (project: AiProjectRow) => (project.adminCount === 0 ? s().noAdmins : s().adminCount({ count: project.adminCount }));
+  const adminsText = (project: AiProjectRow) => (project.adminCount === 0 ? s().noAdmins : t().admins({ count: project.adminCount }));
   const noAdmins = () => (
     <Text tone="bad" weight="medium">
       <Icon name="point-filled" /> {s().noAdmins}
@@ -95,7 +95,7 @@ export default function ProjectsScreen(props: { nav: NavProps; data: AiProjectsD
                   : t().projectsLead({ count: data().summary.total })
               }
               facts={[
-                { value: data().summary.totalAccess, after: t().accessAfter },
+                { value: data().summary.totalAccess.toLocaleString(locale()), after: t().accessAfter },
                 ...(pages() > 1 ? [{ value: t().pageOf({ page: data().page, pages: pages() }) }] : []),
               ]}
               filters={<ContentPager address={address()} pages={pages()} t={t()} />}
@@ -142,7 +142,7 @@ export default function ProjectsScreen(props: { nav: NavProps; data: AiProjectsD
                 width: { min: 140, default: 180 },
                 cell: (project) => (project.adminCount === 0 ? noAdmins() : adminsText(project)),
               },
-              { title: s().access, width: { min: 72, default: 84 }, align: "end", cell: (project) => String(project.accessCount) },
+              { title: s().access, width: { min: 72, default: 84 }, align: "end", cell: (project) => project.accessCount.toLocaleString(locale()) },
               { title: s().updated, drop: true, cell: (project) => project.updated },
             ]}
           />
@@ -185,7 +185,6 @@ export default function ProjectsScreen(props: { nav: NavProps; data: AiProjectsD
                 <Notice
                   tone="bad"
                   title={t().noAdminTitle}
-                  primary={{ label: s().permissions, icon: "shield", onClick: () => void editAccess(project) }}
                 >
                   {t().projectNoAdminText}
                 </Notice>
@@ -197,7 +196,8 @@ export default function ProjectsScreen(props: { nav: NavProps; data: AiProjectsD
                 <Facts
                   items={[
                     { label: s().access, value: t().entries({ count: project.accessCount }) },
-                    { label: s().admins, value: adminsText(project) },
+                    // no admin stands as the notice above; the fact says it only once
+                    ...(project.adminCount === 0 ? [] : [{ label: s().admins, value: adminsText(project) }]),
                     { label: s().updated, value: project.updated },
                     { label: t().created, value: project.created },
                     { label: t().id, value: project.shortId, mono: true, copy: project.shortId },
@@ -215,7 +215,7 @@ export default function ProjectsScreen(props: { nav: NavProps; data: AiProjectsD
       head={
         <Bar
           start={<Path label={aiAreaLink(locale()).label} items={[aiAreaLink(locale()), { label: aiSectionLabel(locale(), "projects") }]} />}
-          end={<ContentSearch address={address()} label={s().searchAiProjects} placeholder={s().searchAiProjects} />}
+          end={<ContentSearch address={address()} label={s().searchAiProjects} placeholder={t().searchPlaceholder} />}
         />
       }
     >
