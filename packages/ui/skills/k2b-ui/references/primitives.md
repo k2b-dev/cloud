@@ -473,7 +473,8 @@ lines instead of cutting a thing.
   `items` (a submenu to the side); or `"separator"` between groups; or a
   section `{ title, items }` under a quiet heading; or an entry without a
   deed `{ info: true, label, icon, meta }` (members a space lists): full
-  contrast, plain text, the keys pass over it. `disabled` is only for a
+  contrast, the keys pass over it; put it in a section, whose group names
+  its info entries as its description for screen readers. `disabled` is only for a
   deed that cannot run now. A section with
   `choice` and `onChoose` is one choice (reply kind, sender, order): its
   entries are options (`value`, else `label`), the chosen one carries the

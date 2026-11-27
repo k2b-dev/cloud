@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
+import { browserName, launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { demoBundle, pattern, serverMarkup } from "../../test/v2-behavior/harness";
 import type {} from "../../test/v2-menu-info.demo";
 
@@ -56,7 +56,7 @@ test("server markup: the menu's button is sent, no popup", () => {
   expect(markup).not.toContain("Anna Berger");
 });
 
-test("an info entry is plain text in the menu: no menu item, no tab stop, not disabled, under its heading", async () => {
+test("an info entry is plain text in the menu: no menu item, no tab stop, not disabled; its group names it as its description", async () => {
   await withPage(async (page) => {
     await open(page);
     // only the deeds are menu items; the people are text
@@ -79,8 +79,34 @@ test("an info entry is plain text in the menu: no menu item, no tab stop, not di
         ["Anna Berger", "Verwaltung"],
         ["Jonas Hartwig", "Mitglied"],
         ["Jule Amsel", "Gast"],
-      ].map(([name, meta]) => ({ text: `${name}${meta}`, role: null, tabindex: null, disabled: null, group: "Mitglieder" })),
+      ].map(([name, meta]) => ({ text: `${name}, ${meta};`, role: null, tabindex: null, disabled: null, group: "Mitglieder" })),
     );
+    // the keys pass over them, so the group that holds them names them as its description: a screen reader hears
+    // who is in the space once, as the group is entered
+    const said = "Anna Berger, Verwaltung; Jonas Hartwig, Mitglied; Jule Amsel, Gast;";
+    const described = await page.evaluate(() => {
+      const group = document.querySelector<HTMLElement>(".k2-menu [data-info]")!.closest('[role="group"]')!;
+      const ids = (group.getAttribute("aria-describedby") ?? "").split(" ").filter(Boolean);
+      return {
+        infos: ids.every((id) => document.getElementById(id)?.hasAttribute("data-info")),
+        text: ids.map((id) => document.getElementById(id)?.textContent ?? "").join(" "),
+      };
+    });
+    expect(described).toEqual({ infos: true, text: said });
+    if (browserName !== "webkit") {
+      // the description as the browser computes it for assistive technology
+      const cdp = await page.context().newCDPSession(page);
+      const { nodes } = (await cdp.send("Accessibility.getFullAXTree")) as {
+        nodes: { role?: { value?: string }; name?: { value?: string }; description?: { value?: string } }[];
+      };
+      const group = nodes.find((node) => node.role?.value === "group" && node.name?.value === "Mitglieder");
+      expect(
+        group?.description?.value
+          ?.replace(/\s+([,;])/g, "$1")
+          .replace(/\s+/g, " ")
+          .trim(),
+      ).toBe(said);
+    }
     // the menu keeps the menu pattern of ui-sdk
     expect(await pattern(page, menu, "menu")).toBe("ok");
   });

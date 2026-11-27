@@ -1,4 +1,15 @@
-import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  type JSX,
+  onCleanup,
+  children as resolveChildren,
+  Show,
+  untrack,
+} from "solid-js";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
@@ -144,7 +155,13 @@ export const alignTo = (element: HTMLElement | undefined): "start" | "end" => {
 const hasLead = (entries: readonly MenuEntry[]): boolean =>
   entries.some((entry) => entry !== "separator" && (isSection(entry) ? hasLead(entry.items) : !!entry.icon));
 
-const Entries = (props: { level: MenuLevelParts; entries: readonly MenuEntry[]; lead?: boolean }) => {
+const Entries = (props: {
+  level: MenuLevelParts;
+  entries: readonly MenuEntry[];
+  lead?: boolean;
+  /** The id of an entry without a deed, so the group around it can name it as its description. */
+  infoId?: (info: MenuInfo) => string | undefined;
+}) => {
   const lead = () => props.lead ?? hasLead(props.entries);
   // Keyed by kind and words, not by object or place: new data for an open menu (a tick that flipped, an entry that
   // came in before it) keeps every entry's element, so the highlight and the focus stay. An entry that turns into
@@ -183,7 +200,7 @@ const Entries = (props: { level: MenuLevelParts; entries: readonly MenuEntry[]; 
             const now = entry();
             return now !== "separator" && isInfo(now) ? now : first;
           };
-          return <Info item={info()} lead={lead()} />;
+          return <Info item={info()} lead={lead()} id={props.infoId?.(info())} />;
         }
         return <Entry level={props.level} kind={kindOf(first)} item={itemOf(entry())} value={key} lead={lead()} />;
       }}
@@ -193,9 +210,19 @@ const Entries = (props: { level: MenuLevelParts; entries: readonly MenuEntry[]; 
 
 /**
  * A section: its heading names the group for assistive technology too. A choice is a radio group of core: arrows walk
- * it, the chosen one is `aria-checked`, choosing closes the menu.
+ * it, the chosen one is `aria-checked`, choosing closes the menu. Entries without a deed are the group's description:
+ * the keys pass over them, so a screen reader hears them once as the group is entered.
  */
 const Section = (props: { level: MenuLevelParts; section: MenuSection; name: string; lead: boolean }) => {
+  const base = createUniqueId();
+  const infoIds = createMemo(() => {
+    const ids = new Map<MenuInfo, string>();
+    props.section.items.forEach((item, index) => {
+      if (isInfo(item)) ids.set(item, `${base}-${index}`);
+    });
+    return ids;
+  });
+  const described = () => [...infoIds().values()].join(" ") || undefined;
   // Core names a group by its heading once the heading is on the page. Its radio group listens to its value only and
   // misses that moment, so the heading's id is handed to it here, once the heading is there.
   const [headingId, setHeadingId] = createSignal<string>();
@@ -206,9 +233,9 @@ const Section = (props: { level: MenuLevelParts; section: MenuSection; name: str
   );
   if (untrack(() => props.section.choice) === undefined) {
     return (
-      <props.level.Group id={props.name} class="k2-mgroup">
+      <props.level.Group id={props.name} class="k2-mgroup" aria-describedby={described()}>
         {heading}
-        <Entries level={props.level} entries={props.section.items} lead={props.lead} />
+        <Entries level={props.level} entries={props.section.items} lead={props.lead} infoId={(info) => infoIds().get(info)} />
       </props.level.Group>
     );
   }
@@ -220,6 +247,7 @@ const Section = (props: { level: MenuLevelParts; section: MenuSection; name: str
       value={props.section.choice}
       onValueChange={(value: string) => props.section.onChoose?.(value)}
       aria-labelledby={headingId()}
+      aria-describedby={described()}
       class="k2-mgroup"
     >
       {heading}
@@ -232,7 +260,7 @@ const Section = (props: { level: MenuLevelParts; section: MenuSection; name: str
               const now = found();
               return now && isInfo(now) ? now : first;
             };
-            return <Info item={info()} lead={props.lead} />;
+            return <Info item={info()} lead={props.lead} id={infoIds().get(info())} />;
           }
           const item = () => {
             const now = found();
@@ -288,11 +316,26 @@ const EntryFace = (props: { item: Pick<MenuItem, "label" | "icon" | "meta">; lea
 
 /**
  * An entry without a deed: no part of the behaviour layer, so the keys and typeahead pass over it and it has no role
- * of its own (plain text in the menu, inside the group its heading names); it looks as an entry does, at rest.
+ * of its own (plain text in the menu); its section's group names it as its description. It looks as an entry does, at
+ * rest; hidden marks part its words and its hint, and it from the next, where a screen reader reads them in one go.
  */
-const Info = (props: { item: MenuInfo; lead: boolean }) => (
-  <div class="k2-mi" data-info="">
-    <EntryFace item={props.item} lead={props.lead} />
+const Info = (props: { item: MenuInfo; lead: boolean; id?: string }) => (
+  <div class="k2-mi" data-info="" id={props.id}>
+    <Show when={props.lead}>
+      <span class="k2-mi-lead">
+        <Show when={props.item.icon}>{(name) => <Icon name={name()} />}</Show>
+      </span>
+    </Show>
+    <span class="k2-mi-label">{props.item.label}</span>
+    <Show when={props.item.meta}>
+      {(meta) => (
+        <>
+          <span class="k2-hidden-text">, </span>
+          <span class="k2-mi-meta">{meta()}</span>
+        </>
+      )}
+    </Show>
+    <span class="k2-hidden-text">;</span>
   </div>
 );
 
