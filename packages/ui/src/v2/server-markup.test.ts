@@ -84,3 +84,25 @@ test("Ticks are drawn by the server alone: a picture with its sentence and one t
   expect(markup.match(/<i data-s="(ok|bad|none)"/g)).toEqual(['<i data-s="none"', '<i data-s="ok"', '<i data-s="bad"']);
   expect(markup).toContain("--k2-c:#7c3aed");
 });
+
+test("a RangeBar is drawn by the server alone: its words, its place on the scale and the colours of its part", async () => {
+  const { RangeBar } = await import("./marks");
+  const markup = renderToString(() =>
+    createComponent(RangeBar, {
+      from: 0,
+      to: 10,
+      domain: [-10, 30],
+      stops: [
+        { at: 0, color: "#0369a1" },
+        { at: 10, color: "#15803d" },
+      ],
+      label: "0° bis 10°",
+    }),
+  );
+  expect(markup).toContain('role="img"');
+  expect(markup).toContain('aria-label="0° bis 10°"');
+  // a quarter in from the start, half the scale short of its end
+  expect(markup).toContain("--k2-range-start:25%");
+  expect(markup).toContain("--k2-range-end:50%");
+  expect(markup).toContain("--k2-range-fill:linear-gradient(to right, #0369a1 0%, #15803d 100%)");
+});

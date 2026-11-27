@@ -122,6 +122,8 @@ export {
   type IconProps,
   Progress,
   type ProgressProps,
+  RangeBar,
+  type RangeBarProps,
   type TickState,
   Ticks,
   type TicksProps,

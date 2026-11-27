@@ -19,6 +19,11 @@ export type IconProps = {
   /** A name for assistive technology; without one the icon is decoration. */
   label?: string;
   tone?: Status | "ai" | "app" | "muted" | "subtle";
+  /**
+   * A data colour by meaning, such as the sun of a weather sign or the rain: a CSS colour that the owner keeps at 3:1
+   * on the surface in both themes. It takes the place of `tone`.
+   */
+  color?: string;
 };
 
 /** A Tabler icon. Its size comes from its place: 16 px in rows and bars, 20 px on a tile, 14 px among marks. */
@@ -28,6 +33,7 @@ export const Icon = (props: IconProps) => (
     data-k2-part="Icon"
     data-name={props.name}
     data-tone={props.tone}
+    style={props.color ? { color: props.color } : undefined}
     role="img"
     aria-label={props.label}
     aria-hidden={props.label ? undefined : "true"}
@@ -308,6 +314,52 @@ export const Progress = (props: ProgressProps) => {
       <Show when={props.label}>
         <span>{props.label}</span>
       </Show>
+    </span>
+  );
+};
+
+export type RangeBarProps = {
+  /** Where the range starts and ends, such as a day's low and high. */
+  from: number;
+  to: number;
+  /** The one scale the bars of a list share, such as the week's lowest low and highest high. */
+  domain: readonly [number, number];
+  /**
+   * Colours along the scale by meaning, such as cold to warm: each holds at its value and runs over into the next. The
+   * owner keeps them at 3:1 on the surface in both themes. Without stops the bar is neutral.
+   */
+  stops?: readonly { at: number; color: string }[];
+  /** The range in words, such as "2,9° bis 9,1°": what assistive technology reads instead of the bar. */
+  label: string;
+};
+
+/**
+ * A range on a shared scale: a bar from `from` to `to` on a quiet track, so the rows of a list read at a glance (the
+ * week's days by their low and high). With `stops` the bar shows the colours of its part of the scale.
+ */
+export const RangeBar = (props: RangeBarProps) => {
+  const span = () => Math.max(Number.EPSILON, props.domain[1] - props.domain[0]);
+  const share = (value: number) => Math.max(0, Math.min(1, (value - props.domain[0]) / span()));
+  const percent = (value: number) => `${Math.round(value * 1000) / 10}%`;
+  const low = () => Math.min(props.from, props.to);
+  const high = () => Math.max(props.from, props.to);
+  // the stops at their place on the bar itself: a stop outside it still sets the colour at its ends
+  const fill = () => {
+    const stops = props.stops;
+    if (!stops?.length) return undefined;
+    if (stops.length === 1) return stops[0]!.color;
+    const width = Math.max(Number.EPSILON, high() - low());
+    return `linear-gradient(to right, ${stops.map((stop) => `${stop.color} ${percent((stop.at - low()) / width)}`).join(", ")})`;
+  };
+  return (
+    <span class="k2-range" data-k2-part="RangeBar" role="img" aria-label={props.label}>
+      <i
+        style={custom({
+          "--k2-range-start": percent(share(low())),
+          "--k2-range-end": percent(1 - share(high())),
+          "--k2-range-fill": fill(),
+        })}
+      />
     </span>
   );
 };
