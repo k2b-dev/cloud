@@ -1597,6 +1597,10 @@ const defineSchema = async (sql: SQL): Promise<void> => {
   await sql`
     CREATE INDEX IF NOT EXISTS idx_grids_records_table_trash ON grids.records USING btree (table_id, deleted_at) WHERE (deleted_at IS NOT NULL)
   `.simple();
+  // the new records per day of a table (its head's series) read a range of this index, not every record of the table
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_records_table_created_live ON grids.records USING btree (table_id, created_at) WHERE (deleted_at IS NULL)
+  `.simple();
   await sql`
     CREATE TABLE IF NOT EXISTS grids.file_attachments (
       file_id uuid NOT NULL,
