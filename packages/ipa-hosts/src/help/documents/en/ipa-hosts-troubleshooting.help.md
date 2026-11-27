@@ -13,7 +13,7 @@ Hosts displays a local mirror while FreeIPA remains the source of truth. When th
 :::reference
 - **A host or hostgroup is missing:** Clear search, check pagination, then run Sync now if the directory changed recently.
 - **A recently edited value reverted:** Another FreeIPA write or a later sync may have replaced it. Check the audited action and current directory value.
-- **A host stays ungrouped:** Open the host action menu and add at least one hostgroup, then confirm the next sync completes.
+- **A host stays ungrouped:** Open the host in the Ungrouped tab, add it to at least one hostgroup with Add to hostgroup, then confirm the next sync completes.
 - **A MAC address is rejected:** Use the expected hexadecimal address format and remove duplicates.
 - **A hostgroup cannot be deleted:** Remove or move memberships that still depend on the group, then retry only when the directory allows deletion.
 - **Scheduled sync does not run:** Check the five-field cron expression, configured timezone, service credentials, and the most recent sync error.

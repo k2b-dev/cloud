@@ -13,7 +13,7 @@ Hosts zeigt einen lokalen Spiegel, während FreeIPA die maßgebliche Quelle blei
 :::reference
 - **Ein Host oder eine Hostgruppe fehlt:** Leere die Suche, prüfe die Seitennavigation und starte Jetzt synchronisieren, wenn sich das Verzeichnis kürzlich geändert hat.
 - **Ein kürzlich geänderter Wert wurde zurückgesetzt:** Ein weiterer FreeIPA-Schreibvorgang oder eine spätere Synchronisierung kann ihn ersetzt haben. Prüfe die protokollierte Aktion und den aktuellen Verzeichniswert.
-- **Ein Host bleibt nicht gruppiert:** Öffne das Aktionsmenü des Hosts, füge mindestens eine Hostgruppe hinzu und prüfe, ob die nächste Synchronisierung abgeschlossen wird.
+- **Ein Host bleibt ohne Gruppe:** Öffne den Host im Reiter Ohne Gruppe, füge ihn mit Zu Hostgruppe hinzufügen mindestens einer Hostgruppe hinzu und prüfe, ob die nächste Synchronisierung abgeschlossen wird.
 - **Eine MAC-Adresse wird abgelehnt:** Verwende das erwartete hexadezimale Adressformat und entferne Duplikate.
 - **Eine Hostgruppe lässt sich nicht löschen:** Entferne oder verschiebe abhängige Mitgliedschaften und versuche es nur erneut, wenn das Verzeichnis die Löschung zulässt.
 - **Die geplante Synchronisierung läuft nicht:** Prüfe den fünfteiligen Cron-Ausdruck, die konfigurierte Zeitzone, die Zugangsdaten des FreeIPA-Benutzers und den letzten Synchronisierungsfehler.

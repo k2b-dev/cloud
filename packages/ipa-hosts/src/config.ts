@@ -1,5 +1,11 @@
 import { appAccess, defineApp } from "@k2b/cloud";
 
+/**
+ * The colour of the host mirror: the shell around and its own figures carry it. The same colour as `appearance.accent` below, which stays a literal: the
+ * shell-gradient check reads it from the source.
+ */
+export const ACCENT = "#7e22ce";
+
 export const app = defineApp({
   id: "ipa-hosts",
   access: appAccess.roles(["admin"], {

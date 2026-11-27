@@ -189,6 +189,11 @@ export const hostStats = async (): Promise<{
   hostsInGroups: number;
   hostsUngrouped: number;
   hostgroupsTotal: number;
+  /** When the mirror last took a host from FreeIPA, ISO; null before the first sync. */
+  lastSyncedAt: string | null;
+  /** Hosts whose FreeIPA client stored no SSH keys, and the first of them by name. */
+  hostsWithoutKeys: number;
+  firstWithoutKeys: string | null;
 }> => {
   const [row] = await sql<
     {
@@ -196,6 +201,9 @@ export const hostStats = async (): Promise<{
       hosts_in_groups: number;
       hosts_ungrouped: number;
       hostgroups_total: number;
+      last_synced_at: Date | null;
+      hosts_without_keys: number;
+      first_without_keys: string | null;
     }[]
   >`
     SELECT
@@ -203,14 +211,46 @@ export const hostStats = async (): Promise<{
       (SELECT COUNT(DISTINCT host_fqdn)::int FROM ipa_hosts.host_hostgroups)                       AS hosts_in_groups,
       (SELECT COUNT(*)::int FROM ipa_hosts.hosts h
         WHERE NOT EXISTS (SELECT 1 FROM ipa_hosts.host_hostgroups hh WHERE hh.host_fqdn = h.fqdn)) AS hosts_ungrouped,
-      (SELECT COUNT(*)::int FROM ipa_hosts.hostgroups)                                             AS hostgroups_total
+      (SELECT COUNT(*)::int FROM ipa_hosts.hostgroups)                                             AS hostgroups_total,
+      -- a sync stamps every host it takes from FreeIPA; edits in Cloud do not, so this is the last sync
+      (SELECT max(synced_at) FROM ipa_hosts.hosts)                                                 AS last_synced_at,
+      (SELECT COUNT(*)::int FROM ipa_hosts.hosts WHERE cardinality(ssh_fingerprints) = 0)          AS hosts_without_keys,
+      (SELECT fqdn FROM ipa_hosts.hosts WHERE cardinality(ssh_fingerprints) = 0
+        ORDER BY fqdn LIMIT 1)                                                                     AS first_without_keys
   `;
   return {
     hostsTotal: row?.hosts_total ?? 0,
     hostsInGroups: row?.hosts_in_groups ?? 0,
     hostsUngrouped: row?.hosts_ungrouped ?? 0,
     hostgroupsTotal: row?.hostgroups_total ?? 0,
+    lastSyncedAt: row?.last_synced_at ? new Date(row.last_synced_at).toISOString() : null,
+    hostsWithoutKeys: row?.hosts_without_keys ?? 0,
+    firstWithoutKeys: row?.first_without_keys ?? null,
   };
+};
+
+/**
+ * Write an edit FreeIPA accepted into the mirror. It leaves `synced_at` alone: an edit in Cloud is not a sync, and the
+ * page's "zuletzt abgeglichen" reads the latest `synced_at`.
+ */
+export const applyHostEdit = async (
+  fqdn: string,
+  opts: { location?: string; locality?: string; description?: string; macAddress?: string[] },
+): Promise<void> => {
+  await sql.begin(async (tx) => {
+    if (opts.description !== undefined) {
+      await tx`UPDATE ipa_hosts.hosts SET description = ${opts.description} WHERE fqdn = ${fqdn}`;
+    }
+    if (opts.location !== undefined) {
+      await tx`UPDATE ipa_hosts.hosts SET location = ${opts.location} WHERE fqdn = ${fqdn}`;
+    }
+    if (opts.locality !== undefined) {
+      await tx`UPDATE ipa_hosts.hosts SET locality = ${opts.locality} WHERE fqdn = ${fqdn}`;
+    }
+    if (opts.macAddress !== undefined) {
+      await tx`UPDATE ipa_hosts.hosts SET mac_address = ${freeipa.util.toPgTextArray(opts.macAddress)}::text[] WHERE fqdn = ${fqdn}`;
+    }
+  });
 };
 
 export const hostMod = async (
@@ -232,21 +272,7 @@ export const hostMod = async (
     return { ok: false, error: response.error.message, status: freeipa.util.mapIpaErrorCode(response.error.code) };
   }
 
-  await sql.begin(async (tx) => {
-    if (opts.description !== undefined) {
-      await tx`UPDATE ipa_hosts.hosts SET description = ${opts.description} WHERE fqdn = ${fqdn}`;
-    }
-    if (opts.location !== undefined) {
-      await tx`UPDATE ipa_hosts.hosts SET location = ${opts.location} WHERE fqdn = ${fqdn}`;
-    }
-    if (opts.locality !== undefined) {
-      await tx`UPDATE ipa_hosts.hosts SET locality = ${opts.locality} WHERE fqdn = ${fqdn}`;
-    }
-    if (opts.macAddress !== undefined) {
-      await tx`UPDATE ipa_hosts.hosts SET mac_address = ${freeipa.util.toPgTextArray(opts.macAddress)}::text[] WHERE fqdn = ${fqdn}`;
-    }
-    await tx`UPDATE ipa_hosts.hosts SET synced_at = now() WHERE fqdn = ${fqdn}`;
-  });
+  await applyHostEdit(fqdn, opts);
 
   return { ok: true };
 };
@@ -358,14 +384,22 @@ export const hostgroupListWithHosts = async (params: {
   const perPage = params.perPage ?? 100;
   const offset = (page - 1) * perPage;
   const search = toLike(params.search);
+  // a group matches by its name, its description, or the name of one of its hosts, so a host is found in its groups
+  const matches = sql`
+    LOWER(hg.cn) LIKE ${search} ESCAPE '\\'
+    OR LOWER(COALESCE(hg.description, '')) LIKE ${search} ESCAPE '\\'
+    OR EXISTS (
+      SELECT 1 FROM ipa_hosts.host_hostgroups hh
+      WHERE hh.hostgroup_cn = hg.cn AND LOWER(hh.host_fqdn) LIKE ${search} ESCAPE '\\'
+    )
+  `;
 
   const [countRows, rows] = await Promise.all([
     search
       ? sql<DbRow[]>`
           SELECT COUNT(*)::int AS count
           FROM ipa_hosts.hostgroups hg
-          WHERE LOWER(hg.cn) LIKE ${search} ESCAPE '\\'
-             OR LOWER(COALESCE(hg.description, '')) LIKE ${search} ESCAPE '\\'
+          WHERE ${matches}
         `
       : sql<DbRow[]>`SELECT COUNT(*)::int AS count FROM ipa_hosts.hostgroups`,
     search
@@ -373,8 +407,7 @@ export const hostgroupListWithHosts = async (params: {
           WITH paged_hostgroups AS (
             SELECT hg.cn, hg.description
             FROM ipa_hosts.hostgroups hg
-            WHERE LOWER(hg.cn) LIKE ${search} ESCAPE '\\'
-               OR LOWER(COALESCE(hg.description, '')) LIKE ${search} ESCAPE '\\'
+            WHERE ${matches}
             ORDER BY hg.cn
             LIMIT ${perPage} OFFSET ${offset}
           )
@@ -441,6 +474,62 @@ export const hostgroupListWithHosts = async (params: {
     hostgroups: rows.map(toHostgroupWithHosts),
     total: Number(countRows[0]?.count ?? 0),
   };
+};
+
+/**
+ * One host group by its exact name, for the record a page opens: its sub-groups and one page of its hosts (by name) with
+ * the number of all of them, so a group of any size answers with bounded output; counting and ordering read the
+ * group's member rows through `idx_ipa_hosts_host_hostgroups_hostgroup`. Null when the mirror has none. One statement.
+ */
+export const hostgroupGetWithHosts = async (
+  cn: string,
+  params: { page: number; perPage: number },
+): Promise<(IpaHostgroupWithHostsRecord & { hostTotal: number }) | null> => {
+  const offset = (params.page - 1) * params.perPage;
+  const rows = await sql<(DbRow & { host_total: number })[]>`
+    SELECT hg.cn, hg.description,
+      (SELECT count(*) FROM ipa_hosts.host_hostgroups hh WHERE hh.hostgroup_cn = hg.cn)::int AS host_total,
+      COALESCE(ARRAY(
+        SELECT hh.host_fqdn FROM ipa_hosts.host_hostgroups hh WHERE hh.hostgroup_cn = hg.cn
+        ORDER BY hh.host_fqdn LIMIT ${params.perPage} OFFSET ${offset}
+      ), '{}') AS member_hosts,
+      COALESCE(ARRAY(SELECT hgh.child_cn FROM ipa_hosts.hostgroup_hostgroups hgh WHERE hgh.parent_cn = hg.cn ORDER BY hgh.child_cn), '{}') AS member_hostgroups,
+      COALESCE((
+        SELECT jsonb_agg(member.detail ORDER BY member.fqdn)
+        FROM (
+          SELECT h.fqdn, jsonb_build_object(
+            'fqdn', h.fqdn,
+            'description', h.description,
+            'location', h.location,
+            'locality', h.locality,
+            'hostgroups', COALESCE((SELECT array_agg(hh2.hostgroup_cn ORDER BY hh2.hostgroup_cn) FROM ipa_hosts.host_hostgroups hh2 WHERE hh2.host_fqdn = h.fqdn), '{}'::text[]),
+            'mac_address', h.mac_address,
+            'platform', h.platform,
+            'os_version', h.os_version,
+            'ssh_fingerprints', h.ssh_fingerprints
+          ) AS detail
+          FROM ipa_hosts.host_hostgroups hh
+          JOIN ipa_hosts.hosts h ON h.fqdn = hh.host_fqdn
+          WHERE hh.hostgroup_cn = hg.cn
+          ORDER BY h.fqdn
+          LIMIT ${params.perPage} OFFSET ${offset}
+        ) member
+      ), '[]'::jsonb) AS host_details
+    FROM ipa_hosts.hostgroups hg
+    WHERE hg.cn = ${cn}
+  `;
+  return rows[0] ? { ...toHostgroupWithHosts(rows[0]), hostTotal: Number(rows[0].host_total) } : null;
+};
+
+/** One host by its exact name with its groups, for the record a page opens; null when the mirror has none. One statement. */
+export const hostGet = async (fqdn: string): Promise<IpaHostRecord | null> => {
+  const rows = await sql<DbRow[]>`
+    SELECT h.*,
+      COALESCE(ARRAY(SELECT hostgroup_cn FROM ipa_hosts.host_hostgroups WHERE host_fqdn = h.fqdn ORDER BY hostgroup_cn), '{}') AS hostgroups
+    FROM ipa_hosts.hosts h
+    WHERE h.fqdn = ${fqdn}
+  `;
+  return rows[0] ? toHost(rows[0]) : null;
 };
 
 export const hostgroupSearch = async (params: { query: string; exclude?: string[]; limit?: number }): Promise<IpaHostgroupRecord[]> => {
@@ -513,7 +602,6 @@ export const hostgroupMod = async (ipaSession: string, cn: string, opts: { descr
     if (opts.description !== undefined) {
       await tx`UPDATE ipa_hosts.hostgroups SET description = ${opts.description} WHERE cn = ${cn}`;
     }
-    await tx`UPDATE ipa_hosts.hostgroups SET synced_at = now() WHERE cn = ${cn}`;
   });
 
   return { ok: true };
