@@ -211,6 +211,16 @@ export function ChatDeviceNoticeV2(props: ChatDeviceNoticeProps): JSX.Element {
   );
 }
 
+/**
+ * A chat the reader may not see, or one that does not exist: it says so in one sentence (never naming the chat or
+ * whether it exists) and leads back to the chats.
+ */
+export function NoAccessV2(props: { back: Action }): JSX.Element {
+  const locale = useLocale();
+  const t = () => chatMessages.resolve([locale()]).t;
+  return <Empty icon="lock" text={t().noAccessDescription} action={props.back} />;
+}
+
 type ThreadHit = Extract<SearchHit, { kind: "thread" }>;
 type SystemHit = Extract<SearchHit, { kind: "system" }>;
 

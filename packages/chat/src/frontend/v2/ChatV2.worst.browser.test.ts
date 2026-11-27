@@ -250,3 +250,11 @@ test("about ten thousand messages keep a bounded history in the page", async () 
     await close();
   }
 }, 60_000);
+
+// What only a primitive fixes. Each turns into a real assertion when its part lands (owner in the PR text of #4362).
+test.todo("every chat row keeps one height with the worst names: Row cuts its title and line 2 with … (MW)", () => {});
+test.todo("right-to-left previews and names read right to left inside a row: Row text dir=auto (MW)", () => {});
+test.todo("initials skip punctuation, so 東京オフィス · 物流チーム reads 東物 (G, #4376)", () => {});
+test.todo("the list sections fold and keep their folded state from the preference (R, Section open/onOpenChange)", () => {});
+test.todo("the phone head with only a search takes no room (#4255)", () => {});
+test.todo("the list stays bounded in the DOM at 1,000 chats (#4211)", () => {});

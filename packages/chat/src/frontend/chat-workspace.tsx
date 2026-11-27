@@ -3725,10 +3725,16 @@ export function ChatWorkspaceView(
         ),
         drawing: false,
       };
-    // k2b-ui gap: the no-access page still draws v1 inside the v2 pane.
     const current = conversation();
     if (openChat()?.id && current) return chatDetail(current);
-    if (noAccess()) return pageDetail("no-access", t().noAccessTitle, noAccessView);
+    if (noAccess())
+      return {
+        ...pageDetail("no-access", t().noAccessTitle, () => (
+          <V2.NoAccessV2 back={{ label: t().backToChats, href: listHref(basePath), onNavigate: backToList }} />
+        )),
+        head: { name: t().threadUnavailable },
+        drawing: false,
+      };
     return null;
   };
   const V2 = props.v2;

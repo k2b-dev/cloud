@@ -337,6 +337,23 @@ test("a place's discussions are a v2 page whose search and state filter live in 
   }
 }, 90_000);
 
+test("a chat the reader may not see says so without naming it, and leads back to the chats", async () => {
+  const { page, errors, close } = await load("/app/chat/c/Nope0001", 1440, 900);
+  try {
+    const detail = page.locator('[data-k2-part="Pane"][data-detail]');
+    await detail.locator('[data-k2-part="Empty"]').waitFor();
+    expect(await detail.getByText("This chat does not exist, or you are not a member of it.").count()).toBe(1);
+    const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+    expect(layout.problems).toEqual([]);
+    await shoot(page, "10-no-access-light-1440");
+    await detail.getByRole("link", { name: "Back to chats" }).click();
+    await page.waitForURL((url) => url.pathname === "/app/chat");
+    expect(errors).toEqual([]);
+  } finally {
+    await close();
+  }
+}, 60_000);
+
 // break-ui: the worst names and counts a list meets. Rows keep their sign and time, names are cut with "…", nothing
 // leaves its column, and the v2 rules hold at both widths. Last in the file: these chats join the list from here on.
 test("the list keeps its shape with the worst names and counts", async () => {
