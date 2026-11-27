@@ -51,8 +51,24 @@ const page = async (query = "", cookie = "") => {
     form: form?.[2],
     category: props && typeof props === "object" && "category" in props ? props.category : undefined,
     forget: props && typeof props === "object" && "forget" in props ? props.forget : undefined,
-    /** The plain link to the other credential: [target, label]. */
-    alternative: /<a href="([^"]+)" class="k2b-button auth-login-alternative[^>]*><span[^>]*>([^<]+)</.exec(html)?.slice(1),
+    /** The link to the other credential: the app form's own way back, or the page's link among the other ways in. */
+    alternative: (() => {
+      if (props && typeof props === "object" && ("fallback" in props || "alternative" in props)) {
+        const link = "fallback" in props ? props.fallback : props.alternative;
+        if (
+          link &&
+          typeof link === "object" &&
+          "href" in link &&
+          "label" in link &&
+          typeof link.href === "string" &&
+          typeof link.label === "string"
+        )
+          return [link.href, link.label];
+      }
+      const match =
+        /<a[^>]*href="([^"]*credential=[^"]*)"[^>]*>(?:<i[^>]*><\/i>)?(?:<!--[^>]*-->)*<span class="k2-btn-label">([^<]+)</.exec(html);
+      return match ? [match[1]!, match[2]!] : undefined;
+    })(),
   };
 };
 
@@ -68,7 +84,6 @@ test("FreeIPA opens with the password and the name from the link, one link away 
 
   const app = await page(new URL(password.alternative![0]!, "https://cloud.example.test").search);
   expect([app.form, app.category]).toEqual(["AppLoginForm", "freeipa"]);
-  expect(app.html).toContain("No paired app? Use your password.");
   expect(app.alternative).toEqual([
     "/auth/login?method=ipa&ipa-uid=mira&redirectTo=%2Fapp%2Ffiles&credential=legacy",
     "Use your FreeIPA password instead",

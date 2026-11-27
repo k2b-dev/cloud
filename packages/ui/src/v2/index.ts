@@ -16,6 +16,8 @@ export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {
   type ActivityEntry,
+  CodeFigure,
+  type CodeFigureProps,
   Digest,
   type DigestEntry,
   type DigestProps,

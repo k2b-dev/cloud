@@ -1,11 +1,9 @@
-import { listLegalLinks } from "@k2b/cloud";
 import { getLocale } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
 import { normalizeRedirectTo } from "@k2b/cloud/shared";
-import { ButtonLink, LocaleProvider } from "@k2b/ui";
 import { ssr } from "../../../config";
 import { isSignOutOthersRetry } from "../../sign-out-others";
-import AuthFooter from "../AuthFooter";
+import { VisitorPage } from "../../VisitorPage";
 import { authMessages } from "../messages";
 import PasswordResetCompleteForm from "./PasswordResetCompleteForm.island";
 import PasswordResetRequestForm from "./PasswordResetRequestForm.island";
@@ -14,7 +12,7 @@ import PasswordResetRequestForm from "./PasswordResetRequestForm.island";
 export default ssr(async (c) => {
   const locale = getLocale(c);
   const t = authMessages.resolve([locale]).t;
-  const [rawAppName, legalLinks] = await Promise.all([coreSettings.get<string>("app.name"), listLegalLinks(locale)]);
+  const rawAppName = await coreSettings.get<string>("app.name");
   const appName = rawAppName || "My App";
   const params = new URL(c.req.url).searchParams;
   const token = params.get("token") ?? undefined;
@@ -22,73 +20,18 @@ export default ssr(async (c) => {
   const retry = isSignOutOthersRetry(params);
   const completing = !!token || retry;
   const redirectTo = normalizeRedirectTo(params.get("redirectTo"));
-  const loginParams = new URLSearchParams();
-  if (redirectTo) loginParams.set("redirectTo", redirectTo);
-  const loginHref = loginParams.size > 0 ? `/auth/login?${loginParams.toString()}` : "/auth/login";
 
-  const title = completing ? t.setNewPassword : t.resetYourPassword;
-  const subtitle = completing ? t.newPasswordIntro : t.resetIntro;
   const formTitle = completing ? t.setNewPassword : t.resetPassword;
   const formSubtitle = completing ? t.resetLinkDescription : t.resetRequestDescription;
 
+  c.get("page").title = formTitle;
   return () => (
-    <LocaleProvider locale={locale}>
-      <div class="min-h-svh bg-zinc-50 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
-        <div class="flex min-h-svh flex-col items-center justify-center gap-5 p-4">
-          <div class="standalone-card grid w-full max-w-5xl overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[var(--k2b-shadow-frame)] dark:border-zinc-800 dark:bg-zinc-950 md:grid-cols-[0.9fr_1.1fr]">
-            <aside class="hidden flex-col justify-between border-r border-zinc-200 bg-zinc-50 p-8 md:flex dark:border-zinc-800 dark:bg-zinc-900/60">
-              <div class="flex flex-1 items-center justify-center">
-                <div class="flex flex-col items-center gap-4 text-center">
-                  <img
-                    src="/branding/logo"
-                    alt={appName}
-                    width="112"
-                    height="112"
-                    class="max-h-28 max-w-28 object-contain"
-                    style={{ "view-transition-name": "logo" }}
-                  />
-                  <p class="text-lg font-semibold text-primary">{appName}</p>
-                </div>
-              </div>
-
-              <div class="max-w-md">
-                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400">{t.secureAccess}</p>
-                <h1 class="mt-3 text-3xl font-semibold tracking-tight text-primary" style={{ "view-transition-name": "page-title" }}>
-                  {title}
-                </h1>
-                <p class="mt-4 text-sm leading-6 text-dimmed">{subtitle}</p>
-              </div>
-            </aside>
-
-            <main class="flex items-center justify-center md:p-10">
-              <div class="w-full max-w-md" style={{ "view-transition-name": "login-card" }}>
-                <div class="mb-8 flex items-start justify-between gap-4">
-                  <div>
-                    <h1 class="text-3xl font-semibold tracking-tight text-primary">{formTitle}</h1>
-                    <p class="mt-1 text-sm text-dimmed">{formSubtitle}</p>
-                  </div>
-                  <span class="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950/45 dark:text-emerald-300">
-                    <i class="ti ti-shield-lock" />
-                    {t.secure}
-                  </span>
-                </div>
-
-                {completing ? (
-                  <PasswordResetCompleteForm token={token ?? ""} redirectTo={redirectTo} signOutFailed={retry} />
-                ) : (
-                  <PasswordResetRequestForm redirectTo={redirectTo} />
-                )}
-
-                <ButtonLink href={loginHref} variant="secondary" size="sm" class="mt-4 w-full justify-center">
-                  <i class="ti ti-arrow-left" />
-                  {t.backToSignIn}
-                </ButtonLink>
-              </div>
-            </main>
-          </div>
-          <AuthFooter links={legalLinks} />
-        </div>
-      </div>
-    </LocaleProvider>
+    <VisitorPage c={c} appName={appName} title={formTitle} description={formSubtitle}>
+      {completing ? (
+        <PasswordResetCompleteForm token={token ?? ""} redirectTo={redirectTo} signOutFailed={retry} />
+      ) : (
+        <PasswordResetRequestForm redirectTo={redirectTo} />
+      )}
+    </VisitorPage>
   );
 });

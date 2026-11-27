@@ -1,16 +1,14 @@
-import { listLegalLinks } from "@k2b/cloud";
 import { type AccountCategory, resolveAccountCategoryLogin } from "@k2b/cloud/contracts";
 import { auth, getLocale } from "@k2b/cloud/server";
 import { appApproval, coreSettings, readAccountCategoryPolicy } from "@k2b/cloud/services";
 import { normalizeRedirectTo, readLoginMethodFromCookieHeader } from "@k2b/cloud/shared";
-import { ButtonLink, LocaleProvider, NoticeCard } from "@k2b/ui";
+import { Band, Bar, Button, Inline, Notice, Tabs, Text } from "@k2b/ui/v2";
 import { ssr } from "../../config";
 import { useAppSignIn } from "../app-approval/availability";
 import { appApprovalMessages } from "../app-approval/messages";
-import AccountCategorySwitch from "./AccountCategorySwitch.island";
+import { VisitorPage } from "../VisitorPage";
 import AdminLoginForm from "./AdminLoginForm.island";
 import AppLoginForm from "./AppLoginForm.island";
-import AuthFooter from "./AuthFooter";
 import GuestLoginForm from "./GuestLoginForm.island";
 import IdleSignOutFinish from "./IdleSignOutFinish.island";
 import LoginForm from "./LoginForm.island";
@@ -23,12 +21,11 @@ export default ssr(async (c) => {
   const locale = getLocale(c);
   const t = authMessages.resolve([locale]).t;
   const confirmation = isReauthenticationRequest(c.req.url) ? appApprovalMessages.resolve([locale]).t : null;
-  const [rawAppName, freeIpaEnabledRaw, allowSelfRegistrationRaw, contactEmailRaw, legalLinks, policy] = await Promise.all([
+  const [rawAppName, freeIpaEnabledRaw, allowSelfRegistrationRaw, contactEmailRaw, policy] = await Promise.all([
     coreSettings.get<string>("app.name"),
     coreSettings.get<boolean>("freeipa.enable"),
     coreSettings.get<boolean>("user.allow_self_registration"),
     coreSettings.get<string>("app.contact_email"),
-    listLegalLinks(locale),
     readAccountCategoryPolicy(),
   ]);
   const appName = rawAppName || "My App";
@@ -76,7 +73,7 @@ export default ssr(async (c) => {
     activeMethod &&
     activeMethod !== "email";
   const categoryLabel = (category: AccountCategory) =>
-    category === "login" ? policy.login.label : category === "guest" ? "Guest" : "FreeIPA";
+    category === "login" ? policy.login.label : category === "guest" ? t.guest : "FreeIPA";
 
   const buildMethodUrl = (nextMethod: AccountCategory | "admin") => {
     const methodParams = new URLSearchParams();
@@ -107,124 +104,89 @@ export default ssr(async (c) => {
             ? t.passwordLoginIntro
             : null;
 
+  c.get("page").title = t.signIn;
+  const title = confirmation?.reauthenticate ?? formTitle;
+  const description = confirmation?.recent ?? formSubtitle;
+  // Where app sign-in is set up, the password and email forms offer it as a link among their own.
+  const appAlternative =
+    approvalEnabled && !useApproval && !token && !isAdminLogin && activeMethod && activeMethod !== "email"
+      ? { href: credentialHref, label: t.useAppInstead }
+      : undefined;
+  // The account types as tabs: each is its own address, so reload and back show the same.
+  const categoryTabs =
+    !isAdminLogin && visibleCategories.length > 1 && !token
+      ? visibleCategories.map((category) => ({
+          label: categoryLabel(category),
+          href: buildMethodUrl(category),
+          current: category === activeMethod,
+        }))
+      : [];
+
   return () => (
-    <LocaleProvider locale={locale}>
-      <div class="min-h-svh bg-zinc-50 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
-        <div class="flex min-h-svh flex-col items-center justify-center gap-5 p-4">
-          <div class="standalone-card grid w-full max-w-5xl overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[var(--k2b-shadow-frame)] dark:border-zinc-800 dark:bg-zinc-950 md:grid-cols-[0.9fr_1.1fr]">
-            <aside class="hidden flex-col justify-between border-r border-zinc-200 bg-zinc-50 p-8 md:flex dark:border-zinc-800 dark:bg-zinc-900/60">
-              <div class="flex flex-1 items-center justify-center">
-                <div class="flex flex-col items-center gap-4 text-center">
-                  <img
-                    src="/branding/logo"
-                    alt={appName}
-                    width="112"
-                    height="112"
-                    class="max-h-28 max-w-28 object-contain"
-                    style={{ "view-transition-name": "logo" }}
-                  />
-                  <div>
-                    <p class="text-lg font-semibold text-primary">{appName}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div class="max-w-md">
-                <h1 class="text-3xl font-semibold tracking-tight text-primary" style={{ "view-transition-name": "page-title" }}>
-                  {t.welcomeBack}
-                </h1>
-                <p class="mt-4 text-sm leading-6 text-dimmed">{t.welcomeDescription}</p>
-              </div>
-            </aside>
-
-            <main class="flex justify-center md:p-10">
-              <div
-                class="auth-login-column flex min-h-[32rem] w-full max-w-md flex-col sm:min-h-[36rem]"
-                style={{ "view-transition-name": "login-card" }}
-              >
-                <div>
-                  <h1 class="sr-only">{t.signIn}</h1>
-                  <h2 class="text-3xl font-semibold tracking-tight text-primary">{confirmation?.reauthenticate ?? formTitle}</h2>
-                  {(confirmation?.recent || formSubtitle) && <p class="mt-1 text-sm text-dimmed">{confirmation?.recent ?? formSubtitle}</p>}
-                </div>
-
-                {!isAdminLogin && visibleCategories.length > 1 && !token && (
-                  <div class="mt-4 md:mt-6" style={{ "view-transition-name": "login-switch" }}>
-                    <AccountCategorySwitch
-                      options={visibleCategories.map((category) => ({
-                        value: category,
-                        label: categoryLabel(category),
-                        href: buildMethodUrl(category),
-                      }))}
-                      value={activeMethod}
-                      ariaLabel={t.fallbackMethod}
-                    />
-                  </div>
-                )}
-
-                <div class="flex flex-1 flex-col justify-center gap-4 pt-4 pb-3 md:py-7">
-                  {signedOutIdle && (
-                    <>
-                      <IdleSignOutFinish />
-                      <NoticeCard tone="info">{t.signedOutIdle}</NoticeCard>
-                    </>
-                  )}
-                  {isAdminLogin ? (
-                    <AdminLoginForm redirectTo={redirectTo} requiresRecovery={!policy.login.enabled} />
-                  ) : useApproval && activeMethod ? (
-                    <AppLoginForm
-                      category={activeMethod}
-                      redirectTo={redirectTo}
-                      fallback={{ href: credentialHref, label: activeMethod === "freeipa" ? t.usePasswordInstead : t.useEmailInstead }}
-                      setupHint={activeMethod === "freeipa" ? t.appSetupPassword : t.appSetupEmail}
-                      forget={sharedWorkstation}
-                    />
-                  ) : isEmailLogin ? (
-                    <GuestLoginForm
-                      redirectTo={redirectTo}
-                      token={token}
-                      category={activeMethod === "guest" || activeMethod === "login" ? activeMethod : undefined}
-                      allowSelfRegistration={allowSelfRegistration && policy.guest.enabled && activeMethod !== "login"}
-                      forget={sharedWorkstation}
-                    />
-                  ) : activeMethod === "freeipa" ? (
-                    <LoginForm
-                      redirectTo={redirectTo}
-                      showBanner={hasBanner === "true"}
-                      defaultUsername={ipaUid}
-                      appName={appName}
-                      forget={sharedWorkstation}
-                    />
-                  ) : (
-                    <NoticeCard tone="info">{t.noLoginAvailable}</NoticeCard>
-                  )}
-                  {approvalEnabled && !useApproval && !token && !isAdminLogin && activeMethod && activeMethod !== "email" && (
-                    <ButtonLink href={credentialHref} variant="ghost" class="auth-login-alternative w-full justify-center">
-                      {t.useAppInstead}
-                    </ButtonLink>
-                  )}
-                  {sharedWorkstation && !signedOutIdle && <p class="text-xs text-dimmed">{t.sharedWorkstationHint}</p>}
-                </div>
-
-                {!isAdminLogin && !token && (
-                  <div class="auth-secondary-actions flex flex-wrap items-center justify-between gap-2 text-xs text-dimmed">
-                    {showPasskey && <PasskeyLoginButton redirectTo={redirectTo} forget={sharedWorkstation} />}
-                    <ButtonLink href={supportHref} variant="secondary" size="sm">
-                      <i class="ti ti-lifebuoy" />
-                      {t.contactSupport}
-                    </ButtonLink>
-                    <ButtonLink href={adminHref} variant="secondary" size="sm">
-                      <i class="ti ti-shield" />
-                      {t.adminToken}
-                    </ButtonLink>
-                  </div>
-                )}
-              </div>
-            </main>
-          </div>
-          <AuthFooter links={legalLinks} />
-        </div>
-      </div>
-    </LocaleProvider>
+    <VisitorPage c={c} appName={appName} title={title} description={description}>
+      {categoryTabs.length > 0 && <Bar start={<Tabs label={t.fallbackMethod} items={categoryTabs} />} />}
+      {signedOutIdle && (
+        <>
+          <IdleSignOutFinish />
+          <Notice tone="note" icon="clock">
+            {t.signedOutIdle}
+          </Notice>
+        </>
+      )}
+      {isAdminLogin ? (
+        <AdminLoginForm redirectTo={redirectTo} requiresRecovery={!policy.login.enabled} />
+      ) : useApproval && activeMethod ? (
+        <AppLoginForm
+          category={activeMethod}
+          redirectTo={redirectTo}
+          fallback={{ href: credentialHref, label: activeMethod === "freeipa" ? t.usePasswordInstead : t.useEmailInstead }}
+          forget={sharedWorkstation}
+        />
+      ) : isEmailLogin ? (
+        <GuestLoginForm
+          redirectTo={redirectTo}
+          token={token}
+          category={activeMethod === "guest" || activeMethod === "login" ? activeMethod : undefined}
+          allowSelfRegistration={allowSelfRegistration && policy.guest.enabled && activeMethod !== "login"}
+          forget={sharedWorkstation}
+          alternative={token ? undefined : appAlternative}
+        />
+      ) : activeMethod === "freeipa" ? (
+        <LoginForm
+          redirectTo={redirectTo}
+          showBanner={hasBanner === "true"}
+          defaultUsername={ipaUid}
+          appName={appName}
+          forget={sharedWorkstation}
+          alternative={appAlternative}
+        />
+      ) : (
+        <Notice tone="warn">{t.noLoginAvailable}</Notice>
+      )}
+      {sharedWorkstation && !signedOutIdle && (
+        <Band>
+          <Text type="meta" muted>
+            {t.sharedWorkstationHint}
+          </Text>
+        </Band>
+      )}
+      {!isAdminLogin && !token && (
+        // One line in the flow of the column, from the text edge, in the size of the bar above; it wraps on a narrow
+        // phone, never a staircase.
+        <Bar
+          start={
+            <Inline>
+              {showPasskey && <PasskeyLoginButton redirectTo={redirectTo} forget={sharedWorkstation} />}
+              <Button variant="ghost" icon="lifebuoy" href={supportHref}>
+                {t.contactSupport}
+              </Button>
+              <Button variant="ghost" icon="shield" href={adminHref}>
+                {t.adminToken}
+              </Button>
+            </Inline>
+          }
+        />
+      )}
+    </VisitorPage>
   );
 });

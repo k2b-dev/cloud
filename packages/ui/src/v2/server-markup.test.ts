@@ -14,6 +14,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Pane } = await import("./layout");
 const { Input } = await import("./controls");
 const { Text } = await import("./content");
+const { CodeFigure } = await import("./components");
 const { Button } = await import("./button");
 const { Empty } = await import("./states");
 
@@ -76,6 +77,12 @@ test("a text field sends autocomplete, length, keyboard, spelling and capitals i
   );
 });
 
+test("a code figure shows the code in groups and reads it sign by sign with what it is for", () => {
+  const markup = renderToString(() => createComponent(CodeFigure, { value: "123456", label: "Vergleichscode" }));
+  expect(markup).toContain(">Vergleichscode: 1 2 3 4 5 6</span>");
+  expect([...markup.matchAll(/<span aria-hidden="true">(\d+)<\/span>/g)].map((match) => match[1])).toEqual(["123", "456"]);
+});
+
 // A page of one task (a code to enter) focuses its field before any script runs; a field elsewhere does not.
 test("a text field takes the focus from the server's markup only when it says so, and sends a form it does not stand in", () => {
   const input = (props: { autofocus?: boolean; form?: string }) =>
@@ -103,6 +110,14 @@ test("an empty state that is a result is a status region with a toned sign; a pl
   expect(result).toContain('class="k2-sign" data-tone="ok"');
   const plain = renderToString(() => createComponent(Empty, { icon: "inbox", text: "Noch nichts." }));
   expect(plain).toContain('<div class="k2-state" data-k2-part="Empty"><span class="k2-sign"><');
+});
+
+// Terms beside a form open in a new tab, so what was filled in stays; other links open in place.
+test("text that leads somewhere opens a new tab only when asked", () => {
+  const link = (newTab?: boolean) =>
+    renderToString(() => createComponent(Text, { href: "/legal/terms", newTab, children: "Nutzungsbedingungen" }));
+  expect(link(true)).toMatch(/<a[^>]*target="_blank"[^>]*rel="noopener"/);
+  expect(link()).not.toMatch(/target=|rel=/);
 });
 
 // A page to read, not to arrange (a visitor page, a wall screen): a fixed width keeps the column, without a grip.

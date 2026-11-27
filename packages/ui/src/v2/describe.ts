@@ -322,7 +322,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Band": {
         const tone = element.getAttribute("data-tone");
-        return `Band${tone ? ` ${tone}` : ""}${label ? ` ${quote(label)}` : ""}${rest().length ? `: ${rest().join(" ")}` : ""}`;
+        const print = element.hasAttribute("data-print-region") ? " print" : "";
+        return `Band${tone ? ` ${tone}` : ""}${print}${label ? ` ${quote(label)}` : ""}${rest().length ? `: ${rest().join(" ")}` : ""}`;
       }
       case "Cells": {
         const cells = [...element.querySelectorAll("[data-k2-part='Cells.Cell']")].map(
@@ -469,12 +470,21 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       if (node.nodeType === 3 && node.textContent?.trim() && owner === "Band")
         problems.push(`loose text ${quote(node.textContent, 30)} in Band: put it in <Text>`);
       if (node.nodeType !== 1) continue;
-      const child = node as Element;
-      if (ownedChild(child)) continue;
-      problems.push(
-        `plain <${child.tagName.toLowerCase()}> in ${where} ${quote(child.textContent, 30)}: no primitive owns it; use Band, Section, Group, List, Table, Notice or Text`,
-      );
+      checkChild(node as Element, where);
     }
+  };
+  // On a laid-out page, an element that draws nothing at this width is no part of it (a form whose fields name it), and
+  // one without a box of its own (`display: contents`, such as the wrapper of an island) is looked through: its
+  // children stand in the container.
+  const checkChild = (child: Element, where: string) => {
+    if (ownedChild(child)) return;
+    if (options.layout && child.getClientRects().length === 0) {
+      if (getComputedStyle(child).display === "contents") for (const inner of child.children) checkChild(inner, where);
+      return;
+    }
+    problems.push(
+      `plain <${child.tagName.toLowerCase()}> in ${where} ${quote(child.textContent, 30)}: no primitive owns it; use Band, Section, Group, List, Table, Notice or Text`,
+    );
   };
 
   const visit = (element: Element, depth: number) => {

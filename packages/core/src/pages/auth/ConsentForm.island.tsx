@@ -1,7 +1,9 @@
 import { signOutBrowserSession } from "@k2b/cloud/browser/session";
 import { apiClient } from "@k2b/cloud/clients/core";
-import { Button, Checkbox, NoticeCard, useLocale } from "@k2b/ui";
-import { createSignal, Show } from "solid-js";
+import { useLocale } from "@k2b/ui";
+import { Band, Button, Check, Notice, Text } from "@k2b/ui/v2";
+import { createSignal, createUniqueId, Show } from "solid-js";
+import { FormActions } from "./FormActions";
 import { authMessages } from "./messages";
 
 export default function ConsentForm(props: { userId: string; version: string; redirectTo: string }) {
@@ -42,46 +44,62 @@ export default function ConsentForm(props: { userId: string; version: string; re
       setBusy(false);
     }
   };
+  // the form stands apart and hidden; its fields and buttons name it, so no form box stands in the column
+  const formId = createUniqueId();
   return (
-    <form
-      class="mt-6 flex flex-col gap-5"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void submit(true);
-      }}
-    >
-      <Checkbox
-        value={accepted}
-        onValueChange={setAccepted}
-        disabled={busy()}
-        label={
-          <span>
-            {t().termsPrefix}{" "}
-            <a href="/legal/terms" target="_blank" rel="noopener" class="underline">
-              {t().terms}
-            </a>{" "}
-            {t().consentPrivacyJoin}{" "}
-            <a href="/legal/privacy" target="_blank" rel="noopener" class="underline">
-              {t().privacy}
-            </a>
-            {t().consentPrivacyEnd}
-          </span>
+    // The nightly, release and Chat smokes read the pending version from this attribute.
+    <>
+      <form
+        id={formId}
+        hidden
+        data-legal-version={props.version}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit(true);
+        }}
+      />
+      <Band>
+        <Check
+          checked={accepted()}
+          onChange={setAccepted}
+          disabled={busy() || stale()}
+          label={
+            <Text>
+              {t().termsPrefix}{" "}
+              <Text href="/legal/terms" newTab>
+                {t().terms}
+              </Text>{" "}
+              {t().consentPrivacyJoin}{" "}
+              <Text href="/legal/privacy" newTab>
+                {t().privacy}
+              </Text>
+              {t().consentPrivacyEnd}
+            </Text>
+          }
+        />
+      </Band>
+      <Show when={error()}>
+        {(message) => (
+          <Notice
+            tone="bad"
+            actions={stale() ? [{ label: t().consentReload, icon: "refresh", onClick: () => window.location.reload() }] : undefined}
+          >
+            {message()}
+          </Notice>
+        )}
+      </Show>
+      <FormActions
+        start={
+          <Button type="button" disabled={busy()} onClick={() => void submit(false)}>
+            {t().consentCancel}
+          </Button>
+        }
+        end={
+          <Button variant="primary" type="submit" form={formId} busy={busy()} disabled={!accepted() || stale()}>
+            {t().consentContinue}
+          </Button>
         }
       />
-      <Show when={error()}>
-        <NoticeCard tone="danger">{error()}</NoticeCard>
-      </Show>
-      <Show when={stale()}>
-        <Button variant="secondary" onClick={() => window.location.reload()}>
-          {t().consentReload}
-        </Button>
-      </Show>
-      <Button type="submit" size="lg" loading={busy()} disabled={!accepted() || stale()}>
-        {t().consentContinue}
-      </Button>
-      <Button type="button" variant="secondary" disabled={busy()} onClick={() => void submit(false)}>
-        {t().consentCancel}
-      </Button>
-    </form>
+    </>
   );
 }

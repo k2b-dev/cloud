@@ -1,4 +1,5 @@
-import { Button, ButtonLink, NoticeCard, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Notice } from "@k2b/ui/v2";
 import { createSignal } from "solid-js";
 import { retrySignOutOthers, signOutOthersRetryPath } from "../sign-out-others";
 import { afterSignInHref } from "./login-redirect";
@@ -20,16 +21,15 @@ export function SignOutOthersRecovery(props: { redirectTo?: string }) {
   };
 
   return (
-    <NoticeCard tone="danger" role="alert" title={t().passwordChangedSignOutFailed} detail={t().signOutOthersRetryHint}>
-      <div class="flex flex-wrap gap-2">
-        <Button size="sm" loading={retrying()} loadingLabel={t().signingOutOthers} onClick={() => void retry()}>
-          <i class="ti ti-refresh" />
-          <span>{t().tryAgain}</span>
-        </Button>
-        <ButtonLink size="sm" variant="secondary" navigation="document" href={afterSignInHref(props.redirectTo)}>
-          {t().continueWithoutSignOut}
-        </ButtonLink>
-      </div>
-    </NoticeCard>
+    <Notice
+      tone="bad"
+      title={t().passwordChangedSignOutFailed}
+      actions={[
+        { label: retrying() ? t().signingOutOthers : t().tryAgain, icon: "refresh", disabled: retrying(), onClick: () => void retry() },
+        { label: t().continueWithoutSignOut, href: afterSignInHref(props.redirectTo) },
+      ]}
+    >
+      <span role="alert">{t().signOutOthersRetryHint}</span>
+    </Notice>
   );
 }

@@ -101,7 +101,8 @@ A head and a status row keep their height.
 
 A block of free height with one line below. `tone`: `note`, `ai`, `yours`,
 `bad`, `warn` (meaning only). Holds `Text`, `Row`, `Prose`, `Tiles`,
-fields. A message in a thread is one `Band`.
+fields. A message in a thread is one `Band`. `print`: the band alone prints,
+without the page around it, such as a legal text.
 
 ### Cells and Cells.Cell
 
@@ -281,7 +282,9 @@ one.
 `type`: `meta` 12/16, `row` 13/20 (default), `body` 14/20, `lead` 18/24.
 `weight` (`"strong"` 600, `"medium"` 500 for a state or amount that stands
 out a little), `muted`, `tone` (`ok`, `warn`, `bad`, `ai`, `draft`), `href`
-(underlined words that lead somewhere; blue is only for the main action).
+(underlined words that lead somewhere; blue is only for the main action),
+`newTab` (with `href`: opens in a new tab, so a form beside the words keeps
+what was filled in, such as terms to accept).
 Without `type`, text takes the role of its place.
 `title` gives text its full words as a tooltip where its place may cut it:
 the title of an open entry in its detail's head takes two lines, then "…".
@@ -451,6 +454,11 @@ lines instead of cutting a thing.
 
 ## Components
 
+- `CodeFigure`: `value`, `label`, `group?` (signs per group, 3 by default).
+  A code a person compares with another screen or types elsewhere, such as
+  the code a sign-in by app shows on both devices: large, monospaced, in
+  groups. Assistive technology reads it sign by sign after `label`. Not for
+  secrets; a code that arrives later stands in a `role="status"` region.
 - `Nav`: `title`, `icon`, `groups: { label?, action?, items }[]`, `foot`.
   A group's `action` is one quiet icon button, or `{ label, items }`: a "…"
   with the group's deeds ("Neues Postfach", "Gelöschte Postfächer").

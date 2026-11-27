@@ -463,6 +463,27 @@ describe("measureV2Layout", () => {
   );
 
   test(
+    "the outline looks through a wrapper without a box (an island) and passes over a form that draws nothing; a plain box stays a problem",
+    async () => {
+      const pane = (inner: string) =>
+        `<section class="k2-pane" data-k2-part="Pane" aria-label="Anmelden"><div class="k2-scroll">${inner}</div></section>`;
+      const band = '<section class="k2-band" data-k2-part="Band"><span class="k2-text" data-k2-part="Text">Mia</span></section>';
+      const island = await open(pane(`<solid-island style="display:contents"><form id="f" hidden></form>${band}</solid-island>`));
+      const plain = await open(pane(`<div>${band}</div>`));
+      try {
+        const clean = await describeV2Page(island);
+        expect(clean.includes("Problems (") ? clean : "").toBe("");
+        expect(clean).toContain("Band");
+        expect(await describeV2Page(plain)).toContain("plain <div> in Pane");
+      } finally {
+        await island.close();
+        await plain.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
     "green: words that gave way to their symbol and stay only as a visually hidden name are no cut label",
     async () => {
       const page = await open(

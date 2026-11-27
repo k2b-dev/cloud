@@ -1,4 +1,5 @@
-import { ButtonLink, NoticeCard, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Notice } from "@k2b/ui/v2";
 import { signInAgainHref } from "../sign-out-others";
 import { authMessages } from "./messages";
 
@@ -7,13 +8,8 @@ export function PasswordChangedSignInAgain(props: { redirectTo?: string }) {
   const locale = useLocale();
   const t = () => authMessages.resolve([locale()]).t;
   return (
-    <NoticeCard tone="warning" role="alert" title={t().passwordChangedSignInAgain}>
-      <div class="flex flex-wrap gap-2">
-        <ButtonLink size="sm" navigation="document" href={signInAgainHref(props.redirectTo)}>
-          <i class="ti ti-login-2" />
-          <span>{t().signIn}</span>
-        </ButtonLink>
-      </div>
-    </NoticeCard>
+    <Notice tone="warn" actions={[{ label: t().signIn, icon: "login-2", href: signInAgainHref(props.redirectTo) }]}>
+      <span role="alert">{t().passwordChangedSignInAgain}</span>
+    </Notice>
   );
 }

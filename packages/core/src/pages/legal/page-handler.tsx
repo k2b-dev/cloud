@@ -10,11 +10,10 @@
 
 import { getLocale } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
-import { markdown } from "@k2b/cloud/shared";
-import { Layout } from "@k2b/cloud/ssr";
-import { MarkdownView, Placeholder } from "@k2b/ui";
+import { Band, Empty, Prose } from "@k2b/ui/v2";
 import { ssr } from "../../config";
 import { corePageMessages } from "../messages";
+import { VisitorPage } from "../VisitorPage";
 
 type LegalKind = "terms" | "privacy" | "imprint";
 
@@ -37,29 +36,24 @@ export const makeLegalPage = (kind: LegalKind) =>
     }
 
     const trimmedContent = (content ?? "").trim();
-    const html = trimmedContent ? markdown.render(trimmedContent, { locale: getLocale(c) }) : null;
+    const appName = (await coreSettings.get<string>("app.name")) || "My App";
+    c.get("page").title = title;
 
+    // A visitor page on v2 in one measure. The text is Markdown in `Prose`: raw HTML in it shows as text.
     return () => (
-      <Layout c={c} title={title}>
-        <div class="container max-w-3xl p-4 sm:p-8" data-print-region="">
-          <h1 class="text-xl font-bold mb-4">{title}</h1>
-          {html ? (
-            <MarkdownView trustedHtml={html} />
-          ) : (
-            <Placeholder
-              surface="paper"
-              description={
-                <>
-                  {t.legalNotConfigured({ title })}{" "}
-                  <a href="/admin/base/legal" class="underline">
-                    /admin/base/legal
-                  </a>
-                  .
-                </>
-              }
-            />
-          )}
-        </div>
-      </Layout>
+      <VisitorPage c={c} appName={appName} title={title}>
+        {trimmedContent ? (
+          // the text alone prints, without the page around it
+          <Band label={title} print>
+            <Prose markdown={trimmedContent} />
+          </Band>
+        ) : (
+          <Empty
+            icon="file-off"
+            text={t.legalNotConfigured({ title })}
+            action={kind === "imprint" ? undefined : { label: t.imprint, icon: "building", href: "/impressum" }}
+          />
+        )}
+      </VisitorPage>
     );
   });

@@ -968,7 +968,9 @@ describe("Cloud app approval UI", () => {
     };
     await flush();
     const link = dom.root.querySelector<HTMLAnchorElement>('a[href="/auth/login?credential=legacy"]')!;
-    expect(dom.root.querySelector(".text-center .tabular-nums")?.textContent).toBe("123456");
+    // the code in its groups, as the phone shows it
+    const groups = dom.root.querySelectorAll("[data-k2-part=CodeFigure] [aria-hidden=true]");
+    expect(Array.from(groups, (group) => group.textContent).join("")).toBe("123456");
     expect(dom.root.textContent).not.toContain("Stopping here does not delete");
     link.addEventListener("click", (event) => event.preventDefault());
     link.click();

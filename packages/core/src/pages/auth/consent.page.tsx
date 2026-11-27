@@ -1,10 +1,8 @@
-import { listLegalLinks } from "@k2b/cloud";
 import { auth, getLocale } from "@k2b/cloud/server";
-import { legalConsent } from "@k2b/cloud/services";
+import { coreSettings, legalConsent } from "@k2b/cloud/services";
 import { normalizeRedirectTo } from "@k2b/cloud/shared";
-import { MinimalLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
-import AuthFooter from "./AuthFooter";
+import { VisitorPage } from "../VisitorPage";
 import ConsentForm from "./ConsentForm.island";
 import { authMessages } from "./messages";
 
@@ -18,20 +16,11 @@ export default ssr(async (c) => {
   const pending = await legalConsent.pending(c);
   if (!pending) return c.redirect(`/auth/login?${new URLSearchParams({ redirectTo })}`, 302);
   const { version } = await legalConsent.documents();
-  const legalLinks = await listLegalLinks(getLocale(c));
+  const appName = (await coreSettings.get<string>("app.name")) || "My App";
+  c.get("page").title = t.consentTitle;
   return () => (
-    <MinimalLayout c={c} preferences={false}>
-      <main class="flex min-h-svh flex-col items-center justify-center gap-6 bg-zinc-50 p-4 dark:bg-zinc-950">
-        <section
-          class="standalone-card w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 sm:p-8 dark:border-zinc-800 dark:bg-zinc-900"
-          data-legal-version={version}
-        >
-          <h1 class="text-2xl font-semibold text-primary">{t.consentTitle}</h1>
-          <p class="mt-2 text-sm text-dimmed">{t.consentDescription}</p>
-          <ConsentForm userId={pending.user.id} version={version} redirectTo={redirectTo} />
-        </section>
-        <AuthFooter links={legalLinks} />
-      </main>
-    </MinimalLayout>
+    <VisitorPage c={c} appName={appName} title={t.consentTitle} description={t.consentDescription}>
+      <ConsentForm userId={pending.user.id} version={version} redirectTo={redirectTo} />
+    </VisitorPage>
   );
 });

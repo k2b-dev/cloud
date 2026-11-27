@@ -3,10 +3,10 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import * as cloud from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { auth } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
+import { serveCoreV2Sheet } from "@k2b/cloud/testing";
 import { Hono } from "hono";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 
@@ -40,13 +40,15 @@ const pendingUser: User = {
   manages: [],
   managesGroupIds: [],
 };
+// Core serves v2.css, so the pages link it alone (restored after this file).
+serveCoreV2Sheet();
 const spies: Array<{ mockRestore(): void }> = [];
 beforeEach(() => {
   spies.push(
     spyOn(auth.session, "getToken").mockReturnValue(null),
     spyOn(services.legalConsent, "pending").mockResolvedValue({ user: pendingUser, sid: "consent-session", authEpoch: 0 }),
     spyOn(services.legalConsent, "documents").mockResolvedValue({ documents: [...documents], version }),
-    spyOn(cloud, "listLegalLinks").mockResolvedValue([]),
+    spyOn(services.coreSettings, "get").mockResolvedValue("Example Cloud" as never),
   );
 });
 afterEach(() => {
@@ -61,4 +63,13 @@ test("the consent page renders the pending document version in a stable attribut
   const html = await response.text();
   expect(/data-legal-version="([a-f0-9]{64})"/.exec(html)?.[1]).toBe(version);
   expect(html).toContain(pendingUser.id);
+});
+
+test("the consent page is a v2 visitor page in one column, without v1 or Tailwind markup", async () => {
+  const app = new Hono().get("/auth/continue", ...handler);
+  const html = await (await app.request("https://cloud.example.test/auth/continue")).text();
+  expect(html).toMatch(/<main class="minimal-layout-main" data-measure=""/);
+  expect(html).toMatch(/<h1 class="k2-record-name"[^>]*>Before you start<\/h1>/);
+  expect(html).toContain('data-k2-part="Check"');
+  expect(html).not.toMatch(/k2b-button|k2b-checkbox|bg-zinc|standalone-card|rounded-2xl/);
 });

@@ -43,6 +43,8 @@ export type TextProps = {
   tone?: Status | "ai" | "draft";
   /** The words lead to this page: they keep the ink of the text and are underlined (blue is only the main action). */
   href?: string;
+  /** With `href`: the page opens in a new tab, so a form beside the words keeps what was filled in (terms to accept). */
+  newTab?: boolean;
   /**
    * The full words as a tooltip, for text its place may cut (a long title in a head): the same words, never a hint
    * of something else.
@@ -64,6 +66,8 @@ export const Text = (props: TextProps) => (
   <Dynamic
     component={props.href ? "a" : "span"}
     href={props.href}
+    target={props.href && props.newTab ? "_blank" : undefined}
+    rel={props.href && props.newTab ? "noopener" : undefined}
     title={props.title}
     class={`k2-text${props.type ? ` ${typeClass[props.type]}` : ""}${props.weight ? ` ${weightClass[props.weight]}` : ""}${props.muted ? " k2-muted" : ""}${props.href ? " k2-link" : ""}`}
     data-k2-part="Text"

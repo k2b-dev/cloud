@@ -747,6 +747,11 @@
 .k2-ui .k2-band > :is(.k2-bar, .k2-notice, .k2-cells, .k2-sec, .k2-facts-line, .k2-table-scroll) {
   border-block: 0;
 }
+/* a band that holds only a bar (an action line in the flow of a column) is that bar: the bar keeps its own height, so
+   it stands like every other bar of the column */
+.k2-ui .k2-band:has(> .k2-bar:only-child) {
+  padding-block: 0;
+}
 
 /* ── Cells: two to four equal cells with a line between them ────────────────────────────────────────────────── */
 .k2-ui .k2-cells {
@@ -6125,5 +6130,74 @@
   }
   .k2-ui .k2-pop.k2-fpop {
     width: calc(100vw - 16px);
+  }
+}
+
+/* A code to compare at a glance (CodeFigure): large, monospaced, in groups, centred in its place. */
+.k2-ui .k2-code-figure {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 16px;
+  margin: 8px 0;
+  font-family: var(--k2-font-mono);
+  font-size: 40px;
+  line-height: 48px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+  color: var(--k2-text);
+}
+
+/* ── Paper: what a page marks with `Band print` prints alone ───────────────────────────────────────────────────── */
+
+/* A page marks what it prints (`Band print`, `data-print-region`): on paper only that prints, without the page's head,
+   panes, footer or a scrollport that would cut it after the first screen. Its ancestors become plain blocks that grow
+   with it. A v2 page whose body is the scope (Core's v2.css) hides its footer too; nothing here changes the screen. */
+@media print {
+  .k2-ui,
+  .k2-ui *,
+  .k2-ui *::before,
+  .k2-ui *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+  /* every drawn part (it has a class) outside the printed text and its ancestors */
+  .k2-ui:has([data-print-region]) [class]:not([data-print-region], [data-print-region] *, :has([data-print-region])) {
+    display: none !important;
+  }
+  .k2-ui:has([data-print-region]),
+  .k2-ui :has([data-print-region]) {
+    display: block !important;
+    position: static !important;
+    inset: auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: none !important;
+    overflow: visible !important;
+    transform: none !important;
+    contain: none !important;
+  }
+  .k2-ui [data-print-region],
+  .k2-ui [data-print-region] .k2-scroll {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    border: 0 !important;
+  }
+  .k2-ui [data-print-region] :is(h1, h2, h3, h4, h5, h6) {
+    break-after: avoid;
+  }
+  .k2-ui [data-print-region] :is(figure, img, pre, blockquote, tr) {
+    break-inside: avoid;
   }
 }

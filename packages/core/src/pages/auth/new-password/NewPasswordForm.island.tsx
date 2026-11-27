@@ -1,12 +1,14 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, NoticeCard, TextInput, useLocale } from "@k2b/ui";
-import { createSignal, Show } from "solid-js";
-import { signOutOthersRetryPath } from "../../sign-out-others";
+import { useLocale } from "@k2b/ui";
+import { Band, Button, Field, Input, Notice, Text } from "@k2b/ui/v2";
+import { createSignal, createUniqueId, Show } from "solid-js";
+import { signInAgainHref, signOutOthersRetryPath } from "../../sign-out-others";
+import { FormActions } from "../FormActions";
 import { afterSignInHref, confirmationRequestOptions } from "../login-redirect";
 import { authMessages } from "../messages";
 import { PasswordChangedSignInAgain } from "../PasswordChangedSignInAgain";
-import { PasswordSetupFields } from "../PasswordSetupFields";
+import { PasswordSetupFieldsV2 } from "../PasswordSetupFieldsV2";
 import { SignOutOthersRecovery } from "../SignOutOthersRecovery";
 
 type NewPasswordFormProps = {
@@ -68,55 +70,66 @@ export default function NewPasswordForm(props: NewPasswordFormProps) {
     },
   });
 
+  // the form stands apart and hidden; its fields and buttons name it, so no form box stands in the column
+  const formId = createUniqueId();
   return (
     <Show when={!signInAgain()} fallback={<PasswordChangedSignInAgain redirectTo={props.redirectTo} />}>
       <Show when={!signOutFailed()} fallback={<SignOutOthersRecovery redirectTo={props.redirectTo} />}>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            mutation.mutate({});
-          }}
-          class="flex flex-col gap-4"
-        >
-          <TextInput
-            label={t().username}
-            description={t().organizationUsernameDescription}
-            placeholder={t().usernameShortPlaceholder}
-            icon="ti ti-user"
-            value={username}
-            onValueChange={setUsername}
-            autocomplete="username"
+        <>
+          <form
+            id={formId}
+            hidden
+            onSubmit={(e) => {
+              e.preventDefault();
+              mutation.mutate({});
+            }}
           />
-
-          <TextInput
-            label={t().currentPassword}
-            description={t().currentPasswordDescription}
-            placeholder={t().currentPassword}
-            icon="ti ti-lock"
-            password
-            value={currentPassword}
-            onValueChange={setCurrentPassword}
-            autocomplete="current-password"
+          <Band>
+            {/* the name from the link is only a suggestion: it stays in the field, where a wrong one can be corrected */}
+            <Field label={t().username} hint={t().organizationUsernameDescription}>
+              <Input
+                form={formId}
+                icon="user"
+                value={username()}
+                onInput={setUsername}
+                placeholder={t().usernameShortPlaceholder}
+                autocomplete="username"
+                autocapitalize="off"
+                spellcheck={false}
+                autofocus={!props.defaultUsername}
+              />
+            </Field>
+            <Field label={t().currentPassword} hint={t().currentPasswordDescription}>
+              <Input
+                form={formId}
+                icon="lock"
+                type="password"
+                value={currentPassword()}
+                onInput={setCurrentPassword}
+                autocomplete="current-password"
+                autofocus={!!props.defaultUsername}
+              />
+            </Field>
+          </Band>
+          <Band>
+            <PasswordSetupFieldsV2
+              form={formId}
+              newPassword={newPassword}
+              confirmPassword={confirmPassword}
+              onNewPasswordChange={setNewPassword}
+              onConfirmPasswordChange={setConfirmPassword}
+            />
+            <Text href={signInAgainHref(props.redirectTo)}>{t().backToSignIn}</Text>
+          </Band>
+          <Show when={mutation.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
+          <FormActions
+            end={
+              <Button variant="primary" type="submit" form={formId} icon="lock-check" busy={mutation.loading()}>
+                {mutation.loading() ? t().updatingPassword : t().setPassword}
+              </Button>
+            }
           />
-
-          <PasswordSetupFields
-            newPassword={newPassword}
-            confirmPassword={confirmPassword}
-            onNewPasswordChange={setNewPassword}
-            onConfirmPasswordChange={setConfirmPassword}
-          />
-
-          {mutation.error() && (
-            <NoticeCard tone="danger">
-              <span>{mutation.error()?.message}</span>
-            </NoticeCard>
-          )}
-
-          <Button type="submit" class="w-full justify-center py-2" loading={mutation.loading()} loadingLabel={t().updatingPassword}>
-            <i class="ti ti-lock-check" />
-            <span>{t().setPassword}</span>
-          </Button>
-        </form>
+        </>
       </Show>
     </Show>
   );

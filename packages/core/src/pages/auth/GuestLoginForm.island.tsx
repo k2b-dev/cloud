@@ -2,10 +2,12 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import { accountCategory } from "@k2b/cloud/contracts";
 import { cookies } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, NoticeCard, TextInput, useLocale } from "@k2b/ui";
-import { createSignal, onMount, Show } from "solid-js";
+import { useLocale } from "@k2b/ui";
+import { Band, Button, Field, Input, Notice, Text } from "@k2b/ui/v2";
+import { createSignal, createUniqueId, onMount, Show } from "solid-js";
 import { LOGIN_EMAIL_SIGN_IN_COOKIE } from "../app-approval/availability";
 import { signInAgainHref } from "../sign-out-others";
+import { FormActions } from "./FormActions";
 import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
 import { authMessages } from "./messages";
 
@@ -16,6 +18,8 @@ export default function GuestLoginForm(props: {
   category?: "guest" | "login";
   /** A shared workstation: the page remembers neither the address nor the method. */
   forget?: boolean;
+  /** The other way into the same account ("Use the app instead"): a link in the form, beside its other links. */
+  alternative?: { href: string; label: string };
 }) {
   const locale = useLocale();
   const t = () => authMessages.resolve([locale()]).t;
@@ -68,78 +72,99 @@ export default function GuestLoginForm(props: {
     if (props.token) tokenMutation.mutate({});
   });
 
-  const error = () => (showTokenInput() ? tokenMutation.error() : emailMutation.error());
   const loading = () => emailMutation.loading() || tokenMutation.loading();
 
+  // the form stands apart and hidden; its fields and buttons name it, so no form box stands in the column
+  const codeFormId = createUniqueId();
+  const emailFormId = createUniqueId();
   return (
     <Show
       when={!showTokenInput()}
       fallback={
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            tokenMutation.mutate({});
-          }}
-          class="flex flex-col gap-4"
-        >
-          <NoticeCard tone="success">{t().checkEmail}</NoticeCard>
-
-          <TextInput
-            label={t().loginCode}
-            description={t().loginCodeDescription}
-            placeholder={t().loginCode}
-            icon="ti ti-key"
-            value={tokenInput}
-            onValueChange={setTokenInput}
-            autocomplete="one-time-code"
+        <>
+          <form
+            id={codeFormId}
+            hidden
+            onSubmit={(e) => {
+              e.preventDefault();
+              tokenMutation.mutate({});
+            }}
           />
-
-          {error() && (
-            <NoticeCard tone="danger">
-              <span>{error()?.message}</span>
-              <ButtonLink href={signInAgainHref(props.redirectTo)} navigation="document" variant="text">
-                {t().backToSignIn}
-              </ButtonLink>
-            </NoticeCard>
-          )}
-
-          <Button type="submit" class="w-full justify-center py-2" loading={loading()} loadingLabel={t().verifying}>
-            {t().verify}
-          </Button>
-        </form>
+          <Notice tone="note" icon="mail-check">
+            {t().checkEmail}
+          </Notice>
+          <Band>
+            <Field label={t().loginCode} hint={t().loginCodeDescription}>
+              <Input
+                form={codeFormId}
+                icon="key"
+                value={tokenInput()}
+                onInput={setTokenInput}
+                placeholder={t().loginCode}
+                autocomplete="one-time-code"
+                spellcheck={false}
+                autocapitalize="off"
+                autofocus={!props.token}
+              />
+            </Field>
+          </Band>
+          <Show when={tokenMutation.error()}>
+            {(error) => (
+              <Notice tone="bad" actions={[{ label: t().backToSignIn, href: signInAgainHref(props.redirectTo) }]}>
+                {error().message}
+              </Notice>
+            )}
+          </Show>
+          <FormActions
+            end={
+              <Button variant="primary" type="submit" form={codeFormId} busy={loading()}>
+                {loading() ? t().verifying : t().verify}
+              </Button>
+            }
+          />
+        </>
       }
     >
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          emailMutation.mutate({});
-        }}
-        class="flex flex-col gap-4"
-      >
-        <TextInput
-          label={t().emailOrUsername}
-          description={props.allowSelfRegistration ? t().selfRegistrationEmailDescription : t().existingEmailDescription}
-          placeholder={t().emailOrUsernamePlaceholder}
-          type="text"
-          icon="ti ti-mail"
-          value={email}
-          onValueChange={setEmail}
-          autocomplete={props.forget ? "off" : "username"}
+      <>
+        <form
+          id={emailFormId}
+          hidden
+          onSubmit={(e) => {
+            e.preventDefault();
+            emailMutation.mutate({});
+          }}
         />
-
-        {error() && (
-          <NoticeCard tone="danger">
-            <span>{error()?.message}</span>
-          </NoticeCard>
-        )}
-
-        <Button type="submit" size="lg" class="w-full justify-center" loading={loading()} loadingLabel={t().sendingLoginLink}>
-          <i class="ti ti-send" />
-          {t().sendLoginLink}
-        </Button>
-
-        <p class="text-sm text-dimmed">{props.allowSelfRegistration ? t().selfRegistrationHint : t().existingAccountHint}</p>
-      </form>
+        <Band>
+          <Field
+            label={t().emailOrUsername}
+            hint={props.allowSelfRegistration ? t().selfRegistrationEmailDescription : t().existingEmailDescription}
+          >
+            <Input
+              form={emailFormId}
+              icon="mail"
+              value={email()}
+              onInput={setEmail}
+              placeholder={t().emailOrUsernamePlaceholder}
+              autocomplete={props.forget ? "off" : "username"}
+              autocapitalize="off"
+              spellcheck={false}
+              autofocus
+            />
+          </Field>
+          <Text type="meta" muted>
+            {props.allowSelfRegistration ? t().selfRegistrationHint : t().existingAccountHint}
+          </Text>
+          <Show when={props.alternative}>{(link) => <Text href={link().href}>{link().label}</Text>}</Show>
+        </Band>
+        <Show when={emailMutation.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
+        <FormActions
+          end={
+            <Button variant="primary" type="submit" form={emailFormId} icon="send" busy={loading()}>
+              {loading() ? t().sendingLoginLink : t().sendLoginLink}
+            </Button>
+          }
+        />
+      </>
     </Show>
   );
 }
