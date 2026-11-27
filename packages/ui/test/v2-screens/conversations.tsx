@@ -1,4 +1,5 @@
-// Recipe: conversations in the sidebar (a messenger). The `Nav` holds the app's name, the search and "Neuer Chat",
+// Test screen of the v2 browser tests, not an example to copy: its look is bare. Reference: the k2b-ui look.
+// conversations in the sidebar (a messenger). The `Nav` holds the app's name, the search and "Neuer Chat",
 // the filters as entries, then the conversations as the app's own rows (`list`), which scroll on their own above the
 // foot. The open conversation is the detail beside it: two columns, no list pane and no head bar of their own. On the
 // phone the list with its search is the page (`phone: "page"`) and "Neuer Chat" floats.

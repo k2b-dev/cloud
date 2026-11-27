@@ -1,4 +1,5 @@
-// Recipe: list with detail. A sidebar, a head with views and the main action, a list beside the open entry.
+// Test screen of the v2 browser tests, not an example to copy: its look is bare. Reference: the k2b-ui look.
+// list with detail. A sidebar, a head with views and the main action, a list beside the open entry.
 // On the phone the detail pane leaves; open the entry as its own page (its own route) there.
 // The open entry comes from the address: with none open, the detail's place says so; while loading, the list holds its place.
 import { Bar, Button, Chip, Facts, List, Loading, Nav, Notice, Pane, Row, Section, StatusRow, Tabs, Text, Workspace } from "@k2b/ui/v2";

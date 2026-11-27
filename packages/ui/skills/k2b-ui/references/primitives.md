@@ -102,8 +102,7 @@ A column that scrolls, with no padding: everything in it reaches both edges.
 
 Panes side by side (list | reader, main | side). One hairline between, a
 grip where a pane has `width`. A `Pane.Split` may stand inside a `Pane`
-under that pane's `Tabs` head, after content that spans both columns (see
-`record.tsx`).
+under that pane's `Tabs` head, after content that spans both columns.
 
 A short task above the page is a `Dialog` (see "Overlays"), not one more
 pane; `Workspace primary` never confirms a dialog.
@@ -114,10 +113,10 @@ A bar of fixed height with one line below: `start`, `end`. Height comes
 from the place: 56 as a head, 52 as a status row, 40 inside a pane. Put
 `Text`, `Tabs`, `RecordHead`, `Inline`, `Button`s, `Avatar` in it. Text in
 a bar is cut to one line. Inside a pane a bar stands at the top (a line of
-state under the head, as in `mail.tsx`) or directly after the fields it
+state under the head) or directly after the fields it
 serves (the buttons of a form or of a reply), never between entries. A line
 of state that must stay while the reader scrolls goes into the pane's
-`status` instead (40 px, as in `mail.tsx`). In a
+`status` instead (40 px). In a
 column narrower than 480 px, a bar inside a pane whose `start` is an
 `Inline` wraps: its things and its `end` flow as one line, one line stays
 40 px, and only a second line makes the bar higher; a bar in `status` too.

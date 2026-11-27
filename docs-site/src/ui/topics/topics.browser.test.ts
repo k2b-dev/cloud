@@ -3,7 +3,7 @@ import { launchBrowser, pageErrors, settled } from "../../../../packages/ui/test
 import { registerSsrTestPlugin } from "../../../../packages/ui/test/ssr-test-plugin";
 
 // The UI topic pages in a browser, from the real server: every recipe and each of its states stands live on its own
-// route, and the Example on topic 2 switches state, width and code without moving the page.
+// route, and the Example on Identity switches state, width and code without moving the page.
 type Browser = Awaited<ReturnType<typeof launchBrowser>>;
 type Page = Awaited<ReturnType<Browser["newPage"]>>;
 
@@ -50,11 +50,12 @@ describe("recipe route", () => {
       }, 30_000);
 
   test("a recipe speaks the language of its sample text, also in the library's own words", async () => {
-    const { page, errors } = await open("/en/ui/v2/recipe/table?state=failed");
+    const { page, errors } = await open("/en/ui/v2/recipe/overview", 390);
     try {
       await page.waitForSelector(".ui-v2-recipe[data-recipe='ready']");
       expect(await page.getAttribute("html", "lang")).toBe("de");
-      expect(await page.getByRole("button", { name: "Erneut versuchen" }).count()).toBe(1);
+      // the drawer button of the sidebar is named by the library (it shows only while the sidebar is a drawer)
+      expect(await page.locator("button[aria-label='Seitenleiste zeigen']").count()).toBe(1);
       expect(errors).toEqual([]);
     } finally {
       await page.close();
@@ -77,26 +78,26 @@ describe("recipe route", () => {
 
   test("an unknown recipe or state is not found", async () => {
     expect((await fetch(`${origin}/en/ui/v2/recipe/nothing`)).status).toBe(404);
-    expect((await fetch(`${origin}/en/ui/v2/recipe/table?state=nothing`)).status).toBe(404);
+    expect((await fetch(`${origin}/en/ui/v2/recipe/overview?state=nothing`)).status).toBe(404);
     for (const name of ["__proto__", "constructor", "toString"]) {
-      expect((await fetch(`${origin}/en/ui/v2/recipe/table?state=${name}`)).status).toBe(404);
+      expect((await fetch(`${origin}/en/ui/v2/recipe/overview?state=${name}`)).status).toBe(404);
       expect((await fetch(`${origin}/en/ui/v2/recipe/${name}`)).status).toBe(404);
       expect((await fetch(`${origin}/en/ui/v2/screen/${name}`)).status).toBe(404);
     }
   });
 });
 
-describe("Example on Lists and tables", () => {
+describe("Example on Identity", () => {
   test("switches state, code and width, and its view never moves the page", async () => {
-    const { page, errors } = await open("/en/ui/v2/lists-and-tables");
+    const { page, errors } = await open("/en/ui/v2/identity");
     try {
-      const example = page.locator("figure.ui-example#table");
-      await page.locator("figure.ui-example#table[data-measured]").waitFor();
+      const example = page.locator("figure.ui-example#overview");
+      await page.locator("figure.ui-example#overview[data-measured]").waitFor();
       await settled(page);
       const box = (selector: string) => example.locator(selector).boundingBox();
       const view = await box(".ui-example__stage");
       const bar = await box(".ui-example__bar");
-      const below = await page.locator("figure.ui-example#list-detail").boundingBox();
+      const below = await page.locator("figure.ui-example#home").boundingBox();
 
       // Preview and Code are v2 Tabs (they switch views), named as one group; the values are segmented controls
       const tabs = example.getByRole("navigation", { name: /preview or code/ });
@@ -107,13 +108,13 @@ describe("Example on Lists and tables", () => {
       // the state: the frame loads the recipe's state, and nothing moves
       await example.getByRole("radio", { name: "Empty" }).click();
       const frame = example.locator("iframe");
-      expect(await frame.getAttribute("src")).toBe("/en/ui/v2/recipe/table?state=empty");
-      const inside = page.frameLocator("figure.ui-example#table iframe");
+      expect(await frame.getAttribute("src")).toBe("/en/ui/v2/recipe/overview?state=empty");
+      const inside = page.frameLocator("figure.ui-example#overview iframe");
       await inside.locator(".ui-v2-recipe[data-recipe='ready']").waitFor();
       await settled(page);
-      expect(await inside.locator("[data-k2-part='Empty']").count()).toBe(1);
+      expect(await inside.locator("[data-k2-part='Empty']").count()).toBeGreaterThan(0);
       expect(await box(".ui-example__stage")).toEqual(view);
-      expect(await page.locator("figure.ui-example#list-detail").boundingBox()).toEqual(below);
+      expect(await page.locator("figure.ui-example#home").boundingBox()).toEqual(below);
 
       // the width and scale stand in the meta line under the frame, never over the screen
       const scale = await box(".ui-example__scale");
@@ -128,12 +129,12 @@ describe("Example on Lists and tables", () => {
       expect(await example.locator(".ui-example__code").innerText()).toContain("export const states");
       expect(await box(".ui-example__code")).toEqual(view);
       expect(await box(".ui-example__bar")).toEqual(bar);
-      expect(await page.locator("figure.ui-example#list-detail").boundingBox()).toEqual(below);
+      expect(await page.locator("figure.ui-example#home").boundingBox()).toEqual(below);
 
       // back to the screen, then the width: 390 stands 1:1 as a phone
       await tabs.getByRole("button", { name: "Preview" }).click();
       await example.getByRole("radio", { name: "390" }).click();
-      await page.locator("figure.ui-example#table[data-phone]").waitFor();
+      await page.locator("figure.ui-example#overview[data-phone]").waitFor();
       await settled(page);
       expect(Math.round((await frame.boundingBox())?.width ?? 0)).toBe(390);
 
@@ -144,10 +145,10 @@ describe("Example on Lists and tables", () => {
   }, 60_000);
 
   test("a phone page shows the phone width from the start", async () => {
-    const { page, errors } = await open("/en/ui/v2/lists-and-tables", 390);
+    const { page, errors } = await open("/en/ui/v2/identity", 390);
     try {
-      const example = page.locator("figure.ui-example#table");
-      await page.locator("figure.ui-example#table[data-measured]").waitFor();
+      const example = page.locator("figure.ui-example#overview");
+      await page.locator("figure.ui-example#overview[data-measured]").waitFor();
       await settled(page);
       expect(await example.getByRole("radio", { name: "390" }).getAttribute("aria-checked")).toBe("true");
       const frame = await example.locator("iframe").boundingBox();
@@ -163,8 +164,8 @@ describe("Example on Lists and tables", () => {
 describe("Example switches", () => {
   for (const width of [1440, 390])
     test(`every segment keeps its words whole and off the group's edge at ${width} px`, async () => {
-      // Dialogs and overlays has the longest state names ("Members", "Confirm")
-      const { page, errors } = await open("/en/ui/v2/dialogs-and-overlays", width);
+      // Identity has the most examples left (overview and home), each with its states
+      const { page, errors } = await open("/en/ui/v2/identity", width);
       try {
         await page.locator("figure.ui-example[data-measured]").first().waitFor();
         await settled(page);

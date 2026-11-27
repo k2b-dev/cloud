@@ -1,4 +1,5 @@
-// Recipe: a record tab with groups. A Band in a tone carries the one statement of the tab; one Section for the area;
+// Test screen of the v2 browser tests, not an example to copy: its look is bare. Reference: the k2b-ui look.
+// a record tab with groups. A Band in a tone carries the one statement of the tab; one Section for the area;
 // one Group per thing that belongs together (here a delivery). A finished one is folded to its head. Inside a group: a
 // sentence, its way, a table, facts; no lines, no nesting.
 import {

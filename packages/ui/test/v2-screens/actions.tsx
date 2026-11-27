@@ -1,4 +1,5 @@
-// Recipe: where deeds stand. The head holds the views, a hint, a filter menu with ticks, a view menu and the one main action;
+// Test screen of the v2 browser tests, not an example to copy: its look is bare. Reference: the k2b-ui look.
+// where deeds stand. The head holds the views, a hint, a filter menu with ticks, a view menu and the one main action;
 // each row has its deeds behind its own "…" and on a right-click or a long press, plus a star that is pressed or not.
 // An offer the address names opens beside the list with its own deeds in its head; "Senden" turns while it sends, and a deed that cannot be
 // taken now is disabled in a notice that says why. Deleting an offer answers with a toast and "Rückgängig".

@@ -1,7 +1,7 @@
 # List queries: filter, sort, group
 
-The one way to let people filter, sort or group a list or table. Recipe:
-`recipes/filtered-table.tsx`.
+The one way to let people filter, sort or group a list or table. Its look:
+rule 11 of [the look](look.md) (filters are sentences).
 
 ## The three parts
 

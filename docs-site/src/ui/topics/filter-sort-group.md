@@ -1,16 +1,10 @@
----
-thumbnail: filtered-table
----
-
 # Filter, sort, group
 
 A list that people narrow down, order or put into groups. Each active filter reads as a sentence, the sort and the grouping stand in words, and the address holds all of it, so reload, back and a shared link show the same list.
 
-## A table people filter
+## Reference look
 
-Orders with two active filters: "Status ist Offen oder In Arbeit" and "Betrag ab 500 €". The list is declared once with `defineListQuery`, in a module the server and the island both import. `FilterBar` shows the filters as statements above the `StatusRow`, and `ListOrder` shows the sort and the grouping in its `filters`. Switch the state: no order matches, the rows load, or the editor of the status filter is open.
-
-<Example recipe="filtered-table" height="520" default="Filtered" />
+The example screens of this page showed a bare look, and agents copied it, so they were removed. Until rebuilt examples follow, build to the reference look: the v2 taste study (three screens before and after, its diagnosis and 13 rules) and its parts gallery (table, filter, settings, detail and info parts). The 13 rules stand with their numbers in the skill `k2b-ui`, `references/look.md`.
 
 ## Cloud shows, the app filters
 

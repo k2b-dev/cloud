@@ -1,4 +1,5 @@
-// Recipe: a form beside a list. The page's one primary ("Neuer Termin") stays in the head and opened the form; the
+// Test screen of the v2 browser tests, not an example to copy: its look is bare. Reference: the k2b-ui look.
+// a form beside a list. The page's one primary ("Neuer Termin") stays in the head and opened the form; the
 // form saves with a default button in its own footer bar. On the phone the form is the page, with one way back.
 import { Band, Bar, Button, Check, Choice, DateInput, Field, Input, List, Pane, Row, Select, StatusRow, Text, Workspace } from "@k2b/ui/v2";
 

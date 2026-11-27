@@ -1,28 +1,14 @@
----
-thumbnail: table
----
-
 # Lists and tables
 
 Many things of one kind. Use a `List` when each entry reads as a line of text, a `Table` when people compare values across rows. Both open an entry by its address.
 
-## A table to compare
+## Reference look
 
-Open invoices with a status row: the lead says how many, the figures follow, the filter sits at the end. Each row opens its invoice and has one deed. Switch the state: empty, loading and failed stand where the rows would stand, and nothing above them moves.
-
-<Example recipe="table" height="440" default="Rows" />
-
-## A list beside the open entry
-
-Sources of Pulse: two-line rows, the open one tinted, its detail beside the list. The open entry is in the address, so reload and back show the same. On the phone the detail leaves and an entry opens as its own page.
-
-<Example recipe="list-detail" height="560" default="Open" />
+The example screens of this page showed a bare look, and agents copied it, so they were removed. Until rebuilt examples follow, build to the reference look: the v2 taste study (three screens before and after, its diagnosis and 13 rules) and its parts gallery (table, filter, settings, detail and info parts). The 13 rules stand with their numbers in the skill `k2b-ui`, `references/look.md`.
 
 ## Folders as a tree
 
 Files with its folder tree: the sidebar's `Nav` group takes a `tree`, the table takes `tree` for rows in levels. The open folder comes from the address, so the way to it stands open on the server's page. The arrow, or Right and Left, folds a folder without opening it; a press on its name opens it. Load only what opens: a folder loads its children the first time it opens (`load`), a level with thousands of entries ends in "Weitere laden", and a folder that failed to load shows a red mark until opening it again works.
-
-<Example recipe="tree" height="560" />
 
 ## List or table?
 

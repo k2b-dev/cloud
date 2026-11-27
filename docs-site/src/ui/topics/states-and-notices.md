@@ -1,23 +1,10 @@
----
-thumbnail: states
----
-
 # States and notices
 
 What a place shows when its data is not simply there: nothing yet, nothing behind a filter, still loading, failed to load. Each state stands where the data will stand, with one way out, and nothing above it moves. A `Notice` says what a person must know or do.
 
-## The states of a list
+## Reference look
 
-Incoming goods of a workshop. Switch the state: "Empty" and "Filtered" are two different sentences with their own way out, "Loading" holds the place of the four rows that usually come, and "Failed" offers "Erneut versuchen" in the place of the rows. "Problem" is a scale that does not answer, something a person must fix, while the list stays. "Reconnecting" is a live connection that retries on its own: it says so in the status row, without a button.
-
-<Example recipe="states" height="440" default="Rows" />
-
-Every state keeps these rules:
-
-- **In place.** The state stands where the rows will stand. The head and the status row stay; only the place of the data changes.
-- **No layout shift.** `Loading` gets as many `rows` and the same `lines` as the rows that usually come, so nothing moves when they arrive. A `Table` takes `loading` and `empty` itself and keeps its head.
-- **A way out.** `Empty` names the one next deed ("Einlieferung erfassen", "Filter zurücksetzen"); `Failed` loads again. "Erneut versuchen" belongs to `Failed` only.
-- **The right sentence.** "Heute ist noch nichts angekommen." is not "Keine Einlieferung an Tor 2.": say whether nothing exists or the filter found nothing.
+The example screens of this page showed a bare look, and agents copied it, so they were removed. Until rebuilt examples follow, build to the reference look: the v2 taste study (three screens before and after, its diagnosis and 13 rules) and its parts gallery (table, filter, settings, detail and info parts). The 13 rules stand with their numbers in the skill `k2b-ui`, `references/look.md`.
 
 ## Empty, failed or notice?
 

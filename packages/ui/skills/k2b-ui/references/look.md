@@ -11,6 +11,70 @@ The values come from the approved design reference for v2 (direction
 means something). The primitives draw most of it; your job is to choose the
 right primitive, feed it real data and leave nothing out.
 
+## The 13 rules of the reference
+
+The reference look is the v2 taste study and its parts gallery
+(maintainer artifacts `cloud-dev/v2-taste-study` and
+`cloud-dev/v2-taste-parts`). Its 13 rules are measurable. Where an older
+rule further down names another value, these win. Where `@k2b/ui` does not
+draw a rule yet, write a `k2b-ui gap` at that place; never fake it with
+app CSS.
+
+1. **Measure, not canvas.** Settings and detail content at most 1040 px
+   wide, from a 32 px edge (head B: 232 px label + 48 px gap + at most
+   760 px content). Lists and tables use the full width. An action stands
+   at the end of the content it acts on, never at the window edge.
+2. **A head says what it is.** Settings and details open with the tinted
+   object head: ground in the app tone at 6 %, mark 40 px, name 18/600 on
+   one line, one meta line 12 px, up to 3 facts on the right (label 12 px,
+   value 13/500), tabs at its lower edge, one line under it. The top left
+   is never empty.
+3. **Five type steps, hard contrast.** 12 meta · 13 row, text, control ·
+   15 section · 18 object · 30 figure (once per screen). Weights 400, 500,
+   600 only. A count is always 12 px meta. Never two sizes less than 2 px
+   apart in one block.
+4. **Section head A or B.** No icon. Title 15/600 + count 13 px n500,
+   description 13 px n600, at most 2 lines. B from a container of 960 px:
+   a 232 px label column, the button under the description. A below that:
+   the button right of the title. The title never wraps.
+5. **Actions are buttons.** Section and row actions 30 px high (in a row
+   26 px), 1 px border #dadade, radius 8 px, icon 15 px + verb. Never a
+   bare text link, never an icon without a word except ⋯ and ×. Exactly
+   one filled main action per screen.
+6. **Row anatomy.** Mark 28 · name 13/500 · meta 12 px n500 in the same
+   line (phone: second line) · one data column · control or state · ⋯.
+   Desktop 46 px on one line, phone at least 52 px on two lines. What a
+   person can change is a control in the row.
+7. **Every thing has its mark.** People: an avatar with a stable hue from
+   the ID. Groups: a tinted mark + member stack (3 + "+n"). Objects: a type
+   mark of 20/28/40 px in the type colour, 13–16 % tone. Never a grey
+   square with a grey icon.
+8. **Lines in two weights.** Hairline #f0f0f2 between rows, column lines
+   quieter at #f5f5f6. Divider #e4e4e7 between sections, under the head
+   block and under a table head. No line under the last, never two lines at
+   one edge.
+9. **One data figure per list.** Exactly one column shows the shape of the
+   data (bars, ticks, stack, spark), in the app tone at 38–45 %. Amber for
+   "too little", red only for errors. Real data only.
+10. **Surfaces only with meaning.** Page ground in the app tone (10 %,
+    neutral at 38 %), the window white. Tint only for the object head,
+    selection, active filters, choice cards and notices. Cards (1 px) only
+    for choices, tiles and islands. No shadow on controls.
+11. **Filters are sentences.** Active filters as statements in the app tone
+    (field · operator · value · ×) with "und" between them; saved views as
+    head tabs with a count; the result count and the sort in words in the
+    status row; "Zurücksetzen" as soon as anything differs. Phone: one line
+    and a sheet with "N zeigen".
+12. **States fully designed.** Loading: placeholder rows in the real row
+    height and column width. Empty: mark 40 px + sentence 15/600 + one
+    sentence + one action, centred in the area it replaces. Failed: its
+    sentence and "Erneut versuchen" where the data would stand. Unsaved:
+    a floating bar at the bottom centre.
+13. **White space only under finished content.** White under the content
+    only when the first screen shows at least 60 % real content, or the
+    page is a complete short setting. Else a topic is missing
+    (inheritance, link, history), not spacing. This is a review rule.
+
 ## Before you write code
 
 ### 1. Write the screen brief
@@ -35,12 +99,12 @@ Eye path:    hero → <second> → <third>
 Identity:    owner colour <where>; data picture per row <which>
 ```
 
-### 2. Start from a recipe, not from parts
+### 2. Start from a recipe or the reference, not from parts
 
-Open the recipe that is closest to your screen (see
-[recipes](recipes.md)), copy it, keep its composition and replace the data.
-A screen assembled from single parts reads as a random first draft even
-when every part is right.
+Where a recipe fits your screen (see [recipes](recipes.md)), copy it, keep
+its composition and replace the data. Where none fits, build to the 13
+rules above and the screens of the taste study. A screen assembled from
+single parts reads as a random first draft even when every part is right.
 
 ### 3. Feed it the worst case
 

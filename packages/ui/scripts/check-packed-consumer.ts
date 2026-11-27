@@ -82,8 +82,8 @@ try {
   for (const file of [
     "skills/k2b-ui/SKILL.md",
     "skills/k2b-ui/references/recipes.md",
-    "skills/k2b-ui/recipes/mail.tsx",
-    "skills/k2b-ui/images/mail-1440.png",
+    "skills/k2b-ui/recipes/overview.tsx",
+    "skills/k2b-ui/images/overview-1440.png",
   ]) {
     if (!existsSync(join(installedUi, file))) throw new Error(`packed @k2b/ui misses its skill file: ${file}`);
   }

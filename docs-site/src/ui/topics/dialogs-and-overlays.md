@@ -1,24 +1,10 @@
----
-thumbnail: dialogs
----
-
 # Dialogs and overlays
 
 What stands above the page for a moment: a dialog for a short task, a question before something that cannot be taken back, and a toast that reports a deed with a way back. Each one closes the same way and gives the focus back to where it came from.
 
-## A dialog, a question, a toast
+## Reference look
 
-The members of a space. "Einladen" opens a dialog with its fields and its own one primary; on the phone it is a sheet from the bottom. Removing a member asks first with `Dialog.confirm` and then answers with a toast and "Rückgängig". Sending an invitation again answers with a toast that says whether it worked. Switch the state to see each one open.
-
-<Example recipe="dialogs" height="560" default="Members" />
-
-Everything above the page keeps these rules:
-
-- **Focus on open.** A dialog puts the focus on its first field, else on the first action of its foot. On the phone's sheet it skips text fields, so the keyboard does not cover the sheet. `Dialog.confirm` starts on the button that says no.
-- **Escape closes.** Escape closes a dialog, a menu and a popover, always, also a dialog with `dismissible={false}`. In `Dialog.confirm`, Escape answers no.
-- **The focus returns.** When it closes, the focus goes back to the button that opened it.
-- **Dismissible.** A press outside and a swipe down on the sheet close a dialog. With `dismissible={false}` they do not, so nothing is lost by a stray touch (a secret shown once); Escape, the close button and the buttons of the foot still close it. `Dialog.confirm` never closes on a press outside.
-- **No stacking surprises.** One dialog at a time, with its own one primary. Toasts stand above any dialog, at the bottom in the middle, at most three, the newest on top, and nothing on the page moves when one comes.
+The example screens of this page showed a bare look, and agents copied it, so they were removed. Until rebuilt examples follow, build to the reference look: the v2 taste study (three screens before and after, its diagnosis and 13 rules) and its parts gallery (table, filter, settings, detail and info parts). The 13 rules stand with their numbers in the skill `k2b-ui`, `references/look.md`.
 
 ## Dialog or a page of its own?
 
