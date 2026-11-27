@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { MAX_EMPTY, transparentIslands } from "./v2-island-css";
+import { v2Parts } from "./v2-parts";
 
 const W = ":where(solid-island,solid-client)";
 const E = ":where(solid-island:empty,solid-client:empty)";
@@ -83,6 +84,35 @@ describe("transparentIslands", () => {
     expect(() => transparentIslands(".a:has(> .x) + .b{x:1}")).toThrow(":has() before a sibling relation");
     expect(() => transparentIslands(".a > .b:\\66 irst-child{x:1}")).toThrow("escaped pseudo-class");
     expect(transparentIslands(".k2-lookup-skel > .k2-skel:nth-child(2){x:1}")).toContain(":nth-child(2)");
+  });
+
+  test("an inner part of a primitive is never in a wrapper: no way through one to it, from it or for its place", () => {
+    const parts = new Set(["k2-lead", "k2-main"]);
+    // a child relation to a part: as written; to anything else: also through a wrapper
+    expect(transparentIslands(".k2-row > .k2-lead{x:1}", parts)).toBe(".k2-row>.k2-lead{x:1}");
+    expect(transparentIslands(".k2-row:has(> .k2-lead){x:1}", parts)).toBe(".k2-row:has(>.k2-lead){x:1}");
+    // between two parts only empty wrappers: an app's slot between them may hold islands that render nothing
+    expect(transparentIslands(".k2-lead + .k2-main{x:1}", parts)).toBe(
+      [0, 1, 2, 3].map((gap) => `.k2-lead+${`${E}+`.repeat(gap)}.k2-main`).join(",\n") + "{x:1}",
+    );
+    // a part beside app content: only the app's side may be in a wrapper
+    expect(transparentIslands(".k2-x ~ .k2-main{x:1}", parts)).toBe(`.k2-x~.k2-main,\n${W}:has(>.k2-x)~.k2-main{x:1}`);
+    expect(transparentIslands(".k2-lead ~ .k2-x{x:1}", parts)).toBe(`.k2-lead~.k2-x,\n.k2-lead~${W}>.k2-x{x:1}`);
+    // its place among its siblings skips empty wrappers, but it never needs a wrapper's place
+    expect(transparentIslands(".k2-row > .k2-lead:last-child{x:1}", parts)).toBe(`.k2-row>.k2-lead:nth-last-child(1 of :not(${E})){x:1}`);
+  });
+
+  test("an :is() or :where() whose every selector names something never matches the wrapper itself", () => {
+    expect(transparentIslands(".a :where(.b, [data-c]){x:1}")).toBe(".a :where(.b,[data-c]){x:1}");
+    expect(transparentIslands(".a :where(.b, *){x:1}")).toContain(":where(:not(solid-island):not(solid-client))");
+  });
+
+  test("the inner parts are the classes v2's components put inside their own elements, never a component's root", () => {
+    const parts = v2Parts();
+    for (const part of ["k2-seam", "k2-scroll", "k2-row-lead", "k2-bar-start", "k2-bar-end", "k2-ws-main", "k2-sh"])
+      expect(parts).toContain(part);
+    for (const root of ["k2-btn", "k2-row", "k2-pane", "k2-sec", "k2-bar", "k2-icon", "k2-ui", "k2-t-meta"])
+      expect(parts).not.toContain(root);
   });
 
   // The guard of the source: a new rule in v2.css that an island would break fails here and in the build.

@@ -421,9 +421,7 @@ describe("Machine storage settings", () => {
         const section = accountsSection(tab);
         await section.waitFor();
         expect(await section.locator("h3").textContent()).toBe("Dienstkonten 0");
-        await section
-          .getByText("Noch kein Dienstkonto. Code eines Postfachs oder einer Base bekommt hier Zugriff wie eine Person.", { exact: true })
-          .waitFor();
+        await section.getByText("Noch kein Dienstkonto.", { exact: true }).waitFor();
         expect(await section.locator("li[data-access-key]").count()).toBe(0);
         if (process.env.SHOTS) {
           await section.scrollIntoViewIfNeeded();

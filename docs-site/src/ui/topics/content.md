@@ -38,7 +38,7 @@ Words in one of the four type roles (meta, row, body, lead); emphasis is a weigh
 
 ### Prose
 
-Reading text, 14/22 with a measure of 720 px; Markdown is rendered safely, without raw HTML or images.
+Reading text, 14/22 with a measure of 720 px; Markdown is rendered safely, without raw HTML or images. A Markdown table reads like a small table: cells 12 px apart on the text edge, the head as a Table head, a line between rows; a column aligned right (`--:`) holds numbers in tabular figures.
 
 <Props of="Prose" />
 
