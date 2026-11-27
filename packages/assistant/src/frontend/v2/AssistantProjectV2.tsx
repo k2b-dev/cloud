@@ -15,6 +15,10 @@ export default function AssistantProjectV2(p: ProjectParts) {
   return (
     <>
       <Pane.Split>
+        {/* k2b-ui gap: #4340 (Pane side): at 1920 the chats stretch to about 1,250 px, where they should keep a reading
+            width and the context grow. A width on this pane would do it, but then at 1024 its minimum, the context's
+            and the sidebar no longer fit, and the sidebar would become a drawer; #4340 shows the context only where
+            there is room. */}
         <Pane
           label={p.props.project.name}
           head={
@@ -54,10 +58,7 @@ export default function AssistantProjectV2(p: ProjectParts) {
           <Section
             title={p.text("Recent chats")}
             count={p.chatTotal()}
-            actions={[
-              // The section already names the Project: the action is the short deed.
-              { label: p.text("Search chats"), icon: "search", onClick: () => void p.searchChats() },
-            ]}
+            // One search on the page: the head's search symbol searches this Project's chats while it is open.
             // Further chats are the way to the rest of the section, at its end.
             more={
               p.chats.hasMore() ? { label: p.text("Load more chats"), icon: "chevron-down", onClick: () => void p.loadMore() } : undefined

@@ -1,8 +1,10 @@
 import { navigateTo } from "@k2b/ssr/nav";
+import { Button } from "@k2b/ui/v2";
 import { createSignal, lazy, Show, Suspense } from "solid-js";
 import { AssistantLiveProvider } from "../assistant-live";
 import { assistantProjectHref } from "../assistant-navigation";
 import type { AssistantWorkspaceParts } from "../assistant-workspace";
+import { codeViewMessages } from "../code-view-messages";
 import { lazyAction } from "../lazy-action";
 import { useAssistantText } from "../ui-copy";
 // The page's own views come with its island, so each draws the server's data on the first picture, without a loader.
@@ -117,6 +119,14 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
         pagePrimary={() => w.projectSettings() && w.activeProject()?.permission === "admin"}
         // Only My apps floats New chat on the phone: a Project has its composer, which starts its new chat (look rules).
         fab={() => w.mainView() === "code"}
+        // My apps' own way to create, in the head at every width (the phone hides a status row's end).
+        viewActions={() =>
+          w.mainView() === "code" && !w.codeDetailShown() ? (
+            <Button icon="sparkles" onClick={() => void w.createFromCodeView()}>
+              {codeViewMessages.resolve([w.locale()]).t.codeCreateInChat}
+            </Button>
+          ) : undefined
+        }
         newChat={() => ({
           label: w.t().newChat,
           icon: "plus",

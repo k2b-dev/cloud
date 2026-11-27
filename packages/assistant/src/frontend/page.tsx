@@ -90,6 +90,7 @@ export default ssr<AuthContext>(async (c) => {
     codeDetail,
     automations,
     placeState,
+    prefsRead,
   ] = await Promise.all([
     assistantAiSettingsState(subject),
     getLiveDictationStatus(c.get("accessSubject")),
@@ -114,16 +115,22 @@ export default ssr<AuthContext>(async (c) => {
     approvalsOpen ? loadWaitingAutomations(invokeCode, timeZone).catch(() => null) : undefined,
     // Gustav at a place: the same loader as navigation, so the first paint and a later switch show the same thing.
     panelScope ? loadPlaceAssistant(c, panelScope).catch(() => null) : null,
+    // Gustav's settings page draws its first picture from these, as its browser reads would: the person's settings,
+    // and whether the OpenAI-compatible API is on with the models it offers, read for the request's access subject as
+    // `/status` reads them. Null: unreadable now, so the page reads them itself and says so.
+    prefsTab
+      ? Promise.all([
+          aiUserPrefs.get(user.id),
+          coreSettings.get<boolean>("ai.openai_api_enabled"),
+          assistantAiSettingsState(c.get("accessSubject")),
+        ]).catch(() => null)
+      : null,
   ]);
-  // Gustav's settings page draws its first picture from these, as its browser read would: the person's settings and
-  // whether the OpenAI-compatible API is on. Null: unreadable now, so the page reads them itself and says so.
-  const initialPrefs = prefsTab
-    ? await Promise.all([aiUserPrefs.get(user.id), coreSettings.get<boolean>("ai.openai_api_enabled")])
-        .then(([prefs, apiEnabled]) => ({
-          prefs,
-          access: apiEnabled ? { baseUrl: `${publicCloudOrigin(appUrl)}/api/ai/openai/v1`, models: settings.options } : null,
-        }))
-        .catch(() => null)
+  const initialPrefs = prefsRead
+    ? {
+        prefs: prefsRead[0],
+        access: prefsRead[1] ? { baseUrl: `${publicCloudOrigin(appUrl)}/api/ai/openai/v1`, models: prefsRead[2].options } : null,
+      }
     : null;
   // An app that does not answer right now leaves the place to the panel, which shows "Try again" in the bar.
   const initialPlace = (() => {
@@ -162,18 +169,20 @@ export default ssr<AuthContext>(async (c) => {
         perPage: 20,
       })
     : null;
-  const projectContext = activeProject ? await loadAssistantProjectContextSnapshot(auth.getAuthority(c), activeProject.id) : null;
-  // A Project's settings page (its administrators') draws its first picture from these, as its browser reads would.
+  // A Project's settings page (its administrators') draws its first picture from its models and access, read with the
+  // Project's context, as its browser reads would.
   const projectSettingsOpen = !embedded && activeProject?.permission === "admin" && url.searchParams.get("settings") === "1";
-  const initialProjectSettingsSeed =
+  const [projectContext, initialProjectSettingsSeed] = await Promise.all([
+    activeProject ? loadAssistantProjectContextSnapshot(auth.getAuthority(c), activeProject.id) : null,
     projectSettingsOpen && activeProjectRecord
-      ? await Promise.all([
+      ? Promise.all([
           peopleAiModels(c.get("accessSubject")),
           aiProjects.listAccess(activeProjectRecord.id, { actor: c.get("actor"), accessSubject: c.get("accessSubject") }, locale),
         ])
           .then(([models, access]) => (access ? { models, access } : null))
           .catch(() => null)
-      : null;
+      : null,
+  ]);
 
   const selectedConversationId =
     activeProject || approvalsOpen || codeOpen || prefsTab

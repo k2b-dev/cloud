@@ -1,9 +1,10 @@
 import type { AiConversation } from "@k2b/cloud/ai";
 import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
-import { type Action, Bar, Button, Canvas, Input, Menu, Nav, Pane, Path, Workspace } from "@k2b/ui/v2";
+import { type Action, Bar, Button, Canvas, Menu, Nav, Pane, Path, Workspace } from "@k2b/ui/v2";
 import { type Accessor, createSignal, type JSX, lazy, Show, Suspense } from "solid-js";
 import { assistantMessages } from "../messages";
+import { useAssistantCopy } from "../ui-copy";
 import { type AssistantNavOptions, createAssistantNav } from "./assistant-nav";
 import { assistantV2Messages } from "./assistant-v2-messages";
 
@@ -31,6 +32,8 @@ export type AssistantFrameV2Props = {
   fab?: Accessor<boolean>;
   /** The view has a primary action of its own, such as Save on a settings page. */
   pagePrimary?: Accessor<boolean>;
+  /** Further actions of the view in front, in the head before "New chat" (secondary, never a second primary). */
+  viewActions?: Accessor<JSX.Element>;
   /** The chat, a Project or a view: the Assistant's own surface, drawn by the shared chat parts. */
   main: JSX.Element;
   /** A view rebuilt on v2 that takes the chat's place, as its own `Pane`; null while the chat (or a v1 view) shows. */
@@ -63,13 +66,13 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
       setDetailsOf(conversation.id);
     },
   });
-  const [query, setQuery] = createSignal("");
-  const searchKey = (event: KeyboardEvent) => {
-    if (event.key !== "Enter" || event.isComposing) return;
-    event.preventDefault();
-    nav.search(query().trim());
-  };
   const path = () => [{ label: t().assistant, href: props.nav.basePath }, ...props.path()];
+  const copy = useAssistantCopy();
+  // The head's search searches the open Project's chats while one is open, and says so.
+  const searchLabel = () => {
+    const project = props.nav.projects().find((entry) => entry.id === props.nav.activeProjectId());
+    return project ? copy().searchChatsIn({ project: project.name }) : t().searchChats;
+  };
   // Read once: the object holds the tabs' content, and Solid makes a prop of JSX a getter, so every read of
   // `props.tabs` would draw that content anew (outside any update, too, when a layout read asks a pane whether it is
   // the detail).
@@ -131,17 +134,13 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
             start={props.path().length > 0 ? <Path label={t().assistant} items={path()} /> : undefined}
             end={
               <>
-                {/* The search of every chat; on the phone the host's bar holds it and the head's field gives way.
-                    Enter opens Cloud's search in the chats. */}
-                <Input
-                  type="search"
-                  icon="search"
-                  label={t().searchChats}
-                  placeholder={v2().searchHint}
-                  value={query()}
-                  onInput={setQuery}
-                  onKeyDown={searchKey}
-                />
+                {/* The search of every chat as a symbol (SEARCH + CREATE rule): it opens Cloud's search in the chats,
+                    as mod+shift+k does, and leaves the head's room to where the page stands.
+                    k2b-ui gap (Z2): the head's search should open over the head on click or "/"; and the shell's
+                    phone bar hands its search only to a head search field (`page-search.ts`), so there it opens the
+                    global search, not this one. */}
+                <Button variant="ghost" icon="search" label={searchLabel()} onClick={() => nav.search()} />
+                {props.viewActions?.()}
                 <Show when={props.openChat()}>
                   {(chat) => (
                     <Menu

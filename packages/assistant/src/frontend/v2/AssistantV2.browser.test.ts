@@ -657,9 +657,9 @@ describe("Assistant on v2", () => {
         if (view === phone) {
           // On the phone the shell's bar holds the one search; New chat floats as the list's main action.
           expect(await page.locator(".k2-fab:visible").textContent()).toContain("Neuer Chat");
-          // The head's own search folds to the host's bar: it keeps no room of its own (v2 clips it to 1 px).
-          const field = await page.locator('[data-slot="head"] [data-k2-part="Input"][data-search]').boundingBox();
-          expect(field === null || field.width <= 1).toBe(true);
+          // The status row's end (the exception chips) is hidden on the phone (gap for R); creating in the chat
+          // stays one press away in the head.
+          expect(await page.locator('[data-slot="head"]').getByRole("button", { name: "Im Chat erstellen" }).isVisible()).toBe(true);
         }
         // One row per app, in the server's order, each a link to its Code (the day line's marks are links too).
         const rows = await pane.evaluate((root) =>
@@ -872,14 +872,12 @@ describe("Assistant on v2", () => {
   test("the search of every chat opens Cloud's search in the Assistant's chats", async () => {
     const { context, page, errors } = await open(wide, "/app/assistant");
     try {
-      const search = page.getByRole("searchbox", { name: "Alle Chats durchsuchen" });
-      await search.fill("Rechnung");
-      await search.press("Enter");
+      // A symbol in the head (SEARCH + CREATE), so the path keeps the head's room.
+      await page.locator('[data-slot="head"]').getByRole("button", { name: "Alle Chats durchsuchen" }).click();
       const searches = await page.waitForFunction(
         () => (window as unknown as { searches: unknown[] }).searches.length > 0 && (window as unknown as { searches: unknown[] }).searches,
       );
       expect(JSON.stringify(await searches.jsonValue())).toContain('"appId":"assistant"');
-      expect(JSON.stringify(await searches.jsonValue())).toContain('"query":"Rechnung"');
       expect(errors).toEqual([]);
     } finally {
       await context.close();
@@ -1101,6 +1099,27 @@ describe("Assistant on v2", () => {
       expect(posted.find((entry) => entry.path === "/api/ai/projects/Prj03")?.body).toMatchObject({ name: "Buchhaltung 2027" });
       await until(() => !page.url().includes("settings=1"));
       expect(new URL(page.url()).search).toBe("?project=Prj03");
+      expect(errors).toEqual([]);
+      expect(unanswered).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("from one Project's settings page another Project opens as itself, and its settings read its own access", async () => {
+    const { context, page, errors, unanswered, calls } = await open(wide, "/app/assistant?project=Prj03&settings=1", { open: false });
+    try {
+      const settings = page.locator('[data-k2-part="Pane"][aria-label="Projekt-Einstellungen"]');
+      await settings.getByRole("textbox", { name: "Name" }).waitFor();
+      // The server's seed served this page: no read of its access.
+      expect(calls.filter((call) => call.startsWith("GET /api/ai/projects/Prj03/access"))).toEqual([]);
+      await page.locator('[data-k2-part="Nav"]').getByRole("link", { name: "Werkstatt Angebote" }).click();
+      await until(() => new URL(page.url()).search === "?project=Prj01");
+      await page.getByRole("button", { name: "Projekt-Einstellungen" }).waitFor();
+      expect(await settings.count()).toBe(0);
+      await page.getByRole("button", { name: "Projekt-Einstellungen" }).click();
+      expect(await settings.getByRole("textbox", { name: "Name" }).inputValue()).toBe("Werkstatt Angebote");
+      await until(() => calls.some((call) => call.startsWith("GET /api/ai/projects/Prj01/access")));
       expect(errors).toEqual([]);
       expect(unanswered).toEqual([]);
     } finally {
