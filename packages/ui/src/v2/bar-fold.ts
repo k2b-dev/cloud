@@ -142,6 +142,8 @@ const fold = (bars: Iterable<Watched>) => {
     const same = next.length === entry.folded.length && next.every((control, at) => control === entry.folded[at]);
     // a button that folds while it has the focus hands it to the "…" that now holds it, once that is drawn
     const focused = next.find((control) => control === document.activeElement && !entry.folded.includes(control));
+    // the bar's own "…" that holds the focus and goes (every button has room again) hands it to the last button
+    const leaving = next.length === 0 && !!entry.bar.querySelector(":scope > .k2-bar-end > .k2-bar-fold")?.contains(document.activeElement);
     if (!same) {
       for (const control of entry.folded) if (!next.includes(control)) control.removeAttribute("data-k2-folded");
       for (const control of next) control.setAttribute("data-k2-folded", "");
@@ -159,6 +161,15 @@ const fold = (bars: Iterable<Watched>) => {
       entry.show(entries, host);
     }
     if (focused) (host ?? entry.bar.querySelector<HTMLElement>(":scope > .k2-bar-end > .k2-bar-fold .k2-btn"))?.focus();
+    // once the "…" is gone (it goes with the update that `show` starts), the focus would fall to the page
+    if (leaving)
+      queueMicrotask(() => {
+        if (entry.bar.querySelector(":scope > .k2-bar-end > .k2-bar-fold")?.contains(document.activeElement)) return;
+        [...entry.bar.querySelectorAll<HTMLElement>(`:scope > .k2-bar-end :is(${foldable})`)]
+          .filter((control) => !control.closest(`.k2-bar-fold, ${neverFolds}`) && control.getClientRects().length > 0)
+          .at(-1)
+          ?.focus();
+      });
   });
 };
 
