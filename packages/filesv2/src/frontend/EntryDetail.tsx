@@ -1,7 +1,7 @@
 import { cloudIdMessages, useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { publishPageContext } from "@k2b/cloud/browser/panel";
 import { query } from "@k2b/stdlib/solid";
-import { fileKindLabel, formatFileViewSize, toast, useLocale } from "@k2b/ui";
+import { fileKindLabel, formatFileViewSize, useLocale } from "@k2b/ui";
 import {
   Band,
   Bar,
@@ -20,6 +20,7 @@ import {
   Row,
   Section,
   Text,
+  useToast,
 } from "@k2b/ui/v2";
 import { createEffect, createMemo, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
@@ -27,13 +28,14 @@ import type { BaseSummary, EntryResult, FileEntry } from "../contracts";
 import { ENTRY_TYPE, entryRefId, FOLDER_TYPE } from "../resource-ref";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
-import { createVersions, EntryHistory, type InspectorHistory } from "./entry-history";
-import { entryIcon } from "./entry-icon";
+import { createEntryLinks, createVersions, EntryHistory, EntryVersions, type InspectorHistory } from "./entry-history";
+import { EntryLinksSection } from "./entry-links";
+import { entryMark } from "./entry-mark";
 import FilePreview from "./FilePreview";
 import FileThumbnail from "./FileThumbnail";
 import { apiFailure, contentLease, inlinePdfHref, previewKind } from "./file-preview";
 import type { FolderActions } from "./folder-actions";
-import { formatWhen } from "./history-actions";
+import { formatWhen, type HistoryEnvironment } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
 import { itemHistoryRequest, itemHistorySource } from "./history-requests";
 import { useFilesMessages } from "./messages";
@@ -67,6 +69,7 @@ export type EntryDetailProps = {
 export default function EntryDetail(props: EntryDetailProps) {
   const t = useBrowserMessages();
   const f = useFilesMessages();
+  const toast = useToast();
   const locale = useLocale();
   const cloudId = useCloudIdCopy();
   const source = () => JSON.stringify([props.base.id, props.base.locationKey, props.path, props.listed?.modified]);
@@ -89,7 +92,13 @@ export default function EntryDetail(props: EntryDetailProps) {
   const result = () => (details.data()?.key === source() && !details.error() ? details.data()?.result : undefined);
   const entry = () => result()?.entry;
   // The favorite as the server answered the last toggle, until the details read it again.
-  const favorite = createMemo(() => result()?.favorite ?? false);
+  // The star keeps the last answer for this entry while the details read again, so it neither blinks nor moves.
+  let lastFavorite = { path: props.path, value: false };
+  const favorite = createMemo(() => {
+    const value = result()?.favorite;
+    if (value !== undefined) lastFavorite = { path: props.path, value };
+    return lastFavorite.path === props.path ? lastFavorite.value : false;
+  });
   const entryRef = (item: FileEntry) => {
     const id = item.resourceId ?? result()?.resourceId ?? entryRefId(props.base.id, item.path);
     return id ? { type: ENTRY_TYPE, id } : null;
@@ -101,15 +110,92 @@ export default function EntryDetail(props: EntryDetailProps) {
     if (ref) onCleanup(publishPageContext({ scope: { ...ref, type: item.directory ? FOLDER_TYPE : ENTRY_TYPE } }));
   });
   const head = () => entry() ?? props.listed;
+  const busy = () => props.actions.busy();
+  const openInTab = async (item: FileEntry) => {
+    if (previewKind(item) === "pdf") return void window.open(inlinePdfHref(props.base.id, item.path), "_blank", "noopener");
+    const tab = window.open("about:blank", "_blank");
+    if (tab) tab.opener = null;
+    try {
+      const lease = await contentLease(props.base.id, item.path, new AbortController().signal, f().downloadFailed);
+      if (tab) tab.location.href = lease.url;
+      else window.open(lease.url, "_blank", "noopener");
+    } catch (error) {
+      tab?.close();
+      toast(error instanceof Error ? error.message : f().downloadFailed, { status: "bad", retry: () => openInTab(item) });
+    }
+  };
+  /** The rarer deeds of the entry, behind "…" in the head; open, download and share stand in the action row. */
+  const menu = (item: FileEntry): MenuEntry[] => {
+    const ref = entryRef(item);
+    return [
+      ...(!item.directory ? [{ label: t().openInTab, icon: "external-link", disabled: busy(), onClick: () => void openInTab(item) }] : []),
+      {
+        label: t().rename,
+        icon: "pencil",
+        disabled: busy() || item.actions?.move === false,
+        onClick: () => void props.actions.rename(item),
+      },
+      { label: t().duplicate, icon: "copy", disabled: busy(), onClick: () => props.actions.duplicate(item) },
+      {
+        label: t().moveTo,
+        icon: "arrow-move-right",
+        disabled: busy() || item.actions?.move === false,
+        onClick: () => void props.actions.moveOrCopy([item]),
+      },
+      { label: t().copyTo, icon: "folder-symlink", disabled: busy(), onClick: () => void props.actions.moveOrCopy([item], true) },
+      ...(item.directory && item.actions?.write !== false
+        ? [{ label: t().shareInbox, icon: "inbox", disabled: busy(), onClick: () => props.onShareInbox(item.path) }]
+        : []),
+      ...(cloudId.available() && ref
+        ? [{ label: cloudIdMessages.resolve([locale()]).t.copy, icon: "id", onClick: () => cloudId.copy(ref) }]
+        : []),
+      "separator",
+      {
+        label: t().trashSelection,
+        icon: "trash",
+        danger: true,
+        disabled: busy() || item.actions?.move === false,
+        onClick: () => void props.actions.trashItems([item]),
+      },
+    ];
+  };
   return (
     <Pane
       detail
+      // no `side` here: a side pane is a context column, which gives way below its main column; the quiet sections of
+      // the record's info column belong to the detail's own side pane (who reaches it and what happened)
       label={head()?.name ?? props.path.split("/").at(-1) ?? props.path}
       back={{ label: props.folderName, href: props.closeHref, onNavigate: props.onNavigate }}
       head={
+        // as the mockup: the name with its star, then "…" and close
         <Bar
-          start={<Text type="lead">{head()?.name ?? props.path.split("/").at(-1)}</Text>}
-          end={<Button variant="ghost" icon="x" label={t().close} href={props.closeHref} onNavigate={props.onNavigate} />}
+          start={
+            <Inline>
+              {/* the name as the Files recipe's detail head: the record's title, with its star */}
+              {/* cut at its end for now: `Cut` cuts a name twice and scrambles right-to-left names (reported) */}
+              <Text type="lead">{head()?.name ?? props.path.split("/").at(-1)}</Text>
+              {/* the star and "…" keep their place while the entry reads again; they wait until it is there */}
+              <Button
+                variant="ghost"
+                icon="star"
+                label={favorite() ? t().removeFavorite : t().addFavorite}
+                pressed={favorite()}
+                disabled={busy() || !entry()}
+                onClick={() => {
+                  const item = entry();
+                  if (item) void toggleFavorite(item, !favorite());
+                }}
+              />
+            </Inline>
+          }
+          end={
+            <>
+              <Show when={entry()} fallback={<Button variant="ghost" icon="dots" label={t().moreActions} disabled />}>
+                {(item) => <Menu label={t().moreActions} items={menu(item())} />}
+              </Show>
+              <Button variant="ghost" icon="x" label={t().close} href={props.closeHref} onNavigate={props.onNavigate} />
+            </>
+          }
         />
       }
     >
@@ -121,18 +207,7 @@ export default function EntryDetail(props: EntryDetailProps) {
           </Show>
         }
       >
-        {(item) => (
-          <Loaded
-            {...props}
-            item={item()}
-            result={result()!}
-            favorite={favorite()}
-            onFavorite={(value) => void toggleFavorite(item(), value)}
-            onStale={() => details.refresh()}
-            cloudCopy={cloudId.available() && entryRef(item()) ? () => cloudId.copy(entryRef(item())!) : undefined}
-            cloudLabel={cloudIdMessages.resolve([locale()]).t.copy}
-          />
-        )}
+        {(item) => <Loaded {...props} item={item()} result={result()!} onStale={() => details.refresh()} />}
       </Show>
     </Pane>
   );
@@ -145,9 +220,9 @@ export default function EntryDetail(props: EntryDetailProps) {
       });
       if (!response.ok) await apiFailure(response, f().unavailable);
       await details.refresh();
-      toast.success(value ? t().favoriteAdded : t().favoriteRemoved);
+      toast(value ? t().favoriteAdded : t().favoriteRemoved, { status: "ok", undo: () => toggleFavorite(item, !value) });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : f().unavailable);
+      toast(error instanceof Error ? error.message : f().unavailable, { status: "bad", retry: () => toggleFavorite(item, value) });
     }
   }
 }
@@ -156,11 +231,7 @@ function Loaded(
   props: EntryDetailProps & {
     item: FileEntry;
     result: EntryResult;
-    favorite: boolean;
-    onFavorite: (value: boolean) => void;
     onStale: () => Promise<unknown>;
-    cloudCopy?: () => void;
-    cloudLabel: string;
   },
 ) {
   const t = useBrowserMessages();
@@ -172,15 +243,18 @@ function Loaded(
     () => props.item,
     async () => void (await props.onStale()),
   );
+  // the item's public links: their rows here, their access in the history's lines
+  const links = createEntryLinks({
+    base: () => props.base,
+    entry: () => props.item,
+    resourceId: () => props.result.resourceId,
+    history: () => props.history,
+  });
   const readOnly = () => props.item.actions?.write === false;
   const busy = () => props.actions.busy();
   const editable = () => props.actions.editable(props.item);
   const pictured = () => ["image", "pdf", "office"].includes(previewSource(props.item) ?? "");
   const hasPreview = () => !props.item.directory && (pictured() || !!previewKind(props.item));
-  const meta = () =>
-    props.item.directory
-      ? t().kindFolder
-      : `${fileKindLabel({ name: props.item.name }, locale())} · ${formatFileViewSize(props.item.size, locale())}`;
   const modified = () =>
     props.history?.env
       ? formatWhen(props.item.modified, locale(), h(), props.history.env)
@@ -198,178 +272,180 @@ function Loaded(
     );
     return change?.actor.kind === "user" ? change.actor.name : null;
   };
-  // The count of versions, once the list of this exact file state is known; the versions section says the rest.
-  const versionCount = () => (versions.state() === "ready" ? String((versions.items()?.length ?? 0) + 1) : null);
-  const openInTab = async () => {
-    if (previewKind(props.item) === "pdf") return void window.open(inlinePdfHref(props.base.id, props.item.path), "_blank", "noopener");
-    const tab = window.open("about:blank", "_blank");
-    if (tab) tab.opener = null;
-    try {
-      const lease = await contentLease(props.base.id, props.item.path, new AbortController().signal, f().downloadFailed);
-      if (tab) tab.location.href = lease.url;
-      else window.open(lease.url, "_blank", "noopener");
-    } catch (error) {
-      tab?.close();
-      toast.error(error instanceof Error ? error.message : f().downloadFailed);
-    }
-  };
+  // who changed it last: the history's exact state when it is read, else what the listing says
+  const changedBy = () => currentAuthor() ?? props.item.facts?.author?.name ?? props.listed?.facts?.author?.name ?? null;
   const open = () => {
     if (props.item.directory) return;
     if (editable()) props.onEdit(props.item);
     else props.actions.preview(props.item);
   };
-  /** The favorite and the rarer deeds of the entry; open, download and share stand beside them. */
-  const menu = (): MenuEntry[] => [
-    {
-      label: props.favorite ? t().removeFavorite : t().addFavorite,
-      icon: "star",
-      checked: props.favorite,
-      disabled: busy(),
-      onClick: () => props.onFavorite(!props.favorite),
-    },
-    ...(!props.item.directory ? [{ label: t().openInTab, icon: "external-link", disabled: busy(), onClick: () => void openInTab() }] : []),
-    {
-      label: t().rename,
-      icon: "pencil",
-      disabled: busy() || props.item.actions?.move === false,
-      onClick: () => void props.actions.rename(props.item),
-    },
-    { label: t().duplicate, icon: "copy", disabled: busy(), onClick: () => props.actions.duplicate(props.item) },
-    {
-      label: t().moveTo,
-      icon: "arrow-move-right",
-      disabled: busy() || props.item.actions?.move === false,
-      onClick: () => void props.actions.moveOrCopy([props.item]),
-    },
-    { label: t().copyTo, icon: "folder-symlink", disabled: busy(), onClick: () => void props.actions.moveOrCopy([props.item], true) },
-    ...(props.item.directory && !readOnly()
-      ? [{ label: t().shareInbox, icon: "inbox", disabled: busy(), onClick: () => props.onShareInbox(props.item.path) }]
-      : []),
-    ...(props.cloudCopy ? [{ label: props.cloudLabel, icon: "id", onClick: props.cloudCopy }] : []),
-    "separator",
-    {
-      label: t().trashSelection,
-      icon: "trash",
-      danger: true,
-      disabled: busy() || props.item.actions?.move === false,
-      onClick: () => void props.actions.trashItems([props.item]),
-    },
-  ];
   const folderHref = (path: string) => filesUrl(props.base.id, path);
+  // Under the one head, what the entry is (its preview, deeds and facts) beside who reaches it and what happened to it
+  // (B: a detail grows on a large screen, never its rows). The split stands in two columns from 720 px of the detail
+  // and in this reading order below that, on the phone too.
   return (
-    <>
-      <Bar
-        start={
-          <Inline>
-            <Text type="meta">{meta()}</Text>
+    <Pane.Split>
+      <Pane label={t().v2DetailWhat}>
+        <Show when={hasPreview()}>
+          {/* The preview leads the detail; a press on it opens it large. Its own viewers keep their behaviour. */}
+          <Band>
+            {/* a picture takes its 240 px; a text preview is as tall as its lines, so no gap stands under it */}
+            <Canvas label={t().expand} height={pictured() ? 240 : undefined}>
+              <Show
+                when={pictured()}
+                fallback={
+                  <div style={{ padding: "16px var(--k2-edge)" }}>
+                    <FilePreview
+                      variant="plain"
+                      pdfFit="page"
+                      previewLines={5}
+                      onExpandPreview={() => props.actions.preview(props.item)}
+                      baseId={props.base.id}
+                      locationKey={props.base.locationKey}
+                      entry={props.item}
+                      onDownload={() => props.actions.startDownload([props.item])}
+                    />
+                  </div>
+                }
+              >
+                <Show keyed when={JSON.stringify([props.base.id, props.base.locationKey, props.item.path, previewRevision(props.item)])}>
+                  <button type="button" class="filesv2-hero-open" onClick={() => props.actions.preview(props.item)} aria-label={t().expand}>
+                    <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={props.item} large hero />
+                  </button>
+                </Show>
+              </Show>
+            </Canvas>
+          </Band>
+        </Show>
+        {/* the one action row of the entry, under its preview; the rarer deeds wait behind "…" in the head. As an Inline
+          the row wraps in a narrow detail instead of running into what the file is */}
+        <Bar
+          start={
+            <Inline>
+              <Show
+                when={props.item.directory}
+                fallback={
+                  <Button icon={editable() ? "pencil" : "eye"} disabled={busy()} onClick={open}>
+                    {editable() ? (readOnly() ? t().openReadOnly : t().edit) : t().preview}
+                  </Button>
+                }
+              >
+                <Button icon="folder-open" href={folderHref(props.item.path)} onNavigate={props.onNavigate}>
+                  {t().open}
+                </Button>
+              </Show>
+              <Button icon="download" disabled={busy()} onClick={() => props.actions.startDownload([props.item])}>
+                {f().download}
+              </Button>
+              <Show when={props.item.actions?.share !== false}>
+                <Button icon="share" disabled={busy()} onClick={() => props.onShare([props.item.path])}>
+                  {t().share}
+                </Button>
+              </Show>
+            </Inline>
+          }
+          end={
+            // a file only read says so at the end of its deeds; what the file is stands among its facts, so the deeds
+            // keep one line (B)
             <Show when={readOnly()}>
               <Chip icon="lock">{t().readOnly}</Chip>
             </Show>
-          </Inline>
-        }
-        end={
-          <>
-            <Show
-              when={props.item.directory}
-              fallback={
-                <Button icon={editable() ? "pencil" : "eye"} disabled={busy()} onClick={open}>
-                  {editable() ? (readOnly() ? t().openReadOnly : t().edit) : t().preview}
-                </Button>
-              }
-            >
-              <Button icon="folder-open" href={folderHref(props.item.path)} onNavigate={props.onNavigate}>
-                {t().open}
-              </Button>
-            </Show>
-            <Button icon="download" disabled={busy()} onClick={() => props.actions.startDownload([props.item])}>
-              {f().download}
-            </Button>
-            <Show when={props.item.actions?.share !== false}>
-              <Button icon="share" variant="ghost" label={t().share} disabled={busy()} onClick={() => props.onShare([props.item.path])} />
-            </Show>
-            <Menu label={t().moreActions} items={menu()} />
-          </>
-        }
-      />
-      <Show when={hasPreview()}>
-        {/* The preview leads the detail; a press on it opens it large. Its own viewers keep their behaviour. */}
-        <Band>
-          <Canvas label={t().expand} height={240}>
-            <Show
-              when={pictured()}
-              fallback={
-                <div style={{ padding: "16px var(--k2-edge)" }}>
-                  <FilePreview
-                    variant="plain"
-                    pdfFit="page"
-                    previewLines={5}
-                    onExpandPreview={() => props.actions.preview(props.item)}
-                    baseId={props.base.id}
-                    locationKey={props.base.locationKey}
-                    entry={props.item}
-                    onDownload={() => props.actions.startDownload([props.item])}
-                  />
-                </div>
-              }
-            >
-              <Show keyed when={JSON.stringify([props.base.id, props.base.locationKey, props.item.path, previewRevision(props.item)])}>
-                <button type="button" onClick={() => props.actions.preview(props.item)} aria-label={t().expand}>
-                  <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={props.item} large hero />
-                </button>
-              </Show>
-            </Show>
-          </Canvas>
-        </Band>
-      </Show>
-      <Section icon="list-details" title={t().properties}>
+          }
+        />
+        {/* the key facts as pairs: who changed it last and when, what it is, and where it lies. The tinted object head
+          (name 18, one meta line, three key facts) waits for the shared part; these move into it then. */}
         <Facts
           items={[
-            { label: t().location, value: `${baseLabel(props.base, t(), locale())} / ${props.item.path}` },
-            { label: t().storageArea, value: props.base.area === "cloud" ? t().cloudArea : t().freeipaArea },
-            { label: f().modified, value: currentAuthor() ? `${modified()}, ${currentAuthor()}` : modified() },
-            ...(!props.item.directory ? [{ label: f().size, value: formatFileViewSize(props.item.size, locale()) }] : []),
-            ...(versionCount() ? [{ label: t().versions, value: versionCount()! }] : []),
+            { label: f().modified, value: changedBy() ? `${changedBy()} · ${modified()}` : modified() },
+            ...(props.item.directory
+              ? []
+              : [
+                  {
+                    label: f().size,
+                    value: `${fileKindLabel({ name: props.item.name }, locale())} · ${formatFileViewSize(props.item.size, locale())}`,
+                  },
+                ]),
+            {
+              label: t().location,
+              value: [baseLabel(props.base, t(), locale()), ...props.item.path.split("/").slice(0, -1)].join(" › "),
+            },
           ]}
         />
-      </Section>
-      <Show when={props.item.directory}>
-        <FolderContents base={props.base} folder={props.item} actions={props.actions} onNavigate={props.onNavigate} />
-      </Show>
-      {/* k2b-ui gap: public links, versions and the item's history are still the v1 parts of the detail; their v2
-          rebuild comes with the history views (Files PR 2). Their behaviour stays the same meanwhile. */}
-      <Band>
-        <Canvas label={h().publicLink}>
-          {/* The v1 parts bring no text edge of their own; until PR 2 they stand on the column's edge. */}
-          <div style={{ padding: "0 var(--k2-edge) 16px" }}>
-            <EntryHistory
-              base={props.base}
-              entry={props.item}
-              resourceId={props.result.resourceId}
-              busy={busy()}
-              onChanged={(path) => void props.onChanged(path)}
-              onOpen={(item) => (item.directory ? undefined : props.actions.preview(item))}
-              locale={locale()}
-              history={props.history}
-              versions={versions}
-              currentAuthor={currentAuthor()}
-              versionsId={`filesv2-versions-${props.item.path}`}
-              versionsOpen
-              onShowVersions={() => document.getElementById(`filesv2-versions-${props.item.path}`)?.scrollIntoView({ block: "nearest" })}
-            />
-          </div>
-        </Canvas>
-      </Band>
-    </>
+        <Show when={props.item.directory}>
+          <FolderContents
+            base={props.base}
+            folder={props.item}
+            actions={props.actions}
+            onNavigate={props.onNavigate}
+            env={props.history?.env}
+          />
+        </Show>
+      </Pane>
+      {/* no `width` yet: a nested split's grip draws off its line (reported); without one the side pane is 400 px */}
+      <Pane side label={t().v2DetailWho}>
+        <Show when={props.history}>
+          {(history) => (
+            <EntryLinksSection links={links} env={history().env} base={props.base} writable={!readOnly()} onNavigate={props.onNavigate} />
+          )}
+        </Show>
+        <Show when={!props.item.directory}>
+          <EntryVersions
+            base={props.base}
+            entry={props.item}
+            busy={busy()}
+            onChanged={(path) => void props.onChanged(path)}
+            onOpen={(item) => (item.directory ? undefined : props.actions.preview(item))}
+            locale={locale()}
+            env={props.history?.env}
+            versions={versions}
+            currentAuthor={changedBy()}
+          />
+        </Show>
+        {/* the item's history, its changes and the links' use as one list */}
+        <EntryHistory
+          base={props.base}
+          entry={props.item}
+          resourceId={props.result.resourceId}
+          busy={busy()}
+          onChanged={(path) => void props.onChanged(path)}
+          onOpen={(item) => (item.directory ? undefined : props.actions.preview(item))}
+          locale={locale()}
+          history={props.history}
+          versions={versions}
+          currentAuthor={currentAuthor()}
+          links={links}
+          // the versions' list in this detail, found by its name
+          onShowVersions={() =>
+            document.querySelector(`[data-k2-part="List"][aria-label="${CSS.escape(t().versions)}"]`)?.scrollIntoView({ block: "nearest" })
+          }
+        />
+      </Pane>
+    </Pane.Split>
   );
 }
 
-/** The first entries of a folder, with a way to download each file; the folder itself shows the rest. */
-function FolderContents(props: { base: BaseSummary; folder: FileEntry; actions: FolderActions; onNavigate: OnNavigate }) {
+/**
+ * The first entries of a folder, with a way to download each file where deeds are given; the folder itself shows the
+ * rest. Also what an old folder address shows of the folder at its new place.
+ */
+export function FolderContents(props: {
+  base: BaseSummary;
+  folder: FileEntry;
+  actions?: FolderActions;
+  onNavigate: OnNavigate;
+  /** The server's first page, so the first picture has the entries without a loading state. */
+  initial?: { items: FileEntry[]; next: string | null };
+  /** With it each entry says who changed it last and when, as the folder's rows do. */
+  env?: HistoryEnvironment;
+}) {
   const t = useBrowserMessages();
+  const h = useHistoryMessages();
   const locale = useLocale();
   const key = () => JSON.stringify([props.base.id, props.base.locationKey, props.folder.path, props.folder.modified]);
+  const initial = props.initial ? { source: key(), data: { key: key(), ...props.initial } } : undefined;
   const contents = query.create({
     source: key,
+    initial,
     load: async (source, { abortSignal }) => {
       const response = await apiClient.bases[":baseId"].entries.$get(
         { param: { baseId: props.base.id }, query: { path: props.folder.path } },
@@ -383,8 +459,17 @@ function FolderContents(props: { base: BaseSummary; folder: FileEntry; actions: 
   const page = () => (contents.data()?.key === key() ? contents.data() : undefined);
   const shown = () => page()?.items.slice(0, CONTENTS_SHOWN) ?? [];
   const more = () => (page()?.next || (page()?.items.length ?? 0) > CONTENTS_SHOWN ? true : undefined);
-  const meta = (entry: FileEntry) =>
-    entry.directory ? t().kindFolder : `${fileKindLabel({ name: entry.name }, locale())} · ${formatFileViewSize(entry.size, locale())}`;
+  const meta = (entry: FileEntry) => {
+    const what = entry.directory
+      ? t().kindFolder
+      : `${fileKindLabel({ name: entry.name }, locale())} · ${formatFileViewSize(entry.size, locale())}`;
+    // who changed it last and when; an author the listing does not name leaves only the time
+    const env = props.env;
+    if (!env) return what;
+    const when = formatWhen(entry.modified, locale(), h(), env);
+    const author = entry.facts?.author?.name;
+    return [what, author ? `${author}, ${when}` : when].join(" · ");
+  };
   const href = (entry: FileEntry) =>
     entry.directory ? filesUrl(props.base.id, entry.path) : filesUrl(props.base.id, props.folder.path, null, entry.path);
   return (
@@ -404,18 +489,19 @@ function FolderContents(props: { base: BaseSummary; folder: FileEntry; actions: 
             <List label={t().contents}>
               {shown().map((entry) => (
                 <Row
-                  icon={entryIcon(entry)}
+                  // the entry's coloured type mark, as the folder shows it
+                  mark={entryMark(entry)}
                   lines={[entry.name, meta(entry)]}
                   href={href(entry)}
                   onNavigate={props.onNavigate}
                   end={
-                    entry.directory ? undefined : (
+                    entry.directory || !props.actions ? undefined : (
                       <Button
                         variant="ghost"
                         icon="download"
                         label={t().downloadNamed(entry.name)}
                         disabled={props.actions.busy()}
-                        onClick={() => props.actions.startDownload([entry])}
+                        onClick={() => props.actions?.startDownload([entry])}
                       />
                     )
                   }

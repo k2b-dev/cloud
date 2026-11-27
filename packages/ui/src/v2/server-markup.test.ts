@@ -13,7 +13,35 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Pane } = await import("./layout");
 const { Input } = await import("./controls");
-const { Text } = await import("./content");
+const { List, Row, Table, Text } = await import("./content");
+const { SERVER_ROWS } = await import("./virtual");
+
+// A list of any length sends its first rows and holds the place of the rest, so the server's work stays bounded and
+// the browser's first render is the same page (break-ui 25.11.: 1,000 conversations took 7.3 s and 10.6k nodes).
+test("a list of items sends only its first rows, each saying where it stands, and holds the place of the rest", () => {
+  const items = Array.from({ length: 1000 }, (_, index) => ({ id: `c${index}`, title: `Gespräch ${index + 1}` }));
+  const markup = renderToString(() =>
+    createComponent(List<(typeof items)[number]>, {
+      label: "Gespräche",
+      items,
+      rowKey: (item) => item.id,
+      row: (item) => createComponent(Row, { lines: [item.title] }),
+    }),
+  );
+  expect(markup.match(/data-k2-part="Row"/g)?.length).toBe(SERVER_ROWS);
+  expect(markup).toContain('aria-setsize="1000"');
+  expect(markup).toContain('aria-posinset="1"');
+  expect(markup).toContain(`--k2-after:${(1000 - SERVER_ROWS) * 40}px`);
+  const table = renderToString(() =>
+    createComponent(Table<(typeof items)[number]>, {
+      label: "Gespräche",
+      rows: items,
+      columns: [{ title: "Titel", cell: (item) => item.title }],
+    }),
+  );
+  expect(table.match(/<tr aria-rowindex/g)?.length).toBe(SERVER_ROWS);
+  expect(table).toContain('aria-rowcount="1001"');
+});
 
 const split = (more: JSX.Element) =>
   renderToString(() =>
@@ -39,4 +67,37 @@ test("a multi-line field sends its value as the text of its textarea, leading bl
   }
   // no value: an empty textarea
   expect(renderToString(() => createComponent(Input, { multiline: true, label: "Notiz" }))).toContain(">\n</textarea>");
+});
+
+// A password manager reads the server's markup, before the island hydrates: what it may fill in stands there (#4173).
+test("a text field sends autocomplete, length, keyboard, spelling and capitals in the server's markup", () => {
+  const markup = renderToString(() =>
+    createComponent(Input, {
+      label: "Code",
+      name: "code",
+      type: "password",
+      autocomplete: "one-time-code",
+      maxLength: 8,
+      inputMode: "numeric",
+      spellcheck: false,
+      autocapitalize: "off",
+    }),
+  );
+  const input = markup.match(/<input[^>]*>/)?.[0] ?? "";
+  for (const attribute of [
+    'name="code"',
+    'autocomplete="one-time-code"',
+    'maxlength="8"',
+    'inputmode="numeric"',
+    'spellcheck="false"',
+    'autocapitalize="off"',
+  ])
+    expect(input).toContain(attribute);
+  expect(renderToString(() => createComponent(Input, { multiline: true, label: "Notiz", spellcheck: true }))).toContain(
+    'spellcheck="true"',
+  );
+  // without them the field stays as it was: no attribute is guessed
+  expect(renderToString(() => createComponent(Input, { label: "Suche" }))).not.toMatch(
+    /autocomplete|maxlength|inputmode|spellcheck|autocapitalize/,
+  );
 });

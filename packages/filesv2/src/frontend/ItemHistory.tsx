@@ -1,13 +1,14 @@
 import { query } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, DetailPanel, Section } from "@k2b/ui";
-import { createMemo, createSignal, createUniqueId, For, Match, Show, Switch } from "solid-js";
+import { useLocale } from "@k2b/ui";
+import { Bar, Button, List, Loading, Notice, Row, Section, Text } from "@k2b/ui/v2";
+import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import type { ActivityPage, ShareAccessPeriod } from "../activity-contracts";
 import type { ShareView } from "../contracts";
-import HistoryUnavailable, { isHistoryUnavailable } from "./HistoryUnavailable";
+import { isHistoryUnavailable } from "./HistoryUnavailable";
 import { type HistoryActions, type HistoryEnvironment, type HistoryRowModel, historyRows } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
-import { HistoryRow, SkeletonRows } from "./history-rows";
-import { AccessRow, periodHasAccess, type ShareAccess } from "./ShareHistory";
+import { ActivityRow } from "./history-v2";
+import { periodHasAccess, periodLabel, type ShareAccess } from "./ShareHistory";
 
 const RECENT = 4;
 
@@ -58,9 +59,6 @@ const at = (iso: string) => Date.parse(iso);
  */
 export default function ItemHistory(props: ItemHistoryProps) {
   const h = useHistoryMessages();
-  const rowsId = createUniqueId();
-  let rows: HTMLUListElement | undefined;
-  let disclosure: HTMLButtonElement | undefined;
   const history = query.createInfinite({
     source: () => props.source,
     initial:
@@ -135,22 +133,11 @@ export default function ItemHistory(props: ItemHistoryProps) {
   const shown = () => (expanded() ? lines() : lines().slice(0, RECENT));
   const older = () => lines().length - RECENT;
   const loadNext = () => void limiting()?.loadMore();
-  const loadOlder = async (trigger: HTMLButtonElement) => {
-    const restoreFocus = trigger.ownerDocument.activeElement === trigger;
+  const loadOlder = async () => {
     const source = props.source;
-    try {
-      if (history.error()) await activity().retry();
-      else await limiting()?.loadMore();
-      if (props.source === source && older() > 0) setExpanded(true);
-    } finally {
-      // The last page can remove the load control. Keep keyboard users at the newly loaded history,
-      // but do not take focus back from another control they used while the request was pending.
-      const active = trigger.ownerDocument.activeElement;
-      if (props.source === source && restoreFocus && (active === trigger || active === trigger.ownerDocument.body)) {
-        if (trigger.isConnected && !trigger.disabled) trigger.focus();
-        else (disclosure?.isConnected ? disclosure : rows)?.focus();
-      }
-    }
+    if (history.error()) await activity().retry();
+    else await limiting()?.loadMore();
+    if (props.source === source && older() > 0) setExpanded(true);
   };
   const retryAccess = () => {
     for (const stream of access()) if (stream.failed) void stream.retry();
@@ -159,157 +146,141 @@ export default function ItemHistory(props: ItemHistoryProps) {
     void history.refresh();
     props.onChanged?.();
   };
+  // older lines: the next page of the stream that holds back the most, or open what is loaded
+  const olderLabel = () => (history.error() ? h().retry : h().showOlderUnknown);
+  const showOlder = () => (expanded() || older() <= 0) && (more() || (loaded() && !!history.error()));
   return (
-    <DetailPanel.Group label={h().history}>
-      <Section
-        title={h().history}
-        icon="ti ti-history"
-        tone="neutral"
-        count={!props.unavailable && complete() && lines().length > 0 ? lines().length : undefined}
-        actions={
-          <Show when={!props.unavailable && props.activityHref}>
-            {(href) => (
-              <ButtonLink size="xs" variant="text" class="filesv2-history-link" href={href()}>
-                {h().allInActivity}
-              </ButtonLink>
-            )}
-          </Show>
-        }
-      >
-        <div class="filesv2-item-history" aria-busy={history.loading() || (!loaded() && history.refreshing()) || accessWaiting()}>
-          <Switch>
-            <Match when={props.unavailable || isHistoryUnavailable(history.error())}>
-              <HistoryUnavailable />
-            </Match>
-            <Match when={!loaded() && history.error()}>
-              <p class="filesv2-item-history__line" role="alert">
-                <i class="ti ti-alert-triangle" aria-hidden="true" />
-                {h().historyFailed}
-                <Button size="xs" variant="text" class="filesv2-history-link" onClick={() => void history.refresh()}>
-                  {h().retry}
-                </Button>
-              </p>
-            </Match>
-            <Match when={!loaded()}>
-              <p class="sr-only" role="status">
-                {h().historyLoading}
-              </p>
-              <SkeletonRows count={RECENT} variant="detail" />
-            </Match>
-            <Match when={lines().length === 0 && (more() || history.error())}>
-              <p class="filesv2-item-history__line" role={history.error() ? "alert" : undefined}>
-                <Show when={history.error()}>
-                  <i class="ti ti-alert-triangle" aria-hidden="true" />
-                </Show>
-                {history.error() ? h().olderFailed : h().nothingVisibleYet}
-                <Button
-                  size="xs"
-                  variant="text"
-                  class="filesv2-history-link"
-                  loading={loadingOlder()}
-                  loadingLabel={h().loadingOlder}
-                  onClick={() => (history.error() ? void activity().retry() : loadNext())}
-                >
-                  {history.error() ? h().retry : h().showOlderUnknown}
-                </Button>
-              </p>
-            </Match>
-            <Match when={lines().length === 0 && complete()}>
-              <p class="filesv2-item-history__line">{h().noEntries}</p>
-            </Match>
-            <Match when={lines().length === 0 && accessWaiting()}>
-              <p class="sr-only" role="status">
-                {h().accessLoading}
-              </p>
-              <SkeletonRows count={RECENT} variant="detail" />
-            </Match>
-            <Match when={lines().length === 0 && !accessFailed()}>
-              <p class="filesv2-item-history__line">{h().linksIncomplete}</p>
-            </Match>
-            <Match when={lines().length > 0}>
-              <ul ref={rows} id={rowsId} class="filesv2-history-rows" tabindex="-1">
-                <For each={shown()}>
-                  {(line) => (
-                    <li>
-                      <Switch>
-                        <Match when={line.kind === "entry" && line}>
-                          {(entry) => (
-                            // A folder includes descendants, so each row names its actual subject.
-                            <HistoryRow
-                              row={entry().row}
-                              env={props.env}
-                              actions={props.actions}
-                              context={props.directory ? "activity" : "item"}
-                              directory={props.directory ? undefined : false}
-                              dated={false}
-                              variant="detail"
-                              onChanged={changed}
-                            />
-                          )}
-                        </Match>
-                        <Match when={line.kind === "access" && line}>
-                          {(item) => <AccessRow share={item().share} period={item().period} env={props.env} />}
-                        </Match>
-                      </Switch>
-                    </li>
-                  )}
-                </For>
-              </ul>
-              <div class="filesv2-item-history__more">
-                <Show when={(expanded() || older() <= 0) && (more() || (loaded() && history.error()))}>
-                  <Button
-                    size="xs"
-                    variant="text"
-                    class="filesv2-history-link"
-                    loading={loadingOlder()}
-                    loadingLabel={h().loadingOlder}
-                    onClick={(event) => void loadOlder(event.currentTarget)}
-                  >
-                    {history.error() ? h().retry : h().showOlderUnknown}
-                  </Button>
-                </Show>
-                <Show when={older() > 0}>
-                  <Button
-                    size="xs"
-                    variant="text"
-                    class="filesv2-history-link"
-                    ref={disclosure}
-                    aria-expanded={expanded()}
-                    aria-controls={rowsId}
-                    onClick={() => setExpanded(!expanded())}
-                  >
-                    {expanded()
-                      ? h().showLess
-                      : older() > 0 && complete()
-                        ? h().showOlder.replace("{count}", String(older()))
-                        : h().showOlderUnknown}
-                  </Button>
-                </Show>
-              </div>
-              <Show when={loaded() && history.error()}>
-                <p class="filesv2-item-history__line" role="alert">
-                  <i class="ti ti-alert-triangle" aria-hidden="true" />
-                  {h().olderFailed}
-                </p>
-              </Show>
-            </Match>
-          </Switch>
-          <Show when={loaded() && accessWaiting() && lines().length > 0}>
-            <p class="sr-only" role="status">
-              {h().accessLoading}
-            </p>
-          </Show>
-          <Show when={loaded() && accessFailed()}>
-            <p class="filesv2-item-history__line" role="alert">
-              <i class="ti ti-alert-triangle" aria-hidden="true" />
-              {h().accessFailed}
-              <Button size="xs" variant="text" class="filesv2-history-link" onClick={retryAccess}>
-                {h().retry}
+    <Section
+      icon="history"
+      title={h().history}
+      count={!props.unavailable && complete() && lines().length > 0 ? lines().length : undefined}
+      more={!props.unavailable && props.activityHref ? { label: h().allInActivity, href: props.activityHref, forward: true } : undefined}
+    >
+      <Switch>
+        <Match when={props.unavailable || isHistoryUnavailable(history.error())}>
+          <Bar start={<Text type="meta">{h().historyUnavailable}</Text>} />
+        </Match>
+        <Match when={!loaded() && history.error()}>
+          <Notice tone="bad" actions={[{ label: h().retry, onClick: () => void history.refresh() }]}>
+            {h().historyFailed}
+          </Notice>
+        </Match>
+        <Match when={!loaded()}>
+          <Loading rows={RECENT} lines={2} />
+        </Match>
+        <Match when={lines().length === 0 && (more() || history.error())}>
+          <Bar
+            start={<Text type="meta">{history.error() ? h().olderFailed : h().nothingVisibleYet}</Text>}
+            end={
+              <Button busy={loadingOlder()} onClick={() => (history.error() ? void activity().retry() : loadNext())}>
+                {olderLabel()}
               </Button>
-            </p>
+            }
+          />
+        </Match>
+        <Match when={lines().length === 0 && complete()}>
+          <Bar start={<Text type="meta">{h().noEntries}</Text>} />
+        </Match>
+        <Match when={lines().length === 0 && accessWaiting()}>
+          {/* the changes are read; only the links' use is on its way: a quiet line, not placeholder rows */}
+          <Bar start={<Text type="meta">{h().accessLoading}</Text>} />
+        </Match>
+        <Match when={lines().length === 0 && !accessFailed()}>
+          <Bar start={<Text type="meta">{h().linksIncomplete}</Text>} />
+        </Match>
+        <Match when={lines().length > 0}>
+          <List label={h().history}>
+            <For each={shown()}>
+              {(line) =>
+                line.kind === "entry" ? (
+                  // the person leads, the sentence names the thing, the time says its day
+                  <ActivityRow
+                    row={line.row}
+                    env={props.env}
+                    actions={props.actions}
+                    mode="all"
+                    // a file's own history says "die Datei"; a folder's names each thing, as it holds many
+                    context={props.directory ? undefined : "item"}
+                    dated
+                    onChanged={changed}
+                  />
+                ) : (
+                  <AccessLine share={line.share} period={line.period} env={props.env} />
+                )
+              }
+            </For>
+          </List>
+          <Show when={showOlder() || older() > 0}>
+            <Bar
+              end={
+                <>
+                  <Show when={showOlder()}>
+                    <Button icon="chevron-down" busy={loadingOlder()} onClick={() => void loadOlder()}>
+                      {olderLabel()}
+                    </Button>
+                  </Show>
+                  <Show when={older() > 0}>
+                    <Button onClick={() => setExpanded(!expanded())}>
+                      {expanded() ? h().showLess : complete() ? h().showOlder.replace("{count}", String(older())) : h().showOlderUnknown}
+                    </Button>
+                  </Show>
+                </>
+              }
+            />
           </Show>
-        </div>
-      </Section>
-    </DetailPanel.Group>
+          <Show when={loaded() && history.error()}>
+            <Notice tone="bad">{h().olderFailed}</Notice>
+          </Show>
+        </Match>
+      </Switch>
+      {/* the links' use still on its way: the history is not complete yet, and says so quietly */}
+      <Show when={loaded() && accessWaiting() && lines().length > 0}>
+        <Bar start={<Text type="meta">{h().accessLoading}</Text>} />
+      </Show>
+      <Show when={loaded() && accessFailed()}>
+        <Notice tone="bad" actions={[{ label: h().retry, onClick: retryAccess }]}>
+          {h().accessFailed}
+        </Notice>
+      </Show>
+    </Section>
+  );
+}
+
+/** One access period of a public link: what visitors did, as a quiet row with the period and the link. */
+function AccessLine(props: { share: ShareView; period: ShareAccessPeriod; env: HistoryEnvironment }) {
+  const h = useHistoryMessages();
+  const locale = useLocale();
+  const text = () => {
+    const period = props.period;
+    if (period.pages > 0) {
+      const count = period.pageNetworks;
+      return count === null ? h().accessPages(period.pages) : h().accessPagesNetworks({ pages: period.pages, networks: count });
+    }
+    if (period.downloads > 0) return h().accessDownloads.replace("{count}", String(period.downloads));
+    return h().accessPasswords.replace("{count}", String(period.passwordFailed));
+  };
+  const facts = () => {
+    const period = props.period;
+    return [
+      props.share.title ? h().linkNamed.replace("{title}", props.share.title) : h().publicLink,
+      period.pages > 0 && period.downloads > 0 ? h().periodDownloads.replace("{count}", String(period.downloads)) : "",
+      (period.pages > 0 || period.downloads > 0) && period.passwordFailed > 0
+        ? h().periodPasswords.replace("{count}", String(period.passwordFailed))
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  };
+  return (
+    <Row
+      mark={{ icon: "link" }}
+      lines={[
+        text(),
+        <>
+          <time dateTime={props.period.date}>{periodLabel(props.period, h(), locale(), props.env)}</time>
+          {facts() ? ` · ${facts()}` : ""}
+        </>,
+      ]}
+    />
   );
 }

@@ -78,9 +78,10 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x57"],
       tabs: ['[data-slot="head"] > .k2-tabs-nav', "0,57 390x44"],
       notice: [".k2-notice", "0,101 390x137"],
-      cells: [".k2-cells", "0,238 390x279"],
-      section: [".k2-sec", "0,517 390x245"],
-      todo: [".k2-sec .k2-row", "0,569 390x92"],
+      // the key figures stand two by two on the phone (lane C), so the record is shorter by a row of cells
+      cells: [".k2-cells", "0,238 390x236"],
+      section: [".k2-sec", "0,474 390x245"],
+      todo: [".k2-sec .k2-row", "0,526 390x92"],
     },
   },
   // akte-einlieferungen.html
@@ -123,7 +124,7 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
     390: {
       head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x56"],
       status: ['[data-k2-part="StatusRow"]', "0,56 390x52"],
-      phoneGroup: [".k2-table-phone .k2-bar", "0,108 390x36"],
+      phoneGroup: [".k2-table-phone-group", "0,108 390x36"],
       phoneRow: [".k2-table-phone .k2-row", "0,144 390x53"],
     },
   },

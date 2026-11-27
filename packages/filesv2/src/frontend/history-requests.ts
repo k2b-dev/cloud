@@ -89,7 +89,7 @@ export function movedEntry(page: ActivityPage, oldPath: string): ActivityEntry |
  */
 export function placeDescriber(
   bases: readonly BaseSummary[],
-  messages: { personal: string },
+  messages: { personal: string; otherStorage: string },
   locale: string,
 ): NonNullable<HistoryEnvironment["describePlace"]> {
   return (place: HistoryPlace) => {
@@ -97,7 +97,7 @@ export function placeDescriber(
     const path = place.kind === "endpoint" ? place.endpoint.path : place.side.relativePath;
     if (!baseId || path == null) return undefined;
     const base = bases.find((item) => item.id === baseId);
-    if (!base) return undefined;
-    return [baseLabel(base, messages, locale), ...path.split("/").filter(Boolean).slice(0, -1)];
+    // a storage this person does not list (any more) reads as words, never as its internal directory
+    return [base ? baseLabel(base, messages, locale) : messages.otherStorage, ...path.split("/").filter(Boolean).slice(0, -1)];
   };
 }

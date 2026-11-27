@@ -1,0 +1,225 @@
+import { useLocale } from "@k2b/ui";
+import { Bar, Button, Chip, Dialog, Failed, Icon, Menu, type OnNavigate, Pane, Table, Text, useToast } from "@k2b/ui/v2";
+import { createSignal, onCleanup, Show } from "solid-js";
+import { apiClient } from "../api/client";
+import type { BaseSummary, SharePage, ShareView } from "../contracts";
+import { baseLabel } from "./base-label";
+import { useBrowserMessages } from "./browser-messages";
+import { apiFailure } from "./file-preview";
+import { useMachineMessages } from "./machine-messages";
+import { useSharePasswordMessages } from "./share-password-messages";
+import { filesUrl } from "./urls";
+
+/** A download link and an upload inbox each wear their own colour, so the two kinds part at a glance. */
+const KIND_MARK = {
+  download: { icon: "link", color: "#2563eb" },
+  inbox: { icon: "inbox", color: "#0f766e" },
+} as const;
+const STATE = { active: "ok", expired: "warn", revoked: "bad" } as const;
+
+/**
+ * Every public link and upload inbox this person made, across storage, with what it opens, who made it, how often it
+ * was used, until when it runs and its state. An owner keeps managing a link after losing access to its storage. The
+ * server reads the first page; further pages add to it here.
+ */
+export default function SharesPane(props: {
+  /** The server's first page, or null when it could not be read. */
+  initial: SharePage | null;
+  bases: readonly BaseSummary[];
+  timeZone: string;
+  onNavigate: OnNavigate;
+}) {
+  const b = useBrowserMessages();
+  const p = useSharePasswordMessages();
+  const machines = useMachineMessages();
+  const locale = useLocale();
+  const toast = useToast();
+  const [page, setPage] = createSignal<SharePage | null>(props.initial);
+  const [loading, setLoading] = createSignal(false);
+  const [busy, setBusy] = createSignal<string | null>(null);
+  const lifetime = new AbortController();
+  onCleanup(() => lifetime.abort());
+  const date = () => new Intl.DateTimeFormat(locale(), { dateStyle: "short", timeZone: props.timeZone });
+
+  /** Reads a page; `after` adds it to the loaded links, without it the list starts again. */
+  const load = async (after?: string) => {
+    setLoading(true);
+    try {
+      const response = await apiClient.shares.$get({ query: after ? { after } : {} }, { init: { signal: lifetime.signal } });
+      if (!response.ok) await apiFailure(response, b().loadFailed);
+      const result = await response.json();
+      const before = after ? (page()?.items ?? []) : [];
+      setPage({ items: [...new Map([...before, ...result.items].map((share) => [share.id, share])).values()], next: result.next });
+    } catch (error) {
+      if (lifetime.signal.aborted) return;
+      if (after) toast(error instanceof Error ? error.message : b().loadFailed, { status: "bad", retry: () => load(after) });
+      else setPage(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const revoke = async (share: ShareView) => {
+    if (busy()) return;
+    const confirmed = await Dialog.confirm({
+      title: b().v2RevokeTitle({ name: share.title }),
+      description: b().revokeQuestion,
+      confirm: b().revoke,
+    });
+    if (!confirmed) return;
+    setBusy(share.id);
+    try {
+      const response = await apiClient.shares[":id"].revoke.$post({ param: { id: share.id } }, { init: { signal: lifetime.signal } });
+      if (!response.ok) await apiFailure(response, b().revokeFailed);
+      const updated = await response.json();
+      setPage((current) => current && { ...current, items: current.items.map((item) => (item.id === updated.id ? updated : item)) });
+      toast(b().revoked, { status: "ok" });
+    } catch (error) {
+      if (!lifetime.signal.aborted)
+        toast(error instanceof Error ? error.message : b().revokeFailed, { status: "bad", retry: () => revoke(share) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** The storage by its name for this person, as the sidebar names it; a storage gone from the list keeps its stored name. */
+  const storage = (share: ShareView) => {
+    const known = props.bases.find((base) => base.id === share.base.id);
+    return known ? baseLabel(known, b(), locale()) : share.base.name;
+  };
+  const place = (share: ShareView) => [storage(share), ...share.scope.split("/").filter(Boolean)].join(" › ");
+  const what = (share: ShareView) => (share.kind === "inbox" ? b().inboxShare : b().shareItems(share.items.length));
+  const by = (share: ShareView) => (share.createdByKind ? `${share.createdBy} (${machines().agent})` : share.createdBy);
+  // A link without an end is the rule: the column shows a dash, the row on the phone nothing.
+  const expires = (share: ShareView) => (share.expiresAt ? date().format(new Date(share.expiresAt)) : undefined);
+  const expiresCell = (share: ShareView) => expires(share) ?? "—";
+  // an active link is the rule and says nothing; only an expired or revoked one wears its state
+  const state = (share: ShareView) => (
+    <Show when={share.state !== "active"}>
+      <Chip status={STATE[share.state]}>{share.state === "expired" ? b().stateExpired : b().stateRevoked}</Chip>
+    </Show>
+  );
+  // the lead names the exceptions; active links are the rule
+  const counted = (state: ShareView["state"]) => page()?.items.filter((share) => share.state === state).length ?? 0;
+
+  return (
+    <Pane
+      label={b().sharesTitle}
+      scrollKey="filesv2-shares"
+      status={
+        // the count is quiet words over the table, as the folder and Activity say theirs
+        <Bar
+          start={
+            <Text type="meta">
+              {page()
+                ? b().v2SharesLead({
+                    count: page()!.items.length,
+                    more: page()!.next ? "+" : "",
+                    expired: counted("expired"),
+                    revoked: counted("revoked"),
+                  })
+                : b().sharesTitle}
+            </Text>
+          }
+        />
+      }
+    >
+      <Show when={page()} fallback={<Failed text={b().loadFailed} onRetry={() => void load()} />}>
+        {(shown) => (
+          <>
+            <Table
+              label={b().sharesTitle}
+              rows={shown().items}
+              rowKey={(share) => share.id}
+              // A link opens the folder it stands for; its deeds stay at the row's end.
+              open={(share) => ({ href: filesUrl(share.base.id, share.scope), onNavigate: props.onNavigate })}
+              empty={{ icon: "world-share", text: b().noShares }}
+              phone={(share) => ({
+                // two lines: what and who; how often it was opened stands in the column on wider screens
+                lines: [share.title, `${what(share)} · ${by(share)}`],
+                mark: KIND_MARK[share.kind],
+                time: expires(share),
+                marks: state(share),
+              })}
+              columns={[
+                {
+                  // the name and the place share the rest: neither is cut while room stands empty, neither vanishes at 1024
+                  title: b().shareName,
+                  mark: (share) => ({ ...KIND_MARK[share.kind], label: share.kind === "inbox" ? b().inboxShare : b().downloadShare }),
+                  cell: (share) => (
+                    <Text>
+                      {share.title}
+                      <Show when={share.passwordProtected}>
+                        {" "}
+                        <Icon name="lock" label={p().protected} />
+                      </Show>
+                    </Text>
+                  ),
+                },
+                {
+                  title: b().v2From,
+                  width: { min: 130, default: 150 },
+                  drop: true,
+                  avatar: (share) => ({ name: share.createdBy }),
+                  cell: (share) => (share.createdByKind ? `${share.createdBy} (${machines().agent})` : share.createdBy),
+                },
+                {
+                  // the state alone: an expired or revoked link wears its chip, an active one says nothing
+                  title: b().shareState,
+                  width: { min: 112, default: 116 },
+                  drop: true,
+                  // while its revoke runs, the row says so in words
+                  cell: (share) => (busy() === share.id ? <Text type="meta">{b().v2Revoking}</Text> : state(share)),
+                },
+                { title: b().shareExpires, width: { min: 88, default: 92 }, drop: true, cell: expiresCell },
+                {
+                  title: b().v2Accesses,
+                  width: { min: 64, default: 72 },
+                  align: "end",
+                  drop: true,
+                  cell: (share) => String(share.accessCount),
+                },
+                // the place has its own width and gives the rest to the name
+                { title: b().v2Place, drop: true, cell: place },
+                {
+                  // the deeds of a link stand behind its "…", at the row's end
+                  title: b().v2Deeds,
+                  width: { min: 48, default: 48 },
+                  align: "end",
+                  cell: (share) => (
+                    <Show when={share.state === "active"}>
+                      <Menu
+                        label={b().v2DeedsFor({ name: share.title })}
+                        items={[
+                          {
+                            label: b().v2RevokeLink,
+                            icon: "link-off",
+                            danger: true,
+                            disabled: Boolean(busy()),
+                            onClick: () => void revoke(share),
+                          },
+                        ]}
+                      />
+                    </Show>
+                  ),
+                },
+              ]}
+            />
+            <Show when={shown().next}>
+              {(next) => (
+                <Bar
+                  start={<Text type="meta">{b().v2SharesShown({ count: shown().items.length })}</Text>}
+                  end={
+                    <Button icon="chevron-down" busy={loading()} onClick={() => void load(next())}>
+                      {b().moreShares}
+                    </Button>
+                  }
+                />
+              )}
+            </Show>
+          </>
+        )}
+      </Show>
+    </Pane>
+  );
+}

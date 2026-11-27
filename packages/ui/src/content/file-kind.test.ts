@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { fileKindLabel } from "./FileTypeIcon";
+import { fileViewMessages } from "./file-view-messages";
 import { formatFileViewSize } from "./file-view-preview";
 
 describe("file kind and size labels", () => {
@@ -19,5 +20,26 @@ describe("file kind and size labels", () => {
     expect(formatFileViewSize(64 * 1024, "de")).toBe("64 KB");
     expect(formatFileViewSize(64 * 1024)).toBe("64.0 KB");
     expect(formatFileViewSize(512, "en")).toBe("512 B");
+    // a shown value never needs four digits: the next unit takes over (break-ui 26.11.: "1.000 KB", "94.190,1 MB")
+    for (const [bytes, de, en, plain] of [
+      [1_024_000, "1 MB", "1 MB", "1.0 MB"],
+      // the edges: 999.98 KB and 999.95 MB are shown rounded to 1000, so they are already the next unit
+      [1_023_980, "1 MB", "1 MB", "1.0 MB"],
+      [1_048_524_000, "1 GB", "1 GB", "1.0 GB"],
+      // just below an edge the unit stays: 999.9 KB
+      [1_023_898, "999,9 KB", "999.9 KB", "999.9 KB"],
+      [98_765_432_109, "92 GB", "92 GB", "92.0 GB"],
+      [5 * 1024 ** 4, "5 TB", "5 TB", "5.0 TB"],
+    ] as const) {
+      expect(formatFileViewSize(bytes, "de")).toBe(de);
+      expect(formatFileViewSize(bytes, "en")).toBe(en);
+      expect(formatFileViewSize(bytes)).toBe(plain);
+    }
+  });
+
+  test("the more-lines hint counts one line in the singular", () => {
+    expect(fileViewMessages.resolve(["de"]).t.previewMoreLines(1)).toBe("… 1 weitere Zeile");
+    expect(fileViewMessages.resolve(["de"]).t.previewMoreLines(4)).toBe("… 4 weitere Zeilen");
+    expect(fileViewMessages.resolve(["en"]).t.previewMoreLines(1)).toBe("… 1 more line");
   });
 });

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { createComponent, createSignal } from "solid-js";
+import { createComponent, createSignal, Show } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { BaseSummary, TrashEntry } from "../src/contracts";
@@ -34,8 +34,10 @@ const base: BaseSummary = {
   versioningEnabled: false,
 };
 const entry = (id: string): TrashEntry => ({ id, name: `${id}.txt`, original: null, directory: false, deletedAt: null, state: "trashed" });
+const names = (root: HTMLElement) =>
+  [...root.querySelectorAll('[data-k2-part="Table"] tbody tr')].map((row) => row.querySelector("td")?.textContent ?? "");
 
-describe("trash view pagination and request identity", () => {
+describe("the v2 trash pane: pages and storage identity", () => {
   if (isServer) {
     test.skip("requires the package DOM runner", () => {});
     return;
@@ -45,17 +47,27 @@ describe("trash view pagination and request identity", () => {
     cleanup();
     pending.length = 0;
   });
-  const mount = async () => {
+  /** The pane as the folder screen places it: one pane per storage, made again when the storage or its place changes. */
+  const mount = async (initial: { entries: TrashEntry[]; next: string | null } | null) => {
     const dom = createDomTestHarness();
-    const { default: TrashView } = await import("../src/frontend/TrashView");
+    const { default: TrashPane } = await import("../src/frontend/TrashPane");
     const [current, setCurrent] = createSignal(base);
+    const [first, setFirst] = createSignal(initial);
     const dispose = render(
       () =>
-        createComponent(TrashView, {
-          get base() {
+        createComponent(Show, {
+          get when() {
             return current();
           },
-          onRestored: () => {},
+          keyed: true,
+          children: (shown: BaseSummary) =>
+            createComponent(TrashPane, {
+              base: shown,
+              initial: first(),
+              timeZone: "Europe/Berlin",
+              onRestored: () => {},
+              onNavigate: () => {},
+            }),
         }),
       dom.root,
     );
@@ -64,60 +76,53 @@ describe("trash view pagination and request identity", () => {
       dom.cleanup();
     };
     await flush();
-    return { dom, setCurrent, dispose };
+    return { dom, setCurrent, setFirst };
   };
-  test("shows unknown filesystem metadata honestly and appends cursor pages once", async () => {
-    const { dom } = await mount();
-    pending[0]!.resolve(Response.json({ base, entries: [entry("first")], next: "cursor" }));
-    await flush();
+
+  test("the server's first page stands without a request, says what is unknown, and appends the next page once", async () => {
+    const { dom } = await mount({ entries: [entry("first")], next: "cursor" });
+    expect(pending).toHaveLength(0);
     expect(dom.root.textContent).toContain("Original location unknown");
     expect(dom.root.textContent).toContain("Deletion time unknown");
-    const more = [...dom.root.querySelectorAll("button")].find((button) => button.textContent?.includes("Show more"));
+    const more = [...dom.root.querySelectorAll("button")].find((button) => button.textContent?.includes("Load more"));
     expect(more).toBeDefined();
     more!.click();
     await flush();
-    expect(pending[1]?.after).toBe("cursor");
-    pending[1]!.resolve(Response.json({ base, entries: [entry("first"), entry("second")], next: null }));
+    expect(pending[0]?.after).toBe("cursor");
+    pending[0]!.resolve(Response.json({ base, entries: [entry("first"), entry("second")], next: null }));
     await flush();
-    expect(dom.root.querySelectorAll('[role="listitem"]')).toHaveLength(2);
-    expect(dom.root.textContent).not.toContain("Show more");
+    expect(names(dom.root)).toHaveLength(2);
+    expect(dom.root.textContent).not.toContain("Load more");
   });
-  test("changing storage aborts its old request and ignores its late result", async () => {
-    const { dom, setCurrent } = await mount();
+
+  test("another storage starts a new pane: its old request ends and a late result shows nothing", async () => {
+    const { dom, setCurrent, setFirst } = await mount({ entries: [entry("alice")], next: "cursor" });
+    [...dom.root.querySelectorAll("button")].find((button) => button.textContent?.includes("Load more"))!.click();
+    await flush();
+    setFirst({ entries: [entry("staff")], next: null });
     setCurrent({ ...base, id: "cloud:groups:staff", name: "Staff", kind: "groups" });
     await flush();
     expect(pending[0]?.signal?.aborted).toBeTrue();
-    pending[1]!.resolve(Response.json({ base: { ...base, id: "cloud:groups:staff" }, entries: [entry("staff")], next: null }));
-    await flush();
     pending[0]!.resolve(Response.json({ base, entries: [entry("alice-private")], next: null }));
     await flush();
     expect(dom.root.textContent).toContain("staff.txt");
     expect(dom.root.textContent).not.toContain("alice-private.txt");
   });
-  test("pending effects are explained and cannot be restored as if completed", async () => {
-    const { dom } = await mount();
-    pending[0]!.resolve(
-      Response.json({ base, entries: [{ ...entry("pending"), state: "pending", error: "operation_unresolved" }], next: null }),
-    );
-    await flush();
+
+  test("an unconfirmed move is explained and cannot be restored as if it were done", async () => {
+    const { dom } = await mount({ entries: [{ ...entry("pending"), state: "pending", error: "operation_unresolved" }], next: null });
     expect(dom.root.textContent).toContain("This move has not been confirmed");
     const restore = [...dom.root.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Restore");
     expect(restore?.disabled).toBeTrue();
   });
-  test("a changed location for the same logical base discards prior pages and cursors", async () => {
-    const { dom, setCurrent } = await mount();
-    pending[0]!.resolve(Response.json({ base, entries: [entry("old-server")], next: "old-cursor" }));
+
+  test("a trash the server could not read offers Try again, which reads the first page", async () => {
+    const { dom } = await mount(null);
+    dom.root.querySelector<HTMLButtonElement>('[data-k2-part="Failed"] button')!.click();
     await flush();
-    [...dom.root.querySelectorAll("button")].find((button) => button.textContent?.includes("Show more"))!.click();
+    expect(pending[0]?.after).toBeUndefined();
+    pending[0]!.resolve(Response.json({ base, entries: [entry("back")], next: null }));
     await flush();
-    setCurrent({ ...base, locationKey: "new-server-root-prefix-binding" });
-    await flush();
-    expect(pending[1]?.signal?.aborted).toBeTrue();
-    expect(pending[2]?.baseId).toBe(base.id);
-    expect(pending[2]?.after).toBeUndefined();
-    pending[2]!.resolve(Response.json({ base, entries: [entry("new-server")], next: null }));
-    await flush();
-    expect(dom.root.textContent).not.toContain("old-server.txt");
-    expect(dom.root.textContent).toContain("new-server.txt");
+    expect(dom.root.textContent).toContain("back.txt");
   });
 });

@@ -1,11 +1,18 @@
 import { query } from "@k2b/stdlib/solid";
 import { batch, createEffect, createSignal, onCleanup } from "solid-js";
 import type { ActivityChain, ActivityEntry, ActivityPage } from "../activity-contracts";
-import type { BasesResult, DirectoryResult, EditorLaunch, EntryResult, FileEntry, MarkedEntry, SharePage } from "../contracts";
+import type { BasesResult, DirectoryResult, EditorLaunch, EntryResult, FileEntry, MarkedEntry, SharePage, TrashEntry } from "../contracts";
 import type { ActivityFilters } from "./history-requests";
 
 /** An old folder address whose item the reader saw move away; shown instead of "not found". */
-export type MovedSnapshot = { baseId: string; path: string; entry: ActivityEntry; chain: ActivityChain };
+export type MovedSnapshot = {
+  baseId: string;
+  path: string;
+  entry: ActivityEntry;
+  chain: ActivityChain;
+  /** The first page of the folder at its new place, as the server read it; null when it could not. */
+  contents?: { items: FileEntry[]; next: string | null } | null;
+};
 
 /**
  * A folder page or a search page. A search that failed keeps its place with `failure`, the stable error code,
@@ -20,6 +27,12 @@ export type DirectoryView = Omit<DirectoryResult, "items"> & {
   failure?: string;
   loadedPages?: number;
 };
+/**
+ * The run of one Activity entry: the entry as this reader may see it, or why it is not there. `missing` covers an
+ * unknown entry, one this reader may not see, and one that no run made, alike: none of them says which.
+ */
+export type RunSnapshot = { id: string } & ({ entry: ActivityEntry } | { problem: "missing" | "failed" });
+
 export type WorkspaceSnapshot = {
   source: string;
   bases: BasesResult;
@@ -27,21 +40,24 @@ export type WorkspaceSnapshot = {
   directory: DirectoryView | null;
   errorCode: string | null;
   detail?: EntryResult | null;
-  shares?: SharePage;
+  /** The first page of this person's links for their view; null when it could not be read. */
+  shares?: SharePage | null;
   editor?: EditorLaunch | null;
   /** Favorites for their page, or the files opened for "Me" in Activity; each authorized for this read. */
   marks?: MarkedEntry[];
-  /** At most six authorized favorites for the overview, so the first frame already holds them and nothing moves. */
-  favoritesPreview?: { items: MarkedEntry[]; more: boolean } | null;
   /** One-time hints the server decided to show to this person. */
   hints?: { recentMoved?: boolean; selectionPill?: boolean };
   /** Instant this snapshot was built; history dates count "today" and ranges from it on server and client alike. */
   now?: string;
   /** Authorized first Activity page for these filters; without it the view loads its own. */
   activity?: { filters: ActivityFilters; page: ActivityPage } | null;
+  /** The run Activity shows beside its list (`run` in the address), read with the page; never loaded after it. */
+  run?: RunSnapshot;
   /** Authorized first history page of the selected entry in `detail`. */
   history?: { source: string; page: ActivityPage } | null;
   moved?: MovedSnapshot | null;
+  /** The first page of a storage's trash for its view; null when it could not be read. */
+  trash?: { entries: TrashEntry[]; next: string | null } | null;
 };
 
 type Transition = {

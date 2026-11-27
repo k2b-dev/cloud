@@ -124,12 +124,23 @@ export const getFileViewPreviewKind = (file: FileViewFile): FileViewPreviewKind 
 };
 
 /**
- * A file size such as "4.2 MB". With `locale`, the number follows that language ("4,2 MB") and drops a trailing
- * zero ("64 KB"); without it, the output stays as before.
+ * A file size such as "4.2 MB", in steps of 1024: B, KB, MB, GB, TB. The next unit takes over as soon as the shown
+ * value would need four digits, so a size reads "1 MB", never "1.000 KB", and "92 GB", never "94.190 MB". With
+ * `locale`, the number follows that language ("4,2 MB") and drops a trailing zero ("64 KB"); without it, it keeps one
+ * decimal ("64.0 KB").
  */
 export const formatFileViewSize = (bytes: number, locale?: string): string => {
-  const [value, unit] = bytes < 1024 ? [bytes, "B"] : bytes < 1024 * 1024 ? [bytes / 1024, "KB"] : [bytes / (1024 * 1024), "MB"];
-  if (unit === "B") return `${bytes} B`;
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"] as const;
+  // the unit follows the value as it is shown (one decimal), so 999.96 KB, shown as 1000, is already 1 MB
+  const shown = (value: number) => Math.round(value * 10) / 10;
+  let value = bytes / 1024;
+  let step = 0;
+  while (shown(value) >= 1000 && step < units.length - 1) {
+    value /= 1024;
+    step += 1;
+  }
+  const unit = units[step];
   if (!locale) return `${value.toFixed(1)} ${unit}`;
   return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value)} ${unit}`;
 };

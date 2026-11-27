@@ -3,9 +3,9 @@ import { createSignal, type JSX } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { ActivityBasesPage, ActivityEntry, ActivityPage, ActivitySide } from "../src/activity-contracts";
-import type { ActivityRequest } from "../src/frontend/ActivityView";
 import type { AdminActivityBase, AdminActivityFilters, AdminBasesLoader } from "../src/frontend/admin-history";
 import type { HistoryEnvironment } from "../src/frontend/history-actions";
+import type { ActivityRequest } from "../src/frontend/history-requests";
 
 // Native JSX handlers install delegated listeners while this module is evaluated.
 const moduleDom = isServer ? undefined : createDomTestHarness();

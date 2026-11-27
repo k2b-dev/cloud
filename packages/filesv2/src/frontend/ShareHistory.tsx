@@ -77,6 +77,11 @@ export type ShareHistoryProps = {
   load: ShareAccessLoad;
   /** Existing revoke action; without it the button is not shown. */
   onRevoke?: (share: ShareView) => Promise<void>;
+  /**
+   * The networks a link was opened from, for the administration's audit. `false` leaves them out (the detail of a
+   * file in Files shows how often a link was used, not from where).
+   */
+  networks?: boolean;
 };
 
 /** "203.0.113.0/24" reads "203.0.113.x"; "2001:db8:4f2::/48" reads "2001:db8:4f2::". A network is never a person. */
@@ -103,6 +108,7 @@ export default function ShareHistory(props: ShareHistoryProps) {
                   period={props.period}
                   load={props.load}
                   onRevoke={props.onRevoke}
+                  networks={props.networks !== false}
                 />
               )}
             </For>
@@ -123,6 +129,7 @@ function ShareFacts(props: {
   period: { from: string; to: string };
   load: ShareAccessLoad;
   onRevoke?: ShareHistoryProps["onRevoke"];
+  networks: boolean;
 }) {
   const h = useHistoryMessages();
   const b = useBrowserMessages();
@@ -226,23 +233,27 @@ function ShareFacts(props: {
                   <dt>{h().downloadsReleased}</dt>
                   <dd>{data().downloads}</dd>
                 </div>
-                <div>
-                  <dt>{h().networks}</dt>
-                  <dd>
-                    {data().networks.overflow
-                      ? h().moreThanNetworks.replace("{count}", String(data().networks.known))
-                      : data().networks.known}
-                  </dd>
-                </div>
+                <Show when={props.networks}>
+                  <div>
+                    <dt>{h().networks}</dt>
+                    <dd>
+                      {data().networks.overflow
+                        ? h().moreThanNetworks.replace("{count}", String(data().networks.known))
+                        : data().networks.known}
+                    </dd>
+                  </div>
+                </Show>
               </dl>
-              <p class="filesv2-share-facts__note">{h().periodNote.replace("{days}", String(days()))}</p>
-              <Show when={data().networks.incomplete}>
+              <p class="filesv2-share-facts__note">
+                {(props.networks ? h().periodNote : h().periodOnly).replace("{days}", String(days()))}
+              </p>
+              <Show when={props.networks && data().networks.incomplete}>
                 <p class="filesv2-share-facts__note">{h().networksIncomplete}</p>
               </Show>
               <Show when={data().passwordFailed > 0}>
                 <p class="filesv2-share-facts__note">{h().wrongPasswords.replace("{count}", String(data().passwordFailed))}</p>
               </Show>
-              <Show when={shown().length > 0}>
+              <Show when={props.networks && shown().length > 0}>
                 <ul class="filesv2-share-facts__networks">
                   <For each={shown()}>
                     {(row, index) => (

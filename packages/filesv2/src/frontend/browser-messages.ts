@@ -11,7 +11,6 @@ export const browserMessages = i18n.define({
       activity: "Activity",
       allStorageUp: "Up to all storage",
       onlyYou: "Only you",
-      createInStorage: "To create folders or upload files, open a storage location.",
       folderReadme: "Folder description",
       showAll: "Show all",
       list: "List",
@@ -189,12 +188,13 @@ export const browserMessages = i18n.define({
       opExtracting: "Taking out pages",
       opProgress: ({ verb, percent }: { verb: string; percent: number }) => `${verb} … ${percent} %`,
       opCancel: "Cancel",
+      droppedFolders: "Dropped folders",
+      readingDrop: "Being read before the upload starts",
       opDiscard: "Discard",
       opWithout: "Without this file",
       opCreated: (name: string) => `“${name}” created`,
       opMergeSummary: ({ pages, files }: { pages: number; files: number }) => `${pages} pages from ${files} files`,
       opExtractSummary: (pages: number) => (pages === 1 ? "1 page" : `${pages} pages`),
-      opUndo: "Undo",
       opUndone: "The new file is in the trash.",
       justCreated: "Just created",
       downloadZip: "Download as ZIP",
@@ -259,7 +259,7 @@ export const browserMessages = i18n.define({
       parentFolderUp: (name: string) => `Up to the parent folder “${name}”`,
       trashTitle: "Trash",
       trashEmpty: "The trash is empty.",
-      trashDescription: "Deleted entries stay here until an administrator empties the trash. Restore puts an entry back where it was.",
+      trashKept: "they stay until an administrator empties the trash",
       restore: "Restore",
       restored: (name: string) => `“${name}” restored.`,
       deletedAt: "Deleted",
@@ -326,6 +326,7 @@ export const browserMessages = i18n.define({
       revoke: "Revoke",
       revokeQuestion: "No new transfers can start. Already issued transfer leases remain valid until they expire. This cannot be undone.",
       revoked: "Share revoked.",
+      v2Revoking: "Revoking…",
       revokeFailed: "The share could not be revoked.",
       createdBy: "Created by",
       publicDownloadAll: "Download everything as ZIP",
@@ -373,7 +374,6 @@ export const browserMessages = i18n.define({
       sortAndFilter: "Sort and filter",
       sortDirection: "Order",
       groupFolders: "Group folders",
-      readingDrop: "Reading dropped folders…",
       systemFilesTitle: "Hidden system files",
       systemFilesQuestion: ({ count, examples }: { count: number; examples: string }) =>
         count === 1
@@ -384,6 +384,8 @@ export const browserMessages = i18n.define({
       uploadWithoutSystemFiles: "Upload without system files",
       uploadAll: "Upload all",
       dropTooLarge: "Select at most 10,000 files and folders per upload.",
+      dropUnread: (n: number) => `${n} dropped entries could not be read.`,
+      batchFailed: (n: number) => `${n} entries did not work and stay chosen.`,
       sortName: "Name",
       sortModified: "Date",
       sortSize: "Size",
@@ -412,7 +414,6 @@ export const browserMessages = i18n.define({
       noFavoritesInline: "No favorites yet. Mark files or folders with the star in their details.",
       favoritesFailed: "Favorites could not be loaded.",
       showAllFavorites: "Show all",
-      storageSection: "Storage",
       recentByYou: "Recently by you",
       noRecentByYou: "No activity of yours yet. What you upload, change or open appears here.",
       recentFailed: "Your recent activity could not be loaded.",
@@ -429,8 +430,8 @@ export const browserMessages = i18n.define({
       uploadUnavailable: "Uploads wait until the current action or search is finished.",
       hiddenLeftOut: (n: number) =>
         n === 1
-          ? "The browser left out 1 hidden file. Upload it on its own."
-          : `The browser left out ${n} hidden files. Upload them on their own.`,
+          ? "The browser left out 1 hidden file; upload it on its own."
+          : `The browser left out ${n} hidden files; upload them on their own.`,
       share: "Share",
       readOnly: "Read only",
       moreActions: "More actions",
@@ -438,7 +439,6 @@ export const browserMessages = i18n.define({
       contents: "Contents",
       contentsFailed: "The contents of this folder cannot be loaded right now. The folder itself is up to date.",
       moreInFolder: "Open the folder for the rest",
-      versionsFailed: "The versions cannot be loaded right now. The file itself is up to date.",
       moreAboutFile: "More about this file",
       moreAboutFolder: "More about this folder",
       technicalDetails: "Technical details",
@@ -453,6 +453,55 @@ export const browserMessages = i18n.define({
       v2Deeds: "Actions",
       v2DeedsFor: (values: { name: string }) => `Actions for ${values.name}`,
       v2InTheMaking: "Files in the making",
+      v2Name: "Name",
+      v2Changed: "Modified",
+      v2TrashCount: (values: { count: number; more: string }) =>
+        values.count === 1 && !values.more ? "1 entry" : `${values.count}${values.more} entries`,
+      v2Deleted: "Deleted",
+      v2State: "State",
+      v2Unresolved: "Not finished",
+      v2Favorites: (values: { count: number }) => (values.count === 1 ? "1 favorite" : `${values.count} favorites`),
+      v2Place: "Location",
+      v2Understood: "Understood",
+      v2Close: "Close",
+      v2SearchShort: "Search",
+      v2EmptyDrop: "Add files with “+”.",
+      v2RecentlyOpened: "Recently opened",
+      v2RevokeLink: "Revoke link",
+      otherStorage: "another storage",
+      v2AreaUnread: (values: { area: string }) =>
+        `The ${values.area} storages could not be read right now, so they are missing here. Try again later.`,
+      v2WhoAndLinks: (values: { who: string; links: number; more: string }) =>
+        `${values.who} + ${values.links}${values.more} ${values.links === 1 && !values.more ? "link" : "links"}`,
+      v2SharesLead: (values: { count: number; more: string; expired: number; revoked: number }) =>
+        [
+          `${values.count}${values.more} ${values.count === 1 && !values.more ? "link" : "links"}`,
+          [values.expired ? `${values.expired} expired` : "", values.revoked ? `${values.revoked} revoked` : ""].filter(Boolean).join(", "),
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      v2Accesses: "Opened",
+      v2EntriesSize: (values: { count: number; more: string; size: string }) =>
+        `${values.count}${values.more} ${values.count === 1 && !values.more ? "entry" : "entries"} · ${values.size}`,
+      v2From: "By",
+      v2Sharing: "Sharing",
+      v2Manage: "Manage",
+      v2DetailWhat: "What it is",
+      v2DetailWho: "Sharing and history",
+      v2TeamOf: (values: { name: string }) => `Team ${values.name}`,
+      v2CanView: "View",
+      v2LinkBy: (values: { name: string }) => `${values.name} · Link`,
+      v2EndsOn: (values: { date: string }) => `ends ${values.date}`,
+      v2OpenedTimes: (values: { count: number }) =>
+        values.count === 0 ? "not opened yet" : `opened ${values.count.toLocaleString("en")}×`,
+      v2Team: "Team",
+      v2Links: (values: { count: number }) => (values.count === 1 ? "Link" : `${values.count} links`),
+      v2RecentMovedTitle: "“Recent” moved to Activity.",
+      v2RevokeTitle: (values: { name: string }) => `Revoke “${values.name}”?`,
+      v2ActiveShares: (values: { count: number; more: string }) =>
+        values.count === 1 && !values.more ? "1 active link" : `${values.count}${values.more} active links`,
+      v2SharesShown: (values: { count: number }) => (values.count === 1 ? "1 link shown" : `${values.count} links shown`),
+      v2StorageCount: (values: { count: number }) => (values.count === 1 ? "1 storage location" : `${values.count} storage locations`),
     },
     de: {
       personal: "Persönlich",
@@ -460,11 +509,10 @@ export const browserMessages = i18n.define({
       activity: "Aktivität",
       allStorageUp: "Zu allen Ablagen",
       onlyYou: "Nur du",
-      createInStorage: "Neue Ordner und Dateien legst du in einer Ablage an.",
       folderReadme: "Ordnerbeschreibung",
       showAll: "Alles anzeigen",
       list: "Liste",
-      grid: "Grid",
+      grid: "Raster",
       view: "Ansicht",
       details: "Details",
       close: "Details schließen",
@@ -638,12 +686,13 @@ export const browserMessages = i18n.define({
       opExtracting: "Seiten werden herausgenommen",
       opProgress: ({ verb, percent }: { verb: string; percent: number }) => `${verb} … ${percent} %`,
       opCancel: "Abbrechen",
+      droppedFolders: "Abgelegte Ordner",
+      readingDrop: "Werden vor dem Hochladen eingelesen",
       opDiscard: "Verwerfen",
       opWithout: "Ohne diese Datei",
       opCreated: (name: string) => `„${name}“ erstellt`,
       opMergeSummary: ({ pages, files }: { pages: number; files: number }) => `${pages} Seiten aus ${files} Dateien`,
       opExtractSummary: (pages: number) => (pages === 1 ? "1 Seite" : `${pages} Seiten`),
-      opUndo: "Rückgängig",
       opUndone: "Die neue Datei liegt im Papierkorb.",
       justCreated: "Gerade erstellt",
       downloadZip: "Als ZIP herunterladen",
@@ -708,8 +757,7 @@ export const browserMessages = i18n.define({
       parentFolderUp: (name: string) => `Zum übergeordneten Ordner „${name}“`,
       trashTitle: "Papierkorb",
       trashEmpty: "Der Papierkorb ist leer.",
-      trashDescription:
-        "Gelöschte Einträge bleiben hier, bis die Administration den Papierkorb leert. Wiederherstellen legt einen Eintrag an seinen alten Ort zurück.",
+      trashKept: "sie bleiben, bis die Administration den Papierkorb leert",
       restore: "Wiederherstellen",
       restored: (name: string) => `„${name}“ wiederhergestellt.`,
       deletedAt: "Gelöscht",
@@ -779,6 +827,7 @@ export const browserMessages = i18n.define({
       revokeQuestion:
         "Neue Übertragungen werden gesperrt. Bereits ausgestellte Übertragungsfreigaben gelten bis zu ihrem Ablauf. Dies kann nicht rückgängig gemacht werden.",
       revoked: "Freigabe widerrufen.",
+      v2Revoking: "Wird widerrufen…",
       revokeFailed: "Die Freigabe konnte nicht widerrufen werden.",
       createdBy: "Erstellt von",
       publicDownloadAll: "Alles als ZIP herunterladen",
@@ -826,7 +875,6 @@ export const browserMessages = i18n.define({
       sortAndFilter: "Sortieren und filtern",
       sortDirection: "Reihenfolge",
       groupFolders: "Ordner gruppieren",
-      readingDrop: "Ordner werden eingelesen…",
       systemFilesTitle: "Versteckte Systemdateien",
       systemFilesQuestion: ({ count, examples }: { count: number; examples: string }) =>
         count === 1
@@ -836,7 +884,9 @@ export const browserMessages = i18n.define({
         "macOS, Windows und Linux legen diese Dateien selbst an, etwa für Vorschaubilder oder Ordneransichten. Eigene Dateien, die mit einem Punkt beginnen, wie .gitignore oder .env, betrifft diese Auswahl nicht.",
       uploadWithoutSystemFiles: "Ohne Systemdateien hochladen",
       uploadAll: "Alle hochladen",
-      dropTooLarge: "Bitte höchstens 10.000 Dateien und Ordner pro Upload auswählen.",
+      dropTooLarge: "Wähle höchstens 10.000 Dateien und Ordner pro Upload.",
+      dropUnread: (n: number) => `${n} abgelegte Einträge ließen sich nicht lesen.`,
+      batchFailed: (n: number) => `${n} Einträge haben nicht geklappt und bleiben ausgewählt.`,
       sortName: "Name",
       sortModified: "Datum",
       sortSize: "Größe",
@@ -865,7 +915,6 @@ export const browserMessages = i18n.define({
       noFavoritesInline: "Noch keine Favoriten. Markiere Dateien oder Ordner in ihren Details mit dem Stern.",
       favoritesFailed: "Favoriten konnten nicht geladen werden.",
       showAllFavorites: "Alle anzeigen",
-      storageSection: "Ablagen",
       recentByYou: "Zuletzt von dir",
       noRecentByYou: "Noch keine Aktivität von dir. Was du hochlädst, änderst oder öffnest, steht hier.",
       recentFailed: "Deine letzte Aktivität konnte nicht geladen werden.",
@@ -882,8 +931,8 @@ export const browserMessages = i18n.define({
       uploadUnavailable: "Uploads warten, bis die laufende Aktion oder Suche beendet ist.",
       hiddenLeftOut: (n: number) =>
         n === 1
-          ? "Der Browser hat 1 versteckte Datei ausgelassen. Lade sie separat hoch."
-          : `Der Browser hat ${n} versteckte Dateien ausgelassen. Lade sie separat hoch.`,
+          ? "Der Browser hat 1 versteckte Datei ausgelassen, lade sie einzeln hoch."
+          : `Der Browser hat ${n} versteckte Dateien ausgelassen, lade sie einzeln hoch.`,
       share: "Teilen",
       readOnly: "Nur lesen",
       moreActions: "Weitere Aktionen",
@@ -891,7 +940,6 @@ export const browserMessages = i18n.define({
       contents: "Inhalt",
       contentsFailed: "Der Inhalt dieses Ordners lässt sich gerade nicht laden. Der Ordner selbst ist aktuell.",
       moreInFolder: "Den Rest zeigt der Ordner",
-      versionsFailed: "Die Versionen lassen sich gerade nicht laden. Die Datei selbst ist aktuell.",
       moreAboutFile: "Mehr zu dieser Datei",
       moreAboutFolder: "Mehr zu diesem Ordner",
       technicalDetails: "Technische Details",
@@ -906,6 +954,58 @@ export const browserMessages = i18n.define({
       v2Deeds: "Aktionen",
       v2DeedsFor: (values: { name: string }) => `Aktionen für ${values.name}`,
       v2InTheMaking: "Dateien in Arbeit",
+      v2Name: "Name",
+      v2Changed: "Geändert",
+      v2TrashCount: (values: { count: number; more: string }) =>
+        values.count === 1 && !values.more ? "1 Eintrag" : `${values.count}${values.more} Einträge`,
+      v2Deleted: "Gelöscht",
+      v2State: "Zustand",
+      v2Unresolved: "Nicht abgeschlossen",
+      v2Favorites: (values: { count: number }) => (values.count === 1 ? "1 Favorit" : `${values.count} Favoriten`),
+      v2Place: "Ort",
+      v2Understood: "Verstanden",
+      v2Close: "Schließen",
+      v2SearchShort: "Suchen",
+      v2EmptyDrop: "Füge Dateien mit „+“ hinzu.",
+      v2RecentlyOpened: "Zuletzt geöffnet",
+      // the deed, apart from the state "Widerrufen" of a revoked link in the same column
+      v2RevokeLink: "Link widerrufen",
+      otherStorage: "andere Ablage",
+      v2AreaUnread: (values: { area: string }) =>
+        `Die ${values.area}-Ablagen konnten gerade nicht gelesen werden und fehlen deshalb hier. Versuch es später noch einmal.`,
+      v2WhoAndLinks: (values: { who: string; links: number; more: string }) =>
+        `${values.who} + ${values.links}${values.more} ${values.links === 1 && !values.more ? "Link" : "Links"}`,
+      v2SharesLead: (values: { count: number; more: string; expired: number; revoked: number }) =>
+        [
+          `${values.count}${values.more} ${values.count === 1 && !values.more ? "Link" : "Links"}`,
+          [values.expired ? `${values.expired} abgelaufen` : "", values.revoked ? `${values.revoked} widerrufen` : ""]
+            .filter(Boolean)
+            .join(", "),
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      v2Accesses: "Geöffnet",
+      v2EntriesSize: (values: { count: number; more: string; size: string }) =>
+        `${values.count}${values.more} ${values.count === 1 && !values.more ? "Eintrag" : "Einträge"} · ${values.size}`,
+      v2From: "Von",
+      v2Sharing: "Freigabe",
+      v2Manage: "Verwalten",
+      v2DetailWhat: "Was es ist",
+      v2DetailWho: "Freigabe und Verlauf",
+      v2TeamOf: (values: { name: string }) => `Team ${values.name}`,
+      v2CanView: "Ansehen",
+      v2LinkBy: (values: { name: string }) => `${values.name} · Link`,
+      v2EndsOn: (values: { date: string }) => `läuft ab ${values.date}`,
+      v2OpenedTimes: (values: { count: number }) =>
+        values.count === 0 ? "noch nicht geöffnet" : `${values.count.toLocaleString("de")}× geöffnet`,
+      v2Team: "Team",
+      v2Links: (values: { count: number }) => (values.count === 1 ? "Link" : `${values.count} Links`),
+      v2RecentMovedTitle: "„Zuletzt“ ist jetzt in der Aktivität.",
+      v2RevokeTitle: (values: { name: string }) => `„${values.name}“ widerrufen?`,
+      v2ActiveShares: (values: { count: number; more: string }) =>
+        values.count === 1 && !values.more ? "1 aktiver Link" : `${values.count}${values.more} aktive Links`,
+      v2SharesShown: (values: { count: number }) => (values.count === 1 ? "1 Link angezeigt" : `${values.count} Links angezeigt`),
+      v2StorageCount: (values: { count: number }) => (values.count === 1 ? "1 Ablage" : `${values.count} Ablagen`),
     },
   },
 });

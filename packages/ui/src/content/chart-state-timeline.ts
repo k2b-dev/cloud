@@ -1,4 +1,13 @@
-import { chartDatumSvg, computeDomain, escapeXml, extendDomainToNice, mapRange, niceStep, svgRoot } from "../charts/core/svg-renderers";
+import {
+  chartDatumSvg,
+  computeDomain,
+  escapeXml,
+  extendDomainToNice,
+  mapRange,
+  niceStep,
+  seriesPaint,
+  svgRoot,
+} from "../charts/core/svg-renderers";
 
 export type StateTimelineDomain = readonly [number, number];
 
@@ -9,6 +18,11 @@ export type StateTimelineInterval = {
   label?: string;
   href?: string;
   tooltip?: string;
+  /**
+   * A start still to come (a planned run): drawn as an outline in its state's colour instead of filled, and its text
+   * alternative says so (`plannedLabel`).
+   */
+  planned?: boolean;
 };
 
 export type StateTimelineRow = {
@@ -31,6 +45,21 @@ export type StateTimelineChartOptions = {
   xAxis?: { format?: (value: number) => string; label?: string };
   legend?: boolean;
   interactive?: boolean;
+  /**
+   * Starts the ids of the drawing's own definitions (the clip of the lane names), so two drawings on one page never
+   * share one; `Chart` gives each instance its own. Without it the ids come from the geometry.
+   */
+  idPrefix?: string;
+  /**
+   * The present moment as the page knows it (the server's request time, then the island's): a thin line over the
+   * lanes with `nowLabel`. The drawing reads no clock of its own, so the server and the first render in the browser
+   * draw the same; without it there is no line.
+   */
+  now?: number;
+  /** The word on the line of `now`, such as "Jetzt"; `Chart` gives it in the page's language. */
+  nowLabel?: string;
+  /** The word a planned start adds to its text alternative, such as "geplant"; `Chart` gives it. */
+  plannedLabel?: string;
 };
 
 const ROW_HEIGHT = 24;
@@ -38,6 +67,10 @@ const TOP = 38;
 const AXIS_HEIGHT = 28;
 const LEGEND_HEIGHT = 24;
 const MIN_VIEW_FRACTION = 1 / 64;
+/** The narrowest a region is drawn: a run of seconds on a day stays visible and can be pointed at, centred on its start. */
+const MIN_REGION = 3;
+/** How near (in drawing units) an axis label may stand to the word of now before it gives way. */
+const NOW_ROOM = 48;
 
 const finiteDomain = (domain: StateTimelineDomain): StateTimelineDomain | null => {
   if (!Number.isFinite(domain[0]) || !Number.isFinite(domain[1]) || domain[0] === domain[1]) return null;
@@ -97,9 +130,6 @@ const fmt = (value: number): string => (Number.isInteger(value) ? String(value) 
 
 const safeHref = (href: string | undefined): string | null => (href && href.startsWith("/") && !href.startsWith("//") ? href : null);
 
-const truncate = (value: string, maxChars: number): string =>
-  value.length <= maxChars ? value : `${value.slice(0, Math.max(1, maxChars - 1))}…`;
-
 const interactiveGroup = (body: string, href: string | undefined, tooltip: string | undefined, ariaLabel: string): string => {
   const safe = safeHref(href);
   const attrs = [`aria-label="${escapeXml(ariaLabel)}"`, tooltip ? `data-chart-tooltip="${escapeXml(tooltip)}"` : ""]
@@ -134,16 +164,22 @@ export const renderStateTimelineSvg = (
   const stateKeys = opts.states?.map((state) => state.state) ?? [...new Set(rows.flatMap((row) => row.intervals.map((i) => i.state)))];
   const stateIndexes = new Map(stateKeys.map((state, index) => [state, index]));
   const body: string[] = [];
-  const maxLabelChars = Math.max(4, Math.floor((gutter - 18) / 6.3));
+  const lanes: string[] = [];
+  // A host stretches the drawing to its box while text keeps its pixel size, so the room a lane name has in pixels is
+  // known only in the browser. Each name starts at the left edge and the gutter cuts it off with a short fade: in the
+  // drawing's own units, the cut scales with the box and always ends before the plot. The full name stays in the
+  // link's title and accessible name. Each drawing of `Chart` has ids of its own: an id that two drawings share points
+  // into the first, and a hidden first one clips nothing. A drawing without a prefix takes ids from its geometry.
+  const labelRight = Math.max(8, plotLeft - 8);
+  const lanesId = opts.idPrefix ? `${opts.idPrefix}-lanes` : `stdlib-chart-lanes-${fmt(labelRight)}-${fmt(height)}`;
 
   rows.forEach((row, rowIndex) => {
     const y = TOP + rowIndex * ROW_HEIGHT;
     if (y + ROW_HEIGHT > rowsBottom + 1) return;
-    const label = truncate(row.label, maxLabelChars);
-    const labelBody = `<text class="stdlib-chart-state-label" x="${fmt(plotLeft - 8)}" y="${fmt(
+    const labelBody = `<text class="stdlib-chart-state-label" x="0" y="${fmt(
       y + ROW_HEIGHT / 2,
-    )}" text-anchor="end" dominant-baseline="middle">${escapeXml(label)}</text>`;
-    body.push(interactiveGroup(labelBody, row.href, row.tooltip ?? row.label, row.label));
+    )}" text-anchor="start" dominant-baseline="middle">${escapeXml(row.label)}</text>`;
+    lanes.push(interactiveGroup(labelBody, row.href, row.tooltip ?? row.label, row.label));
 
     for (const [index, interval] of row.intervals.entries()) {
       if (!Number.isFinite(interval.from) || !Number.isFinite(interval.to)) continue;
@@ -156,11 +192,26 @@ export const renderStateTimelineSvg = (
       const x2 = mapRange(to, viewport, [plotLeft, plotRight]);
       const style = stateStyles.get(interval.state);
       const stateIndex = style?.index ?? stateIndexes.get(interval.state) ?? 0;
-      const color = style?.color ? ` fill="${escapeXml(style.color)}"` : "";
-      const rect = `<rect class="stdlib-chart-state-region stdlib-chart-series-${stateIndex % 8}"${color} x="${fmt(
-        x,
-      )}" y="${fmt(y + 3)}" width="${fmt(Math.max(2, x2 - x))}" height="${ROW_HEIGHT - 6}" rx="3"/>`;
+      // too short to see: the narrowest region, centred on the start and kept on the plot
+      const narrow = x2 - x < MIN_REGION;
+      const left = narrow ? Math.max(plotLeft, Math.min(plotRight - MIN_REGION, x - MIN_REGION / 2)) : x;
+      const regionWidth = narrow ? MIN_REGION : x2 - x;
+      // a planned start: an outline of 1.5 in its state's colour over a faint fill (stroke and width as a style, which
+      // wins over the white edge of 1 every region has)
+      const planned = interval.planned
+        ? ` data-planned="" fill-opacity="0.12" stroke-dasharray="3 2" style="stroke:${
+            style?.color ? escapeXml(style.color) : `var(--stdlib-chart-c${(stateIndex % 8) + 1})`
+          };stroke-width:1.5"`
+        : "";
+      const rect = `<rect ${seriesPaint(style?.color, stateIndex, "stdlib-chart-state-region")}${planned} x="${fmt(
+        left,
+      )}" y="${fmt(y + 3)}" width="${fmt(regionWidth)}" height="${ROW_HEIGHT - 6}" rx="${narrow ? 1 : 3}"/>`;
       const stateLabel = style?.label ?? interval.state;
+      // "geplant" only where the state's own words do not say it already ("Geplant, geplant")
+      const plannedWord =
+        interval.planned && opts.plannedLabel && !stateLabel.toLocaleLowerCase().includes(opts.plannedLabel.toLocaleLowerCase())
+          ? opts.plannedLabel
+          : undefined;
       body.push(
         interactiveGroup(
           chartDatumSvg(
@@ -184,24 +235,57 @@ export const renderStateTimelineSvg = (
           ),
           interval.href,
           interval.tooltip ?? interval.label,
-          [row.label, interval.label, stateLabel].filter(Boolean).join(", "),
+          [row.label, interval.label, stateLabel, plannedWord].filter(Boolean).join(", "),
         ),
       );
     }
   });
 
+  if (lanes.length > 0) {
+    const fadeFrom = Math.max(0, labelRight - 16);
+    body.unshift(
+      `<defs><linearGradient id="${lanesId}-fade" gradientUnits="userSpaceOnUse" x1="${fmt(fadeFrom)}" y1="0" x2="${fmt(
+        labelRight,
+      )}" y2="0"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>` +
+        `<mask id="${lanesId}" maskUnits="userSpaceOnUse" x="0" y="0" width="${fmt(labelRight)}" height="${fmt(height)}">` +
+        `<rect x="0" y="0" width="${fmt(labelRight)}" height="${fmt(height)}" fill="url(#${lanesId}-fade)"/></mask>` +
+        `<clipPath id="${lanesId}-clip"><rect x="0" y="0" width="${fmt(labelRight)}" height="${fmt(height)}"/></clipPath></defs>`,
+      // a name starts at the left edge in a page written right to left too: `start` would be the right edge there
+      `<g class="stdlib-chart-state-labels" direction="ltr" mask="url(#${lanesId})" clip-path="url(#${lanesId}-clip)">${lanes.join("")}</g>`,
+    );
+  }
+
   const tickTarget = Math.max(2, Math.min(8, Math.floor((plotRight - plotLeft) / 110)));
   const ticks = extendDomainToNice(viewport[0], viewport[1], niceStep(viewport[1] - viewport[0], tickTarget)).ticks;
   const format = opts.xAxis?.format ?? ((value: number) => fmt(value));
+  // now, where the page says: its word stands on the time axis at its time, so the axis labels near it give way
+  const nowX =
+    opts.now !== undefined && Number.isFinite(opts.now) && opts.now >= viewport[0] && opts.now <= viewport[1]
+      ? mapRange(opts.now, viewport, [plotLeft, plotRight])
+      : undefined;
   for (const tick of ticks) {
     if (tick < viewport[0] || tick > viewport[1]) continue;
     const x = mapRange(tick, viewport, [plotLeft, plotRight]);
+    const label =
+      nowX !== undefined && opts.nowLabel && Math.abs(x - nowX) < NOW_ROOM
+        ? ""
+        : `<text class="stdlib-chart-heatmap-label" x="${fmt(x)}" y="${fmt(rowsBottom + 17)}" text-anchor="middle">${escapeXml(format(tick))}</text>`;
+    body.push(`<line x1="${fmt(x)}" x2="${fmt(x)}" y1="${TOP}" y2="${fmt(rowsBottom)}" stroke="currentColor" opacity="0.08"/>`, label);
+  }
+
+  // now: a thin line over the lanes down to the time axis, and its word on the axis, kept inside the plot at its ends
+  // (the band above the lanes belongs to the controls of an interactive chart)
+  if (nowX !== undefined) {
+    const anchor = nowX < plotLeft + 24 ? "start" : nowX > plotRight - 24 ? "end" : "middle";
     body.push(
-      `<line x1="${fmt(x)}" x2="${fmt(x)}" y1="${TOP}" y2="${fmt(rowsBottom)}" stroke="currentColor" opacity="0.08"/>`,
-      `<text class="stdlib-chart-heatmap-label" x="${fmt(x)}" y="${fmt(rowsBottom + 17)}" text-anchor="middle">${escapeXml(
-        format(tick),
-      )}</text>`,
+      `<line class="stdlib-chart-state-now" x1="${fmt(nowX)}" x2="${fmt(nowX)}" y1="${TOP}" y2="${fmt(rowsBottom + 4)}" stroke="currentColor" stroke-width="1"/>`,
     );
+    if (opts.nowLabel)
+      body.push(
+        `<text class="stdlib-chart-heatmap-label stdlib-chart-state-now-label" x="${fmt(nowX)}" y="${fmt(rowsBottom + 17)}" text-anchor="${anchor}">${escapeXml(
+          opts.nowLabel,
+        )}</text>`,
+      );
   }
 
   if (opts.xAxis?.label) {
@@ -217,10 +301,9 @@ export const renderStateTimelineSvg = (
     let x = plotLeft;
     const y = height - 9;
     for (const [index, state] of (opts.states ?? []).entries()) {
-      const color = state.color ? ` fill="${escapeXml(state.color)}"` : "";
       const label = state.label ?? state.state;
       body.push(
-        `<rect class="stdlib-chart-series-${index % 8}"${color} x="${fmt(x)}" y="${y - 8}" width="8" height="8" rx="2"/>`,
+        `<rect ${seriesPaint(state.color, index)} x="${fmt(x)}" y="${y - 8}" width="8" height="8" rx="2"/>`,
         `<text class="stdlib-chart-heatmap-label" x="${fmt(x + 12)}" y="${y}" text-anchor="start">${escapeXml(label)}</text>`,
       );
       x += 20 + label.length * 6.2;

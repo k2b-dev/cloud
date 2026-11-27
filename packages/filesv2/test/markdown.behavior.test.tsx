@@ -46,15 +46,18 @@ test("Markdown saves the revision of loaded bytes and preserves a draft after co
   globalThis.fetch = Object.assign(async () => new Response("hello", { headers: { etag: '"loaded-revision"' } }), {
     preconnect: originalFetch.preconnect,
   });
-  const { default: MarkdownDocument } = await import("../src/frontend/MarkdownDocument");
+  const { default: MarkdownDocument } = await import("../src/frontend/MarkdownPane");
   let guard: (() => Promise<boolean>) | null = null;
+  let head: import("../src/frontend/MarkdownPane").EditorHead | null = null;
   const dispose = render(
     () =>
       createComponent(MarkdownDocument, {
         launch,
-        onBack: () => {},
         onGuard: (value) => {
           guard = value;
+        },
+        onHead: (value) => {
+          head = value;
         },
       }),
     dom.root,
@@ -65,12 +68,18 @@ test("Markdown saves the revision of loaded bytes and preserves a draft after co
     dom.cleanup();
   };
   await flush();
+  // the draft's state stands in the workspace's head: "Saved" for a moment after a save
+  const stateChip = () => head?.state();
   const editor = dom.root.querySelector<HTMLTextAreaElement>("textarea")!;
   expect(editor).not.toBeNull();
   expect(editor.value).toBe("hello");
+  // no title row of its own: saving ends the editor's own bar, which every width shows
   const tools = [...dom.root.querySelectorAll<HTMLButtonElement>('[role="toolbar"] button')];
-  expect(tools.at(-1)!.getAttribute("aria-label")).toBe("Close");
-  expect(tools.at(-2)!.getAttribute("aria-label")).toBe("Save");
+  // "Speichern" ends it; no close of its own, the sidebar leads back
+  expect(tools.at(-1)!.getAttribute("aria-label")).toBe("Save");
+  expect(tools.map((tool) => tool.getAttribute("aria-label"))).not.toContain("Close");
+  expect(dom.root.querySelector('[data-slot="status"]')).toBeNull();
+  expect(head!.dirty()).toBe(false);
   expect(dom.root.textContent).not.toContain("Back to folder");
   expect(dom.root.querySelector('[data-variant="embedded"][data-fill="true"]')).not.toBeNull();
   expect(await guard!()).toBe(true);
@@ -80,7 +89,7 @@ test("Markdown saves the revision of loaded bytes and preserves a draft after co
   editor.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true }));
   await flush();
   expect(saves).toHaveLength(1);
-  expect(dom.root.querySelector(".ti-check")).toBeNull();
+  expect(stateChip()).not.toBe("Saved");
   expect(saves[0]).toMatchObject({ content: "my draft", options: { expectedRevision: "loaded-revision" } });
   expect(editor.value).toBe("my draft");
   expect(dom.root.textContent).toContain("The file changed");
@@ -105,23 +114,23 @@ test("Markdown saves the revision of loaded bytes and preserves a draft after co
   expect(allowed).toBe(true);
   expect(dom.document.querySelector("dialog")).toBeNull();
   expect(editor.value).toBe("my draft");
-  expect(dom.root.textContent).toContain("Unsaved changes");
+  expect(stateChip()).toBe("Unsaved changes");
   failSave = false;
   editor.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true }));
   await flush();
-  expect(dom.root.textContent).not.toContain("Unsaved changes");
+  expect(stateChip()).not.toBe("Unsaved changes");
   expect(await guard!()).toBe(true);
   expect(dom.root.querySelector('[role="toolbar"]')!.textContent).not.toContain("Saved");
-  expect(dom.root.querySelector(".ti-check")).not.toBeNull();
+  expect(stateChip()).toBe("Saved");
   editor.value = "next draft";
   editor.dispatchEvent(new Event("input", { bubbles: true }));
   await flush();
-  expect(dom.root.querySelector(".ti-check")).toBeNull();
+  expect(stateChip()).not.toBe("Saved");
   editor.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true }));
   await flush();
-  expect(dom.root.querySelector(".ti-check")).not.toBeNull();
+  expect(stateChip()).toBe("Saved");
   await new Promise((resolve) => setTimeout(resolve, 1600));
-  expect(dom.root.querySelector(".ti-check")).toBeNull();
+  expect(stateChip()).not.toBe("Saved");
   dispose();
   expect(guard).toBeNull();
 });

@@ -1,3 +1,4 @@
+export { type AdminWorkspaceProps, default as AdminWorkspace } from "../AdminWorkspace";
 export { default as PageTrail, type PageTrailProps } from "../PageTrail";
 export { default as V2WorkspaceNavigation, type V2WorkspaceNavigationProps } from "../V2WorkspaceNavigation";
 export { default as WorkspaceNavigationProvider } from "../WorkspaceNavigationProvider";

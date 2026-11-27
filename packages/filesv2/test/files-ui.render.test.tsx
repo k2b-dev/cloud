@@ -8,9 +8,9 @@ import { parseAdminLocation } from "../src/frontend/admin-location";
 import FilesScreen from "../src/frontend/FilesScreen.island";
 import FileThumbnail from "../src/frontend/FileThumbnail";
 import { DirectoryStatus, IssueMessage } from "../src/frontend/feedback";
+import { itemHistoryRequest, itemHistorySource } from "../src/frontend/history-requests";
 import Inventory from "../src/frontend/Inventory";
-import Workspace from "../src/frontend/Workspace.island";
-import { chain, current, entry, gone } from "./history-fixtures";
+import { chain, current, entry, gone, live, page } from "./history-fixtures";
 
 describe("Filesv2 server-rendered feedback", () => {
   test("an old folder SSR snapshot shows its move without a false loading error", () => {
@@ -27,7 +27,7 @@ describe("Filesv2 server-rendered feedback", () => {
     const moved = entry({ action: "item.move", before: gone("team/Old"), after: current("team/New") });
     const html = renderToString(() => (
       <LocaleProvider locale="en">
-        <Workspace
+        <FilesScreen
           timeZone="Europe/Berlin"
           initial={{
             source: `/app/filesv2?base=${encodeURIComponent(base.id)}&path=Old`,
@@ -41,14 +41,116 @@ describe("Filesv2 server-rendered feedback", () => {
               path: "Old",
               entry: moved,
               chain: chain({ endpoint: { baseId: base.id, path: "New", itemId: null }, certainty: "verified" }),
+              // what the folder holds at its new place, read by the server with the move
+              contents: {
+                items: [{ name: "Offer.pdf", path: "New/Offer.pdf", directory: false, size: 2048, modified: "2026-10-19T10:00:00.000Z" }],
+                next: null,
+              },
             },
           }}
         />
       </LocaleProvider>
     ));
     expect(html).toContain("This folder has moved");
+    expect(html).toContain("Offer.pdf");
+    expect(html).toContain('data-k2-part="Workspace"');
     expect(html).not.toContain("Files could not be loaded");
     expect(html).not.toContain("Try again");
+    expect(html).not.toContain('data-k2-part="Loading"');
+  });
+
+  const team = {
+    id: "cloud:groups:vertrieb",
+    area: "cloud" as const,
+    kind: "groups" as const,
+    name: "Vertrieb",
+    status: "existing" as const,
+    reason: null,
+    indexEnabled: true,
+    versioningEnabled: true,
+  };
+  const home = { ...team, id: "cloud:users:valentin", kind: "users" as const, name: "valentin" };
+  const screen = (source: string, extra: Record<string, unknown>) =>
+    renderToString(() => (
+      <LocaleProvider locale="en">
+        <FilesScreen
+          timeZone="Europe/Berlin"
+          initial={{
+            source,
+            bases: { items: [home, team], issues: [], editor: null },
+            selectedId: null,
+            directory: null,
+            errorCode: null,
+            now: "2026-10-20T12:30:00.000Z",
+            ...extra,
+          }}
+        />
+      </LocaleProvider>
+    ));
+
+  test("Activity and the shares render on v2 with their data and no loading state on the first picture", () => {
+    const upload = entry({
+      action: "file.upload",
+      actor: { kind: "user", userId: "valentin", name: "Valentin Kolb" },
+      after: live("vertrieb/Angebote/Angebot 2026-118.pdf", { directory: false }),
+    });
+    const activity = screen("/app/filesv2?view=activity&who=me", {
+      activity: { filters: { actor: "me" }, page: page([upload]) },
+      marks: [],
+    });
+    expect(activity).toContain("Angebot 2026-118.pdf");
+    expect(activity).toContain('data-k2-part="FilterBar"');
+    expect(activity).toContain('data-k2-part="List"');
+    expect(activity).toContain("1 changes");
+    expect(activity).not.toContain('data-k2-part="Loading"');
+
+    const shares = screen("/app/filesv2?view=shares", {
+      shares: {
+        items: [
+          {
+            passwordProtected: true,
+            id: "s1",
+            kind: "download",
+            url: null,
+            title: "Unterlagen Lindqvist",
+            note: null,
+            publicNote: null,
+            base: { id: team.id, name: team.name, kind: team.kind },
+            scope: "Angebote",
+            items: ["Angebote/Angebot 2026-118.pdf"],
+            createdBy: "Valentin Kolb",
+            createdAt: "2026-10-18T10:00:00.000Z",
+            expiresAt: "2026-12-15T10:00:00.000Z",
+            state: "active",
+            accessCount: 3,
+            lastAccessedAt: null,
+            maxFileSize: 0,
+            maxTotalSize: 0,
+            showUploadNames: false,
+          },
+        ],
+        next: null,
+      },
+    });
+    for (const text of ["Unterlagen Lindqvist", "1 link", "Actions for Unterlagen Lindqvist"]) expect(shares).toContain(text);
+    // the lead names only exceptions, and a phone row has two lines: what and who, not how often it was opened
+    for (const text of ["1 active", "3 accesses"]) expect(shares).not.toContain(text);
+    expect(shares).toContain("1 entry · Valentin Kolb");
+    expect(shares).not.toContain('data-k2-part="Loading"');
+  });
+
+  test("a vanished item's batched step says it checks the batch in the first picture, as the browser's does", () => {
+    const moved = entry({
+      action: "item.move",
+      batchId: "batch-1",
+      before: gone("vertrieb/Kunden/Angebote 2025"),
+      after: current("vertrieb/Archiv/Angebote 2025", { itemId: "f1" }),
+    });
+    const html = screen("/app/filesv2?view=activity&q=Angebote+2025", {
+      activity: { filters: { q: "Angebote 2025" }, page: page([moved]) },
+    });
+    expect(html).toContain("Angebote 2025");
+    expect(html).toContain("Checking the other items");
   });
 
   test("all inventory states have readable localized labels independent of color", () => {
@@ -161,19 +263,27 @@ describe("Filesv2 server-rendered feedback", () => {
             selectedId: base.id,
             directory: { base, path: "Projects", items, next: null, actions: { create: true } },
             detail: { base, entry: items[2]!, favorite: false },
+            // the server reads the open file's history for the first picture, as the page does
+            history: {
+              source: itemHistorySource(itemHistoryRequest(base, items[2]!)),
+              page: { items: [], next: null, visibleCount: 0, batches: [], exhausted: true },
+            },
             errorCode: null,
             now: "2026-11-25T12:00:00.000Z",
           }}
         />
       </LocaleProvider>
     ));
-    for (const text of ["Drafts", "Budget 2027.xlsx", "Notes.md", "Projects", "Upload", "3 items loaded"]) expect(html).toContain(text);
+    for (const text of ["Drafts", "Budget 2027.xlsx", "Notes.md", "Projects", "3 entries ·"]) expect(html).toContain(text);
+    // beside an open file the upload stays in "+", so nothing floats over the file on the phone
+    expect(html).not.toContain(">Upload<");
     expect(html).toContain('data-k2-part="Workspace"');
     expect(html).toContain('data-k2-part="Table"');
     expect(html).toContain('data-k2-part="Path"');
     expect(html).toContain('data-k2-part="FilterBar"');
     // The open entry stands beside the list from the first picture, with its deeds and properties.
-    expect(html).toContain("Properties");
+    // the facts of the open file, without a head of their own
+    expect(html).toContain('data-k2-part="Facts"');
     expect(html).toContain("Download");
     // Zero loading indicators on the first render (quality bar of the v2 migration).
     expect(html).not.toContain('data-k2-part="Loading"');

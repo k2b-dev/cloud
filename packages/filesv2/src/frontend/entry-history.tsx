@@ -1,5 +1,6 @@
 import { query } from "@k2b/stdlib/solid";
-import { Avatar, Button, DetailPanel, formatFileViewSize, Placeholder, prompts, Section, toast } from "@k2b/ui";
+import { formatFileViewSize, prompts } from "@k2b/ui";
+import { Bar, Section as Group, List, Menu, Notice, Row, Text, useToast } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch, untrack } from "solid-js";
 import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
@@ -13,7 +14,7 @@ import { useHistoryMessages } from "./history-messages";
 import { itemHistoryRequest, itemHistorySource, sharePeriod } from "./history-requests";
 import ItemHistory from "./ItemHistory";
 import { useFilesMessages } from "./messages";
-import ShareHistory, { createShareAccess, type ShareAccessRequest } from "./ShareHistory";
+import { createShareAccess, type ShareAccessRequest } from "./ShareHistory";
 import type { WorkspaceSnapshot } from "./workspace-state";
 
 /** History in the detail: request context, the server's first page and the actions; absent hides it. */
@@ -101,46 +102,33 @@ export type Versions = ReturnType<typeof createVersions>;
  * Order of the detail as approved: public links, versions of a file, then the item's history. Versions and history
  * share one version list, so history rows can name "Version 2" with the number the list shows.
  */
-export function EntryHistory(props: {
-  base: BaseSummary;
-  entry: FileEntry;
-  resourceId?: string;
-  busy?: boolean;
-  onChanged: (selectPath?: string | null) => void;
-  onOpen: (entry: FileEntry) => void;
-  locale: string;
-  history?: InspectorHistory;
-  versions: Versions;
-  currentAuthor?: string | null;
-  versionsId: string;
-  versionsOpen: boolean;
-  onShowVersions: () => void;
+/**
+ * The item's public links, as the detail shows them and its history counts their access: the server's pages of the
+ * person's own links for this item, one access query per link over the counted window, and their revocation.
+ */
+export function createEntryLinks(props: {
+  base: () => BaseSummary;
+  entry: () => FileEntry;
+  resourceId: () => string | undefined;
+  history: () => InspectorHistory | undefined;
 }) {
   const h = useHistoryMessages();
   const t = useBrowserMessages();
-  // Numbers count the saved versions, oldest first; the current content comes after them.
-  const ordered = createMemo(() => [...(props.versions.items() ?? [])].sort((a, b) => a.created.localeCompare(b.created)));
-  const versionNumbers = createMemo(() => new Map(ordered().map((version, index) => [version.id, index + 1])));
-  const versionOf = (entry: ActivityEntry) => (props.versions.state() === "ready" ? activityVersion(entry, props.entry, ordered()) : null);
-  const restorePrevious = async (entry: ActivityEntry) => {
-    const previous = ordered().at(-1);
-    if (!previous || !versionOf(entry)?.restorable) throw new Error(h().actionFailed);
-    await restoreVersion(props.base.id, props.entry, previous.id, h().actionFailed);
-    toast.success(t().versionRestored);
-    props.onChanged(props.entry.path);
-  };
-  const request = () => itemHistoryRequest(props.base, { ...props.entry, resourceId: props.entry.resourceId ?? props.resourceId });
-  const source = () => JSON.stringify([props.base.locationKey ?? null, itemHistorySource(request())]);
-  const now = () => props.history?.env.now ?? new Date().toISOString();
+  const now = () => props.history()?.env.now ?? new Date().toISOString();
   const period = createMemo(() => sharePeriod(now()));
   const shareSource = () =>
-    JSON.stringify([props.base.id, props.base.locationKey ?? null, props.entry.path, props.entry.resourceId ?? props.resourceId ?? null]);
+    JSON.stringify([
+      props.base().id,
+      props.base().locationKey ?? null,
+      props.entry().path,
+      props.entry().resourceId ?? props.resourceId() ?? null,
+    ]);
   // Server-side item matching precedes pagination. Never filter a user's global first page in the browser.
   const shares = query.createInfinite({
     source: shareSource,
-    enabled: () => !!props.history,
+    enabled: () => !!props.history(),
     loadPage: (_key, { cursor, abortSignal }) =>
-      loadItemShares({ baseId: props.base.id, path: props.entry.path }, cursor ?? null, abortSignal, h().accessFailed),
+      loadItemShares({ baseId: props.base().id, path: props.entry().path }, cursor ?? null, abortSignal, h().accessFailed),
     getNextCursor: (page: SharePage) => page.next,
   });
   // The query clears its error as soon as a retry starts; keep this action's label and alert in place until it settles.
@@ -185,55 +173,57 @@ export function EntryHistory(props: {
     items.set(share.id, { ...share, state: result.state });
     setRevoked({ source, items });
   };
+  return {
+    items: links,
+    state: linksState,
+    period,
+    loadAccess,
+    revoke,
+    /** The list itself: loading its first page, a failed page, or more pages to read. */
+    list: () => ({
+      loading: shares.loading() && !shareRetrying() && itemShares().length === 0,
+      failed: shareFailed(),
+      more: shares.hasMore() || shareFailed(),
+      busy: shares.loadingMore() || shares.loading() || shareRetrying(),
+      label: shareFailed() ? h().retry : t().moreShares,
+    }),
+    loadMore: loadMoreShares,
+  };
+}
+export type EntryLinks = ReturnType<typeof createEntryLinks>;
+
+export function EntryHistory(props: {
+  base: BaseSummary;
+  entry: FileEntry;
+  resourceId?: string;
+  busy?: boolean;
+  onChanged: (selectPath?: string | null) => void;
+  onOpen: (entry: FileEntry) => void;
+  locale: string;
+  history?: InspectorHistory;
+  versions: Versions;
+  currentAuthor?: string | null;
+  onShowVersions: () => void;
+  /** The item's public links (see `createEntryLinks`): their access feeds the history's lines too. */
+  links: EntryLinks;
+}) {
+  const h = useHistoryMessages();
+  const t = useBrowserMessages();
+  const toast = useToast();
+  // Numbers count the saved versions, oldest first; the current content comes after them.
+  const ordered = createMemo(() => [...(props.versions.items() ?? [])].sort((a, b) => a.created.localeCompare(b.created)));
+  const versionOf = (entry: ActivityEntry) => (props.versions.state() === "ready" ? activityVersion(entry, props.entry, ordered()) : null);
+  const restorePrevious = async (entry: ActivityEntry) => {
+    const previous = ordered().at(-1);
+    if (!previous || !versionOf(entry)?.restorable) throw new Error(h().actionFailed);
+    await restoreVersion(props.base.id, props.entry, previous.id, h().actionFailed);
+    toast(t().versionRestored, { status: "ok" });
+    props.onChanged(props.entry.path);
+  };
+  const request = () => itemHistoryRequest(props.base, { ...props.entry, resourceId: props.entry.resourceId ?? props.resourceId });
+  const source = () => JSON.stringify([props.base.locationKey ?? null, itemHistorySource(request())]);
   return (
     <>
-      <Show when={props.history}>
-        {(history) => (
-          <>
-            <ShareHistory env={history().env} shares={links()} period={period()} load={loadAccess} onRevoke={revoke} />
-            <Show when={shares.loading() || shareFailed() || shares.hasMore()}>
-              <div role="group" aria-label={h().publicLink}>
-                <Show when={shares.loading() && !shareRetrying() && itemShares().length === 0}>
-                  <p role="status">{t().loadingDetails}</p>
-                </Show>
-                <Show when={shareFailed()}>
-                  <p class="filesv2-item-history__line" role="alert">
-                    {h().accessFailed}
-                  </p>
-                </Show>
-                <Show when={shares.hasMore() || shareFailed()}>
-                  <Button
-                    size="xs"
-                    variant="link"
-                    loading={shares.loadingMore() || shares.loading() || shareRetrying()}
-                    onClick={() => void loadMoreShares()}
-                  >
-                    {shareFailed() ? h().retry : t().moreShares}
-                    <i class={shareFailed() ? "ti ti-refresh" : "ti ti-chevron-down"} aria-hidden="true" />
-                  </Button>
-                </Show>
-              </div>
-            </Show>
-          </>
-        )}
-      </Show>
-      <Show when={!props.entry.directory}>
-        {/* Phones open this list from the version count in Info; wider panels always show it. */}
-        <div id={props.versionsId} class="filesv2-inspector-versions" data-open={props.versionsOpen ? "true" : undefined}>
-          <VersionsSection
-            base={props.base}
-            entry={props.entry}
-            busy={props.busy}
-            onChanged={props.onChanged}
-            onOpen={props.onOpen}
-            locale={props.locale}
-            versions={props.versions}
-            currentAuthor={props.currentAuthor}
-            env={props.history?.env}
-            number={(version) => versionNumbers().get(version.id)}
-          />
-        </div>
-      </Show>
       <Show when={props.history}>
         {(history) => (
           <ItemHistory
@@ -251,7 +241,7 @@ export function EntryHistory(props: {
               history().initial?.source === itemHistorySource(request()) ? { source: source(), page: history().initial!.page } : null
             }
             load={(cursor, signal) => loadItemHistory(request(), cursor, signal, h().historyFailed)}
-            links={{ items: links(), state: linksState() }}
+            links={{ items: props.links.items(), state: props.links.state() }}
             activityHref={history().activityHref(props.base.id, props.entry.path, props.entry.directory ? "folder" : "item")}
             onChanged={() => props.onChanged(props.entry.path)}
           />
@@ -261,7 +251,7 @@ export function EntryHistory(props: {
   );
 }
 
-function VersionsSection(props: {
+export function EntryVersions(props: {
   base: BaseSummary;
   entry: FileEntry;
   busy?: boolean;
@@ -271,27 +261,28 @@ function VersionsSection(props: {
   env?: HistoryEnvironment;
   versions: Versions;
   currentAuthor?: string | null;
-  number?: (version: FileVersion) => number | undefined;
 }) {
   const h = useHistoryMessages();
   const t = useBrowserMessages();
+  const toast = useToast();
   const f = useFilesMessages();
   const [busy, setBusy] = createSignal(false);
   const items = () => props.versions.items() ?? [];
   const canAct = () => props.versions.state() === "ready" && !props.versions.refreshing();
-  // Newest first, below the current file, as the approved list reads.
+  // Newest first, below the current file, as the approved list reads; numbered oldest first, as the history counts them.
   const listed = createMemo(() => [...items()].sort((a, b) => b.created.localeCompare(a.created)));
+  const number = (version: FileVersion) => listed().length - listed().indexOf(version);
   const run = async (work: () => Promise<void>) => {
     if (busy() || props.busy) return;
     if (!canAct()) {
-      toast.error(h().versionsFailed);
+      toast(h().versionsFailed, { status: "bad" });
       return;
     }
     setBusy(true);
     try {
       await work();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : f().unavailable);
+      toast(error instanceof Error ? error.message : f().unavailable, { status: "bad", retry: () => run(work) });
     } finally {
       setBusy(false);
     }
@@ -313,7 +304,7 @@ function VersionsSection(props: {
         json: { path: path(), id: version.id, comment: String(values.comment ?? "") },
       });
       if (!response.ok) await apiFailure(response, f().unavailable);
-      toast.success(t().versionCommented);
+      toast(t().versionCommented, { status: "ok" });
       await props.versions.refresh();
     });
   };
@@ -326,7 +317,7 @@ function VersionsSection(props: {
         json: { path: path(), id: version.id, expectedRevision: props.entry.revision },
       });
       if (!response.ok) await apiFailure(response, f().unavailable);
-      toast.success(t().versionRestored);
+      toast(t().versionRestored, { status: "ok" });
       props.onChanged(path());
     });
   const restoreAs = async (version: FileVersion) => {
@@ -347,7 +338,7 @@ function VersionsSection(props: {
         json: { path: path(), id: version.id, name: values.name },
       });
       if (!response.ok) await apiFailure(response, f().unavailable);
-      toast.success(t().versionRestored);
+      toast(t().versionRestored, { status: "ok" });
       props.onChanged((await response.json()).entry.path);
     });
   };
@@ -368,132 +359,82 @@ function VersionsSection(props: {
     props.env
       ? formatWhen(iso, props.locale, h(), props.env)
       : new Date(iso).toLocaleString(props.locale, { dateStyle: "medium", timeStyle: "short" });
+  const label = (version: FileVersion) => h().versionN.replace("{n}", String(number(version)));
+  const writable = () => props.entry.actions?.write !== false;
   return (
-    <DetailPanel.Group label={t().versions}>
-      <Section
-        title={t().versions}
-        icon="ti ti-versions"
-        actions={
-          <span class="inline-flex size-4" role="status">
-            <Show when={props.versions.state() === "ready" && props.versions.refreshing()}>
-              <i class="ti ti-loader-2 motion-safe:animate-spin" aria-hidden="true" />
-              <span class="sr-only">{t().loadingDetails}</span>
-            </Show>
-          </span>
-        }
-        count={props.versions.state() === "ready" ? items().length + 1 : undefined}
-      >
-        <Show when={props.versions.state() === "error"}>
-          <Placeholder
-            state="error"
-            align="left"
-            class="px-0 py-1"
-            description={h().versionsFailed}
-            action={
-              <Button size="xs" variant="text" onClick={() => void props.versions.refresh()}>
-                {t().retry}
-              </Button>
-            }
-          />
-        </Show>
-        <Switch>
-          <Match when={props.versions.state() === "off"}>
-            <p class="text-xs text-dimmed">{t().versionsUnavailable}</p>
-          </Match>
-          <Match when={props.versions.state() === "loading"}>
-            <Placeholder state="loading" align="left" class="px-0 py-1" description={t().loadingDetails} />
-          </Match>
-          <Match when={props.versions.items() !== null}>
-            <div class="flex flex-col">
-              {/* The file as it is now, numbered after the saved versions as the history counts it. */}
-              <DetailPanel.Action
-                type="button"
-                title={
-                  props.versions.state() === "ready"
-                    ? `${h().versionN.replace("{n}", String(items().length + 1))} · ${h().versionCurrent}`
-                    : h().versionCurrent
-                }
-                leading={
-                  <span aria-hidden="true" class="flex">
-                    <Avatar
-                      name={props.currentAuthor ?? h().versionCurrent}
-                      icon={props.currentAuthor ? undefined : "ti ti-file"}
-                      size="xs"
-                      style={{ width: "20px", height: "20px" }}
+    <Group icon="versions" title={t().versions} count={props.versions.state() === "ready" ? items().length + 1 : undefined}>
+      <Switch>
+        <Match when={props.versions.state() === "error"}>
+          <Notice tone="bad" actions={[{ label: t().retry, onClick: () => void props.versions.refresh() }]}>
+            {h().versionsFailed}
+          </Notice>
+        </Match>
+        <Match when={props.versions.state() === "off"}>
+          <Bar start={<Text type="meta">{t().versionsUnavailable}</Text>} />
+        </Match>
+        <Match when={props.versions.state() === "loading"}>
+          <Bar start={<Text type="meta">{t().loadingDetails}</Text>} />
+        </Match>
+        <Match when={props.versions.items() !== null}>
+          <List label={t().versions}>
+            {/* as the Files recipe: one line each, who saved it and when, its size (and "aktuell" or its comment) as
+                the quiet note; the right column holds the deeds, as a row of one line has room for one thing there */}
+            <Row
+              avatar={props.currentAuthor ? { name: props.currentAuthor } : undefined}
+              mark={props.currentAuthor ? undefined : { icon: "file" }}
+              lines={[when(props.entry.modified)]}
+              meta={`${formatFileViewSize(props.entry.size, props.locale)} · ${h().versionCurrent}`}
+              onOpen={props.busy ? undefined : () => props.onOpen(props.entry)}
+            />
+            <For each={listed()}>
+              {(version) => (
+                <Row
+                  // Filegate's author metadata names the comment editor, not the content author.
+                  avatar={version.author ? { name: version.author } : undefined}
+                  mark={version.author ? undefined : { icon: "history" }}
+                  lines={[when(version.created)]}
+                  meta={[formatFileViewSize(version.size, props.locale), version.comment].filter(Boolean).join(" · ")}
+                  onOpen={
+                    busy() || props.busy || !canAct()
+                      ? undefined
+                      : () => (writable() ? void comment(version) : void downloadVersion(version))
+                  }
+                  end={
+                    <Menu
+                      label={`${t().actions}: ${label(version)}`}
+                      items={[
+                        {
+                          label: t().commentVersion,
+                          icon: "message",
+                          disabled: !canAct() || !writable(),
+                          onClick: () => void comment(version),
+                        },
+                        {
+                          label: t().downloadVersion,
+                          icon: "download",
+                          disabled: !canAct(),
+                          onClick: () => void downloadVersion(version),
+                        },
+                        {
+                          // an in-place restore needs the file's revision; without it the copy below still works
+                          label: t().restoreVersion,
+                          icon: "arrow-back-up",
+                          disabled: !canAct() || !props.entry.revision || !writable(),
+                          onClick: () => void restore(version),
+                        },
+                        { label: t().restoreVersionAs, icon: "file-plus", disabled: !canAct(), onClick: () => void restoreAs(version) },
+                      ]}
                     />
-                  </span>
-                }
-                trailing={
-                  <time dateTime={props.entry.modified} title={when(props.entry.modified)}>
-                    {when(props.entry.modified)}
-                  </time>
-                }
-                disabled={props.busy}
-                onClick={() => props.onOpen(props.entry)}
-              />
-              <For each={listed()}>
-                {(version) => (
-                  <DetailPanel.Action
-                    type="button"
-                    title={
-                      props.number?.(version)
-                        ? h().versionN.replace("{n}", String(props.number(version)))
-                        : t().versionLabel(when(version.created))
-                    }
-                    description={[version.comment, version.author, formatFileViewSize(version.size, props.locale)]
-                      .filter(Boolean)
-                      .join(" · ")}
-                    // Filegate's author metadata names the comment editor, not the content author.
-                    leading={
-                      <span aria-hidden="true" class="flex">
-                        <Avatar name={t().versions} icon="ti ti-history" size="xs" style={{ width: "20px", height: "20px" }} />
-                      </span>
-                    }
-                    trailing={
-                      <time dateTime={version.created} title={when(version.created)}>
-                        {when(version.created)}
-                      </time>
-                    }
-                    disabled={busy() || props.busy || !canAct()}
-                    onClick={() => (props.entry.actions?.write === false ? void downloadVersion(version) : void comment(version))}
-                    menuLabel={`${t().actions}: ${when(version.created)}`}
-                    menuItems={[
-                      {
-                        disabled: !canAct() || props.entry.actions?.write === false,
-                        label: t().commentVersion,
-                        icon: "ti ti-message",
-                        action: () => void comment(version),
-                      },
-                      {
-                        disabled: !canAct(),
-                        label: t().downloadVersion,
-                        icon: "ti ti-download",
-                        action: () => void downloadVersion(version),
-                      },
-                      {
-                        disabled: !canAct() || !props.entry.revision || props.entry.actions?.write === false,
-                        label: t().restoreVersion,
-                        description: !props.entry.revision ? t().restoreNeedsRevision : undefined,
-                        icon: "ti ti-arrow-back-up",
-                        action: () => void restore(version),
-                      },
-                      {
-                        disabled: !canAct(),
-                        label: t().restoreVersionAs,
-                        icon: "ti ti-file-plus",
-                        action: () => void restoreAs(version),
-                      },
-                    ]}
-                  />
-                )}
-              </For>
-            </div>
-            <Show when={!items().length}>
-              <p class="text-xs text-dimmed">{t().noVersions}</p>
-            </Show>
-          </Match>
-        </Switch>
-      </Section>
-    </DetailPanel.Group>
+                  }
+                />
+              )}
+            </For>
+          </List>
+          <Show when={!items().length}>
+            <Bar start={<Text type="meta">{t().noVersions}</Text>} />
+          </Show>
+        </Match>
+      </Switch>
+    </Group>
   );
 }

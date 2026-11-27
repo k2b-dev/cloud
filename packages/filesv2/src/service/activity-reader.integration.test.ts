@@ -2,6 +2,7 @@ import { beforeAll, beforeEach, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { resolveDisplayNames } from "@k2b/cloud/server";
 import { secrets } from "@k2b/cloud/services";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import {
@@ -212,6 +213,31 @@ suite("history reader SQL and permission projection in a private database", () =
     const page = await f.reader.activity(call);
     expect(page.items).toHaveLength(1);
     expect(page.items[0]?.after).toMatchObject({ visibility: "full", source: "snapshot", path: "archive/alice/file" });
+  });
+
+  // The run beside Activity's list is read with the page (one entry, the reader's current rights): its statements are
+  // pinned, so the page's SSR load stays bounded (DATA-13, page audit 27.11.).
+  test("one entry, as the run beside Activity reads it, costs a pinned list of statements", async () => {
+    await seed();
+    const f = fixture();
+    const meter = await meterSql();
+    try {
+      const statements = await meter.during(async () => {
+        const entry = await f.reader.activityEntry(call, { activityId: candidate().id });
+        expect(entry.actor).toMatchObject({ userId: otherId, name: "Live Bob" });
+      });
+      // one read budget (a transaction with its time limit), the entry by its primary key, its storage, one name lookup
+      expect(statements).toEqual([
+        "BEGIN",
+        "SELECT pg_backend_pid() AS pid, set_config('statement_timeout', (SELECT least(nullif(setting::bigint,0),$1 )::text FROM ",
+        "SELECT id,started_at,finished_at,coalesce(finished_at,started_at)::text AS effective_time, state,action,server_url,root,",
+        "COMMIT",
+        "SELECT id,lifecycle,area,kind,identity_id,identity_name,root,path,uid_number::double precision AS uid_number,gid_number:",
+        "SELECT id, display_name, uid, avatar_hash FROM auth.users WHERE id = ANY($1 ::uuid[])",
+      ]);
+    } finally {
+      await meter.close();
+    }
   });
 
   test("reads actual rows, resolves live names, strips private detail, and preserves FK name deletion", async () => {

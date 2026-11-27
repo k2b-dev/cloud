@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -9,7 +9,7 @@ import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-hydration.client";
 import type {} from "../../test/v2-hydration-twice";
 import { measureV2Layout } from "./testing";
-import { hairline, heights, textEdge } from "./tokens";
+import { heights, textEdge } from "./tokens";
 
 // The primitives rendered on the server and hydrated in the browser, as a page with islands that hydrate would: the
 // development build of Solid throws on a node the server did not send, so a mismatch fails here. The fixture
@@ -23,6 +23,8 @@ const bundle = bundleV2Entry;
 
 type Server = { html: string; script: string; made: { cells: number; probe: number } };
 
+const now = new Date("2026-12-31T23:30:00Z");
+
 let browser: Browser;
 let client: string;
 let server: Server;
@@ -32,7 +34,10 @@ beforeAll(async () => {
   const serverFile = resolve(temp, "server.js");
   await Bun.write(serverFile, serverCode);
   const { render }: { render: () => Server } = await import(serverFile);
+  // one instant on both sides, the last half hour of 2026 in UTC and already 1 January 2027 in Berlin
+  setSystemTime(now);
   server = render();
+  setSystemTime();
   [client, browser] = await Promise.all([bundle("v2-hydration.client.tsx", "dom"), launchBrowser()]);
 }, launchHookMs);
 afterAll(async () => {
@@ -41,7 +46,7 @@ afterAll(async () => {
 });
 
 const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
-  const page = await browser.newPage({ viewport: { width, height: 900 } });
+  const page = await browser.newPage({ viewport: { width, height: 900 }, timezoneId: "Europe/Berlin" });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   const consoleErrors: string[] = [];
@@ -56,6 +61,22 @@ const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
     await page.evaluate(() => {
       window.__k2Sent = document.getElementById("root")!.cloneNode(true);
     });
+    // the browser stands on the same instant as the server (only `Date`; timers and frames stay real)
+    await page.evaluate((at) => {
+      const RealDate = Date;
+      const offset = at - RealDate.now(); // real clock: the page's distance to the pinned instant
+      class PinnedDate extends RealDate {
+        constructor(...args: ConstructorParameters<DateConstructor> | []) {
+          if (args.length === 0)
+            super(RealDate.now() + offset); // real clock: flows from the pinned instant
+          else super(...(args as ConstructorParameters<DateConstructor>));
+        }
+        static override now() {
+          return RealDate.now() + offset; // real clock: flows from the pinned instant
+        }
+      }
+      globalThis.Date = PinnedDate as DateConstructor;
+    }, now.getTime());
     await page.addScriptTag({ content: client });
     await waitInPage(
       page,
@@ -75,6 +96,14 @@ const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
 test("hydration: the live page is what the server sent, in elements, texts and attributes", async () => {
   await withPage(async (page) => {
     expect(await page.evaluate(sentVsLive)).toEqual([]);
+  });
+});
+
+test("hydration: a DateInput reads “heute” in its own time zone on the server and in the browser alike", async () => {
+  // a server in UTC would say 31 December, a browser in Berlin 1 January: `timeZone` gives both the same day
+  expect(server.html).toContain('name="since" value="2027-01-01"');
+  await withPage(async (page) => {
+    expect(await page.locator('input[name="since"]').inputValue()).toBe("2027-01-01");
   });
 });
 
@@ -146,7 +175,7 @@ test("every cell and every field is made once, on the server and in the browser;
     expect(await page.evaluate(() => globalThis.__k2Made)).toEqual({ cells: 6, probe: 1 });
     // the head of each group is in the table and in the phone list, each its own
     expect(await page.locator(".k2-table tr[data-group] .k2-chip").allTextContents()).toEqual(["Offen", "Erledigt"]);
-    expect(await page.locator(".k2-table-phone .k2-bar .k2-chip").allTextContents()).toEqual(["Offen", "Erledigt"]);
+    expect(await page.locator(".k2-table-phone-group .k2-chip").allTextContents()).toEqual(["Offen", "Erledigt"]);
   });
 });
 
@@ -165,9 +194,10 @@ test("an entry that opens something holds no control inside a control, and each 
     await row.getByRole("button", { name: "Mehr zu Holzwerk" }).click();
     expect(await hash()).toBe("#angebot");
     await page.getByText("Geöffnet: mehr").waitFor();
-    await page.getByRole("button", { name: "Jonas Hartwig" }).click();
+    await page.getByRole("button", { name: "Jonas Hartwig", exact: true }).click();
     await page.getByText("Geöffnet: jonas").waitFor();
-    await page.getByRole("button", { name: "Annehmen" }).click();
+    // the row's deed is named by its words and then the row's title
+    await page.getByRole("button", { name: "Annehmen Jonas Hartwig", exact: true }).click();
     await page.getByText("Geöffnet: annehmen").waitFor();
     // a digest entry and a table row open from anywhere on them, their own links stay theirs
     // a link in the title of a row stays its own; the row is opened by the element named by that title
@@ -238,6 +268,65 @@ test("controls without a handler keep their own state, and the shape shows it", 
   });
 });
 
+// Facts and cells whose values are on their way keep the shape of the loaded ones: labels and hints stay, each value
+// is a bar of its line's height, and nothing moves when the values come (#4152).
+for (const width of [1440, 390])
+  test(`at ${width}: loading facts and cells stand in the shape of the loaded ones`, async () => {
+    await withPage(async (page) => {
+      const shape = () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll(".k2-facts, .k2-fact-pair > *, .k2-cells, .k2-cell, .k2-cell > *")].map((element) => {
+            const box = element.getBoundingClientRect();
+            return [element.className || element.tagName, Math.round(box.top), Math.round(box.left), Math.round(box.height)].join(" ");
+          }),
+        );
+      const loaded = await shape();
+      await page.evaluate(() => globalThis.__k2FactsLoading?.(true));
+      await settled(page);
+      // places and heights, not widths: an inline value's bar is shorter than its words, the line keeps its height
+      expect(await shape()).toEqual(loaded);
+      const said = await page.evaluate(() => ({
+        busy: [...document.querySelectorAll('[aria-busy="true"]')].map((element) => element.className),
+        // per value: what assistive technology hears, and whether the value that is there is held unseen
+        values: [...document.querySelectorAll(".k2-fact-value, .k2-cell-value")].map((value) => [
+          value.querySelector(":scope > .k2-hidden-text")?.textContent,
+          value.querySelector(":scope > .k2-held")?.getAttribute("aria-hidden") ?? "no value yet",
+        ]),
+        labels: [...document.querySelectorAll(".k2-fact-pair > dt, .k2-cell-label")].map((label) => label.textContent?.trim()),
+      }));
+      expect(said.busy).toEqual(["k2-facts", "k2-facts", "k2-facts", "k2-cell", "k2-cell"]);
+      const held = ["Wird geladen...", "true"];
+      // "Notiz" has no value yet: a bar of one line
+      expect(said.values).toEqual([held, held, held, held, held, ["Wird geladen...", "no value yet"], held, held, held, held, held, held]);
+      expect(said.labels).toEqual([
+        "Kundennr.",
+        "Ort",
+        "Anschrift",
+        "Schlüssel",
+        "Status",
+        "Notiz",
+        "Stand",
+        "Termin",
+        "Betrag",
+        "Ansprechperson",
+        "Offen",
+        "Erledigt",
+      ]);
+      // the value under the bar is not seen
+      expect(
+        await page.evaluate(() =>
+          [...document.querySelectorAll(".k2-held *, .k2-held")].every((part) => getComputedStyle(part).visibility === "hidden"),
+        ),
+      ).toBe(true);
+      // the copy buttons keep their place, not yet usable
+      const copy = page.locator(".k2-fact-pair > dd > .k2-btn");
+      expect(await copy.evaluateAll((buttons) => buttons.map((button) => button.matches(":disabled")))).toEqual([true, true]);
+      await page.evaluate(() => globalThis.__k2FactsLoading?.(false));
+      await settled(page);
+      expect(await shape()).toEqual(loaded);
+    }, width);
+  });
+
 test("facts are pairs of term and value, Markdown in prose runs nothing", async () => {
   await withPage(async (page) => {
     const facts = await page.evaluate(() => {
@@ -245,7 +334,8 @@ test("facts are pairs of term and value, Markdown in prose runs nothing", async 
       return [...list.children].map((pair) => `${pair.tagName}:${[...pair.children].map((child) => child.tagName).join(",")}`);
     });
     expect(facts).toEqual(["DIV:DT,DD", "DIV:DT,DD"]);
-    expect(await page.locator("dl.k2-facts dd .k2-btn").count()).toBe(1);
+    // the first list: one value to copy
+    expect(await page.locator("dl.k2-facts").first().locator("dd .k2-btn").count()).toBe(1);
     const prose = page.locator('[data-k2-part="Prose"]');
     expect(await prose.locator("script, img, [onerror]").count()).toBe(0);
     expect(await prose.locator('a[href^="javascript"]').count()).toBe(0);
@@ -265,10 +355,10 @@ for (const width of [1440, 390]) {
       expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
       const row = page.locator('.k2-row:has-text("Zwei Zeilen")');
       const rowBox = (await row.boundingBox())!;
-      // 52 and its line, as the mockup draws a row of two lines: the marks open no third line. (On the phone the panes
-      // stand one under the other and the last row of a pane gives its line to the seam below it.)
+      // 52, as the mockup draws a row of two lines: the marks open no third line. It is the last row of its list, so no
+      // line stands under it (look rule 4), on the desktop and on the phone.
       const line = await row.evaluate((element) => Number.parseFloat(getComputedStyle(element).borderBottomWidth));
-      expect(line).toBe(width < textEdge.phoneBelow ? 0 : hairline.width);
+      expect(line).toBe(0);
       expect(rowBox.height).toBe(heights.row2 + line);
       // a row of three lines without marks: its third line runs to the end of the row and ends there in "…"
       const third = await page.locator('.k2-row:has-text("Spedition Falk")').evaluate((element) => {

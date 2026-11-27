@@ -11,8 +11,7 @@ const load = async () => {
   const dom = createDomTestHarness();
   try {
     return {
-      Workspace: (await import("./Workspace.island")).default,
-      toast: (await import("@k2b/ui")).toast,
+      Workspace: (await import("./FilesScreen.island")).default,
       registerCommandHandler: (await import("@k2b/cloud/browser/commands")).registerCommandHandler,
     };
   } finally {
@@ -22,7 +21,15 @@ const load = async () => {
 const modules = isServer ? undefined : await load();
 
 if (modules) {
-  const { Workspace, toast, registerCommandHandler } = modules;
+  const { Workspace, registerCommandHandler } = modules;
+  /** The sentences of the v2 toasts on the page that report a failed deed. */
+  const failedToasts = () =>
+    [...document.querySelectorAll('.k2-toast[data-type="error"] .k2-toast-text')].map((node) => node.textContent?.trim() ?? "");
+  // v2 overlays read the phone query at once; the DOM harness has no global matchMedia, so a desktop answers.
+  Object.defineProperty(globalThis, "matchMedia", {
+    configurable: true,
+    value: (media: string) => ({ media, matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+  });
   test("Message actor reports unavailable Chat and retries with only the UUID through the public command", async () => {
     setSystemTime(new Date("2026-10-20T12:30:00.000Z"));
     const dom = createDomTestHarness();
@@ -44,11 +51,6 @@ if (modules) {
     let dispose = () => {};
     let unregister = () => {};
     try {
-      const failed = Promise.withResolvers<string>();
-      const error = spyOn(toast, "error").mockImplementation((message) => {
-        failed.resolve(message);
-        return { dismiss() {}, update() {} };
-      });
       dispose = render(
         () =>
           createComponent(Workspace, {
@@ -80,8 +82,9 @@ if (modules) {
         [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.textContent?.trim() === "Message Lukas Pohl")!;
       await Bun.sleep(30);
       button().click();
-      expect(await failed.promise).toContain("Chat is unavailable");
-      expect(error).toHaveBeenCalledTimes(1);
+      // until the failure shows; the test's own timeout bounds the wait
+      while (failedToasts().length === 0) await Bun.sleep(10);
+      expect(failedToasts()).toEqual([expect.stringContaining("Chat is unavailable")]);
       expect(`${location.pathname}${location.search}`).toBe(source);
       const opened = Promise.withResolvers<unknown>();
       unregister = registerCommandHandler("chat.conversation.compose", z.strictObject({ userId: z.uuid() }), (input) => {
@@ -130,7 +133,6 @@ if (modules) {
         let dispose = () => {};
         try {
           const navigate = spyOn(window.location, "assign").mockImplementation(() => {});
-          const error = spyOn(toast, "error").mockImplementation(() => ({ dismiss() {}, update() {} }));
           dispose = render(
             () =>
               createComponent(Workspace, {
@@ -180,7 +182,7 @@ if (modules) {
           );
           await Bun.sleep(30);
           expect(navigate).not.toHaveBeenCalled();
-          expect(error).not.toHaveBeenCalled();
+          expect(failedToasts()).toEqual([]);
           expect(`${location.pathname}${location.search}`).toBe(leave === "navigation" ? "/app/contacts" : source);
         } finally {
           response.resolve(Response.json({ href: "/app/chat?command=contact" }));

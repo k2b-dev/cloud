@@ -34,10 +34,18 @@ The working surface of an app: one per screen.
   none is open, so nothing moves when it opens. Keep the list's `width`.
 - Tablet: where the sidebar at its default does not fit beside every column
   at its minimum, it becomes a drawer with a button at the start of the head.
-- Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`.
+- Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`. In
+  a head with `Tabs` the open view never gives way: buttons with words that
+  `keep` fold into the head's own "…" (each runs as its button would), and
+  the open tab keeps its whole name. A column with a `width` fills the
+  screen; its minimum counts only on the desktop.
   A search in the head (`Input type="search"`) stays as its symbol; a tap
   goes into the field, which opens over the head while it has the focus
-  and folds back, its words kept, on blur or Escape.
+  and folds back, its words kept, on blur or Escape. A host that offers the
+  page's search in a bar of its own (the Cloud shell's phone bar) marks the
+  v2 scope with `data-k2-host-search`: the folded search then leaves the head
+  to its tabs and the Tab key's order on the phone, and the host focuses the
+  field from its bar (a head with a path opens it over the first row).
 
 ### Pane
 
@@ -47,7 +55,9 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   the column scrolls: a `StatusRow` of 52 px above a list, or a `Bar` of 40 px
   with the state of an open entry above a reader), `label`.
 - `width={{ min, default }}`: only inside `Pane.Split`; puts a grip on its
-  line.
+  line. A drag or the keys (arrows 8 px, Shift 64 px, Home and End to the
+  limits, Enter back to the default) move the width; a reload starts at the
+  default again. The sidebar's grip works the same.
 - `detail`: the reader beside a list. What is open belongs in the address:
   render the detail only while the address names an entry. On the phone
   the detail is the page, and the title in its head is never cut: beside the
@@ -60,8 +70,24 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   that closes in place returns the focus to the row that opened it.
 - `scrollKey` (such as "mail-list"): back and forward bring the column
   back to where it was scrolled.
-- `side`: the info column of a record; quieter sections, a `more` link
-  becomes a row.
+- `side`: the context column (the info column of a record, what a form
+  feeds, a chart beside a table); quieter sections, a `more` link becomes a
+  row. In a `Pane.Split` of exactly one main column and this context column
+  after it, the context stands beside only where the split holds both at
+  their default widths (400 px without a `width`). With less it gives way
+  to the end of the main column, at its full width, and the split scrolls
+  in one piece: the main column is never squeezed and nothing hides; it
+  needs no room of the workspace, so the sidebar never becomes a drawer for
+  it. `side={{ from: 1400 }}` asks for more room, in px of the split, for a
+  main column that needs it (a table: beside only on a large screen). In
+  any other split (a list, its reader and an info column) it stands beside
+  as every column does.
+- A detail that grows on a large screen is the same part: under the
+  detail's one `head` (and what spans both, such as a hero band), a
+  `Pane.Split` of what it is (a `Pane`) and who and what happened (a `Pane
+  side`, `width={{ min: 280, default: 320 }}`). It stands in two columns
+  from 720 px of the detail (a window of ~1680 px beside a list of 640 px)
+  and in reading order below that.
 - children: bands, sections, groups, lists, tables, notices, `Text`.
 
 ### Pane.Split
@@ -71,14 +97,8 @@ grip where a pane has `width`. A `Pane.Split` may stand inside a `Pane`
 under that pane's `Tabs` head, after content that spans both columns (see
 `record.tsx`).
 
-Until v2 has a `Dialog`, a screen "with the dialog open" shows the dialog's
-form as one more `Pane detail` at the end of the split: a head `Bar` with
-its title and a close button, `Band`s of fields, a footer `Bar`. Mark it
-with a `k2b-ui gap` comment. `detail` makes it leave on the phone, where the
-form is its own route. Its confirm button is a default (framed) button: the
-page's one primary stays in the head, and `Workspace primary` must never
-confirm a dialog. When the list beside it is a table, give the dialog pane
-a `width` so the table keeps its columns.
+A short task above the page is a `Dialog` (see "Overlays"), not one more
+pane; `Workspace primary` never confirms a dialog.
 
 ### Bar
 
@@ -103,14 +123,39 @@ fields. A message in a thread is one `Band`.
 
 ### Cells and Cells.Cell
 
-2–4 equal cells with a line between; stacked on the phone. A cell:
+2–4 equal cells with a line between; on the phone two by two (a third
+alone across the second row). A cell:
 `icon`, `color` (data colour of its area), `label`, `value`, `meta`,
-`href` (adds a chevron). Use for the key statements of a record.
+`href` (adds a chevron), `trend` (a `Spark` at the end of the value, such
+as orders per day this week), `loading` (a bar lies on value and `meta`;
+what is there keeps its room unseen under it, a value not there yet is one
+line; symbol and label stay, a `trend` keeps its place unseen). Use for the
+key statements of a record or the home of a place.
 
 ### Tiles
 
 Like things to press, such as attachments: `items: { icon, title, meta?,
-href? }[]`, `more` (an action after them), `label`. Never nested.
+href?, onNavigate?, color? }[]`, `more` (an action after them), `label`.
+
+`variant="media"`: photos, pages and videos in a grid of at least 160 px.
+A tile adds `image` (its picture, 4:3), `kind` (`PDF`, a video's length),
+`people` (the first is the owner, 16 px), `sign` (`{ icon, label }` at the
+end of its quiet line, such as the sharing state) and `key`. `select: {
+selected, onChange(key, on) }` puts a box on each picture; it shows under
+the pointer, with the focus, on touch, and on all tiles while one is
+selected; a selected tile is blue with a line inside its edge.
+Never nested. With `color` the symbol becomes the thing's `Mark`. A tile is
+at most 320 px wide; a long title is cut in the middle and keeps its
+extension ("Angebot_Holz…nal_v3.pdf"), whole on hover.
+
+`variant="card"`: each thing a card in a grid (at least 240 px a card) for
+an overview of things with a face, such as the bases of Grids. A card
+adds `stats` (`{ icon?, label, status?, yours? }`: "6 Tabellen", "8 knapp"
+in `warn`), `people` (an `Avatar.Stack` at the foot), `foot` (quiet words
+at its end: "Felix · vor 2 Min") and `trend` (a `Spark` at the top end, in
+the card's colour). The whole card opens its `href`. `create` adds the last
+card that makes a new thing: dashed, `title`, `meta`, `href` or `onClick`,
+and `choices` as round chips (templates). Cards hold no box and no line.
 
 ### Canvas
 
@@ -121,7 +166,12 @@ component's root and never in a plain element. A `Chart` of `@k2b/ui`
 fills it (`style={{ height: "100%" }}`) with `v2.css` alone. While the
 drawing loads, fails or has no data, put `Loading`, `Failed` or `Empty`
 inside the `Canvas`: with a `height` it keeps that height, so nothing
-moves.
+moves. `height="fill"`: the drawing is the whole pane (an editor, a frame
+of another page). Directly in its `Pane`, it takes the height left under
+head and status by layout alone, from the first render (never measure it
+in a script); below 240 px the pane scrolls. In a `Pane.Split` on the
+phone, where the panes stand one under the other, its pane takes the
+height that is left, so the drawing still fills it.
 
 ## Structure
 
@@ -129,7 +179,9 @@ moves.
 
 A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
 `actions` (≤ 2 text buttons in the head), `summary` (one sentence),
-`more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
+`measure` (its head, sentence and rows keep the reading measure of `Prose`,
+720 px of text, so a short list in a wide pane stays together; its line
+still reaches the column's edges), `more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
 `Pane side`, where the link becomes a row), children. No line under
 the head or between entries, one line at the end. Put `Row`s directly in a
 section, or a `Digest`, `Facts`, `Group`s.
@@ -140,8 +192,8 @@ What belongs together, framed: `icon`, `color`, `title`, `count`, `meta`
 (head grows to 56), `state` (a `Chip`; for a running state such as "Läuft"
 `state={<Text weight="medium"><Icon name="gavel" /> Läuft</Text>}`; or an amount),
 `actions` (text buttons),
-`menu` (more deeds behind "…"), `folded` (head only, with a chevron),
-children. No line inside; never a `Group` in a `Group`, and never in a
+`menu` (more deeds behind "…"), `folded` (starts as head only; its
+chevron opens and closes it in place), children. No line inside; never a `Group` in a `Group`, and never in a
 `Band` (the band's line would cut the frame). Groups stand in a `Section`
 or directly in a `Pane`. A group's way (arrived → … → paid) is `Steps`
 inside it.
@@ -150,11 +202,45 @@ inside it.
 
 ### List and Row
 
-`List` holds `Row`s (`label` names it). A `Row`:
+`List` holds `Row`s (`label` names it). A list that can grow without end
+(conversations, records, a log) takes its data instead of written rows:
+`items`, `rowKey(item)` and `row(item, index) => <Row … />`, and `total`
+when more exist than are loaded. Use it by default for every list whose
+length you do not control: only the rows in view and a margin around them
+are in the page, the server renders the first rows (no shift on hydration),
+a list of at most 40 entries stays whole as the server sent it, the focused row stays while it scrolls away, and each row says where it
+stands (`aria-posinset`, `aria-setsize`). "Weitere laden" stays a `Band`
+with a text `Button` after the list. Write rows out only for a few fixed
+ones. A row that is not in the page now (the row to give the focus back
+to after a detail closes) is reached through `controller`: its `reveal(key)`
+brings the row into view and gives it back. Tab out of a focused row that
+scrolled away goes to its neighbour in the list. `group(item) => { key,
+label, count? }` puts a head before the first item of each group (a day):
+its words in 600 and a quiet count, no band and no line; heads are no rows
+and do not count as one.
+
+What a window cannot do (known, decided 26.11.): the browser's find (Ctrl+F)
+finds only rows in the page, so a list people search in needs its own
+search; Shift+Tab from below the list (a foot) lands on the last row in the
+page, not the last item; Tab out of a row that scrolled away looks at most
+20 entries further for the next stop (past 20 heads or rows without a
+control the browser decides); a group head is no entry of the list for a screen
+reader (as the group rows of a table on the phone), its rows say their place
+in the whole list; a `Nav` group that grows past 40 entries is made anew
+once (the focus in it is lost then), and its entries are known by their
+position, so an entry put in above a parked one moves the parking to its
+neighbour.
+
+A `Row`:
 
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
-- lead: `icon` + `color`, or `avatar`, or a dot when `unread`.
+  The second line of two or three is one line, cut with "…" before what
+  stands beside it (an address or JSON without a break never runs under the
+  marks or a deed); a cut line of words says all of it on hover.
+- lead: `mark` (the thing's `Mark`: a base, a file with its thumbnail, a
+  table; 24 px on one line, 32 px on two or three), or `avatar`, or a
+  quiet `icon` for a plain place or deed, or a dot when `unread`.
 - `meta` (quiet note after the title, a count), `time` (top right). Title
   and `meta` share the first line in equal parts, and each takes only what
   it needs: a count or a number stays whole, a long note is cut with "…",
@@ -162,7 +248,25 @@ inside it.
 - `marks` (chips, icons, avatars bottom right): use them with 3 lines; on a
   2-line row they add a third line. The third line shares its width with
   the marks, so keep it a preview text that may be cut, never an amount.
-- `action` (one framed button at the end; under the text on the phone),
+  Marks take at most half of the row; what does not fit gives way whole, in
+  this order: a tag chip is cut to about 12 letters first, then lone `Icon`s
+  leave (they stand last), then the marks at the end. So pass them in the
+  order of their weight: words of a state (as `Text`, never loose text),
+  then the tag, then the person, then symbols. Marks are things to see,
+  never to press: a mark that leaves is out of view but still in the page,
+  so a button or link there would be reached by Tab unseen. Put a deed in
+  `action` or `end`.
+- A line of three is cut with "…" and says its words on hover. An address
+  or a file name as a line: `<Cut text={address} keep="domain" />` cuts it in
+  the middle, so the domain or extension stays readable.
+- `states` (chips that must be read whole, such as the checks of a domain:
+  colour, symbol, word): under the lines on the title's text edge; they
+  wrap to more lines instead of being cut, on the phone too, and the row
+  grows only when they are there.
+- `action` (one framed button at the end; under the text on the phone; its
+  name is its words and then the row's title, "Ansehen Angebot Küche", so
+  rows with the same deed are told apart: name nothing yourself; on the
+  phone a finger hits 44 px of it, its look unchanged),
   `end` (a few icon buttons, or the state chip of a one- or two-line row).
 - states: `unread`, `strong`, `current` (the open one, app tint),
   `yours` (you are next).
@@ -187,29 +291,40 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 `columns: Column<T>[]`, `rows: T[]`, `label`. A column: `title`, `cell(row)`
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
-never widens it, grip in the head), `wrap` (one text column may take 3
+never widens it, a grip in the head that a drag or the keys move), `wrap` (one text column may take 3
 lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
 `href` stays in the address there; offer another order on the phone in the
 page itself if it needs one. The last column takes the rest. Chips,
 `Progress`, text buttons are fine in cells. `open(row) => { href } | {
-onOpen }` makes each row open its entry.
+onOpen }` makes each row open its entry. A column's `mark(row)` leads its
+cell with the thing's `Mark` (a file's thumbnail or type, 24 px), its
+`avatar(row)` with a person (the name in the cell names it); `phone(row)`
+takes a `mark` as well.
 
 A large table (Grids, a work list) adds, all optional: `rowKey(row)` (needed
 for the next three), `select: { selected, onChange, all, row }` (a box
 column; pair it with `StatusRow selection`), `current` (the open row's key,
 tinted), `sticky` (first column stays while scrolling sideways), `group(row)
-=> { key, head: () => JSX, meta?, count? }` (tinted group rows), `sort: { column,
+=> { key, head: () => JSX, meta?, count? }` (a group head as text in 600 with
+its count, no band; no line under it, none under the last row), `sort: { column,
 direction }` (the column sorted now: an arrow and darker words in its head,
-`aria-sort` on it), `phone(row) => { lines, avatar?, time?, marks?
+`aria-sort` on it), `phone(row) => { lines, avatar?, time?, marks?, end?
 }` (on the phone each row becomes a two-line row instead: `time` top right,
-`marks` at the end of the second line, such as the entry's state chip).
+`marks` at the end of the second line, such as the entry's state chip, `end`
+the row's deeds as on a `Row`, such as its "…": give it whatever a column of
+deeds offers on the desktop, or the phone loses them).
 
 Give every table whose column widths add up to more than a phone (about
 350 px after the dropped ones) a `phone(row)`; otherwise its last columns
 are cut off at 390 px (the outline reports it). A phone row opens what
 `open(row)` names; a row's other deeds live on the page it opens.
+
+A table of any length keeps only the rows in view in the page (its head
+stays, empty rows hold the place of the others, `aria-rowcount` and
+`aria-rowindex` say where a row stands); a cell is made when its row first
+shows. Whether rows have two lines is read from the first page of rows.
 
 `loading` (`true` or `{ rows?, lines? }`): the head stays and placeholder
 rows hold the place of the rows. `empty` (`{ icon, text, action? }`): with
@@ -224,7 +339,12 @@ edges.
 `copy` adds a copy button with that text; `mono` shows a value read sign by
 sign (a token, a key, an ID) in monospace, broken at any sign and selected
 whole by one click. `inline` puts all on one
-line with `end` (such as a print button).
+line with `end` (such as a print button). `loading` while the values are on
+their way: labels, hints and copy buttons (not yet usable) stay, and a
+quiet bar lies on each value. A value that is there (a refresh) keeps its
+exact room unseen under the bar (lines, chips, wrapping); a value not there
+yet (`""`) is a bar of one line. Give `copy: ""` where a value will have
+one.
 
 ### Text
 
@@ -233,6 +353,10 @@ line with `end` (such as a print button).
 out a little), `muted`, `tone` (`ok`, `warn`, `bad`, `ai`, `draft`), `href`
 (underlined words that lead somewhere; blue is only for the main action).
 Without `type`, text takes the role of its place.
+`title` gives text its full words as a tooltip where its place may cut it:
+the title of an open entry in its detail's head takes two lines, then "…".
+Two lines make that head 65 px: beside a list, its line then no longer meets
+the status row (K1 holds for a one-line title).
 In a column it is a block with the text edge; in a bar or row it runs
 inline. Emphasis is a weight, never a size.
 
@@ -260,13 +384,38 @@ lines instead of cutting a thing.
   active filter. Never a colour without a word. There is no neutral status:
   "Pausiert" is `warn` or a plain chip.
 - `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
+- `Mark`: what a thing looks like. `icon` + `color` (its data colour, or
+  the colour of its kind: table, form, PDF), `image` (a thumbnail over the
+  symbol; while it loads and when it fails the symbol shows), `kind` (the
+  type on its corner: `PDF`), `label` (without one it is decoration beside
+  its name). The place sets the size: 20 in the sidebar and in a sentence,
+  24 leading a row of one line, 32 leading a row of two or three, 36 on a
+  card. In a sentence write `<Mark {...table} /><Text weight="strong">Aufträge</Text>`.
+- `Avatar.Stack`: `people`, `max` (3, at most 5), `label`. People over each
+  other with a ring and "+n"; one picture with every name. In a narrow
+  place (a 90 px column) it shows the faces it holds whole and counts the
+  rest; the count is always right and never cut, from the first render.
+- `Spark`: `values` (oldest first), `label`: what the bars say as one
+  sentence ("Werkstatt: in 7 Tagen von 12 auf 41 Änderungen gestiegen"),
+  never only the title of the data. A few bars of a short history, the
+  last strongest; beside a number, never instead of it.
+- Data colours (`color` of `Mark`, `Avatar`, `Chip tag`, `Nav`, `Tiles`,
+  `Section`, `Cells.Cell`, `Digest`, `Preview`) are validated: a hex colour, an
+  `oklch()` or `var(--…)`; anything else renders neutral. For a hex colour
+  the primitives derive readable foregrounds themselves (symbols and bars
+  3:1, type 4.5:1, light and dark), so a pale yellow works too.
+- `Preview`: `label`, `icon`, `color`, `image`, `kind`. The large picture of
+  the open thing at the top of its detail, 4:3 from text edge to text edge;
+  the symbol stands while it loads, fails or is missing.
 
 ## Controls
 
 - `Button`: `variant` `primary` (one per page), default (framed), `ghost`,
   `text` (quiet, in heads and at row ends); `icon`, `avatar` (a `Person`,
   such as the one a thread is assigned to), `href` (+ `onNavigate`),
-  `onClick`, `menu` (chevron), `forward`, `disabled` (dimmed), `busy` (a
+  `onClick`, `menu` (chevron), `forward`, `about` (the id of what the deed
+  is about, such as a row's title: its name is its own words, then those;
+  `Row` does this for its `action`), `disabled` (dimmed), `busy` (a
   turning sign over the label while its deed runs, such as a save: the
   width, the look and the focus stay, a second press and a second sending
   of the form do nothing), `pressed` (a toggle such as a favourite star:
@@ -275,9 +424,20 @@ lines instead of cutting a thing.
   in a head on the phone), `title` (a hint under the pointer, for a button
   whose words give way to its symbol in a narrow place). Without children
   it needs `label`.
+- `Setting`: `label`, `name`, `hint`, `error`, `was` ("12 Std.": an unsaved
+  change says "geändert · vorher 12 Std." under its control), `action`
+  (one quiet deed at the end of the name's line, such as "Auf Standard
+  zurücksetzen" while the value differs from its default, as `Field
+  action`), one control as child. One setting of a settings page: the name
+  (13, 500) and its hint on the left, the control in a column of 300 px
+  beside them, no line between settings; one column when its pane is
+  narrower than 600 px (by the pane, not the window). Never stack `Field`s
+  as a settings page.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
-  such as "Sekunden", or "optional"), one control as child. `Field.Row`
+  such as "Sekunden", or "optional"), `action` (one quiet deed at the end
+  of the label line instead, such as "Auf Standard zurücksetzen"; the field
+  keeps its height), one control as child. `Field.Row`
   puts fields side by side (one column on the phone). `required` keeps the
   form from being sent without a value; the label line shows nothing for
   it, the fields that may stay empty say "optional". After a failed save a
@@ -289,9 +449,65 @@ lines instead of cutting a thing.
   search), `ref` (the text field, to focus it), `end` (a symbol or a ghost
   icon button, such as the filter of a search), `disabled` (a grey well
   that takes no input; the browser leaves it out of a sent form).
-- `Select`: `options` (strings or `{ value, label }`), `value`, `onChange`,
-  `placeholder`.
-- `DateInput`: `value`, `onInput`, `placeholder`.
+  A search the server answers takes `name` and `send={{ action, params,
+  onSearch }}`: the field is its own GET form, so Enter loads `action`
+  with the text and `params` (the rest of the address) also without
+  JavaScript; `onSearch` searches in place where JavaScript runs. It keeps
+  its place in a head and folds on the phone, and its form is named by
+  `label`. Never wrap it in a `<form>` and never put it inside one: forms
+  do not nest, and the browser drops the inner one (`describeV2` reports
+  both).
+  The standard text-field attributes pass through and stand in the
+  server's markup, so a password manager reads them before the island
+  hydrates: `autocomplete` (`username`, `current-password`,
+  `new-password`, `one-time-code`, `off`), `maxLength`, `inputMode` (the
+  phone keyboard, such as `numeric` for a code), `spellcheck` and
+  `autocapitalize` (`false` and `off` for names, codes and keys). Never set
+  them through `ref` after hydration.
+- `Select`: `options` (strings or `{ value, label, disabled }`), `value`,
+  `onChange`, `placeholder`, `disabled` (a grey well, the value still
+  shown, while it cannot be changed).
+- `TagsInput`: several short values as chips in one field (domains,
+  server addresses): `value`, `onChange`, `suggestions` (values to pick
+  while typing; any other text is taken on Enter), `placeholder`,
+  `disabled`. Backspace in the empty field takes the last chip back.
+- `ImageInput`: one image: `value` (its address), `onChange` (the new
+  address, or `null` when removed), `transform` (file to address; by
+  default a square picture as a data URL; upload and return a URL for
+  large files), `accept`, `round` (a person's picture), `disabled`. A
+  dropped or pasted file counts as chosen.
+- `Slider`: a number on a range: `value`, `onChange` (every step),
+  `onCommit` (the drag or key press ended: save here), `min`, `max`,
+  `step`, `format` (`Intl.NumberFormat` options, such as percent),
+  `disabled`. The number reads at the end.
+- `ColorInput`: a colour as `#rrggbb`: `value`, `onChange`, `onCommit`,
+  `swatches` (presets), `disabled`. Swatch and code (any CSS colour typed
+  in), a surface of saturation and brightness, a hue slider, the presets.
+- `CodeInput`: a one-time or pairing code, a box per character: `value`,
+  `onInput`, `onComplete` (the last box filled), `length` (6),
+  `characters` (`digits` or `alphanumeric`), `autocomplete`
+  (`one-time-code` by default; `off` for a code shown on another device),
+  `disabled`.
+- `DateInput`: `value` (a date key such as "2026-12-15", or as the locale
+  writes it), `onInput` (a date key, "" when emptied), `placeholder`. Typed
+  text ("24.11.2026", "heute", "+3") applies on Enter or leaving the field;
+  the calendar symbol opens `DatePicker` below the field. A form gets the
+  date key under `name`; text that is no date (also "2026-02-30") marks the
+  field and makes the form invalid. `timeZone` says which day "heute" is
+  ("UTC" by default); give the same zone on the server and in the island.
+- `DatePicker`: one month of days to pick from (a calendar grid: arrows,
+  PageUp/PageDown, Home/End, Enter; the locale's month names and first day of
+  the week; six weeks, so its height never changes). `value`, `onPick`,
+  `min`, `max`, `timeZone` (which day is today), `label`, `error`,
+  `onClear` ("Leeren"), `autoFocus`; `time` adds the ui-sdk time input: hour
+  and minute as spinbuttons in the locale's clock (24 hours in German, AM/PM
+  in American English; typing, arrows, Backspace; never the browser's time
+  field), applied
+  with "Übernehmen". `view="weeks"` (with a required `min`, usually today) shows six
+  weeks from the week of `min` as one grid instead of whole months, for a moment ahead ("Später", an
+  expiry): one row per week over the ends of months, the 1st shows the
+  month's short name, keys move the weeks, the arrows by six. Use it inside a
+  popover or sheet; a form field is `DateInput`.
 - `Check`: `label`, `checked` (`true`, `false`, `"mixed"`), `switch`,
   `onChange`, `disabled` (dimmed).
 - `Choice`: a few visible options, one chosen: `name`, `options`, `value`,
@@ -302,16 +518,26 @@ lines instead of cutting a thing.
 ## Components
 
 - `Nav`: `title`, `icon`, `groups: { label?, action?, items }[]`, `foot`.
+  The groups scroll between the title and the foot; a group of more than 40
+  entries keeps only the entries in view in the page.
   A group's `action` is one quiet icon button, or `{ label, items }`: a "…"
   with the group's deeds ("Neues Postfach", "Gelöschte Postfächer").
   An item: `label`, `icon`, `href` or `onClick`, `count`, `current`,
   `menu` (its deeds, such as pin and hide: a "…" over its count that shows
   under the pointer and with the focus; Tab always reaches it),
   `nested`, `dot` (`"ok"` for something new, `"warn"`/`"bad"` for a
-  problem there). An item with `items` instead of `icon` and a link folds
+  problem there, `"running"` for work that runs now: a small turning mark
+  in the dot's place that says "Läuft"), `color` (the place's data colour:
+  its symbol becomes its `Mark`, the same as in its rows and on its card).
+  `quota: { label, value, of, text }` shows what the open place uses above
+  the foot ("Werkstatt · 38,2 von 100 GB" over a bar; amber from 75 %, red
+  from 90 %). An item with `items` instead of `icon` and a link folds
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.
+- Counts of `Nav` and `Tabs`: a number is written in the page's language and
+  in full (12.345 in German, 12,345 in English), never cut to "9.999+"; words
+  you give (`"99+"`, `"+8"`) stay as they are.
 - `Tabs`: `label`, `items: { label, icon?, count?, href?, onClick?,
   current?, menu? }[]`. In a head `Bar start` they share the bar with actions; as a `Pane`
   head they are their own 44 px bar. `menu` takes the entries of a `Menu`:
@@ -320,32 +546,51 @@ lines instead of cutting a thing.
   cut: one without room hides whole and joins that menu (and its count),
   opening from there as it does as a tab; without a menu tab a tab "Mehr"
   holds them. Known: while tabs hide, a gap of less than one tab may stand
-  before the menu tab.
-- `StatusRow`: `lead` (the one statement, "7 ungelesen"), `loading` (results
+  before the menu tab. The open tab never hides: without room it stands
+  after the tabs that fit, cut with "…" (whole on hover), and is not named
+  in the menu again (leave it out of your `menu` entries too).
+- `StatusRow`: `lead` (the one statement, "7 ungelesen"; cut with "…"
+  where it does not fit before the filters), `loading` (results
   refresh in place: `true` turns a quiet mark after the lead; pass `false`
   while idle so its 16 px stay reserved and nothing moves; leave it out where
   the row never refreshes), `facts: { before?, value?, after? }[]` (where
   they do not fit before the filters, the later ones give way whole, so the
   filters keep their words; they go on the phone; put what must stay in
-  `lead`),
+  `lead`; a number `value` is written in the page's language, 12.847),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
-  `Button variant="ghost" menu`; leave on the phone),
+  `Button variant="ghost" menu`, each with an `icon`; below 600 px of row
+  they keep only their symbols, the words stay their names; leave on the
+  phone),
   `selection: { count, actions, clear }` (while rows are selected the row
   becomes the bar of what can be done with them).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
   head `Bar start` instead of `Tabs`. The last item is the page itself. On
   the phone the path gives way and the shell's phone bar names the page; the
   head itself is hidden unless it holds a search, which stays as its symbol.
+  From five places on, the places between the first and the last two fold
+  into a menu "…" in their order, the same on the server and in the browser.
+  Where room runs out, the place before the page shortens with "…" first,
+  then the page; their whole names show on hover. The deeds at the end keep
+  their words before the path does.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
   }[]`; a way of a few steps, such as a delivery's way inside its `Group`.
 - `Notice`: `tone` `note`, `ai`, `bad`, `warn`; `title`, `meta`, `icon`,
   `actions` (≤ 2 text buttons; `disabled` on one that cannot be taken
-  now, and the sentence says why), children (the sentence and its
-  consequence). Use it for errors with a way out instead of "try again"
+  now, and the sentence says why), `primary` (the one thing to do, such as
+  "Neu laden": a framed button after one quiet text button at most; it is
+  no primary of the page), children (the sentence and its
+  consequence). A `note` and an `ai` summary keep their line breaks; a long
+  one shows its first 8 (note) or 4 (summary) lines and "Mehr anzeigen".
+  Use it for errors with a way out instead of "try again"
   buttons of your own.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
-  title, state: { icon, label, tone? }, text, href? }[]`.
+  title, state: { icon, label, tone? }, text, href? }[]`, or `activity`:
+  who did what, `{ person, text, time, place?, href?, onNavigate? }[]`
+  (`onNavigate` opens the thing in place, as on rows). The sentence
+  names the person in `<Text weight="strong">` and the thing with its
+  `Mark` and name; place and time stand quiet under it. A form or a
+  workflow that did something is a person with its name ("Webformular").
 - `FilterBar`: the filters of a list as statements, in `Pane status` above
   its `StatusRow`: `query` (from `defineListQuery`), `state`, `onChange`;
   optional `base` (the view's state, where "Zurücksetzen" returns),
@@ -353,7 +598,18 @@ lines instead of cutting a thing.
   `timeZone` (of points in time, "UTC" by default), `views` (`{ stores,
   current?: { key, label, query, scope? }, onSaved?, onRemoved? }`), `results` ("9 Artikel"
   for the phone sheet). It writes the address itself. See
-  [list queries](list-queries.md).
+  [list queries](list-queries.md). `end` (the `ListOrder` and a choice of
+  display such as list or grid) makes the bar the one status row of its
+  list (52 px) with `results` in quiet words before it: the page head then
+  has two rows, path and deeds, then this bar. `display` (`MenuSection`s,
+  such as "Darstellung" with list and grid, or a colour choice) puts each
+  section as a menu of its own in the end on the desktop; on the phone,
+  where the end has no room, sort, grouping and these sections fold into
+  one menu "Ansicht" at the end of the bar. Give every choice that changes
+  how the list shows to `display`, never to `end` alone, so the phone keeps
+  it. While entries are selected a
+  `StatusRow selection` takes its place at the same height; on the phone the
+  selection's actions float at the bottom, symbol over word.
 - `ListOrder`: `query`, `state`, `onChange`; the sort and the grouping in
   words, for `StatusRow filters`.
 - `Lookup`: `label`, `value`, `onChange`, `load`, `resolve?`, `known?`,
@@ -364,7 +620,22 @@ lines instead of cutting a thing.
   ids give way first (always on the phone), then the name is cut with "…";
   the head's actions keep their place.
 
-## Overlays: Menu, Popover, Toast
+## Overlays: Dialog, Menu, Popover, Toast
+
+- `Dialog`: `title`, `open` and `onOpenChange` (the screen keeps the open
+  state), `foot` (the buttons, the main one last: the dialog's own one
+  primary), children (fields, a notice, text; they scroll). 480 px in the
+  middle; below 768 px a sheet from the bottom that a swipe down closes.
+  The first field takes the focus (on the sheet the first control that is
+  no text field), else the first action of the foot; focus stays inside,
+  Escape and the close button close it, focus returns to what opened it.
+  `dismissible={false}`: a press outside, a swipe and the back gesture do
+  not close it; Escape, the close button and the foot still do.
+- `Dialog.confirm({ title, confirm, description?, cancel? })`: resolves
+  `true` when the person agrees. An alert dialog without a close button,
+  never a sheet; focus starts on the other button, Escape answers no, a
+  press outside does nothing. Call it from a menu entry with `void`, so the
+  menu closes while it asks.
 
 - `Menu`: `items`, the button's look like `Button` (`label`, `icon`,
   `variant`, `disabled`; children are the words). Without words it is the
@@ -387,40 +658,9 @@ lines instead of cutting a thing.
   right-click.
 - `Popover`: a panel behind a button: the button's look like `Menu`,
   `title`, `content` (primitives such as `Check`, `Facts`, `Text`). Escape
-  and a press outside close it. With `tip` instead, a short hint on its one
-  child (a `Button`) after a moment on hover or focus.
-- `useToast()`: call it in the component, then
-  `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.
-  One sentence at the bottom in the middle, five seconds, "Rückgängig" with
-  `undo`, or "Erneut versuchen" with `retry` for a deed that failed; `status` `ok` or `bad` adds a sign
-  (`bad` is announced at once).
-  A toast reports a deed; it never replaces `Failed` or a `Notice` at the
-  place of a problem.
-
-## Overlays: Menu, Popover, Toast
-
-- `Menu`: `items`, the button's look like `Button` (`label`, `icon`,
-  `variant`, `disabled`; children are the words). Without words it is the
-  quiet "…" (`dots`) named by `label` ("Weitere Aktionen" by default); in a
-  head it stays on the phone. An entry: `label`, `icon`, `onClick` (a
-  Promise keeps the menu open and the entry busy), `href`, `danger`,
-  `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
-  (an entry that toggles; `onClick` flips it, the tick stands at the end),
-  `items` (a submenu to the side); or `"separator"` between groups; or a
-  section `{ title, items }` under a quiet heading. A section with
-  `choice` and `onChoose` is one choice (reply kind, sender, order): its
-  entries are options (`value`, else `label`), the chosen one carries the
-  tick, choosing closes the menu. Lines around sections and before the
-  first `danger` entry come by themselves. The menu lines up with
-  its button; there is no `align`.
-- `Menu.Context`: `items`, and one element as child, such as a `Row`. A
-  right-click or a long press opens the menu at the pointer, Shift+F10 at
-  the element. It adds no wrapper, so a `Row` stays a child of its `List`.
-  Give the same entries to a "…" in the row's `end` for those who do not
-  right-click.
-- `Popover`: a panel behind a button: the button's look like `Menu`,
-  `title`, `content` (primitives such as `Check`, `Facts`, `Text`). Escape
-  and a press outside close it. With `tip` instead, a short hint on its one
+  and a press outside close it. Like the menu's "…", a button without words
+  stays in a head on the phone; there the panel is a sheet from the bottom,
+  which a swipe down also closes. With `tip` instead, a short hint on its one
   child (a `Button`) after a moment on hover or focus.
 - `useToast()`: call it in the component, then
   `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.

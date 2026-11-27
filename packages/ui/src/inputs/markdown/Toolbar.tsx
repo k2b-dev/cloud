@@ -16,6 +16,8 @@ type ToolbarProps = {
   textarea: () => HTMLTextAreaElement | null;
   activeFormats?: () => Set<string>;
   disabled?: boolean;
+  /** At the start of the bar, before the tools: the document's name, so a page needs no head above the editor. */
+  leading?: JSX.Element;
   trailing?: JSX.Element;
 };
 
@@ -90,6 +92,9 @@ export default function Toolbar(props: ToolbarProps): JSX.Element {
       aria-label={markdownToolbarMessages().markdownFormatting}
       onKeyDown={moveFocus}
     >
+      <Show when={props.leading}>
+        <span class="k2b-markdown-editor__leading">{props.leading}</span>
+      </Show>
       <For each={TOOLS}>
         {(tool, index) =>
           tool.kind === "separator" ? (

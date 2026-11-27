@@ -1,4 +1,18 @@
-import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
+import {
+  type Accessor,
+  createContext,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  type JSX,
+  onCleanup,
+  onMount,
+  children as resolveChildren,
+  Show,
+  untrack,
+  useContext,
+} from "solid-js";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
@@ -11,15 +25,19 @@ import type { OnNavigate } from "./types";
  * `items` opens a submenu to the side. `danger` is red and stands after a line.
  */
 export type MenuItem = {
+  /** The words of the entry. */
   label: string;
   /** A Tabler icon name without the `ti-` prefix. */
   icon?: string;
+  /** The deed; a returned Promise keeps the menu open and the entry busy until it settles. */
   onClick?: () => unknown;
+  /** The page the entry opens, as a link. */
   href?: string;
   /** With `href`: opens the page in place on a plain click or Enter, as a tab or a row does (see `OnNavigate`). */
   onNavigate?: OnNavigate;
   /** Red, for a deed that destroys; the menu puts a line before the first one. */
   danger?: boolean;
+  /** The entry cannot be chosen now: dimmed, and focus passes over it. */
   disabled?: boolean;
   /** A quiet hint at the end, such as the key that does the same ("⌘ D"). */
   meta?: string;
@@ -37,9 +55,13 @@ export type MenuItem = {
  * `onChoose` with its value. The menu draws a line between a section and what stands around it.
  */
 export type MenuSection = {
+  /** The quiet heading over the entries, such as "Sortieren nach". */
   title: string;
+  /** The entries under the heading. */
   items: readonly MenuItem[];
+  /** Makes the section one choice: the value of the chosen entry, which carries the tick. */
   choice?: string;
+  /** Called with the value of the entry chosen in a section with `choice`; choosing closes the menu. */
   onChoose?: (value: string) => void;
 };
 
@@ -56,11 +78,13 @@ export type TriggerProps = {
   variant?: Variant;
   /** A Tabler icon name; a button without words shows `dots`. */
   icon?: string;
+  /** The button cannot open now: dimmed, and pressed no time. */
   disabled?: boolean;
 } & (
   | {
       /** The words on the button; a chevron follows them. */
       children: JSX.Element;
+      /** Another name for assistive technology, only where the words alone do not say enough. */
       label?: string;
     }
   | {
@@ -70,7 +94,10 @@ export type TriggerProps = {
     }
 );
 
-export type MenuProps = TriggerProps & { items: readonly MenuEntry[] };
+export type MenuProps = TriggerProps & {
+  /** The entries: items, sections under a heading, and `"separator"` between groups. */
+  items: readonly MenuEntry[];
+};
 
 /**
  * Lines between groups: before the first dangerous entry after others, and around a section; no line at the start,
@@ -314,7 +341,27 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
  * head or a section; with words it is a framed button with a chevron. Keys, typeahead, focus and placement come from
  * the behaviour layer; the menu lines up with the end of a button on the right and the start of one on the left.
  */
+/**
+ * The deeds a phone head folds away (see `Bar`): the head's own "…" takes them in after its entries. That is the
+ * first "…" that stands right in the head's end (`data-head-menu`); one inside a wrapper hides on the phone anyway.
+ */
+export const HeadFoldContext = createContext<Accessor<readonly MenuEntry[]>>();
+
 const MenuRoot = (props: MenuProps) => {
+  const folded = useContext(HeadFoldContext);
+  // on the phone, where the head folds them, the "…" of a head also holds the deeds that kept their words
+  const [phone, setPhone] = createSignal(false);
+  const [first, setFirst] = createSignal(false);
+  onMount(() => {
+    if (!folded || !iconOnly() || typeof matchMedia === "undefined") return;
+    const end = trigger?.parentElement;
+    setFirst(!!end?.classList.contains("k2-bar-end") && end.querySelector(":scope > [data-head-menu]") === trigger);
+    const wide = matchMedia("(min-width: 768px)");
+    const follow = () => setPhone(!wide.matches);
+    follow();
+    wide.addEventListener("change", follow);
+    onCleanup(() => wide.removeEventListener("change", follow));
+  });
   const t = useOverlayMessages();
   const words = resolveChildren(() => props.children);
   const iconOnly = () => words() === undefined;
@@ -340,13 +387,18 @@ const MenuRoot = (props: MenuProps) => {
         data-menu={iconOnly() ? undefined : ""}
         // the "…" of a head stays on the phone, where the other buttons give way, so their deeds stay reachable
         data-keep={iconOnly() ? "" : undefined}
+        // a "…" in a head can take the deeds it folds: the stylesheet then leaves out the bar's own (see `Bar`)
+        data-head-menu={folded && iconOnly() ? "" : undefined}
         aria-label={iconOnly() ? name() : undefined}
         title={iconOnly() ? name() : undefined}
       >
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
       </level.Trigger>
       <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
-        <Entries level={level} entries={props.items} />
+        <Entries
+          level={level}
+          entries={folded && first() && phone() && folded().length > 0 ? [...props.items, "separator", ...folded()] : props.items}
+        />
       </level.Popup>
     </>
   );
@@ -385,9 +437,11 @@ export const MenuTab = (props: { items: readonly MenuEntry[]; current?: boolean;
 };
 
 export type MenuContextProps = {
+  /** The entries, the same as those of the "…" beside the element. */
   items: readonly MenuEntry[];
   /** The one element the menu belongs to, such as a `Row`; it gets no wrapper. */
   children: JSX.Element;
+  /** No menu opens on a right-click or a long press; the browser's own menu shows instead. */
   disabled?: boolean;
 };
 

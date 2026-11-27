@@ -31,22 +31,69 @@ export function pathCrumbs(path: string) {
   return parts.map((name, index) => ({ name, path: parts.slice(0, index + 1).join("/") }));
 }
 
+/** The cookie that keeps the storage this person opened last; an address without a place opens it again. */
+export const lastBaseCookie = "filesv2-base";
+
+/** The storage this person opened last, as the cookie header names it; `undefined` without one. */
+export function readLastBase(cookie?: string | null): string | undefined {
+  const value = cookie
+    ?.split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${lastBaseCookie}=`))
+    ?.slice(lastBaseCookie.length + 1);
+  if (!value) return undefined;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return undefined;
+  }
+}
+
 /**
- * Files starts at all storage when there is more than one storage and the address names no non-empty storage,
- * folder or file, no search (a query after trimming or a search filter), and no trash, shares, recent or favorites view. Unknown views and
- * edit without a file are ignored, matching the normalized snapshot address. A single storage opens inside it.
+ * Where Files opens when an address names no place (Valentin 27.11.: no page of all storage): the storage opened last,
+ * if this person still reaches it, else their personal one, else the first one there is.
  */
-export const showsOverview = (params: URLSearchParams, storageCount: number) =>
-  storageCount > 1 &&
+export function startBase<B extends { id: string; kind: string; status: string }>(bases: readonly B[], last?: string): B | undefined {
+  const existing = bases.filter((base) => base.status === "existing");
+  return (
+    (last ? existing.find((base) => base.id === last) : undefined) ??
+    existing.find((base) => base.kind === "users") ??
+    existing[0] ??
+    bases[0]
+  );
+}
+
+/**
+ * Whether an address names no place: no storage, folder or file, no search (a query after trimming or a search filter),
+ * and no trash, shares, recent, favorites or Activity view. Unknown views and edit without a file count as no place.
+ */
+export const namesNoPlace = (params: URLSearchParams) =>
   !["base", "path", "file"].some((key) => params.get(key)) &&
   !searchState(params) &&
   !["trash", "shares", "recent", "favorites", "activity"].includes(params.get("view") ?? "");
 
+/** The views of the Files screen; each is shown in place beside the others. */
+export type ScreenView = "folder" | "trash" | "favorites" | "shares" | "activity" | "edit";
+
+/**
+ * The view an address shows: the trash of a storage, the favorites, the shares, Activity, a file in its editor, or a
+ * folder (with a search below it). Unknown views and an editor without a file show the folder.
+ */
+export const screenViewOf = (params: URLSearchParams): ScreenView => {
+  const view = params.get("view");
+  if (view === "trash" || view === "favorites" || view === "shares" || view === "activity") return view;
+  if (view === "edit" && params.get("file")) return "edit";
+  return "folder";
+};
+
 const WHEN: readonly ActivityWhen[] = ["today", "7", "30", "365"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The Activity address: `base`, `path`, `scope`, `who`, `what`, `when` and `q` keep the filters across reload, back and links. */
-export function activityUrl(filters: ActivityFilters = {}) {
+/**
+ * The Activity address: `base`, `path`, `scope`, `who`, `what`, `when` and `q` keep the filters across reload, back and
+ * links; `run` opens the run of one entry beside the list, so its details also survive reload, back and links.
+ */
+export function activityUrl(filters: ActivityFilters = {}, run?: string | null) {
   const query = new URLSearchParams({ view: "activity" });
   if (filters.baseId) query.set("base", filters.baseId);
   if (filters.baseId && filters.path !== undefined) {
@@ -57,7 +104,15 @@ export function activityUrl(filters: ActivityFilters = {}) {
   if (filters.action) query.set("what", filters.action);
   if (filters.when) query.set("when", filters.when);
   if (filters.q) query.set("q", filters.q);
+  if (run) query.set("run", run);
   return `/app/filesv2?${query}`;
+}
+
+/** The entry whose run Activity shows beside its list: `undefined` without one, `null` for a value that is no entry ID. */
+export function parseActivityRun(params: URLSearchParams): string | null | undefined {
+  const run = params.get("run");
+  if (run === null) return undefined;
+  return UUID.test(run) ? run.toLowerCase() : null;
 }
 
 /**

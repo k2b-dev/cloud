@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, mock, test } from "bun:test";
 import { createComponent, createRoot } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
@@ -30,7 +30,7 @@ const load = async () => {
   const dom = createDomTestHarness();
   try {
     return {
-      Workspace: (await import("../src/frontend/Workspace.island")).default,
+      Workspace: (await import("../src/frontend/FilesScreen.island")).default,
       ui: await import("@k2b/ui"),
       derivePageTrail: (await import("@k2b/cloud/ssr/page-trail")).derivePageTrail,
       snapshotTitle: (await import("../src/frontend/trail")).snapshotTitle,
@@ -60,6 +60,16 @@ describe("Filesv2 progressive navigation", () => {
     return;
   }
   let cleanup = () => {};
+  // v2 overlays read the phone query at once; the DOM harness has no global matchMedia, so a desktop answers.
+  const media = Object.getOwnPropertyDescriptor(globalThis, "matchMedia");
+  Object.defineProperty(globalThis, "matchMedia", {
+    configurable: true,
+    value: (query: string) => ({ media: query, matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+  });
+  afterAll(() => {
+    if (media) Object.defineProperty(globalThis, "matchMedia", media);
+    else Reflect.deleteProperty(globalThis, "matchMedia");
+  });
   afterEach(() => {
     cleanup();
     apiRequests.length = 0;
@@ -213,70 +223,21 @@ describe("Filesv2 progressive navigation", () => {
     expect(requests[0]!.signal.aborted).toBe(true);
   });
 
-  test("a failing section stays inside the overview and retries; tiles and the way into storage keep working", async () => {
+  test("the favorites pane loads, links each favorite, removes at once and brings a favorite back when removing fails", async () => {
     const dom = createDomTestHarness();
-    dom.window.history.replaceState(null, "", "/app/filesv2");
-    const { Workspace } = modules!;
-    const base = {
-      id: "home",
-      name: "Alice",
-      area: "cloud" as const,
-      kind: "users" as const,
-      status: "existing" as const,
-      reason: null,
-      indexEnabled: false,
-      versioningEnabled: false,
-    };
-    const group = { ...base, id: "ipa", name: "Team", area: "freeipa" as const, kind: "groups" as const };
-    const bases = { items: [base, group], issues: [{ area: "freeipa" as const, code: "unavailable" }], editor: null };
-    const dispose = render(() => createComponent(Workspace, { initial: { ...initial, source: "/app/filesv2", bases } }), dom.root);
-    cleanup = () => {
-      dispose();
-      dom.cleanup();
-    };
-    await flush();
-    // The storage entries come from the bases alone; favorites and "Recently by you" ask for themselves.
-    expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
-    expect(apiRequests.map((request) => request.kind)).toEqual(["favorites", "activity", "recent"]);
-    expect(dom.root.querySelectorAll(".filesv2-overview__skeleton-card")).toHaveLength(6);
-    const unavailable = () => Response.json({ code: "unavailable", message: "Storage unavailable" }, { status: 503 });
-    apiRequests[0]!.resolve(unavailable());
-    apiRequests[1]!.resolve(unavailable());
-    apiRequests[2]!.resolve(Response.json([]));
-    await flush();
-    expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
-    const sections = [...dom.root.querySelectorAll(".filesv2-overview__section")];
-    expect(sections.map((section) => !!section.querySelector('.k2b-placeholder[data-state="error"]'))).toEqual([true, false, true]);
-    for (const section of [sections[0]!, sections[2]!])
-      [...section.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Try again"))!.click();
-    await flush();
-    expect(apiRequests.slice(3).map((request) => request.kind)).toEqual(["favorites", "activity", "recent"]);
-    apiRequests[3]!.resolve(Response.json([]));
-    apiRequests[4]!.resolve(Response.json({ items: [], next: null, visibleCount: 0, batches: [], exhausted: true }));
-    apiRequests[5]!.resolve(Response.json([]));
-    await flush();
-    expect(dom.root.querySelector('.filesv2-overview .k2b-placeholder[data-state="error"]')).toBeNull();
-    expect(sections[0]!.textContent).toContain("No favorites yet.");
-    expect(sections[2]!.textContent).toContain("No activity of yours yet.");
-    expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
-  });
-
-  test("the favorites page loads, opens, removes at once and brings a favorite back when removing fails", async () => {
-    const dom = createDomTestHarness();
-    const { default: FavoritesPage } = await import("../src/frontend/FavoritesPage");
+    const { default: FavoritesPane } = await import("../src/frontend/FavoritesPane");
     const { LocaleProvider } = modules!.ui;
-    const opened: string[] = [];
     const dispose = render(
       () =>
         createComponent(LocaleProvider, {
           locale: "de",
           get children() {
-            return createComponent(FavoritesPage, {
+            return createComponent(FavoritesPane, {
               initial: null,
               bases: [{ id: "home", label: "Persönlich" }],
               timeZone: "Europe/Berlin",
               now: "2026-10-20T12:30:00.000Z",
-              onOpen: (entry) => opened.push(entry.entry.path),
+              onNavigate: () => {},
             });
           },
         }),
@@ -288,7 +249,8 @@ describe("Filesv2 progressive navigation", () => {
     };
     await flush();
     expect(apiRequests.map((request) => request.kind)).toEqual(["favorites"]);
-    expect(dom.root.querySelectorAll(".filesv2-favorites__skeleton-row")).toHaveLength(6);
+    // The table holds the place of six two-line rows while the list loads.
+    expect(dom.root.querySelectorAll('[data-k2-part="Table"] tbody tr')).toHaveLength(6);
     const make = (path: string) => ({
       base: { id: "home", name: "Home", kind: "users", area: "cloud" },
       entry: { path, name: path.split("/").at(-1), directory: false, size: 1, modified: "2026-10-20T10:00:00.000Z" },
@@ -297,12 +259,12 @@ describe("Filesv2 progressive navigation", () => {
     apiRequests[0]!.resolve(Response.json([make("Planung/Budget.xlsx"), make("Notizen.md")]));
     await flush();
     expect(dom.root.textContent).toContain("Budget.xlsx");
-    expect(dom.root.textContent).toContain("Persönlich / Planung · heute, 12:00");
-    [...dom.root.querySelectorAll<HTMLElement>(".k2b-file-grid__row")]
-      .find((row) => row.textContent?.includes("Budget.xlsx"))!
-      .querySelector<HTMLButtonElement>(".k2b-file-grid__open")!
-      .click();
-    expect(opened).toEqual(["Planung/Budget.xlsx"]);
+    expect(dom.root.textContent).toContain("Persönlich / Planung");
+    expect(dom.root.textContent).toContain("heute, 12:00");
+    // A file opens beside its folder's listing, by a real link.
+    expect(dom.root.querySelector("a.k2-row-open")?.getAttribute("href")).toBe(
+      "/app/filesv2?base=home&path=Planung&file=Planung%2FBudget.xlsx",
+    );
     const star = () => [...dom.root.querySelectorAll<HTMLButtonElement>('button[aria-label="Aus Favoriten entfernen"]')];
     star()[0]!.click();
     await flush();
@@ -313,11 +275,14 @@ describe("Filesv2 progressive navigation", () => {
     apiRequests[1]!.resolve(Response.json({ code: "unavailable", message: "Storage unavailable" }, { status: 503 }));
     await flush();
     expect(dom.root.textContent).toContain("Budget.xlsx");
-    for (const button of star()) button.click();
-    await flush();
+    // The rows are made anew when one leaves, so each star is found again before its press.
+    while (star().length) {
+      star()[0]!.click();
+      await flush();
+    }
     for (const request of apiRequests.slice(2)) request.resolve(Response.json({ favorite: false }));
     await flush();
-    expect(dom.root.textContent).toContain("Noch keine Favoriten");
+    expect(dom.root.textContent).toContain("Markiere Dateien oder Ordner in ihren Details mit dem Stern.");
   });
 
   test("a shares deep link remains account-scoped after its requested group disappears", async () => {
@@ -337,7 +302,10 @@ describe("Filesv2 progressive navigation", () => {
     expect(apiRequests[1]!.kind).toBe("shares");
     apiRequests[1]!.resolve(Response.json({ items: [], next: null }));
     await flush();
-    expect(dom.root.querySelector("h1:not(.k2b-app-workspace__head-heading)")?.textContent).toBe("Shares");
+    // the shares page is named by its active sidebar entry; its head repeats no title
+    expect(dom.root.querySelector('[data-k2-part="Nav"] [aria-current="page"]')?.textContent).toContain("Shares");
+    expect(dom.root.querySelector('[data-k2-part="Workspace"] [data-k2-part="Path"]')).toBeNull();
+    expect(dom.root.textContent).toContain("No shares yet.");
     expect(dom.root.textContent).not.toContain("This directory is missing");
   });
 

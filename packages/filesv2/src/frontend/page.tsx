@@ -3,7 +3,6 @@ import { AccountIdentityError } from "@k2b/cloud/services";
 import { hintOpen, Layout, markHintSeen } from "@k2b/cloud/ssr";
 import { FilegateError } from "@k2b/filegate";
 import type { Context } from "hono";
-import { Show } from "solid-js";
 import { filegateErrorCode } from "../api/filegate-error";
 import { ssr } from "../config";
 import { type BaseSummary, BrowseQuerySchema, EntryQuerySchema, type SearchQuery, SearchQuerySchema } from "../contracts";
@@ -20,11 +19,10 @@ import { RECENT_MOVED_HINT, SELECTION_PILL_HINT } from "./hints";
 import { activityRequest, itemHistoryRequest, itemHistorySource, movedEntry } from "./history-requests";
 import { filesMessages } from "./messages";
 import { filesPageScope } from "./page-scope";
-import { FAVORITES_PREVIEW } from "./StorageOverview";
+import { readRun } from "./run-read";
 import { searchRequest } from "./search-state";
 import { snapshotTitle } from "./trail";
-import { activityUrl, filesUrl, parseActivityFilters, showsOverview } from "./urls";
-import Workspace from "./Workspace.island";
+import { activityUrl, filesUrl, namesNoPlace, parseActivityFilters, parseActivityRun, readLastBase, startBase } from "./urls";
 import type { DirectoryView, WorkspaceSnapshot } from "./workspace-state";
 
 /**
@@ -74,11 +72,14 @@ export default ssr<AuthContext>(async (c) => {
   if (view === "recent") return c.redirect(activityUrl({ actor: "me" }));
   const activityFilters = view === "activity" ? parseActivityFilters(new URL(c.req.url).searchParams) : undefined;
   if (activityFilters === null) return ssr.error(c, 400);
+  // the run beside Activity's list; only Activity has one, and an ID that is none is refused like a filter
+  const run = activityFilters ? parseActivityRun(new URL(c.req.url).searchParams) : undefined;
+  if (run === null) return ssr.error(c, 400);
   const trashView = view === "trash";
   const editView = view === "edit" && !!requestedFile;
   const source = new URL(
     activityFilters
-      ? activityUrl(activityFilters)
+      ? activityUrl(activityFilters, run)
       : folderView
         ? `${url.pathname}${url.search}`
         : filesUrl(requestedBase, query.data.path, query.data.after, requestedFile),
@@ -104,14 +105,22 @@ export default ssr<AuthContext>(async (c) => {
   );
   try {
     initial.bases = await filesService.bases(requestCall(c));
-    const overview = showsOverview(source.searchParams, initial.bases.items.length);
-    const selected = overview
-      ? undefined
-      : activityFilters
-        ? initial.bases.items.find((base) => base.id === activityFilters.baseId)
-        : requestedBase && view !== "shares"
-          ? initial.bases.items.find((base) => base.id === requestedBase)
-          : (initial.bases.items.find((base) => base.status === "existing") ?? initial.bases.items[0]);
+    // No page of all storage (Valentin 27.11.): an address without a place opens the storage this person used last, if
+    // they still reach it, else their personal one. The address keeps its other parameters.
+    const last = readLastBase(c.req.header("cookie"));
+    if (namesNoPlace(url.searchParams)) {
+      const start = startBase(initial.bases.items, last);
+      if (start) {
+        const target = new URL(url);
+        target.searchParams.set("base", start.id);
+        return c.redirect(`${target.pathname}${target.search}`);
+      }
+    }
+    const selected = activityFilters
+      ? initial.bases.items.find((base) => base.id === activityFilters.baseId)
+      : requestedBase && view !== "shares"
+        ? initial.bases.items.find((base) => base.id === requestedBase)
+        : startBase(initial.bases.items, last);
     if (requestedBase && !selected && view !== "shares") throw new FilesError("not_found", 404);
     initial.selectedId = selected?.id ?? null;
     const address = addressFor(selected?.id ?? "");
@@ -120,22 +129,23 @@ export default ssr<AuthContext>(async (c) => {
     if (activityFilters) {
       // The same request as the client's loader; a failed first page leaves the view to load and report it itself.
       const request = activityRequest(activityFilters, { now, timeZone });
-      [initial.activity, initial.marks] = await Promise.all([
+      [initial.activity, initial.marks, initial.run] = await Promise.all([
         filesService
           .activity(requestCall(c), request)
           .then((page) => ({ filters: activityFilters, page }))
           .catch(() => null),
         // "Me" also lists the files this person opened; without them it still shows the changes.
         activityFilters.actor === "me" ? filesService.recent(requestCall(c)).catch(() => undefined) : undefined,
+        // the open run is in the first picture beside the list; a refusal and a failure each say so in its place
+        run
+          ? readRun(run, () => filesService.activityEntry({ ...requestCall(c), requestAbort: c.req.raw.signal }, { activityId: run }))
+          : undefined,
       ]);
-    } else if (view === "shares") initial.shares = await filesService.listShares(requestCall(c));
+    } else if (view === "shares") initial.shares = await filesService.listShares(requestCall(c)).catch(() => null);
     else if (view === "favorites") initial.marks = await filesService.favorites(requestCall(c));
-    else if (overview)
-      // Favorites stand above the storage locations, so the first frame holds them and nothing below moves.
-      initial.favoritesPreview = await filesService
-        .favorites(requestCall(c), { limit: FAVORITES_PREVIEW + 1 })
-        .then((items) => ({ items: items.slice(0, FAVORITES_PREVIEW), more: items.length > FAVORITES_PREVIEW }))
-        .catch(() => null);
+    // The trash shows its first page in the first picture; a failed read lets the view say so with Try again.
+    else if (trashView && selected?.status === "existing")
+      initial.trash = await filesService.trash(requestCall(c), { baseId: selected.id }).catch(() => null);
     else if (editView && selected?.status === "existing")
       initial.editor = await filesService.editor(requestCall(c), { baseId: selected.id, path: requestedFile! });
     else if (selected?.status === "existing" && !trashView) {
@@ -200,18 +210,9 @@ export default ssr<AuthContext>(async (c) => {
   const title = snapshotTitle(initial, t.files, browserMessages.resolve([locale]).t, locale);
   const scope = filesPageScope(initial) ?? undefined;
   return () => (
-    <Show
-      when={folderView && !showsOverview(source.searchParams, initial.bases.items.length) && !initial.moved}
-      fallback={
-        <Layout context={{ scope }} c={c} title={title} fullWidth fullPage>
-          <Workspace initial={initial} preferences={preferences} timeZone={timeZone} retentionDays={retentionDays} />
-        </Layout>
-      }
-    >
-      <Layout context={{ scope }} c={c} title={title} fullWidth fullPage ui="v2">
-        <FilesScreen initial={initial} preferences={preferences} timeZone={timeZone} />
-      </Layout>
-    </Show>
+    <Layout context={{ scope }} c={c} title={title} fullWidth fullPage ui="v2">
+      <FilesScreen initial={initial} preferences={preferences} timeZone={timeZone} retentionDays={retentionDays} />
+    </Layout>
   );
 });
 
@@ -221,5 +222,15 @@ async function movedLookup(c: Parameters<typeof requestCall>[0], baseId: string,
   const entry = page ? movedEntry(page, path) : null;
   if (!entry) return null;
   const chain = await filesService.movementChain(requestCall(c), { activityId: entry.id, oldPath: path }).catch(() => null);
-  return chain ? { baseId, path, entry, chain } : null;
+  if (!chain) return null;
+  // what the folder holds at its new place in this storage, for the first picture; the page reads it again on failure
+  const endpoint = chain.endpoint;
+  const contents =
+    endpoint && endpoint.baseId === baseId
+      ? await filesService
+          .list(requestCall(c), { baseId, path: endpoint.path })
+          .then((page) => ({ items: page.items, next: page.next }))
+          .catch(() => null)
+      : null;
+  return { baseId, path, entry, chain, contents };
 }

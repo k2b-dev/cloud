@@ -1,13 +1,16 @@
-import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { openCommand, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { markHintSeen } from "@k2b/cloud/browser/hints";
+import { publishPageContext } from "@k2b/cloud/browser/panel";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { navigate as commitHistory, type LinkNavigateEvent, listenPopState } from "@k2b/ssr/nav";
 import { cookies } from "@k2b/stdlib/browser";
-import { formatFileViewSize, toast, useLocale } from "@k2b/ui";
+import { formatFileViewSize, useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
+  Chip,
   Empty,
   Failed,
   FilterBar,
@@ -32,19 +35,26 @@ import {
   Text,
   Tiles,
   type TwoActions,
+  useToast,
   Workspace,
 } from "@k2b/ui/v2";
-import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, mapArray, on, onCleanup, onMount, Show } from "solid-js";
+import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
 import { ErrorSchema, type FileEntry } from "../contracts";
+import ActivityPane from "./ActivityPane";
+import { activityQuery } from "./activity-query";
+import { createActivityVersionLoader } from "./activity-versions";
 import { useAssetMessages } from "./asset-messages";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import { preferencesCookie, type ViewPreference, viewFor, withView } from "./browser-preferences";
 import { directoryContext, directoryPageCount, directoryPages } from "./directory-pages";
-import EntryDetail from "./EntryDetail";
-import { entryIcon } from "./entry-icon";
-import { historyExecutionHref } from "./execution-url";
+import EntryDetail, { FolderContents } from "./EntryDetail";
+import { entryMark, storageMark } from "./entry-mark";
+import { entryThumbnail } from "./entry-thumbnail";
+import { runHref } from "./execution-url";
+import FavoritesPane from "./FavoritesPane";
 import { issueText } from "./feedback";
 import { createFilesUploads } from "./files-uploads";
 import { createFolderActions, type FolderOperation } from "./folder-actions";
@@ -58,15 +68,36 @@ import {
   type SearchListState,
   searchOf,
 } from "./folder-query";
-import type { HistoryTarget } from "./history-actions";
-import { entryHref, recheckActivity, resolveTarget } from "./history-api";
+import { RECENT_MOVED_HINT } from "./hints";
+import { formatWhen, type HistoryActions, type HistoryTarget, isCurrent } from "./history-actions";
+import {
+  entryHref,
+  loadActivity,
+  loadBatchContext,
+  loadChain,
+  loadRecent,
+  loadRecovery,
+  loadRun,
+  moveActivityBack,
+  recheckActivity,
+  resolveTarget,
+  restoreActivity,
+} from "./history-api";
 import { useHistoryMessages } from "./history-messages";
-import { placeDescriber } from "./history-requests";
+import { activityRequest, placeDescriber } from "./history-requests";
+import MarkdownPane from "./MarkdownPane";
+import MovedPane from "./MovedPane";
 import { useFilesMessages } from "./messages";
+import OfficePane from "./OfficePane";
+import { filesPageScope } from "./page-scope";
+import RunDetail from "./RunDetail";
 import { openShareDialog } from "./ShareDialog";
+import SharesPane from "./SharesPane";
 import { searchRequest } from "./search-state";
+import { createSeenTiles } from "./seen-tiles";
+import TrashPane from "./TrashPane";
 import { snapshotTitle } from "./trail";
-import { activityUrl, editorUrl, filesUrl } from "./urls";
+import { activityUrl, editorUrl, filesUrl, lastBaseCookie, parseActivityFilters, parseActivityRun, screenViewOf, startBase } from "./urls";
 import { createWorkspaceState, type DirectoryView, type WorkspaceSnapshot } from "./workspace-state";
 
 /** Listings are read again while the tab is visible; Filegate has no change feed yet. */
@@ -96,10 +127,13 @@ export default function FilesScreen(props: {
   initial: WorkspaceSnapshot;
   preferences?: Record<string, ViewPreference>;
   timeZone?: string;
+  /** Configured history retention, named when a history search finds nothing. */
+  retentionDays?: number;
 }) {
   const t = useFilesMessages();
   const b = useBrowserMessages();
   const h = useHistoryMessages();
+  const toast = useToast();
   const assets = useAssetMessages();
   const locale = useLocale();
   const timeZone = () => props.timeZone ?? "UTC";
@@ -111,6 +145,14 @@ export default function FilesScreen(props: {
     const parsed = ErrorSchema.safeParse(await response.json().catch(() => null));
     return new Error(parsed.success ? parsed.data.message : t().unavailable);
   };
+  // People to filter Activity by are the actors this person has seen there; the reader has no directory of them.
+  const [people, setPeople] = createSignal<Record<string, string>>({});
+  const notePeople = (entries: readonly ActivityEntry[]) => {
+    const seen = entries.filter((entry) => entry.actor.userId && entry.actor.name && !people()[entry.actor.userId]);
+    if (seen.length)
+      setPeople((current) => ({ ...current, ...Object.fromEntries(seen.map((entry) => [entry.actor.userId!, entry.actor.name!])) }));
+  };
+  if (props.initial.activity) notePeople(props.initial.activity.page.items);
   // A background read that found changes hands its directory to the next load once.
   let polled: { source: string; value: DirectoryView } | null = null;
   const workspace = createWorkspaceState<WorkspaceSnapshot>({
@@ -125,8 +167,57 @@ export default function FilesScreen(props: {
       const requested = params.get("base");
       const selected = requested
         ? bases.items.find((base) => base.id === requested)
-        : (bases.items.find((base) => base.status === "existing") ?? bases.items[0]);
-      if (requested && !selected) throw new Error(t().missingDescription);
+        : startBase(bases.items, cookies.readCookie(lastBaseCookie) ?? undefined);
+      const view = screenViewOf(params);
+      if (requested && !selected && view !== "shares") throw new Error(t().missingDescription);
+      const filters = view === "activity" ? parseActivityFilters(params) : undefined;
+      if (filters === null) throw new Error(t().unavailable);
+      // Activity names the storage it filters by; shares and all storage stand above every storage.
+      const chosen = filters
+        ? bases.items.find((item) => item.id === filters.baseId)
+        : view === "shares" && !requested
+          ? undefined
+          : selected;
+      const now = new Date().toISOString();
+      const base = { source, bases, selectedId: chosen?.id ?? null, directory: null, errorCode: null, now };
+      if (filters) {
+        const env = { now, timeZone: timeZone() };
+        const runId = parseActivityRun(params) ?? undefined;
+        const [page, marks, run] = await Promise.all([
+          loadActivity(activityRequest(filters, env), signal, h().errorTitle).catch((error: unknown) => {
+            if (signal.aborted) throw error;
+            return null;
+          }),
+          filters.actor === "me" ? loadRecent(signal, b().loadFailed).catch(() => undefined) : undefined,
+          // the run comes with its page, as on the server: the detail and the list stand together
+          runId ? loadRun(runId, signal) : undefined,
+        ]);
+        if (page) notePeople(page.items);
+        return { ...base, activity: page ? { filters, page } : null, marks, run };
+      }
+      if (view === "shares") {
+        const response = await apiClient.shares.$get({ query: {} }, { init: { signal } });
+        return { ...base, shares: response.ok ? await response.json() : null };
+      }
+      if (view === "edit") {
+        if (selected?.status !== "existing") return base;
+        const response = await apiClient.bases[":baseId"].editor.$post(
+          { param: { baseId: selected.id }, json: { path: params.get("file") ?? "" } },
+          { init: { signal } },
+        );
+        if (!response.ok) throw await apiError(response);
+        return { ...base, editor: await response.json() };
+      }
+      if (view === "favorites") {
+        const response = await apiClient.favorites.$get({}, { init: { signal } });
+        if (!response.ok) throw await apiError(response);
+        return { ...base, marks: await response.json() };
+      }
+      if (view === "trash") {
+        if (selected?.status !== "existing") return base;
+        const response = await apiClient.bases[":baseId"].trash.$get({ param: { baseId: selected.id }, query: {} }, { init: { signal } });
+        return { ...base, trash: response.ok ? await response.json() : null };
+      }
       let directory: DirectoryView | null = null;
       if (selected?.status === "existing") {
         const address = readFolderAddress(queries(), params, preference(selected.id));
@@ -183,6 +274,11 @@ export default function FilesScreen(props: {
   const directory = () => snapshot().directory;
   const folder = () => directory()?.path ?? params().get("path") ?? "";
   const address = createMemo((): FolderAddress => readFolderAddress(queries(), params(), preference(snapshot().selectedId)));
+  /** Where a storage's folder starts: its own order and grouping, no filter. */
+  const folderBase = createMemo(() => {
+    const start = readFolderAddress(queries(), new URLSearchParams(), preference(snapshot().selectedId));
+    return start.mode === "folder" ? start.state : undefined;
+  });
   const folderState = createMemo(() => {
     const current = address();
     return current.mode === "folder" ? current.state : undefined;
@@ -194,7 +290,19 @@ export default function FilesScreen(props: {
   const search = createMemo(() => searchOf(address(), params()));
   const searching = () => search() !== null;
   const openPath = () => params().get("file");
-  const hasOverview = () => snapshot().bases.items.length > 1;
+  // The view in place; an address of another view never stays here, so a folder is the fallback.
+  const screen = () => screenViewOf(params());
+  // the storage this person works in is where Files opens next time; the server checks it against access again
+  createEffect(() => {
+    const base = selected();
+    if (screen() === "folder" && base?.status === "existing") cookies.writeCookie(lastBaseCookie, base.id);
+  });
+  const editing = () => (screen() === "edit" ? (snapshot().editor ?? undefined) : undefined);
+  /** The folder the sidebar marks: the open one, or the folder of the file being edited. */
+  const navFolder = () => {
+    const launch = editing();
+    return launch ? parentPath(launch.entry.path) : folder();
+  };
   const canCreate = () => directory()?.actions?.create !== false && selected()?.status === "existing";
   const label = (base: NonNullable<ReturnType<typeof selected>>) => baseLabel(base, b(), locale());
   const folderName = (path: string) => path.split("/").at(-1) || (selected() ? label(selected()!) : t().files);
@@ -232,9 +340,14 @@ export default function FilesScreen(props: {
   // ── Navigation ──────────────────────────────────────────────────────────────────────────────────────────────────
   const [cursorNotice, setCursorNotice] = createSignal(params().get("refreshed") === "true");
   const invalidCursor = (error: string | undefined) => !!error && /cursor/i.test(error);
-  /** A Files address this screen shows in place: a folder or a search, never one of the other views. */
-  const ownsAddress = (url: URL) => url.pathname === "/app/filesv2" && !url.searchParams.has("view");
+  /** Every Files address is a view of this screen, shown in place. */
+  const ownsAddress = (url: URL) => url.pathname === "/app/filesv2";
+  // An open editor asks before the screen leaves it; it answers false to stay.
+  let editorGuard: (() => Promise<boolean>) | null = null;
+  const leave = async () => !editorGuard || (await editorGuard());
   const go = async (target: string, replace = false) => {
+    if (!(await leave())) return;
+    editorGuard = null;
     setCursorNotice(false);
     await workspace.navigate(target, () => commitHistory(target, { replace, scroll: "manual" }));
     if (invalidCursor(workspace.failure()?.message) && (params().has("after") || params().has("pages"))) {
@@ -245,7 +358,9 @@ export default function FilesScreen(props: {
       await go(`${first.pathname}${first.search}`, true);
     }
   };
-  const onNavigate: OnNavigate = (event: LinkNavigateEvent) => {
+  const onNavigate: OnNavigate = async (event: LinkNavigateEvent) => {
+    if (!(await leave())) return;
+    editorGuard = null;
     if (!ownsAddress(event.url)) return event.fallback();
     const target = `${event.url.pathname}${event.url.search}`;
     setCursorNotice(false);
@@ -268,10 +383,16 @@ export default function FilesScreen(props: {
     addEventListener("popstate", mark, { capture: true });
     onCleanup(() => removeEventListener("popstate", mark, { capture: true }));
     onCleanup(
-      listenPopState(({ url }) => {
+      listenPopState(async ({ url }) => {
+        // Deeds that belong to the page shown (a contact, a lookup) end with it.
+        workspace.cancelNavigationActions();
         if (!ownsAddress(url)) return window.location.reload();
         const target = `${url.pathname}${url.search}`;
         if (target === workspace.committedSource() && !workspace.pending()) return;
+        // Back out of an editor with unsaved changes asks first; staying puts its address back.
+        const previous = workspace.committedSource();
+        if (!(await leave())) return commitHistory(previous, { replace: true, scroll: "manual", viewTransition: false });
+        editorGuard = null;
         void workspace.navigate(target);
       }),
     );
@@ -309,7 +430,8 @@ export default function FilesScreen(props: {
   };
 
   // The way up: Alt+↑, the shell's way up and Backspace in the listing move in place like every other link here.
-  const up = () => (folder() ? folderHref(parentPath(folder())) : hasOverview() ? filesUrl() : null);
+  // up leads to the parent folder; a storage's root has none (no page of all storage above it)
+  const up = () => (folder() ? folderHref(parentPath(folder())) : null);
   const goUp = () => {
     const target = up();
     if (!target) return;
@@ -321,9 +443,9 @@ export default function FilesScreen(props: {
     onCleanup(
       registerContextAwareCommand({
         id: "filesv2.parent-folder",
-        title: folder() ? b().parentRow : b().allStorage,
-        description: folder() ? b().parentFolderUp(folderName(parentPath(folder()))) : b().allStorageUp,
-        icon: folder() ? "ti ti-folder-up" : "ti ti-layout-grid",
+        title: b().parentRow,
+        description: b().parentFolderUp(folderName(parentPath(folder()))),
+        icon: "ti ti-folder-up",
         shortcut: "alt+arrowup",
         action: goUp,
       }),
@@ -347,6 +469,10 @@ export default function FilesScreen(props: {
     };
     document.addEventListener("keydown", backspace);
     onCleanup(() => document.removeEventListener("keydown", backspace));
+  });
+  // The side panel knows the place shown, also after a navigation in place.
+  createEffect(() => {
+    onCleanup(publishPageContext({ scope: filesPageScope(snapshot()) }));
   });
   // The shell names the folder, or the search, and follows every navigation in place.
   createEffect(
@@ -460,7 +586,8 @@ export default function FilesScreen(props: {
     env: {
       now: snapshot().now ?? props.initial.now ?? new Date().toISOString(),
       timeZone: timeZone(),
-      executionHref: historyExecutionHref,
+      // a run opens beside Activity under its filters; elsewhere (an entry's history) beside Activity without filters
+      executionHref: (entry: ActivityEntry) => runHref(activityFilters())(entry),
       describePlace: placeDescriber(snapshot().bases.items, b(), locale()),
       onNavigate: (event: LinkNavigateEvent) => onNavigate(event),
     },
@@ -478,7 +605,11 @@ export default function FilesScreen(props: {
           if (ownsAddress(new URL(href, ORIGIN))) await go(href);
           else window.location.assign(href);
         } catch (error) {
-          if (!signal.aborted) toast.error(error instanceof Error && error.message ? error.message : h().actionFailed);
+          if (!signal.aborted)
+            toast(error instanceof Error && error.message ? error.message : h().actionFailed, {
+              status: "bad",
+              retry: () => history().actions.onOpen(target),
+            });
         }
       },
       onRecheck: async (entry: Parameters<typeof recheckActivity>[0]) => {
@@ -489,14 +620,148 @@ export default function FilesScreen(props: {
       activityUrl({ baseId, path, ...(scope === "folder" ? { scope } : {}) }),
   }));
 
+  // ── Activity ────────────────────────────────────────────────────────────────────────────────────────────────────
+  /*
+   * Deeds of vanished items run through the recovery endpoints, which resolve the entry again with current rights,
+   * identity and journals. A refusal (403, 409) says so; nothing here trusts a stored entry.
+   */
+  const activityActions: HistoryActions = {
+    loadVersion: createActivityVersionLoader(() => h().historyFailed),
+    onContact: async function contact(person) {
+      const { userId } = person;
+      const signal = workspace.navigationSignal();
+      const retry = () => contact(person);
+      try {
+        const opened = await openCommand("chat.conversation.compose", { userId }, {}, signal);
+        if (!signal.aborted && !opened) toast(h().actionFailed, { status: "bad", retry });
+      } catch (error) {
+        if (!signal.aborted) toast(error instanceof Error && error.message ? error.message : h().actionFailed, { status: "bad", retry });
+      }
+    },
+    onOpen: (target) => void history().actions.onOpen(target),
+    onShowVersions: (entry) => {
+      const side = isCurrent(entry.after) ? entry.after : isCurrent(entry.before) ? entry.before : null;
+      if (side) void history().actions.onOpen({ kind: "side", side });
+    },
+    loadRecovery: (entry, signal) => loadRecovery(entry, signal, h().recoveryFailed),
+    onRestoreTrash: (entry, options) => restoreActivity(entry, options?.name, h().actionFailed),
+    onMoveBack: async (entry) => {
+      await moveActivityBack(entry, h().actionFailed);
+    },
+    onRecheck: async (entry) => {
+      await recheckActivity(entry, h().actionFailed);
+    },
+    onShowTrash: (trash) => void go(viewHref(trash.baseId, "trash")),
+    onOpenOldLocation: (place) => void go(filesUrl(place.baseId, place.path)),
+  };
+  const activityFilters = createMemo(() => (screen() === "activity" ? (parseActivityFilters(params()) ?? {}) : {}));
+  /** The run Activity shows beside its list: only while the address names one and the snapshot read it. */
+  const openRun = createMemo(() => {
+    const id = screen() === "activity" ? parseActivityRun(params()) : undefined;
+    const run = snapshot().run;
+    return id && run?.id === id ? run : undefined;
+  });
+  const activityLists = createMemo(() =>
+    activityQuery(
+      h(),
+      snapshot().bases.items.map((base) => ({ id: base.id, label: label(base) })),
+      () => [{ value: "me", label: h().whoMe }, ...Object.entries(people()).map(([value, name]) => ({ value, label: name }))],
+    ),
+  );
+  const activityState = createMemo(() => activityLists().parse(params()).state);
+  /** A new filter from the bar, which wrote the address already: an item without its storage leaves with it. */
+  const changeActivity = () => {
+    if (stepping) return;
+    const next = new URLSearchParams(window.location.search);
+    if (!next.get("base")) {
+      next.delete("path");
+      next.delete("scope");
+    }
+    void go(`/app/filesv2?${next}`, true);
+  };
+  const submitActivitySearch = (text: string) => {
+    const words = text.trim();
+    if (words === (activityFilters().q ?? "")) return;
+    void go(activityUrl({ ...activityFilters(), q: words || undefined }));
+  };
+  // the open Markdown editor's draft state, shown in the head beside the file's name
+  // The editor's way back: its folder with the file open beside it ("‹ Werkstatt" on the phone, as the open detail's).
+  const editorBackAction = () => {
+    const launch = snapshot().editor;
+    if (!launch) return undefined;
+    const folderPath = parentPath(launch.entry.path);
+    return { label: folderName(folderPath), href: filesUrl(launch.base.id, folderPath, null, launch.entry.path), onNavigate };
+  };
+  const editorBack = () => {
+    const launch = snapshot().editor;
+    if (launch) void go(filesUrl(launch.base.id, parentPath(launch.entry.path), null, launch.entry.path));
+  };
+  // Once, at the sidebar's Activity: Recent now lives there. The server decides; dismissing or using it ends it.
+  const [recentMoved, setRecentMoved] = createSignal(!!props.initial.hints?.recentMoved);
+  const dismissRecentMoved = () => {
+    setRecentMoved(false);
+    markHintSeen(RECENT_MOVED_HINT);
+  };
+
   // ── Words and rows ──────────────────────────────────────────────────────────────────────────────────────────────
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
-  const date = createMemo(() => new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short", timeZone: timeZone() }));
   // A phone row has room for the day alone.
-  const day = createMemo(() => new Intl.DateTimeFormat(locale(), { dateStyle: "short", timeZone: timeZone() }));
+  const day = createMemo(() => new Intl.DateTimeFormat(locale(), { day: "2-digit", month: "2-digit", timeZone: timeZone() }));
+  // "heute, 08:10", "gestern, 15:22" or the date: the words of Activity, short enough for a column.
+  const when = (iso: string) =>
+    formatWhen(iso, locale(), h(), { now: snapshot().now ?? props.initial.now ?? new Date().toISOString(), timeZone: timeZone() });
   const sizeText = (entry: FileEntry) => (entry.directory ? "" : formatFileViewSize(entry.size, locale()));
+  /**
+   * Who reaches an entry, only where it differs from its folder (B: a qualifier only at the exception): its own active
+   * download links. The folder's own reach (the team, or only you) stands once, in the head beside the path.
+   */
+  const sharing = (entry: FileEntry) => (entry.facts?.links ? b().v2Links({ count: entry.facts.links }) : "");
   const fresh = () => actions.fresh();
   const rows = createMemo((): FolderRow[] => entries().map((entry) => ({ key: entry.path, entry, fresh: fresh().has(entry.path) })));
+  // an empty folder has nothing to filter, sort or show otherwise: no filter row over it, unless a filter made it empty
+  const folderBarState = () =>
+    rows().length > 0 || !!directory()?.next || Object.keys(address().state.filters).length > 0 ? folderState() : undefined;
+  // Previews of the open folder share one signal: leaving the folder cancels those still waiting, so the next folder
+  // and an opened file's large preview do not queue behind them.
+  const previews = createMemo(
+    on(
+      () => `${selected()?.id}\u0000${folder()}`,
+      () => {
+        const controller = new AbortController();
+        onCleanup(() => controller.abort());
+        return controller.signal;
+      },
+    ),
+  );
+  const thumbnail = (entry: FileEntry, variant: "small" | "large") => entryThumbnail(selected()?.id, entry, variant, previews());
+  // The grid keeps every tile in the page: a photo asks for its preview once its tile comes near the view.
+  const seenTile = createSeenTiles(
+    () => t().files,
+    () => entries().map((entry) => entry.path),
+    () => grid() && rows().length > 0,
+  );
+  // One tile object per entry for as long as the entry stands: an arriving preview changes the tile's picture, it does
+  // not make every tile anew.
+  const tiles = createMemo(
+    mapArray(entries, (entry) => ({
+      key: entry.path,
+      ...entryMark(entry),
+      get image() {
+        return seenTile(entry.path) ? thumbnail(entry, "large") : undefined;
+      },
+      title: entry.name,
+      get meta() {
+        return fresh().has(entry.path) ? b().justCreated : when(entry.modified);
+      },
+      people: entry.facts?.author ? [{ name: entry.facts.author.name }] : [],
+      get sign() {
+        return entry.facts?.links ? { icon: "link", label: sharing(entry) } : undefined;
+      },
+      get href() {
+        return openTarget(entry).href;
+      },
+    })),
+  );
   const placeOf = (entry: FileEntry) => {
     const within = folder() ? entry.path.slice(folder().length + 1) : entry.path;
     return parentPath(within) || folderName(folder());
@@ -508,7 +773,10 @@ export default function FilesScreen(props: {
   const lead = () => {
     const shown = directory();
     if (!shown) return "";
-    if (!searching()) return b().pageItems(shown.items.length);
+    if (!searching()) {
+      const bytes = shown.items.reduce((sum, entry) => sum + (entry.directory ? 0 : entry.size), 0);
+      return b().v2EntriesSize({ count: shown.items.length, more: shown.next ? "+" : "", size: formatFileViewSize(bytes, locale()) });
+    }
     if (typeof shown.total !== "number") return b().searchResults(shown.items.length);
     return shown.truncated ? b().searchTruncated(shown.total) : b().searchTotal(shown.total);
   };
@@ -518,43 +786,6 @@ export default function FilesScreen(props: {
       .reduce((sum, entry) => sum + entry.size, 0);
   const movable = (items: readonly FileEntry[]) => items.every((item) => item.actions?.move !== false);
   const shareable = (items: readonly FileEntry[]) => items.every((item) => item.actions?.share !== false);
-  /** The deeds of one entry, behind its "…". */
-  const entryMenu = (entry: FileEntry): MenuEntry[] => [
-    entry.directory
-      ? { label: b().open, icon: "folder-open", href: folderHref(entry.path), onNavigate }
-      : actions.editable(entry)
-        ? { label: entry.actions?.write === false ? b().openReadOnly : b().edit, icon: "pencil", onClick: () => edit(entry) }
-        : { label: b().preview, icon: "eye", onClick: () => actions.preview(entry) },
-    { label: b().details, icon: "info-circle", href: withFile(entry.path), onNavigate },
-    {
-      label: entry.directory ? b().downloadZip : t().download,
-      icon: "download",
-      disabled: actions.busy(),
-      onClick: () => actions.startDownload([entry]),
-    },
-    ...(entry.actions?.share !== false ? [{ label: b().shareSelection, icon: "world-share", onClick: () => share([entry.path]) }] : []),
-    ...(searching()
-      ? []
-      : [
-          "separator" as const,
-          { label: b().rename, icon: "pencil", disabled: entry.actions?.move === false, onClick: () => void actions.rename(entry) },
-          { label: b().duplicate, icon: "copy", disabled: !canCreate(), onClick: () => actions.duplicate(entry) },
-          {
-            label: b().moveTo,
-            icon: "arrow-move-right",
-            disabled: entry.actions?.move === false,
-            onClick: () => void actions.moveOrCopy([entry]),
-          },
-          { label: b().copyTo, icon: "folder-symlink", onClick: () => void actions.moveOrCopy([entry], true) },
-        ]),
-    {
-      label: b().trashSelection,
-      icon: "trash",
-      danger: true,
-      disabled: entry.actions?.move === false,
-      onClick: () => void actions.trashItems([entry]),
-    },
-  ];
   /** What can be done with the chosen entries, at the place of the status row while they are chosen. */
   const selectionActions = () => {
     const items = chosenEntries();
@@ -581,6 +812,22 @@ export default function FilesScreen(props: {
               onClick: () => void actions.moveOrCopy(items),
             },
             { label: b().copyTo, icon: "folder-symlink", disabled: actions.busy(), onClick: () => void actions.moveOrCopy(items, true) },
+            ...(items.length === 1
+              ? [
+                  {
+                    label: b().rename,
+                    icon: "pencil",
+                    disabled: actions.busy() || items[0]!.actions?.move === false,
+                    onClick: () => void actions.rename(items[0]!),
+                  },
+                  {
+                    label: b().duplicate,
+                    icon: "copy",
+                    disabled: actions.busy() || !canCreate(),
+                    onClick: () => actions.duplicate(items[0]!),
+                  },
+                ]
+              : []),
             {
               label: b().moveToNewFolder,
               icon: "folder-plus",
@@ -597,7 +844,11 @@ export default function FilesScreen(props: {
     ];
   };
   /** New entries and uploads: the head's "Neu". */
+  // the head's one create action (Valentin 26.11.): uploading first, then what can be made new here
   const addMenu = (): MenuEntry[] => [
+    { label: b().upload, icon: "upload", onClick: actions.pickFiles },
+    { label: b().uploadFolder, icon: "folder-up", onClick: actions.pickFolder },
+    "separator",
     { label: b().newFolder, icon: "folder-plus", onClick: () => void actions.createFolder() },
     { label: b().newFile, icon: "file-plus", onClick: () => void actions.createFile() },
     { label: assets().markdown, icon: "markdown", onClick: () => void actions.createMarkdown() },
@@ -614,9 +865,6 @@ export default function FilesScreen(props: {
           },
         ]
       : []),
-    "separator",
-    { label: b().upload, icon: "upload", onClick: actions.pickFiles },
-    { label: b().uploadFolder, icon: "folder-up", onClick: actions.pickFolder },
   ];
   const view = () => preference(snapshot().selectedId);
   // k2b-ui gap: Table has no tree rows (lane Y2: Table tree rows); a storage that keeps the tree view shows its list.
@@ -674,10 +922,23 @@ export default function FilesScreen(props: {
   const navGroups = createMemo((): NavGroup[] => [
     {
       items: [
-        ...(hasOverview() ? [{ label: b().allStorage, icon: "layout-grid", href: filesUrl() }] : []),
-        { label: b().activity, icon: "history", href: activityUrl({ actor: "me" }) },
-        { label: b().favorites, icon: "star", href: viewHref(null, "favorites") },
-        { label: b().shares, icon: "world-share", href: viewHref(snapshot().selectedId, "shares") },
+        // Activity is "Me" across all storage; inside Activity the entry keeps the filters.
+        {
+          label: b().activity,
+          icon: "history",
+          href: screen() === "activity" ? snapshot().source : activityUrl({ actor: "me" }),
+          onNavigate,
+          current: screen() === "activity",
+          dot: recentMoved() ? ("ok" as const) : undefined,
+        },
+        { label: b().favorites, icon: "star", href: viewHref(null, "favorites"), onNavigate, current: screen() === "favorites" },
+        {
+          label: b().shares,
+          icon: "world-share",
+          href: viewHref(snapshot().selectedId, "shares"),
+          onNavigate,
+          current: screen() === "shares",
+        },
       ],
     },
     {
@@ -686,33 +947,46 @@ export default function FilesScreen(props: {
         const open = base.id === snapshot().selectedId;
         const item: NavItem = {
           label: label(base),
-          icon: base.kind === "users" ? "home" : "users",
+          icon: storageMark(base).icon,
+          color: storageMark(base).color,
           href: filesUrl(base.id),
           onNavigate,
-          current: open && !folder() && !searching(),
+          current: open && ((screen() === "folder" && !folder() && !searching()) || (!!editing() && !navFolder())),
+          // a storage that is not there says so where it is listed: a dot and its state's word, read with its name
+          ...(base.status !== "existing" ? { dot: "warn" as const, count: t()[base.status] } : {}),
           ...(base.area === "cloud"
-            ? { menu: [{ label: b().activityOfStorage, icon: "history", href: activityUrl({ baseId: base.id }) }] }
+            ? { menu: [{ label: b().activityOfStorage, icon: "history", href: activityUrl({ baseId: base.id }), onNavigate }] }
             : {}),
         };
         // k2b-ui gap: Nav has no tree (lane Y2: Nav tree, lazy with paging). The open storage folds out the folders
         // down to this one; other branches open from the listing until then.
-        const chain = open
-          ? ancestors(folder()).map((path) => ({
-              label: path.split("/").at(-1) ?? path,
-              icon: "folder",
-              href: folderHref(path),
-              onNavigate,
-              nested: true,
-              current: path === folder() && !searching(),
-            }))
-          : [];
+        // while a file is edited its folder is the current entry: the editor's head names the file alone (Valentin 26.11.)
+        const chain =
+          open && ((screen() === "folder" && !snapshot().moved) || editing())
+            ? ancestors(navFolder()).map((path) => ({
+                label: path.split("/").at(-1) ?? path,
+                icon: "folder",
+                href: folderHref(path),
+                onNavigate,
+                nested: true,
+                current: path === navFolder() && (!!editing() || !searching()),
+              }))
+            : [];
         return [item, ...chain];
       }),
     },
   ]);
   const navFoot = (): NavItem[] => [
     ...(snapshot().selectedId && selected()?.status === "existing"
-      ? [{ label: b().trashTitle, icon: "trash", href: viewHref(snapshot().selectedId, "trash") }]
+      ? [
+          {
+            label: b().trashTitle,
+            icon: "trash",
+            href: viewHref(snapshot().selectedId, "trash"),
+            onNavigate,
+            current: screen() === "trash",
+          },
+        ]
       : []),
     {
       label: b().sidebarSearch,
@@ -720,10 +994,34 @@ export default function FilesScreen(props: {
       onClick: () => openGlobalSearch({ query: "", scope: { appId: "filesv2", tag: "file", label: t().files, icon: "ti ti-folders" } }),
     },
   ];
+  // A view of the sidebar is named by its active entry there: its head never repeats that word as a title (B: no title
+  // that only repeats the nav). Its name stays on the phone, where the sidebar is away: the phone bar carries it.
   const pathItems = () => {
     const base = selected();
+    if (screen() === "favorites" || screen() === "shares") return [];
+    if (screen() === "activity") {
+      const item = activityFilters().path;
+      return item === undefined
+        ? []
+        : [
+            { label: b().activity, href: activityUrl({ ...activityFilters(), path: undefined, scope: undefined }) },
+            { label: item.split("/").at(-1) || (base ? label(base) : item) },
+          ];
+    }
+    if (screen() === "edit") {
+      const launch = snapshot().editor;
+      // one bar: the file's name, small; its place is the active entry of the sidebar, not a second path (Valentin 26.11.)
+      return launch ? [{ label: launch.entry.name }] : [];
+    }
+    const moved = snapshot().moved;
+    if (moved)
+      return [...(base ? [{ label: label(base), href: folderHref("") }] : []), ...moved.path.split("/").map((part) => ({ label: part }))];
+    if (screen() === "trash")
+      return [
+        // the trash itself is the sidebar's active entry: the path says whose trash it is, not "Papierkorb" again (B)
+        ...(base ? [{ label: label(base), href: folderHref("") }] : []),
+      ];
     return [
-      ...(hasOverview() ? [{ label: b().allStorage, href: filesUrl() }] : []),
       ...(base ? [{ label: label(base), href: folder() || searching() ? folderHref("") : undefined }] : []),
       ...ancestors(folder()).map((path) => ({
         label: path.split("/").at(-1) ?? path,
@@ -732,156 +1030,353 @@ export default function FilesScreen(props: {
       ...(searching() ? [{ label: b().v2SearchResults }] : []),
     ];
   };
-  const uploadAction = () => (canCreate() && !searching() ? { label: b().upload, icon: "upload", onClick: actions.pickFiles } : undefined);
+  /** The name of the place on the phone bar, where the sidebar is away: the view, the open folder (never cut), the file. */
+  const placeName = () => {
+    if (screen() === "favorites") return b().favorites;
+    if (screen() === "shares") return b().sharesTitle;
+    if (screen() === "activity") return b().activity;
+    if (screen() === "trash") return b().trashTitle;
+    if (screen() === "edit") return snapshot().editor?.entry.name ?? t().files;
+    const moved = snapshot().moved;
+    if (moved) return moved.path.split("/").at(-1) || folderName("");
+    return folderName(folder());
+  };
+  /** Who reaches the open folder: the team of a group storage or only this person, and the links among its entries. */
+  const folderSharing = () => {
+    const shown = directory();
+    const links = entries().reduce((sum, entry) => sum + (entry.facts?.links ?? 0), 0);
+    const who = selected()?.kind === "groups" ? b().v2Team : b().onlyYou;
+    // the links of the loaded rows: with more pages or a filter there can be more, so the count is a lower bound
+    const partial = !!shown?.next || Object.keys(folderState()?.filters ?? {}).length > 0;
+    return links ? b().v2WhoAndLinks({ who, links, more: partial ? "+" : "" }) : who;
+  };
+
+  /**
+   * The head of the screen: the path with the folder's sharing, or the open file's state, and the search and "+".
+   * A view that only the sidebar names has no head row at all: no row without content. Where the screen's main column
+   * has a status row (a folder, Activity), the head goes to that column, so head and status row are one block.
+   */
+  const paneHead = () => (screen() === "folder" && !snapshot().moved) || screen() === "activity";
+  const headStart = () => {
+    // a folder says who reaches it beside its path, as the mockup's "Team + 1 Link"
+    if (screen() === "folder" && !snapshot().moved && selected())
+      return (
+        <Inline>
+          <Path label={b().v2Where} items={pathItems()} />
+          <Chip icon={selected()?.kind === "groups" ? "users" : "lock"}>{folderSharing()}</Chip>
+        </Inline>
+      );
+    return pathItems().length > 0 ? <Path label={b().v2Where} items={pathItems()} /> : undefined;
+  };
+  const screenHead = () =>
+    // the editor has no head: its toolbar names the file and says its state (Valentin 27.11.)
+    screen() === "favorites" || screen() === "shares" || screen() === "edit" ? undefined : (
+      <Bar
+        start={headStart()}
+        end={
+          <>
+            <Show when={screen() === "activity"}>
+              <Input
+                type="search"
+                icon="search"
+                label={h().searchLabel}
+                placeholder={b().v2SearchShort}
+                value={activityFilters().q ?? ""}
+                onKeyDown={(event) => {
+                  if (event.isComposing) return;
+                  const input = event.currentTarget as HTMLInputElement;
+                  if (event.key === "Enter") submitActivitySearch(input.value);
+                  if (event.key === "Escape" && input.value) {
+                    input.value = "";
+                    submitActivitySearch("");
+                  }
+                }}
+              />
+            </Show>
+
+            <Show when={screen() === "folder" && !snapshot().moved}>
+              <Input
+                type="search"
+                icon="search"
+                label={b().searchIn(folderName(folder()))}
+                placeholder={b().v2SearchShort}
+                value={address().state.search ?? ""}
+                onKeyDown={(event) => {
+                  if (event.isComposing) return;
+                  const input = event.currentTarget as HTMLInputElement;
+                  if (event.key === "Enter") submitSearch(input.value);
+                  if (event.key === "Escape" && input.value) {
+                    input.value = "";
+                    submitSearch("");
+                  }
+                }}
+              />
+              <Show when={canCreate() && !searching()}>
+                {/* ONE create action, never "+" beside "Hochladen" (Valentin 26.11.) */}
+                <Menu icon="plus" label={b().add} items={addMenu()} disabled={actions.busy()} />
+              </Show>
+            </Show>
+          </>
+        }
+      />
+    );
 
   return (
     <>
-      <V2WorkspaceNavigation label={t().files} groups={navGroups()} foot={navFoot()} />
+      <V2WorkspaceNavigation label={placeName()} groups={navGroups()} foot={navFoot()} />
       <actions.Layer />
       <Workspace
         sidebarLabel={b().v2SidebarWidth}
         sidebar={<Nav title={t().files} icon="folders" groups={navGroups()} foot={navFoot()} />}
-        detail
-        detailEmpty={{ icon: "file", text: b().v2NothingOpen }}
-        primary={uploadAction()}
-        head={
-          <Bar
-            start={<Path label={b().v2Where} items={pathItems()} />}
-            end={
-              <>
-                <Input
-                  type="search"
-                  icon="search"
-                  label={b().searchIn(folderName(folder()))}
-                  placeholder={b().search}
-                  value={address().state.search ?? ""}
-                  onKeyDown={(event) => {
-                    if (event.isComposing) return;
-                    const input = event.currentTarget as HTMLInputElement;
-                    if (event.key === "Enter") submitSearch(input.value);
-                    if (event.key === "Escape" && input.value) {
-                      input.value = "";
-                      submitSearch("");
+        // No empty half (look rule 5): the detail stands only while an entry is open.
+        detail={(screen() === "folder" && !snapshot().moved && openPath()) || openRun() ? true : undefined}
+        // no floating main action: the head's "+" is the one create action (Valentin 26.11.), and nothing floats over
+        // an open file on the phone. A view that only the sidebar names has no head row at all: no row without content.
+        head={paneHead() ? undefined : screenHead()}
+      >
+        <Show when={screen() === "shares"}>
+          <SharesPane initial={snapshot().shares ?? null} bases={snapshot().bases.items} timeZone={timeZone()} onNavigate={onNavigate} />
+        </Show>
+        <Show when={screen() === "activity"}>
+          <Pane.Split>
+            <ActivityPane
+              head={screenHead()}
+              width={openRun() ? { min: 440, default: 720 } : undefined}
+              filters={activityFilters()}
+              query={activityLists()}
+              state={activityState()}
+              onChange={changeActivity}
+              initial={snapshot().activity?.page ?? null}
+              marks={snapshot().marks}
+              bases={snapshot().bases.items.map((base) => ({ id: base.id, label: label(base) }))}
+              env={history().env}
+              actions={activityActions}
+              loadChain={(entry, signal) => loadChain(entry, signal, h().chainFailed)}
+              loadBatch={(entry, signal) => loadBatchContext(entry, signal, h().batchFailed)}
+              retentionDays={props.retentionDays ?? 365}
+              pending={workspace.pending()}
+              onReload={() => void go(snapshot().source, true)}
+              onPeople={notePeople}
+              who={
+                activityFilters().actor
+                  ? {
+                      value: activityFilters().actor!,
+                      label: activityFilters().actor === "me" ? h().whoMe : (people()[activityFilters().actor!] ?? h().selectedPerson),
                     }
+                  : undefined
+              }
+            />
+            <Show when={openRun()} keyed>
+              {(run) => (
+                <RunDetail
+                  run={run}
+                  env={history().env}
+                  closeHref={activityUrl(activityFilters())}
+                  onNavigate={onNavigate}
+                  onRetry={() => void go(snapshot().source, true)}
+                />
+              )}
+            </Show>
+          </Pane.Split>
+        </Show>
+        <Show when={screen() === "edit" ? (snapshot().editor ?? false) : undefined} keyed>
+          {(launch) =>
+            launch ? (
+              launch.kind === "markdown" ? (
+                <MarkdownPane
+                  launch={launch}
+                  back={editorBackAction()}
+                  onGuard={(guard) => {
+                    editorGuard = guard;
                   }}
                 />
-                <Show when={canCreate() && !searching()}>
-                  <Menu icon="plus" label={b().add} items={addMenu()} disabled={actions.busy()} />
-                  <Button variant="primary" icon="upload" disabled={actions.busy()} onClick={actions.pickFiles}>
-                    {b().upload}
-                  </Button>
-                </Show>
-              </>
-            }
-          />
-        }
-      >
-        <Pane.Split>
-          <Pane
-            label={t().files}
-            width={{ min: 440, default: 640 }}
-            scrollKey={`filesv2:${snapshot().selectedId ?? ""}:${folder()}`}
-            status={
-              <Show when={directory()}>
-                <Show when={folderState()}>
-                  {(state) => (
-                    <FilterBar
-                      query={queries().folder}
-                      state={state()}
-                      onChange={changeFolder}
-                      icons={FILTER_ICONS}
-                      timeZone={timeZone()}
-                      results={lead()}
-                    />
-                  )}
-                </Show>
-                <Show when={searchListState()}>
-                  {(state) => (
-                    <FilterBar
-                      query={queries().search}
-                      state={state()}
-                      onChange={changeSearch}
-                      icons={FILTER_ICONS}
-                      timeZone={timeZone()}
-                      results={lead()}
-                    />
-                  )}
-                </Show>
-                <StatusRow
-                  lead={lead()}
-                  loading={workspace.pending()}
-                  select={
-                    entries().length
-                      ? {
-                          label: b().selectAll,
-                          checked: chosen().length === 0 ? false : chosenEntries().length === entries().length ? true : "mixed",
-                          onChange: (checked) => setChosen(checked ? entries().map((entry) => entry.path) : []),
-                        }
-                      : undefined
-                  }
-                  selection={
-                    chosenEntries().length
-                      ? {
-                          count: [
-                            b().selectedActions(chosenEntries().length),
-                            chosenBytes() ? formatFileViewSize(chosenBytes(), locale()) : "",
-                          ]
-                            .filter(Boolean)
-                            .join(" · "),
-                          actions: selectionActions(),
-                          clear: { label: b().clear, onClick: () => setChosen([]) },
-                        }
-                      : undefined
-                  }
-                  filters={
-                    <>
-                      <Show when={folderState()}>
-                        {(state) => <ListOrder query={queries().folder} state={state()} onChange={changeFolder} />}
-                      </Show>
-                      <Show when={searchListState()}>
-                        {(state) => <ListOrder query={queries().search} state={state()} onChange={changeSearch} />}
-                      </Show>
-                      <Show when={!searching()}>
-                        <Menu icon={grid() ? "layout-grid" : "list"} label={b().view} items={viewMenu()} />
-                      </Show>
-                    </>
-                  }
+              ) : (
+                <OfficePane launch={launch} onBack={editorBack} back={editorBackAction()} />
+              )
+            ) : (
+              <Pane label={b().editorFailed}>
+                <Failed
+                  text={workspace.failure()?.message ?? issueText(t(), snapshot().errorCode ?? "unavailable")}
+                  onRetry={() => void go(workspace.failure()?.source ?? snapshot().source, true)}
                 />
+              </Pane>
+            )
+          }
+        </Show>
+        <Show when={screen() === "folder" ? snapshot().moved : undefined} keyed>
+          {(moved) => (
+            <MovedPane
+              moved={moved}
+              oldAddress={[...(selected() ? [label(selected()!)] : []), ...moved.path.split("/")]}
+              env={history().env}
+              onOpen={(target) => void history().actions.onOpen(target)}
+              historyHref={activityUrl({ q: moved.path.split("/").at(-1) ?? moved.path })}
+              onNavigate={onNavigate}
+            >
+              {/* the folder at its new place, when it stays in this storage: its first entries, the way in is "Dorthin springen" */}
+              <Show when={moved.chain.endpoint?.baseId === selected()?.id && moved.chain.endpoint && selected()}>
+                {(base) => (
+                  <FolderContents
+                    base={base()}
+                    folder={{
+                      name: moved.chain.endpoint!.path.split("/").at(-1) ?? moved.chain.endpoint!.path,
+                      path: moved.chain.endpoint!.path,
+                      directory: true,
+                      size: 0,
+                      modified: moved.entry.time,
+                    }}
+                    initial={moved.contents ?? undefined}
+                    onNavigate={onNavigate}
+                    env={history().env}
+                  />
+                )}
               </Show>
-            }
-          >
-            <Show when={cursorNotice()}>
-              <Notice tone="note" actions={[{ label: b().v2Hide, onClick: () => setCursorNotice(false) }]}>
-                {b().cursorReset}
-              </Notice>
+            </MovedPane>
+          )}
+        </Show>
+        <Show when={screen() === "favorites"}>
+          <FavoritesPane
+            initial={snapshot().marks ?? null}
+            bases={snapshot().bases.items.map((base) => ({ id: base.id, label: label(base) }))}
+            now={snapshot().now ?? props.initial.now ?? new Date().toISOString()}
+            timeZone={timeZone()}
+            onNavigate={onNavigate}
+          />
+        </Show>
+        <Show when={screen() === "trash" ? selected() : undefined} keyed>
+          {(base) => (
+            <TrashPane
+              base={base}
+              initial={snapshot().trash ?? null}
+              timeZone={timeZone()}
+              onRestored={(path) => void go(filesUrl(base.id, parentPath(path), null, path))}
+              onNavigate={onNavigate}
+            />
+          )}
+        </Show>
+        <Show when={screen() === "folder" && !snapshot().moved}>
+          <Pane.Split>
+            <Pane
+              label={t().files}
+              // the screen's head and the list's status row are one block over the list (look rule 30)
+              head={screenHead()}
+              // the list takes the whole width; only beside an open file it keeps its own, with a grip
+              width={openPath() ? { min: 440, default: 720 } : undefined}
+              scrollKey={`filesv2:${snapshot().selectedId ?? ""}:${folder()}`}
+              status={
+                <Show when={directory()}>
+                  <Show
+                    when={chosenEntries().length}
+                    fallback={
+                      <>
+                        {/* an empty folder has nothing to filter, sort or show otherwise: no row over its empty state;
+                            with a filter set the row stays, so the filter can be taken back */}
+                        <Show when={folderBarState()}>
+                          {(state) => (
+                            <FilterBar
+                              query={queries().folder}
+                              state={state()}
+                              onChange={changeFolder}
+                              // "Zurücksetzen" only with a filter: the storage's own order and grouping are where it starts
+                              base={folderBase()}
+                              icons={FILTER_ICONS}
+                              timeZone={timeZone()}
+                              results={rows().length || directory()?.next ? lead() : undefined}
+                              end={
+                                <>
+                                  <ListOrder query={queries().folder} state={state()} onChange={changeFolder} />
+                                  <Menu icon={grid() ? "layout-grid" : "list"} items={viewMenu()}>
+                                    {grid() ? b().grid : b().list}
+                                  </Menu>
+                                </>
+                              }
+                            />
+                          )}
+                        </Show>
+                        <Show when={searchListState()}>
+                          {(state) => (
+                            <FilterBar
+                              query={queries().search}
+                              state={state()}
+                              onChange={changeSearch}
+                              icons={FILTER_ICONS}
+                              timeZone={timeZone()}
+                              results={rows().length || directory()?.next ? lead() : undefined}
+                              end={<ListOrder query={queries().search} state={state()} onChange={changeSearch} />}
+                            />
+                          )}
+                        </Show>
+                      </>
+                    }
+                  >
+                    <StatusRow
+                      lead=""
+                      select={{
+                        label: b().selectAll,
+                        checked: chosenEntries().length === entries().length ? true : "mixed",
+                        onChange: (checked) => setChosen(checked ? entries().map((entry) => entry.path) : []),
+                      }}
+                      selection={{
+                        count: [
+                          b().selectedActions(chosenEntries().length),
+                          chosenBytes() ? formatFileViewSize(chosenBytes(), locale()) : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" · "),
+                        actions: selectionActions(),
+                        clear: { label: b().clear, onClick: () => setChosen([]) },
+                      }}
+                    />
+                  </Show>
+                </Show>
+              }
+            >
+              {/* Once, where Recent used to be: it lives in Activity now. Opening "Me" or hiding it ends it. */}
+              <Show when={recentMoved()}>
+                <Notice
+                  tone="note"
+                  title={b().v2RecentMovedTitle}
+                  actions={[
+                    { label: b().openActivity, href: activityUrl({ actor: "me" }), onNavigate },
+                    { label: b().v2Hide, onClick: dismissRecentMoved },
+                  ]}
+                >
+                  {b().recentMovedText}
+                </Notice>
+              </Show>
+              <Show when={cursorNotice()}>
+                <Notice tone="note" actions={[{ label: b().v2Hide, onClick: () => setCursorNotice(false) }]}>
+                  {b().cursorReset}
+                </Notice>
+              </Show>
+              {snapshot().bases.issues.map((issue) => (
+                <Notice tone="warn" title={t()[issue.area]}>
+                  {issueText(t(), issue.code)}
+                </Notice>
+              ))}
+              <FolderBody />
+            </Pane>
+            <Show when={directory() && selected() && openPath() ? openPath() : undefined} keyed>
+              {(path) => (
+                <EntryDetail
+                  base={selected()!}
+                  path={path}
+                  listed={entries().find((entry) => entry.path === path)}
+                  initial={snapshot().detail ?? props.initial.detail}
+                  history={history()}
+                  actions={actions}
+                  closeHref={withFile(null)}
+                  folderName={searching() ? b().v2SearchResults : folderName(folder())}
+                  onNavigate={onNavigate}
+                  onEdit={edit}
+                  onShare={share}
+                  onShareInbox={shareInbox}
+                  onChanged={refresh}
+                />
+              )}
             </Show>
-            {snapshot().bases.issues.map((issue) => (
-              <Notice tone="warn" title={t()[issue.area]}>
-                {issueText(t(), issue.code)}
-              </Notice>
-            ))}
-            <FolderBody />
-          </Pane>
-          <Show when={directory() && selected() && openPath() ? openPath() : undefined} keyed>
-            {(path) => (
-              <EntryDetail
-                base={selected()!}
-                path={path}
-                listed={entries().find((entry) => entry.path === path)}
-                initial={snapshot().detail ?? props.initial.detail}
-                history={history()}
-                actions={actions}
-                closeHref={withFile(null)}
-                folderName={searching() ? b().v2SearchResults : folderName(folder())}
-                onNavigate={onNavigate}
-                onEdit={edit}
-                onShare={share}
-                onShareInbox={shareInbox}
-                onChanged={refresh}
-              />
-            )}
-          </Show>
-        </Pane.Split>
+          </Pane.Split>
+        </Show>
       </Workspace>
     </>
   );
@@ -943,9 +1438,8 @@ export default function FilesScreen(props: {
                               const count = number(rows().filter((other) => other.entry.directory === folders).length);
                               return {
                                 key: folders ? "folders" : "files",
-                                head: () => <Text weight="strong">{folders ? b().filterFolders : b().filterFiles}</Text>,
+                                head: () => (folders ? b().filterFolders : b().filterFiles),
                                 count,
-                                meta: count,
                               };
                             }
                           : undefined
@@ -955,59 +1449,80 @@ export default function FilesScreen(props: {
                       phone={(row) => ({
                         lines: [
                           row.entry.name,
-                          searching() ? placeOf(row.entry) : row.entry.directory ? b().kindFolder : sizeText(row.entry),
+                          [
+                            searching() ? placeOf(row.entry) : row.entry.directory ? b().kindFolder : sizeText(row.entry),
+                            sharing(row.entry),
+                          ]
+                            .filter(Boolean)
+                            .join(" · "),
                         ],
+                        mark: { ...entryMark(row.entry), image: thumbnail(row.entry, "small") },
                         time: row.fresh ? b().justCreated : day().format(new Date(row.entry.modified)),
                       })}
                       columns={[
                         {
                           title: t().name,
-                          width: { min: 160, default: 260 },
+                          width: { min: 160, default: 220 },
                           sort: sortTarget("name"),
-                          cell: (row) => {
-                            const name = (
-                              <Inline>
-                                <Icon name={entryIcon(row.entry)} />
-                                <Text>{row.entry.name}</Text>
-                              </Inline>
-                            );
-                            return searching() ? { lines: [name, placeOf(row.entry)] } : name;
-                          },
+                          // a photo shows itself as its mark, once the preview service has drawn it
+                          mark: (row) => ({ ...entryMark(row.entry), image: thumbnail(row.entry, "small") }),
+                          // cut at its end for now: `Cut` cuts a name twice and scrambles right-to-left names (reported)
+                          cell: (row) => (searching() ? { lines: [row.entry.name, placeOf(row.entry)] } : row.entry.name),
+                        },
+                        {
+                          // Who changed it last, as far as this person may see the history.
+                          title: b().v2From,
+                          width: { min: 110, default: 120 },
+                          drop: true,
+                          avatar: (row) => (row.entry.facts?.author ? { name: row.entry.facts.author.name } : undefined),
+                          cell: (row) => row.entry.facts?.author?.name ?? "",
+                        },
+                        // Who reaches it where that differs from the folder: its own download links; an open entry
+                        // says it in its detail, so the column leaves while one is open and "Von" keeps its names.
+                        ...(openPath()
+                          ? []
+                          : [
+                              {
+                                title: b().v2Sharing,
+                                width: { min: 96, default: 110 },
+                                drop: true,
+                                cell: (row: FolderRow) =>
+                                  row.entry.facts?.links ? (
+                                    <Text>
+                                      <Icon name="link" /> {sharing(row.entry)}
+                                    </Text>
+                                  ) : (
+                                    ""
+                                  ),
+                              },
+                            ]),
+                        {
+                          title: t().modified,
+                          width: { min: 100, default: 120 },
+                          drop: true,
+                          sort: sortTarget("modified"),
+                          cell: (row) => (row.fresh ? b().justCreated : when(row.entry.modified)),
                         },
                         {
                           title: t().size,
-                          width: { min: 90, default: 110 },
+                          width: { min: 72, default: 90 },
                           align: "end",
-                          drop: true,
                           sort: sortTarget("size"),
                           cell: (row) => sizeText(row.entry),
-                        },
-                        {
-                          title: t().modified,
-                          width: { min: 130, default: 150 },
-                          drop: true,
-                          sort: sortTarget("modified"),
-                          cell: (row) => (row.fresh ? b().justCreated : date().format(new Date(row.entry.modified))),
-                        },
-                        {
-                          title: b().v2Deeds,
-                          cell: (row) => <Menu label={b().v2DeedsFor({ name: row.entry.name })} items={entryMenu(row.entry)} />,
                         },
                       ]}
                     />
                   }
                 >
-                  {/* k2b-ui gap: Tiles show no picture, size or selection and open as a page (lane Y2: Tiles with
-                      images S/M/L); the grid lists symbols until then. */}
                   <Show when={rows().length} fallback={<Empty {...emptyState()} />}>
                     <Tiles
+                      variant="media"
                       label={t().files}
-                      items={rows().map((row) => ({
-                        icon: entryIcon(row.entry),
-                        title: row.entry.name,
-                        meta: row.entry.directory ? b().kindFolder : sizeText(row.entry),
-                        href: openTarget(row.entry).href,
-                      }))}
+                      select={{
+                        selected: chosen(),
+                        onChange: (key, on) => setChosen((now) => (on ? [...now, key] : now.filter((each) => each !== key))),
+                      }}
+                      items={tiles()}
                     />
                   </Show>
                 </Show>
@@ -1033,7 +1548,9 @@ export default function FilesScreen(props: {
           onNavigate,
         },
       };
-    return { icon: "folder", text: b().emptyTitle };
+    // ONE create action (Valentin 26.11.): the empty folder says how its first files come, by dropping them on the page
+    // or with the head's "+", and offers no button of its own
+    return canCreate() ? { icon: "upload", text: `${b().emptyTitle}. ${b().v2EmptyDrop}` } : { icon: "folder", text: b().emptyTitle };
   }
 
   /** A search waits in its shape while it runs, so the old results never stand under new words. */

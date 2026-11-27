@@ -12,13 +12,6 @@
   flex-direction: column;
   min-height: 0;
 }
-.filesv2-browser__surface {
-  position: relative;
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-}
 /* "All storage": favorites, storage locations, and the last things this person did, as quiet sections on one
    surface. Each section body lines up under its heading's text, past the heading's icon. */
 .filesv2-overview {
@@ -29,133 +22,25 @@
   max-width: 72rem;
   padding: 0.75rem;
 }
-.filesv2-overview__section {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 0.375rem;
-}
-.filesv2-overview__section > :not(.k2b-panel-header) {
-  margin-inline-start: 1.625rem;
-}
-.filesv2-overview__title {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.filesv2-overview__title > .ti {
-  color: var(--k2b-text-muted);
-}
-.filesv2-overview__count {
-  padding: 0 0.4375rem;
-  border-radius: 999px;
-  background: var(--k2b-surface-muted, var(--k2b-hover));
-  color: var(--k2b-text-muted);
-  font-size: 0.75rem;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.125rem;
-}
-.filesv2-overview__hint {
-  margin-block: 0.25rem 0;
-  color: var(--k2b-text-muted);
-  font-size: 0.78125rem;
-}
 /* Loading keeps the place of six entries, so the storage locations below never move. */
-.filesv2-overview__skeleton-card {
-  height: 3.5rem;
-  border-radius: var(--k2b-radius-surface);
-}
 /* The same compact rows as Activity, with Activity's narrow layout on a phone. */
-.filesv2-overview__recent {
-  container: filesv2-history / inline-size;
-  margin-inline: -0.5rem;
-}
 /* The favorites page reads like a short list: inset from the edges, at a comfortable width. */
 .filesv2-favorites > .k2b-file-grid,
 .filesv2-favorites__skeleton {
   max-width: 60rem;
   padding: var(--ui-space-shell, 0.75rem);
 }
-.filesv2-favorites__skeleton {
-  display: grid;
-  gap: 0.25rem;
-}
-.filesv2-favorites__skeleton-row {
-  height: 3rem;
-  border-radius: var(--k2b-radius-control);
-}
-.filesv2-shares__lead {
-  margin: 0;
-  max-width: 46rem;
-  color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
-}
-@container k2b-app-area (max-width: 47.999rem) {
-  .filesv2-overview__section > :not(.k2b-panel-header) {
-    margin-inline-start: 0;
-  }
-  /* A phone shows four favorites; the page has the rest. Stronger than the card's own display. */
-  .filesv2-overview .filesv2-overview__favorites > :nth-child(n + 5) {
-    display: none;
-  }
-}
-.filesv2-browser__header {
-  display: flex;
-  flex-shrink: 0;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem 0.75rem 0.5rem;
-}
+
 @media (min-width: 640px) {
   .filesv2-browser__header,
   .filesv2-overview {
     padding-inline: 1rem;
   }
 }
-.filesv2-browser__collection {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
 /* The column is a flex column, so the selection pill's strip, its last child, stands at the column's end for any
    number of rows and sticks there while a long list scrolls beneath. The rows keep their own height. */
-.filesv2-browser__scroll {
-  display: flex;
-  flex-direction: column;
-}
-.filesv2-browser__scroll > * {
-  flex-shrink: 0;
-}
 /* Without a selection the pill keeps its place but is not seen, read, or reached, also without scripting, where the
    toolbar's own pending state turns visible. */
-.k2b-ui .k2b-toolbar.filesv2-selection-pill.filesv2-selection-pill--idle {
-  visibility: hidden;
-}
-.filesv2-browser__collection .k2b-file-grid {
-  padding: var(--ui-space-shell);
-}
-.filesv2-selection-bar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  min-height: 1.75rem;
-}
-.filesv2-browser__pagination {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem 0.75rem;
-}
-.filesv2-filename {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
 .filesv2-thumbnail {
   display: inline-flex;
   align-items: center;
@@ -163,7 +48,7 @@
   width: 2rem;
   height: 2rem;
   flex: 0 0 2rem;
-  font-size: 1.5rem;
+  font-size: 18px;
   color: var(--k2b-text-secondary);
 }
 .filesv2-thumbnail img {
@@ -226,11 +111,24 @@
     transition: none;
   }
 }
+/* the detail's preview opens large on a press: the button is the whole picture, so a kind's sign without a drawn
+   preview stands in its middle, not at the edge (break-ui) */
+.filesv2-hero-open {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
 .filesv2-thumbnail--large {
   width: 100%;
   height: 100%;
   flex-basis: auto;
-  font-size: 3rem;
+  font-size: 18px;
 }
 .filesv2-preview {
   min-width: 0;
@@ -251,293 +149,31 @@
   min-height: 0;
 }
 
-
-
 .filesv2-search {
   flex: 1 1 12rem;
   min-width: 0;
 }
 
 /* File list: a flat striped list, not a data table. */
-.filesv2-list {
-  display: flex;
-  flex-direction: column;
-  padding: 0 0.5rem 0.5rem;
-  font-size: 0.8125rem;
-}
-.filesv2-list__head {
-  display: flex;
-  align-items: center;
-  padding: 0.25rem 0;
-  min-height: 1.75rem;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--k2b-text-muted);
-}
-.filesv2-list__row {
-  /* Tree depth; rows override the default inline. */
-  --depth: 0;
-  display: flex;
-  align-items: center;
-  /* Leaves 0.25rem above and below the 2rem file-type tile. */
-  min-height: 2.5rem;
-  border-radius: var(--k2b-radius-control);
-  color: var(--k2b-text);
-  cursor: pointer;
-}
 /* Row fills share one specificity, so source order decides: zebra, hover, checked, then drop target. The tree relies on indentation instead of zebra. */
-:where(.filesv2-list:not([data-tree])) .filesv2-list__row:nth-child(even of :where(.filesv2-list__row)) {
-  background: color-mix(in srgb, var(--k2b-surface-muted) 55%, transparent);
-}
-.filesv2-list__row:hover {
-  background: color-mix(in srgb, var(--k2b-hover) 60%, transparent);
-}
 /* Only checked rows are filled; outside select mode the highlighted entry is the active row below. */
-:where(.filesv2-list[data-selecting]) .filesv2-list__row[aria-selected="true"] {
-  background: var(--k2b-row-selected);
-}
 /* The active row in list and tree alike: no fill of its own, so it never looks hovered. */
-.filesv2-list__row--active .filesv2-list__name {
-  font-weight: 600;
-  color: var(--ui-app-accent-text);
-}
-.filesv2-list__row:focus-visible {
-  outline: 2px solid var(--k2b-focus-ring);
-  outline-offset: -2px;
-}
-.filesv2-list__cell {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  padding: 0 0.5rem;
-}
-.filesv2-list__cell--info {
-  flex: 0 0 2.25rem;
-  justify-content: center;
-  padding: 0;
-}
 /* The 2rem file-type tile with room before the name, as in the mockup's file rows. */
-.filesv2-list__cell--icon {
-  flex: 0 0 2.75rem;
-  justify-content: center;
-  padding: 0 0.5rem 0 0.25rem;
-}
-.filesv2-list__row--up {
-  color: var(--k2b-text-secondary);
-}
-.filesv2-list__info {
-  opacity: 0;
-}
-.filesv2-list__row:hover .filesv2-list__info,
-.filesv2-list__row:focus-within .filesv2-list__info,
-.filesv2-list__row[aria-selected="true"] .filesv2-list__info,
-.filesv2-list[data-touch="true"] .filesv2-list__info {
-  opacity: 1;
-}
-.filesv2-list__cell--name {
-  flex: 1 1 auto;
-  gap: 0.5rem;
-  padding-left: 0;
-}
-.filesv2-list__cell--icon {
-  margin-left: calc(var(--depth, 0) * 1.25rem);
-}
-.filesv2-list__name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 /* Where a row that leads somewhere goes, such as the parent folder's name: quiet, and it alone gives way to the label. */
-.filesv2-list__detail {
-  min-width: 0;
-  flex: 0 1 auto;
-  overflow: hidden;
-  color: var(--k2b-text-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.filesv2-list__row--virtual .filesv2-list__name {
-  flex: none;
-}
 /* A search hit's folder gives way well before its name. */
-.filesv2-list[data-search] .filesv2-list__name {
-  min-width: 0;
-  flex: 0 1 auto;
-}
-.filesv2-list[data-search] .filesv2-list__detail {
-  flex-shrink: 8;
-}
 /* A new file in the making: its name, and below it the progress or the
    reason it failed, in the row's usual height; its commands at the end. */
-.filesv2-list__row--operation {
-  cursor: default;
-}
-.filesv2-list__row--operation .filesv2-list__cell--name {
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 0;
-}
-.filesv2-list__row--operation .filesv2-list__name {
-  max-width: 100%;
-  line-height: 1.25rem;
-}
-.filesv2-list__operation-text {
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--k2b-text-muted);
-  font-size: 0.75rem;
-  line-height: 1rem;
-  font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.filesv2-list__row--operation[data-state="failed"] .filesv2-list__operation-text,
-.filesv2-list__row--operation[data-state="failed"] .filesv2-thumbnail {
-  color: var(--k2b-danger-text);
-}
-.filesv2-list__cell--operation {
-  flex: 0 0 auto;
-  gap: 0.75rem;
-  justify-content: flex-end;
-}
 /* The same in a tile: the progress or the reason below the name, its commands below that. */
-.filesv2-grid-operation {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.125rem;
-}
-.filesv2-grid-operation__text {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-.filesv2-grid-operation[data-state="failed"] .filesv2-grid-operation__text,
-.filesv2-thumbnail--virtual[data-state="failed"] {
-  color: var(--k2b-danger-text);
-}
-.filesv2-grid-operation__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
 /* A file made a moment ago says so in place of its date, with the success check. */
-.filesv2-list__fresh {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  color: var(--k2b-success-text);
-}
-.filesv2-list__disclosure {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  flex: 0 0 2rem;
-  border-radius: var(--k2b-radius-control);
-  font-size: 1.5rem;
-  color: var(--k2b-text-secondary);
-}
-.filesv2-list__disclosure:hover {
-  color: var(--k2b-action);
-}
-.filesv2-list__cell--size {
-  flex: 0 0 6rem;
-  justify-content: flex-end;
-  font-variant-numeric: tabular-nums;
-  color: var(--k2b-text-secondary);
-}
-.filesv2-list__cell--modified {
-  flex: 0 0 11rem;
-  color: var(--k2b-text-secondary);
-}
 /* Narrow browsers keep the name readable: dates go first, sizes next. */
-@container files-browser (max-width: 40rem) {
-  .filesv2-list__cell--modified {
-    display: none;
-  }
-}
-@container files-browser (max-width: 26rem) {
-  .filesv2-list__cell--size {
-    display: none;
-  }
-}
-.filesv2-list__row--more:hover {
-  background: transparent;
-}
-.filesv2-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 2rem;
-}
+
 /* Search filters stay on one line; a value that no longer fits scrolls the strip instead of moving the rows below. */
-.filesv2-search-filters {
-  display: flex;
-  flex: 0 1 auto;
-  align-items: center;
-  gap: 0.375rem;
-  min-width: 0;
-  max-width: 100%;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.filesv2-search-filters > * {
-  flex-shrink: 0;
-}
 /* A running search shows rows of the list's geometry: its head, then 2.5rem rows with the 2rem file-type tile. */
-.filesv2-search-loading {
-  display: flex;
-  flex-direction: column;
-  padding: 1.75rem 0.5rem 0.5rem;
-}
-.filesv2-search-loading__row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  height: 2.5rem;
-  padding-left: 0.25rem;
-}
-.filesv2-search-loading__icon {
-  width: 2rem;
-  height: 2rem;
-  flex: none;
-  border-radius: var(--k2b-radius-control);
-}
-.filesv2-search-loading__text {
-  width: min(22rem, 60%);
-  height: 0.75rem;
-  border-radius: 999px;
-}
-.filesv2-search-loading__row:nth-child(3n) .filesv2-search-loading__text {
-  width: min(15rem, 45%);
-}
-.filesv2-search-loading__row:nth-child(3n + 1) .filesv2-search-loading__text {
-  width: min(28rem, 70%);
-}
-.filesv2-hero {
-  display: block;
-  width: 100%;
-  border-radius: var(--k2b-radius-control);
-  overflow: hidden;
-  background: var(--k2b-surface-muted);
-}
-.filesv2-hero:focus-visible {
-  outline: 2px solid var(--k2b-focus-ring);
-}
 .filesv2-thumbnail--hero {
   width: 100%;
   height: 12rem;
   flex-basis: auto;
-  font-size: 3rem;
+  font-size: 18px;
 }
 .filesv2-thumbnail--hero img {
   max-height: 12rem;
@@ -592,39 +228,7 @@
 }
 
 /* Files' widths before anyone resizes. The saved layout is the workspace's inline style and wins over them. */
-.k2b-app-workspace.filesv2-workspace {
-  --k2b-workspace-sidebar-width: 248px;
-  --k2b-workspace-detail-filesv2-inspector-width: 400px;
-}
-
 /* Sidebar tree: the label carries a marker; the row's own icon slot turns into a spinner so nothing shifts. */
-.filesv2-nav-label {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-}
-.filesv2-nav-spinner {
-  display: none;
-}
-.k2b-app-workspace__nav-tree-row:has(.filesv2-nav-spinner) > .k2b-app-workspace__sidebar-item-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.k2b-app-workspace__nav-tree-row:has(.filesv2-nav-spinner) > .k2b-app-workspace__sidebar-item-icon i {
-  display: none;
-}
-.k2b-app-workspace__nav-tree-row:has(.filesv2-nav-spinner) > .k2b-app-workspace__sidebar-item-icon::after {
-  content: "";
-  display: block;
-  box-sizing: border-box;
-  width: 0.875rem;
-  height: 0.875rem;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 9999px;
-  animation: filesv2-spin 0.8s linear infinite;
-}
 @keyframes filesv2-spin {
   to {
     transform: rotate(360deg);
@@ -632,33 +236,6 @@
 }
 
 /* Selection mode: a checkbox column in lists, a floating checkbox on tiles. */
-.filesv2-list__cell--check {
-  flex: 0 0 2rem;
-  justify-content: center;
-  padding: 0;
-}
-.filesv2-list__row--virtual {
-  color: var(--k2b-text-secondary);
-}
-.filesv2-grid-check {
-  position: absolute;
-  top: 0.5rem;
-  left: 0.5rem;
-  z-index: 1;
-}
-.filesv2-grid-wrap .k2b-file-grid {
-  padding-bottom: 0;
-}
-.filesv2-grid-wrap .k2b-file-grid__name {
-  font-size: 0.8125rem;
-  color: var(--k2b-text-secondary);
-}
-.filesv2-grid-wrap .k2b-file-grid__item[aria-selected="true"] .k2b-file-grid__name {
-  color: var(--k2b-text);
-}
-.filesv2-thumbnail--virtual {
-  color: var(--k2b-text-muted);
-}
 .filesv2-picker__tile {
   color: var(--k2b-text-secondary);
   font-size: 0.6875rem;
@@ -670,45 +247,7 @@
   flex-direction: column;
   min-height: 0;
 }
-.filesv2-editor__frame {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-}
-.filesv2-editor__frame iframe {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border: 0;
-}
-.filesv2-editor__loading {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--k2b-surface);
-}
-
 /* Sortable list headers keep the column look; the chevron marks the active order. */
-.filesv2-list__sort {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-}
-.filesv2-list__cell--size .filesv2-list__sort {
-  justify-content: flex-end;
-}
-.filesv2-list__sort:hover {
-  color: var(--k2b-text);
-}
-
 /* Drag-and-drop: the source fades, the folder under the pointer lights up, the drag image names the count. */
 .filesv2-list__row[data-dragging="true"],
 .k2b-file-grid__item[data-dragging="true"] {
@@ -720,30 +259,8 @@
   outline-offset: -2px;
   background: color-mix(in srgb, var(--k2b-action) 12%, transparent);
 }
-.filesv2-drag-image {
-  position: fixed;
-  top: -100px;
-  left: -100px;
-  z-index: 1;
-  padding: 0.25rem 0.625rem;
-  border-radius: var(--k2b-radius-control);
-  background: var(--k2b-action-solid);
-  color: #fff;
-  font-size: 0.75rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
 /* Keep the favorite's state visible without turning its outline into a filled icon. */
 .filesv2-favorite { position: relative; }
-.filesv2-favorite[data-favorite="true"] .filesv2-favorite__star { color: var(--k2b-warning-500); }
-.filesv2-favorite__remove { display: none; color: var(--k2b-danger-text); }
-.filesv2-favorite[data-favorite="true"]:focus-visible .filesv2-favorite__star { display: none; }
-.filesv2-favorite[data-favorite="true"]:focus-visible .filesv2-favorite__remove { display: inline; }
-@media (hover: hover) and (pointer: fine) {
-  .filesv2-favorite[data-favorite="true"]:hover .filesv2-favorite__star { display: none; }
-  .filesv2-favorite[data-favorite="true"]:hover .filesv2-favorite__remove { display: inline; }
-}
 
 .filesv2-template-list {
   height: min(300px, 60dvh);
@@ -751,38 +268,8 @@
   min-height: 0;
 }
 
-.filesv2-folder-readme {
-  position: relative;
-  flex: 0 0 auto;
-  min-height: 0;
-  padding: 0.25rem 0.75rem 0.75rem;
-}
 /* The viewport clips; it reaches into the section's inset by a Markdown table's 0.5rem past the text, so the table
    keeps its line ends while the text stays in place. */
-.filesv2-folder-readme__content {
-  height: 20vh;
-  overflow: hidden;
-  margin-inline: -0.5rem;
-  padding-inline: 0.5rem;
-}
-.k2b-ui .filesv2-folder-readme .k2b-content-markdown[data-heading-scale] > :first-child {
-  margin-block-start: 0;
-}
-.filesv2-folder-readme__content[data-overflow="true"] {
-  mask-image: linear-gradient(to bottom, black calc(100% - 4rem), transparent calc(100% - 1.5rem));
-}
-.filesv2-folder-readme__expand {
-  position: absolute;
-  inset-inline: 0.75rem;
-  bottom: 0.75rem;
-  display: flex;
-  justify-content: flex-start;
-}
-
-.filesv2-folder-readme__expand button {
-  color: var(--k2b-text-secondary);
-}
-
 /* The system-files dialog's three buttons wrap onto separate lines on phones. @k2b/ui stretches a button's tap area
    to 2.75rem above and below it on touch, so the lines keep 0.75rem apart there and no line takes another's taps. */
 @media (any-pointer: coarse) {
@@ -1300,20 +787,8 @@ dialog[open]:has(.filesv2-export-dialog) {
 /* Details panel in the shared outline: the one main action in a quiet tint of
    the app colour, a quiet line for an empty section, and image thumbnails
    that fill the file list's preview slot. */
-.k2b-ui .k2b-button.filesv2-details-main {
-  color: var(--k2b-detail-panel-accent, var(--k2b-action));
-  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 11%, transparent);
-  /* The tint is its edge: no grey subtle-button border around it. */
-  border-color: transparent;
-}
 .k2b-ui .k2b-button.filesv2-details-main:not(:disabled, [aria-disabled="true"]):hover {
   background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 17%, transparent);
-}
-.k2b-ui .filesv2-details-none {
-  margin: 0;
-  color: var(--k2b-text-muted);
-  font-size: 0.75rem;
-  line-height: 1.25rem;
 }
 .k2b-file-grid__preview > .filesv2-thumbnail {
   width: 100%;

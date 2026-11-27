@@ -6,9 +6,6 @@ export const executionMessages = i18n.define({
   messages: {
     en: {
       title: "Execution in Files",
-      scope:
-        "This record shows one action and its recorded effect in Files, with the available source context. It does not describe the outcome of the whole originating run.",
-      sourceUnavailable: "The source conversation is not available through this record.",
       actor: "Performed by",
       via: "Via",
       action: "Recorded action",
@@ -17,10 +14,8 @@ export const executionMessages = i18n.define({
       time: "Recorded at",
       before: "Before",
       after: "After",
-      snapshot: "Recorded path; this does not confirm its current location.",
+      then: "then",
       references: "Source context and references",
-      referenceNote:
-        "These references can help identify the request. They do not open the source conversation or establish the outcome of other actions.",
       request: "Request reference",
       invocation: "Invocation reference",
       callingApp: "Calling application",
@@ -33,15 +28,12 @@ export const executionMessages = i18n.define({
       unknownSource: "Other source",
       started: "Started",
       finished: "Finished",
-      failedTitle: "This execution record could not be loaded",
-      failedText: "Try loading this Files record again in a moment.",
-      retry: "Try again",
+      failed: "This run could not be loaded. Activity stays as it is.",
+      missing: "This run is not there, or you may not see it.",
+      close: "Close",
     },
     de: {
       title: "Ausführung in Dateien",
-      scope:
-        "Dieser Eintrag zeigt eine Aktion und ihre aufgezeichnete Wirkung in Dateien mit dem verfügbaren Quellkontext. Er beschreibt nicht den Ausgang der gesamten ursprünglichen Ausführung.",
-      sourceUnavailable: "Die Quellkonversation ist über diesen Eintrag nicht verfügbar.",
       actor: "Ausgeführt von",
       via: "Über",
       action: "Aufgezeichnete Aktion",
@@ -50,10 +42,8 @@ export const executionMessages = i18n.define({
       time: "Aufgezeichnet am",
       before: "Vorher",
       after: "Nachher",
-      snapshot: "Aufgezeichneter Pfad; der aktuelle Ort ist damit nicht bestätigt.",
+      then: "damals",
       references: "Quellkontext und Referenzen",
-      referenceNote:
-        "Diese Referenzen helfen, den Aufruf zuzuordnen. Sie öffnen keine Quellkonversation und belegen nicht den Ausgang anderer Aktionen.",
       request: "Request-Referenz",
       invocation: "Invocation-Referenz",
       callingApp: "Aufrufende Anwendung",
@@ -66,9 +56,9 @@ export const executionMessages = i18n.define({
       unknownSource: "Andere Quelle",
       started: "Begonnen",
       finished: "Beendet",
-      failedTitle: "Der Ausführungseintrag konnte nicht geladen werden",
-      failedText: "Versuch gleich noch einmal, diesen Dateien-Eintrag zu laden.",
-      retry: "Erneut versuchen",
+      failed: "Dieser Lauf konnte nicht geladen werden. Die Aktivität bleibt, wie sie ist.",
+      missing: "Diesen Lauf gibt es nicht, oder du darfst ihn nicht sehen.",
+      close: "Schließen",
     },
   },
 });

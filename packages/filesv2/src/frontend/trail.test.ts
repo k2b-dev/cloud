@@ -24,16 +24,6 @@ const folder = (path: string, source = `/app/filesv2?base=b1&path=${encodeURICom
 });
 
 describe("Files reports its current page to the shell", () => {
-  test("the overview is the current level above two storage roots", () => {
-    const snapshot = {
-      source: "/app/filesv2",
-      bases: { ...bases, items: [base, { ...base, id: "b2", kind: "groups" as const }] },
-      directory: null,
-    };
-    expect(snapshotTitle(snapshot, "Files", messages, "en")).toEqual([{ title: "Files", href: "/app/filesv2" }, { title: "All storage" }]);
-    expect(trailOf(snapshot)).toEqual({ title: "All storage", ancestors: [] });
-  });
-
   test("the plain address with one root still titles its root folder", () => {
     expect(trailOf(folder("", "/app/filesv2"))).toEqual({ title: "Personal", ancestors: [] });
   });

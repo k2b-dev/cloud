@@ -52,6 +52,13 @@ export type MarkdownEditorProps = ValueFieldProps<string> & {
   saving?: boolean;
   /** Shows a successful-save check. The caller clears it after a brief delay or the next edit. */
   saved?: boolean;
+  /**
+   * The state of the document in words, such as "Alles gespeichert": with it, the end of the toolbar says the state
+   * while there is nothing to save, and the same place is the "Save" button (with its words) while there is.
+   */
+  saveState?: string;
+  /** At the start of the toolbar: the document's name, so a page needs no head above the editor. */
+  toolbarLeading?: JSX.Element;
   toolbarTrailing?: JSX.Element;
 };
 
@@ -478,8 +485,34 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
     }
   };
 
+  // with a state in words, the place of saving says the state while there is nothing to save, and saves while there is
+  const canSave = () => !!props.onSave && !props.disabled && (!props.saveDisabled || !!props.saving);
   const saveControls = (): JSX.Element => (
-    <>
+    <Show
+      when={props.saveState === undefined}
+      fallback={
+        <Show
+          when={canSave()}
+          fallback={
+            <span class="k2b-markdown-editor__state" role="status">
+              {props.saveState}
+            </span>
+          }
+        >
+          <button
+            type="button"
+            class="k2b-markdown-editor__save"
+            title={markdownEditorMessages().saveShortcut}
+            disabled={props.saving}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => props.onSave?.()}
+          >
+            <i class={props.saving ? "ti ti-loader-2 k2b-spin" : "ti ti-device-floppy"} aria-hidden="true" />
+            {messages().save}
+          </button>
+        </Show>
+      }
+    >
       <Show when={props.onSave}>
         <Tooltip.Trigger
           type="button"
@@ -494,7 +527,7 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
           <i class={props.saving ? "ti ti-loader-2 k2b-spin" : props.saved ? "ti ti-check" : "ti ti-device-floppy"} aria-hidden="true" />
         </Tooltip.Trigger>
       </Show>
-    </>
+    </Show>
   );
 
   return (
@@ -533,6 +566,7 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
             textarea={textareaSignal}
             activeFormats={activeFormats}
             disabled={props.disabled}
+            leading={props.toolbarLeading}
             trailing={
               <>
                 {props.toolbarTrailing}

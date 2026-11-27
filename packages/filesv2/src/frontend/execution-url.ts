@@ -1,10 +1,16 @@
 import type { ActivityEntry } from "../activity-contracts";
-
-/** An activity ID addresses one Files record; correlation IDs never become source-run URLs. */
-export const executionUrl = (activityId: string) => `/app/filesv2/execution/${encodeURIComponent(activityId)}`;
+import type { ActivityFilters } from "./history-requests";
+import { activityUrl } from "./urls";
+import type { RunSnapshot } from "./workspace-state";
 
 /** An ordinary HTTP request is not a delegated run. The reader strips these fields from limited projections. */
 export const hasRun = (execution: ActivityEntry["execution"]) =>
   !!execution && !!(execution.invocationId || execution.origin || execution.callingApp);
 
-export const historyExecutionHref = (entry: ActivityEntry) => (hasRun(entry.execution) ? executionUrl(entry.id) : null);
+/** A run opens beside Activity's list under these filters; an activity ID addresses one Files record. */
+export const runHref = (filters: ActivityFilters) => (entry: ActivityEntry) =>
+  hasRun(entry.execution) ? activityUrl(filters, entry.id) : null;
+
+/** What a read entry shows as a run: a formerly full entry may now have only a projection without its run. */
+export const runOf = (id: string, entry: ActivityEntry): RunSnapshot =>
+  hasRun(entry.execution) ? { id, entry } : { id, problem: "missing" };

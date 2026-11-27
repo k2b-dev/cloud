@@ -182,8 +182,9 @@ describe("the detail of the v2 folder screen", () => {
           }),
         );
         const detail = () => dom.root;
-        const section = () => dom.root.querySelector<HTMLElement>(".filesv2-inspector-versions")!;
-        const titles = () => [...section().querySelectorAll(".k2b-detail-panel__action-title")].map((title) => title.textContent?.trim());
+        // the versions' own section, its rows on v2: the first line of each row with its quiet note
+        const section = () => sectionTitled(dom.root, "Versions")!;
+        const titles = () => [...section().querySelectorAll('[data-k2-part="Row"] .k2-row-l1')].map((title) => title.textContent?.trim());
         await flush();
         answerIf("shares", () => Response.json({ items: [], next: null }));
         // R4 was written after the details were read: the list now saves R3 as v-3.
@@ -229,8 +230,11 @@ describe("the detail of the v2 folder screen", () => {
         await flush();
         confirmEntry(newer);
         await flush();
-        expect(titles()[0]).toBe("Version 4 · current");
-        expect(fact(detail(), "Versions")).toBe("4");
+        // confirmed for R4: four versions, the file as it is now first and "current"
+        expect(section().querySelector(".k2-sh-count")?.textContent).toBe("4");
+        expect(titles()[0]).toContain("current");
+        // the versions are named once, in their own section; the properties carry no second count (review 26.11.)
+        expect(fact(detail(), "Versions")).toBeUndefined();
         // The overwrite that produced R3 no longer names the current file, so it restores no predecessor.
         expect(button(detail(), "Restore version 3")).toBeUndefined();
         expect(button(detail(), "Restore version 2")).toBeUndefined();

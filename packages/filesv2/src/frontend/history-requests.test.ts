@@ -83,7 +83,7 @@ describe("shared history requests", () => {
   });
 
   test("approved current and disappearance sides use the storage label and relative folders; snapshots stay raw", () => {
-    const describe = placeDescriber([base], { personal: "Persönlich" }, "de");
+    const describe = placeDescriber([base], { personal: "Persönlich", otherStorage: "Andere Ablage" }, "de");
     expect(describe({ kind: "endpoint", endpoint: { baseId: base.id, path: "Archiv/2025/Angebote 2025", itemId: null } })).toEqual([
       "Team Vertrieb",
       "Archiv",
@@ -115,7 +115,10 @@ describe("shared history requests", () => {
     expect(describe({ kind: "side", side: namedSnapshot })).toEqual(["Team Vertrieb", "Kunden"]);
     expect(isCurrent(namedSnapshot)).toBe(false);
     expect(describe({ kind: "side", side: { ...recorded, relativePath: null } })).toBeUndefined();
-    expect(describe({ kind: "side", side: { ...full("users/raw-id/A"), publicBaseId: "unknown", relativePath: "A" } })).toBeUndefined();
+    // a storage this person no longer lists reads as words, never as its internal directory ("werkstatt › Eingang")
+    expect(
+      describe({ kind: "side", side: { ...full("users/raw-id/Eingang/A"), publicBaseId: "unknown", relativePath: "Eingang/A" } }),
+    ).toEqual(["Andere Ablage", "Eingang"]);
     expect(
       describe({
         kind: "side",
