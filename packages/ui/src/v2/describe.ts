@@ -566,8 +566,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       !workspace.querySelector(":scope > .k2-ws-main > [data-slot=head] h1")
     )
       problems.push("the head names no page: give Workspace a `title` (or its sidebar a Nav with a current entry)");
+    // (a head of only the sidebar's toggle has no Bar: its name is heard, and nothing is missing)
     else if (
       workspace.querySelector(":scope > .k2-ws-main > [data-slot=head] > h1") &&
+      workspace.querySelector(":scope > .k2-ws-main > [data-slot=head] > .k2-bar") &&
       !workspace.querySelector(":scope > .k2-ws-main > [data-slot=head] > .k2-bar > .k2-bar-start")
     )
       problems.push("the head's Bar was made before the Workspace, so it cannot show the page's name: write it in `head`");

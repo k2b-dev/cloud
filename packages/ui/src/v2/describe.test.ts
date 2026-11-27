@@ -113,6 +113,14 @@ describe("describeV2", () => {
     window.document.body.innerHTML = head(deeds);
     expect(describeV2(window.document.body.firstElementChild as unknown as Element)).toContain("the head names no page");
     expect(outline(head(`<h1 class="k2-hidden-text">Notizbücher</h1>${deeds}`))).toContain("made before the Workspace");
+    // a head of only the sidebar's toggle (no `head`, a Nav names the page) has no Bar, and nothing is missing
+    expect(
+      outline(
+        head(
+          '<button class="k2-btn k2-ws-toggle" data-variant="ghost" data-icon-only="" aria-label="Seitenleiste einblenden"></button><h1 class="k2-hidden-text">Posteingang</h1>',
+        ),
+      ),
+    ).not.toContain("Problems");
     const named = outline(
       head('<div class="k2-bar" data-k2-part="Bar"><div class="k2-bar-start"><h1 class="k2-head-title">Notizbücher</h1></div></div>'),
     );
