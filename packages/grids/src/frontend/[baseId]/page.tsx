@@ -4,6 +4,7 @@ import { NotFoundState } from "@k2b/ui";
 import { currentActorUser } from "../../api/permissions";
 import { withInitialGqlResults } from "../../api/workspace-query-preview";
 import { ssr } from "../../config";
+import { gridsService } from "../../service";
 import { getBaseActivity } from "../../service/base-activity";
 import BaseHome from "../_components/frame/BaseHome.island";
 import { toHomeActivity } from "../_components/frame/base-activity-model";
@@ -14,6 +15,7 @@ import GridsWorkspace from "../_components/workspace/GridsWorkspace";
 import { projectPublicWorkspaceState } from "../_components/workspace/workspace-public-state";
 import { loadGridsWorkspaceState } from "../_components/workspace/workspace-state";
 import { serializeWorkspaceState } from "../_components/workspace/workspace-state-serialization";
+import { loadBaseChoices } from "../base-choices";
 import { resolveGridsMessages } from "../messages";
 import { gridsPageScope } from "../page-context";
 
@@ -76,7 +78,8 @@ export default ssr<AuthContext>(async (c) => {
   if (loadedState.kind !== "ok")
     return ssr.error(c, loadedState.kind === "accessDenied" ? 403 : 404, {
       description: loadedState.kind === "accessDenied" ? t.askBaseAdminForAccess : t.baseUnavailable,
-      action: { label: t.allBases, href: "/app/grids" },
+      // Grids opens a base the person may open, the one they worked in last where it can
+      action: { label: t.openGrids, href: "/app/grids" },
     });
 
   const state = loaded.state;
@@ -101,10 +104,23 @@ export default ssr<AuthContext>(async (c) => {
       ),
       new Map(readable.map((table) => [table.id, table.shortId])),
     );
+    // the switcher's bases, opened last first, and the dialog that makes one (`?new=`)
+    const bases = {
+      ...(await loadBaseChoices({ userId: user.id, userGroups: user.memberofGroupIds }, c.req.header("Cookie"), locale)),
+      templates: gridsService.template.list(locale),
+      create: params.get("new")?.trim() || null,
+      canCreate: true,
+    };
     return () => (
       <Layout c={c} fullWidth ui="v2" title={state.title} context={{ scope }}>
         <RememberGridsPath />
-        <BaseHome state={state} query={query} tab={homeTab(params, (state.navigation?.groups.length ?? 0) > 0)} activity={activity} />
+        <BaseHome
+          state={state}
+          query={query}
+          tab={homeTab(params, (state.navigation?.groups.length ?? 0) > 0)}
+          activity={activity}
+          bases={bases}
+        />
       </Layout>
     );
   }

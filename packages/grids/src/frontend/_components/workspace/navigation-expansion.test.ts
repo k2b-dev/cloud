@@ -4,6 +4,7 @@ import {
   GRIDS_SETTINGS_COOKIE_BUDGET,
   parseDocumentViewMode,
   parseNavigationExpansion,
+  parseRecentBases,
 } from "../sidebar/GridsSettingsStore";
 import { initialNavigationExpansion } from "./navigation-expansion";
 
@@ -17,6 +18,7 @@ test("opens curated groups initially, remembers collapse, and reveals the active
 test("bounds the entire encoded cookie and preserves existing document settings", () => {
   const settings = boundGridsSettings({
     lastPath: "/app/grids/BASE01",
+    recentBases: ["BASE01", "BASE02"],
     documentViewMode: "folders",
     navigation: Array.from({ length: 200 }, (_, i) => ({ base: String(i).padStart(6, "0"), expanded: ["group:GROUP1", "type:table"] })),
   });
@@ -24,6 +26,8 @@ test("bounds the entire encoded cookie and preserves existing document settings"
   const header = `settings-app-grids=${encodeURIComponent(JSON.stringify(settings))}`;
   expect(parseNavigationExpansion(header, "000000")).toEqual(["group:GROUP1", "type:table"]);
   expect(parseDocumentViewMode(header)).toBe("folders");
+  // the bases opened last stay: the folds of old bases give way first
+  expect(parseRecentBases(header)).toEqual(["BASE01", "BASE02"]);
   expect(parseNavigationExpansion("settings-app-grids=%invalid", "BASE01")).toBeUndefined();
   expect(
     parseNavigationExpansion(

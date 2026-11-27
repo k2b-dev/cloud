@@ -381,6 +381,7 @@ export const gridsService = {
   template: {
     list: templates.list,
     get: templates.get,
+    preview: templates.preview,
     instantiate: templates.instantiate,
   },
   exporter: {

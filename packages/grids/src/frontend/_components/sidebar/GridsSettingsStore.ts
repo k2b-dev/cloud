@@ -32,10 +32,7 @@ const normalizeSettings = (raw: unknown): GridsSettings => {
   return {
     lastPath: typeof candidate.lastPath === "string" ? candidate.lastPath : null,
     recentBases: Array.isArray(candidate.recentBases)
-      ? [...new Set(candidate.recentBases.filter((id): id is string => typeof id === "string" && BASE_ID.test(id)))].slice(
-          0,
-          RECENT_BASES,
-        )
+      ? [...new Set(candidate.recentBases.filter((id): id is string => typeof id === "string" && BASE_ID.test(id)))].slice(0, RECENT_BASES)
       : [],
     documentViewMode: normalizeDocumentViewMode(candidate.documentViewMode),
     navigation: Array.isArray(candidate.navigation)

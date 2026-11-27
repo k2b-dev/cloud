@@ -77,6 +77,26 @@ const summarizeTemplate = (template: GridTemplate): TemplateSummary => ({
 
 export const list = (locale?: string): TemplateSummary[] => getTemplates(locale).map(summarizeTemplate);
 
+/** Kinds of field a preview leaves out: they show no words of their own (a file, a computed or looked-up value). */
+const PREVIEW_SKIPS = new Set(["file", "formula", "lookup"]);
+
+/** What a start tile shows of a template: the tables it makes, and its main table (most fields) with its first columns. */
+export type TemplatePreview = { tables: number; table: string; columns: string[] };
+
+export const preview = (id: string, locale?: string): TemplatePreview | null => {
+  const template = getTemplate(id, locale);
+  const main = template?.tables.reduce((most, table) => (table.fields.length > most.fields.length ? table : most));
+  if (!template || !main) return null;
+  return {
+    tables: template.tables.length,
+    table: main.name,
+    columns: main.fields
+      .filter((field) => !PREVIEW_SKIPS.has(field.type))
+      .slice(0, 3)
+      .map((field) => field.name),
+  };
+};
+
 export const get = (id: string, locale?: string): TemplateSummary | null => {
   const template = getTemplate(id, locale);
   return template ? summarizeTemplate(template) : null;

@@ -4,8 +4,8 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
-import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../../ui/test/browser";
 import { renderCloudShell } from "../../../../../../tests/fixtures/cloud-shell";
+import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../../ui/test/browser";
 import { FIXTURE_NOW, FIXTURE_REVISION, type FixtureVariant } from "./frame.browser-fixture";
 
 // The bases overview and a base home on v2, in a real browser: the address holds what is open and narrowed, the

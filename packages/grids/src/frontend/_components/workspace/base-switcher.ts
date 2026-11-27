@@ -59,9 +59,7 @@ export function createBaseSwitcher(
     options: options(),
     error: failed() ? t().failedLoadBases : undefined,
     onLoad: () => void load(),
-    actions: [
-      ...(canCreate ? [{ id: "new", label: t().newBase, icon: "ti ti-plus", action: () => void create(), disabled: creating() }] : []),
-      { id: "all", label: t().allBases, icon: "ti ti-layout-grid", href: "/app/grids" },
-    ],
+    // Grids has no page of all bases: the switcher is the way between them
+    actions: canCreate ? [{ id: "new", label: t().newBase, icon: "ti ti-plus", action: () => void create(), disabled: creating() }] : [],
   });
 }
