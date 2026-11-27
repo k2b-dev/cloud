@@ -50,6 +50,7 @@ const mount = () => {
         title: node.title,
         preview: null,
         tags: [],
+        editors: [],
         createdAt: FIXTURE_NOW,
         updatedAt: FIXTURE_NOW,
         lockedAt: null,
