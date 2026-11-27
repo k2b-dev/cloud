@@ -84,7 +84,11 @@ test("hostile runner CI is path-filtered and required by the gate", async () => 
     })
     .parse(parse(await Bun.file(`${import.meta.dir}/../../../.github/workflows/ci.yml`).text()));
   const job = workflow.jobs["runner-attacks"]!;
-  expect(job.if).toBe("needs.changes.outputs.runner == 'true'");
+  // Draft PRs skip every full-CI job (the ci-gate rule enforces this prefix); ready PRs keep the runner path filter.
+  expect(job.if).toBe(
+    "(github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.runner == 'true')",
+  );
+  expect(workflow.jobs.gate!.needs).toContain("runner-attacks");
   const commands = job.steps!.map((step) => step.run ?? "").join("\n");
   for (const file of ["hostile.test.js", "isolation.test.js", "engine.test.js", "shutdown.test.js", "attacks/bridge.ts"])
     expect(commands).toContain(file);

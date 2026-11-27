@@ -1,0 +1,6 @@
+### The island size helper failed on islands with the v2 workspace navigation
+
+- **What happened:** `islandBundleSize` could not measure an island that renders `V2WorkspaceNavigation` (#4332). Its second build failed with "No matching export in `shared/theme.ts`" (or `shared/locale.ts`), so the Grids records island's budget was not checked.
+- **Root cause:** The helper builds twice. The second build replaces dead modules (in the metafile, without bytes in any output) with stubs. A stub keeps only the names that a module of the first build imports, and the helper listed those modules from the metafile's inputs. Bun drops some modules whole and leaves them out of the inputs, here `preference-controller.ts` and `locale-preference.ts`. It still parses and links them again in the second build. Their imports of `theme.ts` and `locale.ts` found stubs without those names.
+- **Error class:** A list of modules taken from the metafile's inputs, used as if it were every module the bundler links.
+- **Guard:** `buildIslandClosure` can record each importer the bundler resolves from. `islandBundleSize` takes the imported names from all importers of the first build, also from modules it dropped whole. `scripts/fixtures/island-bundle-size.test.ts` measures an island that renders `V2WorkspaceNavigation`. Before the fix it failed with `LOCALE_COOKIE`.

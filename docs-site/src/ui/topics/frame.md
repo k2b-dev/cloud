@@ -20,6 +20,7 @@ The workspace decides from its own width, on the server's page too, so nothing j
 - **Phone (below 768 px):** the sidebar leaves, and head actions hide unless they have `keep`. The main action floats at the bottom right from `Workspace primary`. The list is the page; an open entry is a page of its own.
 - **One way back:** on the phone, the open entry's `Pane back` is the one way back to the list, with the list's address as `href`. The close × of its head gives way there, so there are never two.
 - **An installed app:** where no shell holds the app's places, a `TabBar` at the bottom edge holds them on the phone: four places and "Mehr" with the others in a sheet. From 768 px it leaves, and the app's `Nav` beside the page holds them.
+- **The bar names the page:** a pane with `back` and no `head` of its own, such as an editor whose name stood in the workspace's head, shows its `label` after the way back on the phone: "‹ Werkstatt  Notizen.md". The way back takes at most half the bar and is cut first; its whole name stays its hint.
 
 ## Tabs or path?
 
