@@ -125,7 +125,12 @@ export default function BasesOverview(props: BasesOverviewProps) {
     <Pane
       label={t().bases}
       scrollKey="grids-bases"
-      status={countBar(searching() ? `${lead()} · ${t().searchBases} „${props.state.search}“` : lead())}
+      // the tab "Bases 9" carries the count; a line of its own only says what a search or a page narrowed it to
+      status={
+        hasApps() && !searching() && props.bases.length === props.total
+          ? undefined
+          : countBar(searching() ? `${lead()} · ${t().searchBases} „${props.state.search}“` : lead())
+      }
     >
       <Table
         label={t().bases}
@@ -146,7 +151,8 @@ export default function BasesOverview(props: BasesOverviewProps) {
         columns={[
           {
             title: t().name,
-            width: { min: 200, default: 360 },
+            // k2b-ui slot (#4391): an explicit grow on this column; until then the date stands right after the numbers
+            width: { min: 200, default: 400 },
             cell: (base) => (
               <Inline>
                 <Mark {...kindMark("base")} />
@@ -165,7 +171,6 @@ export default function BasesOverview(props: BasesOverviewProps) {
           },
           {
             title: t().lastChange,
-            align: "end",
             cell: (base) => lastChange(base.id) ?? "–",
           },
         ]}
@@ -190,7 +195,7 @@ export default function BasesOverview(props: BasesOverviewProps) {
           <List label={t().apps}>{props.apps.items.map(appRow)}</List>
         </Section>
       </Show>
-      <Section icon="clock" title={t().recentlyChanged} summary={t().recentTablesDescription}>
+      <Section icon="clock" title={t().recentlyChanged}>
         <Show when={props.recentTables.length > 0} fallback={<Empty icon="table" text={t().noTablesDescription} />}>
           <List label={t().recentlyChanged}>
             {props.recentTables.map((table) => (
@@ -208,7 +213,8 @@ export default function BasesOverview(props: BasesOverviewProps) {
   );
 
   const appsPane = (page: number) => (
-    <Pane label={t().allAppsTitle} scrollKey="grids-apps" status={countBar(t().appsCount({ count: number(props.apps.total) }))}>
+    // the tab "Apps 51" carries the count
+    <Pane label={t().allAppsTitle} scrollKey="grids-apps">
       <Show when={props.apps.items.length > 0} fallback={<Empty icon="app-window" text={t().noAppsDescription} />}>
         <List label={t().apps}>{props.apps.items.map(appRow)}</List>
       </Show>

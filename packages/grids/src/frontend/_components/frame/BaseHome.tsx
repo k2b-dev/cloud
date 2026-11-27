@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Band, Bar, Empty, FilterBar, Input, List, Menu, Notice, Pane, Row, Section, Tabs, Text } from "@k2b/ui/v2";
+import { Bar, Empty, FilterBar, Input, List, Menu, Notice, Pane, Row, Section, Tabs, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { navigationReferenceKey } from "../../../navigation-contracts";
 import { workspaceMessages } from "../workspace/messages";
@@ -184,7 +184,9 @@ function HomeList(props: HomeProps) {
     return (
       <Row
         mark={kindMark(MARKED_KIND[resource.type], resource.icon)}
-        lines={[resource.name, second]}
+        // one line: the name, then kind and source as its quiet note (k2b-ui slot, MW: a second line only on the phone)
+        lines={[resource.name]}
+        meta={second}
         href={resource.href}
         onOpen={resource.href ? undefined : () => frame.nav.fillOut(resource.id)}
         end={edit ? <Menu label={t().editForm} items={[{ label: t().editForm, icon: "pencil", onClick: edit }]} /> : undefined}
@@ -244,13 +246,6 @@ function HomeList(props: HomeProps) {
       <LiveNotice />
       <Show when={!frame.revoked()}>
         <Show when={emptyRouteNote()}>{(note) => <Notice tone="note">{note()}</Notice>}</Show>
-        <Show when={props.state.base.description}>
-          {(description) => (
-            <Band>
-              <Text muted>{description()}</Text>
-            </Band>
-          )}
-        </Show>
         <Show
           when={props.tab === "groups"}
           fallback={

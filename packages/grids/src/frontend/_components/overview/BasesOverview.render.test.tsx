@@ -144,7 +144,9 @@ describe("Grids bases overview on v2", () => {
 
   test("lists every usable app on its own paginated page", () => {
     const html = renderOverview({ apps: { count: 3, total: 51, page: 2 } });
-    expect(html).toContain("51 apps");
+    // the tab carries the count, once
+    expect(html).toContain('data-k2-part="Tabs"');
+    expect(html).toContain(">51<");
     expect(html).toContain("Page 2 of 2");
     expect(html).toContain('href="/app/grids?apps=1"');
     expect(html).not.toContain("Recently changed");

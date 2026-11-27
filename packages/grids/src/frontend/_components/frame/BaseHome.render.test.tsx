@@ -110,7 +110,7 @@ describe("Grids base home on v2", () => {
     // each row carries the mark of its kind; the count stands once, in the filter bar, not as a status row of its own
     expect(html).toContain('data-k2-part="Mark"');
     expect(html).not.toContain('data-k2-part="StatusRow"');
-    expect(html).toContain("Team workspace");
+    // the base's purpose lives in its settings, not as a band of its own on the home
     // outside edit mode nothing is created from here; nothing loads on the first picture
     expect(html).not.toContain(">New<");
     expect(html).not.toContain('data-k2-part="Loading"');
