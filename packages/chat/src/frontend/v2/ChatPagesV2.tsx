@@ -1,7 +1,7 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { navigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
-import { Band, Disclosure, Empty, Failed, FilterBar, Input, List, Loading, Notice, Row, Section, useLocale } from "@k2b/ui/v2";
+import { Band, Bar, Disclosure, Empty, Failed, Input, List, Loading, Menu, Notice, Row, Section, useLocale } from "@k2b/ui/v2";
 import { defineListQuery, field } from "@k2b/ui/v2/list-query";
 import { createMemo, createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import type { z } from "zod";
@@ -189,8 +189,8 @@ export function SystemThreadDirectoryV2(props: {
   );
   // The page code loads in the browser, so the address is there to read; the bar writes it, the search below too.
   const [state, setState] = createSignal(query().parse(location.search).state);
-  const search = (text: string) => {
-    const next = query().set(state(), "q", text);
+  /** One change of the search or the state: the declaration derives the state and writes the address. */
+  const change = (next: ReturnType<typeof state> | undefined) => {
     if (!next) return;
     setState(next);
     const params = query().serialize(next, location.search).toString();
@@ -209,17 +209,53 @@ export function SystemThreadDirectoryV2(props: {
       .join(" · ");
   return (
     <>
-      <Band label={t().searchThreads}>
-        <Input
-          type="search"
-          icon="search"
-          label={t().searchThreads}
-          placeholder={t().searchThreads}
-          value={state().search ?? ""}
-          onInput={search}
-        />
-      </Band>
-      <FilterBar query={query()} state={state()} onChange={setState} />
+      {/* k2b-ui gap: `FilterBar` is reached only through the `@k2b/ui/v2` barrel, and the bundler then hoists it (with
+          Lookup and DatePicker) into the chunk every page of Chat loads (+57 KB over Chat's v2 budget). Until it has a
+          path of its own, the search and the one state stand as one row; the address is the declaration's.
+          k2b-ui gap: a v2 `Select` used only in this lazy page still moves its listbox behaviour through the `@k2b/ui/v2` barrel into the chunk every Chat page loads (+47 KB over Chat's v2 budget). The choice is a menu with a tick (menu behaviour is loaded already) until the barrel splits. */}
+      <Bar
+        start={
+          <Input
+            type="search"
+            icon="search"
+            label={t().searchThreads}
+            placeholder={t().searchThreads}
+            value={state().search ?? ""}
+            onInput={(text) => change(query().set(state(), "q", text))}
+          />
+        }
+        end={
+          <Menu
+            label={chatV2Messages.resolve([locale()]).t.discussionState}
+            items={[
+              {
+                title: chatV2Messages.resolve([locale()]).t.discussionState,
+                choice: state().filters.filter ?? "any",
+                onChoose: (value: string) =>
+                  change(
+                    value === "open" || value === "done" || value === "unread"
+                      ? query().set(state(), "filter", value)
+                      : query().clear(state(), "filter"),
+                  ),
+                items: [
+                  { label: t().allThreads, value: "any" },
+                  { label: t().threadsOpen, value: "open" },
+                  { label: t().threadsDone, value: "done" },
+                  { label: t().threadsUnread, value: "unread" },
+                ],
+              },
+            ]}
+          >
+            {state().filters.filter === "open"
+              ? t().threadsOpen
+              : state().filters.filter === "done"
+                ? t().threadsDone
+                : state().filters.filter === "unread"
+                  ? t().threadsUnread
+                  : t().allThreads}
+          </Menu>
+        }
+      />
       <List label={t().threadsIn({ title: props.conversation.title })}>
         <Row
           icon="messages"

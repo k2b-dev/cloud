@@ -1,10 +1,12 @@
 import { isManagerEntry } from "@k2b/cloud/access/ui";
 import {
   Band,
+  Bar,
   Choice,
   Empty,
   Failed,
   Field,
+  Inline,
   Input,
   List,
   Loading,
@@ -13,7 +15,6 @@ import {
   Notice,
   Row,
   Section,
-  Select,
   Text,
 } from "@k2b/ui/v2";
 import { For, type JSX, Show } from "solid-js";
@@ -135,27 +136,44 @@ function SharedV2(props: ChatSharedSectionProps): JSX.Element {
           : undefined
       }
     >
-      <Field.Row>
-        <Field label={t().sharedKinds}>
-          <Select
-            value={shared.kind()}
-            options={SHARED_KINDS.map((entry) => ({ value: entry.kind, label: t()[entry.label] }))}
-            onChange={(value) => {
-              const chosen = SHARED_KINDS.find((entry) => entry.kind === value);
-              if (chosen) shared.setKind(chosen.kind);
-            }}
-          />
-        </Field>
-        <Show when={(props.threads?.items.length ?? 0) > 0}>
-          <Field label={t().sharedThread}>
-            <Select
-              value={shared.thread()}
-              options={shared.threadOptions().map((option) => ({ value: option.value, label: option.label }))}
-              onChange={(value) => shared.setThread(value || "all")}
-            />
-          </Field>
-        </Show>
-      </Field.Row>
+      {/* k2b-ui gap: a v2 `Select` used only in this lazy page still moves its listbox behaviour through the `@k2b/ui/v2` barrel into the chunk every Chat page loads (+47 KB over Chat's v2 budget). The choice is a menu with a tick (menu behaviour is loaded already) until the barrel splits. */}
+      <Bar
+        start={
+          <Inline>
+            <Menu
+              label={t().sharedKinds}
+              items={[
+                {
+                  title: t().sharedKinds,
+                  choice: shared.kind(),
+                  onChoose: (value: string) => {
+                    const chosen = SHARED_KINDS.find((entry) => entry.kind === value);
+                    if (chosen) shared.setKind(chosen.kind);
+                  },
+                  items: SHARED_KINDS.map((entry) => ({ label: t()[entry.label], value: entry.kind })),
+                },
+              ]}
+            >
+              {t()[SHARED_KINDS.find((entry) => entry.kind === shared.kind())?.label ?? "sharedAll"]}
+            </Menu>
+            <Show when={(props.threads?.items.length ?? 0) > 0}>
+              <Menu
+                label={t().sharedThread}
+                items={[
+                  {
+                    title: t().sharedThread,
+                    choice: shared.thread(),
+                    onChoose: (value: string) => shared.setThread(value || "all"),
+                    items: shared.threadOptions().map((option) => ({ label: option.label, value: option.value })),
+                  },
+                ]}
+              >
+                {shared.threadOptions().find((option) => option.value === shared.thread())?.label ?? t().wholeChat}
+              </Menu>
+            </Show>
+          </Inline>
+        }
+      />
       <Show when={shared.incomplete() && shared.status() === "ready"}>
         <Notice tone="warn" actions={[{ label: t().retry, onClick: () => shared.refresh() }]}>
           {t().discussionsIncomplete}
