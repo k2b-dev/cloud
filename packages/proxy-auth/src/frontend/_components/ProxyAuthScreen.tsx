@@ -5,6 +5,7 @@ import {
   Band,
   Bar,
   Button,
+  Canvas,
   Cells,
   confirm,
   Dialog,
@@ -17,7 +18,6 @@ import {
   type NavProps,
   Notice,
   Pane,
-  Prose,
   Row,
   Section,
   Steps,
@@ -356,10 +356,9 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
     </Pane.Split>
   );
 
-  /** The piece of Traefik configuration for a client, as a code block. */
+  /** The piece of Traefik configuration for a client, its lines as they are pasted. */
   const traefikExample = () =>
     [
-      "```yaml",
       "http:",
       "  middlewares:",
       "    my-proxy-auth:",
@@ -370,7 +369,6 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
       '          - "X-Forwarded-Email"',
       '          - "X-Forwarded-Groups"',
       "        trustForwardHeader: true",
-      "```",
     ].join("\n");
   /** The way to a protected app in three steps; `first` is the state of the first one. */
   const firstSteps = (first: "done" | "next") => [
@@ -386,7 +384,13 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
         <Facts items={[{ label: t().pattern, value: `${props.baseUrl}/proxy-auth/verify/<client-id>`, mono: true }]} />
       </Section>
       <Section title={t().exampleConfiguration}>
-        <Prose markdown={traefikExample()} />
+        {/* k2b-ui gap: a code block of its own (Prose code neither scrolls nor wraps a long line); until it comes the
+            example scrolls sideways in its own drawing */}
+        <Canvas label={t().exampleConfiguration}>
+          <pre class="proxy-auth-example">
+            <code>{traefikExample()}</code>
+          </pre>
+        </Canvas>
       </Section>
       <Section title={t().responseHeaders}>
         <Facts
