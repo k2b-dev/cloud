@@ -64,6 +64,12 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
   text only to look like the real thing.
 - A v2 island imports only from `@k2b/ui/v2`, including `useLocale` for the
   page's language: the `@k2b/ui` entry belongs to v1.
+- On the phone a screen has one search place and no empty head row. A host
+  whose bar holds the page's search (Cloud's shell) marks the v2 scope with
+  `data-k2-host-search`: the head's search gives way to it, and a head with
+  nothing else to show takes no room. A detail `Pane` always has `back`: on
+  the phone it is a page of its own with its way back and its title, never
+  the list's views.
 
 ## What to use for what
 

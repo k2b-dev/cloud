@@ -721,6 +721,7 @@ const swapServer = new Hono<{ Variables: { runtime: RuntimeContext; user: import
           fullPage: c.req.query("fullPage") === "true",
           fullWidth: c.req.query("fullWidth") === "true",
           focusMode: c.req.query("focusMode") === "true",
+          ui: c.req.query("ui") === "v2" ? "v2" : undefined,
           children: "Swappable content",
         }),
     ),
@@ -745,6 +746,7 @@ test("page swap replaces only the content column and its page data", async () =>
       expect(canvas.getAttribute("data-nav-shell")).toMatch(/^[a-f0-9]{32}$/);
       expect(canvas.getAttribute("data-nav-scope")).toBe("/app/swap");
       expect(canvas.getAttribute("data-nav-attributes")).toBe("data-layout-full-page data-workspace-sidebar-collapsed");
+      expect(column.querySelector("main")?.hasAttribute("data-k2-host-search")).toBe(false);
       signature ??= canvas.getAttribute("data-nav-shell");
       canvasClass ??= canvas.getAttribute("class");
       expect(canvas.getAttribute("data-nav-shell")).toBe(signature);
@@ -767,6 +769,12 @@ test("page swap replaces only the content column and its page data", async () =>
       expect(canvas.querySelectorAll("solid-island,solid-client").length).toBeLessThanOrEqual(4);
       expect(canvas.firstElementChild?.tagName).toBe("SOLID-ISLAND"); // ShellRuntime stays in the document.
     }
+    // A v2 page's <main> marks the host of its search (`data-k2-host-search`) and is swapped with the page; the
+    // header's `pageSearch` is not, so between v1 and v2 the document loads, as their shells differ.
+    window.document.body.innerHTML = await (await swapServer.request("/app/swap?ui=v2")).text();
+    const v2 = window.document.querySelector(".cloud-app-canvas")!;
+    expect(v2.querySelector("main")?.hasAttribute("data-k2-host-search")).toBe(true);
+    expect(v2.getAttribute("data-nav-shell")).not.toBe(signature);
     window.document.body.innerHTML = await (await swapServer.request("/app/swap?focusMode=true")).text();
     expect(window.document.querySelector("[data-nav-shell],[data-nav-root],[data-nav-scope]")).toBeNull();
     window.document.body.innerHTML = await (await swapServer.request("/app/swap?anonymous=true")).text();

@@ -29,6 +29,7 @@ render(
         </Pane>
         <Pane
           detail
+          back={{ label: "Aufgaben", href: "#" }}
           label={title}
           head={
             <Bar

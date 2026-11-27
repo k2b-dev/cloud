@@ -142,6 +142,8 @@ export default function MailScreen() {
         <Pane
           detail
           label="Nachricht"
+          // on the phone the message is a page of its own: its one bar is the way back to the inbox
+          back={{ label: "Posteingang", href: "#" }}
           head={
             <Bar
               start={<Text type="lead">{open.subject}</Text>}
