@@ -18,6 +18,8 @@ const remainingTime = (expiresAt: string, locale: string, now = Date.now()): str
 const fileKind = (mimeType: string | undefined): string | undefined =>
   ({ "application/pdf": "PDF", "text/csv": "CSV", "application/xml": "XML", "application/zip": "ZIP" })[mimeType ?? ""];
 
+const FILE_ICONS: Record<string, string> = { PDF: "file-type-pdf", CSV: "file-type-csv", XML: "file-type-xml", ZIP: "file-zip" };
+
 /**
  * A document someone shared by link, for a visitor without an account (recipe `public-page`): the file's name in the
  * head with its one task, downloading; under it what the file is and how long the link lasts. A link that expired or
@@ -52,12 +54,14 @@ export function PublicDocumentShare(props: {
     >
       <Pane label={available() ? props.filename! : t().linkUnavailable}>
         <Show when={available()} fallback={<Empty icon="link-off" text={t().documentLinkUnavailable} />}>
-          <Section icon={fileKind(props.mimeType) === "PDF" ? "file-type-pdf" : "file"} title={t().sharedThroughGrids}>
+          {/* each fact once: the format is the section's sign, how long the link lasts one line with its date */}
+          <Section icon={FILE_ICONS[fileKind(props.mimeType) ?? ""] ?? "file"} title={t().sharedThroughGrids}>
             <Facts
               items={[
-                ...(fileKind(props.mimeType) ? [{ label: t().fileFormat, value: fileKind(props.mimeType)! }] : []),
-                { label: t().linkExpiresLabel, value: remainingTime(props.expiresAt!, locale()) },
-                { label: t().availableUntilLabel, value: props.expiresAtLabel! },
+                {
+                  label: t().availableUntilLabel,
+                  value: `${props.expiresAtLabel} (${remainingTime(props.expiresAt ?? "", locale())})`,
+                },
               ]}
             />
           </Section>

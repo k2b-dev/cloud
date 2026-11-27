@@ -54,6 +54,8 @@ let browser: Browser;
 let css: string;
 let harness: string;
 let icons: { css: string; font: string };
+// the real type of Cloud (IBM Plex) instead of the system fallback, so the pictures count as evidence
+let plex: { css: string; dir: string };
 beforeAll(async () => {
   harness = await buildHarness();
   const iconCssUrl = import.meta.resolve("@k2b/ui/icons/tabler.css");
@@ -61,6 +63,8 @@ beforeAll(async () => {
   const fontAsset = iconCss.match(/url\((\.\/[^)"']+\.woff2(?:[?#][^)"']*)?)\)/)?.[1];
   if (!fontAsset) throw new Error("@k2b/ui Tabler preset does not reference a WOFF2 asset");
   icons = { css: iconCss.replace(fontAsset, "/tabler-icons.woff2"), font: fileURLToPath(new URL(fontAsset, iconCssUrl)) };
+  const plexCss = fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css"));
+  plex = { css: (await Bun.file(plexCss).text()).replaceAll("./fonts/", "/fonts/"), dir: join(plexCss, "..", "fonts") };
   css = [
     "@layer properties, theme, base, components, utilities;",
     await buildCss(resolve(import.meta.dir, "../../../../../styles.css")),
@@ -83,7 +87,7 @@ const views: View[] = [
 
 const page = () =>
   `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8">` +
-  `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
+  `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/plex.css"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
   `<style>${css}</style><style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
   `<body class="k2b-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`;
 
@@ -105,6 +109,8 @@ const open = async (view: View, address: string) => {
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
     if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
+    if (url.pathname === "/plex.css") return route.fulfill({ contentType: "text/css", body: plex.css });
+    if (url.pathname.startsWith("/fonts/")) return route.fulfill({ path: join(plex.dir, url.pathname.slice("/fonts/".length)) });
     return route.fulfill({ status: 404, json: { message: "Not found" } });
   });
   await tab.goto(`${origin}${address}`);

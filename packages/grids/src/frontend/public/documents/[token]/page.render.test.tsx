@@ -40,8 +40,10 @@ describe("public document share page", () => {
     expect(html).toContain("charge-statement.pdf");
     expect(html).toContain('href="/share/grids/documents/gdl_test/download"');
     expect(html).toContain("Download file");
-    expect(html).toContain("Link expires in");
-    expect(html).toContain("August 20, 2026 at 8:00 PM");
+    // how long the link lasts is one fact: its date with the time left
+    expect(html).toContain("Valid until");
+    expect(html).toContain("August 20, 2026 at 8:00 PM (");
+    expect(html).not.toContain("Format");
     expect(html).toContain("Shared securely through Grids");
     expect(html).toContain('data-name="file-type-pdf"');
     // no v1 card, no application chrome
@@ -49,15 +51,15 @@ describe("public document share page", () => {
     expect(html).not.toContain("AppWorkspace");
   });
 
-  test("an expired or revoked link says so in one sentence, without a download", () => {
+  test("an expired or revoked link says so in one sentence with the way forward, without a download", () => {
     const html = renderToString(() => createComponent(PublicDocumentShare, {}));
     expect(html).toContain("Link no longer available");
-    expect(html).toContain("This document link has expired or was revoked.");
+    expect(html).toContain("This link has expired or was revoked; ask whoever shared it for a new one.");
     expect(html).toContain('data-k2-part="Empty"');
     expect(html).not.toContain("Download file");
   });
 
-  test("a non-PDF share names its format", () => {
+  test("a non-PDF share shows its format in its sign", () => {
     const html = renderToString(() =>
       createComponent(PublicDocumentShare, {
         filename: "payments.csv",
@@ -68,6 +70,6 @@ describe("public document share page", () => {
       }),
     );
     expect(html).toContain("payments.csv");
-    expect(html).toContain("CSV");
+    expect(html).toContain('data-name="file-type-csv"');
   });
 });
