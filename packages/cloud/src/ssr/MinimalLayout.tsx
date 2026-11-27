@@ -31,6 +31,13 @@ export type MinimalLayoutProps = {
    * footer with the legal links and the language and theme settings stays as it is.
    */
   ui?: "v2";
+  /**
+   * With `ui="v2"`: the page is one task to read and decide, such as a consent or a code to enter. Its one child, the
+   * workspace, stands as a column of 560 px, centred on the page background, so its words and its buttons stay
+   * together; on a phone it takes the whole width. Its last part draws no line under it. (Beside a Core older than its
+   * v2.css the page keeps the whole width.)
+   */
+  measure?: boolean;
 };
 
 /** A v2 page beside an older Core: the frame its sheet lacks, inline (the page fills the window above the footer). */
@@ -57,9 +64,16 @@ export default function MinimalLayout(props: MinimalLayoutProps) {
     !v2 ? (
       props.children
     ) : v2Sheet ? (
-      <main class={scope ? "k2-ui minimal-layout-main" : "minimal-layout-main"}>{props.children}</main>
+      <main class={scope ? "k2-ui minimal-layout-main" : "minimal-layout-main"} data-measure={props.measure ? "" : undefined}>
+        {props.children}
+      </main>
     ) : (
-      <main class="k2-ui minimal-layout-main" style={kiosk ? `${OLDER_CORE.main};height:100dvh` : OLDER_CORE.main}>
+      // beside an older Core the measure has no column: its sheet does not know the attribute
+      <main
+        class="k2-ui minimal-layout-main"
+        data-measure={props.measure ? "" : undefined}
+        style={kiosk ? `${OLDER_CORE.main};height:100dvh` : OLDER_CORE.main}
+      >
         {props.children}
       </main>
     );

@@ -1,5 +1,11 @@
 import { appAccess, defineApp } from "@k2b/cloud";
 
+/**
+ * The colour of OAuth: the shell around and its histories carry it. The same colour as `appearance.accent` below, which stays a literal: the
+ * shell-gradient check reads it from the source.
+ */
+export const ACCENT = "#4338ca";
+
 export const app = defineApp({
   id: "oauth",
   // These protocols validate their own credentials and never use Cloud session authority.

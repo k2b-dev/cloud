@@ -5,9 +5,11 @@ import type { Context } from "hono";
 import { oauth } from "../service/oauth";
 import { isConfirmedBrowserSignIn } from "../service/sign-in";
 import type { DeviceApprovalView } from "./_components/DeviceApproval";
+import { mayBeNamed } from "./error-reasons";
 import { oauthMessages } from "./messages";
 
 const MAX_CODE_INPUT_LENGTH = 64;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Same client address the platform rate limiter keys on. */
 const deviceClientIp = (c: Context): string =>
@@ -27,7 +29,20 @@ export const resolveDeviceView = async <E extends AuthContext>(c: Context<E>): P
   }
 
   const result = c.req.query("result");
-  if (result === "approved" || result === "denied" || result === "expired") return { kind: "result", outcome: result };
+  if (result === "approved") {
+    // what was connected, and to whom: only a request this person approved names its application, and only one an
+    // administrator registered for devices; anything else says the generic sentence
+    const request = c.req.query("request");
+    const clientId = request && UUID.test(request) ? await oauth.device.approvedClientId({ id: request, userId: user.id }) : null;
+    const client = clientId ? await oauth.clients.getByClientId({ clientId }) : null;
+    if (!client || !mayBeNamed(client)) return { kind: "result", outcome: result };
+    return {
+      kind: "result",
+      outcome: result,
+      message: t.deviceApprovedFor({ app: client.name }),
+    };
+  }
+  if (result === "denied" || result === "expired") return { kind: "result", outcome: result };
 
   const typed = c.req.query("user_code");
   if (typed === undefined) return { kind: "entry" };
@@ -65,7 +80,7 @@ export const resolveDeviceView = async <E extends AuthContext>(c: Context<E>): P
     kind: "confirm",
     request,
     code: oauth.device.formatUserCode(userCode),
-    client: { name: client.name, clientId: client.clientId },
+    client: { name: client.name, clientId: client.clientId, kind: client.registrationKind },
     scopes: pending.scopes,
     reauthenticateHref,
   };

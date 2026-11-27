@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-11-19
+updated: 2026-11-26
 ---
 
 # Testing
@@ -889,6 +889,25 @@ loaded by later files, even with `--isolate`. Compilers for a fixture bundle
 belong in that build's `Bun.build({ plugins: [...] })`; plugins in a script
 executed in a separate process stay in that process.
 
+### Draw an app page in the Cloud shell
+
+`@k2b/cloud/testing` draws an app's page the way Cloud serves it, for browser
+tests and design pictures without a running Cloud:
+
+- `loadShellAssets({ id, css })` builds Cloud's `global.css` and the app's
+  sheet, and serves them with the Plex fonts and the icons. A page that links
+  Core's `v2.css` alone, such as a visitor page on `MinimalLayout ui="v2"` or
+  an app page on `PwaLayout ui="v2"`, passes `v2Page: true`.
+- `openShellPage(browser, assets, { path, html, width, errors })` opens the
+  page's first HTML at one width, light. It refuses every request to another
+  origin. `errors` is the test's own collector, such as `pageErrors`.
+- `serveCoreV2Sheet()` lets the registered Core declare its `/public/v2.css`,
+  so the page draws the frame of a current installation. It restores the spy
+  after the test file.
+
+The entry needs Playwright in the consumer. `@k2b/ui` builds none of Cloud's
+styles.
+
 ## Run integration tests
 
 Disposable PostgreSQL containers in CI, nightly, release smoke checks, and the local
@@ -1362,13 +1381,42 @@ through their own runner with disposable containers. See
 
 ## What CI runs
 
-The pull request `gate` runs `bun run check`, `bun run test`, and the
+Draft pull requests run only `changes`, the shared UI build in `setup`,
+`check` (`bun run check` and PR metadata checks), and `gate`. They skip all
+test shards and path-filtered jobs, including browser tests, integration,
+Grids certification, documentation builds, production bundles, images, and
+the image mirror. The `check` job reports the light checks. The required
+`gate` deliberately fails with "Draft: light checks only - the full gate
+runs after ready for review", even when all light checks pass. Run focused
+tests locally while the PR is a draft.
+
+Marking a PR ready for review (`ready_for_review`) starts the full gate,
+even without a new commit. Wait for the **new full gate run** to pass before
+merging or enabling auto-merge: its `gate` job appears only after its
+dependencies finish, and the previous draft gate remains red until then.
+Opening, reopening, or pushing to a non-draft PR
+also runs the full gate. Every `merge_group` and manual workflow run uses
+the full gate, regardless of draft state. New PR runs cancel older runs of
+the same PR; merge queue runs each have a unique concurrency group and are
+never cancelled by this concurrency policy.
+This reduces draft runner demand but does not give merge queue jobs a
+scheduler priority over other jobs already queued.
+
+The full `gate` runs `bun run check`, `bun run test`, and the
 integration suites against PostgreSQL 17, NATS JetStream, Valkey,
 Gotenberg, and Stalwart 1.0.0 for JMAP. Path-filtered jobs, such as the Grids
 certification, the WebKit browser tests, the documentation checks, and the image
 boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
+
+`gate` runs with `always()` and rejects draft PR events before aggregation,
+so a light result for the same head SHA cannot authorize a PR after it becomes
+ready. Full runs aggregate every job and require `mirror`, `unit`, and
+`integration` to succeed. Existing path filters still control the other
+optional jobs; failed or cancelled jobs fail the full gate. The `ci-gate`
+rule and its tests check the job list, exact draft and path conditions,
+the red draft gate, skip allowances, event triggers, and concurrency policy.
 
 Unit tests run in thirteen shards, WebKit tests in twenty-two, and integration tests
 in six. Each mode uses its own measured seconds per suite in

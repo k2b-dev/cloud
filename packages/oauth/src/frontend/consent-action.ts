@@ -6,6 +6,7 @@ import type { Context } from "hono";
 import { z } from "zod";
 import { oauth } from "../service/oauth";
 import { BrowserSignInRequiredError } from "../service/sign-in";
+import { type ErrorReason, errorPageHref } from "./error-reasons";
 import { oauthMessages } from "./messages";
 
 export const ConsentDecisionSchema = z.object({
@@ -13,8 +14,8 @@ export const ConsentDecisionSchema = z.object({
   decision: z.enum(["approve", "deny"]),
 });
 
-const localError = (c: Context<AuthContext>, description: string) =>
-  c.redirect(`/oauth/error?error=invalid_request&error_description=${encodeURIComponent(description)}`);
+/** The error page says the reason in the person's language by its code. */
+const refused = (c: Context<AuthContext>, reason: ErrorReason) => c.redirect(errorPageHref(reason));
 
 const actorForAudit = (user: AuthContext["Variables"]["user"]) => ({
   userId: user.id,
@@ -35,17 +36,17 @@ export const completeConsent = async (c: Context<AuthContext>, decisionInput: z.
   const { request: requestId, decision } = decisionInput;
   // A grant would outlive removing the phone, so only the web may decide.
   const browserSignIn = await auth.browserSignIn(c);
-  if (!browserSignIn) return localError(c, t.webSessionRequired);
+  if (!browserSignIn) return refused(c, "web_session_required");
   const sessionToken = c.get("sessionToken");
   const session = sessionToken ? await auth.session.authenticateRequest(c, sessionToken) : null;
-  if (!session) return localError(c, t.webSessionRequired);
+  if (!session) return refused(c, "web_session_required");
   const issuer = publicCloudOrigin(await get<string>("app.url"));
   const requestOrigin = c.req.header("origin");
-  if (requestOrigin && requestOrigin !== issuer) return localError(c, t.consentOriginInvalid);
+  if (requestOrigin && requestOrigin !== issuer) return refused(c, "origin_invalid");
 
   const request = await oauth.consent.consume(requestId);
   const user = expectUserBackedActor(c);
-  if (!request || request.userId !== user.id) return localError(c, t.consentInvalid);
+  if (!request || request.userId !== user.id) return refused(c, "consent_invalid");
 
   const client = await oauth.clients.getByClientId({ clientId: request.clientId });
   if (
@@ -56,7 +57,7 @@ export const completeConsent = async (c: Context<AuthContext>, decisionInput: z.
     request.scopes.some((scope) => !client.scopes.includes(scope)) ||
     !(await oauth.clients.canAuthorizeUser({ client, userId: user.id, profile: user.profile }))
   ) {
-    return localError(c, t.consentNoLongerValid);
+    return refused(c, "consent_expired");
   }
 
   if (decision === "deny") {
@@ -108,7 +109,7 @@ export const completeConsent = async (c: Context<AuthContext>, decisionInput: z.
     });
   } catch (error) {
     if (!(error instanceof BrowserSignInRequiredError)) throw error;
-    if (error.code === "FORBIDDEN") return localError(c, t.consentNoLongerValid);
+    if (error.code === "FORBIDDEN") return refused(c, "consent_expired");
     const renewedRequest = await oauth.consent.create(request);
     return c.redirect(`/oauth/consent?request=${encodeURIComponent(renewedRequest)}`, 303);
   }

@@ -2,265 +2,63 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { getLocale } from "@k2b/cloud/server";
 import { get } from "@k2b/cloud/services";
 import { formatDate } from "@k2b/cloud/shared";
-import { AdminLayout } from "@k2b/cloud/ssr";
-import { SearchBar } from "@k2b/cloud/ssr/islands";
-import { DataTable, type DataTableColumn, NoticeCard, Pagination, Placeholder, StatCell, StatGrid } from "@k2b/ui";
-import { ssr } from "../config";
+import { AdminLayout, adminNavigation } from "@k2b/cloud/ssr";
+import { ACCENT, ssr } from "../config";
+import type { OAuthClient } from "../contracts";
 import { oauthService } from "../service";
-import ClientActions from "./_components/ClientActions.island";
-import CreateClientButton from "./_components/CreateClientButton.island";
-import { oauthMessages } from "./messages";
+import OAuthScreen from "./_components/OAuthScreen.island";
 
-const PER_PAGE = 50;
+import { CLIENTS_PER_PAGE as PER_PAGE } from "./clients-page";
 
-/** Admin OAuth clients list page. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * OAuth on v2: the clients (`search`, `page`), one open beside them (`client=<id>`, read on its own, so it stays open
+ * on any page and with any search), and the endpoints an application needs (`tab=endpoints`).
+ */
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
-  const { t } = oauthMessages.resolve([locale]);
-  const search = (c.req.query("search") ?? "").trim();
+  const search = (c.req.query("search") ?? "").trim().slice(0, 200);
   const rawPage = Number.parseInt(c.req.query("page") ?? "1", 10);
   const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
-  const [clientsPage, summary] = await Promise.all([
-    oauthService.client.list({
-      pagination: { page, perPage: PER_PAGE },
-      filter: { query: search || undefined },
-    }),
+  const tab = c.req.query("tab") === "endpoints" ? "endpoints" : "clients";
+  const openId = tab === "clients" ? c.req.query("client")?.trim() || null : null;
+  const [clientsPage, summary, activity, opened] = await Promise.all([
+    oauthService.client.list({ pagination: { page, perPage: PER_PAGE }, filter: { query: search || undefined } }),
     oauthService.client.summary(),
+    oauthService.client.connectionFigures(),
+    // an id that is no id names no client; the store is never asked for it
+    openId && UUID.test(openId) ? oauthService.client.get({ id: openId }) : null,
   ]);
-  const clients = clientsPage.items;
-  const totalPages = Math.ceil(clientsPage.total / clientsPage.perPage);
-  const paginationBaseUrl = search ? `/admin/oauth?search=${encodeURIComponent(search)}&page=` : "/admin/oauth?page=";
+  // the connections of the clients on this page and of the open one, and the people of the open one
+  const [connections, connectedPeople] = await Promise.all([
+    oauthService.client.connections({
+      clientIds: [...new Set([...clientsPage.items.map((client) => client.clientId), ...(opened ? [opened.clientId] : [])])],
+    }),
+    opened ? oauthService.client.connectedPeople({ clientId: opened.clientId }) : null,
+  ]);
 
   // Build base URL for OAuth endpoints
   const rawAppUrl = await get<string>("app.url");
   const baseUrl = rawAppUrl.startsWith("http") ? rawAppUrl : `https://${rawAppUrl}`;
-
-  type ClientRow = (typeof clients)[number];
-  const columns: DataTableColumn<ClientRow>[] = [
-    { id: "client", header: t.client, value: (client) => client.name },
-    { id: "registration", header: t.registration, value: (client) => client.registrationKind },
-    { id: "description", header: t.description, value: (client) => client.description, cellClass: "max-w-[18rem]" },
-    { id: "type", header: t.type, value: (client) => client.isPublic },
-    { id: "access", header: t.access, value: (client) => client.accessMode },
-    { id: "scopes", header: t.scopes, value: (client) => client.scopes },
-    { id: "profiles", header: t.profiles, value: (client) => client.allowedProfiles },
-    { id: "created", header: t.created, value: (client) => client.createdAt, cellClass: "whitespace-nowrap" },
-    {
-      id: "actions",
-      header: <span class="sr-only">{t.actions}</span>,
-      headerClass: "w-px text-right",
-      cellClass: "text-right whitespace-nowrap max-w-none",
-    },
-  ];
+  const row = (client: OAuthClient) => ({ ...client, created: formatDate(client.createdAt, { locale }) });
 
   return () => (
-    <AdminLayout c={c} title="OAuth">
-      <div class="app-rows">
-        <div class="min-w-0" style="view-transition-name: admin-oauth-title">
-          <h1 class="text-base font-semibold text-primary">OAuth</h1>
-        </div>
-
-        {/* Stat cards — see skills/cloud-app/references/frontend.md § Stats */}
-        <StatGrid columns={3}>
-          <StatCell label={t.clients} value={summary.total} sub={t.registered} accent={{ tone: "blue", icon: "ti ti-key" }} />
-          <StatCell label={t.public} value={summary.public} sub={t.publicSubtitle} />
-          <StatCell label={t.dynamic} value={summary.dynamic} sub={t.dynamicSubtitle} accent={{ tone: "emerald", icon: "ti ti-world" }} />
-        </StatGrid>
-
-        <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <SearchBar action="/admin/oauth" value={search} placeholder={t.searchClients} ariaLabel={t.searchClientsLabel} />
-          <CreateClientButton />
-        </div>
-
-        {clients.length > 0 ? (
-          <section class="paper overflow-hidden" style="view-transition-name: admin-oauth-table">
-            <DataTable
-              rows={clients}
-              columns={columns}
-              getRowId={(client) => client.id}
-              hoverRows
-              class="overflow-x-auto"
-              renderCell={({ row: client, col }) => {
-                if (col.id === "client") return <span class="font-medium text-primary">{client.name}</span>;
-                if (col.id === "description") {
-                  return (
-                    <span class="text-dimmed" title={client.description || t.noDescription}>
-                      {client.description || <span class="italic">{t.noDescription}</span>}
-                    </span>
-                  );
-                }
-                if (col.id === "registration") {
-                  const label =
-                    client.registrationKind === "first_party"
-                      ? t.firstParty
-                      : client.registrationKind === "dynamic"
-                        ? t.dynamic
-                        : t.managed;
-                  return <span class="text-dimmed">{label}</span>;
-                }
-                if (col.id === "type") {
-                  return (
-                    <span
-                      class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                        client.isPublic
-                          ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
-                          : "bg-[var(--ui-surface-muted)] text-secondary"
-                      }`}
-                    >
-                      {client.isPublic ? t.public : t.confidential}
-                    </span>
-                  );
-                }
-                if (col.id === "scopes") {
-                  return (
-                    <div class="flex flex-wrap gap-1">
-                      {client.scopes.map((scope) => (
-                        <span class="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-dimmed dark:bg-zinc-800">{scope}</span>
-                      ))}
-                    </div>
-                  );
-                }
-                if (col.id === "access") {
-                  if (client.accessMode === "specific") {
-                    return (
-                      <span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
-                        {t.selected({ count: client.accessUsers.length + client.accessGroups.length })}
-                      </span>
-                    );
-                  }
-                  return <span class="text-dimmed">{t.profiles}</span>;
-                }
-                if (col.id === "profiles") {
-                  return (
-                    <div class="flex flex-wrap gap-1">
-                      {client.allowedProfiles.map((profile) => (
-                        <span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
-                          {profile}
-                        </span>
-                      ))}
-                    </div>
-                  );
-                }
-                if (col.id === "created") return <span class="text-dimmed">{formatDate(client.createdAt, { locale })}</span>;
-                if (col.id === "actions") return <ClientActions client={client} />;
-                return "";
-              }}
-            />
-          </section>
-        ) : (
-          <Placeholder surface="paper" description={search ? <>{t.noMatch({ query: search })}</> : <>{t.noClients}</>} />
-        )}
-
-        {totalPages > 1 ? <Pagination currentPage={clientsPage.page} totalPages={totalPages} baseUrl={paginationBaseUrl} /> : null}
-
-        <NoticeCard tone="info" style="view-transition-name: admin-oauth-reference" bodyClass="flex flex-col gap-6">
-          <section>
-            <h2 class="font-semibold text-primary">{t.discoveryEndpoints}</h2>
-            <dl class="mt-2 flex flex-col gap-2">
-              <div>
-                <dt class="text-dimmed">{t.openIdConfiguration}</dt>
-                <dd>
-                  <a href="/.well-known/openid-configuration" class="break-all underline" target="_blank">
-                    <code>{baseUrl}/.well-known/openid-configuration</code>
-                  </a>
-                </dd>
-              </div>
-              <div>
-                <dt class="text-dimmed">JWKS</dt>
-                <dd>
-                  <a href="/.well-known/jwks.json" class="break-all underline" target="_blank">
-                    <code>{baseUrl}/.well-known/jwks.json</code>
-                  </a>
-                </dd>
-              </div>
-            </dl>
-          </section>
-
-          <section>
-            <h2 class="font-semibold text-primary">{t.oauthEndpoints}</h2>
-            <dl class="mt-2 flex flex-col gap-2">
-              <div>
-                <dt class="text-dimmed">{t.authorizationEndpoint}</dt>
-                <dd>
-                  <code class="break-all">{baseUrl}/oauth/authorize</code>
-                </dd>
-              </div>
-              <div>
-                <dt class="text-dimmed">{t.tokenEndpoint}</dt>
-                <dd>
-                  <code class="break-all">{baseUrl}/oauth/token</code>
-                </dd>
-              </div>
-              <div>
-                <dt class="text-dimmed">{t.dynamicRegistrationEndpoint}</dt>
-                <dd>
-                  <code class="break-all">{baseUrl}/oauth/register</code>
-                </dd>
-              </div>
-              <div>
-                <dt class="text-dimmed">{t.userInfoEndpoint}</dt>
-                <dd>
-                  <code class="break-all">{baseUrl}/oauth/userinfo</code>
-                </dd>
-              </div>
-              <div>
-                <dt class="text-dimmed">{t.logoutUrl}</dt>
-                <dd>
-                  <code class="break-all">{baseUrl}/oauth/logout</code>
-                </dd>
-              </div>
-            </dl>
-          </section>
-
-          <section>
-            <h2 class="font-semibold text-primary">{t.availableScopes}</h2>
-            <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-              <dt>
-                <code>openid</code>
-              </dt>
-              <dd class="text-dimmed">{t.requiredReturnsUserId}</dd>
-              <dt>
-                <code>profile</code>
-              </dt>
-              <dd class="text-dimmed">{t.returnsProfileClaims}</dd>
-              <dt>
-                <code>email</code>
-              </dt>
-              <dd class="text-dimmed">{t.returnsEmail}</dd>
-              <dt>
-                <code>groups</code>
-              </dt>
-              <dd class="text-dimmed">{t.returnsGroups}</dd>
-            </dl>
-          </section>
-
-          <section>
-            <h2 class="font-semibold text-primary">{t.claimMapping}</h2>
-            <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-              <dt class="text-dimmed">{t.idClaim}</dt>
-              <dd>
-                <code>sub</code> {t.or} <code>uid</code> ({t.username})
-              </dd>
-              <dt class="text-dimmed">{t.databaseId}</dt>
-              <dd>
-                <code>id</code> (UUID)
-              </dd>
-              <dt class="text-dimmed">{t.displayNameClaim}</dt>
-              <dd>
-                <code>display_name</code>
-              </dd>
-              <dt class="text-dimmed">{t.emailClaim}</dt>
-              <dd>
-                <code>email</code>
-              </dd>
-              <dt class="text-dimmed">{t.groupsClaim}</dt>
-              <dd>
-                <code>groups</code>
-              </dd>
-            </dl>
-          </section>
-        </NoticeCard>
-      </div>
+    <AdminLayout c={c} ui="v2" title="OAuth">
+      <OAuthScreen
+        nav={adminNavigation(c)}
+        baseUrl={baseUrl}
+        tab={tab}
+        search={search}
+        paging={{ page: clientsPage.page, pages: Math.max(1, Math.ceil(clientsPage.total / clientsPage.perPage)) }}
+        clients={clientsPage.items.map(row)}
+        figures={summary}
+        activity={activity}
+        accent={ACCENT}
+        connections={connections}
+        connectedPeople={connectedPeople}
+        open={openId ? { id: openId, found: opened ? row(opened) : null } : null}
+      />
     </AdminLayout>
   );
 });

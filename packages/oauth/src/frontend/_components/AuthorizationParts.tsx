@@ -1,120 +1,146 @@
-import { Button, ButtonLink, useLocale } from "@k2b/ui";
-import { For, type JSX, Show } from "solid-js";
+import { useLocale } from "@k2b/ui";
+import { Avatar, Band, Bar, Button, Facts, type FactsProps, Icon, Inline, Notice, Row, Section, Text } from "@k2b/ui/v2";
+import { For } from "solid-js";
 import { oauthMessages } from "../messages";
 import { consentScopeLabel } from "../scope-labels";
-
-/** The `id` of the page heading that `AuthorizationPage` names its card by. */
-export const PAGE_TITLE_ID = "oauth-page-title";
 
 const useMessages = () => {
   const locale = useLocale();
   return () => oauthMessages.resolve([locale()]).t;
 };
 
-/** The heading of a decision, with an optional dimmed line below it. */
-export function DecisionHeader(props: { title: string; children?: JSX.Element }) {
-  return (
-    <header>
-      <h1 id={PAGE_TITLE_ID} class="break-words text-xl font-semibold leading-snug text-primary">
-        {props.title}
-      </h1>
-      <Show when={props.children}>
-        <p class="mt-2 text-sm text-dimmed">{props.children}</p>
-      </Show>
-    </header>
-  );
-}
+/** The sign of each scope, as the client editor shows it. */
+const scopeIcons: Record<string, string> = {
+  openid: "fingerprint",
+  profile: "id-badge-2",
+  email: "mail",
+  groups: "users-group",
+  offline_access: "refresh",
+  read: "eye",
+  write: "pencil",
+  admin: "shield-lock",
+};
 
 /** Every requested scope in words, and the reminder that Cloud permissions still apply. */
-export function RequestedAccess(props: { scopes: readonly string[] }) {
+export function RequestedAccess(props: { scopes: readonly string[]; limitNote?: boolean }) {
   const t = useMessages();
   return (
-    <section class="mt-6" aria-labelledby="oauth-requested-access">
-      <h2 id="oauth-requested-access" class="text-sm font-medium text-primary">
-        {t().requestedAccess}
-      </h2>
-      <ul class="mt-2 grid gap-1.5">
-        <For each={props.scopes}>
-          {(scope) => (
-            <li class="flex items-start gap-2 text-sm text-secondary">
-              <i class="ti ti-check mt-0.5 shrink-0 text-dimmed" aria-hidden="true" />
-              <span>{consentScopeLabel(scope, t())}</span>
-            </li>
-          )}
-        </For>
-      </ul>
-      <p class="mt-3 text-xs text-dimmed">{t().permissionLimit}</p>
-    </section>
+    <Section title={t().requestedAccess} summary={props.limitNote ? t().permissionLimit : undefined}>
+      {/* k2b-ui gap (#4328): a Row keeps the phone's two-line height for a single line, so a short statement list stands
+          as text lines, in the same rhythm on the phone and on a large screen */}
+      <For each={props.scopes}>
+        {(scope) => (
+          <Inline>
+            <Icon name={scopeIcons[scope] ?? "check"} />
+            <Text>{consentScopeLabel(scope, t())}</Text>
+          </Inline>
+        )}
+      </For>
+    </Section>
   );
 }
 
-/** A caution the person reads right before deciding: plain text with one icon, no tinted box. */
-export function CautionNote(props: { children: JSX.Element }) {
-  return (
-    <p class="mt-6 flex items-start gap-2 text-sm text-secondary">
-      <i class="ti ti-alert-triangle mt-0.5 shrink-0 text-[var(--k2b-warning-text)]" aria-hidden="true" />
-      <span>{props.children}</span>
-    </p>
-  );
-}
-
-/** Why the person signs in again before allowing: plain text with one icon, like the caution. */
-export function ReauthenticateNote() {
+/** Who is signed in here: the account the decision is for, with its picture. */
+export function SignedIn(props: { person: string }) {
   const t = useMessages();
   return (
-    <p class="mt-6 flex items-start gap-2 text-sm text-secondary" data-testid="oauth-reauthenticate">
-      <i class="ti ti-shield-lock mt-0.5 shrink-0 text-dimmed" aria-hidden="true" />
-      <span>{t().confirmIdentityHint}</span>
-    </p>
+    <Section title={t().forAccount}>
+      <Row avatar={{ name: props.person }} lines={[props.person, t().signedInHere]} />
+    </Section>
   );
 }
 
 /**
- * Deny and Allow as two equal buttons in one row, Allow last and primary. The
- * row keeps its order on phones, so the reading and focus order stay the same.
- * When the browser sign-in is too old for access that stays signed in,
- * "Confirm identity" takes Allow's place and opens the sign-in that leads back
- * to this page; Deny keeps working.
+ * The technical facts of a request, quiet, after the decision's content: the person rarely needs them, an
+ * administrator finds them. They stand open, since a decision page works without script.
  */
-export function DecisionForm(props: { action: string; request: string; userCode?: string; reauthenticateHref?: string | null }) {
+export function TechnicalFacts(props: { items: FactsProps["items"] }) {
   const t = useMessages();
   return (
-    <form method="post" action={props.action} class="mt-6 grid grid-cols-2 gap-3">
-      <input type="hidden" name="request" value={props.request} />
-      <Show when={props.userCode}>{(code) => <input type="hidden" name="user_code" value={code()} />}</Show>
-      <Button type="submit" name="decision" value="deny" variant="secondary" size="lg" class="w-full">
-        {t().deny}
-      </Button>
-      <Show
-        when={props.reauthenticateHref}
-        fallback={
-          <Button type="submit" name="decision" value="approve" size="lg" class="w-full">
-            {t().allowAccess}
-          </Button>
-        }
-      >
-        {(href) => (
-          <ButtonLink href={href()} size="lg" class="w-full" data-testid="oauth-confirm-identity">
-            {t().confirmIdentity}
-          </ButtonLink>
-        )}
-      </Show>
-    </form>
+    <Section title={t().technicalDetails} summary={t().permissionLimit}>
+      <Facts items={props.items} />
+    </Section>
   );
 }
 
-/** The final state of a decision. It is a status region, so assistive technology reads it as the result. */
-export function Outcome(props: { icon: string; success?: boolean; title: string; body: JSX.Element; children?: JSX.Element }) {
+/** The `id` of the one decision form on a page; its buttons stand in a bar and send it by this name. */
+const DECISION_FORM = "oauth-decision";
+
+/**
+ * Deny and Allow in one row, Allow last and primary; the row keeps its order on phones, so the reading and focus order
+ * stay the same. The form is the server's: a POST with the request (and the device code) as hidden fields and the
+ * pressed button's `decision`. When the browser sign-in is too old for access that stays signed in, "Confirm identity"
+ * takes Allow's place and opens the sign-in that leads back to this page; Deny keeps working.
+ */
+export function DecisionForm(props: {
+  action: string;
+  request: string;
+  userCode?: string;
+  reauthenticateHref?: string | null;
+  /** The one caution read right before deciding; a too old sign-in adds why the person signs in again. */
+  caution: string;
+  /** The signed-in person the decision is for, named right above the buttons. */
+  person?: string;
+}) {
+  const t = useMessages();
   return (
-    <div role="status" class="flex flex-col items-center text-center" data-testid="oauth-outcome">
-      <i class={`${props.icon} text-4xl ${props.success ? "text-[var(--k2b-success-text)]" : "text-dimmed"}`} aria-hidden="true" />
-      <h1 id={PAGE_TITLE_ID} class="mt-3 break-words text-xl font-semibold leading-snug text-primary">
-        {props.title}
-      </h1>
-      <p class="mt-2 text-sm text-dimmed">{props.body}</p>
-      <Show when={props.children}>
-        <div class="mt-6 flex w-full flex-col gap-4">{props.children}</div>
-      </Show>
-    </div>
+    <>
+      {/* the one caution, with its sign in a column of its own so the sentence keeps one text edge */}
+      <Notice tone="warn">{props.reauthenticateHref ? `${props.caution} ${t().confirmIdentityHint}` : props.caution}</Notice>
+      <Band>
+        <form id={DECISION_FORM} method="post" action={props.action} hidden>
+          <input type="hidden" name="request" value={props.request} />
+          {props.userCode ? <input type="hidden" name="user_code" value={props.userCode} /> : null}
+        </form>
+        {props.person ? (
+          <Inline>
+            <Avatar name={props.person} decorative />
+            <Text weight="strong">{props.person}</Text>
+            <Text type="meta" muted>
+              {t().signedInHere}
+            </Text>
+          </Inline>
+        ) : null}
+        <Bar
+          end={
+            <>
+              <Button type="submit" form={DECISION_FORM} name="decision" value="deny">
+                {t().deny}
+              </Button>
+              {props.reauthenticateHref ? (
+                <Button variant="primary" icon="shield-lock" href={props.reauthenticateHref}>
+                  {t().confirmIdentity}
+                </Button>
+              ) : (
+                <Button variant="primary" icon="check" type="submit" form={DECISION_FORM} name="decision" value="approve">
+                  {t().allowAccess}
+                </Button>
+              )}
+            </>
+          }
+        />
+      </Band>
+    </>
+  );
+}
+
+/** The final state of a decision: its sign, one sentence and, where there is one, the way on; read as a status. */
+export function Outcome(props: { icon: string; body: string; ok?: boolean; action?: { label: string; href: string } }) {
+  // the sign stands in the sentence's line; the way on follows below
+  return (
+    <Band>
+      <Text>
+        <Icon name={props.icon} tone={props.ok ? "ok" : "muted"} /> <span role="status">{props.body}</span>
+      </Text>
+      {props.action ? (
+        <Bar
+          end={
+            <Button icon="arrow-right" href={props.action.href}>
+              {props.action.label}
+            </Button>
+          }
+        />
+      ) : null}
+    </Band>
   );
 }

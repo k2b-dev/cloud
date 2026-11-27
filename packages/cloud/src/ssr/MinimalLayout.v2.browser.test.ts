@@ -28,7 +28,7 @@ const declare = (core: Core) =>
   coreRoutes.mockReturnValue(core === "with v2.css" ? ["/public/global.css", "/public/v2.css"] : ["/public/global.css"]);
 
 const legalApp = { id: "legal-probe", legalLinks: [{ label: "Imprint", href: "/impressum" }] };
-const render = (kiosk: boolean, core: Core = "with v2.css") => {
+const render = (kiosk: boolean, core: Core = "with v2.css", measure = false) => {
   declare(core);
   const page: { appUi?: "v2"; stylesheets?: "v2" } = {};
   const context = {
@@ -39,6 +39,7 @@ const render = (kiosk: boolean, core: Core = "with v2.css") => {
     createComponent(MinimalLayout, {
       c: context,
       ui: "v2",
+      measure,
       preferences: !kiosk,
       get children() {
         return createComponent(recipe.default, { kiosk });
@@ -116,6 +117,51 @@ describe("MinimalLayout ui v2", () => {
       }
     }
   });
+
+  for (const width of [1440, 390])
+    test(`with a measure at ${width} px the task stands as a column of 560 px on the tinted page, on the phone across the window, without a line under its last part`, async () => {
+      const tab = await browser.newPage({ viewport: { width, height: 900 } });
+      try {
+        const { html } = render(false, "with v2.css", true);
+        expect(html).toContain('<main class="minimal-layout-main" data-measure=""');
+        await tab.setContent(
+          `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${sheets["with v2.css"].css}</style></head>` +
+            `<body class="${sheets["with v2.css"].body}">${html}</body></html>`,
+        );
+        await settled(tab);
+        expect((await measureV2Layout(tab, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+        const page = await tab.evaluate(() => {
+          const workspace = document.querySelector("[data-k2-workspace]")!;
+          const box = workspace.getBoundingClientRect();
+          return {
+            left: box.left,
+            right: box.right,
+            view: document.documentElement.clientWidth,
+            page: getComputedStyle(document.querySelector(".minimal-layout")!).backgroundColor,
+            card: getComputedStyle(workspace).backgroundColor,
+            edge: getComputedStyle(workspace).borderTopWidth,
+            // the line under the last part of each pane: none, neither above the empty window nor beside the card's edge
+            lasts: [...workspace.querySelectorAll(".k2-pane > .k2-scroll")].map(
+              (scroll) => getComputedStyle(scroll.lastElementChild!).borderBottomWidth,
+            ),
+          };
+        });
+        expect(page.lasts.length).toBeGreaterThan(0);
+        expect(new Set(page.lasts)).toEqual(new Set(["0px"]));
+        if (width === 1440) {
+          expect(page.right - page.left).toBeLessThanOrEqual(560);
+          expect(Math.abs(page.left - (page.view - page.right))).toBeLessThanOrEqual(1);
+          // a card on the tinted page background
+          expect(page.page).not.toBe(page.card);
+          expect(page.edge).toBe("1px");
+        } else {
+          expect({ left: page.left, right: page.right }).toEqual({ left: 0, right: page.view });
+          expect(page.edge).toBe("0px");
+        }
+      } finally {
+        await tab.close();
+      }
+    }, 30_000);
 
   for (const core of ["with v2.css", "older"] as const)
     for (const kiosk of [false, true])

@@ -15,14 +15,24 @@ import selectorParser, { type Node, type Selector } from "postcss-selector-parse
 //   parts of one primitive, which no island stands between, mark their rule `/* one primitive: … */` and step over
 //   none, which keeps the sheet small;
 // - `:first-child`, `:last-child`, `:only-child` of an element in a wrapper also need the wrapper in that place, and
-//   skip any number of empty wrappers;
+//   skip any number of empty wrappers; inside `:has()` they skip none (there they relate the parts of one primitive,
+//   such as a seam after a pane or the icon in a button);
 // - `:has(> …)`, `:has(+ …)` and `:has(~ …)` look through a wrapper below the anchor, never past the anchor's own wrapper;
 // - `:nth-child(1 of S)` and `:nth-last-child(1 of S)` count like `:first-child` and `:last-child` among the siblings that
 //   match S;
 // - a compound without a class, id, attribute or tag (`*`, `:not(.x)`) never matches the wrapper itself;
 // - a run of compounds holds at most one sibling relation.
 // Every added part sits in `:where()`, so specificity, and with it the cascade, stays exactly as written; without a
-// wrapper on the page every rule matches exactly what it matched before. A form this cannot make transparent
+// wrapper on the page every rule matches exactly what it matched before. A rule's selector becomes a list of whole
+// selectors, one per way its last part crosses a wrapper, never one `:is()` around them all.
+// What a browser pays for each form decides the last two points. WebKit sorts a rule by the class of its subject; a
+// rule whose subject is one `:is()` of several selectors it checks against every element that changes. And it checks
+// a `:has()` whose argument counts siblings with `:nth-*-child(… of S)` again on every change of the page. Both made
+// WebKit style a page that redraws an SVG of 300 nodes (the Notebooks graph) about 20 times as long as with the plain
+// sheet; now it takes about three times as long, most of it for the child relation through a wrapper itself, which
+// a redraw of 300 nodes fits into a frame. `src/v2/island-css-cost.browser.test.ts` holds it to that (its comment has
+// the measured ratios). So a `:has()` whose last-child question is about the app's content, not about parts of one
+// primitive, asks it outside the `:has()` (the last but phone forms of a table). A form this cannot make transparent
 // (`:nth-*`, `:*-of-type`, `:empty`, a sibling relation inside `:has()` after its first step, also inside `:is()`,
 // a `:has()` before a sibling relation, two sibling relations in a row, an escaped pseudo-class)
 // fails the build;
@@ -75,7 +85,9 @@ const compound = (nodes: Node[], context: Context, argument = false): Compound =
         continue;
       }
       if (STRUCTURAL.has(name)) {
-        body += `${PLACE[name]}:where(:not(${WRAPPER}>*),${WRAPPER}${PLACE[name]}>*)`;
+        // inside `:has()` the plain pseudo-class: there skipping empty wrappers would cost every change of the page
+        const place = context.inHas ? name : PLACE[name];
+        body += `${place}:where(:not(${WRAPPER}>*),${WRAPPER}${place}>*)`;
         continue;
       }
       // `:nth-child(1 of S)` and `:nth-last-child(1 of S)`: first or last among the siblings that match S, as
@@ -251,6 +263,24 @@ const relativeAlternatives = (selector: Selector, context: Context) => {
   return { lead, alternatives: chains.map((chain) => [chain, ...tail].join(" ")) };
 };
 
+/**
+ * A selector of a rule as whole selectors: one for each way its last part (the subject's run of compounds) crosses a
+ * wrapper. The parts before it keep their alternatives in `:is()`.
+ */
+const ruleSelectors = (selector: Selector, context: Context): string[] => {
+  const parsed = parse(selector);
+  if (parsed.lead) fail(context, "a relative selector outside :has()");
+  const groups = segments(parsed, context);
+  const subject = groups.at(-1)!;
+  const before = groups
+    .slice(0, -1)
+    .map((group) => join(run(group.compounds, group.relations, context), group.compounds.at(-1)!.pseudoElement))
+    .join(" ");
+  return run(subject.compounds, subject.relations, context).map(
+    (chain) => `${before ? `${before} ` : ""}${chain}${subject.compounds.at(-1)!.pseudoElement}`,
+  );
+};
+
 /** v2.css as it ships: every relation also holds through one island wrapper. */
 export const transparentIslands = (css: string): string => {
   const root = postcss.parse(css);
@@ -260,9 +290,9 @@ export const transparentIslands = (css: string): string => {
     const internal = marker?.type === "comment" && /^one primitive:\s*\S/.test(marker.text);
     const selectors = selectorParser().astSync(rule.selector);
     rule.selector = selectors.nodes
-      .map((selector) => {
+      .flatMap((selector) => {
         const text = String(selector).trim();
-        return complex(selector, { inHas: false, placeholder: text.includes(".k2-skel"), internal, rule: text });
+        return ruleSelectors(selector, { inHas: false, placeholder: text.includes(".k2-skel"), internal, rule: text });
       })
       .join(",\n");
   });

@@ -219,7 +219,7 @@ suite("Lasting OAuth access requires confirmed browser sign-in", () => {
       ).toBe("1");
       await fresh(who.sid);
       const approved = await post("/oauth/device", who.cookie, { request: stale.request, decision: "approve" });
-      expect(approved.headers.get("location")).toBe("/oauth/device?result=approved");
+      expect(approved.headers.get("location")).toStartWith("/oauth/device?result=approved&request=");
       const [row] = await sql`SELECT status, confirmed_sid, confirmed_at FROM oauth.device_authorizations WHERE id = ${started.id}::uuid`;
       expect(row).toMatchObject({ status: "approved", confirmed_sid: who.sid, confirmed_at: expect.any(Date) });
     }));
@@ -232,7 +232,7 @@ suite("Lasting OAuth access requires confirmed browser sign-in", () => {
       const request = await oauth.device.createConfirmation({ deviceAuthorizationId: started.id, userId: who.userId });
       const response = await post("/oauth/device", who.cookie, { request, decision: "approve", user_code: "ABCD-EFGH" });
       const location = new URL(response.headers.get("location")!, origin);
-      expect(location.searchParams.get("error_description")).toBe("Sign in again in the browser, then enter the code again.");
+      expect(`${location.pathname}?${location.searchParams}`).toBe("/oauth/error?error=sign_in_again");
       const denial = await oauth.device.createConfirmation({ deviceAuthorizationId: started.id, userId: who.userId });
       expect((await post("/oauth/device", who.cookie, { request: denial, decision: "deny" })).headers.get("location")).toBe(
         "/oauth/device?result=denied",

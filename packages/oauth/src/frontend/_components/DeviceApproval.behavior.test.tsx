@@ -8,7 +8,7 @@ const confirm: DeviceApprovalView = {
   reauthenticateHref: null,
   request: "11111111-1111-4111-8111-111111111111",
   code: "WDJB-MJHT",
-  client: { name: "Cloud CLI", clientId: "cloud-cli" },
+  client: { name: "Cloud CLI", clientId: "cloud-cli", kind: "first_party" },
   scopes: ["openid", "read", "write", "offline_access"],
 };
 
@@ -45,12 +45,15 @@ describe("device approval page DOM", () => {
   test("code entry formats what the person types into XXXX-XXXX and submits it as user_code", async () => {
     const page = await mount("en", { kind: "entry" });
     try {
-      expect(page.root.querySelector("h1")?.textContent).toBe("Connect a device");
+      expect(page.root.textContent).toContain("Enter the code shown on your device or terminal.");
       const form = page.root.querySelector("form");
       expect(form?.getAttribute("method")).toBe("get");
       expect(form?.getAttribute("action")).toBe("/oauth/device");
       const input = page.root.querySelector<HTMLInputElement>('input[name="user_code"]');
       if (!input) throw new Error("Code input missing");
+      // the field and the button send the form without standing in it
+      expect(input.form).toBe(form);
+      expect(page.root.querySelector<HTMLButtonElement>('button[type="submit"]')?.form).toBe(form);
       input.value = "wdjb mjht0";
       input.dispatchEvent(new Event("input", { bubbles: true }));
       expect(input.value).toBe("WDJB-MJHT");
@@ -63,7 +66,6 @@ describe("device approval page DOM", () => {
   test("an invalid code keeps the typed value and explains the error in German", async () => {
     const page = await mount("de", { kind: "entry", code: "AAAA-AAAA", error: "Dieser Code ist ungültig oder abgelaufen." });
     try {
-      expect(page.root.querySelector("h1")?.textContent).toBe("Gerät verbinden");
       expect(page.root.querySelector<HTMLInputElement>('input[name="user_code"]')?.value).toBe("AAAA-AAAA");
       expect(page.root.textContent).toContain("Dieser Code ist ungültig oder abgelaufen.");
       expect(buttons(page.root)).toContain("Weiter");
@@ -72,12 +74,14 @@ describe("device approval page DOM", () => {
     }
   });
 
-  test("confirmation names the client, the code, every scope, and the own-code warning in English", async () => {
+  test("confirmation names the client once, the code, every scope, and the own-code warning in English", async () => {
     const page = await mount("en", confirm);
     try {
-      expect(page.root.querySelector("h1")?.textContent).toBe("Allow Cloud CLI to access your account?");
-      expect(page.root.querySelector('[data-testid="device-user-code"]')?.textContent).toBe("WDJB-MJHT");
-      expect(page.root.textContent).toContain("cloud-cli");
+      // the question is the page's heading (device.tsx), so the block holds the code and what to compare
+      expect(page.root.textContent).toContain("Check that this code matches the one on your device");
+      expect(page.root.textContent).toContain("WDJB-MJHT");
+      // the question names the client once; no fact repeats its name or ID
+      expect(page.root.textContent).not.toContain("cloud-cli");
       expect(page.root.textContent).toContain("Perform changes available to your account");
       expect(page.root.textContent).toContain("Stay connected until you revoke access");
       expect(page.root.textContent).toContain("Only continue if you started this sign-in yourself.");
@@ -86,6 +90,8 @@ describe("device approval page DOM", () => {
       expect(page.root.querySelector<HTMLInputElement>('input[name="request"]')?.value).toBe(confirm.request);
       expect(buttons(page.root)).toEqual(["Deny", "Allow access"]);
       expect(Array.from(page.root.querySelectorAll("button")).map((node) => node.getAttribute("value"))).toEqual(["deny", "approve"]);
+      // both send the decision form with its hidden request
+      for (const button of page.root.querySelectorAll("button")) expect(button.form).toBe(form);
     } finally {
       page.close();
     }
@@ -94,7 +100,7 @@ describe("device approval page DOM", () => {
   test("confirmation and outcomes read naturally in German", async () => {
     const page = await mount("de", confirm);
     try {
-      expect(page.root.querySelector("h1")?.textContent).toBe("Cloud CLI Zugriff auf dein Konto erlauben?");
+      expect(page.root.textContent).toContain("Prüfe, ob dieser Code mit dem auf deinem Gerät übereinstimmt");
       expect(page.root.textContent).toContain("Für dein Konto verfügbare Änderungen ausführen");
       expect(page.root.textContent).toContain("Fahre nur fort, wenn du diese Anmeldung selbst gestartet hast.");
       expect(buttons(page.root)).toEqual(["Ablehnen", "Zugriff erlauben"]);
@@ -104,15 +110,13 @@ describe("device approval page DOM", () => {
 
     const approved = await mount("de", { kind: "result", outcome: "approved" });
     try {
-      const status = approved.root.querySelector('[role="status"]');
-      expect(status?.querySelector("h1")?.textContent).toBe("Gerät verbunden");
-      expect(status?.textContent).toContain("Du kannst diesen Tab jetzt schließen.");
+      expect(approved.root.textContent).toContain("Du kannst diesen Tab jetzt schließen.");
+      expect(approved.root.querySelector("form")).toBeNull();
     } finally {
       approved.close();
     }
     const denied = await mount("en", { kind: "result", outcome: "denied" });
     try {
-      expect(denied.root.querySelector('[role="status"] h1')?.textContent).toBe("Access denied");
       expect(denied.root.textContent).toContain("You can close this tab now.");
       expect(denied.root.querySelector("form")).toBeNull();
     } finally {
