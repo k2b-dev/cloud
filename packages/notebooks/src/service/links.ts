@@ -156,12 +156,14 @@ type BacklinkRow = {
 };
 
 /**
- * List notes that link to `noteId`, filtered by access on the *source*
- * notebook so a backlink only appears if the requester can read where it's
- * coming from.
+ * One page of the notes that link to `noteId`, newest change first, filtered by access on the *source* notebook so a
+ * backlink only appears if the requester can read where it's coming from, with the total of all such notes. One
+ * bounded statement: the page (at most `limit`, from `offset`) and the total come together, so a note linked from
+ * thousands of notes costs the same as one linked from a few (#4417). Only a page past the end asks for the total
+ * again.
  *
- * `bypassAccess: true` skips the access filter — used for global admins so
- * the backlinks panel reflects the full link graph for them.
+ * `bypassAccess: true` skips the access filter — used for global admins so the backlinks panel reflects the full link
+ * graph for them.
  */
 export const listBacklinks = async (params: {
   noteId: string;
@@ -169,59 +171,64 @@ export const listBacklinks = async (params: {
   serviceAccountId?: string | null;
   boundNotebookId?: string | null;
   bypassAccess?: boolean;
-}): Promise<Backlink[]> => {
+  limit: number;
+  offset?: number;
+}): Promise<{ items: Backlink[]; total: number }> => {
   const { noteId, userId, bypassAccess = false } = params;
-  if (!(await mayReadAcrossNotebooks(params))) return [];
+  if (!(await mayReadAcrossNotebooks(params))) return { items: [], total: 0 };
   const principalMatch = buildNotebookVisibleAccessCondition({ userId, serviceAccountId: params.serviceAccountId });
   const boundNotebookId = params.boundNotebookId ?? null;
+  const offset = params.offset ?? 0;
+  const readable = bypassAccess
+    ? sql``
+    : sql`
+        AND EXISTS (
+          SELECT 1
+          FROM notebooks.notebook_access na
+          JOIN auth.access a ON a.id = na.access_id
+          WHERE na.notebook_id = src.notebook_id
+            AND ${principalMatch}
+            AND (${boundNotebookId}::text IS NULL OR src.notebook_id::text = ${boundNotebookId})
+        )`;
+  const sources = sql`
+    SELECT DISTINCT src.id, src.short_id, src.title, src.notebook_id, src.updated_at
+    FROM notebooks.note_links nl
+    JOIN notebooks.notes src ON src.id = nl.source_note_id
+    WHERE nl.target_note_id = ${noteId}::uuid ${readable}
+  `;
+  const rows = await sql<(BacklinkRow & { total: number })[]>`
+    SELECT
+      linked.id AS note_id,
+      linked.short_id AS note_short_id,
+      linked.title,
+      linked.notebook_id,
+      nb.short_id AS notebook_short_id,
+      nb.name AS notebook_name,
+      linked.updated_at,
+      linked.total
+    FROM (
+      SELECT sources.*, COUNT(*) OVER ()::int AS total
+      FROM (${sources}) sources
+      ORDER BY sources.updated_at DESC, sources.id
+      LIMIT ${params.limit} OFFSET ${offset}
+    ) linked
+    JOIN notebooks.notebooks nb ON nb.id = linked.notebook_id
+    ORDER BY linked.updated_at DESC, linked.id
+  `;
+  const total =
+    rows[0]?.total ??
+    (offset > 0 ? ((await sql<{ total: number }[]>`SELECT COUNT(*)::int AS total FROM (${sources}) sources`)[0]?.total ?? 0) : 0);
 
-  const rows = bypassAccess
-    ? await sql<BacklinkRow[]>`
-        SELECT DISTINCT
-          src.id AS note_id,
-          src.short_id AS note_short_id,
-          src.title,
-          src.notebook_id,
-          nb.short_id AS notebook_short_id,
-          nb.name AS notebook_name,
-          src.updated_at
-        FROM notebooks.note_links nl
-        JOIN notebooks.notes src ON src.id = nl.source_note_id
-        JOIN notebooks.notebooks nb ON nb.id = src.notebook_id
-        WHERE nl.target_note_id = ${noteId}::uuid
-        ORDER BY src.updated_at DESC
-      `
-    : await sql<BacklinkRow[]>`
-        SELECT DISTINCT
-          src.id AS note_id,
-          src.short_id AS note_short_id,
-          src.title,
-          src.notebook_id,
-          nb.short_id AS notebook_short_id,
-          nb.name AS notebook_name,
-          src.updated_at
-        FROM notebooks.note_links nl
-        JOIN notebooks.notes src ON src.id = nl.source_note_id
-        JOIN notebooks.notebooks nb ON nb.id = src.notebook_id
-        WHERE nl.target_note_id = ${noteId}::uuid
-          AND EXISTS (
-            SELECT 1
-            FROM notebooks.notebook_access na
-            JOIN auth.access a ON a.id = na.access_id
-            WHERE na.notebook_id = src.notebook_id
-              AND ${principalMatch}
-              AND (${boundNotebookId}::text IS NULL OR src.notebook_id::text = ${boundNotebookId})
-          )
-        ORDER BY src.updated_at DESC
-      `;
-
-  return rows.map((r) => ({
-    noteId: r.note_short_id,
-    title: r.title,
-    notebookId: r.notebook_short_id,
-    notebookName: r.notebook_name,
-    updatedAt: r.updated_at.toISOString(),
-  }));
+  return {
+    total,
+    items: rows.map((r) => ({
+      noteId: r.note_short_id,
+      title: r.title,
+      notebookId: r.notebook_short_id,
+      notebookName: r.notebook_name,
+      updatedAt: r.updated_at.toISOString(),
+    })),
+  };
 };
 
 /**

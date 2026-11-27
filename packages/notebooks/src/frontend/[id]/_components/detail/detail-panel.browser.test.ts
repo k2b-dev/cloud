@@ -89,6 +89,24 @@ beforeAll(async () => {
       const path = new URL(request.url).pathname;
       if (path === "/api/notebooks/overview/activity") return Response.json(activityPage);
       if (path === "/api/notebooks/book01/access/members") return Response.json(accessMembers);
+      // further backlinks of the "linked" note, a page at a time, as the API answers (#4417)
+      if (path === "/api/notebooks/book01/notes/note01/backlinks") {
+        const query = new URL(request.url).searchParams;
+        const page = Number(query.get("page"));
+        const perPage = Number(query.get("per_page"));
+        const first = (page - 1) * perPage + 1;
+        const data = Array.from({ length: Math.max(0, Math.min(perPage, 251 - first)) }, (_, index) => ({
+          noteId: `l${String(first + index).padStart(4, "0")}`,
+          title: `Lieferschein ${first + index}`,
+          notebookId: "book01",
+          notebookName: "Handbuch Logistik",
+          updatedAt: "2026-10-16T19:00:00.000Z",
+        }));
+        return Response.json({
+          data,
+          pagination: { page, per_page: perPage, total: 250, total_pages: Math.ceil(250 / perPage), has_next: page * perPage < 250 },
+        });
+      }
       if (/^\/api\/accounts\/users\/[^/]+\/avatar$/.test(path))
         return new Response(
           '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24" fill="#247b92"/><circle cx="12" cy="9" r="4" fill="#fff"/></svg>',
@@ -173,6 +191,31 @@ const titled = (title: string) => `section.k2b-section:has(.k2b-section__title:t
 const access = titled("Zugriff");
 const presence = "section.k2b-section:has(.k2b-detail-presence)";
 const contents = 'section.k2b-section:has(.k2b-section__title:text-is("Inhalt"))';
+
+test("a note linked from many holds one page of backlinks and loads the rest a page at a time", async () => {
+  const { page } = await open(1440, false, "linked");
+  try {
+    const more = page.getByRole("button", { name: /^Weitere Verweise laden/ });
+    // the links section may stand closed under "Mehr zu dieser Notiz"; open it if so
+    if (!(await more.isVisible()))
+      await page
+        .getByRole("button", { name: /^Verknüpfungen/, expanded: false })
+        .first()
+        .evaluate((button) => (button instanceof HTMLButtonElement ? button.click() : undefined));
+    // the server sent one page and the total; nothing beyond the page is in the panel
+    await page.getByText("Verlinkt von 100", { exact: true }).waitFor();
+    expect(await more.textContent()).toContain("100 von 250");
+    await more.click();
+    await page.getByText("Verlinkt von 200", { exact: true }).waitFor();
+    expect(await more.textContent()).toContain("200 von 250");
+    await more.click();
+    await page.getByText("Verlinkt von 250", { exact: true }).waitFor();
+    // every backlink is loaded, so the way to more leaves
+    await more.waitFor({ state: "detached" });
+  } finally {
+    await page.close();
+  }
+}, 60_000);
 
 for (const width of [1440, 390]) {
   test(`${width}: every section's content starts on its title's text edge`, async () => {

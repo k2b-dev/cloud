@@ -112,7 +112,9 @@ type Props = {
   /** Attachments referenced from the current note's markdown — initial SSR
    *  hydration. Live updates flow through `ATTACHMENTS_UPDATE_EVENT`. */
   attachments: Attachment[];
+  /** The first page of the notes that link here; `backlinksTotal` counts them all, and the rest load on demand. */
   backlinks: Backlink[];
+  backlinksTotal: number;
   /** What the note links to and its tags. */
   relations: NoteDetailRelations;
   /** Whether this person may see who else has access: everyone with access of their own, never public access alone. */
@@ -152,6 +154,7 @@ type SoftNavigatedDetail = {
   taskProgress: TaskProgress;
   attachments: Attachment[];
   backlinks: Backlink[];
+  backlinksTotal: number;
   relations: NoteDetailRelations;
   namedBlocks: NamedBlockSummary[];
 };
@@ -173,6 +176,8 @@ const EDIT_ACTIONS = new Set(["note.edited", "note.restored", "note.created"]);
 /** Activity rows before "n more": enough to see what happened lately without pushing the panel's end away. */
 const NEWEST_ACTIVITY = 4;
 const ACTIVITY_PAGE_SIZE = 10;
+/** Backlinks per page: the server's first page (`NOTE_LINKS_PAGE`) and the API's `per_page` maximum. */
+const BACKLINKS_PAGE = 100;
 const NO_AUTHORS: NoteAuthors = { createdBy: null, lastEditedBy: null };
 const isImage = (attachment: Attachment) => attachmentPreviewKind(attachment) === "image";
 /** Words read per minute for the reading time in the properties. */
@@ -205,6 +210,7 @@ const REFERENCE_ICONS: Partial<Record<NamedBlockSummary["type"], string>> = {
 export default function NotebookDetailPanel(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
+  const formatCount = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const duplicateNote = useDuplicateNote(props.notebookId);
   const saveAsTemplate = useSaveAsTemplate(props.notebookId);
   const [open, setOpen] = createSignal(props.initiallyOpen);
@@ -216,6 +222,30 @@ export default function NotebookDetailPanel(props: Props) {
   const [contentMd, setContentMd] = createSignal(props.contentMd);
   const [historyIncomplete, setHistoryIncomplete] = createSignal(props.historyIncomplete);
   const [backlinks, setBacklinks] = createSignal<Backlink[]>(props.backlinks);
+  const [backlinksTotal, setBacklinksTotal] = createSignal(props.backlinksTotal);
+  const [backlinksLoading, setBacklinksLoading] = createSignal(false);
+  const [backlinksFailed, setBacklinksFailed] = createSignal(false);
+  /** The next page of backlinks after the loaded ones, appended; a note opened meanwhile keeps its own list. */
+  const loadMoreBacklinks = async () => {
+    const forNote = noteId();
+    setBacklinksLoading(true);
+    setBacklinksFailed(false);
+    try {
+      const response = await apiClient[":id"].notes[":noteId"].backlinks.$get({
+        param: { id: props.notebookId, noteId: forNote },
+        query: { page: String(Math.floor(backlinks().length / BACKLINKS_PAGE) + 1), per_page: String(BACKLINKS_PAGE) },
+      });
+      if (!response.ok) throw new Error(`backlinks ${response.status}`);
+      const page = await response.json();
+      if (noteId() !== forNote) return;
+      setBacklinks((loaded) => [...loaded, ...page.data.filter((next) => !loaded.some((known) => known.noteId === next.noteId))]);
+      setBacklinksTotal(page.pagination.total);
+    } catch {
+      if (noteId() === forNote) setBacklinksFailed(true);
+    } finally {
+      setBacklinksLoading(false);
+    }
+  };
   const [relations, setRelations] = createSignal<NoteDetailRelations>(props.relations);
   const [createdAt, setCreatedAt] = createSignal(props.createdAt);
   const [updatedAt, setUpdatedAt] = createSignal(props.updatedAt);
@@ -568,6 +598,8 @@ export default function NotebookDetailPanel(props: Props) {
       setActiveHeading(null);
       setTasks(detail.taskProgress);
       setBacklinks(detail.backlinks);
+      setBacklinksTotal(detail.backlinksTotal);
+      setBacklinksFailed(false);
       setRelations(detail.relations);
       setActivityExpanded(false);
       const ids = detail.attachments.map((attachment) => attachment.id);
@@ -1149,7 +1181,26 @@ export default function NotebookDetailPanel(props: Props) {
             emptyHint={props.canWrite ? t().tagsHint : undefined}
           />
 
-          <DetailLinks incoming={backlinks().map(linkItem)} outgoing={relations().outgoing.map(linkItem)} />
+          <DetailLinks
+            incoming={backlinks().map(linkItem)}
+            outgoing={relations().outgoing.map(linkItem)}
+            footer={
+              // A note linked from many holds one page; the rest load here, a page at a time (#4417).
+              <Show when={backlinks().length < backlinksTotal()}>
+                <DetailPanel.Action
+                  type="button"
+                  leading={<i class={`ti ${backlinksLoading() ? "ti-loader-2 k2b-spin" : "ti-dots"}`} aria-hidden="true" />}
+                  title={
+                    backlinksFailed()
+                      ? t().moreBacklinksFailed
+                      : t().moreBacklinks({ shown: formatCount(backlinks().length), total: formatCount(backlinksTotal()) })
+                  }
+                  disabled={backlinksLoading()}
+                  onClick={() => void loadMoreBacklinks()}
+                />
+              </Show>
+            }
+          />
 
           <Show when={visibleAttachments().length > 0 || attachmentMetadata.error()}>
             <Section
