@@ -61,6 +61,8 @@ describe("loadGridsWorkspaceState — Base access boundary", () => {
         ({
           tables: [],
           tableLevels: {},
+          workflows: [],
+          customApps: [],
           fieldsByTable: { [formTable.id]: [] },
           viewsByTable: {},
           formsByTable: { [formTable.id]: [form] },
@@ -182,6 +184,8 @@ describe("loadGridsWorkspaceState — Base access boundary", () => {
         ({
           tables: [formTable],
           tableLevels: { [formTable.id]: "read" },
+          workflows: [],
+          customApps: [],
           fieldsByTable: { [formTable.id]: [] },
           viewsByTable: {},
           formsByTable: {},

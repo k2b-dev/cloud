@@ -96,6 +96,8 @@ describe("loadGridsWorkspaceState — document templates use Base access", () =>
         ({
           tables: [],
           tableLevels: {},
+          workflows: [],
+          customApps: [],
           fieldsByTable: {},
           viewsByTable: {},
           formsByTable: {},

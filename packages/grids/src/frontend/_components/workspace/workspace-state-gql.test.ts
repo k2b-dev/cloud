@@ -130,6 +130,8 @@ describe("loadGridsWorkspaceState — GQL-backed views", () => {
         ({
           tables: catalogTables,
           tableLevels: catalogTableLevels,
+          workflows: [],
+          customApps: [],
           fieldsByTable: catalogFieldsByTable,
           viewsByTable: catalogViewsByTable,
           formsByTable: { [table.id]: [] },
