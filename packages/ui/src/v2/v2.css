@@ -3732,19 +3732,25 @@
   color: var(--k2-c, var(--k2-n600));
 }
 
-/* The way to all of a section, at its end: a quiet text button on the right ("All deliveries ›") … */
+/* A section's way to all of it stands under its rows, its words on their text edge (Valentin 26.11.: at the start, not
+   the end; logical margins, so a page written right to left has it at the right), after a symbol where the section has
+   one; its 8 px of padding stand before the edge, as a text button's */
 .k2-ui .k2-sec-link {
-  align-self: flex-end;
+  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   gap: 4px;
   height: var(--k2-h-control-small);
-  margin: 4px var(--k2-edge) 0 0;
+  margin-block: 4px 0;
+  margin-inline: calc(var(--k2-edge) - 8px) 0;
   padding: 0 8px;
   border-radius: var(--k2-r-control);
   font: var(--k2-t-meta);
   font-weight: 500;
   color: var(--k2-muted);
+}
+.k2-ui .k2-pane:not([data-side]) .k2-sec:has(> .k2-sh > :is(.k2-icon, .k2-stile)) > .k2-sec-link {
+  margin-inline-start: calc(var(--k2-edge-icon) - 8px);
 }
 .k2-ui .k2-sec-link > b {
   font-weight: 500;
