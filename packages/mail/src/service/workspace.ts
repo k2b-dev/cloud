@@ -57,6 +57,7 @@ import * as mailboxes from "./mailboxes";
 import type { ConversationRowState, ConversationSummary, ConversationViewCounts, MailFolderView, MessageDetail } from "./messages";
 import * as messages from "./messages";
 import * as publicResources from "./public-resources";
+import { type MailReceivedPerDay, peekReceivedPerDay } from "./received-per-day";
 import type { ConversationReminder } from "./reminders";
 import * as reminders from "./reminders";
 import type { SavedConversationView } from "./saved-views";
@@ -258,6 +259,11 @@ export type MailboxPageData = {
    * people who may not assign (they read only or see assigned conversations only) and when the lookup failed.
    */
   dropAssignees: MailDropAssignees | null;
+  /**
+   * The mails this mailbox received per day over the last 53 weeks, for the v2 reader while no mail is open. Loaded
+   * with the page and a mailbox switch when asked for (`receivedPerDay: "load"`); null otherwise and when it failed.
+   */
+  receivedPerDay?: MailReceivedPerDay | null;
   activity: MailActivityEvent[];
   reminder: ConversationReminder | null;
   keep: ConversationKeep | null;
@@ -1129,6 +1135,12 @@ export const loadMailboxPageData = async (pageParams: {
    * and answers null; the first load and a mailbox switch load them ("load", the default).
    */
   dropAssignees?: "load" | "keep";
+  /**
+   * "load": the mails per day in `timeZone` when the cache holds them (a v2 page load or mailbox switch that opens no
+   * mail); the page never waits for a count. Without it the answer leaves them out (null).
+   */
+  receivedPerDay?: "load" | "keep";
+  timeZone?: string;
 }): Promise<Result<MailboxPageData>> => {
   // cold counts may hold the page only for a fixed wait from the start of the request
   const params = { ...pageParams, context: withOneAccessRead(pageParams.context), countsBy: Date.now() + FIRST_RENDER_COUNT_WAIT_MS };
@@ -1166,6 +1178,7 @@ export const loadMailboxPageData = async (pageParams: {
     workspacePreference,
     doneTodayCounts,
     dropAssigneesResult,
+    receivedPerDay,
   ] = await Promise.all([
     mailboxes.getMailbox(params.context, params.mailboxId),
     folders,
@@ -1187,6 +1200,10 @@ export const loadMailboxPageData = async (pageParams: {
           () => collaboration.listDropAssignees({ context: params.context, mailboxId: params.mailboxId }),
           params.mailboxId,
         )
+      : null,
+    // only from the cache: the page never waits for a year count; on a miss the empty reader loads it itself
+    pageParams.receivedPerDay === "load" && pageParams.timeZone
+      ? peekReceivedPerDay({ mailboxId: params.mailboxId, access: permission.data, timeZone: pageParams.timeZone })
       : null,
   ]);
   if (!mailboxResult.ok) return fail(mailboxResult.error);
@@ -1235,6 +1252,7 @@ export const loadMailboxPageData = async (pageParams: {
     scheduledCount: listView.scheduledPage ? listView.scheduledPage.total : scheduledCountResult.ok ? scheduledCountResult.data : 0,
     localTags: localTagResult.ok ? localTagResult.data : [],
     dropAssignees: dropAssigneesResult ?? null,
+    receivedPerDay,
     savedViews: savedViewResult.ok ? savedViewResult.data : [],
     viewCounts: viewCountsResult.ok && viewCountsResult.data ? viewCountsResult.data : EMPTY_VIEW_COUNTS,
     ...(viewCountsResult.ok && !viewCountsResult.data ? { viewCountsPending: true as const } : {}),

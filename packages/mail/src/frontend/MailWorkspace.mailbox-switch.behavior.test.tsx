@@ -228,7 +228,14 @@ const path = `/app/mail/${MAILBOX_ID}`;
 /** Long enough for a refresh through the mocked API to finish. */
 const settle = () => Bun.sleep(60);
 
-type RecordedRequest = { route: string; mailboxId: string; href: string; signal: AbortSignal | null | undefined };
+type RecordedRequest = {
+  route: string;
+  mailboxId: string;
+  href: string;
+  /** What the request asked for the year of mail: "load" or "keep". */
+  received: string | null;
+  signal: AbortSignal | null | undefined;
+};
 
 describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
   const m = modules!;
@@ -296,7 +303,13 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
         if (route === "workspace-route" || route === "workspace-list") {
           const mailboxId = url.pathname.split("/").at(-2)!;
           const href = url.searchParams.get("href")!;
-          requests.push({ route, mailboxId, href, signal: init?.signal ?? (input instanceof Request ? input.signal : undefined) });
+          requests.push({
+            route,
+            mailboxId,
+            href,
+            received: url.searchParams.get("receivedPerDay"),
+            signal: init?.signal ?? (input instanceof Request ? input.signal : undefined),
+          });
           await held.get(mailboxId);
           if (failure === "network") throw new TypeError("Network unavailable");
           if (failure === "json") return new Response("{invalid json");
@@ -322,7 +335,7 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     else Reflect.deleteProperty(globalThis, "CSS");
     setSystemTime();
   });
-  const mount = (requestPath = path, snapshot = snapshotFor(requestPath)) => {
+  const mount = (requestPath = path, snapshot = snapshotFor(requestPath), loadsReceivedPerDay = false) => {
     dom.window.history.replaceState(null, "", requestPath);
     dispose = render(
       () =>
@@ -338,6 +351,7 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
           initialUserPreferences: m.readMailUserPreferencesFromCookieHeader("", MAILBOX_ID),
           initialTheme: m.readThemeFromCookieHeader(""),
           calendarIntegrationAvailable: false,
+          loadsReceivedPerDay,
           sidebar: { mailboxes: mailboxes.map((box) => ({ ...box, receivingAddress: null })), pinnedMailboxIds: [], hiddenMailboxIds: [] },
         }),
       dom.root,
@@ -511,6 +525,24 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     dispose = () => {};
     await Bun.sleep(1_200);
     expect(asked).toHaveLength(1);
+  });
+
+  test("a page without the v2 reader never asks a switch for the year of mail", async () => {
+    mount();
+    link("Box002").click();
+    await settle();
+    expect(requests.map(({ route, received }) => ({ route, received }))).toEqual([{ route: "workspace-route", received: "keep" }]);
+  });
+
+  test("the v2 reader asks a switch for the new mailbox's year of mail, unless the switch opens a mail", async () => {
+    mount(path, snapshotFor(path), true);
+    link("Box002").click();
+    await settle();
+    await pop("/app/mail/Box003?conversation=Conv1");
+    expect(requests.map(({ mailboxId, received }) => ({ mailboxId, received }))).toEqual([
+      { mailboxId: "Box002", received: "load" },
+      { mailboxId: "Box003", received: "keep" },
+    ]);
   });
 
   test("the retained list clears A's bulk selection before B can act", async () => {
