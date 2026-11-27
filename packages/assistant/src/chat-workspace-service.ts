@@ -29,7 +29,16 @@ const readWorkspace = async (conversationId: string, userId: string): Promise<Ch
 export const loadAssistantChatWorkspace = async (
   identity: AiResourceContext,
   chatShortId: string,
+  /** The chat, when the caller already read it with `ownerUserId` of this identity's user (the page's first view). */
+  checked?: { id: string; shortId: string; createdByUserId: string | null },
 ): Promise<ChatWorkspaceSnapshot | null> => {
+  // A handed chat counts only when it is the person's own; anything else is read with the owner check.
+  if (
+    identity.accessSubject.type === "user" &&
+    checked?.shortId === chatShortId &&
+    checked.createdByUserId === identity.accessSubject.userId
+  )
+    return readWorkspace(checked.id, identity.accessSubject.userId);
   const chat = await workspaceConversation(identity, chatShortId);
   return chat ? readWorkspace(chat.conversationId, chat.userId) : null;
 };

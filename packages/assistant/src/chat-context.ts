@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import {
+  type AiConversation,
   type AiConversationSkillUse,
   type AiConversationSource,
   type AiConversationSourceKind,
@@ -238,11 +239,20 @@ const resultSources = async (conversationId: string) => {
 export const loadAssistantChatContextSnapshot = async (
   identity: AiResourceContext,
   chatId: string,
-  options: { timeZone: string; locale?: string },
+  options: {
+    timeZone: string;
+    locale?: string;
+    /** The chat, when the caller already read it with `ownerUserId` of this identity's user (the page's first view). */
+    conversation?: AiConversation;
+  },
 ): Promise<AssistantChatContextSnapshot | null> => {
   if (identity.accessSubject.type !== "user") throw new Error("A user-backed identity is required.");
   const userId = identity.accessSubject.userId;
-  const conversation = await aiConversations.getConversationByShortId({ shortId: chatId, ownerUserId: userId });
+  // A handed chat counts only when it is this person's own; anything else is read with the owner check.
+  const conversation =
+    options.conversation?.shortId === chatId && options.conversation.createdByUserId === userId
+      ? options.conversation
+      : await aiConversations.getConversationByShortId({ shortId: chatId, ownerUserId: userId });
   if (!conversation) return null;
   const now = new Date().toISOString();
   const [delivered, sourcePage, overview, skills, memories, wakeups] = await Promise.all([

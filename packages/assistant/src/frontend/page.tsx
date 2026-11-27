@@ -75,50 +75,89 @@ export default ssr<AuthContext>(async (c) => {
   const owner = { kind: "person" as const, userId: user.id };
   const panelScope = panelContext?.scope;
   const subject = { type: "user" as const, userId: user.id };
-  const initialLiveCursor = await aiLive.cursor();
   const catalog = catalogPerApp(locale, auth.getAuthority(c));
+  const identity = { actor: c.get("actor"), accessSubject: c.get("accessSubject") };
+  // A Project the address names, with what its view shows: its chats, its context and, for its administrators'
+  // settings page, its models and access. It depends only on the address, so it loads beside everything else.
+  const projectSettingsRequested = !embedded && url.searchParams.get("settings") === "1";
+  const loadProject = async () => {
+    const record = requestedProjectId ? await aiProjects.getByShortId(requestedProjectId, identity) : null;
+    if (!record) return null;
+    const view = { ...record, id: record.shortId };
+    const settingsOpen = projectSettingsRequested && view.permission === "admin";
+    const [chats, context, settingsSeed] = await Promise.all([
+      aiConversations.listConversationsPage({ ownerUserId: user.id, projectId: record.id, page: 1, perPage: 20 }),
+      loadAssistantProjectContextSnapshot(auth.getAuthority(c), view.id),
+      settingsOpen
+        ? Promise.all([peopleAiModels(c.get("accessSubject")), aiProjects.listAccess(record.id, identity, locale)])
+            .then(([models, access]) => (access ? { models, access } : null))
+            .catch(() => null)
+        : null,
+    ]);
+    return { record, view, chats, context, settingsSeed, settingsOpen };
+  };
+  // A chat the address names is read with everything else; without one, the page picks it from the sidebar below.
+  const namedConversation =
+    requestedConversationId && !requestedProjectId && !approvalsOpen && !codeOpen && !prefsTab
+      ? aiConversations.getConversationByShortId({ shortId: requestedConversationId, ownerUserId: user.id })
+      : null;
+  // One stage for everything the first view needs that does not depend on another read (page audit 27.11.: six
+  // stages one after another before).
   const [
-    settings,
-    liveDictation,
-    sidebar,
-    appUrl,
-    initialQuotas,
-    approvals,
-    codeList,
-    codeExists,
-    codeBlockPage,
-    codeDetail,
-    automations,
-    placeState,
-    prefsRead,
+    initialLiveCursor,
+    codePlace,
+    project,
+    namedChat,
+    [
+      settings,
+      liveDictation,
+      sidebar,
+      appUrl,
+      initialQuotas,
+      approvals,
+      codeList,
+      codeExists,
+      codeBlockPage,
+      codeDetail,
+      automations,
+      placeState,
+      prefsRead,
+    ],
   ] = await Promise.all([
-    assistantAiSettingsState(subject),
-    getLiveDictationStatus(c.get("accessSubject")),
-    loadAssistantSidebarSnapshot(
-      { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
-      { locale, timeZone, caller: openQuestionsCaller(c) },
-      placeAppsFromCatalog(catalog),
-    ),
-    coreSettings.get<string>("app.url"),
-    getAiChatQuotas(subject).catch(() => null),
-    // Only for the view; the sidebar counts what waits from the open questions, like the row above the field.
-    approvalsOpen ? loadPendingApprovals(c, { app: "assistant" }) : undefined,
-    // The list's first page when the page opens on it; otherwise only whether the person has any Code. Null: unknown.
-    codeOpen && !detailCodeId ? loadCodeOverview(invokeCode, owner, { timeZone, now: new Date() }).catch(() => null) : undefined,
-    codeOpen && !detailCodeId ? undefined : hasPersonalCode(invokeCode, owner.userId).catch(() => null),
-    panelScope ? loadCodeSummaries(invokeCode, { kind: "resource", ref: panelScope }).catch(() => null) : undefined,
-    // The shared Code page reads its Code, versions, runs and switch-on state itself and shows each failure in place.
-    detailCodeId
-      ? loadCodePage(c, { owner: { codeId: detailCodeId }, href: `/app/assistant/code/${detailCodeId}`, canManageOwner: false })
-      : undefined,
-    // The person's own Code that waits for them, read apart so older questions never push it out of its section.
-    approvalsOpen ? loadWaitingAutomations(invokeCode, timeZone).catch(() => null) : undefined,
-    // Gustav at a place: the same loader as navigation, so the first paint and a later switch show the same thing.
-    panelScope ? loadPlaceAssistant(c, panelScope).catch(() => null) : null,
-    // Gustav's settings page draws its first picture from these, as its browser reads would: the person's settings,
-    // and whether the OpenAI-compatible API is on; its models are the page's own read above (`settings`). Null:
-    // unreadable now, so the page reads them itself and says so.
-    prefsTab ? Promise.all([aiUserPrefs.get(user.id), coreSettings.get<boolean>("ai.openai_api_enabled")]).catch(() => null) : null,
+    aiLive.cursor(),
+    // The panel names its place from the first paint, and knows whether that place could have Code at all.
+    panelScope ? loadCodePlace(panelScope, invokeCode, catalog) : undefined,
+    loadProject(),
+    namedConversation,
+    Promise.all([
+      assistantAiSettingsState(subject),
+      getLiveDictationStatus(c.get("accessSubject")),
+      loadAssistantSidebarSnapshot(
+        { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
+        { locale, timeZone, caller: openQuestionsCaller(c) },
+        placeAppsFromCatalog(catalog),
+      ),
+      coreSettings.get<string>("app.url"),
+      getAiChatQuotas(subject).catch(() => null),
+      // Only for the view; the sidebar counts what waits from the open questions, like the row above the field.
+      approvalsOpen ? loadPendingApprovals(c, { app: "assistant" }) : undefined,
+      // The list's first page when the page opens on it; otherwise only whether the person has any Code. Null: unknown.
+      codeOpen && !detailCodeId ? loadCodeOverview(invokeCode, owner, { timeZone, now: new Date() }).catch(() => null) : undefined,
+      codeOpen && !detailCodeId ? undefined : hasPersonalCode(invokeCode, owner.userId).catch(() => null),
+      panelScope ? loadCodeSummaries(invokeCode, { kind: "resource", ref: panelScope }).catch(() => null) : undefined,
+      // The shared Code page reads its Code, versions, runs and switch-on state itself and shows each failure in place.
+      detailCodeId
+        ? loadCodePage(c, { owner: { codeId: detailCodeId }, href: `/app/assistant/code/${detailCodeId}`, canManageOwner: false })
+        : undefined,
+      // The person's own Code that waits for them, read apart so older questions never push it out of its section.
+      approvalsOpen ? loadWaitingAutomations(invokeCode, timeZone).catch(() => null) : undefined,
+      // Gustav at a place: the same loader as navigation, so the first paint and a later switch show the same thing.
+      panelScope ? loadPlaceAssistant(c, panelScope).catch(() => null) : null,
+      // Gustav's settings page draws its first picture from these, as its browser reads would: the person's settings,
+      // and whether the OpenAI-compatible API is on; its models are the page's own read above (`settings`). Null:
+      // unreadable now, so the page reads them itself and says so.
+      prefsTab ? Promise.all([aiUserPrefs.get(user.id), coreSettings.get<boolean>("ai.openai_api_enabled")]).catch(() => null) : null,
+    ]),
   ]);
   const initialPrefs = prefsRead
     ? {
@@ -139,44 +178,21 @@ export default ssr<AuthContext>(async (c) => {
     initialPlace && (initialPlace.state === "available" || initialPlace.state === "unavailable") && !approvalsOpen && !codeOpen
       ? initialPlace.conversationId
       : null;
-  // The panel names its place from the first paint, and knows whether that place could have Code at all.
-  const codePlace = panelScope && codeBlockPage !== undefined ? await loadCodePlace(panelScope, invokeCode, catalog) : undefined;
   // An unknown answer keeps "My apps & automations" in the sidebar, so a failure never hides the person's Code.
   const hasCode = codeList !== undefined ? codeList === null || codeList.items.length > 0 : codeExists !== false;
   const status = { ...settings, liveDictationAvailable: liveDictation.available };
   const { conversations } = sidebar;
-  const activeProjectRecord = requestedProjectId
-    ? await aiProjects.getByShortId(requestedProjectId, { actor: c.get("actor"), accessSubject: c.get("accessSubject") })
-    : null;
-  if (requestedProjectId && !activeProjectRecord) return ssr.error(c, 404);
-  const activeProject = activeProjectRecord ? { ...activeProjectRecord, id: activeProjectRecord.shortId } : null;
+  if (requestedProjectId && !project) return ssr.error(c, 404);
+  const activeProject = project?.view ?? null;
   const projects = activeProject
-    ? sidebar.projects.some((project) => project.id === activeProject.id)
-      ? sidebar.projects.map((project) => (project.id === activeProject.id ? activeProject : project))
+    ? sidebar.projects.some((entry) => entry.id === activeProject.id)
+      ? sidebar.projects.map((entry) => (entry.id === activeProject.id ? activeProject : entry))
       : [...sidebar.projects, activeProject]
     : sidebar.projects;
-  const projectChats = activeProjectRecord
-    ? await aiConversations.listConversationsPage({
-        ownerUserId: user.id,
-        projectId: activeProjectRecord.id,
-        page: 1,
-        perPage: 20,
-      })
-    : null;
-  // A Project's settings page (its administrators') draws its first picture from its models and access, read with the
-  // Project's context, as its browser reads would.
-  const projectSettingsOpen = !embedded && activeProject?.permission === "admin" && url.searchParams.get("settings") === "1";
-  const [projectContext, initialProjectSettingsSeed] = await Promise.all([
-    activeProject ? loadAssistantProjectContextSnapshot(auth.getAuthority(c), activeProject.id) : null,
-    projectSettingsOpen && activeProjectRecord
-      ? Promise.all([
-          peopleAiModels(c.get("accessSubject")),
-          aiProjects.listAccess(activeProjectRecord.id, { actor: c.get("actor"), accessSubject: c.get("accessSubject") }, locale),
-        ])
-          .then(([models, access]) => (access ? { models, access } : null))
-          .catch(() => null)
-      : null,
-  ]);
+  const projectChats = project?.chats ?? null;
+  const projectContext = project?.context ?? null;
+  const projectSettingsOpen = project?.settingsOpen ?? false;
+  const initialProjectSettingsSeed = project?.settingsSeed ?? null;
 
   const selectedConversationId =
     activeProject || approvalsOpen || codeOpen || prefsTab
@@ -184,8 +200,11 @@ export default ssr<AuthContext>(async (c) => {
       : (requestedConversationId ??
         (embedded ? placeConversationId : conversations.find((conversation) => !conversation.isDone)?.shortId) ??
         null);
+  // Only a chat the page picks itself waits for the sidebar; a named one came with the first stage.
   const resolvedActiveConversation = selectedConversationId
-    ? await aiConversations.getConversationByShortId({ shortId: selectedConversationId, ownerUserId: user.id })
+    ? selectedConversationId === requestedConversationId && namedConversation
+      ? namedChat
+      : await aiConversations.getConversationByShortId({ shortId: selectedConversationId, ownerUserId: user.id })
     : null;
   if (!activeProject && requestedConversationId && !resolvedActiveConversation) return ssr.error(c, 404);
   if (requestedConversationId && resolvedActiveConversation?.shortId !== requestedConversationId) {
@@ -194,26 +213,23 @@ export default ssr<AuthContext>(async (c) => {
       302,
     );
   }
-  if (resolvedActiveConversation) {
-    await aiConversations.markConversationViewed({
-      conversationId: resolvedActiveConversation.id,
-      ownerUserId: user.id,
-    });
-  }
   const activeConversation = resolvedActiveConversation ? { ...resolvedActiveConversation, unreadCompletion: false } : null;
   const initialConversations = conversations.map((conversation) =>
     conversation.id === activeConversation?.shortId ? { ...conversation, unreadCompletion: false } : conversation,
   );
-  const identity = { actor: c.get("actor"), accessSubject: c.get("accessSubject") };
+  // The open chat's views and the mark that the person saw it, in one stage.
   const [initialDetail, initialTimeline, initialContext, initialTabs] = activeConversation
     ? await Promise.all([
         loadAiStreamState(activeConversation, c.get("actor").kind === "user" ? user.id : null, { locale, userId: user.id }),
         aiConversations.listConversationTimeline({ conversationId: activeConversation.id }),
-        loadAssistantChatContextSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, activeConversation.shortId, {
+        // The chat was read above with this person as its owner; the views take it instead of reading it again.
+        loadAssistantChatContextSnapshot(identity, activeConversation.shortId, {
           timeZone,
           locale,
+          conversation: resolvedActiveConversation ?? undefined,
         }),
-        loadAssistantChatWorkspace(identity, activeConversation.shortId),
+        loadAssistantChatWorkspace(identity, activeConversation.shortId, activeConversation),
+        aiConversations.markConversationViewed({ conversationId: activeConversation.id, ownerUserId: user.id }),
       ])
     : [null, [], null, null];
 

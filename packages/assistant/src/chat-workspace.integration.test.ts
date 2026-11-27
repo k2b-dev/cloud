@@ -78,6 +78,15 @@ databaseSuite()("personal chat workspace persistence", () => {
     expect(await saveAssistantChatWorkspace(owner, "Gone01", { state, revision: 0 })).toBeNull();
   });
 
+  test("a chat handed in by the page counts only for its owner; anyone else gets the owner check", async () => {
+    const conversation = await chat();
+    await saveAssistantChatWorkspace(owner, conversation.shortId, { state, revision: 0 });
+    // The page hands the chat it already read, so its owner needs no second read.
+    expect(await loadAssistantChatWorkspace(owner, conversation.shortId, conversation)).toEqual({ state, revision: 1 });
+    // The same chat handed for another person is not taken: the lookup with the owner check finds nothing.
+    expect(await loadAssistantChatWorkspace(other, conversation.shortId, conversation)).toBeNull();
+  });
+
   test("non-user access subjects are rejected", async () => {
     const identity = { ...owner, accessSubject: { type: "service_account" as const, serviceAccountId: other.user.id } };
     await expect(loadAssistantChatWorkspace(identity, "Chat01")).rejects.toThrow("user-backed identity");
