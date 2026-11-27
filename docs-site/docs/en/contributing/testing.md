@@ -1327,6 +1327,11 @@ try {
 }
 ```
 
+A test file can open and close any number of meters, also overlapping ones.
+The proxy stays for the whole process, and the last `close()` binds the
+handle to the database directly again. A pool that a module creates while a
+meter is open keeps the proxy and still works after `close()`.
+
 Warm the caches with one event before the measured window. Keep the window to
 the events under test, because timers that fire inside it count too. Pin the
 number you measured, and name the issue when it is above the target. A fix

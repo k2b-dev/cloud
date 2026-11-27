@@ -451,6 +451,15 @@ export type PaneProps = {
    * the list back where it was (the page restores every `data-scroll-preserve` region, as v1's `ScrollArea` does).
    */
   scrollKey?: string;
+  /**
+   * The content stands in the middle of the column: across at its own measure, at most that of four cards (4 × 240 px
+   * with their gaps, between the text edges), and in the middle of the height where it fits. Taller content starts at
+   * the top and scrolls, as in any pane; on the phone it always starts at the top. For a page with little on it and
+   * nothing beside it, such as the first start of an app without any data: one line and a few `Tiles`. A line of text
+   * stands centred over them, on the phone at the start. It draws no
+   * line and no box of its own, and it is CSS alone, so the server's first render already stands there.
+   */
+  center?: boolean;
   /** Bands, rows, sections; the pane pads nothing. */
   children?: JSX.Element;
 };
@@ -517,6 +526,7 @@ export const Pane = (props: PaneProps) => {
       data-width={props.width ? "" : undefined}
       data-detail={props.detail ? "" : undefined}
       data-side={props.side ? "" : undefined}
+      data-center={props.center ? "" : undefined}
       style={custom({
         "--k2-pane-w": props.width ? `${size() ?? props.width.default}px` : undefined,
         "--k2-pane-min": props.width ? `${props.width.min}px` : undefined,
@@ -961,6 +971,13 @@ export type TilesProps = {
   variant?: "card";
   /** Cards only: the last card makes a new thing. */
   create?: TileCreate;
+  /**
+   * At most this many tiles share a row and grow with its width, such as the four ways to start a notebook across
+   * the page. A tile never gets narrower than 240 px for it: where n do not fit, they stand in rows of half of them
+   * (four as 2 × 2, never 3 + 1), and below that one under the other. On the phone a row always holds half of them,
+   * even below 240 px a tile.
+   */
+  perRow?: number;
   /** One deed after the tiles, such as "Alle herunterladen". */
   more?: Action;
   /** A name for the tiles, for assistive technology. */
@@ -1047,8 +1064,22 @@ const TileMake = (props: { create: TileCreate }) => (
   </div>
 );
 
+/** How many tiles share a row, a whole number of at least one, and the half (rounded up) they fall back to. */
+const perRowStyle = (perRow: number) => {
+  const count = Math.max(1, Math.floor(perRow));
+  return custom({ "--k2-per-row": String(count), "--k2-per-row-half": String(Math.ceil(count / 2)) });
+};
+
 export const Tiles = (props: TilesProps) => (
-  <div class="k2-tiles" data-k2-part="Tiles" data-variant={props.variant} role="list" aria-label={props.label}>
+  <div
+    class="k2-tiles"
+    data-k2-part="Tiles"
+    data-variant={props.variant}
+    data-per-row={props.perRow ? "" : undefined}
+    style={props.perRow ? perRowStyle(props.perRow) : undefined}
+    role="list"
+    aria-label={props.label}
+  >
     <Show
       when={props.variant === "card"}
       fallback={
