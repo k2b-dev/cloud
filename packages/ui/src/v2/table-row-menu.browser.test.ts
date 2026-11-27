@@ -83,3 +83,18 @@ test("the keyboard on an item of a row's menu runs the item and its dialog, not 
     expect([await deeds(page), await page.evaluate(() => location.hash)]).toEqual([["rename:info"], ""]);
   });
 });
+
+// A table inside a dialog: the dialog stands around the whole table, not in a row, so a click on a row still opens it.
+test("a table inside a dialog opens its rows by a click on them", async () => {
+  await withPage(async (page) => {
+    await page.getByRole("button", { name: "Verwalten" }).click();
+    const table = page.getByRole("table", { name: "Postfächer im Dialog" });
+    await table.waitFor();
+    await settled(page);
+    // the empty end of the second row, beside its link
+    const cell = await table.getByRole("cell", { name: "buero@werkstatt.example" }).boundingBox();
+    if (!cell) throw new Error("no second row in the dialog");
+    await page.mouse.click(cell.x + cell.width - 12, cell.y + cell.height / 2);
+    await page.waitForFunction(() => location.hash === "#manage=buero");
+  });
+});
