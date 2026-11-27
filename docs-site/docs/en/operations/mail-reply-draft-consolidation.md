@@ -129,7 +129,7 @@ It offers no way to open the removed drafts, because they no longer exist.
 Operator logs contain **Mail F6 reply draft consolidation completed** with
 `deletedDrafts` and `affectedConversations`. `migrate()` returns these counts;
 `mail.schema_migrations.details` on marker 4 preserves them after a restart.
-The final `completed` field means consolidation succeeded.
+The final `completed` field means consolidation and the unique index succeeded.
 
 The new columns use metadata-only defaults. The nonnegative-count check is
 added without scanning under the column-addition lock and validated after that
@@ -138,8 +138,11 @@ Preflight also refuses consolidation counts or revision/generation counters
 that would overflow during consolidation. These refusals leave marker 4 absent
 and all drafts intact; resolve the reported data before retrying.
 
-F6 builds no index. Each batch groups the open reply drafts once, then handles
-several duplicate conversations, up to 100 deletions per transaction. A
+On the upgrade start, F6 builds a temporary supporting partial index over the
+open reply drafts with a plain `CREATE INDEX`: the earlier image is stopped, so
+the build locks out no writer and waits for no older transaction. Each batch
+groups the open reply drafts once, then handles several duplicate
+conversations, up to 100 deletions per transaction. A
 conversation with more than 100 losers spans batches. A bounded keyset pass
 identifies legacy source attachment copies before mode switching becomes
 available. Explicit source copies created in Reply or Reply all remain personal
@@ -159,12 +162,13 @@ refuses marker 4 even while `completed` is false. Never delete the marker to
 retry an earlier image.
 
 The unique index `drafts_one_open_reply_idx` is the database backstop of the
-reply box. Startup does not wait for it: Mail builds it concurrently in the
-background after the migration, together with its other indexes, and then
-drops the indexes of earlier releases (`drafts_reply_consolidation_idx` and the
-per-author suggestion indexes). A long transaction, such as a nightly dump, or
-a build that another instance runs only delays the index, never the start.
-Until it is valid, the reply box still holds one open reply draft per
+reply box. F6's last transaction builds it the same plain way, drops the
+supporting index and the per-author suggestion indexes, and commits the
+`completed` marker with them. Later starts skip F6 and never wait for this
+index: if it goes missing or a build is interrupted, Mail builds it again
+concurrently in the background after the migration. A long transaction, such
+as a nightly dump, or a build that another instance runs only delays it, never
+the start. Until it is valid, the reply box still holds one open reply draft per
 conversation: every writer that puts a draft into a conversation's box takes
 that conversation's reply-box lock and checks first, and a merge of two
 conversations that both have an open reply draft returns

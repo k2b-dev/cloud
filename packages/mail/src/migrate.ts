@@ -9,7 +9,7 @@
  * Mail was first deployed. That history remains unsupported; an unknown newer
  * history is also refused without altering its data or suggesting a schema reset.
  */
-import { sql } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { migrateWorkflowAi } from "@k2b/cloud/ai/tasks";
 import { logger } from "@k2b/cloud/services";
 import { type ConcurrentIndex, type ConcurrentIndexOutcome, ensureConcurrentIndexes } from "@k2b/cloud/services/concurrent-index";
@@ -1052,8 +1052,36 @@ export const MAIL_CONCURRENT_INDEXES: readonly ConcurrentIndex[] = [
   ...folderIdentityIndexes,
 ];
 
+const INDEX_BUILD_LEASE_MS = 60_000;
+const indexBuildMutex = lazySync((sync) => sync.mutex({ id: "mail:index-build", ttlMs: INDEX_BUILD_LEASE_MS, retry: { maxAttempts: 1 } }));
+
+/**
+ * One Mail index build or drop at a time across every replica and the minute jobs, on top of the helper's lease per
+ * table: concurrent builds of partial and expression indexes wait for each other's snapshots, and Postgres cancels one
+ * of them. `busy` while another one runs. Never throws.
+ */
+const oneAtATime = async (work: () => Promise<ConcurrentIndexOutcome>): Promise<ConcurrentIndexOutcome> => {
+  try {
+    const mutex = indexBuildMutex();
+    const lease = await mutex.acquire({ resource: "mail-indexes" });
+    if (!lease) return "busy";
+    // runtime-timer: renews the build lease while one statement runs; cleared when it ends.
+    const renewal = setInterval(() => void mutex.extend(lease).catch(() => false), INDEX_BUILD_LEASE_MS / 3);
+    renewal.unref();
+    try {
+      return await work();
+    } finally {
+      clearInterval(renewal);
+      await mutex.release(lease).catch(() => false);
+    }
+  } catch (error) {
+    log.warn("Mail background index unavailable; the next attempt retries", { error: String(error) });
+    return "failed";
+  }
+};
+
 const build = (indexes: readonly ConcurrentIndex[], purpose: string, pool: SqlClient = sql) =>
-  ensureConcurrentIndexes(indexes, { log, purpose, db: pool });
+  oneAtATime(() => ensureConcurrentIndexes(indexes, { log, purpose, db: pool }));
 
 const indexValid = async (db: SqlClient, name: string): Promise<boolean> => {
   const [row] = await db<{ valid: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pg_index
@@ -1072,20 +1100,21 @@ const dropIndex = async (pool: SqlClient, name: string): Promise<void> => {
 };
 
 /** The reply box's unique backstop, then the indexes it replaced. Never throws. */
-export const buildReplyDraftIndex = async (pool: SqlClient = sql): Promise<ConcurrentIndexOutcome> => {
-  const outcome = await build([REPLY_DRAFT_INDEX], "reply box", pool);
-  if (outcome !== "ready" && outcome !== "built") return outcome;
-  for (const name of RETIRED_DRAFT_INDEXES) {
-    try {
-      const [index] = await pool<{ present: boolean }[]>`SELECT to_regclass(${`mail.${name}`}) IS NOT NULL AS present`;
-      if (index?.present) await dropIndex(pool, name);
-    } catch (error) {
-      log.warn("A retired Mail draft index was not dropped; the next start retries", { index: name, error: String(error) });
-      break;
+export const buildReplyDraftIndex = (pool: SqlClient = sql): Promise<ConcurrentIndexOutcome> =>
+  oneAtATime(async () => {
+    const outcome = await ensureConcurrentIndexes([REPLY_DRAFT_INDEX], { log, purpose: "reply box", db: pool });
+    if (outcome !== "ready" && outcome !== "built") return outcome;
+    for (const name of RETIRED_DRAFT_INDEXES) {
+      try {
+        const [index] = await pool<{ present: boolean }[]>`SELECT to_regclass(${`mail.${name}`}) IS NOT NULL AS present`;
+        if (index?.present) await dropIndex(pool, name);
+      } catch (error) {
+        log.warn("A retired Mail draft index was not dropped; the next start retries", { index: name, error: String(error) });
+        break;
+      }
     }
-  }
-  return outcome;
-};
+    return outcome;
+  });
 
 export const buildRoomAccessIndex = (pool: SqlClient = sql) => build([ROOM_ACCESS_INDEX], "shared draft access", pool);
 export const buildBackfillActivityIndex = (pool: SqlClient = sql) => build([backfillActivityIndex], "backfill activity", pool);
@@ -1163,8 +1192,10 @@ export const buildOptionalSearchIndex = async (): Promise<"unavailable" | Concur
   try {
     const before = await readBm25IndexState();
     if (!before.installed) return "unavailable";
-    if (before.present && !before.bm25) await dropIndex(sql, bm25Index.name);
-    return await build([bm25Index], "optional BM25 search");
+    return await oneAtATime(async () => {
+      if (before.present && !before.bm25) await dropIndex(sql, bm25Index.name);
+      return ensureConcurrentIndexes([bm25Index], { log, purpose: "optional BM25 search", db: sql });
+    });
   } catch (error) {
     log.warn("Optional BM25 index for Mail search is unavailable; search stays native", {
       error: error instanceof Error ? error.message : String(error),

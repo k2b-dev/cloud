@@ -2,7 +2,7 @@ import { beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import { newShortId } from "./lib/short-id";
-import { buildReplyDraftIndex, migrate } from "./migrate";
+import { migrate } from "./migrate";
 
 const suite = suiteFor("database", "nats");
 
@@ -185,9 +185,6 @@ suite("Mail one-way migrations in every upgrade order", () => {
     // A workflow review draft has user origin: F6 keeps it as the only reply, the retirement does not touch it.
     expect(await draft(review)).toEqual(reviewBefore);
     expect(await presentRetirementTriggers()).toEqual(retirementTriggers);
-    // Startup leaves the unique index and the retired slot index to the background build.
-    expect(await index("drafts_one_open_reply_idx")).toBeNull();
-    expect(await buildReplyDraftIndex()).toBe("built");
     expect(await index("drafts_one_open_reply_idx")).toMatchObject({ valid: true });
     expect(await index("drafts_untouched_suggestion_author_idx")).toBeNull();
 

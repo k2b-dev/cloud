@@ -7,10 +7,11 @@ import type { sql } from "bun";
  * it changes something. `migrate-startup.integration.test.ts` holds that lock on every such table while Mail migrates.
  */
 
-const INDEX = /^CREATE (?:UNIQUE )?INDEX IF NOT EXISTS ([a-z_]+)\s+ON\s+([a-z_]+)\.[a-z_]+/;
-const COLUMN = /^ALTER TABLE ([a-z_]+\.[a-z_]+) ADD COLUMN IF NOT EXISTS ([a-z_]+)\s/;
+const INDEX = /^CREATE (?:UNIQUE )?INDEX IF NOT EXISTS ([a-z0-9_]+)\s+ON\s+([a-z0-9_]+)\.[a-z0-9_]+/;
+const COLUMN = /^ALTER TABLE ([a-z0-9_]+\.[a-z0-9_]+) ADD COLUMN IF NOT EXISTS ([a-z0-9_]+)\s/;
 // A second clause would change the table even when the column exists.
-const SECOND_CLAUSE = /,\s*(?:ADD|ALTER|DROP|RENAME|VALIDATE)\s/i;
+const SECOND_CLAUSE =
+  /,\s*(?:ADD|ALTER|DROP|RENAME|VALIDATE|SET|RESET|OWNER|ENABLE|DISABLE|INHERIT|NO|CLUSTER|REPLICA|FORCE|ATTACH|DETACH)\s/i;
 
 const hasColumn = async (db: typeof sql, table: string, column: string) => {
   const [row] = await db<{ present: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pg_attribute

@@ -1275,7 +1275,7 @@ suite("one reply draft per conversation", () => {
       await sql`DROP TRIGGER test_f6_lock_timeout ON mail.activity_events`.simple();
       await sql`DROP FUNCTION mail.test_f6_lock_timeout()`.simple();
     }
-    // Also interrupt finish after all erasures have committed.
+    // Also interrupt finish after all erasures have committed; the unique index commits with the marker.
     await sql`CREATE FUNCTION mail.test_f6_finish_timeout() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
         IF NEW.version = 4 AND (NEW.details->>'completed')::boolean THEN
@@ -1292,15 +1292,15 @@ suite("one reply draft per conversation", () => {
         affectedConversations: 1,
         completed: false,
       });
-      // Startup leaves the unique index to the background build.
-      expect(await sql`SELECT to_regclass('mail.drafts_one_open_reply_idx') AS present`).toEqual([{ present: null }]);
+      const [unique] = await sql<{ present: boolean }[]>`SELECT to_regclass('mail.drafts_one_open_reply_idx') IS NOT NULL AS present`;
+      expect(unique?.present).toBeFalse();
     } finally {
       await sql`DROP TRIGGER test_f6_finish_timeout ON mail.schema_migrations`.simple();
       await sql`DROP FUNCTION mail.test_f6_finish_timeout()`.simple();
     }
     const result = await migrate();
     expect(result).toEqual({ deletedDrafts: 104, affectedConversations: 1, completed: true });
-    expect(await buildReplyDraftIndex()).toBe("built");
+    expect(await buildReplyDraftIndex()).toBe("ready");
     const kept = unwrap(await drafts.getDraft(owner, mailboxId, older.id));
     expect(kept.consolidatedCount).toBe(104);
     expect(kept.body).toBe("My text");
