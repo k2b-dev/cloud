@@ -478,7 +478,8 @@ export const PulseScreen = (props: { list?: boolean }) => (
             { title: "Zustand", width: { min: 150, default: 150 }, cell: stateChip, drop: true },
             {
               title: "Abrufe, 30 Min",
-              width: { min: 140, default: 140 },
+              // the ticks' 140 px and the cell's padding: a narrower column would cut the newest slots
+              width: { min: 160, default: 160 },
               cell: (source) => (
                 <Ticks
                   slots={source.ticks}

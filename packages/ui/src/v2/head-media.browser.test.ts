@@ -2147,6 +2147,13 @@ for (const which of ["oauth-b", "pulse-b"] as const)
               // the exceptions stand in one line (or wrap as one), under the figure, never as rows of their own
               // Pulse draws its day as Ticks of 48 half hours (W5)
               slots: hero.querySelectorAll(".k2-ticks > i").length,
+              // every tick of a table's column shows whole, the newest at the end too
+              cut: [...document.querySelectorAll(".k2-table .k2-ticks > i")].filter((tick) => {
+                const cell = tick.closest("td")!;
+                const edge = cell.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(cell).paddingRight);
+                const box = tick.getBoundingClientRect();
+                return tick.getClientRects().length > 0 && (box.right > edge + 0.5 || box.width < 1);
+              }).length,
               exceptions: ex.length,
               under: ex.every((item) => item.getBoundingClientRect().top >= figure.getBoundingClientRect().bottom),
             };
@@ -2159,6 +2166,7 @@ for (const which of ["oauth-b", "pulse-b"] as const)
           // a drawing of the real history, named in a sentence, as wide as its place gives
           expect({ which, width, drawn: found.drawn.slice(1) }).toEqual({ which, width, drawn: [true, true] });
           expect(found.slots).toBe(which === "oauth-b" ? 0 : 48);
+          expect(found.cut).toBe(0);
           expect(found.exceptions).toBe(which === "oauth-b" ? 2 : 3);
           expect(found.under).toBe(true);
           const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
