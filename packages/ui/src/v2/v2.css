@@ -1843,6 +1843,41 @@
 .k2-ui .k2-prose :where(ol) {
   list-style: decimal;
 }
+/* A table in reading text reads like a small v2 table: cells 12 px apart and flush with the text edge at both ends, the
+   head in the type of a Table head, a hairline between rows. A column the author aligns right (`--:` in Markdown) holds
+   numbers: they stand at the end in tabular figures, so amounts line up. */
+.k2-ui .k2-prose :where(table) {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.k2-ui .k2-prose :where(th, td) {
+  padding: 8px 12px;
+  border-bottom: var(--k2-hairline);
+  text-align: start;
+  vertical-align: top;
+}
+.k2-ui .k2-prose :where(th) {
+  font: var(--k2-t-meta);
+  font-weight: 500;
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-prose :where(td) {
+  color: var(--k2-text);
+}
+.k2-ui .k2-prose :where(th, td):first-child {
+  padding-left: 0;
+}
+.k2-ui .k2-prose :where(th, td):last-child {
+  padding-right: 0;
+}
+.k2-ui .k2-prose :where(th, td)[align="right"] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.k2-ui .k2-prose :where(tr):last-child > :where(td) {
+  border-bottom: 0;
+}
 
 /* ── Inline: one line of things with a fixed gap ────────────────────────────────────────────────────────────── */
 .k2-ui .k2-inline {

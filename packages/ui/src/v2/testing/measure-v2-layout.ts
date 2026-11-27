@@ -21,8 +21,8 @@
  * control, a mark, an overlay) floats on its own: its outline is no divider and makes no double line.
  *
  * The DOM contract of v2 marks what the rules need: `data-k2-column` (a column), `data-k2-grip` (a grip whose box is
- * its pill), `data-k2-prose` (reading text), `data-k2-figure` (a drawn mark such as the track of steps; its lines are
- * no dividers), `data-k2-canvas` (free drawing: never measured inside, only the line it draws itself) and
+ * its pill), `data-k2-prose` (reading text; its own lines, such as the rows of a table in it, belong to the text and
+ * are no dividers), `data-k2-figure` (a drawn mark such as the track of steps; its lines are no dividers), `data-k2-canvas` (free drawing: never measured inside, only the line it draws itself) and
  * `data-k2-avatar` (initials, no type role). The options take other selectors, for the mockup's classes for example.
  *
  * - **inside:** a band or a group is one thing (rule 9): a horizontal hairline inside it separates its parts and is a
@@ -321,8 +321,9 @@ function measureInPage(options: InPage): DomResult {
       round: boolean,
       boxed = frame,
     ) => {
-      // Lines inside a figure (the track of steps, a progress bar) are marks, not dividers.
-      if (element.closest(options.figure)) return;
+      // Lines inside a figure (the track of steps, a progress bar) are marks, not dividers; lines inside reading text
+      // (the rows of a table in Prose) belong to the text, which keeps its own measure, not to the layout.
+      if (element.closest(options.figure) || element.closest(options.prose)) return;
       const clip = clipOf(element);
       const [cx0, cx1, cy0, cy1] = [Math.max(x0, clip.left), Math.min(x1, clip.right), Math.max(y0, clip.top), Math.min(y1, clip.bottom)];
       if (cx1 - cx0 <= 0.25 || cy1 - cy0 <= 0.25) return;
