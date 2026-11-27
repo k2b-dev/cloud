@@ -183,6 +183,8 @@ describe("NATS diagnostics access form", () => {
     try {
       expect(dom.root.textContent).toContain("Enter system access for the current server list.");
       expect(dom.root.querySelectorAll("textarea")[1]!.value).toBe("");
+      // a text field fits its height in a microtask; it runs before the page goes away
+      await Bun.sleep(0);
     } finally {
       dispose();
       dom.cleanup();
