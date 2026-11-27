@@ -8,6 +8,8 @@ import { backgroundWork } from "./runtime-quiesce";
  * An index built next to live writes. Queries must work without it; it only makes them faster. A UNIQUE index that a
  * transaction relies on is never one of these: the migration creates it before its first use, in its transaction
  * (`createIndexIfMissing` with `unique`).
+ * `unique` is only for an index no transaction relies on before it is valid, such as a backstop of a rule that locks
+ * already keep, or a feature that waits until the index is valid.
  */
 export type ConcurrentIndex = {
   /** Index name without schema; Postgres creates it in the table's schema. */
@@ -19,6 +21,7 @@ export type ConcurrentIndex = {
    * never request input; it reaches SQL as written, so a `;` is refused.
    */
   definition: string;
+  unique?: boolean;
 };
 
 /**
@@ -76,7 +79,9 @@ const buildIndex = async (db: SQL, index: ConcurrentIndex, options: ConcurrentIn
   if (before.present) await dropIndex(db, index);
   const startedAt = performance.now();
   try {
-    await db.unsafe(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition}`).simple();
+    await db
+      .unsafe(`CREATE ${index.unique ? "UNIQUE " : ""}INDEX CONCURRENTLY IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition}`)
+      .simple();
   } catch (error) {
     const after = await readIndex(db, index);
     if (after.valid) return "ready";
@@ -278,7 +283,7 @@ export const addMissingColumns = async (db: SQL, table: string, columns: Readonl
  * Creates an ordinary index in the migration's transaction only when the catalog lacks it. `CREATE INDEX IF NOT EXISTS`
  * alone waits for the lock of a running concurrent build on the table even when the index exists.
  */
-export const createIndexIfMissing = async (db: SQL, index: ConcurrentIndex & { unique?: boolean }): Promise<void> => {
+export const createIndexIfMissing = async (db: SQL, index: ConcurrentIndex): Promise<void> => {
   if (!validIndex(index)) throw new Error(`Invalid index: ${index.name} ON ${index.table}`);
   const [state] = await db<
     { present: boolean }[]
@@ -287,4 +292,37 @@ export const createIndexIfMissing = async (db: SQL, index: ConcurrentIndex & { u
   await db
     .unsafe(`CREATE ${index.unique ? "UNIQUE " : ""}INDEX IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition}`)
     .simple();
+};
+
+/**
+ * Drops an index with `DROP INDEX CONCURRENTLY` under the same lease per table as the builds, on a reserved connection.
+ * It waits for every transaction that may use the index, so call it only from background work. Never throws.
+ */
+export const dropConcurrentIndex = async (
+  index: Pick<ConcurrentIndex, "name" | "table">,
+  options: ConcurrentIndexOptions,
+): Promise<ConcurrentIndexOutcome> => {
+  try {
+    if (!IDENTIFIER.test(index.name) || !qualifiedTable(index.table)) throw new Error(`Invalid index: ${index.name} ON ${index.table}`);
+    const lease = bound() ? buildLease() : null;
+    const held = lease ? await lease.acquire({ resource: index.table }) : null;
+    if (lease && !held) return "busy";
+    try {
+      const db = await (options.db ?? sql).reserve();
+      try {
+        await dropIndex(db, { ...index, definition: "" });
+        return "ready";
+      } finally {
+        db.release();
+      }
+    } finally {
+      if (lease && held) await lease.release(held).catch(() => false);
+    }
+  } catch (error) {
+    options.log.warn(`The ${options.purpose} index was not dropped; the next attempt retries`, {
+      index: index.name,
+      error: message(error),
+    });
+    return "failed";
+  }
 };
