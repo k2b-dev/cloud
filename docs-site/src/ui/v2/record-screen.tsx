@@ -89,7 +89,8 @@ const RecordFrame = (props: { tab: "overview" | "deliveries"; children: JSX.Elem
           label="Bereiche der Akte"
           items={[
             { label: "Überblick", icon: "layout-grid", current: props.tab === "overview", href: "/en/ui/v2/screen/record" },
-            { label: "Geld", icon: "currency-euro", count: 12 },
+            // an invoice is overdue: the area says so before it is opened
+            { label: "Geld", icon: "currency-euro", count: 12, dot: "warn" },
             {
               label: "Einlieferungen",
               icon: "package",
