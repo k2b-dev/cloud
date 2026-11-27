@@ -53,7 +53,7 @@ export default function HashGenerator() {
           </Section>
         }
         result={
-          <Section icon="hash" title={w().result} summary={input() ? undefined : w().nothingYet}>
+          <Section icon="hash" title={w().result} summary={input() ? undefined : w().nothingYet} measure>
             {/* before any text, one quiet line where the result will stand */}
             <Facts
               items={[

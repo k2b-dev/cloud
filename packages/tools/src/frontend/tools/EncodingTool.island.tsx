@@ -131,7 +131,7 @@ export default function EncodingTool() {
           </Section>
         }
         result={
-          <Section icon="transform" title={w().result} summary={result().output ? undefined : w().nothingYet}>
+          <Section icon="transform" title={w().result} summary={result().output ? undefined : w().nothingYet} measure>
             <Facts items={[{ label: outputLabel(), value: result().output || "–", mono: true, copy: result().output || undefined }]} />
           </Section>
         }

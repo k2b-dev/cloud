@@ -101,11 +101,13 @@ test("a tool page is one block: one pane, its fields at the reading measure", as
       await page.locator('[data-k2-part="Workspace"]').waitFor();
       const found = await page.evaluate(() => {
         const fields = [...document.querySelectorAll('[data-k2-part="Pane"] .k2-field')];
+        // the facts of a result too: a value and its copy stay together, not 1100 px apart
+        const parts = [...fields, ...document.querySelectorAll('[data-k2-part="Pane"] .k2-facts')];
         return {
           panes: document.querySelectorAll('[data-k2-part="Pane"]').length,
           fields: fields.length > 0,
           // 720 px of text between the two text edges of 20 px
-          measured: fields.every((field) => field.getBoundingClientRect().width <= 760),
+          measured: parts.every((part) => part.getBoundingClientRect().width <= 760),
         };
       });
       expect({ name, ...found }).toEqual({ name, panes: 1, fields: true, measured: true });

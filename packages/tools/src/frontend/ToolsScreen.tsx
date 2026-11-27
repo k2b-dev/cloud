@@ -95,7 +95,8 @@ export default function ToolsScreen(props: {
  * encoding) and a long text lead with what goes in, its result follows. The phone keeps the same order.
  *
  * Each part brings its own `Section`s: what goes in keeps the reading measure (`measure`), so a field never runs over
- * 1500 px; the password keeps the whole width as the figure of the page.
+ * 1500 px, and so does the result, so a value and its copy stay together; the password keeps the whole width as the
+ * figure of the page.
  *
  * k2b-ui gap: waits #4360 (`Section.Columns`): in a wide window the result and the options could stand side by side
  * in this one block, each ending with its content. When #4360 lands, the two parts go into `<Section.Columns>` in
