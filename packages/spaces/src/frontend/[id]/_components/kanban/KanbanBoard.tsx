@@ -1809,7 +1809,7 @@ export default function KanbanBoard(props: Props) {
                                             <span data-spaces-kanban-card-tag class="inline-flex min-w-0 max-w-full items-center gap-1.5">
                                               <span
                                                 class="h-2 w-2 shrink-0 rounded-full"
-                                                style={{ "background-color": tag().color }}
+                                                style={{ "background-color": hexColor(tag().color) }}
                                                 aria-hidden="true"
                                               />
                                               <span class="spaces-kanban-card-meta min-w-0 max-w-32 truncate text-xs text-dimmed">
