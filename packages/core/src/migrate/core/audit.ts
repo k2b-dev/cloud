@@ -1,4 +1,5 @@
 import { sql } from "@k2b/cloud";
+import { createIndexes } from "@k2b/cloud/services/migration-ddl";
 import { repairEncodedMetadata } from "./jsonb-metadata";
 
 export const migrate = async (): Promise<void> => {
@@ -28,12 +29,14 @@ export const migrate = async (): Promise<void> => {
     )
   `.simple();
 
-  await sql`CREATE INDEX IF NOT EXISTS idx_audit_events_created_at ON audit.events(created_at DESC)`.simple();
-  await sql`CREATE INDEX IF NOT EXISTS idx_audit_events_actor ON audit.events(actor_user_id, created_at DESC)`.simple();
-  await sql`CREATE INDEX IF NOT EXISTS idx_audit_events_actor_uid ON audit.events(actor_uid, created_at DESC)`.simple();
-  await sql`CREATE INDEX IF NOT EXISTS idx_audit_events_target ON audit.events(target_type, target_id, created_at DESC)`.simple();
-  await sql`CREATE INDEX IF NOT EXISTS idx_audit_events_action ON audit.events(action, created_at DESC)`.simple();
-  await sql`CREATE INDEX IF NOT EXISTS idx_audit_events_outcome ON audit.events(outcome, created_at DESC)`.simple();
+  await createIndexes(sql, "audit.events", [
+    { name: "idx_audit_events_created_at", definition: "(created_at DESC)" },
+    { name: "idx_audit_events_actor", definition: "(actor_user_id, created_at DESC)" },
+    { name: "idx_audit_events_actor_uid", definition: "(actor_uid, created_at DESC)" },
+    { name: "idx_audit_events_target", definition: "(target_type, target_id, created_at DESC)" },
+    { name: "idx_audit_events_action", definition: "(action, created_at DESC)" },
+    { name: "idx_audit_events_outcome", definition: "(outcome, created_at DESC)" },
+  ]);
   console.log("  ✓ audit.events table");
   await repairEncodedMetadata("audit.events");
 

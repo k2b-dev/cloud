@@ -1,5 +1,6 @@
 /** Platform-owned events schema. Core and the public test installer share this DDL. */
 import type { TransactionSQL } from "bun";
+import { createIndexes } from "./migration-ddl";
 import { ensureSchema } from "./postgres";
 
 /** Run in the owning migration transaction; applications use events/testing instead. */
@@ -35,20 +36,18 @@ export const migrateEventsSchema = async (tx: TransactionSQL): Promise<void> => 
   await tx`DROP INDEX IF EXISTS events.idx_events_outbox_claim, events.idx_events_outbox_order, events.idx_events_outbox_key, events.idx_events_outbox_due, events.idx_events_outbox_deadline`.simple();
   // A claim walks one application's rows in seq order and probes each key for a claimed row or
   // one waiting for a retry, so its cost follows the batch, not the backlog or its statistics.
-  await tx`CREATE INDEX IF NOT EXISTS idx_events_outbox_sequence ON events.outbox (kind, app_id, seq)`.simple();
-  await tx`
-    CREATE INDEX IF NOT EXISTS idx_events_outbox_busy ON events.outbox (kind, app_id, ordering_key)
-    WHERE claimed_until IS NOT NULL OR attempts > 0
-  `.simple();
-  await tx`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_events_outbox_coalesce
-    ON events.outbox (app_id, coalesce_key) WHERE coalesce_key IS NOT NULL
-  `.simple();
+  await createIndexes(tx, "events.outbox", [
+    { name: "idx_events_outbox_sequence", definition: "(kind, app_id, seq)" },
+    { name: "idx_events_outbox_busy", definition: "(kind, app_id, ordering_key) WHERE claimed_until IS NOT NULL OR attempts > 0" },
+    { name: "idx_events_outbox_coalesce", definition: "(app_id, coalesce_key) WHERE coalesce_key IS NOT NULL", unique: true },
+  ]);
   // Deadline invalidations are future-dated in this same outbox. Due rows must
   // remain cheap to claim while many long-lived session expiries are pending.
   // The composite expression is intentional: ordinary key probes cannot use
   // this index's app/kind prefix and accidentally scan every future deadline.
-  await tx`CREATE INDEX IF NOT EXISTS idx_events_outbox_wake ON events.outbox ((ARRAY[app_id, kind]), (GREATEST(claimed_until, next_attempt_at)))`.simple();
+  await createIndexes(tx, "events.outbox", [
+    { name: "idx_events_outbox_wake", definition: "((ARRAY[app_id, kind]), (GREATEST(claimed_until, next_attempt_at)))" },
+  ]);
   // The only write path, for the TypeScript API and for application SQL triggers.
   // A coalesce key joins live rows of one transaction: the last payload wins, the first seq stays.
   await tx`

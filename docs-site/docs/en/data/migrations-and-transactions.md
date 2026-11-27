@@ -5,7 +5,7 @@ section: Data
 order: 420
 description: Evolve application schemas safely and keep related writes atomic.
 tags: [data, postgres, migrations, transactions]
-updated: 2026-11-15
+updated: 2026-11-27
 ---
 
 # Migrations and transactions
@@ -43,6 +43,7 @@ Keep DDL in `src/migrate.ts`:
 
 ```ts
 import { sql } from "@k2b/cloud";
+import { createIndexes } from "@k2b/cloud/services/migration-ddl";
 
 export const migrate = async (): Promise<void> => {
   await sql`
@@ -60,10 +61,9 @@ export const migrate = async (): Promise<void> => {
     )
   `.simple();
 
-  await sql`
-    CREATE INDEX IF NOT EXISTS inventory_items_created_at
-    ON inventory.items (created_at DESC, id)
-  `.simple();
+  await createIndexes(sql, "inventory.items", [
+    { name: "inventory_items_created_at", definition: "(created_at DESC, id)" },
+  ]);
 };
 ```
 
@@ -74,16 +74,50 @@ migrate platform-owned tables. See [Data ownership](/en/docs/data).
 
 ## Add a column
 
-Use an idempotent statement:
+Use `addColumns()`:
 
 ```ts
-await sql`
-  ALTER TABLE inventory.items
-  ADD COLUMN IF NOT EXISTS description TEXT
-`.simple();
+import { addColumns } from "@k2b/cloud/services/migration-ddl";
+
+await addColumns(sql, "inventory.items", {
+  description: "TEXT",
+  archived: "BOOLEAN NOT NULL DEFAULT false",
+});
 ```
 
 Choose a default that keeps existing rows valid.
+
+## Keep startup out of the table's lock queue
+
+Postgres locks the table before it checks `IF NOT EXISTS`. An
+`ALTER TABLE … ADD COLUMN IF NOT EXISTS` takes the strongest lock even when the
+column exists, and `CREATE INDEX IF NOT EXISTS` blocks writers. Such a
+statement waits behind a backup, an index build, or a long transaction. While
+it waits, every other query of the table waits behind it.
+
+The helpers in `@k2b/cloud/services/migration-ddl` read the catalog first:
+
+| Helper | Replaces | Locks the table when |
+| --- | --- | --- |
+| `addColumns(db, table, columns)` | `ADD COLUMN IF NOT EXISTS` | a column is missing |
+| `createIndexes(db, table, indexes)` | `CREATE INDEX IF NOT EXISTS` | an index is missing |
+| `replaceTrigger(db, table, name, definition)` | `DROP TRIGGER IF EXISTS` plus `CREATE TRIGGER` | the definition differs |
+| `withTableLock(db, table, run)` | other DDL, gated on the catalog | `run` changes something |
+
+When the helper must lock, it waits at most two seconds per attempt. Then it
+tries again with a pause, up to eight attempts in about 40 seconds. Each wait
+logs a warning that names the sessions holding the lock. After the last
+attempt, setup fails with those names, and the next start tries again.
+
+Inside your own `sql.begin()`, a helper runs once in that transaction. Set
+`SET LOCAL lock_timeout` in the transaction and retry it as a whole.
+
+`createIndexes()` builds without `CONCURRENTLY`, and the build blocks writers.
+Use it for a new or small table. For a large table that is in use, build the
+index concurrently in the background after setup.
+
+Write a trigger definition the way `pg_get_triggerdef()` prints it. Otherwise
+every start replaces the trigger and logs a warning.
 
 > **Do not add and later drop the same column on every startup.**
 >

@@ -1,4 +1,5 @@
 import { sql } from "@k2b/cloud";
+import { createIndexes, withTableLock } from "@k2b/cloud/services/migration-ddl";
 import { migrateLogMetadataReader } from "./logging-metadata";
 
 export const migrate = async (): Promise<void> => {
@@ -18,26 +19,16 @@ export const migrate = async (): Promise<void> => {
   console.log("  ✓ logging.entries table");
   await migrateLogMetadataReader();
 
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_logging_entries_source
-    ON logging.entries(source)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_logging_entries_level
-    ON logging.entries(level)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_logging_entries_created_at
-    ON logging.entries(created_at DESC)
-  `.simple();
+  await createIndexes(sql, "logging.entries", [
+    { name: "idx_logging_entries_source", definition: "(source)" },
+    { name: "idx_logging_entries_level", definition: "(level)" },
+    { name: "idx_logging_entries_created_at", definition: "(created_at DESC)" },
+  ]);
   // Composite index for the dashboard summary query: filters of the shape
   // `WHERE level = 'error' AND created_at > <cutoff> ORDER BY created_at DESC`
   // become index-only scans. Massively cheaper than the single-column indexes
   // when the table grows past tens of thousands of rows.
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_logging_entries_level_created_at
-    ON logging.entries(level, created_at DESC)
-  `.simple();
+  await createIndexes(sql, "logging.entries", [{ name: "idx_logging_entries_level_created_at", definition: "(level, created_at DESC)" }]);
 
   await sql`
     CREATE TABLE IF NOT EXISTS logging.trace_spans (
@@ -79,21 +70,21 @@ export const migrate = async (): Promise<void> => {
       PRIMARY KEY (bucket, source, app_id, category, name)
     )
   `.simple();
-  await sql`CREATE INDEX IF NOT EXISTS idx_logging_run_minutes_source_bucket
-    ON logging.run_minutes(source, bucket DESC)`.simple();
+  await createIndexes(sql, "logging.run_minutes", [{ name: "idx_logging_run_minutes_source_bucket", definition: "(source, bucket DESC)" }]);
 
   // span_key deterministically defines the composite primary key. Keeping a
   // second unique constraint creates two competing conflict targets under
   // concurrent idempotent starts.
-  await sql`
-    ALTER TABLE logging.trace_spans
-    DROP CONSTRAINT IF EXISTS trace_spans_span_key_key
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_logging_trace_spans_span_key
-    ON logging.trace_spans(span_key)
-    WHERE span_key IS NOT NULL
-  `.simple();
+  await withTableLock(sql, "logging.trace_spans", (tx) =>
+    tx`DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'logging.trace_spans'::regclass AND conname = 'trace_spans_span_key_key') THEN
+        ALTER TABLE logging.trace_spans DROP CONSTRAINT trace_spans_span_key_key;
+      END IF;
+    END $$`.simple(),
+  );
+  await createIndexes(sql, "logging.trace_spans", [
+    { name: "idx_logging_trace_spans_span_key", definition: "(span_key) WHERE span_key IS NOT NULL" },
+  ]);
 
   await sql`
     CREATE TABLE IF NOT EXISTS logging.trace_events (
@@ -112,30 +103,15 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   console.log("  ✓ logging.trace_events table");
 
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_logging_trace_spans_source_started
-    ON logging.trace_spans(source, started_at DESC)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_logging_trace_spans_status_started
-    ON logging.trace_spans(status, started_at DESC)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_logging_trace_spans_category_started
-    ON logging.trace_spans(category, started_at DESC)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_logging_trace_spans_started
-    ON logging.trace_spans(started_at DESC)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_logging_trace_spans_ended
-    ON logging.trace_spans(ended_at)
-    WHERE ended_at IS NOT NULL
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_logging_trace_events_span_occurred
-    ON logging.trace_events(trace_id, span_id, occurred_at ASC)
-  `.simple();
+  await createIndexes(sql, "logging.trace_spans", [
+    { name: "idx_logging_trace_spans_source_started", definition: "(source, started_at DESC)" },
+    { name: "idx_logging_trace_spans_status_started", definition: "(status, started_at DESC)" },
+    { name: "idx_logging_trace_spans_category_started", definition: "(category, started_at DESC)" },
+    { name: "idx_logging_trace_spans_started", definition: "(started_at DESC)" },
+    { name: "idx_logging_trace_spans_ended", definition: "(ended_at) WHERE ended_at IS NOT NULL" },
+  ]);
+  await createIndexes(sql, "logging.trace_events", [
+    { name: "idx_logging_trace_events_span_occurred", definition: "(trace_id, span_id, occurred_at ASC)" },
+  ]);
   console.log("  ✓ logging indexes");
 };

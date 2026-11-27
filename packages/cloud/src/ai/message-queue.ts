@@ -4,6 +4,7 @@ import { sql } from "../runtime/clients";
 import type { RequestActor, UserRequestActor } from "../server";
 import { isAppSessionActor } from "../server/actor";
 import { logger } from "../services/logging";
+import { addColumns } from "../services/migration-ddl";
 import { toPgTextArray } from "../services/postgres";
 import { coreSettings } from "../services/settings/api";
 import { isUnknownActionOutcome } from "./action-review";
@@ -155,7 +156,7 @@ export const migrateAiQueuedMessagesTable = async () => {
       AND origin->>'kind'='chat' AND delegated_done_at IS NULL`.simple();
   // A person's Stop holds the queue until that person acts again (coordinator, 16.11.): Send now starts one entry, a new
   // message of the person releases the hold. Kept on the chat, so no entry needs a second state.
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS queue_held_at timestamptz`.simple();
+  await addColumns(sql, "ai.conversations", { queue_held_at: "timestamptz" });
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS ai_queued_messages_one_send_now ON ai.queued_messages(conversation_id)
     WHERE send_requested_at IS NOT NULL AND status IN ('pending','failed')`.simple();
   await sql`CREATE INDEX IF NOT EXISTS ai_queued_messages_pending ON ai.queued_messages(conversation_id, position) WHERE status IN ('pending','failed')`.simple();

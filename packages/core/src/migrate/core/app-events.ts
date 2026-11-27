@@ -1,4 +1,5 @@
 import { sql } from "@k2b/cloud";
+import { addColumns, createIndexes } from "@k2b/cloud/services/migration-ddl";
 import type { SQL } from "bun";
 
 export const migrate = async (db: SQL = sql): Promise<void> => {
@@ -11,8 +12,10 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       state TEXT NOT NULL CHECK(state IN ('accepted','rejected')), code TEXT,
       received_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS app_events_type ON events.app_events(type,version,seq DESC)`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS app_events_retention ON events.app_events(received_at)`.simple();
+    await createIndexes(tx, "events.app_events", [
+      { name: "app_events_type", definition: "(type,version,seq DESC)" },
+      { name: "app_events_retention", definition: "(received_at)" },
+    ]);
     await tx`CREATE TABLE IF NOT EXISTS events.app_declarations (
       app_id TEXT NOT NULL,
       type TEXT NOT NULL,
@@ -28,7 +31,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       retired_at TIMESTAMPTZ,
       PRIMARY KEY(app_id, type, version)
     )`.simple();
-    await tx`ALTER TABLE events.app_declarations ADD COLUMN IF NOT EXISTS retired_at TIMESTAMPTZ`.simple();
+    await addColumns(tx, "events.app_declarations", { retired_at: "TIMESTAMPTZ" });
     await tx`CREATE TABLE IF NOT EXISTS events.app_manifests (
       app_id TEXT PRIMARY KEY,
       hash TEXT NOT NULL,
@@ -39,16 +42,23 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       state TEXT NOT NULL CHECK(state IN ('active','blocked','cancelled')), reason TEXT,
       first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`.simple();
-    await tx`ALTER TABLE events.app_subscriptions ADD COLUMN IF NOT EXISTS resource_binding JSONB`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS app_subscriptions_resource ON events.app_subscriptions
-      ((resource_binding->>'consumer'),(resource_binding->>'key')) WHERE resource_binding IS NOT NULL`.simple();
+    await addColumns(tx, "events.app_subscriptions", { resource_binding: "JSONB" });
+    await createIndexes(tx, "events.app_subscriptions", [
+      {
+        name: "app_subscriptions_resource",
+        definition: "((resource_binding->>'consumer'),(resource_binding->>'key')) WHERE resource_binding IS NOT NULL",
+      },
+    ]);
     // Build atomically before the broker starts. CONCURRENTLY cannot run in this transaction.
     // Separate partial indexes keep each OR arm bounded by its matching subscriptions.
-    await tx`CREATE INDEX IF NOT EXISTS app_subscriptions_fanout_service ON events.app_subscriptions
-      (event_type,version) WHERE state='active' AND resource_binding IS NULL`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS app_subscriptions_fanout_resource ON events.app_subscriptions
-      (event_type,version,(resource_binding->'place'->>'type'),(resource_binding->'place'->>'id'),first_seen_at)
-      WHERE state='active' AND resource_binding IS NOT NULL`.simple();
+    await createIndexes(tx, "events.app_subscriptions", [
+      { name: "app_subscriptions_fanout_service", definition: "(event_type,version) WHERE state='active' AND resource_binding IS NULL" },
+      {
+        name: "app_subscriptions_fanout_resource",
+        definition:
+          "(event_type,version,(resource_binding->'place'->>'type'),(resource_binding->'place'->>'id'),first_seen_at) WHERE state='active' AND resource_binding IS NOT NULL",
+      },
+    ]);
     await tx`CREATE TABLE IF NOT EXISTS events.app_deliveries (
       seq BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, id UUID NOT NULL UNIQUE,
       subscription_id TEXT NOT NULL REFERENCES events.app_subscriptions(id),
@@ -59,19 +69,27 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       claimed_until TIMESTAMPTZ, claim_token UUID, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), UNIQUE(subscription_id,event_id)
     )`.simple();
-    await tx`ALTER TABLE events.app_deliveries ADD COLUMN IF NOT EXISTS unreachable_count INTEGER NOT NULL DEFAULT 0`.simple();
-    await tx`ALTER TABLE events.app_deliveries ADD COLUMN IF NOT EXISTS retained_from TIMESTAMPTZ`.simple();
+    await addColumns(tx, "events.app_deliveries", { unreachable_count: "INTEGER NOT NULL DEFAULT 0", retained_from: "TIMESTAMPTZ" });
     await tx`UPDATE events.app_deliveries SET retained_from = created_at WHERE retained_from IS NULL`;
-    await tx`ALTER TABLE events.app_deliveries ALTER COLUMN retained_from SET DEFAULT now(), ALTER COLUMN retained_from SET NOT NULL`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS app_deliveries_event ON events.app_deliveries(event_id)`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS app_deliveries_pending ON events.app_deliveries(next_attempt_at,seq) WHERE state IN ('pending','retrying')`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS app_deliveries_order ON events.app_deliveries(subscription_id,subject_key,seq) WHERE state IN ('pending','retrying','failed')`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS app_deliveries_retention ON events.app_deliveries(updated_at)`.simple();
+    // ALTER COLUMN locks the table even without a change, so the catalog decides first.
+    await tx`DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+        WHERE a.attrelid = 'events.app_deliveries'::regclass AND a.attname = 'retained_from' AND NOT a.attisdropped
+          AND (NOT a.attnotnull OR pg_get_expr(d.adbin, d.adrelid) IS DISTINCT FROM 'now()')) THEN
+        ALTER TABLE events.app_deliveries ALTER COLUMN retained_from SET DEFAULT now(), ALTER COLUMN retained_from SET NOT NULL;
+      END IF;
+    END $$`.simple();
+    await createIndexes(tx, "events.app_deliveries", [
+      { name: "app_deliveries_event", definition: "(event_id)" },
+      { name: "app_deliveries_pending", definition: "(next_attempt_at,seq) WHERE state IN ('pending','retrying')" },
+      { name: "app_deliveries_order", definition: "(subscription_id,subject_key,seq) WHERE state IN ('pending','retrying','failed')" },
+      { name: "app_deliveries_retention", definition: "(updated_at)" },
+    ]);
     await tx`CREATE TABLE IF NOT EXISTS events.app_broker_status (
       id BOOLEAN PRIMARY KEY DEFAULT true CHECK(id), last_sequence BIGINT NOT NULL DEFAULT 0,
       state TEXT NOT NULL DEFAULT 'ready', code TEXT, gap_from BIGINT, gap_to BIGINT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`.simple();
-    await tx`ALTER TABLE events.app_broker_status ADD COLUMN IF NOT EXISTS unseen_sequences INT8MULTIRANGE NOT NULL DEFAULT '{}'::int8multirange`.simple();
+    await addColumns(tx, "events.app_broker_status", { unseen_sequences: "INT8MULTIRANGE NOT NULL DEFAULT '{}'::int8multirange" });
     await tx`INSERT INTO events.app_broker_status(id) VALUES(true) ON CONFLICT DO NOTHING`;
   });
 };
