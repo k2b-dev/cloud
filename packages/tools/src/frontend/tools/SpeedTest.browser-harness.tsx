@@ -1,6 +1,6 @@
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
-import { Metric } from "./SpeedTest.island";
+import { Metric } from "./SpeedTestView";
 
 render(
   () => (
