@@ -14,7 +14,7 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { renderSafeMarkdown } from "../content/MarkdownView";
-import { hintAt, showHint } from "../internal/truncated-title";
+import { hintPointer, unhintPart } from "../internal/truncated-title";
 import { useLocale } from "../intl/locale";
 import { useGrip } from "./behavior/resize";
 import { ActionButton, CopyButton } from "./button";
@@ -694,8 +694,15 @@ export const Table = <T,>(props: TableProps<T>) => {
   });
   // What a column takes in a small table while it stands: the growing one at least its `min`, the others their
   // default (never a grip's width, so dragging a column never drops another under the pointer).
-  const needs = (index: number) =>
-    index === growIndex() ? (props.columns[index]?.width?.min ?? 0) : (props.columns[index]?.width?.default ?? 0);
+  const needs = (index: number) => (index === growIndex() ? floor(index) : (props.columns[index]?.width?.default ?? 0));
+  // The least a growing column takes: its own `min`, else (it has no width) the smallest `min` of the others, so it
+  // never shrinks to nothing and the table scrolls sideways instead (as #4210 floors an open last column).
+  const floor = (index: number) => {
+    const own = props.columns[index]?.width?.min;
+    if (own !== undefined) return own;
+    const others = props.columns.flatMap((column, other) => (other !== index && column.width ? [column.width.min] : []));
+    return others.length > 0 ? Math.min(...others) : 0;
+  };
   // Drop and the least width need every column's room: each has a `width`, the growing one may leave it open.
   const measurable = () => !grid() && props.columns.every((column, index) => column.width || index === growIndex());
   // The columns that may drop give way by the table's own width, in their order (rule 7: columns drop, they do not
@@ -760,21 +767,35 @@ export const Table = <T,>(props: TableProps<T>) => {
     sizes.observe(element);
     const inner = element.querySelector("table");
     if (inner) sizes.observe(inner);
-    // A line cut with "…" shows its whole text as a hint where the pointer rests on it, on the element the pointer is
-    // on (the shared helper of lists and tables): measured then, so only a line that is cut gives one, and no cell
-    // carries an element for it. Its whole text stays in the page as its name.
+    // A line cut with "…" shows its whole text as a hint where the pointer rests on it, through the one helper of rows
+    // and cells: each cell is a part, its lines (and a name in an `Inline`) the lines; the hint goes on the element the
+    // pointer is on and leaves with it. Measured then, so only a cut line gives one; no cell carries an element for it.
+    let cell: Element | undefined;
+    const leave = () => {
+      if (cell) unhintPart(cell);
+      cell = undefined;
+    };
     const hint = (event: PointerEvent) => {
-      const cell = event.target instanceof Element ? event.target.closest("td") : null;
-      if (!cell || !element.contains(cell)) return;
-      showHint(
+      const now = event.target instanceof Element ? (event.target.closest("td") ?? undefined) : undefined;
+      if (now !== cell) leave();
+      if (!now || !element.contains(now)) return;
+      cell = now;
+      hintPointer(
+        now,
         event.target,
-        hintAt(cell.querySelectorAll(".k2-cell-line .k2-inline > .k2-text, .k2-cell-line"), event.clientX, event.clientY),
+        now.querySelectorAll(".k2-cell-line, .k2-cell-line .k2-inline > .k2-text"),
+        event.clientX,
+        event.clientY,
       );
     };
     element.addEventListener("pointermove", hint);
+    element.addEventListener("pointerleave", leave);
+    element.addEventListener("pointercancel", leave);
     onCleanup(() => {
       element.removeEventListener("scroll", measure);
       element.removeEventListener("pointermove", hint);
+      element.removeEventListener("pointerleave", leave);
+      element.removeEventListener("pointercancel", leave);
       sizes.disconnect();
     });
   });

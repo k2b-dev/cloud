@@ -31,6 +31,7 @@ const members = [
 ];
 const keys = [{ id: "1", name: "Werkstatt-Export", prefix: "k2_live_8f3a…", used: "vor 3 Minuten" }];
 const people = [{ id: "1", name: "Anna Brandt", mail: "anna.brandt@werkstatt.example", role: "Leitung" }];
+const places = [{ id: "1", name: "Werkstatt", hall: "Halle 2", note: "Zufahrt über den Hof, Schlüssel beim Pförtner" }];
 const dates = [
   {
     id: "1",
@@ -95,6 +96,19 @@ render(
               { title: "Name", width: { min: 160, default: 200 }, cell: (person) => person.name },
               { title: "E-Mail", width: { min: 200, default: 300 }, cell: (person) => person.mail, drop: true },
               { title: "Rolle", width: { min: 100, default: 140 }, cell: (person) => person.role },
+            ]}
+          />
+        </Section>
+        {/* an open last column grows, and never below the smallest min of the others: a narrow table scrolls instead */}
+        <Section title="Orte">
+          <Table
+            label="Orte"
+            rows={places}
+            rowKey={(place) => place.id}
+            columns={[
+              { title: "Name", width: { min: 160, default: 200 }, cell: (place) => place.name },
+              { title: "Halle", width: { min: 120, default: 160 }, cell: (place) => place.hall },
+              { title: "Notiz", cell: (place) => place.note },
             ]}
           />
         </Section>

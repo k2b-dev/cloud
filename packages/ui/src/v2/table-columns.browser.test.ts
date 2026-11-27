@@ -124,8 +124,26 @@ for (const width of [1440, 1024])
       const whole = members.locator(".k2-cell-line", { hasText: "Lager und Inventur" });
       expect(await cut.evaluate((line) => line.scrollWidth > line.clientWidth)).toBe(true);
       await cut.hover();
+      expect(await cut.getAttribute("title")).toBe(note);
+      // the hint leaves with the pointer: to another cell, and out of the table
       await whole.hover();
-      expect([await cut.getAttribute("title"), await whole.getAttribute("title")]).toEqual([note, null]);
+      expect([await cut.getAttribute("title"), await whole.getAttribute("title")]).toEqual([null, null]);
+      await cut.hover();
+      await page.mouse.move(2, 2);
+      expect(await cut.getAttribute("title")).toBeNull();
       expect(await cut.textContent()).toBe(note);
+    });
+  });
+
+// An open last column grows (it has no width) and never below the smallest min of the others: in a table too narrow for
+// its columns it keeps that floor and the table scrolls sideways instead (#4210 floors it the same way).
+for (const width of [1440, 390])
+  test(`at ${width} px an open last column grows and keeps its floor`, async () => {
+    await withPage(width, async (page) => {
+      const places = await page.evaluate(table, "Orte");
+      expect([places.columns.Name, places.columns.Halle]).toEqual([200, 160]);
+      expect(places.columns.Notiz).toBeGreaterThanOrEqual(120);
+      if (width === 390) expect({ scrolls: places.scrolls, end: places.cue.end }).toEqual({ scrolls: true, end: true });
+      else expect(places.scrolls).toBe(false);
     });
   });

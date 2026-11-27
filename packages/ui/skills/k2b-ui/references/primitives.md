@@ -204,7 +204,7 @@ may leave it open; a large table scrolls instead), `sort` (its head is pressed t
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
 `href` stays in the address there; offer another order on the phone in the
 page itself if it needs one. One column takes the rest: the one with `grow`,
-else one without a `width`,
+else one without a `width` (at least the smallest `min` of the others),
 else the widest that is neither a number (`align: "end"`) nor a `drop`
 column; its head has no grip. A small table narrower
 than its columns need scrolls sideways, its edge fades and its scrollbar
