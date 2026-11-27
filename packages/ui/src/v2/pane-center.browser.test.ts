@@ -26,13 +26,18 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (viewport: { width: number; height: number }, tiles: number, run: (page: Page) => Promise<void>) => {
+const withPage = async (
+  viewport: { width: number; height: number },
+  tiles: number,
+  variant: "plain" | "card",
+  run: (page: Page) => Promise<void>,
+) => {
   const page = await browser.newPage({ viewport });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui" data-tiles="${tiles}"><div id="root"></div></body></html>`,
+      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui" data-tiles="${tiles}" data-variant="${variant}"><div id="root"></div></body></html>`,
     );
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
@@ -63,30 +68,31 @@ const read = (page: Page) =>
 // the measure of four cards of 240 px with their 12 px gaps, between the two text edges
 const measure = (edge: number) => 4 * 240 + 3 * 12 + 2 * edge;
 
-for (const width of [1440, 1920])
-  test(`a centred pane holds one line and four cards in the middle of the page at ${width} px`, async () => {
-    await withPage({ width, height: 900 }, 4, async (page) => {
-      const found = await read(page);
-      const edge = textEdge.wide;
-      // in the middle across: as much room on the left as on the right, at the measure of four cards
-      expect(Math.round(found.tiles.width)).toBe(measure(edge));
-      expect(Math.abs(found.tiles.left - found.scroll.left - (found.scroll.right - found.tiles.right))).toBeLessThanOrEqual(1);
-      // the line stands over the cards, on the same text edge
-      expect(Math.round(found.lead.left)).toBe(Math.round(found.tiles.left));
-      // four cards in one row, each at least 240 px, sharing the row evenly
-      expect(new Set(found.tile.map((tile) => Math.round(tile.top))).size).toBe(1);
-      for (const tile of found.tile) expect(tile.width).toBeGreaterThanOrEqual(240);
-      // in the middle of the height: as much room above the line as below the cards
-      const above = found.lead.top - found.scroll.top;
-      const below = found.scroll.bottom - found.tiles.bottom;
-      expect(above).toBeGreaterThan(100);
-      expect(Math.abs(above - below)).toBeLessThanOrEqual(1);
-      expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
+for (const variant of ["plain", "card"] as const)
+  for (const width of [1440, 1920])
+    test(`a centred pane holds one line and four ${variant} tiles in the middle of the page at ${width} px`, async () => {
+      await withPage({ width, height: 900 }, 4, variant, async (page) => {
+        const found = await read(page);
+        const edge = textEdge.wide;
+        // in the middle across: as much room on the left as on the right, at the measure of four cards
+        expect(Math.round(found.tiles.width)).toBe(measure(edge));
+        expect(Math.abs(found.tiles.left - found.scroll.left - (found.scroll.right - found.tiles.right))).toBeLessThanOrEqual(1);
+        // the line stands over the cards, on the same text edge
+        expect(Math.round(found.lead.left)).toBe(Math.round(found.tiles.left));
+        // four cards in one row, each at least 240 px, sharing the row evenly
+        expect(new Set(found.tile.map((tile) => Math.round(tile.top))).size).toBe(1);
+        for (const tile of found.tile) expect(tile.width).toBeGreaterThanOrEqual(240);
+        // in the middle of the height: as much room above the line as below the cards
+        const above = found.lead.top - found.scroll.top;
+        const below = found.scroll.bottom - found.tiles.bottom;
+        expect(above).toBeGreaterThan(100);
+        expect(Math.abs(above - below)).toBeLessThanOrEqual(1);
+        expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
+      });
     });
-  });
 
 test("a centred pane whose content is taller than the page starts at the top and scrolls, nothing cut away above", async () => {
-  await withPage({ width: 1440, height: 400 }, 40, async (page) => {
+  await withPage({ width: 1440, height: 400 }, 40, "plain", async (page) => {
     const found = await read(page);
     expect(found.overflows).toBe(true);
     // the line is the first thing under the top of the pane, as in any pane
@@ -96,13 +102,14 @@ test("a centred pane whose content is taller than the page starts at the top and
   });
 });
 
-test("on the phone a centred pane starts at the top with the normal edge and the cards under each other", async () => {
-  await withPage({ width: 390, height: 844 }, 4, async (page) => {
-    const found = await read(page);
-    expect(Math.round(found.tiles.width)).toBe(390);
-    expect(found.lead.top - found.scroll.top).toBeLessThan(40);
-    const lefts = new Set(found.tile.map((tile) => Math.round(tile.left)));
-    expect(lefts).toEqual(new Set([textEdge.phone]));
-    expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
+for (const variant of ["plain", "card"] as const)
+  test(`on the phone a centred pane starts at the top with the normal edge and the ${variant} tiles under each other`, async () => {
+    await withPage({ width: 390, height: 844 }, 4, variant, async (page) => {
+      const found = await read(page);
+      expect(Math.round(found.tiles.width)).toBe(390);
+      expect(found.lead.top - found.scroll.top).toBeLessThan(40);
+      const lefts = new Set(found.tile.map((tile) => Math.round(tile.left)));
+      expect(lefts).toEqual(new Set([textEdge.phone]));
+      expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
+    });
   });
-});
