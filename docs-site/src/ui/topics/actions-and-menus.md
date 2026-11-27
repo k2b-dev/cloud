@@ -43,7 +43,7 @@ The one button: `primary` once per page, framed by default, `ghost` and `text` f
 
 ### Menu
 
-More deeds behind a button or behind "…": items, sections, one choice, toggles and submenus. An entry whose `onClick` returns a Promise keeps the menu open and turns until it settles.
+More deeds behind a button or behind "…": items, sections, one choice, toggles and submenus. An entry whose `onClick` returns a Promise keeps the menu open and turns until it settles. A long menu never leaves the screen: it opens to the side with more room, scrolls inside, and the keys bring the entry they reach into view.
 
 <Props of="Menu MenuItem MenuSection" />
 
