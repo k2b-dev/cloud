@@ -32,9 +32,9 @@ const notebooks: Tile[] = [
       table: {
         columns: ["Zutat", { label: "Menge", align: "end" }, "Einheit"],
         rows: [
-          ["Camembert", "250", "g"],
-          ["Frischkäse", "200", "g"],
           ["Zwiebel", "1,2", "kg"],
+          ["Eier", "8", "Stück"],
+          ["Mehl", "1,5", "kg"],
         ],
       },
     },
@@ -47,11 +47,11 @@ const notebooks: Tile[] = [
     color: APP,
     preview: {
       table: {
-        columns: ["Titel", "Autor", "Status"],
+        columns: ["Titel", "Status"],
         rows: [
-          ["Momo", "Michael Ende", "Liest du"],
-          ["Unterleuten", "Juli Zeh", "Gelesen"],
-          ["Der Process", "Franz Kafka", "Als Nächstes"],
+          ["Momo", "Lese ich"],
+          ["Faust", "Gelesen"],
+          ["Altes Land", "Gelesen"],
         ],
       },
     },
