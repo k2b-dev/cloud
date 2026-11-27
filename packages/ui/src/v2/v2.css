@@ -908,6 +908,16 @@
 .k2-ui .k2-band > :is(.k2-bar, .k2-notice, .k2-cells, .k2-sec, .k2-facts-line, .k2-table-scroll) {
   border-block: 0;
 }
+/* The last part of a pane draws no line under itself: below it ends the column, there is nothing to separate. The
+   line keeps its pixel (transparent), so nothing moves. */
+.k2-ui .k2-pane > .k2-scroll > :is(.k2-sec, .k2-row, .k2-band, .k2-bar):last-child,
+.k2-ui .k2-pane > .k2-scroll > .k2-list:last-child > .k2-row:last-child,
+.k2-ui .k2-pane > .k2-scroll > .k2-table-phone:last-child > .k2-list > .k2-row:last-child {
+  border-bottom-color: transparent;
+}
+.k2-ui .k2-pane > .k2-scroll > .k2-table-scroll:nth-last-child(1 of :not(.k2-table-phone)) {
+  --k2-table-end: 1px solid transparent;
+}
 
 /* ── Cells: two to four equal cells with a line between them ────────────────────────────────────────────────── */
 .k2-ui .k2-cells {
@@ -1278,7 +1288,7 @@
 /* Measure, not canvas (taste rules 1 and 4): in a pane of 960 px and more every section is B. Its title, summary and
    buttons stand in a column of 232 px at the start, its content 48 px beside it, and the whole section, its line too,
    ends at 1040 px, so the deeds stand at the end of what they act on, never at the far edge of a wide window. A
-   section that holds a table, tiles or a drawing keeps A and its full width: lists and tables use the room. A narrower
+   section that holds a table, tiles, groups or a drawing keeps A and its full width: lists and tables use the room. A narrower
    pane is A; the pane decides, not the window. The head floats, so the content keeps its own children as they are. */
 @container k2-pane (min-width: 960px) {
   .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) {
@@ -1333,10 +1343,6 @@
 .k2-ui :is(.k2-sec, .k2-sec-body) > .k2-row + .k2-row,
 .k2-ui :is(.k2-sec, .k2-sec-body) > .k2-list > .k2-row + .k2-row {
   border-top: var(--k2-hairline-subtle);
-}
-/* the last section of a page draws no line under itself: there is nothing below it to separate */
-.k2-ui .k2-pane > .k2-scroll > .k2-sec:last-child {
-  border-bottom: 0;
 }
 /* in a side column (the info column of a record) a section is quieter: a row title, 28 px head */
 .k2-ui .k2-pane[data-side] .k2-sec {
@@ -3200,14 +3206,14 @@
 }
 /* the place picks the control height, so the air above and below is equal and at least 6 px:
    head 56 → 36, status row 52 → 36, bar 40 → 28, a row → 28. A control never turns square in a band. */
-.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), [data-slot="status"] > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells, .k2-facts, .k2-facts-line) .k2-btn:not([data-variant="text"]) {
+.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), [data-slot="status"] > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-sh, .k2-cells, .k2-facts, .k2-facts-line) .k2-btn:not([data-variant="text"]) {
   height: var(--k2-h-control-small);
   padding: 0 8px;
   gap: 4px;
   font: var(--k2-t-meta);
   font-weight: 500;
 }
-.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), [data-slot="status"] > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells, .k2-facts, .k2-facts-line) .k2-btn[data-icon-only] {
+.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), [data-slot="status"] > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-sh, .k2-cells, .k2-facts, .k2-facts-line) .k2-btn[data-icon-only] {
   width: var(--k2-h-control-small);
   padding: 0;
 }

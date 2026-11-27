@@ -8,8 +8,9 @@ import MailTabletScreen from "./MailTabletScreen.island";
 import MenusScreen from "./MenusScreen.island";
 import { MailScreen } from "./mail-screen";
 import { DeliveriesScreen, RecordScreen } from "./record-screen";
-import { GridsAccessScreen, VenueTimesScreen } from "./taste-screens";
+import { SettingsScreen } from "./settings-screen";
 import TableScreen from "./TableScreen.island";
+import { GridsAccessScreen } from "./taste-screens";
 import V2Inspect from "./V2Inspect.island";
 import V2InspectSwitch from "./V2InspectSwitch.island";
 
@@ -94,6 +95,16 @@ export const v2Screens = {
     rail: kundenRail,
     render: () => <DeliveriesScreen />,
   },
+  settings: {
+    title: "Einstellungen · Zeiten und Schichten",
+    description:
+      "The settings of a place in Standorte. On a wide pane each section's title, its one sentence and its button stand in a column at the left and its content beside it, up to the measure of 1040 px; on the phone they stand above it. The clear line stands between sections, the hair between rows, and the last section draws none.",
+    mockup: "settings-headings-study v2 (A, B)",
+    app: "#2563eb",
+    phone: { app: "Standorte" },
+    rail: { apps: ["world", "book", "message", "coffee", "leaf"], current: "coffee" },
+    render: () => <SettingsScreen />,
+  },
   table: {
     title: "Große Tabelle",
     description:
@@ -169,16 +180,6 @@ export const v2Screens = {
     phone: { app: "Grids" },
     rail: { apps: ["home", "mail", "folder", "table", "notebook", "coffee"], current: "table" },
     render: () => <GridsAccessScreen />,
-  },
-  "venue-times": {
-    title: "Einstellungen · Zeiten und Schichten",
-    description:
-      "Opening hours, exceptions and shifts of a venue: section heads with a framed button under their summary on a wide pane, beside the title on the phone.",
-    mockup: "v2-taste-study v2 (b · Standorte › Zeiten)",
-    app: "#ea580c",
-    phone: { app: "Standorte" },
-    rail: { apps: ["home", "mail", "folder", "building-store", "notebook", "coffee"], current: "building-store" },
-    render: () => <VenueTimesScreen />,
   },
 } satisfies Record<string, V2Screen>;
 

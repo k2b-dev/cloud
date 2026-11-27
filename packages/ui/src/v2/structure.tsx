@@ -6,11 +6,15 @@ import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
 import type { Action, TwoActions } from "./types";
 
-const HeadActions = (props: { actions?: TwoActions }) => (
+/** The buttons of a head: quiet text buttons in a group's tinted head, small framed buttons in a section's. */
+const HeadActions = (props: { actions?: TwoActions; variant: "text" | "secondary" }) => (
   <For each={props.actions}>
     {(action) => (
       <Button
+        variant={props.variant}
         icon={action.icon}
+        // where a head keeps only the symbol (a group's on the phone), the words stay the button's name and hint
+        title={action.icon ? action.label : undefined}
         forward={action.forward}
         href={action.href}
         onNavigate={action.onNavigate}
@@ -97,7 +101,7 @@ export const Section = (props: SectionProps) => {
         </Show>
         <Show when={props.actions?.length || fold}>
           <span class="k2-sh-end">
-            <HeadActions actions={props.actions} />
+            <HeadActions actions={props.actions} variant="secondary" />
             {fold && (
               <fold.Trigger
                 class="k2-btn"
@@ -221,7 +225,7 @@ export const Group = (props: GroupProps) => {
                 />
               )}
             </Show>
-            <HeadActions actions={props.actions} />
+            <HeadActions actions={props.actions} variant="text" />
             <Show when={props.folded}>
               <fold.Trigger
                 class="k2-btn"

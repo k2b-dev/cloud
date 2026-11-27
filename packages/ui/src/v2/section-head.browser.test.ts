@@ -82,11 +82,15 @@ const expectA = (found: Awaited<ReturnType<typeof shape>>) => {
 
 const title = typeRoles.title;
 
-test("every head: no symbol, a calm title of 15 px at 600, the count quiet beside it", async () => {
-  for (const which of ["form", "detail"] as const)
-    await withPage(which, 1440, async (page) => {
+test("every head: no symbol, a calm title of 15 px at 600 (in B the column's label at 14 px), the count quiet beside it", async () => {
+  for (const [which, width, font] of [
+    ["detail", 1440, `${title.size}px/${title.lineHeight}px ${title.weight}`],
+    ["form", 390, `${title.size}px/${title.lineHeight}px ${title.weight}`],
+    ["form", 1440, `${typeRoles.body.size}px/${typeRoles.body.lineHeight}px 600`],
+  ] as const)
+    await withPage(which, width, async (page) => {
       const found = await shape(page);
-      expect([found.symbols, found.font, found.countWeight]).toEqual([0, `${title.size}px/${title.lineHeight}px ${title.weight}`, "400"]);
+      expect([which, width, found.symbols, found.font, found.countWeight]).toEqual([which, width, 0, font, "400"]);
       expect(Math.abs(found.count!.bottom - found.title!.bottom)).toBeLessThanOrEqual(3);
     });
 });
@@ -138,8 +142,6 @@ test("1440 px, a section that holds a table keeps A and its full width", async (
     expectA(found);
     // from the pane's edge (the workspace's frame is 1 px), not inset to a measure
     expect(found.section!.left).toBeLessThanOrEqual(1);
-    // the only (so the last) section of the page draws no line under itself
-    expect(await page.evaluate(() => getComputedStyle(document.querySelector('[data-k2-part="Section"]')!).borderBottomStyle)).toBe("none");
   });
 });
 
@@ -161,5 +163,16 @@ test("the clear line stands between sections, the hair between rows and table ro
       row: "rgb(240, 240, 242)",
       cell: "rgb(240, 240, 242)",
     });
+  });
+});
+
+test("the last section of a pane draws no line under itself (its pixel stays, so nothing moves)", async () => {
+  await withPage("detail", 1440, async (page) => {
+    const last = await page.evaluate(() => {
+      const section = document.querySelector('[data-k2-part="Section"]')!;
+      const style = getComputedStyle(section);
+      return [section === section.parentElement?.lastElementChild, style.borderBottomWidth, style.borderBottomColor];
+    });
+    expect(last).toEqual([true, "1px", "rgba(0, 0, 0, 0)"]);
   });
 });
