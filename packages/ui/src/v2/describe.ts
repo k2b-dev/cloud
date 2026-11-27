@@ -297,9 +297,26 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         if (name === "StatusRow") {
           const lead = element.querySelector(".k2-status-lead")?.textContent;
           const facts = [...element.querySelectorAll(".k2-fact")].map((fact) => clip(fact.textContent ?? "", 30));
+          // chips of the statement, such as an exception: [bad "1 ohne Zugriff"]; with layout only the ones in sight
+          // (a chip that gave way wraps out of its one line)
+          const group = element.querySelector(".k2-status-marks")?.getBoundingClientRect();
+          const inSight = (chip: Element) => {
+            if (!options.layout || !group) return true;
+            const box = chip.getBoundingClientRect();
+            return (
+              box.width > 0 &&
+              box.top >= group.top - 0.5 &&
+              box.bottom <= group.bottom + 0.5 &&
+              box.left >= group.left - 0.5 &&
+              box.right <= group.right + 0.5
+            );
+          };
+          const marks = [...element.querySelectorAll(".k2-status-marks .k2-chip")]
+            .filter(inSight)
+            .map((chip) => `[${chip.getAttribute("data-status") ? `${chip.getAttribute("data-status")} ` : ""}${quote(chip.textContent)}]`);
           const select = element.querySelector(".k2-mark, [data-k2-mark]") ? " select-all" : "";
           if (element.hasAttribute("data-selecting")) return `StatusRow selecting ${quote(lead)}: ${start ? words(start).join(" ") : ""}`;
-          return `StatusRow ${quote(lead)}${facts.length ? ` · ${facts.join(" · ")}` : ""}${select}${end ? ` | ${words(end).join(" ")}` : ""}`;
+          return `StatusRow ${quote(lead)}${marks.length ? ` ${marks.join(" ")}` : ""}${facts.length ? ` · ${facts.join(" · ")}` : ""}${select}${end ? ` | ${words(end).join(" ")}` : ""}`;
         }
         const startWords = start ? words(start) : [];
         const endWords = end ? words(end) : [];
@@ -460,7 +477,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         problems.push(`loose text ${quote(node.textContent, 30)} in Band: put it in <Text>`);
       if (node.nodeType !== 1) continue;
       const child = node as Element;
-      if (ownedChild(child)) continue;
+      // the rule a primitive makes for itself (a split's context column): part of that primitive, not the screen's
+      if (ownedChild(child) || child.matches("style[data-k2-rule]")) continue;
       problems.push(
         `plain <${child.tagName.toLowerCase()}> in ${where} ${quote(child.textContent, 30)}: no primitive owns it; use Band, Section, Group, List, Table, Notice or Text`,
       );
