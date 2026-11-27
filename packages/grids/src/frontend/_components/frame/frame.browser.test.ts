@@ -201,7 +201,16 @@ describe("Grids before its first base", () => {
         // above each name a preview: a template's main table with its sample rows, the blank base a table's sign
         expect(await ways.locator(".k2-tile-preview").count()).toBe(4);
         expect(await ways.locator(".k2-tile-pv-table").count()).toBe(3);
-        expect(await ways.nth(1).locator(".k2-tile-pv-table tbody tr").count()).toBeGreaterThan(0);
+        for (const way of [1, 2, 3]) expect(await ways.nth(way).locator(".k2-tile-pv-table tbody tr").count()).toBe(3);
+        // every word of a preview stands whole: no cell of a shown column ends in "…"
+        const cut = await ways
+          .locator(".k2-tile-pv-table :is(th, td)")
+          .evaluateAll((cells) =>
+            cells
+              .filter((cell) => getComputedStyle(cell).display !== "none" && cell.scrollWidth > cell.clientWidth)
+              .map((cell) => cell.textContent),
+          );
+        expect(cut).toEqual([]);
         // from 1440 on the four ways stand in one row; below, a card keeps its 240 px and they wrap
         if (view === wide || view === xl) {
           await settled(tab);

@@ -8,12 +8,12 @@ import { BASES_PAGE_PATH, withParam } from "./bases-query";
 import CreateBaseDialog, { type BaseTemplate } from "./CreateBaseDialog";
 import { overviewMessages } from "./messages";
 
-/** One way to begin: a blank base, or a template with the tables it makes and its main table's first columns. */
+/** One way to begin: a blank base, or a template with the tables it makes and the small table it shows on its card. */
 export type StartWay = {
   id: string;
   name: string;
   icon: string;
-  preview: { tables: number; table: string; columns: string[]; rows: string[][] } | null;
+  preview: { tables: number; columns: Array<{ name: string; align?: "end" }>; rows: string[][] } | null;
 };
 
 export type GridsStartProps = {
@@ -66,8 +66,10 @@ export default function GridsStart(props: GridsStartProps) {
             onNavigate: (event: LinkNavigateEvent) => open(event, way.id),
             // under the name how many tables it makes (mockup empty-start-tiles v4)
             meta: way.preview ? t().tableCount({ count: way.preview.tables, formatted: number(way.preview.tables) }) : t().blankBaseFoot,
-            // above the name the main table's first columns and sample rows; the blank base shows a table's sign
-            preview: way.preview ? { table: { columns: way.preview.columns, rows: way.preview.rows } } : { icon: "table" },
+            // above the name the small table the template brings for its card; the blank base shows a table's sign
+            preview: way.preview
+              ? { table: { columns: way.preview.columns.map((column) => column.name), rows: way.preview.rows } }
+              : { icon: "table" },
           }))}
         />
       </Pane>

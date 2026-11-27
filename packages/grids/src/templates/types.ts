@@ -153,7 +153,26 @@ export type GridTemplate = {
   workflows?: TemplateWorkflow[];
   workflowLaunchers?: TemplateWorkflowLauncher[];
   navigationGroups?: Array<{ name: string; entries: Array<{ type: NavigationReference["type"]; key: string }> }>;
+  /** What the first start's card shows of this template. */
+  preview?: TemplatePreview;
 };
+
+/**
+ * A small table made for the first start's card, not records the base gets: three short columns and three rows that a
+ * card shows whole. A column of amounts stands at the end.
+ */
+export type TemplatePreview = {
+  columns: Array<{ name: string; align?: "end" }>;
+  rows: string[][];
+};
+
+/** A day of a preview as the page's language writes it, without the year ("01.04."). */
+export const previewDay = (iso: string, locale?: string) =>
+  new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", timeZone: "UTC" }).format(new Date(`${iso}T00:00:00Z`));
+
+/** An amount of a preview with two decimals, as the page's language writes it ("3.200,00"). */
+export const previewAmount = (value: number, locale?: string) =>
+  new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 
 export const table = (key: string): TemplateRef => ({ $ref: "table", key });
 export const field = (key: string): TemplateRef => ({ $ref: "field", key });

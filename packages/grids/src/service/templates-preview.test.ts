@@ -1,34 +1,45 @@
 import { describe, expect, test } from "bun:test";
 import { preview } from "./templates";
 
-// The start's tiles show a template as the base will hold it: its main table with real columns and its first sample
-// records, linked records by name, choices by their label, dates and numbers as the page's language writes them.
-const NOW = new Date("2026-11-27T12:00:00.000Z");
+// The start's cards show the small table a template brings for them: three short columns and three rows that a card
+// shows whole, amounts at the end and as the page's language writes them.
+const START = ["finance", "inventory", "billing"] as const;
 
 describe("a template's preview", () => {
-  test("names the main table's sample records, linked records by name", () => {
-    expect(preview("finance", "de", NOW)).toEqual({
+  test("Private Finanzen: date, amount and category of three bookings", () => {
+    expect(preview("finance", "de")).toEqual({
       tables: 5,
-      table: "Transaktionen",
-      columns: ["Datum", "Zahlungspartner", "Konto"],
+      columns: [{ name: "Datum" }, { name: "Betrag", align: "end" }, { name: "Kategorie" }],
       rows: [
-        ["01.04.", "Arbeitgeber GmbH", "Hauptkonto"],
-        ["02.04.", "Vermieter", "Hauptkonto"],
-        ["05.04.", "Markt vor Ort", "Visa"],
+        ["01.04.", "3.200,00", "Gehalt"],
+        ["02.04.", "980,00", "Miete"],
+        ["18.04.", "28,90", "Bücher"],
       ],
     });
   });
 
-  test("shows choices by their label and a date of the current month on the day it is read", () => {
-    const billing = preview("billing", "de", NOW);
-    expect(billing?.columns).toEqual(["Dokumentart", "Geschäftspartner", "Belegdatum"]);
-    expect(billing?.rows[0]?.[0]).toBe("Rechnung");
-    expect(billing?.rows[0]?.[2]).toBe("15.11.");
+  test("Rechnungswesen: number, customer and amount of three invoices", () => {
+    expect(preview("billing", "de")).toMatchObject({
+      columns: [{ name: "Nr." }, { name: "Kunde" }, { name: "Betrag", align: "end" }],
+      rows: [
+        ["RE-0001", "Nordlicht", "1.190,00"],
+        ["RE-0002", "Weber", "476,00"],
+        ["RE-0003", "Atelier K", "89,25"],
+      ],
+    });
+    expect(preview("billing", "en")?.columns.map((column) => column.name)).toEqual(["No.", "Customer", "Amount"]);
   });
 
-  test("leaves out ids, files and computed values, and knows no template it does not have", () => {
-    const inventory = preview("inventory", "de", NOW);
-    expect(inventory?.columns).toEqual(["Name", "Kategorie", "Lagerort"]);
-    expect(preview("missing", "de", NOW)).toBeNull();
+  test("every start template brings three columns and three rows of short words, in English and German", () => {
+    for (const locale of ["de", "en"])
+      for (const id of START) {
+        const shown = preview(id, locale);
+        expect(shown?.columns).toHaveLength(3);
+        expect(shown?.rows).toHaveLength(3);
+        // a card's column holds about ten characters; a longer word would end in "…"
+        for (const text of [...(shown?.columns.map((column) => column.name) ?? []), ...(shown?.rows.flat() ?? [])])
+          expect({ id, locale, text, fits: text.length <= 10 }).toMatchObject({ fits: true });
+      }
+    expect(preview("missing", "de")).toBeNull();
   });
 });

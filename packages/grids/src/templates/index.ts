@@ -7,6 +7,7 @@ import type { GridTemplate } from "./types";
 export type {
   GridTemplate,
   TemplateDateExpression,
+  TemplatePreview,
   TemplateRef,
 } from "./types";
 
