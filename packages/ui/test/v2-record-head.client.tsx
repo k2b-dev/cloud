@@ -2,7 +2,8 @@ import { render } from "solid-js/web";
 import { Bar, Button, Menu, Pane, RecordHead, Text, Workspace } from "../src/v2";
 
 // A record's head on the phone, as Weather shows a place: an avatar, a very long name, its kinds and the head's
-// actions ("…" and one kept action). `window.__k2Kinds = false` leaves the kinds out.
+// actions (three kept symbols and "…", as a record head with #4373's kept actions shows them on the phone).
+// `window.__k2Kinds = false` leaves the kinds out.
 
 declare global {
   interface Window {
@@ -27,7 +28,9 @@ render(
           }
           end={
             <>
+              <Button keep icon="search" label="In der Akte suchen" />
               <Button keep icon="star" label="Merken" />
+              <Button keep icon="share" label="Teilen" />
               <Menu items={[{ label: "Umbenennen", icon: "pencil" }]} />
             </>
           }

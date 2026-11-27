@@ -6,9 +6,11 @@ import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/bro
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-record-head.client";
 
-// A record's head on the phone (W8, Weather at 390 px with a long place name): avatar, name and the head's actions
-// stand in one row, the name cut with "…"; only kinds that find no room beside the name take a second row. Before,
-// avatar, name and "…" took a row each (about 140 px). The fixture is test/v2-record-head.client.tsx.
+// A record's head on the phone (W8, Weather at 390 px with a long place name; W7, the Kundenakte with four symbols):
+// avatar, name and the head's actions stand in one row, as the approved mockup's 57 px head. The name comes before
+// the kinds: it keeps at least 8ch and is cut with "…"; a kind without room beside it leaves the head, it never takes a
+// second row. Before, avatar, name and "…" took a row each (about 140 px), then the name shrank to 40 px beside the
+// kinds. The fixture is test/v2-record-head.client.tsx.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss = "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; }";
@@ -22,8 +24,8 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (kinds: boolean, run: (page: Page) => Promise<void>) => {
-  const page = await browser.newPage({ viewport: { width: 390, height: 800 } });
+const withPage = async (kinds: boolean, width: number, run: (page: Page) => Promise<void>) => {
+  const page = await browser.newPage({ viewport: { width, height: 800 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
@@ -49,40 +51,62 @@ const shape = (page: Page) =>
       return Math.round(box.top + box.height / 2);
     };
     const name = bar.querySelector<HTMLElement>(".k2-record-name")!;
-    const avatar = bar.querySelector(".k2-av")!;
-    const style = getComputedStyle(bar);
+    const start = bar.querySelector<HTMLElement>(":scope > .k2-bar-start")!.getBoundingClientRect();
+    // 8ch of the name's own font: the width of "0" eight times
+    const context = document.createElement("canvas").getContext("2d")!;
+    context.font = getComputedStyle(name).font;
+    const chips = [...bar.querySelectorAll(".k2-chip")];
+    // a chip shows when its box lies inside the start's box (the start cuts what wrapped below it)
+    const shows = (chip: Element) => {
+      const box = chip.getBoundingClientRect();
+      return box.width > 0 && box.top >= start.top - 0.5 && box.bottom <= start.bottom + 0.5;
+    };
     return {
-      // one row of the head: the avatar with the space above and below it and the head's line (57 px, as the mockup)
-      row: Math.round(
-        avatar.getBoundingClientRect().height +
-          Number.parseFloat(style.paddingTop) +
-          Number.parseFloat(style.paddingBottom) +
-          Number.parseFloat(style.borderBottomWidth),
-      ),
       height: Math.round(bar.getBoundingClientRect().height),
       name: middle(name),
-      avatar: middle(avatar),
+      nameWidth: name.getBoundingClientRect().width,
+      least: 8 * context.measureText("0").width,
+      avatar: middle(bar.querySelector(".k2-av")!),
       actions: [...bar.querySelectorAll(":scope > .k2-bar-end .k2-btn")].map(middle),
+      // the kinds that show, each on the name's row; none half cut at the start's edge
+      kinds: chips.filter(shows).map(middle),
+      halfCut: chips.filter((chip) => {
+        const box = chip.getBoundingClientRect();
+        return !shows(chip) && box.top < start.bottom - 0.5 && box.bottom > start.bottom + 0.5;
+      }).length,
       cut: name.scrollWidth > name.clientWidth + 0.5,
       inside: bar.getBoundingClientRect().right <= innerWidth + 0.5,
     };
   });
 
-test("390 px, a very long name with its kinds: two rows at most, the actions on the name's row, the name cut with '…'", async () => {
-  await withPage(true, async (page) => {
+test("390 px, a very long name with two kinds and four symbols: one row of 57 px, the name at least 8ch and cut, the kinds without room left out", async () => {
+  await withPage(true, 390, async (page) => {
     const found = await shape(page);
-    // the head's row, then a row of kinds (a chip of 24 px and the 4 px above it)
-    expect(found.height).toBeLessThanOrEqual(found.row + 4 + 24);
+    expect(found.height).toBe(57);
+    expect(found.nameWidth).toBeGreaterThanOrEqual(found.least - 0.5);
+    expect(found.actions).toHaveLength(4);
+    expect([found.avatar, ...found.actions, ...found.kinds]).toEqual(
+      [found.avatar, ...found.actions, ...found.kinds].map(() => found.name),
+    );
+    expect([found.halfCut, found.cut, found.inside]).toEqual([0, true, true]);
+  });
+});
+
+test("390 px, a very long name without kinds: the same one row of 57 px", async () => {
+  await withPage(false, 390, async (page) => {
+    const found = await shape(page);
+    expect(found.height).toBe(57);
     expect([found.avatar, ...found.actions]).toEqual([found.name, ...found.actions.map(() => found.name)]);
     expect([found.cut, found.inside]).toEqual([true, true]);
   });
 });
 
-test("390 px, a very long name without kinds: one row", async () => {
-  await withPage(false, async (page) => {
+test("1440 px, unchanged: the head's 56 px, the name cut beside both kinds and the actions", async () => {
+  await withPage(true, 1440, async (page) => {
     const found = await shape(page);
-    expect(found.height).toBe(found.row);
+    expect(found.height).toBe(56);
+    expect(found.kinds).toEqual([found.name, found.name]);
     expect([found.avatar, ...found.actions]).toEqual([found.name, ...found.actions.map(() => found.name)]);
-    expect([found.cut, found.inside]).toEqual([true, true]);
+    expect(found.inside).toBe(true);
   });
 });

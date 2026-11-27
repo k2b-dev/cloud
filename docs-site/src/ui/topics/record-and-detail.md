@@ -38,7 +38,7 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 ### RecordHead
 
-The identity of the record in the head `Bar start`: picture, name, kinds and identifiers that give way when room is short. On the phone, picture, name and the head's actions stay in one row and the name is cut with "…". Only kinds that find no room beside the name go to a second row.
+The identity of the record in the head `Bar start`: picture, name, kinds and identifiers that give way when room is short. On the phone, picture, name and the head's actions stay in one row and the name is cut with "…". The name comes before the kinds: a kind that finds no room beside the name leaves the head, so show what matters about the record in its facts as well.
 
 <Props of="RecordHead RecordId" />
 
