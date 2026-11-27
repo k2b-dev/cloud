@@ -99,13 +99,17 @@ The `start` keeps a least: its name at `--k2-start-least` (16ch, or all
 of it, where it is narrower), or its open tab. Where the `end` does not fit beside the whole
 `start` (six kept actions beside tabs on the phone), the end folds first:
 its buttons that do not fit move into a menu "…" at its end, in their
-order, the last first. If the end ends with an icon-only `Menu`, they are
-its first section; no second "…" stands beside it. The primary action, a
+order, the last first. If the end's last plain `Menu` "…" (no icon or
+label of its own) is followed only by parts that never fold (a closing ×,
+the primary), they are its first section; no second "…" stands beside it.
+An end made outside the `Bar` (a helper's JSX, an island of its own)
+cannot offer its "…": the bar then shows its own, "Mehr in dieser Leiste". The primary action, a
 closing ×, a `Menu`, a search and a button that opens a menu never fold.
 Only when nothing more can fold does the `start` shorten with "…", down
 to its least, never to nothing. The browser measures the fold once the
-page is alive; before that the start keeps its least and the end cuts,
-so at load only buttons turn into "…". A bar that fits never changes.
+page is alive; before that the start keeps its whole width (up to the
+bar's) and the end cuts from its start, so its primary stays. A bar that
+fits never changes.
 
 ### Band
 

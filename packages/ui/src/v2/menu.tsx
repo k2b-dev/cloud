@@ -6,6 +6,7 @@ import {
   createSignal,
   For,
   type JSX,
+  mergeProps,
   onCleanup,
   onMount,
   children as resolveChildren,
@@ -143,9 +144,10 @@ const hasLead = (entries: readonly MenuEntry[]): boolean =>
 
 const Entries = (props: { level: MenuLevelParts; entries: readonly MenuEntry[]; lead?: boolean }) => {
   const lead = () => props.lead ?? hasLead(props.entries);
-  // Keyed by kind and words, not by object or place: new data for an open menu (a tick that flipped, an entry that
-  // came in before it) keeps every entry's element, so the highlight and the focus stay. An entry that turns into
-  // another kind gets a new key and is made anew, with the right role and handler.
+  // Keyed by kind and by its `value` or its place among the entries of its kind, not by object or words: new data for
+  // an open menu (a tick that flipped, an entry that turned disabled or got new words, "Favorit" to "Favorit
+  // entfernen") keeps every entry's element, so the highlight and the focus stay. An entry that turns into another
+  // kind gets a new key and is made anew, with the right role and handler.
   const keyed = createMemo(() => {
     const seen = new Map<string, number>();
     return menuEntries(props.entries).map((entry, index) => {
@@ -154,9 +156,9 @@ const Entries = (props: { level: MenuLevelParts; entries: readonly MenuEntry[]; 
           ? `separator:${index}`
           : isSection(entry)
             ? `${entry.choice === undefined ? "section" : "choice"}:${entry.title}`
-            : // the behaviour layer reads `disabled` once, when the entry comes: an entry that turns (un)usable while
-              // the menu is open comes anew
-              `${kindOf(entry)}:${entry.label}${entry.disabled ? ":off" : ""}`;
+            : entry.value !== undefined
+              ? `${kindOf(entry)}:${entry.value}`
+              : kindOf(entry);
       const count = seen.get(base) ?? 0;
       seen.set(base, count + 1);
       return { key: count ? `${base}#${count}` : base, entry };
@@ -274,13 +276,13 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
       return props.item.disabled;
     },
   };
-  const keyed = {
-    ...shared,
+  // merged, not spread: a spread would read the getters of `shared` (disabled, danger) once
+  const keyed = mergeProps(shared, {
     value: props.value,
     get label() {
       return props.item.label;
     },
-  };
+  });
   const kind = props.kind;
   if (kind === "submenu") {
     const sub = props.level.useSubmenu();
@@ -350,10 +352,11 @@ const MenuRoot = (props: MenuProps) => {
   const name = () => props.label ?? t().moreActions;
   let trigger: HTMLElement | undefined;
   // The "…" at the end of a bar takes the buttons the bar has no room for, as its first section (see `Bar`), so no
-  // second "…" stands beside it. Only a menu without words offers itself.
+  // second "…" stands beside it. Only the plain "…" offers itself: no words, no symbol and no name of its own (a
+  // `Menu icon="filter" label="Filter"` is another thing and takes no actions).
   const fold = useContext(BarFold);
   onMount(() => {
-    if (fold && trigger && iconOnly()) onCleanup(fold.offer(trigger));
+    if (fold && trigger && iconOnly() && props.icon === undefined && props.label === undefined) onCleanup(fold.offer(trigger));
   });
   const items = (): readonly MenuEntry[] => {
     const folded = fold && trigger && fold.host() === trigger ? fold.entries() : [];

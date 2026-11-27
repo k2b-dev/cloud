@@ -696,8 +696,9 @@
 .k2-ui .k2-bar[data-k2-part="Bar"]:not([data-k2-fitted]) > .k2-bar-end {
   justify-content: flex-end;
 }
-.k2-ui .k2-bar[data-k2-fitted] > .k2-bar-end {
-  flex-shrink: 0.001;
+/* weights, not a factor below 1: factors that add up to less than 1 take only that part of the missing room */
+.k2-ui .k2-bar[data-k2-part="Bar"][data-k2-fitted] > .k2-bar-start {
+  flex-shrink: 1000;
 }
 .k2-ui .k2-bar:not([data-k2-measuring]) > .k2-bar-end > [data-k2-folded] {
   display: none;
@@ -708,6 +709,7 @@
   flex: none;
 }
 .k2-ui .k2-bar[data-k2-part="Bar"][data-k2-measuring] > .k2-bar-start {
+  flex: none;
   width: max-content;
   max-width: none;
 }

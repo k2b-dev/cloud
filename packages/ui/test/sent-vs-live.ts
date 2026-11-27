@@ -21,7 +21,8 @@ export const sentVsLive = (): string[] => {
   // a bar marks itself measured and its buttons that fold into "…" (`Bar`, bar-fold.ts)
   const foldAttributes = new Set(["data-k2-fitted", "data-k2-folded"]);
   const measuredAttribute = (element: Element, name: string) =>
-    (measuredAttributes.has(name) && element.getAttribute("role") === "separator") || foldAttributes.has(name);
+    (measuredAttributes.has(name) && element.getAttribute("role") === "separator") ||
+    (foldAttributes.has(name) && element.closest(".k2-bar") !== null);
   const sent = Reflect.get(window, "__k2Sent");
   const live = document.getElementById("root");
   if (!(sent instanceof Node) || !live) return ["the page holds no sent copy (window.__k2Sent) or no #root"];

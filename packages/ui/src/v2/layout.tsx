@@ -616,11 +616,12 @@ export type BarProps = {
  *
  * The start keeps a least: its name at `--k2-start-least` (16ch; its whole content, where narrower), or its open
  * tab. Where the end does not fit beside the whole start (six actions beside tabs on the phone), the end folds first:
- * its buttons that do not fit move into a menu "…" at its end, in their order, the last first. Where the end ends with a
- * menu "…" of its own, they are that menu's first section. The primary action, a closing ×, a menu and a search never
- * fold. Only when nothing more can fold does the start shorten its words with "…", down to its least. The browser
- * measures the fold once the page is alive; before that the start keeps its least and the end cuts what has no room,
- * so at load only buttons turn into "…". A bar that fits is never changed.
+ * its buttons that do not fit move into a menu "…" at its end, in their order, the last first. Where the end's last
+ * plain `Menu` "…" is followed only by parts that never fold, they are that menu's first section; an end made outside
+ * the bar (an island of its own) gets the bar's own "…" instead. The primary action, a closing ×, a menu and a search
+ * never fold. Only when nothing more can fold does the start shorten its words with "…", down to its least. The
+ * browser measures the fold once the page is alive; before that the start keeps its whole width (up to the bar's) and
+ * the end cuts what has no room from its start, so its primary stays. A bar that fits is never changed.
  */
 export const Bar = (props: BarProps) => {
   const t = useOverlayMessages();
