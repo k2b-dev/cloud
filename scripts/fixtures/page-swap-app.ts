@@ -23,7 +23,7 @@ import type { User } from "../../packages/cloud/src/contracts/shared";
 import type { AuthContext } from "../../packages/cloud/src/server/middleware/auth";
 import type { RuntimeContext } from "../../packages/cloud/src/ssr/runtime";
 import { buildIslands } from "../../packages/ssr/src/build";
-import { launchBrowser } from "../../packages/ui/test/browser";
+import { launchBrowser, waitInPage } from "../../packages/ui/test/browser";
 import { registerSsrTestPlugin } from "../../packages/ui/test/ssr-test-plugin";
 
 const cloudRoot = resolve(import.meta.dir, "../../packages/cloud");
@@ -399,7 +399,14 @@ export function pageSwapContract(name: string, app: () => PageSwapApp, contract:
         `Island ids ${foreign.join(", ")} were not built by the harness: another test file in this process loaded the page modules with its own SSR transform first. Run the package's tests with bun test --isolate.`,
       );
     await columnMounted(page);
-    await page.waitForFunction(() => document.querySelector("[data-nav-announcer]") !== null);
+    // The shell's runtime island puts the announcer in when it installs page swaps; an island script that did not load,
+    // or a runtime that failed and removed it again, is named instead of a bare timeout (#4393).
+    await waitInPage(
+      page,
+      "the shell's runtime mounts its navigation announcer",
+      () => document.querySelector("[data-nav-announcer]") !== null,
+      () => errors,
+    );
     // A document load replaces window: the mark survives only swaps.
     await page.evaluate(() => Object.assign(window, { pageSwapMark: "kept" }));
     const documents: string[] = [];
