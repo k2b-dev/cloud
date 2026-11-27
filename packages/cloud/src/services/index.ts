@@ -45,8 +45,18 @@ export type {
   TraceSummary,
   TraceWindow,
 } from "./logging";
-export { audit } from "./audit";
-export type { AuditActionGroup, AuditActor, AuditEvent, AuditListFilter, AuditOutcome, AuditRecordParams, AuditTarget } from "./audit";
+export { AUDIT_COUNT_BOUND, AuditCursorError, audit } from "./audit";
+export type {
+  AuditActionGroup,
+  AuditActor,
+  AuditEvent,
+  AuditListConfig,
+  AuditListFilter,
+  AuditListPage,
+  AuditOutcome,
+  AuditRecordParams,
+  AuditTarget,
+} from "./audit";
 
 export {
   GATEWAY_TELEMETRY_TENANT,
