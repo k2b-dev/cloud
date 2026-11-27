@@ -114,17 +114,10 @@ export default function BasesOverview(props: Props) {
         status={
           props.empty ? undefined : (
             <StatusRow
-              // what asks for a deed today, not a count of what happened (CLEAR AND DENSE): the chips name the two
-              lead="2 Dinge brauchen dich"
-              facts={[{ value: 5, after: "Bases" }]}
-              filters={
-                <>
-                  <Chip yours icon="forms">
-                    12 neue Einträge
-                  </Chip>
-                  <Chip status="bad">Nachbestellung fehlgeschlagen</Chip>
-                </>
-              }
+              // what asks for a deed today, named in the statement itself, so it says it also on the phone where the
+              // chips leave (CLEAR AND DENSE); the count of the bases stands once, at the section
+              lead="3 Anträge warten auf dich"
+              filters={<Chip status="bad">Nachbestellung fehlgeschlagen</Chip>}
             />
           )
         }
