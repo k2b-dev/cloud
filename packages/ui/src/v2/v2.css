@@ -4669,8 +4669,8 @@
     display: none;
   }
   /* The end of a status row stays on the phone: its filters and its action are what a person does with the list. Beside
-     the statement where both have room; else in a second line below it, wrapping itself where it needs more lines, so
-     no control is cut or lost. The row grows by that line; the statement keeps its own line. */
+     the statement while the statement keeps 40 % of the row; else in a second line below it, wrapping itself where it
+     needs more lines, so no control is cut or lost. The row grows by that line; the statement keeps its own line. */
   .k2-ui .k2-bar[data-status-row]:has(> .k2-bar-end) {
     flex-wrap: wrap;
     height: auto;
@@ -4680,7 +4680,8 @@
     padding-block: calc((var(--k2-h-status) - 1px - var(--k2-h-control)) / 2);
   }
   .k2-ui .k2-bar[data-status-row] > .k2-bar-start:has(+ .k2-bar-end) {
-    flex: 1 1 auto;
+    /* the statement gives way (cut with "…") down to 40 % of the row; an end that needs more takes the second line */
+    min-width: 40%;
     min-height: var(--k2-h-control);
   }
   /* in its own line the end starts on the text edge, under the statement, not at the far side */
