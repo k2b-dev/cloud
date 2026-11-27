@@ -170,7 +170,9 @@ inside it.
   says all of it on hover when it is longer than its line holds beside a
   time (more than 20 signs). A row of three cuts each line. Any other title
   wraps, but stops after two lines with "…"; one longer than two lines can
-  hold (more than 60 signs) says all of it on hover.
+  hold (more than 60 signs) says all of it on hover. Each line runs in the
+  direction of its own text (`dir="auto"`): an Arabic or Hebrew line stands
+  right to left with its "…" at its end, also in a German page.
 - lead: `icon` + `color`, or `avatar`, or a dot when `unread`.
 - `meta` (quiet note after the title, a count), `time` (top right). Title
   and `meta` share the first line in equal parts, and each takes only what

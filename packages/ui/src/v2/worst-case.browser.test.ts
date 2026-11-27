@@ -413,11 +413,13 @@ for (const width of [1440, 1024, 390, 320])
       async (page) => {
         const rows = await page.evaluate(() =>
           Array.from(document.querySelectorAll<HTMLElement>(".k2-row")).map((row) => {
-            const line = (part: HTMLElement) => Math.round(part.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(part).lineHeight));
+            const line = (part: HTMLElement) =>
+              Math.round(part.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(part).lineHeight));
             const title = row.querySelector<HTMLElement>(".k2-row-title")!;
             const text = row.querySelector<HTMLElement>(":scope > .k2-row-l2")!;
             const meta = row.querySelector<HTMLElement>(".k2-row-meta");
-            const hint = (part: HTMLElement) => (part.getAttribute("title") === null ? "none" : part.getAttribute("title") === part.textContent ? "whole" : "other");
+            const hint = (part: HTMLElement) =>
+              part.getAttribute("title") === null ? "none" : part.getAttribute("title") === part.textContent ? "whole" : "other";
             const name = title.getBoundingClientRect();
             const count = meta?.getBoundingClientRect();
             return {
@@ -435,13 +437,51 @@ for (const width of [1440, 1024, 390, 320])
         expect(rows.every((row) => row.beside)).toBe(true);
         // what is cut says all of it on hover; a short name has no hint that a screen reader would read twice
         for (const row of rows) for (const [index, cut] of row.cut.entries()) if (cut) expect(row.hints[index]).toBe("whole");
-        expect(rows.map((row) => row.hints[0])).toEqual(["none", "whole", "none", "none", "none", "whole", "whole"]);
+        expect(rows.map((row) => row.hints[0])).toEqual(["none", "whole", "none", "none", "none", "whole", "whole", "none", "none"]);
         // the long ones are cut where the column is narrow; a name of 20 signs fits beside its time even at 320 px
-        if (width <= 1024) expect(rows.slice(0, 5).map((row) => row.cut)).toEqual([[false, true], [true, false], [false, true], [false, false], [false, false]]);
-        if (width <= 390) expect(rows.slice(5).map((row) => row.cut[0])).toEqual([true, true]);
+        if (width <= 1024)
+          expect(rows.slice(0, 5).map((row) => row.cut)).toEqual([
+            [false, true],
+            [true, false],
+            [false, true],
+            [false, false],
+            [false, false],
+          ]);
+        if (width <= 390) expect(rows.slice(5, 7).map((row) => row.cut[0])).toEqual([true, true]);
         const layout = await measureV2Layout(page, { root: "#root" });
         expect(layout.past).toEqual([]);
         expect(layout.squeezed).toEqual([]);
+      },
+      "chats",
+    );
+  });
+
+// W9 (Chat break-ui): an Arabic or Hebrew last message ran in the page's direction, so it stood on the left and its
+// "…" fell on the wrong side, over its first words. Each line of a row runs in the direction of its own text.
+for (const width of [1440, 390])
+  test(`a row's lines in Arabic or Hebrew run right to left, cut at their end, at ${width} px`, async () => {
+    await withPage(
+      width,
+      async (page) => {
+        const lines = await page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>(".k2-row"))
+            .filter((row) => /[֐-ۿ]/.test(row.textContent ?? ""))
+            .flatMap((row) => [row.querySelector<HTMLElement>(".k2-row-title")!, row.querySelector<HTMLElement>(":scope > .k2-row-l2")!])
+            .map((line) => {
+              const box = line.getBoundingClientRect();
+              // the first letter of the text: in its own direction it stands at the right edge of its line, in view
+              const range = document.createRange();
+              range.setStart(line.firstChild!, 0);
+              range.setEnd(line.firstChild!, 1);
+              const first = range.getBoundingClientRect();
+              return {
+                direction: getComputedStyle(line).direction,
+                start: first.width > 0 && first.right <= box.right + 1 && first.right >= box.right - 12 && first.left >= box.left - 1,
+              };
+            }),
+        );
+        // two rows, each a name and a cut last message
+        expect(lines).toEqual(Array.from({ length: 4 }, () => ({ direction: "rtl", start: true })));
       },
       "chats",
     );

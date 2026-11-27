@@ -498,7 +498,8 @@ export const Row = (props: RowProps) => {
         </Show>
       </span>
       <span class="k2-row-l1">
-        <span class="k2-row-title" id={title} title={cut(0)}>
+        {/* user text runs in its own direction (an Arabic or Hebrew line in a German page), "…" at its end */}
+        <span class="k2-row-title" id={title} title={cut(0)} dir="auto">
           {text()[0]}
         </span>
         <Show when={meta() !== undefined}>
@@ -506,12 +507,12 @@ export const Row = (props: RowProps) => {
         </Show>
       </span>
       <Show when={lines() > 1}>
-        <span class="k2-row-l2" title={cut(1)}>
+        <span class="k2-row-l2" title={cut(1)} dir="auto">
           {text()[1]}
         </span>
       </Show>
       <Show when={lines() > 2}>
-        <span class="k2-row-l3" title={cut(2)}>
+        <span class="k2-row-l3" title={cut(2)} dir="auto">
           {text()[2]}
         </span>
       </Show>

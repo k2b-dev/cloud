@@ -55,7 +55,10 @@ const memory = `Valentin möchte Angebote immer zuerst als Entwurf sehen, mit de
 // `<body data-case="chats">`: a list of chats (W9) whose names and last messages run long, each with a time and a deed;
 // every row keeps one height: one line of name, one line of message
 const chats = [
-  { name: "Nora Weber", text: "One more thing: the invoice lists 12 chairs, we ordered 10. I will ask them to correct it before we pay anything, and then we can talk about the delivery date and the second table." },
+  {
+    name: "Nora Weber",
+    text: "One more thing: the invoice lists 12 chairs, we ordered 10. I will ask them to correct it before we pay anything, and then we can talk about the delivery date and the second table.",
+  },
   {
     name: "Lieferung KW 49 · Werkstatt Nord, Abholung Montag früh mit dem großen Transporter, danach Küchenfront, Zuschnitt und Montage beim Kunden in Leipzig, Abnahme mit dem Bauleiter und Rechnung an die Hausverwaltung am Freitag",
     text: "Abholung Montag",
@@ -67,6 +70,17 @@ const chats = [
   // a long name with a count beside it, and an address as a name (W9 break-ui): one line each, the count beside the name
   { name: "Maximiliane Alexandra von Hohenzollern-Sigmaringen-Wittelsbach", text: "You: Already done.", meta: "86" },
   { name: "projektabstimmung.lieferanten.werkstatt-nord@example.org", text: "Can you send photos to the supplier?" },
+  // user text in a script of the other direction (W9 break-ui): each line runs in its own direction, "…" at its end
+  {
+    name: "مستودع القاهرة",
+    text: "تم تأجيل التسليم إلى يوم الاثنين بسبب عطل في المستودع، يرجى إبلاغ العملاء وتحديث الجدول الزمني للطلبات المفتوحة قبل نهاية الأسبوع. ".repeat(
+      3,
+    ),
+  },
+  {
+    name: "מחסן תל אביב",
+    text: "המשלוח נדחה ליום שני בגלל תקלה במחסן, נא לעדכן את הלקוחות ואת לוח הזמנים של ההזמנות הפתוחות לפני סוף השבוע. ".repeat(3),
+  },
 ];
 if (scenario === "chats")
   render(
