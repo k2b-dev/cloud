@@ -1,8 +1,8 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Choice, Field, Section, Slider, Text } from "@k2b/ui/v2";
+import { Button, Choice, Field, Section, Slider, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onMount } from "solid-js";
-import ToolsScreen, { ToolPanes } from "../ToolsScreen";
+import ToolsScreen, { ToolPane } from "../ToolsScreen";
 import { useToolCopy } from "../tool-copy";
 import { toolsWorkspaceMessages } from "../tools-messages";
 
@@ -209,43 +209,35 @@ export default function LoremIpsumGenerator() {
         </>
       }
     >
-      <ToolPanes
-        kind="generator"
+      <ToolPane
+        lead="input"
         scrollKey="tools-lorem"
-        input={{
-          label: w().settings,
-          children: (
-            <>
-              <Band label={w().settings}>
-                <Field label={w().kind}>
-                  <Choice
-                    name="lorem-mode"
-                    value={mode()}
-                    onChange={(value) => setMode(value as Mode)}
-                    options={[
-                      { value: "paragraphs", label: t().paragraphs },
-                      { value: "sentences", label: t().sentences },
-                      { value: "words", label: t().words },
-                    ]}
-                  />
-                </Field>
-                <Field label={t().count} hint={countDescription()} optional={`1–${maxCount()}`}>
-                  <Slider min={1} max={maxCount()} value={count()} onChange={setCount} />
-                </Field>
-              </Band>
-            </>
-          ),
-        }}
-        result={{
-          label: w().result,
-          children: (
-            <>
-              <Section icon="align-left" title={w().result}>
-                <For each={paragraphs()}>{(paragraph) => <Text type="body">{paragraph}</Text>}</For>
-              </Section>
-            </>
-          ),
-        }}
+        label={w().result}
+        input={
+          <Section icon="adjustments-horizontal" title={w().settings} measure>
+            <Field label={w().kind}>
+              <Choice
+                name="lorem-mode"
+                value={mode()}
+                onChange={(value) => setMode(value as Mode)}
+                options={[
+                  { value: "paragraphs", label: t().paragraphs },
+                  { value: "sentences", label: t().sentences },
+                  { value: "words", label: t().words },
+                ]}
+              />
+            </Field>
+            <Field label={t().count} hint={countDescription()} optional={`1–${maxCount()}`}>
+              <Slider min={1} max={maxCount()} value={count()} onChange={setCount} />
+            </Field>
+          </Section>
+        }
+        result={
+          // a text to read: it keeps the reading measure, as the options under it
+          <Section icon="align-left" title={w().result} measure>
+            <For each={paragraphs()}>{(paragraph) => <Text type="body">{paragraph}</Text>}</For>
+          </Section>
+        }
       />
     </ToolsScreen>
   );

@@ -1,8 +1,8 @@
 import { crypto, i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Band, Bar, Button, Check, Facts, Field, Inline, Input, Notice, Section, Tabs, Text } from "@k2b/ui/v2";
+import { Bar, Button, Check, Facts, Field, Inline, Input, Notice, Section, Tabs, Text } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
-import ToolsScreen, { ToolPanes } from "../ToolsScreen";
+import ToolsScreen, { ToolPane } from "../ToolsScreen";
 import { toolsWorkspaceMessages } from "../tools-messages";
 
 type Tab = "symmetric" | "asymmetric";
@@ -150,42 +150,40 @@ export default function EncryptionTool() {
   const symReady = () => !!symPayload() && !!symKey() && !running();
   return (
     <ToolsScreen tool="encryption">
-      <ToolPanes
-        kind="converter"
+      <ToolPane
+        lead="input"
         scrollKey="tools-encryption"
-        input={{
-          label: w().input,
-          head: (
-            <Tabs
-              label={w().kind}
-              items={[
-                { label: t().tabSymmetric, icon: "key", current: tab() === "symmetric", onClick: () => switchTo("symmetric") },
-                { label: t().tabAsymmetric, icon: "keys", current: tab() === "asymmetric", onClick: () => switchTo("asymmetric") },
-              ]}
-            />
-          ),
-          children: (
-            <>
-              <Show when={tab() === "symmetric"}>
-                <Band label={t().tabSymmetric}>
-                  <Text type="body">{t().symIntro}</Text>
-                  <Field label={t().payloadLabel} hint={t().symPayloadDescription}>
-                    <Input multiline placeholder={t().symPayloadPlaceholder} value={symPayload()} onInput={setSymPayload} />
-                  </Field>
-                  <Field label={t().keyLabel} hint={t().keyDescription}>
-                    <Input type="password" icon="key" placeholder={t().keyPlaceholder} value={symKey()} onInput={setSymKey} />
-                  </Field>
-                  <Check
-                    switch
-                    label={`${t().stretchedLabel} · ${symStretched() ? t().stretchedNote : t().fastNote}`}
-                    checked={symStretched()}
-                    onChange={setSymStretched}
-                  />
-                  <Text type="meta" muted>
-                    {`${t().symStretchedHint} ${t().symFastHint}`}
-                  </Text>
-                </Band>
-                {/* the deeds end the column on one line without a line of their own: the seam below separates */}
+        label={w().result}
+        head={
+          <Tabs
+            label={w().kind}
+            items={[
+              { label: t().tabSymmetric, icon: "key", current: tab() === "symmetric", onClick: () => switchTo("symmetric") },
+              { label: t().tabAsymmetric, icon: "keys", current: tab() === "asymmetric", onClick: () => switchTo("asymmetric") },
+            ]}
+          />
+        }
+        input={
+          <>
+            <Show when={tab() === "symmetric"}>
+              <Section icon="cursor-text" title={w().input} measure>
+                <Text type="body">{t().symIntro}</Text>
+                <Field label={t().payloadLabel} hint={t().symPayloadDescription}>
+                  <Input multiline placeholder={t().symPayloadPlaceholder} value={symPayload()} onInput={setSymPayload} />
+                </Field>
+                <Field label={t().keyLabel} hint={t().keyDescription}>
+                  <Input type="password" icon="key" placeholder={t().keyPlaceholder} value={symKey()} onInput={setSymKey} />
+                </Field>
+                <Check
+                  switch
+                  label={`${t().stretchedLabel} · ${symStretched() ? t().stretchedNote : t().fastNote}`}
+                  checked={symStretched()}
+                  onChange={setSymStretched}
+                />
+                <Text type="meta" muted>
+                  {`${t().symStretchedHint} ${t().symFastHint}`}
+                </Text>
+                {/* the deeds end the section on one line, within its measure */}
                 <Inline>
                   <Button
                     icon="lock-open"
@@ -218,20 +216,20 @@ export default function EncryptionTool() {
                     {t().encrypt}
                   </Button>
                 </Inline>
-              </Show>
-              <Show when={tab() === "asymmetric"}>
-                <Band label={t().keyPair}>
-                  <Text type="body">{t().asymIntro}</Text>
-                  <Text type="meta" muted>
-                    {`${t().exampleLabel} ${t().exampleAlice} ${t().exampleKeyPair} ${t().exampleEncrypt} ${t().exampleDecrypt} ${t().exampleNobody}`}
-                  </Text>
-                  <Field label={t().publicKeyLabel} hint={t().publicKeyDescription}>
-                    <Input multiline placeholder={t().publicKeyPlaceholder} value={asymPubKey()} onInput={setAsymPubKey} />
-                  </Field>
-                  <Field label={t().privateKeyLabel} hint={t().privateKeyDescription}>
-                    <Input multiline placeholder={t().privateKeyPlaceholder} value={asymPrivKey()} onInput={setAsymPrivKey} />
-                  </Field>
-                </Band>
+              </Section>
+            </Show>
+            <Show when={tab() === "asymmetric"}>
+              <Section icon="keys" title={t().keyPair} measure>
+                <Text type="body">{t().asymIntro}</Text>
+                <Text type="meta" muted>
+                  {`${t().exampleLabel} ${t().exampleAlice} ${t().exampleKeyPair} ${t().exampleEncrypt} ${t().exampleDecrypt} ${t().exampleNobody}`}
+                </Text>
+                <Field label={t().publicKeyLabel} hint={t().publicKeyDescription}>
+                  <Input multiline placeholder={t().publicKeyPlaceholder} value={asymPubKey()} onInput={setAsymPubKey} />
+                </Field>
+                <Field label={t().privateKeyLabel} hint={t().privateKeyDescription}>
+                  <Input multiline placeholder={t().privateKeyPlaceholder} value={asymPrivKey()} onInput={setAsymPrivKey} />
+                </Field>
                 <Bar
                   end={
                     <Button
@@ -254,12 +252,12 @@ export default function EncryptionTool() {
                     </Button>
                   }
                 />
-                <Band label={t().encryptDecrypt}>
-                  <Field label={t().payloadLabel} hint={t().asymHint}>
-                    <Input multiline placeholder={t().asymPayloadPlaceholder} value={asymPayload()} onInput={setAsymPayload} />
-                  </Field>
-                </Band>
-                {/* the deeds end the column on one line without a line of their own: the seam below separates */}
+              </Section>
+              <Section icon="lock" title={t().encryptDecrypt} measure>
+                <Field label={t().payloadLabel} hint={t().asymHint}>
+                  <Input multiline placeholder={t().asymPayloadPlaceholder} value={asymPayload()} onInput={setAsymPayload} />
+                </Field>
+                {/* the deeds end the section on one line, within its measure */}
                 <Inline>
                   <Button
                     icon="lock-open"
@@ -291,30 +289,27 @@ export default function EncryptionTool() {
                     {t().encryptPublicKey}
                   </Button>
                 </Inline>
-              </Show>
-            </>
-          ),
-        }}
-        result={{
-          label: w().result,
-          children: (
-            <>
-              <Show when={error()}>
-                <Notice
-                  tone="bad"
-                  title={
-                    failedDeed() === "decrypt" ? t().errDecryptFailed : failedDeed() === "keys" ? t().errKeyGenFailed : t().errEncryptFailed
-                  }
-                >
-                  {error()}
-                </Notice>
-              </Show>
-              <Section icon="file-code" title={t().output} summary={output() ? undefined : w().nothingYet}>
-                <Facts items={[{ label: t().output, value: output() || "–", mono: true, copy: output() || undefined }]} />
               </Section>
-            </>
-          ),
-        }}
+            </Show>
+          </>
+        }
+        result={
+          <>
+            <Show when={error()}>
+              <Notice
+                tone="bad"
+                title={
+                  failedDeed() === "decrypt" ? t().errDecryptFailed : failedDeed() === "keys" ? t().errKeyGenFailed : t().errEncryptFailed
+                }
+              >
+                {error()}
+              </Notice>
+            </Show>
+            <Section icon="file-code" title={t().output} summary={output() ? undefined : w().nothingYet}>
+              <Facts items={[{ label: t().output, value: output() || "–", mono: true, copy: output() || undefined }]} />
+            </Section>
+          </>
+        }
       />
     </ToolsScreen>
   );

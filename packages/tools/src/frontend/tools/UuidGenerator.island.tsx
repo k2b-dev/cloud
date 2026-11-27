@@ -1,8 +1,8 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Facts, Field, Section, Slider } from "@k2b/ui/v2";
+import { Button, Facts, Field, Section, Slider } from "@k2b/ui/v2";
 import { createMemo, createSignal, onMount } from "solid-js";
-import ToolsScreen, { ToolPanes } from "../ToolsScreen";
+import ToolsScreen, { ToolPane } from "../ToolsScreen";
 import { useToolCopy } from "../tool-copy";
 import { toolsWorkspaceMessages } from "../tools-messages";
 
@@ -61,28 +61,23 @@ export default function UuidGenerator() {
         </>
       }
     >
-      <ToolPanes
-        kind="generator"
+      <ToolPane
+        lead="result"
         scrollKey="tools-uuid"
-        result={{
-          label: w().result,
-          children: (
-            // technical values in monospace, each with its copy; the count is a quiet number at the head
-            <Section icon="fingerprint" title={w().result} count={uuids().length || undefined}>
-              <Facts items={uuids().map((uuid, index) => ({ label: String(index + 1), value: uuid, mono: true, copy: uuid }))} />
-            </Section>
-          ),
-        }}
-        input={{
-          label: w().settings,
-          children: (
-            <Band label={w().settings}>
-              <Field label={t().count} hint={t().countDescription} optional="1–100">
-                <Slider min={1} max={100} value={count()} onChange={setCount} />
-              </Field>
-            </Band>
-          ),
-        }}
+        label={w().result}
+        result={
+          // technical values in monospace, each with its copy; the count is a quiet number at the head
+          <Section icon="fingerprint" title={w().result} count={uuids().length || undefined}>
+            <Facts items={uuids().map((uuid, index) => ({ label: String(index + 1), value: uuid, mono: true, copy: uuid }))} />
+          </Section>
+        }
+        input={
+          <Section icon="adjustments-horizontal" title={w().settings} measure>
+            <Field label={t().count} hint={t().countDescription} optional="1–100">
+              <Slider min={1} max={100} value={count()} onChange={setCount} />
+            </Field>
+          </Section>
+        }
       />
     </ToolsScreen>
   );

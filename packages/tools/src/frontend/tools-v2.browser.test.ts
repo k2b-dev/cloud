@@ -90,6 +90,31 @@ for (const name of SCREENS)
     }
   }, 60_000);
 
+// One block from the top: a tool page is one pane with its result and its options one under the other, the fields at
+// the reading measure. A column of options beside a short result left the rest of the page white (review 27.11.).
+const ONE_BLOCK = ["password", "uuid", "lorem", "hash", "encoding", "color", "mailto", "encryption"];
+test("a tool page is one block: one pane, its fields at the reading measure", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    for (const name of ONE_BLOCK) {
+      await page.goto(`${server.url.href}?screen=${name}`);
+      await page.locator('[data-k2-part="Workspace"]').waitFor();
+      const found = await page.evaluate(() => {
+        const fields = [...document.querySelectorAll('[data-k2-part="Pane"] .k2-field')];
+        return {
+          panes: document.querySelectorAll('[data-k2-part="Pane"]').length,
+          fields: fields.length > 0,
+          // 720 px of text between the two text edges of 20 px
+          measured: fields.every((field) => field.getBoundingClientRect().width <= 760),
+        };
+      });
+      expect({ name, ...found }).toEqual({ name, panes: 1, fields: true, measured: true });
+    }
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
 // break-ui: the realistic worst cases through the harness address (the same props the server passes), never a switch
 // in the product. A long task typed into the search, a search with exactly one hit, the English catalog, and the
 // longest password the generator allows with symbols. Each holds at 390 and 1440 px without sideways scrolling.
