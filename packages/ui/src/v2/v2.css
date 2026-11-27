@@ -66,6 +66,8 @@
   --k2-bad-tint: #fef2f2;
   --k2-bad: #b91c1c;
   --k2-bad-dot: #ef4444;
+  /* the fill of a button whose deed destroys (white words on it, in both themes) */
+  --k2-danger: #b91c1c;
   --k2-ai: #8e1b6f;
   --k2-ai-tint: #fcf3f8;
   /* the fill of the assistant's own primary action (white words on it, 7.7:1, in both themes) */
@@ -171,6 +173,8 @@
   --k2-bad-tint: #450a0a;
   --k2-bad: #fca5a5;
   --k2-bad-dot: #ef4444;
+  /* the fill of a button whose deed destroys (white words on it, in both themes) */
+  --k2-danger: #dc2626;
   --k2-ai: #f0abdc;
   --k2-ai-tint: #3a0f2e;
   --k2-ai-fill: #8e1b6f;
@@ -2192,6 +2196,11 @@
 /* a part of such an app that keeps blue on purpose (a dialog opened with primary "blue") */
 .k2-ui:is([data-k2b-primary="ai"] [data-k2b-primary="blue"] .k2-ui, [data-k2b-primary="ai"] [data-k2b-primary="blue"]) {
   --k2-primary: var(--k2-blue);
+}
+/* the agreeing button of a question whose deed destroys (Dialog.confirm `danger`) */
+.k2-ui .k2-btn[data-variant="primary"][data-danger] {
+  background: var(--k2-danger);
+  border-color: var(--k2-danger);
 }
 .k2-ui .k2-btn[data-variant="ghost"] {
   border-color: transparent;

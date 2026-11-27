@@ -46,7 +46,7 @@ The one dialog: 480 px in the middle of the window, a sheet from the bottom belo
 
 ### Dialog.confirm
 
-`await Dialog.confirm({ title, confirm })` asks before something that cannot be taken back and resolves `true` when the person agrees. An alert dialog without a close button, never a sheet.
+`await Dialog.confirm({ title, confirm })` asks before something that cannot be taken back and resolves `true` when the person agrees. An alert dialog without a close button, never a sheet. With `danger` the agreeing button is red, for a deed that destroys: deleting, revoking access, removing a device or a member. While it asks, Back (the phone's or the browser's) answers no and the page stays; any answer leaves the history as it was.
 
 <Props of="ConfirmOptions" />
 

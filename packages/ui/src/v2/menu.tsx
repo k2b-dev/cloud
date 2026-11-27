@@ -1,5 +1,17 @@
-import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  type JSX,
+  mergeProps,
+  onCleanup,
+  children as resolveChildren,
+  Show,
+  untrack,
+} from "solid-js";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
+import { hintOf, namedByLabel } from "./button";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
 import { PageLayer } from "./page-layer";
@@ -70,7 +82,10 @@ export type TriggerProps = {
   | {
       /** The words on the button; a chevron follows them. */
       children: JSX.Element;
-      /** Another name for assistive technology, only where the words alone do not say enough. */
+      /**
+       * Beside words they name the button and this is a hint; beside a count (`3`) this is the name ("3 weitere
+       * Ansichten"), holding what shows (as `Button`).
+       */
       label?: string;
     }
   | {
@@ -267,13 +282,14 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
       return props.item.disabled;
     },
   };
-  const keyed = {
-    ...shared,
+  // mergeProps keeps the getters of `shared`: a spread would read them once, so an entry locked or freed while its menu
+  // is open would keep its first state
+  const keyed = mergeProps(shared, {
     value: props.value,
     get label() {
       return props.item.label;
     },
-  };
+  });
   const kind = props.kind;
   if (kind === "submenu") {
     const sub = props.level.useSubmenu();
@@ -362,8 +378,9 @@ const MenuRoot = (props: MenuRootProps) => {
         data-menu={iconOnly() ? undefined : ""}
         // the "…" of a head stays on the phone, where the other buttons give way, so their deeds stay reachable
         data-keep={iconOnly() ? "" : undefined}
-        aria-label={iconOnly() ? name() : undefined}
-        title={iconOnly() ? name() : undefined}
+        // as Button: words name the button and its label is a hint; a count or a symbol is named by the label
+        aria-label={iconOnly() ? name() : namedByLabel(words()) ? props.label : undefined}
+        title={iconOnly() ? name() : hintOf(props.label, words())}
         tabindex={props.pointerOnly ? -1 : undefined}
         aria-hidden={props.pointerOnly ? "true" : undefined}
       >

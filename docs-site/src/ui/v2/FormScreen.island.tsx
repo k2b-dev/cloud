@@ -34,6 +34,7 @@ export default function FormScreen() {
       description: "Die Angaben zu diesem Auftrag gehen verloren. Ein verworfener Auftrag lässt sich nicht wiederherstellen.",
       confirm: "Verwerfen",
       cancel: "Weiter bearbeiten",
+      danger: true,
     });
   const [quantity, setQuantity] = createSignal("0");
   const [notify, setNotify] = createSignal(true);

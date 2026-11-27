@@ -12,7 +12,11 @@ declare global {
   interface Window {
     __k2Drop?: (which: 1 | 2) => void;
     __k2Ask?: () => void;
+    /** Asks a dangerous question ("Gerät entfernen?") from the page. */
+    __k2AskDanger?: () => void;
     __k2Shorten?: () => void;
+    /** Asks "Erste?" and "Zweite?" at once and writes the answers to `<body data-first>` and `<body data-second>`. */
+    __k2AskTwo?: () => void;
     __k2Lengthen?: () => void;
   }
 }
@@ -21,8 +25,22 @@ export function Demo() {
   const [first, setFirst] = createSignal(true);
   const [second, setSecond] = createSignal(document.documentElement.dataset.two !== undefined);
   window.__k2Drop = (which) => (which === 1 ? setFirst : setSecond)(false);
+  window.__k2AskDanger = () =>
+    void Dialog.confirm({ title: "Gerät entfernen?", confirm: "Entfernen", danger: true }).then((answer) => {
+      document.body.dataset.answer = String(answer);
+    });
+  window.__k2AskTwo = () => {
+    void Dialog.confirm({ title: "Erste?", confirm: "Ja" }).then((answer) => {
+      document.body.dataset.first = String(answer);
+    });
+    void Dialog.confirm({ title: "Zweite?", confirm: "Ja" }).then((answer) => {
+      document.body.dataset.second = String(answer);
+    });
+  };
   window.__k2Ask = () =>
     void Dialog.confirm({ title: "Weiter?", confirm: "Ja" }).then((answer) => {
+      // where the history stands when the answer arrives: a caller that navigates then must find its own entry
+      document.body.dataset.at = `${JSON.stringify(history.state ?? null)} ${location.href}`;
       document.body.dataset.answer = String(answer);
     });
   return (

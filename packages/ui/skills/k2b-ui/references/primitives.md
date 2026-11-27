@@ -332,7 +332,11 @@ lines instead of cutting a thing.
   is off; not for links or the primary action), `type`, `keep` (stays
   in a head on the phone), `title` (a hint under the pointer, for a button
   whose words give way to its symbol in a narrow place). Without children
-  it needs `label`.
+  it needs `label`. Beside words, also a time, a date, a share or a sum
+  (`12:30`, `26.11.2026`, `100 %`, `€ 12,50`), the words are the name and
+  `label` is a hint; beside a count (`2`, `99+`) or a symbol (`+`) `label`
+  is the name, and a count's label holds the count ("2 offene
+  Kommentare").
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
   such as "Sekunden", or "optional"), `action` (one quiet deed at the end
@@ -512,16 +516,22 @@ lines instead of cutting a thing.
   Escape and the close button close it, focus returns to what opened it.
   `dismissible={false}`: a press outside, a swipe and the back gesture do
   not close it; Escape, the close button and the foot still do.
-- `Dialog.confirm({ title, confirm, description?, cancel? })`: resolves
-  `true` when the person agrees. An alert dialog without a close button,
-  never a sheet; focus starts on the other button, Escape answers no, a
-  press outside does nothing. Call it from a menu entry with `void`, so the
+- `Dialog.confirm({ title, confirm, description?, cancel?, danger? })`:
+  resolves `true` when the person agrees. An alert dialog without a close
+  button, never a sheet; focus starts on the other button, Escape answers
+  no, a press outside does nothing. `danger` makes the agreeing button red:
+  use it for every deed that destroys (delete, revoke, remove a member or a
+  device). Questions asked together show one after the other. Back
+  answers the one that shows no and keeps the page; no app code for the
+  history. A reload while it asks leaves its entry behind: the first Back
+  after it stays on the page. Call it from a menu entry with `void`, so the
   menu closes while it asks.
 
 - `Menu`: `items`, the button's look like `Button` (`label`, `icon`,
-  `variant`, `disabled`; children are the words). Without words it is the
-  quiet "…" (`dots`) named by `label` ("Weitere Aktionen" by default); in a
-  head it stays on the phone. An entry: `label`, `icon`, `onClick` (a
+  `variant`, `disabled`; children are the words, named as on a `Button`:
+  words name it, a count or a symbol is named by `label`). Without words
+  it is the quiet "…" (`dots`) named by `label` ("Weitere Aktionen" by
+  default); in a head it stays on the phone. An entry: `label`, `icon`, `onClick` (a
   Promise keeps the menu open and the entry busy), `href`, `danger`,
   `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),

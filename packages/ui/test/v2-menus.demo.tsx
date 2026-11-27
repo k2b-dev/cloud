@@ -13,6 +13,8 @@ declare global {
     __moreViews?: () => void;
     /** Where the last Escape went: to the page, or taken by something on it (the toast test). */
     __escape?: "none" | "page" | "taken";
+    /** Locks or frees the tick "Nur offene zeigen" while the menu may be open. */
+    __k2LockTick?: (locked: boolean) => void;
   }
 }
 
@@ -29,6 +31,8 @@ const orders = [
 export function Demo() {
   const [openOnly, setOpenOnly] = createSignal(true);
   const [urgent, setUrgent] = createSignal(false);
+  const [tickLocked, setTickLocked] = createSignal(false);
+  if (typeof window !== "undefined") window.__k2LockTick = setTickLocked;
   const [views, setViews] = createSignal(["Archiv", "Vorlagen"]);
   if (typeof window !== "undefined") window.__moreViews = () => setViews([...views(), `Ansicht ${views().length + 1}`]);
   // the open reply of Mail: one choice for the kind of reply and one for the sender
@@ -52,6 +56,7 @@ export function Demo() {
     {
       label: "Nur offene zeigen",
       checked: openOnly(),
+      disabled: tickLocked(),
       onClick: () => {
         const next = !openOnly();
         setOpenOnly(next);

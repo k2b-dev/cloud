@@ -68,7 +68,7 @@ A `Popover` in the head has no `keep`: on the phone it leaves with the other hea
 ### Do
 
 - Give a row's "…" and its `Menu.Context` the same list of entries.
-- Name every icon button and every "…" with `label`, such as "Aktionen für Regal Archiv".
+- Name every icon button and every "…" with `label`, such as "Aktionen für Regal Archiv". Beside words, also a time, a date, a share or a sum (`12:30`, `100 %`), `label` is a hint; beside a count (`2`, `99+`) or a symbol (`+`) it is the name, and a count's label holds the count, such as "2 offene Kommentare".
 - Put deeds that destroy last, with `danger`; the line before them comes by itself.
 - Say why a deed is disabled, in the sentence beside it.
 

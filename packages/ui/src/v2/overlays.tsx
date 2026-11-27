@@ -1,5 +1,6 @@
 import { createEffect, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { isServer, render } from "solid-js/web";
+import { sharedDialogHistory } from "../internal/dialog-history";
 import { useUiMessages } from "../intl/messages";
 import { createQuestion, type Question, quietFocus, useDialog } from "./behavior/overlays";
 import { Icon } from "./marks";
@@ -171,6 +172,8 @@ export type ConfirmOptions = {
   confirm: string;
   /** The words of the other button; "Abbrechen" by default. */
   cancel?: string;
+  /** Agreeing destroys something (deletes, revokes, removes a device): the agreeing button is red. */
+  danger?: boolean;
 };
 
 /**
@@ -179,19 +182,23 @@ export type ConfirmOptions = {
  * the shape of `Dialog`, without a close button: Escape and the other button answer no, focus starts on the other
  * button, a press outside does nothing, and it is never a sheet. The first `Workspace` on the page answers, also for
  * code in another island; without one, the question brings its own dialog to the end of the page until it is
- * answered. A question whose dialog leaves the page while it asks is answered no.
+ * answered. A question whose dialog leaves the page while it asks is answered no. Questions asked together show one
+ * after the other. While one shows it holds one entry in the history: Back (the phone's, the browser's) answers that
+ * question no and leaves the page where it is, and any answer takes the entry out again (the history of the dialogs
+ * of `@k2b/ui`, which page navigation knows). A reload while it asks leaves that entry behind: the reloaded page
+ * shows no question, and the first Back stays on it.
  */
 export const confirm = (options: ConfirmOptions): Promise<boolean> => {
   const page = pageAnswer();
   if (page) return page(options);
   // no Workspace answers: a dialog of its own, in a v2 scope of its own, for as long as the question is open
-  const question = createQuestion<ConfirmOptions>();
+  const held = createHeldQuestion();
   const host = document.createElement("div");
   host.className = "k2-ui";
   host.style.display = "contents";
   document.body.append(host);
-  const stop = render(() => <ConfirmSurface question={question} />, host);
-  return question.ask(options).finally(() => {
+  const stop = render(() => <ConfirmSurface held={held} />, host);
+  return held.ask(options).finally(() => {
     stop();
     host.remove();
   });
@@ -220,23 +227,69 @@ const pageAnswer = (): Ask | undefined => {
  * server too, so it never changes what the server sent.
  */
 export const ConfirmDialog = (props: { host: () => HTMLElement | undefined }) => {
-  const question = createQuestion<ConfirmOptions>();
+  const held = createHeldQuestion();
   onMount(() => {
     const host = props.host();
     if (!host) return;
-    Reflect.set(host, hostKey, question.ask);
+    Reflect.set(host, hostKey, held.ask);
     onCleanup(() => {
       Reflect.deleteProperty(host, hostKey);
     });
   });
-  return <ConfirmSurface question={question} />;
+  return <ConfirmSurface held={held} />;
 };
 
-const ConfirmSurface = (props: { question: Question<ConfirmOptions> }) => {
+/**
+ * The question that answers `confirm`, with its one entry in the history: held from the moment a question shows (one
+ * still waiting holds none) to its answer. The answer arrives once that entry has left the history, so a caller that
+ * navigates on it replaces the page's own entry, as after a dialog of `@k2b/ui`.
+ */
+const createHeldQuestion = () => {
+  const question = createQuestion<ConfirmOptions>();
+  let shown: HTMLElement | undefined;
+  /** Back came before the question's element was there: it answers no as soon as it is. */
+  let backed = false;
+  // Back answers the question that shows no, as Escape does (focus returns to where it was asked)
+  const answerNo = () => {
+    if (!shown?.isConnected) backed = true;
+    else shown.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  };
+  let release: (() => void) | undefined;
+  const free = () => {
+    release?.();
+    release = undefined;
+    backed = false;
+  };
+  return {
+    question,
+    ask: (options: ConfirmOptions) =>
+      question.ask(options).then(async (answer) => {
+        free();
+        await sharedDialogHistory.settled();
+        return answer;
+      }),
+    /** A question shows: it holds its entry until its answer (its leaving is no moment of its own). */
+    shows: (open: boolean) => {
+      if (open && !release) release = sharedDialogHistory.hold(answerNo);
+    },
+    mounted: (element: HTMLElement) => {
+      shown = element;
+      if (!backed) return;
+      backed = false;
+      queueMicrotask(answerNo);
+    },
+    free,
+  };
+};
+
+type HeldQuestion = ReturnType<typeof createHeldQuestion>;
+
+const ConfirmSurface = (props: { held: HeldQuestion }) => {
   const t = useUiMessages();
-  const parts = props.question.useDialog();
+  const parts = props.held.question.useDialog(() => ({ onOpenChange: props.held.shows }));
+  onCleanup(props.held.free);
   return (
-    <parts.Popup class="k2-dialog" data-k2-part="Dialog" data-alert="" backdrop={{ class: "k2-backdrop" }}>
+    <parts.Popup ref={props.held.mounted} class="k2-dialog" data-k2-part="Dialog" data-alert="" backdrop={{ class: "k2-backdrop" }}>
       <div class="k2-slot" data-slot="head">
         <div class="k2-bar">
           <div class="k2-bar-start">
@@ -257,7 +310,13 @@ const ConfirmSurface = (props: { question: Question<ConfirmOptions> }) => {
             <parts.Close class="k2-btn" data-k2-part="Button">
               <span class="k2-btn-label">{parts.payload()?.cancel ?? t().cancel}</span>
             </parts.Close>
-            <parts.Close class="k2-btn" data-k2-part="Button" data-variant="primary" value="confirm">
+            <parts.Close
+              class="k2-btn"
+              data-k2-part="Button"
+              data-variant="primary"
+              data-danger={parts.payload()?.danger ? "" : undefined}
+              value="confirm"
+            >
               <span class="k2-btn-label">{parts.payload()?.confirm}</span>
             </parts.Close>
           </div>
