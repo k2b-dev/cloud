@@ -380,7 +380,8 @@ export const scannedSources = async (root: string, aliases: Record<string, strin
             queue.push(target);
           }
   }
-  return files;
+  // the file system lists in any order; findings and their reasons come out the same on every machine
+  return new Map([...files].sort(([a], [b]) => a.localeCompare(b)));
 };
 
 const manifestSchema = (value: unknown): { sideEffects?: string[]; aliases: Record<string, string[]> } => {
@@ -413,7 +414,7 @@ export const rule: Rule = {
       if (!patterns.some(({ glob }) => glob.match(file)))
         findings.push({
           file: join(root, file),
-          message: `does something on import (${why.join("; ")}); add "./${file}" to sideEffects in packages/cloud/package.json, or a bundler drops it where nothing uses its exports`,
+          message: `does something on import (${why.toSorted().join("; ")}); add "./${file}" to sideEffects in packages/cloud/package.json, or a bundler drops it where nothing uses its exports`,
         });
     // a listed module that does nothing on import keeps code in every island that reaches it
     for (const { entry } of patterns)

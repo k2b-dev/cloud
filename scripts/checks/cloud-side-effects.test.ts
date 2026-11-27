@@ -107,7 +107,7 @@ test("the rule asks for each module that does something and for no module that d
   // an index resolves, a used script counts, workers, tests and unused scripts do not
   expect(await run(files, ["**/*.css"])).toEqual([
     "scripts/used.ts: does something on import (runs `process.on('exit', () => {})",
-    "src/channels/browser.ts: does something on import (src/channels/index.ts imports it for its effect",
+    "src/channels/browser.ts: does something on import (runs `registerDriver({ id: 'browser' })",
     "src/channels/index.ts: does something on import (imports ./browser for its effect)",
   ]);
   // a glob covers what it matches; an exact entry that does nothing is stale
