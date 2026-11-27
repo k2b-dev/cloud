@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../../ui/test/browser";
+import { renderCloudShell } from "../../../../../../tests/fixtures/cloud-shell";
 import { FIXTURE_NOW, FIXTURE_REVISION, type FixtureVariant } from "./frame.browser-fixture";
 
 // The bases overview and a base home on v2, in a real browser: the address holds what is open and narrowed, the
@@ -54,6 +55,8 @@ const buildCss = async (entry: string): Promise<string> => {
 };
 
 let browser: Browser;
+// the real Cloud shell (icon rail, page title, phone bar) around the screens, as a person sees the page
+let shell: Awaited<ReturnType<typeof renderCloudShell>>;
 let css: string;
 let harness: string;
 let icons: { css: string; font: string };
@@ -76,9 +79,10 @@ beforeAll(async () => {
     v2Css,
   ].join("\n");
   if (shots) mkdirSync(shots, { recursive: true });
-  browser = await launchBrowser();
+  [shell, browser] = await Promise.all([renderCloudShell({ id: "grids", name: "Grids", icon: "table" }), launchBrowser()]);
 }, launchHookMs);
 afterAll(async () => {
+  shell?.restore();
   await browser?.close();
 });
 
@@ -89,11 +93,21 @@ const phone: View = { width: 390, height: 844, touch: true, name: "390" };
 // the widest screen B is drawn for: lists keep their measure and the rest is room, not stretched rows
 const xl: View = { width: 1920, height: 1080, touch: false, name: "1920" };
 
-const page = (variant: FixtureVariant) =>
-  `<!doctype html><html lang="de" class="light" data-variant="${variant}"><head><meta charset="utf-8">` +
-  `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/plex.css"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
-  `<style>${css}</style><style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
-  `<body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`;
+/** The shell's page for an address, with the app's styles and the harness that mounts the screen into its `#root`. */
+const page = async (address: string, variant: FixtureVariant) => {
+  const html = await shell.page(address, [{ title: "Start", href: "/" }, { title: "Grids" }]);
+  return (
+    html
+      // the shell's own stylesheets are served by Core: the page carries the same styles, compiled here
+      .replace(/<link\b[^>]*rel="(?:stylesheet|preload)"[^>]*>/g, "")
+      .replace("<html", `<html data-variant="${variant}"`)
+      .replace(
+        "</head>",
+        `<link rel="stylesheet" href="${origin}/plex.css"><link rel="stylesheet" href="${origin}/tabler-icons.css"><style>${css}</style></head>`,
+      )
+      .replace("</body>", '<script src="/harness.js"></script></body>')
+  );
+};
 
 type Seen = { created: unknown[] };
 
@@ -134,7 +148,7 @@ const open = async (view: View, address: string, variant: FixtureVariant = "plai
   await tab.route(`${origin}/**`, async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/app/grids" || url.pathname.startsWith("/app/grids/Bas001"))
-      return route.fulfill({ contentType: "text/html; charset=utf-8", body: page(variant) });
+      return route.fulfill({ contentType: "text/html; charset=utf-8", body: await page(`${url.pathname}${url.search}`, variant) });
     if (url.pathname === "/api/grids/workspace/revision")
       return route.fulfill({ json: { ...FIXTURE_REVISION, canWrite: true, canAdmin: true } });
     if (url.pathname === "/api/grids/bases" && route.request().method() === "POST") {
