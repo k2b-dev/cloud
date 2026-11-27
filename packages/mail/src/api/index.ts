@@ -3279,18 +3279,18 @@ const mailOperationsApi = new Hono<MailApiContext>()
     "/mailboxes/:mailboxId/drafts/:draftId/document/rest",
     describeRoute({
       tags: ["Mail"],
-      summary: "Recover a device document after sending or discard",
+      summary: "Recover a device document after sending, discard or a refused edit",
       description:
-        "Preserves the full device text including deletions. Repeat with the same generation, clientId and state after a lost answer.",
+        "Preserves the full device text including deletions. `unchanged`: nothing beyond the stored draft; `kept`: a recovery copy of the returned existing draft (an open draft keeps refused input this way); `recovered`: a separate new draft. Repeat with the same generation, clientId and state after a lost answer.",
       parameters: draftDocumentAccountParameters,
       ...requiresAuth,
       responses: {
         200: jsonResponse(
           z.union([
             z.object({ status: z.literal("unchanged"), durableSourceState: z.string() }),
-            z.object({ status: z.literal("recovered"), draft: draftSchema, durableSourceState: z.string() }),
+            z.object({ status: z.enum(["kept", "recovered"]), draft: draftSchema, durableSourceState: z.string() }),
           ]),
-          "Unchanged or recovered whole draft",
+          "Where the whole device draft went",
         ),
       },
     }),
