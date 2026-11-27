@@ -2024,13 +2024,19 @@
   row-gap: 8px;
 }
 /* A bar in the flow of a column or in a pane's status place (not a head or a status row, which have their own narrow
-   forms) with such a line: its things and its end flow as one line that wraps, the end after the last thing when it
-   has room there. One line stays the bar's 40 px (a small control of 28 px with equal air above and below, the line
-   below), only a second line makes it higher. */
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]):has(> .k2-bar-start > .k2-inline) {
+   forms): its things and its end flow as one line that wraps, the end after the last thing when it has room there and
+   on a line of its own when not, so it never runs under them (the deeds of an open file beside its size). One line
+   stays the bar's 40 px (a small control of 28 px with equal air above and below, the line below), only a second line
+   makes it higher. */
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]) {
   height: auto;
   min-height: var(--k2-h-bar);
   padding-block: calc((var(--k2-h-bar) - 1px - var(--k2-h-control-small)) / 2);
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+/* its deeds wrap too where the column is narrower than they are, so none is cut */
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]) > .k2-bar-start {
   flex-wrap: wrap;
   row-gap: 8px;
 }
@@ -5095,6 +5101,24 @@
     padding: 6px 0;
   }
 }
+/* On the phone a row that leads with a thing's mark is 56 px with a mark of 40 (the mockup's phone lists of files and
+   folders), still above the touch target of 44; a row without a mark keeps its 60 px. */
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-row[data-mark],
+  .k2-ui .k2-row[data-mark][data-lines="1"] {
+    min-height: 56px;
+    padding-block: 8px;
+  }
+  .k2-ui .k2-row[data-mark] > .k2-row-lead > .k2-mk {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+  }
+  .k2-ui .k2-row[data-mark] > .k2-row-lead > .k2-mk > .k2-icon {
+    font-size: 22px;
+  }
+}
+
 
 /* ── Narrow column: below 480 px of its pane, by the pane's own width (a side panel on the desktop too) ─────────
    What simply has no room changes with the column, not the window: a large table becomes rows and drops columns,

@@ -547,6 +547,17 @@ test("a setting stands with its value beside its name, and an unsaved change say
       };
     });
     expect(deed).toEqual({ name: "Auf Standard zurücksetzen", between: true, top: true });
+    // the keys follow the eye: the name's deed comes first, then the value it stands before (WCAG 2.4.3)
+    await page.locator("[data-k2-part='Setting'][data-action] .k2-field-action button").focus();
+    await page.keyboard.press("Tab");
+    const inValue = () =>
+      page.evaluate(() => {
+        const setting = document.querySelector("[data-k2-part='Setting'][data-action]")!;
+        return !!document.activeElement && setting.contains(document.activeElement) && !document.activeElement.closest(".k2-field-action");
+      });
+    expect(await inValue()).toBe(true);
+    await page.keyboard.press("Shift+Tab");
+    expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Auf Standard zurücksetzen");
   });
   await withPage(
     "settings",
@@ -591,8 +602,8 @@ test("the states of an entry stand whole under its lines and wrap; rows without 
           };
         });
         // without states the rows keep their heights: 44 for one line that leads with a mark, 52 for two (in a section
-        // no line between rows); on the phone a row of one line takes its 60
-        expect(found.heights).toEqual(width === 1440 ? [44, 52] : [60, 52]);
+        // no line between rows); on the phone a row that leads with a mark takes 56 (the mockup's 56 with a mark of 40)
+        expect(found.heights).toEqual(width === 1440 ? [44, 52] : [56, 56]);
         expect(found.edge).toBe(0);
         expect(found.under).toBe(true);
         expect(found.whole).toBe(true);
@@ -853,3 +864,75 @@ test("an empty state with two ways out: the first a button, the second quiet tex
       width,
     );
 });
+
+test("on the phone a row that leads with a mark is 56 px with a mark of 40; a row without a mark keeps its 60 px", async () => {
+  await withPage(
+    "states",
+    async (page) => {
+      const rows = await page.locator(".k2-row[data-mark]").evaluateAll((elements) =>
+        elements.map((row) => {
+          const mark = row.querySelector(":scope > .k2-row-lead > .k2-mk")!.getBoundingClientRect();
+          return { height: Math.round(row.getBoundingClientRect().height), mark: `${mark.width}x${mark.height}` };
+        }),
+      );
+      expect(rows.length).toBe(4);
+      expect([...new Set(rows.map((row) => row.mark))]).toEqual(["40x40"]);
+      // a row of one line is exactly 56; one with more lines or states grows from there
+      expect(rows[0]!.height).toBe(56);
+      expect(rows.every((row) => row.height >= 56)).toBe(true);
+    },
+    390,
+  );
+  await withPage(
+    "selection",
+    async (page) => {
+      const plain = await page
+        .locator(".k2-row:not([data-mark])")
+        .first()
+        .evaluate((row) => Math.round(row.getBoundingClientRect().height));
+      expect(plain).toBe(60);
+    },
+    390,
+  );
+  // beside the phone the mark is 32 again
+  await withPage(
+    "list",
+    async (page) => {
+      const mark = await page
+        .locator(".k2-row[data-mark] > .k2-row-lead > .k2-mk")
+        .first()
+        .evaluate((element) => element.getBoundingClientRect().width);
+      expect(mark).toBe(32);
+    },
+    1024,
+  );
+});
+
+for (const width of [1440, 1024, 800])
+  test(`a bar in the flow of a column puts its end on a line of its own where it has no room, never under its deeds (Files, ${width})`, async () => {
+    await withPage(
+      "list",
+      async (page) => {
+        const found = await page.evaluate(() => {
+          const bar = document.querySelector(".k2-pane[data-detail] .k2-scroll > .k2-bar")!;
+          const end = bar.querySelector(".k2-bar-end")!.getBoundingClientRect();
+          const deeds = [...bar.querySelectorAll(".k2-bar-start .k2-btn")].map((button) => button.getBoundingClientRect());
+          const pane = bar.closest(".k2-pane")!.getBoundingClientRect();
+          return {
+            apart: deeds.every((deed) => end.left >= deed.right || end.top >= deed.bottom || end.bottom <= deed.top),
+            inside: [end, ...deeds].every((box) => box.right <= pane.right + 0.5),
+            // every deed keeps its whole label
+            whole: [...bar.querySelectorAll<HTMLElement>(".k2-bar-start .k2-btn")].every(
+              (button) => button.scrollWidth <= button.clientWidth + 1,
+            ),
+          };
+        });
+        expect({ width, ...found }).toEqual({ width, apart: true, inside: true, whole: true });
+        // at 800 the detail stands at its narrowest; the actions of its sections are another place (MW)
+        if (width === 800) return;
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.problems).toEqual([]);
+      },
+      width,
+    );
+  });
