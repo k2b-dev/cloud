@@ -11,7 +11,6 @@ import capabilitiesPage from "./observability/capabilities/page";
 import gatewayPage from "./observability/gateway/page";
 import { legacyRoutesHref } from "./observability/gateway/query";
 import infrastructureApiRoutes from "./observability/infrastructure/api";
-import infrastructurePage from "./observability/infrastructure/page";
 import { runScheduleNowAction } from "./observability/jobs/actions";
 import jobsApiRoutes from "./observability/jobs/api";
 import loggingApiRoutes from "./observability/logs/api";
@@ -114,12 +113,13 @@ export const router = new Hono<AuthContext>()
   .get("/admin/observability/workflows", auth.requireRole("admin", ssr.access), ...workflowsPage)
   .get("/admin/observability/capabilities", auth.requireRole("admin", ssr.access), ...capabilitiesPage)
   .get("/admin/observability/metrics", auth.requireRole("admin", ssr.access), ...metricsPage)
-  .get("/admin/observability/infrastructure", auth.requireRole("admin", ssr.access), ...infrastructurePage)
   .get("/admin/observability/infrastructure/postgres", auth.requireRole("admin", ssr.access), ...postgresPage)
   .get("/admin/observability/infrastructure/valkey", auth.requireRole("admin", ssr.access), ...redisPage)
   .get("/admin/observability/infrastructure/nats", auth.requireRole("admin", ssr.access), ...natsPage)
   .get("/admin/observability/infrastructure/nats-access", auth.requireRole("admin", ssr.access), ...natsAccessPage)
   // Postgres, Valkey, NATS and its access became areas of the infrastructure record; old addresses keep their query.
+  // The record has no overview of its own: the Ops overview shows the three services, and the record opens on Postgres.
+  .get("/admin/observability/infrastructure", auth.requireRole("admin", ssr.access), moved("/admin/observability/infrastructure/postgres"))
   .get("/admin/observability/postgres", auth.requireRole("admin", ssr.access), moved("/admin/observability/infrastructure/postgres"))
   .get("/admin/observability/valkey", auth.requireRole("admin", ssr.access), moved("/admin/observability/infrastructure/valkey"))
   .get("/admin/observability/nats", auth.requireRole("admin", ssr.access), moved("/admin/observability/infrastructure/nats"))

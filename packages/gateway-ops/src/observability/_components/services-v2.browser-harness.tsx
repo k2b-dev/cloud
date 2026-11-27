@@ -1,7 +1,6 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { render } from "solid-js/web";
-import { InfrastructureScreenFixture } from "../infrastructure/_components/infrastructure-screen.fixture";
 import { MetricsScreenFixture } from "../metrics/_components/metrics-screen.fixture";
 import NatsAccessScreen from "../nats/_components/NatsAccessScreen.island";
 import { NatsScreenFixture } from "../nats/_components/nats-screen.fixture";
@@ -26,9 +25,6 @@ const screens: Record<string, () => JSX.Element> = {
   alerts: () => <SettingsScreenFixture {...options} open={params.get("webhook")} state={settingsState} />,
   health: () => <SettingsScreenFixture {...options} area="health" state={settingsState} />,
   retention: () => <SettingsScreenFixture {...options} area="retention" state={settingsState} />,
-  infrastructure: () => (
-    <InfrastructureScreenFixture {...options} state={params.has("slow") ? "slow" : params.has("failed") ? "failed" : "normal"} />
-  ),
   nats: () => <NatsScreenFixture {...options} />,
   access: () => (
     <LocaleProvider locale={locale}>

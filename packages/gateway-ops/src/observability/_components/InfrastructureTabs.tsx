@@ -3,9 +3,8 @@ import { Tabs } from "@k2b/ui/v2";
 import { natsMessages } from "../nats/messages";
 import { areaMessages } from "./area-messages";
 
-/** The infrastructure record: an overview and one area per backend, each with its own address. */
+/** The infrastructure record: one area per backend, each with its own address; the record opens on Postgres. */
 export const INFRA_HREF = {
-  overview: "/admin/observability/infrastructure",
   postgres: "/admin/observability/infrastructure/postgres",
   valkey: "/admin/observability/infrastructure/valkey",
   nats: "/admin/observability/infrastructure/nats",
@@ -22,7 +21,6 @@ export function InfrastructureTabs(props: { current: InfraArea }) {
     <Tabs
       label={area().infrastructure}
       items={[
-        { label: area().home, icon: "layout-dashboard", href: INFRA_HREF.overview, current: props.current === "overview" },
         { label: "Postgres", icon: "database", href: INFRA_HREF.postgres, current: props.current === "postgres" },
         { label: "Valkey", icon: "database", href: INFRA_HREF.valkey, current: props.current === "valkey" },
         { label: "NATS", icon: "topology-star-3", href: INFRA_HREF.nats, current: props.current === "nats" },
