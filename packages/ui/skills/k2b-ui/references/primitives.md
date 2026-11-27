@@ -456,13 +456,23 @@ lines instead of cutting a thing.
   holds them. Known: while tabs hide, a gap of less than one tab may stand
   before the menu tab.
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"; cut with "…"
-  where it does not fit before the filters), `loading` (results
+  first where it does not fit, its whole words as a hint on hover),
+  `loading` (results
   refresh in place: `true` turns a quiet mark after the lead; pass `false`
   while idle so its 16 px stay reserved and nothing moves; leave it out where
-  the row never refreshes), `facts: { before?, value?, after? }[]` (where
-  they do not fit before the filters, the later ones give way whole, so the
-  filters keep their words; they go on the phone; put what must stay in
-  `lead`),
+  the row never refreshes), `facts: { before?, value?, after? }[]` (they
+  share the room before the filters with the lead, each up to its own width:
+  beside a short lead they take the rest, beside a long lead they keep their
+  width and the lead is cut; where both are long the lead keeps 40 % (60 %
+  below 600 px, where the controls fold) and the later figures give way
+  whole, so the filters keep their words; they go on the phone; put what must
+  stay in `lead`),
+  `marks` (tinted chips of the statement, an exception such as
+  `<Chip status="bad">1 ohne Zugriff</Chip>`: after the lead, they keep their
+  width while the lead is cut, stay on the phone, and give way whole only
+  where about a word of the lead no longer fits; a chip that must never leave
+  belongs in `lead`; chips only, no buttons, as a chip that gave way still
+  takes the focus; `cond && <Chip/>` is fine, `false` draws nothing),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`, each with an `icon`; below 600 px of row

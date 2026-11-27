@@ -30,7 +30,8 @@
  * - **cut:** a control's label never leaves its box and is never clipped, unless it ends in "…" in its own box (the
  *   way back to a list with a long name); a one-line text (the lines of a row, the
  *   cells of a table with column widths) never wraps, it ends with "…"; a box that clips its text shows every line
- *   whole and cuts a line at its end only with "…".
+ *   whole and cuts a line at its end only with "…"; text never runs out of a box that does not clip it, where it would
+ *   run under what stands beside it and look cut mid-word.
  *
  * ```ts
  * import { measureV2Layout } from "@k2b/ui/v2/testing";
@@ -604,6 +605,49 @@ function measureInPage(options: InPage): DomResult {
       const holdsControl = Array.from(element.children).some((child) => child.matches(options.controls));
       if (clipsX && !holdsControl && element.scrollWidth > element.clientWidth + 1 && style.textOverflow !== "ellipsis")
         cut.push(`${name(element)} "${labelOf(element)}" cuts its line without "…"`);
+    }
+    // Text that runs out of the box it stands in, where that box does not clip, runs under what stands beside it: a
+    // person sees it cut mid-word with no "…" (a lead under the chips at the end of its row). It belongs cut with "…"
+    // in its own box. A box that is placed on its own (absolute, fixed) may stand outside on purpose.
+    for (const element of elements) {
+      if (!(element instanceof HTMLElement) || element.closest(options.controls) || hiddenName(element)) continue;
+      if (!Array.from(element.childNodes).some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim())) continue;
+      const own = getComputedStyle(element);
+      if (["absolute", "fixed"].includes(own.position)) continue;
+      let parent = element.parentElement;
+      while (parent && getComputedStyle(parent).display === "contents") parent = parent.parentElement;
+      if (!parent || !root.contains(parent) || getComputedStyle(parent).overflowX !== "visible") continue;
+      const place = parent.getBoundingClientRect();
+      // Only what is in sight: a box that clips its own text (with "…") keeps it inside, whatever the text's range says,
+      // and a box that scrolls its own text (code, a scrolling bar of words) shows it within its own edges; the box
+      // itself must still stand in its place.
+      const clip = hardClipX(element);
+      if (["auto", "scroll"].includes(own.overflowX)) {
+        const edges = element.getBoundingClientRect();
+        clip.left = Math.max(clip.left, edges.left);
+        clip.right = Math.min(clip.right, edges.right);
+      }
+      // A box moved on purpose may stand out by as much as it was moved, never more: its own shift sideways, a negative
+      // margin, a negative (hanging) indent, or a relative place moved by `left`, `right` or `inset`.
+      const shift = own.transform === "none" ? 0 : Math.abs(new DOMMatrixReadOnly(own.transform).m41);
+      // a relatively placed box moved by `left`, `right` or `inset` counts as moved by that much
+      const offset =
+        own.position === "relative" ? Math.abs(Number.parseFloat(own.left) || 0) + Math.abs(Number.parseFloat(own.right) || 0) : 0;
+      const allowance =
+        shift +
+        offset +
+        Math.max(0, -Number.parseFloat(own.marginLeft)) +
+        Math.max(0, -Number.parseFloat(own.marginRight)) +
+        Math.max(0, -Number.parseFloat(own.textIndent));
+      const boxes = textBoxes(element, (node) => node.parentElement !== element);
+      const out = Math.max(
+        0,
+        ...boxes.map((box) => Math.max(Math.min(box.right, clip.right) - place.right, place.left - Math.max(box.left, clip.left))),
+      );
+      if (out > allowance + 1)
+        cut.push(
+          `${name(element)} "${labelOf(element)}" runs ${Math.round(out)} px out of ${name(parent)} and under what stands beside it; it is cut with "…" in its own box`,
+        );
     }
     for (const element of Array.from(root.querySelectorAll(options.oneLine))) {
       if (!visible(element) || element.parentElement?.closest(options.skip)) continue;
