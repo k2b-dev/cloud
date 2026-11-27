@@ -172,9 +172,11 @@ for (const width of [1440, 1920, 1024, 390]) {
         const line = await box(page, '[data-k2-part="Pane"] > .k2-scroll > .k2-text');
         expect(Math.abs(line.top - pane.top - (pane.bottom - tiles.bottom))).toBeLessThanOrEqual(1);
       }
+      // where four do not fit in one row: 2 × 2, never 3 + 1
+      if (width === 1024) expect(new Set(tops).size).toBe(2);
       if (width < 768) {
-        // the phone: from the top, the cards under each other
-        expect(new Set(tops).size).toBe(4);
+        // the phone: from the top, the cards 2 × 2 as the approved mockup draws them
+        expect(new Set(tops).size).toBe(2);
         const line = await box(page, '[data-k2-part="Pane"] > .k2-scroll > .k2-text');
         expect(line.top - pane.top).toBeLessThan(40);
       }
