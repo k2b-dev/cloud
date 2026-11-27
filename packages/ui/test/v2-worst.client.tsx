@@ -148,7 +148,41 @@ else if (scenario === "table" || scenario === "head" || scenario === "headmenu" 
     ),
     root,
   );
-else
+// `<body data-case="schedule">`: tasks of the Assistant (W7) whose second line is a schedule: the whole schedule shows,
+// a very long one stops after two lines and says all of it on hover
+else if (scenario === "schedule") {
+  const tasks = [
+    { id: "t1", name: "Tagesbericht", plan: "Mo–Fr um 08:00, 12:00 und 17:30 Uhr, zuletzt bis 19:55 Uhr", last: "heute, 08:00" },
+    {
+      id: "t2",
+      name: "Lager abgleichen",
+      plan: `Jeden ersten Montag im Monat um 06:30 Uhr, ${"danach alle zwei Stunden bis zum Abend, ".repeat(6)}außer an Feiertagen`,
+      last: "1.12.2026, 06:30",
+    },
+    { id: "t3", name: "Kurz", plan: "täglich", last: "gestern" },
+    // a name in a script of the other direction runs right to left in its cell
+    { id: "t4", name: "تقرير المستودع اليومي", plan: "يوميًا", last: "heute" },
+  ];
+  render(
+    () => (
+      <Workspace>
+        <Pane label="Aufgaben">
+          <Table
+            label="Aufgaben"
+            rows={tasks}
+            rowKey={(task) => task.id}
+            columns={[
+              { title: "Aufgabe", cell: (task) => ({ lines: [task.name, task.plan] }), width: { min: 200, default: 320 } },
+              { title: "Zuletzt", cell: (task) => task.last, width: { min: 120, default: 160 } },
+            ]}
+            phone={(task) => ({ lines: [task.name, task.plan], time: task.last })}
+          />
+        </Pane>
+      </Workspace>
+    ),
+    root,
+  );
+} else
   render(
     () => (
       <Workspace

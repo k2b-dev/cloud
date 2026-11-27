@@ -210,7 +210,11 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
 never widens it, a grip in the head that a drag or the keys move), `wrap` (one text column may take 3
-lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
+lines), `drop` (leaves on the phone). In a table with widths a cell's
+quiet line takes two lines before it is cut with "…", and words longer
+than two lines of the column's `min` hold say all of it on hover (a
+schedule stays readable). A cell's text runs in its own direction
+(`dir="auto"`). `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
 `href` stays in the address there; offer another order on the phone in the

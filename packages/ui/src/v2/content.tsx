@@ -517,6 +517,9 @@ export const Row = (props: RowProps) => {
 
 // ── Table ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
+/** About the width of a sign of the quiet second line of a cell (12 px), in px: what decides whether it may be cut. */
+const SIGN_PX = 7;
+
 /** Two lines of a cell: the line itself and a quiet second line under it. */
 export type CellLines = { lines: readonly [JSX.Element, JSX.Element] };
 
@@ -731,9 +734,19 @@ export const Table = <T,>(props: TableProps<T>) => {
   const firstSticky = (index: number) => (props.sticky && index === 0 ? "last" : undefined);
 
   const cell = (column: Column<T>, value: CellValue, target?: OpenTarget) => {
-    // Every line of a cell is a block of its own: cut with "…" in a sized table, wrapped in a small one.
+    // Every line of a cell is a block of its own: cut with "…" in a sized table, wrapped in a small one. A second line
+    // takes two lines before it is cut; words longer than two lines of the column's narrowest width hold (about 7 px a
+    // sign at 12 px) say all of it on hover. Text runs in its own direction (an Arabic name in a German table).
+    const hint = (content: JSX.Element) =>
+      typeof content === "string" && Array.from(content).length > (2 * (column.width?.min ?? 0)) / SIGN_PX ? content : undefined;
     const line = (content: JSX.Element, second = false) => (
-      <span class="k2-cell-line" data-wrap={!second && column.wrap ? "" : undefined} data-second={second ? "" : undefined}>
+      <span
+        class="k2-cell-line"
+        data-wrap={!second && column.wrap ? "" : undefined}
+        data-second={second ? "" : undefined}
+        title={second ? hint(content) : undefined}
+        dir="auto"
+      >
         {content}
       </span>
     );

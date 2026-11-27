@@ -1401,6 +1401,17 @@
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
 }
+/* the second line of a cell wraps to two lines at most, then "…", its words on hover (W7 27.11.: a schedule lost its
+   end, "bis 19:5…"); the row grows with it, as with a column that wraps */
+.k2-ui .k2-table[data-sized] td > .k2-cell-line[data-second] {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .k2-ui .k2-table[data-sized] td > .k2-cell-line[data-wrap] {
   overflow: hidden;
   display: -webkit-box;
