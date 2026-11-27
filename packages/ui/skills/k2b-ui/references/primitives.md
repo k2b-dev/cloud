@@ -514,8 +514,9 @@ lines instead of cutting a thing.
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.
   A group with `tree` in place of `items` holds places in levels (the
-  folders of Files, the pages of a notebook): `tree: { label, items,
-  current?, expanded?, onExpandedChange?, load?, more?, loadMore? }`, each
+  folders of Files, the pages of a notebook): `tree: navTree({ label, items,
+  current?, expanded?, onExpandedChange?, load?, more?, loadMore? })`
+  (`navTree` brings the tree's code along, so a `Nav` without a tree loads none of it), each
   place a `NavTreeNode`: `key`, `label`, `icon?`, `href` (+ `onNavigate`),
   `count?`, `dot?`, `children?` (loaded so far), `branch` (children that
   load on the first open through `load(key, { signal })`), `more` (`true`
@@ -626,8 +627,9 @@ lines instead of cutting a thing.
   Promise keeps the menu open and the entry busy), `href`, `danger`,
   `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
-  `items` (a submenu to the side), or `panel` (`(close) => …`, a panel
-  such as a `DatePicker` as the next step: a dialog of its own that takes
+  `items` (a submenu to the side), or `panel` (`menuPanel((close) => …)`,
+  which brings the panel's code along, so a menu without a panel loads none
+  of it; a panel such as a `DatePicker` as the next step: a dialog of its own that takes
   the place of the menu the entry stands in, under a head that leads
   back; its own keys and focus, so the arrows stay with the calendar;
   Escape and the back button lead back; it calls `close` once it
