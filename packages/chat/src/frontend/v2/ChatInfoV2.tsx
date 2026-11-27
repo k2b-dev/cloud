@@ -243,9 +243,11 @@ export default function ChatInfoV2(props: ChatInfoPanelProps): JSX.Element {
       <Show when={props.sharedProps}>
         {(shared) => (
           // k2b-ui gap: what the chat shared (files, links, elements with their filters and pages) still draws v1.
-          <Canvas label={t().shared}>
-            <ChatSharedSection {...shared()} />
-          </Canvas>
+          <Band label={t().shared}>
+            <Canvas label={t().shared}>
+              <ChatSharedSection {...shared()} />
+            </Canvas>
+          </Band>
         )}
       </Show>
     </>
