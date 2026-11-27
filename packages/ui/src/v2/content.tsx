@@ -2,6 +2,7 @@ import { Link } from "@k2b/ssr/nav";
 import {
   createContext,
   createMemo,
+  createSignal,
   createUniqueId,
   For,
   type JSX,
@@ -14,6 +15,7 @@ import {
 import { Dynamic } from "solid-js/web";
 import { renderSafeMarkdown } from "../content/MarkdownView";
 import { useLocale } from "../intl/locale";
+import { useGrip } from "./behavior/resize";
 import { ActionButton, CopyButton } from "./button";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
@@ -41,6 +43,11 @@ export type TextProps = {
   tone?: Status | "ai" | "draft";
   /** The words lead to this page: they keep the ink of the text and are underlined (blue is only the main action). */
   href?: string;
+  /**
+   * The full words as a tooltip, for text its place may cut (a long title in a head): the same words, never a hint
+   * of something else.
+   */
+  title?: string;
   /** The words. */
   children: JSX.Element;
 };
@@ -57,6 +64,7 @@ export const Text = (props: TextProps) => (
   <Dynamic
     component={props.href ? "a" : "span"}
     href={props.href}
+    title={props.title}
     class={`k2-text${props.type ? ` ${typeClass[props.type]}` : ""}${props.weight ? ` ${weightClass[props.weight]}` : ""}${props.muted ? " k2-muted" : ""}${props.href ? " k2-link" : ""}`}
     data-k2-part="Text"
     data-type={props.type}
@@ -440,7 +448,8 @@ export const Row = (props: RowProps) => {
       </Show>
       <Show when={end() !== undefined || props.action}>
         <span class="k2-row-end">
-          <Show when={props.action}>{(action) => <ActionButton action={action()} />}</Show>
+          {/* the deed is named by its words and then the row's title, so rows with the same deed are told apart */}
+          <Show when={props.action}>{(action) => <ActionButton action={action()} about={title} />}</Show>
           {end()}
         </span>
       </Show>
@@ -551,6 +560,35 @@ const SortArrow = (props: { sorted?: "ascending" | "descending" }) => (
   <Show when={props.sorted}>{(sorted) => <Icon name={sorted() === "descending" ? "arrow-down" : "arrow-up"} />}</Show>
 );
 
+/**
+ * The grip at the start of a column head: it moves the width of the column before it (`useGrip`). A column is at
+ * most as wide as the table's visible width; the table scrolls sideways when its columns need more.
+ */
+const ColumnGrip = (props: { label: string; width: { min: number; default: number }; value: number; onChange: (px: number) => void }) => {
+  const grip = useGrip({
+    label: () => props.label,
+    value: () => props.value,
+    onChange: (px) => props.onChange(px),
+    min: () => props.width.min,
+    reset: () => props.width.default,
+    direction: () => 1,
+    measure: (element) => {
+      const head = element.parentElement?.previousElementSibling;
+      const scroller = element.closest(".k2-table-scroll");
+      const now = head?.getBoundingClientRect().width;
+      if (!now || !scroller) return undefined;
+      return { now, max: scroller.clientWidth };
+    },
+    // the table's visible width and every column head
+    observe: (element) => {
+      const scroller = element.closest(".k2-table-scroll");
+      const heads = element.parentElement?.parentElement?.children ?? [];
+      return scroller ? [scroller, ...heads] : [...heads];
+    },
+  });
+  return <span class="k2-cgrip" {...grip} />;
+};
+
 /** Two lines only when they are named so: an array of two parts (a fragment) stays one line. */
 const isPair = (value: CellValue): value is CellLines =>
   typeof value === "object" &&
@@ -622,6 +660,10 @@ export const Table = <T,>(props: TableProps<T>) => {
     select.onChange(on ? [...select.selected, rowKey] : select.selected.filter((selectedKey) => selectedKey !== rowKey));
   };
   const span = () => props.columns.length + (props.select ? 1 : 0);
+  // The widths the grips gave columns, by index; a column keeps its default until then.
+  const [sizes, setSizes] = createSignal<Readonly<Record<number, number>>>({});
+  const columnWidth = (index: number) => sizes()[index] ?? props.columns[index]?.width?.default;
+  const sizeOf = (px: number | undefined) => (px === undefined ? undefined : { width: `${px}px` });
   // The sticky first data column stands after the box column (44 px).
   const stickyLeft = () => (props.select ? "44px" : "0px");
   const firstSticky = (index: number) => (props.sticky && index === 0 ? "last" : undefined);
@@ -673,13 +715,7 @@ export const Table = <T,>(props: TableProps<T>) => {
               </Show>
               {/* every column is its default wide; in a small table the last one takes the rest of the row */}
               <For each={props.columns}>
-                {(column, index) => (
-                  <col
-                    style={
-                      column.width && (grid() || index() < props.columns.length - 1) ? { width: `${column.width.default}px` } : undefined
-                    }
-                  />
-                )}
+                {(column, index) => <col style={grid() || index() < props.columns.length - 1 ? sizeOf(columnWidth(index())) : undefined} />}
               </For>
             </colgroup>
           </Show>
@@ -703,15 +739,14 @@ export const Table = <T,>(props: TableProps<T>) => {
                     aria-sort={props.sort?.column === index() ? props.sort.direction : undefined}
                   >
                     <Show when={index() > 0 && props.columns[index() - 1]?.width}>
-                      <span
-                        class="k2-cgrip"
-                        role="separator"
-                        aria-orientation="vertical"
-                        aria-label={props.columns[index() - 1]!.title}
-                        aria-valuemin={props.columns[index() - 1]!.width!.min}
-                        aria-valuenow={props.columns[index() - 1]!.width!.default}
-                        tabindex="0"
-                      />
+                      {(width) => (
+                        <ColumnGrip
+                          label={props.columns[index() - 1]?.title ?? ""}
+                          width={width()}
+                          value={columnWidth(index() - 1) ?? width().default}
+                          onChange={(px) => setSizes((sizes) => ({ ...sizes, [index() - 1]: px }))}
+                        />
+                      )}
                     </Show>
                     <Show
                       when={column.sort}
