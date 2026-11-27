@@ -66,6 +66,7 @@ declare global {
       | "pulse-b-list"
       | "hero-worst"
       | "hero-bare"
+      | "hero-empty"
       | "head-worst"
       | "head-bare"
       | `owner-${string}`;
@@ -101,6 +102,8 @@ render(
         <SelectionScreen four={which === "selection-four"} />
       ) : which.startsWith("owner-") ? (
         <OwnerScreen color={`#${which.slice(6)}`} />
+      ) : which === "hero-empty" ? (
+        <IdentityWorstScreen part="hero" empty />
       ) : which === "hero-worst" || which === "hero-bare" || which === "head-worst" || which === "head-bare" ? (
         <IdentityWorstScreen part={which.startsWith("hero") ? "hero" : "head"} bare={which.endsWith("bare")} />
       ) : which === "oauth-b" || which === "oauth-b-list" ? (

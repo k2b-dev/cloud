@@ -200,12 +200,18 @@ test("a hero comes whole from the server: the figure in its role, the history na
   });
   expect(markup).toMatch(/data-k2-type="figure"[^>]*>178</);
   expect(markup).toContain('aria-label="Neue Verbindungen je Tag"');
-  expect(markup).toContain("· MCP Inspector");
+  // who stands quietly after the words, without a "·" (the study's exception line)
+  expect(markup).toContain(">MCP Inspector<");
+  expect(markup).not.toContain("· MCP Inspector");
   // a failure from the very first value is drawn, one past the last is none
   const area = (failedFrom: number) =>
     html(Hero, { figure: "1", label: "Werte", trend: { kind: "area", values: [1, 2, 3], label: "Werte", failedFrom } });
   expect(area(0)).toContain("k2-hero-failed");
   expect(area(3)).not.toContain("k2-hero-failed");
+  // an area of one value draws no line: its place stands empty and keeps its height
+  const one = html(Hero, { figure: "1", label: "Werte", trend: { kind: "area", values: [4], label: "Werte", empty: "Noch keine Werte" } });
+  expect(one).toContain('class="k2-hero-none"');
+  expect(one).not.toContain("k2-hero-line");
 });
 
 test("the head of an open thing and the ticks come whole from the server", () => {

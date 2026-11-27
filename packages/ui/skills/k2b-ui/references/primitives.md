@@ -105,7 +105,7 @@ A head and a status row keep their height.
 (30/34, 600, tabular, once per screen) and the owner's colour: `figure`,
 `label`, `meta`, `trend` (`{ kind: "bars" | "area" | "ticks", values,
 label, start, caption, end }`, only from real data), `exceptions` (`{
-status | icon, count, word, who }`, one line of "● number word · who").
+status | icon, count, word, who }`, one line of "● number word who").
 `ObjectHead` as the `head` of an open thing: `mark` (40 px), `name` (18),
 `meta`, `actions` (in the phone's bar there), up to three `facts` and a
 `problem` (`{ title, text }`, red in place), on the owner's tint. `Ticks`

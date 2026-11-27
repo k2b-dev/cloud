@@ -10,10 +10,15 @@ import type { Status } from "./types";
  * - `bars`: one bar per period, such as new connections per day; the last one (today) in full colour;
  * - `area`: a line with its area, such as values per minute; `from` tints the time from that index on as failed;
  * - `ticks`: one tick per fetch or check, such as the fetches of today; a failed one stands red and full height.
+ * Where no real history exists yet (a new app, nothing counted so far), pass the kind with no values and `empty`: the
+ * place of the drawing keeps its height and says so, so a history that comes later moves nothing. Never draw an
+ * invented series. An area needs two values; with fewer it stands as empty.
  */
 export type HeroTrend = {
   /** What the drawing says, in one sentence a person who cannot see it gets the same from. */
   label: string;
+  /** What stands in the drawing's place while there is no history, such as "Noch keine Verbindungen gezählt". */
+  empty?: string;
   /** The words under the drawing: its start, what it shows, its end, such as "27.10.", "Neue Verbindungen je Tag", "heute". */
   start?: string;
   caption?: string;
@@ -24,7 +29,7 @@ export type HeroTrend = {
   | { kind: "ticks"; values: readonly TickState[] }
 );
 
-/** One exception under the figure: "● 1 Fehler · Drucker Halle 2 seit 10:40". */
+/** One exception under the figure: "● 1 Fehler  Drucker Halle 2 seit 10:40", who quiet after the words. */
 export type HeroException = {
   /** The state of what it counts: a dot in its colour; `off` for what rests. Without it, `icon` stands. */
   status?: Status | "off";
@@ -47,7 +52,7 @@ export type HeroProps = {
   meta?: string;
   /** Its real history beside it. */
   trend?: HeroTrend;
-  /** What falls out of line, as one line of "● number word · who" under the figure; never rows or cards. */
+  /** What falls out of line, as one line of "● number word who" under the figure; never rows or cards. */
   exceptions?: readonly HeroException[];
 };
 
@@ -135,6 +140,13 @@ export const Hero = (props: HeroProps) => (
         <div class="k2-hero-trend">
           {(() => {
             const shown = trend();
+            // no history yet: its place keeps the drawing's height and says so
+            if (shown.values.length < (shown.kind === "area" ? 2 : 1))
+              return (
+                <span class="k2-hero-none" data-kind={shown.kind} role="img" aria-label={shown.empty ?? shown.label}>
+                  {shown.empty}
+                </span>
+              );
             if (shown.kind === "bars") return <Bars values={shown.values} label={shown.label} />;
             if (shown.kind === "area") return <Area values={shown.values} label={shown.label} failedFrom={shown.failedFrom} />;
             return <Ticks slots={shown.values} label={shown.label} stretch />;
@@ -162,7 +174,7 @@ export const Hero = (props: HeroProps) => (
               </Show>
               <b>{exception.count}</b> {exception.word}
               <Show when={exception.who}>
-                <span class="k2-hero-meta">· {exception.who}</span>
+                <span class="k2-hero-meta">{exception.who}</span>
               </Show>
             </li>
           )}

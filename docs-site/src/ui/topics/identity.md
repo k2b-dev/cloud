@@ -22,7 +22,7 @@ One base: key numbers with a short history in `Cells`, then its tables, forms an
 
 Every screen (direction B, 26.11.) gets three things that work the same everywhere:
 
-- **One `Hero` right under the head:** the one figure or statement that counts today, in the figure type (30/34, 600, once per screen) and in the colour of the app the thing belongs to. Its real history stands beside it (bars, an area or ticks from data the app has), and what falls out of line stands under it as one line: "● number word · who".
+- **One `Hero` right under the head:** the one figure or statement that counts today, in the figure type (30/34, 600, once per screen) and in the colour of the app the thing belongs to. Its real history stands beside it (bars, an area or ticks from data the app has), and what falls out of line stands under it as one line: "● number word who".
 - **A tinted `ObjectHead` on the open thing:** the tint of its app as ground, its sign in 40, its name in 18, one meta line and up to three key facts. A problem stands red right there.
 - **One picture of the data per row:** `Ticks`, `Spark` or `Avatar.Stack`, in the soft colour of the app; red only for a failure.
 

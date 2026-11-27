@@ -843,6 +843,17 @@
   display: block;
   width: 100%;
 }
+/* no history yet: the place of the drawing keeps its 56 px and says so, quietly, so a later history moves nothing */
+.k2-ui .k2-hero-none {
+  display: flex;
+  align-items: center;
+  height: 56px;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-hero-none[data-kind="ticks"] {
+  height: 44px;
+}
 .k2-ui .k2-hero-draw > rect {
   fill: var(--k2-app-soft, var(--k2-app-text));
 }

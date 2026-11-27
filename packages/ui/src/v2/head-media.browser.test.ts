@@ -53,6 +53,7 @@ type Case =
   | "pulse-b-list"
   | "hero-worst"
   | "hero-bare"
+  | "hero-empty"
   | "head-worst"
   | "head-bare"
   | `owner-${string}`;
@@ -2090,6 +2091,35 @@ for (const width of [1440, 390])
       },
       width,
     );
+  });
+
+// a new app without a history yet: the place of the drawing keeps its height and says so, so a history that comes later
+// moves nothing in the band (review r2 P2)
+for (const width of [1440, 390])
+  test(`identity B at ${width}: a hero without a history keeps the height of its drawing and says so`, async () => {
+    const trend = async (which: "hero-worst" | "hero-empty") => {
+      let found = { drawing: 0, hero: 0, said: "" };
+      await withPage(
+        which,
+        async (page) => {
+          found = await page.evaluate(() => {
+            const place = document.querySelector(".k2-hero-trend > :first-child")!;
+            return {
+              drawing: Math.round(place.getBoundingClientRect().height),
+              hero: Math.round(document.querySelector("[data-k2-part='Hero']")!.getBoundingClientRect().height),
+              said: place.getAttribute("aria-label") ?? "",
+            };
+          });
+          expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+        },
+        width,
+      );
+      return found;
+    };
+    const [full, empty] = [await trend("hero-worst"), await trend("hero-empty")];
+    expect(empty.drawing).toBe(full.drawing);
+    expect(empty.hero).toBe(full.hero);
+    expect(empty.said).toBe("Noch keine Verbindungen gezählt");
   });
 
 // break-ui: a long name of the list on the way back keeps clear of the head's deeds in the phone's bar; it ends with "…"

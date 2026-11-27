@@ -525,7 +525,8 @@ export const PulseScreen = (props: { list?: boolean }) => (
 
 // Break-ui for the hero and the head of an open thing: a huge figure, a name without spaces, long words everywhere,
 // and a hero with nothing but its figure (no history, no meta, no exceptions), beside the worst case.
-export const IdentityWorstScreen = (props: { part: "hero" | "head"; bare?: boolean }) => (
+// `empty`: the hero of a new app that has no history yet; its drawing's place keeps its height and says so
+export const IdentityWorstScreen = (props: { part: "hero" | "head"; bare?: boolean; empty?: boolean }) => (
   <Workspace>
     {props.part === "hero" ? (
       <Pane label="Worst" owner={OAUTH}>
@@ -538,7 +539,8 @@ export const IdentityWorstScreen = (props: { part: "hero" | "head"; bare?: boole
             meta="9.876.543 Personen · 1.234.567 neu in 7 Tagen · 98 Gruppen · 12 Mandanten · 3 Regionen"
             trend={{
               kind: "bars",
-              values: [0, 0, 0, 1_000_000, 0, 3, 0, 0, 0, 0],
+              values: props.empty ? [] : [0, 0, 0, 1_000_000, 0, 3, 0, 0, 0, 0],
+              empty: "Noch keine Verbindungen gezählt",
               label: "Neue Verbindungen je Tag: ein Tag mit einer Million, sonst fast keine",
               start: "01.01.2026",
               caption: "Neue Verbindungen je Tag über alle Mandanten und Dienstkonten hinweg",
