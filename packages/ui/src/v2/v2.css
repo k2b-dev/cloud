@@ -3414,11 +3414,13 @@
   overscroll-behavior: contain;
 }
 /* Menu: entries 32 px, 4 px inside the menu; a line between groups reaches the menu's edges. The menu is as wide as
-   its longest entry, at least 232 px; a menu taller than the screen scrolls inside. */
+   its longest entry, at least 232 px. It is never taller than the room on the side it opens to (`--available-height`
+   of the behaviour layer, which opens it to the other side when there is more room there), so nothing is cut off;
+   a longer menu scrolls inside, and the keys bring the entry they reach into view. */
 .k2-ui .k2-menu {
   min-width: 232px;
   max-width: min(360px, calc(100vw - 16px));
-  max-height: calc(100dvh - 16px);
+  max-height: min(calc(100dvh - 16px), var(--available-height, calc(100dvh - 16px)));
   overflow-y: auto;
   padding: 4px;
   display: flex;

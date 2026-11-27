@@ -467,7 +467,8 @@ lines instead of cutting a thing.
   entries are options (`value`, else `label`), the chosen one carries the
   tick, choosing closes the menu. Lines around sections and before the
   first `danger` entry come by themselves. The menu lines up with
-  its button; there is no `align`.
+  its button; there is no `align`. A long menu never leaves the screen:
+  it opens to the side with more room and scrolls inside.
 - `Menu.Context`: `items`, and one element as child, such as a `Row`. A
   right-click or a long press opens the menu at the pointer, Shift+F10 at
   the element. It adds no wrapper, so a `Row` stays a child of its `List`.
