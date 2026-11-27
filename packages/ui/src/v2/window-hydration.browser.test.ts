@@ -95,3 +95,15 @@ test("a sidebar of 1,000 entries whose current one is far down hydrates without 
     expect(seen).toBe(true);
   });
 });
+
+// the rows of a table on the phone say their place among its rows: the heads of its groups are no rows (review of #4211)
+test("a phone row of a grouped table counts rows only in its place", async () => {
+  await hydrated("phone", 390, async (page) => {
+    const places = await page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLElement>('.k2-table-phone [data-k2-part="Row"]'))
+        .slice(0, 15)
+        .map((row) => `${row.getAttribute("aria-posinset")}/${row.getAttribute("aria-setsize")}`),
+    );
+    expect(places).toEqual(Array.from({ length: 15 }, (_, index) => `${index + 1}/38`));
+  });
+});
