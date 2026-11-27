@@ -55,7 +55,7 @@ A column that scrolls, with no padding: a head, a status that stays, a `width` i
 
 ### Bar
 
-A bar of fixed height with one line below and two places, `start` and `end`; its height comes from its place.
+A bar of fixed height with one line below and two places, `start` and `end`; its height comes from its place. The `start` keeps a least: its name at `--k2-start-least` (16ch), or its open tab. Buttons of the `end` that do not fit beside the whole `start` move into a menu "…" at its end, in their order, or into the end's own plain `Menu` "…" as its first section (an end made outside the `Bar`, in an island of its own, gets the bar's "Mehr in dieser Leiste" instead); the primary action, a closing ×, a menu and a search stay. Only when nothing more can fold does the `start` shorten its words with "…", down to its least, never to nothing.
 
 <Props of="Bar" />
 
@@ -90,7 +90,7 @@ Until they are fixed, use the nearest part and write `// k2b-ui gap: …` at tha
 
 - Put the app's places in `Nav`, its views in `Tabs`, and its main action in the head and in `Workspace primary`.
 - Render the detail only while the address names an entry, and give its `back` the list's address.
-- Declare `detail` and `detailEmpty` on the workspace when a detail opens beside the list.
+- Declare `detail` and `detailEmpty` on the workspace when a detail opens beside the list. While nothing is open, `detailEmpty` may carry a `hero`: a picture of the place as a whole, such as a [`Heat`](/en/ui/v2/content) of the mails received per day with a line that sums it up.
 - Give a long list a `scrollKey`, so back and forward return to where it was.
 
 ### Don't

@@ -23,7 +23,7 @@ const settings = await import("../server/middleware/settings");
 const help = await import("./help");
 const consent = await import("./panel-consent");
 const { defaultRailPreferences } = await import("../contracts/rail-preferences");
-const { Bar, Button, Input, Pane, Tabs, Text, Workspace } = await import("@k2b/ui/v2");
+const { Bar, Button, Input, List, Nav, Pane, Row, Tabs, Text, Workspace } = await import("@k2b/ui/v2");
 const spies = [
   spyOn(rail, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
   spyOn(settings, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
@@ -64,6 +64,31 @@ const workspace = () =>
     },
   });
 
+/** Chat on v2: no head, the chats as the nav's own rows under its search, the phone's page. */
+const navWorkspace = () =>
+  createComponent(Workspace, {
+    get sidebar() {
+      return createComponent(Nav, {
+        title: "Chat",
+        icon: "messages",
+        search: { label: "Chats durchsuchen", value: "", onInput: () => undefined },
+        groups: [{ items: [{ label: "Ungelesen", icon: "mail", count: 2, href: "/app/phone?filter=unread" }] }],
+        get list() {
+          return createComponent(List, {
+            label: "Chats",
+            get children() {
+              return createComponent(Row, { lines: ["Werkstatt Nord", "Lena: Fotos sind da."], href: "/app/phone/c/1" });
+            },
+          });
+        },
+        phone: "page",
+      });
+    },
+    get children() {
+      return createComponent(Pane.Split, { children: [] });
+    },
+  });
+
 const app = defineApp({
   id: "phone",
   name: "Mail",
@@ -90,7 +115,7 @@ const server = new Hono<Env>()
           fullPage: true,
           title: [{ title: "Start", href: "/" }, { title: "Mail", href: "/app/phone" }, { title: "Posteingang" }],
           get children() {
-            return workspace();
+            return c.req.query("nav") === undefined ? workspace() : navWorkspace();
           },
         }),
     ),
@@ -129,8 +154,8 @@ declare global {
 }
 
 /** The real page from Layout's server HTML with the global stylesheet; the phone bar's button gets its deeds below. */
-const open = async (ui: "v1" | "v2" = "v2"): Promise<Page> => {
-  const response = await server.request(`/app/phone?ui=${ui}`);
+const open = async (ui: "v1" | "v2" = "v2", query = ""): Promise<Page> => {
+  const response = await server.request(`/app/phone?ui=${ui}${query}`);
   expect(response.status).toBe(200);
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await page.setContent(await response.text());
@@ -222,6 +247,24 @@ test("a page of the classic library keeps the global search in the phone bar", a
   try {
     expect(await barButtons(page)).toEqual(["Open global search", "Open help", "Open apps"]);
     expect(await page.locator("[data-k2-host-search]").count()).toBe(0);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("on a page whose list is the phone's page, the phone bar's search opens the nav's search over the list", async () => {
+  const page = await open("v2", "&nav");
+  try {
+    const button = page.getByRole("button", { name: "Search", exact: true });
+    await button.evaluate((trigger) => {
+      if (trigger instanceof HTMLElement) trigger.addEventListener("click", () => window.openPageSearch?.());
+    });
+    await button.click();
+    await settled(page);
+    const search = page.getByRole("searchbox", { name: "Chats durchsuchen" });
+    expect(await search.evaluate((input) => document.activeElement === input)).toBe(true);
+    // one search on the page: the nav's, over the list; the head has none
+    expect(await page.locator('[data-slot="head"] [data-k2-part="Input"][data-search]').count()).toBe(0);
   } finally {
     await page.close();
   }

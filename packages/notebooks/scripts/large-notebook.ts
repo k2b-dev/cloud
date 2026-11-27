@@ -223,7 +223,8 @@ async function measure(cloud: DevCloud, notebookId: string, targets: Targets, ru
     folderBlocks: await sample(cloud, runs, `/api/notebooks/${notebookId}/notes/${folder}/block-preview`, { method: "POST", json: {} }),
     search: await sample(cloud, runs, `/api/notebooks/${notebookId}/search?q=${encodeURIComponent("steering group")}`),
     globalSearch: await sample(cloud, runs, `/api/notebooks/search?q=${encodeURIComponent("steering group")}&notebook=${notebookId}`),
-    backlinks: await sample(cloud, runs, `/api/notebooks/${notebookId}/notes/${linked}/backlinks`),
+    // one page of the API's largest size, as the details load them (the endpoint pages since #4417)
+    backlinks: await sample(cloud, runs, `/api/notebooks/${notebookId}/notes/${linked}/backlinks?per_page=100`),
     graphPage: await sample(cloud, runs, `/app/notebooks/${notebookId}?mode=graph&note=${page}`, html),
     graph: await sample(cloud, runs, `/api/notebooks/${notebookId}/graph`),
   };
