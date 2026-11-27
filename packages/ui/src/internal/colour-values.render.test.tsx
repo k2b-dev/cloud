@@ -15,6 +15,8 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Chat, ColorChoices, DashboardSection, DetailPresence, NoticeRow } = await import("../index");
 const { Select } = await import("../inputs/Select");
+const { Avatar } = await import("../surfaces/Avatar");
+const { ReferenceChip } = await import("../content/ReferenceChip");
 const { default: Navigation } = await import("../layout/Navigation");
 const { createNavigation } = await import("../layout/navigation-model");
 const { default: AppWorkspace } = await import("../layout/AppWorkspace");
@@ -50,6 +52,14 @@ test("a colour is a hex colour, a colour name, a colour function of plain number
     expect(cssColor(color)).toBeUndefined();
 });
 
+test("the check stays linear in time on a long input", () => {
+  for (const long of ["a".repeat(100_000) + "()", "a".repeat(100_000) + "(", "rgb(".repeat(25_000), "#".repeat(100_000)]) {
+    const start = performance.now();
+    expect(cssColor(long)).toBeUndefined();
+    expect(performance.now() - start).toBeLessThan(50);
+  }
+});
+
 const noop = () => undefined;
 const parts: [string, (color: string) => JSX.Element][] = [
   ["NoticeRow", (color) => createComponent(NoticeRow, { tile: "ti ti-bell", tileColor: color, children: "Neu" })],
@@ -68,6 +78,11 @@ const parts: [string, (color: string) => JSX.Element][] = [
         iconColor: `color-mix(in srgb, ${color} 78%, var(--k2b-text))`,
         children: "",
       }),
+  ],
+  ["Avatar ring", (color) => createComponent(Avatar, { name: "Ada Renz", ring: { color } })],
+  [
+    "ReferenceChip",
+    (color) => createComponent(ReferenceChip, { kind: "object", title: "Wartungsfenster", icon: "ti ti-mail", accent: color, href: "/m" }),
   ],
   ["Select", (color) => createComponent(Select, { label: "Status", value: "a", options: [{ value: "a", label: "Offen", color }] })],
   [

@@ -31,16 +31,19 @@ const COLOR_FUNCTIONS = new Set([
  * else, such as a `;`, a `:`, `url(` or a second declaration, is dropped: a value from data never adds to the style
  * it stands in, on the server or in the browser.
  */
+/** No colour value is longer than this; a longer one is no colour, and the check stays linear in time on any input. */
+const MAX_COLOR_LENGTH = 200;
+
 export const cssColor = (value: string | null | undefined): string | undefined => {
   const color = value?.trim();
-  if (!color || !/^[a-z0-9#.,%/\s()-]+$/i.test(color)) return undefined;
+  if (!color || color.length > MAX_COLOR_LENGTH || !/^[a-z0-9#.,%/\s()-]+$/i.test(color)) return undefined;
   let depth = 0;
   for (const sign of color) {
     if (sign === "(") depth += 1;
     else if (sign === ")" && --depth < 0) return undefined;
   }
   if (depth !== 0) return undefined;
-  for (const [, name] of color.matchAll(/([a-z-]*)\(/gi)) if (!COLOR_FUNCTIONS.has(name!.toLowerCase())) return undefined;
+  for (const [, name] of color.matchAll(/(?<![a-z-])([a-z-]*)\(/gi)) if (!COLOR_FUNCTIONS.has(name!.toLowerCase())) return undefined;
   return color;
 };
 

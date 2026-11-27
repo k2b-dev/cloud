@@ -479,10 +479,8 @@ export function ChatActivity(props: ChatActivityProps): JSX.Element {
     props.onOpenChange?.(next);
   };
   const tone = () => props.tone ?? "neutral";
-  const style = () => {
-    const accent = cssColor(props.accent);
-    return accent ? { "--k2b-chat-activity-accent": accent } : undefined;
-  };
+  const accent = () => cssColor(props.accent);
+  const style = () => (accent() ? { "--k2b-chat-activity-accent": accent() } : undefined);
   const expandable = () => Boolean(props.renderBody || props.children);
   // A `Chat.Activity.Toggle` in the label registers while the label resolves, before the row picks its element, so the
   // server and the first browser frame agree on whether the whole row or only the toggle is the disclosure.
@@ -511,7 +509,7 @@ export function ChatActivity(props: ChatActivityProps): JSX.Element {
               <div
                 class={`k2b-chat-activity ${props.class ?? ""}`}
                 data-tone={tone()}
-                data-accent={props.accent ? "true" : undefined}
+                data-accent={accent() ? "true" : undefined}
                 data-busy={props.busy ? "true" : undefined}
                 data-wrap={props.wrap ? "true" : undefined}
                 data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
@@ -530,7 +528,7 @@ export function ChatActivity(props: ChatActivityProps): JSX.Element {
                 <div
                   class={`k2b-chat-activity ${props.class ?? ""}`}
                   data-tone={tone()}
-                  data-accent={props.accent ? "true" : undefined}
+                  data-accent={accent() ? "true" : undefined}
                   data-busy={props.busy ? "true" : undefined}
                   data-wrap={props.wrap ? "true" : undefined}
                   data-body-inset={props.bodyInset === false ? "false" : undefined}
@@ -551,7 +549,7 @@ export function ChatActivity(props: ChatActivityProps): JSX.Element {
               <details
                 class={`k2b-chat-activity ${props.class ?? ""}`}
                 data-tone={tone()}
-                data-accent={props.accent ? "true" : undefined}
+                data-accent={accent() ? "true" : undefined}
                 data-busy={props.busy ? "true" : undefined}
                 data-wrap={props.wrap ? "true" : undefined}
                 data-body-inset={props.bodyInset === false ? "false" : undefined}
