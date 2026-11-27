@@ -36,7 +36,7 @@ export type SectionProps = {
   actions?: TwoActions;
   /** One sentence under the head that sums the section up. */
   summary?: JSX.Element;
-  /** The way to all of it, at the end ("All deliveries ›"). */
+  /** The way to all of it, at the end ("All deliveries ›"); an `icon` replaces the chevron, such as `chevron-up` for "Show fewer". */
   more?: Action;
   /** An anchor for a link to this section, such as `screen` for `/me#screen`; unique on the page. */
   id?: string;
@@ -96,7 +96,7 @@ export const Section = (props: SectionProps) => {
             <Show when={more().meta}>
               <span class="k2-sec-link-meta">{more().meta}</span>
             </Show>
-            <Icon name="chevron-right" />
+            <Icon name={more().icon ?? "chevron-right"} />
           </Dynamic>
         )}
       </Show>

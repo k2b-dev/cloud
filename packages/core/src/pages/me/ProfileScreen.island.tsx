@@ -153,7 +153,11 @@ export default function ProfileScreen(props: ProfileScreenProps) {
           icon="users-group"
           title={t().groups}
           actions={props.groups.accountsUi ? [{ label: t().browseGroups, icon: "users-group", href: "/app/accounts/groups" }] : undefined}
-          more={props.groups.all ? { label: t().firstGroups, href: "/me#groups" } : { label: t().allGroups, href: "/me?groups=all#groups" }}
+          more={
+            props.groups.all
+              ? { label: t().firstGroups, icon: "chevron-up", href: "/me#groups" }
+              : { label: t().allGroups, href: "/me?groups=all#groups" }
+          }
         >
           <Show when={props.groups.items.length > 0} fallback={<Empty icon="users-group" text={t().noGroups} />}>
             <Tiles

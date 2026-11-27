@@ -321,6 +321,11 @@ describe("account pages on v2", () => {
     const all = await content("/me", "en", "?groups=all");
     expect(shown(all)).toHaveLength(9);
     expect(all).toContain('href="/me#groups"');
+    // showing fewer folds the list: its chevron points up, not onwards
+    const fewer = /<a[^>]*href="\/me#groups"[^>]*>[\s\S]*?<\/a>/.exec(all)?.[0] ?? "";
+    expect(fewer).toContain("chevron-up");
+    expect(fewer).not.toContain("chevron-right");
+    expect(first).toMatch(/href="\/me\?groups=all#groups"[^>]*>[\s\S]*?chevron-right/);
   });
 
   test("the profile offers the FreeIPA request and shows a waiting one with its withdrawal", async () => {

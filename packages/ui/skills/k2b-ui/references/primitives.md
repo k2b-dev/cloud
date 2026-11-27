@@ -143,7 +143,8 @@ moves.
 
 A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
 `actions` (≤ 2 text buttons in the head), `summary` (one sentence),
-`more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
+`more` (one link at the end: "All deliveries ›"; its `icon` replaces the
+chevron, `chevron-up` for "Show fewer"; its `meta` shows only in a
 `Pane side`, where the link becomes a row), `id` (an anchor for a link
 such as `/me#screen`), children. No line under
 the head or between entries, one line at the end. Put `Row`s directly in a
