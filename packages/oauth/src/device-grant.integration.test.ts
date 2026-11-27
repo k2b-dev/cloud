@@ -358,7 +358,7 @@ suite("OAuth device authorization grant", () => {
     // People type codes loosely: lowercase and without the dash still match.
     const confirm = await confirmRequest(who, started.user_code.replace("-", "").toLowerCase());
     expect(confirm.code).toBe(started.user_code);
-    expect(confirm.client).toEqual({ name: "Cloud CLI", clientId: "cloud-cli" });
+    expect(confirm.client).toEqual({ name: "Cloud CLI", clientId: "cloud-cli", kind: "first_party" });
     expect(confirm.scopes).toEqual(["openid", "profile", "read", "offline_access"]);
 
     const approved = await decide(who, confirm.request, "approve");

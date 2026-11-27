@@ -3,7 +3,7 @@ import { getLocale } from "@k2b/cloud/server";
 import { get } from "@k2b/cloud/services";
 import { formatDate } from "@k2b/cloud/shared";
 import { AdminLayout, adminNavigation } from "@k2b/cloud/ssr";
-import { ssr } from "../config";
+import { ACCENT, ssr } from "../config";
 import type { OAuthClient } from "../contracts";
 import { oauthService } from "../service";
 import OAuthScreen from "./_components/OAuthScreen.island";
@@ -23,11 +23,19 @@ export default ssr<AuthContext>(async (c) => {
   const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
   const tab = c.req.query("tab") === "endpoints" ? "endpoints" : "clients";
   const openId = tab === "clients" ? c.req.query("client")?.trim() || null : null;
-  const [clientsPage, summary, opened] = await Promise.all([
+  const [clientsPage, summary, activity, opened] = await Promise.all([
     oauthService.client.list({ pagination: { page, perPage: PER_PAGE }, filter: { query: search || undefined } }),
     oauthService.client.summary(),
+    oauthService.client.connectionFigures(),
     // an id that is no id names no client; the store is never asked for it
     openId && UUID.test(openId) ? oauthService.client.get({ id: openId }) : null,
+  ]);
+  // the connections of the clients on this page and of the open one, and the people of the open one
+  const [connections, connectedPeople] = await Promise.all([
+    oauthService.client.connections({
+      clientIds: [...new Set([...clientsPage.items.map((client) => client.clientId), ...(opened ? [opened.clientId] : [])])],
+    }),
+    opened ? oauthService.client.connectedPeople({ clientId: opened.clientId }) : null,
   ]);
 
   // Build base URL for OAuth endpoints
@@ -45,6 +53,10 @@ export default ssr<AuthContext>(async (c) => {
         paging={{ page: clientsPage.page, pages: Math.max(1, Math.ceil(clientsPage.total / clientsPage.perPage)) }}
         clients={clientsPage.items.map(row)}
         figures={summary}
+        activity={activity}
+        accent={ACCENT}
+        connections={connections}
+        connectedPeople={connectedPeople}
         open={openId ? { id: openId, found: opened ? row(opened) : null } : null}
       />
     </AdminLayout>

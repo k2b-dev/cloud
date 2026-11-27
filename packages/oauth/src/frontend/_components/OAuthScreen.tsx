@@ -2,24 +2,33 @@ import { formatDate, groupDisplayName } from "@k2b/cloud/shared";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
 import {
+  Avatar,
+  Band,
   Bar,
   Button,
+  Canvas,
+  Cells,
   Check,
   Chip,
+  Choice,
   confirm,
   Dialog,
   Empty,
   Facts,
   Field,
+  Icon,
+  Inline,
   Input,
   Lookup,
+  Mark,
   Menu,
   type NavProps,
   Notice,
   Pane,
+  RecordHead,
+  Row,
   Section,
-  Select,
-  StatusRow,
+  Spark,
   Table,
   Tabs,
   Text,
@@ -29,9 +38,12 @@ import type { LookupItem } from "@k2b/ui/v2/list-query";
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { OAuthClient, OAuthScope } from "@/contracts";
+import type { ClientConnections, ConnectedPerson, ConnectionFigures } from "../../service/connections";
 import { CLIENTS_PER_PAGE } from "../clients-page";
 import { oauthMessages } from "../messages";
 import { clientEditorUpdate, clientEditorValues, type ProfileChoice, profileChoice, profilesForChoice } from "./client-editor";
+import { DayBars } from "./DayBars";
+import { clientMark, GROUP_MARK } from "./kind-marks";
 
 /** One client as the list shows it: the stored client and its date in the person's words. */
 export type ClientRow = OAuthClient & { created: string };
@@ -48,14 +60,22 @@ export type OAuthScreenProps = {
   paging: { page: number; pages: number };
   clients: ClientRow[];
   figures: { total: number; public: number; dynamic: number };
+  /** All connections: active, people, new per day, unused clients (`oauthService.client.connectionFigures`). */
+  activity: ConnectionFigures;
+  /**
+   * The colour of OAuth itself: its figures and histories carry it, while the shell around shows the colour of the area
+   * the page stands in (Administration).
+   */
+  accent: string;
+  /** The people connected with the open client, most recently used first; null while none is open. */
+  connectedPeople: { total: number; people: ConnectedPerson[] } | null;
+  /** The connections of the listed and the open client, by `clientId`. */
+  connections: Record<string, ClientConnections>;
   /** The client open beside the list (`client=<id>`), read on its own; `found` is null when it is gone. */
   open: { id: string; found: ClientRow | null } | null;
 };
 
 const PATH = "/admin/oauth";
-
-/** What every sign-in asks for: a row does not repeat them. */
-const USUAL_SCOPES: ReadonlySet<OAuthScope> = new Set(["openid", "profile", "email"]);
 
 /** Every scope a managed client may request, in the order the editor offers them, with its sign. */
 const SCOPES = [
@@ -124,9 +144,6 @@ export default function OAuthScreen(props: OAuthScreenProps) {
   };
   const list = () => href({ client: null });
 
-  // ── Words for a client ────────────────────────────────────────────────────────────────────────────────────────
-  const kind = (client: OAuthClient) =>
-    client.registrationKind === "first_party" ? t().firstParty : client.registrationKind === "dynamic" ? t().dynamic : t().managed;
   const profileLabel = (client: OAuthClient) =>
     ({ user: t().fullUsersOnly, everybody: t().everybody, guest: t().guestsOnly, none: t().noUserProfiles })[
       profileChoice(client.allowedProfiles)
@@ -143,57 +160,92 @@ export default function OAuthScreen(props: OAuthScreenProps) {
       admin: t().admin,
     })[scope];
 
-  /**
-   * What sets a client apart from the usual one (managed here, with a secret), in colour, sign and word: registered by
-   * itself, brought by Cloud, or public. The usual client carries no mark.
-   */
-  const kindChips = (client: OAuthClient) => (
-    <>
-      <Show when={client.registrationKind === "dynamic"}>
-        <Chip status="warn" icon="world">
-          {kind(client)}
-        </Chip>
-      </Show>
-      <Show when={client.registrationKind === "first_party"}>
-        <Chip icon="cloud">{kind(client)}</Chip>
-      </Show>
-      <Show when={client.isPublic}>
-        <Chip icon="lock-open">{t().public}</Chip>
-      </Show>
-    </>
-  );
-  /** Who may sign in, where it is not the usual full users: only chosen people and groups, or other profiles. */
-  const accessChip = (client: OAuthClient) =>
-    client.accessMode !== "specific" && profileChoice(client.allowedProfiles) === "user" ? undefined : client.accessMode === "specific" ? (
-      <Chip status="warn" icon="user-check">
-        {t().selected({ count: client.accessUsers.length + client.accessGroups.length })}
-      </Chip>
-    ) : (
-      (() => {
-        const choice = profileChoice(client.allowedProfiles);
-        const [icon, words] = {
-          user: ["user", t().profileUsers],
-          everybody: ["users", t().profileEverybody],
-          guest: ["user-question", t().profileGuests],
-          none: ["user-off", t().profileNobody],
-        }[choice];
-        return <Chip icon={icon}>{words}</Chip>;
-      })()
-    );
-  /** The scopes as chips; in a row only two and "+n", which the open client lists whole. */
-  const scopeChips = (client: OAuthClient, row = false) => {
-    // a row marks only what a sign-in does not usually ask for; the open client lists every scope
-    const listed = row ? client.scopes.filter((scope) => !USUAL_SCOPES.has(scope)) : client.scopes;
-    const shown = row ? listed.slice(0, 2) : listed;
-    return (
-      <>
-        <For each={shown}>{(scope) => <Chip>{scope}</Chip>}</For>
-        <Show when={listed.length > shown.length}>
-          <Chip>{`+${number(listed.length - shown.length)}`}</Chip>
-        </Show>
-      </>
-    );
+  /** The mark of a client's kind, the same in the list, the open client and every dialog. */
+  const markOf = (client: OAuthClient) => clientMark(client);
+  /** The one neutral badge of a client that is not the usual: brought by Cloud, registered by itself, a service, a device. */
+  const badge = (client: OAuthClient) =>
+    client.registrationKind === "first_party"
+      ? t().firstParty
+      : client.registrationKind === "dynamic"
+        ? t().selfRegisteredBadge
+        : client.serviceAccountId
+          ? t().serviceAccount
+          : client.isPublic && client.allowDeviceGrant
+            ? t().deviceBadge
+            : undefined;
+  const NO_CONNECTIONS: ClientConnections = { active: 0, peopleCount: 0, people: [], perDay: [], lastUsedAt: null };
+  const connectionsOf = (client: OAuthClient) => props.connections[client.clientId] ?? NO_CONNECTIONS;
+  const DAY = 24 * 60 * 60 * 1000;
+  /** A client that can keep connections and was not used for 30 days. */
+  const unused = (client: OAuthClient) => {
+    if (!client.scopes.includes("offline_access") || client.serviceAccountId) return false;
+    const last = connectionsOf(client).lastUsedAt ?? client.createdAt;
+    return Date.now() - Date.parse(last) > 30 * DAY;
   };
+  /** A moment relative to now in its short form ("vor 3 Min."), as a list reads it; older than a week its date. */
+  const ago = (iso: string) => {
+    const diff = Date.parse(iso) - Date.now();
+    const short = new Intl.RelativeTimeFormat(locale(), { numeric: "auto", style: "short" });
+    const minutes = Math.round(diff / 60_000);
+    if (Math.abs(minutes) < 60) return short.format(minutes, "minute");
+    const hours = Math.round(minutes / 60);
+    if (Math.abs(hours) < 24) return short.format(hours, "hour");
+    const days = Math.round(hours / 24);
+    if (Math.abs(days) < 7) return short.format(days, "day");
+    return shortDate(iso);
+  };
+  const dayAxis = (days: number): [string, string, string] => {
+    const day = (back: number) => shortDate(new Date(Date.now() - back * 24 * 60 * 60 * 1000).toISOString());
+    return [day(days - 1), day(Math.floor((days - 1) / 2)), t().today];
+  };
+  const NAME_IN_LINE = 32;
+  const inLine = (name: string) => {
+    const graphemes = [...new Intl.Segmenter(locale(), { granularity: "grapheme" }).segment(name)].map((part) => part.segment);
+    return graphemes.length > NAME_IN_LINE
+      ? `${graphemes
+          .slice(0, NAME_IN_LINE - 1)
+          .join("")
+          .trimEnd()}…`
+      : name;
+  };
+  const shortDate = (iso: string) => new Intl.DateTimeFormat(locale(), { day: "2-digit", month: "2-digit" }).format(new Date(iso));
+  const lastUse = (client: OAuthClient) => {
+    const last = connectionsOf(client).lastUsedAt;
+    return last ? ago(last) : "–";
+  };
+  /** The spark's words: what the bars say, for a person who cannot see them. */
+  const trendWords = (name: string, perDay: readonly number[]) =>
+    t().newPerDayWords({ name, total: perDay.reduce((sum, count) => sum + count, 0), today: perDay.at(-1) ?? 0 });
+  /** A client's kind in words: brought by Cloud, or how it signs in. */
+  const kindLine = (client: OAuthClient) =>
+    client.registrationKind === "first_party"
+      ? t().firstParty
+      : client.registrationKind === "dynamic"
+        ? t().dynamic
+        : client.isPublic
+          ? t().public
+          : t().confidential;
+  /** The second line of every row: the kind, then what the client is for or where it lives. */
+  const secondLine = (client: OAuthClient) =>
+    [
+      badge(client) ?? kindLine(client),
+      // an unused client says only since when; its chip says the rest, so the row keeps two lines
+      unused(client)
+        ? undefined
+        : client.serviceAccountId
+          ? t().serviceAccountNoPeople
+          : connectionsOf(client).active === 0
+            ? t().nobodyConnectedLong
+            : t().connectedCount({ count: connectionsOf(client).active }),
+      lastUse(client),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  const connected = () => new Set((props.connectedPeople?.people ?? []).map((person) => person.userId));
+  /** A client no profile may use: said plainly, it is a choice, not a failure. */
+  const nobodyMay = (client: OAuthClient) => profileChoice(client.allowedProfiles) === "none" && client.accessMode !== "specific";
+  /** A client unused for 30 days: a warn dot with its words, no pill. */
+  const unusedMark = (words: string) => <Text tone="warn">{`● ${words}`}</Text>;
 
   // ── Directory: people and groups for "only these" ─────────────────────────────────────────────────────────────
   const loadPrincipals = async (text: string, context: { signal: AbortSignal; limit: number }) => {
@@ -313,8 +365,6 @@ export default function OAuthScreen(props: OAuthScreenProps) {
     });
   };
 
-  const dynamicClients = () => rows().filter((client) => client.registrationKind === "dynamic");
-
   // ── Deeds on an open client ───────────────────────────────────────────────────────────────────────────────────
   // A retry repeats what the person already agreed to; it does not ask again.
   const remove = async (client: ClientRow) => {
@@ -358,6 +408,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
   };
 
   // ── Parts ─────────────────────────────────────────────────────────────────────────────────────────────────────
+  /** The open client: who it is, what needs attention, three figures, its facts, where it sends people, who may use it. */
   const record = (client: ClientRow) => (
     <Pane
       detail
@@ -365,16 +416,14 @@ export default function OAuthScreen(props: OAuthScreenProps) {
       back={{ label: t().backToClients, href: list() }}
       head={
         <Bar
-          start={<Text weight="strong">{client.name}</Text>}
+          start={
+            <Inline>
+              <Mark {...markOf(client)} />
+              <RecordHead name={client.name} kinds={badge(client) ? [badge(client)!] : undefined} />
+            </Inline>
+          }
           end={
             <>
-              {/* a self-registered client has one deed, revoking; a managed one keeps the rarer ones in "…", which the
-                  phone shows as well */}
-              <Show when={client.registrationKind === "dynamic"}>
-                <Button icon="trash" keep onClick={() => void remove(client)}>
-                  {t().revokeAction}
-                </Button>
-              </Show>
               <Show when={client.registrationKind === "managed"}>
                 <Menu
                   label={t().moreActions}
@@ -383,8 +432,6 @@ export default function OAuthScreen(props: OAuthScreenProps) {
                     { label: t().deleteAction, icon: "trash", danger: true, onClick: () => void remove(client) },
                   ]}
                 />
-              </Show>
-              <Show when={client.registrationKind === "managed"}>
                 <Button icon="pencil" keep onClick={() => start(client)}>
                   {t().edit}
                 </Button>
@@ -395,67 +442,187 @@ export default function OAuthScreen(props: OAuthScreenProps) {
         />
       }
     >
-      <Show when={client.registrationKind === "first_party"}>
-        <Notice tone="note" icon="cloud">
-          {t().firstPartyNote}
-        </Notice>
-      </Show>
+      {/* what needs attention stands first, with its one deed */}
       <Show when={client.registrationKind === "dynamic"}>
-        <Notice tone="warn" icon="world">
+        <Notice
+          tone="warn"
+          title={t().unverifiedTitle}
+          actions={[{ label: t().revokeAction, icon: "trash", onClick: () => void remove(client) }]}
+        >
           {t().dynamicNote}
         </Notice>
       </Show>
-      {/* k2b-ui gap: Facts mono breaks an ID or hash at any sign; IDs need one line with an ellipsis and copy (DP). */}
-      <Facts
-        items={[
-          { label: t().clientId, value: client.clientId, mono: true, copy: client.clientId },
-          { label: t().type, value: `${kind(client)} · ${client.isPublic ? t().public : t().confidential}` },
-          ...(client.description ? [{ label: t().description, value: client.description }] : []),
-          ...(client.redirectUris.length === 0
-            ? [{ label: t().redirectUri, value: t().noRedirect }]
-            : client.redirectUris.map((uri) => ({ label: t().redirectUriOne, value: uri, mono: true, copy: uri }))),
-          ...(client.logoutUri ? [{ label: t().logoutUri, value: client.logoutUri, mono: true, copy: client.logoutUri }] : []),
-          { label: t().scopes, value: <>{scopeChips(client)}</> },
-          { label: t().whoCanUse, value: profileLabel(client) },
-          ...(client.accessMode === "specific"
-            ? [
-                {
-                  label: t().access,
-                  value: (
-                    <>
-                      <For each={client.accessUsers}>{(user) => <Chip icon="user">{user.displayName || user.uid}</Chip>}</For>
-                      <For each={client.accessGroups}>
-                        {(group) => <Chip icon="users-group">{groupDisplayName(group.name, locale())}</Chip>}
-                      </For>
-                    </>
-                  ),
-                },
-              ]
-            : []),
-          ...(client.isPublic ? [{ label: t().deviceGrant, value: client.allowDeviceGrant ? t().allowed : t().off }] : []),
-          { label: t().created, value: client.created },
-        ]}
-      />
+      <Show when={client.registrationKind === "managed" && profileChoice(client.allowedProfiles) === "none"}>
+        <Notice tone="warn" title={t().nobodyTitle} actions={[{ label: t().edit, icon: "pencil", onClick: () => start(client) }]}>
+          {t().nobodyText}
+        </Notice>
+      </Show>
+      {/* three key facts as a strip; the tinted object head of @k2b/ui takes them over in one step */}
+      <Cells>
+        <Cells.Cell
+          icon="plug-connected"
+          label={t().connected}
+          value={client.serviceAccountId ? "–" : number(connectionsOf(client).active)}
+          meta={client.serviceAccountId ? t().serviceAccountNoPeople : t().connectedPeople({ count: connectionsOf(client).peopleCount })}
+        />
+        <Cells.Cell
+          icon="clock"
+          label={t().lastUsed}
+          value={lastUse(client)}
+          meta={connectionsOf(client).people[0]?.name ?? t().neverUsed}
+        />
+        <Cells.Cell icon="calendar" label={t().created} value={client.created} meta={kindLine(client)} />
+      </Cells>
+      <Show when={!client.serviceAccountId}>
+        <Section title={t().newPerDay} count={t().last30Days}>
+          <Show when={connectionsOf(client).perDay.some((count) => count > 0)} fallback={<Text muted>{t().noConnectionsIn30Days}</Text>}>
+            <Canvas label={t().newPerDay}>
+              <DayBars
+                values={connectionsOf(client).perDay}
+                color={props.accent}
+                axis={dayAxis(connectionsOf(client).perDay.length)}
+                label={trendWords(client.name, connectionsOf(client).perDay)}
+              />
+            </Canvas>
+          </Show>
+        </Section>
+      </Show>
+      <Section title={t().access}>
+        <Facts items={[{ label: t().whoMay, value: client.accessMode === "specific" ? t().chosenWords : profileLabel(client) }]} />
+        <Show when={client.accessMode === "specific"}>
+          <For each={client.accessUsers}>
+            {(user) => (
+              <Row
+                avatar={{ name: user.displayName || user.uid }}
+                lines={[user.displayName || user.uid]}
+                meta={t().user}
+                // a chosen person who uses the client now says so
+                time={connected().has(user.id) ? t().connectedWord : undefined}
+              />
+            )}
+          </For>
+          <For each={client.accessGroups}>
+            {(group) => <Row mark={GROUP_MARK} lines={[groupDisplayName(group.name, locale())]} meta={t().group} />}
+          </For>
+        </Show>
+      </Section>
+      <Show when={!client.serviceAccountId}>
+        <Section title={t().connected} count={number(props.connectedPeople?.total ?? 0)}>
+          <Show when={(props.connectedPeople?.people.length ?? 0) > 0} fallback={<Text muted>{t().nobodyConnectedYet}</Text>}>
+            <For each={props.connectedPeople?.people ?? []}>
+              {(person) => (
+                <Row
+                  avatar={{ name: person.name }}
+                  lines={[person.name]}
+                  meta={t().sinceDate({ date: shortDate(person.since) })}
+                  time={person.lastUsedAt ? ago(person.lastUsedAt) : t().neverUsed}
+                />
+              )}
+            </For>
+            <Show when={(props.connectedPeople?.total ?? 0) > (props.connectedPeople?.people.length ?? 0)}>
+              <Text type="meta" muted>
+                {t().morePeople({ count: (props.connectedPeople?.total ?? 0) - (props.connectedPeople?.people.length ?? 0) })}
+              </Text>
+            </Show>
+          </Show>
+        </Section>
+      </Show>
+      <Section title={t().technique}>
+        <Facts
+          items={[
+            {
+              label: t().type,
+              value:
+                client.registrationKind === "first_party"
+                  ? `${t().firstParty} · ${t().firstPartyNote}`
+                  : client.registrationKind === "managed"
+                    ? `${t().managed} · ${kindLine(client)}`
+                    : `${t().dynamic} · ${client.isPublic ? t().public : t().confidential}`,
+            },
+            { label: t().clientId, value: client.clientId, mono: true, copy: client.clientId },
+            // every address it sends people back to, each to copy; the label names the first
+            ...(client.redirectUris.length === 0
+              ? [{ label: t().redirectUri, value: t().noRedirect }]
+              : client.redirectUris.map((uri, index) => ({
+                  label: index === 0 ? t().redirectUri : "",
+                  value: uri,
+                  mono: true,
+                  copy: uri,
+                }))),
+            ...(client.logoutUri ? [{ label: t().logoutUri, value: client.logoutUri, mono: true, copy: client.logoutUri }] : []),
+            ...(client.isPublic ? [{ label: t().deviceGrant, value: client.allowDeviceGrant ? t().allowed : t().off }] : []),
+            // k2b-ui gap: B shows each scope as a small mark; an Inline of chips in a fact cuts them instead of wrapping
+            { label: t().scopes, value: client.scopes.join(" "), mono: true },
+          ]}
+        />
+      </Section>
     </Pane>
   );
 
+  /**
+   * The one figure of the page with its real trend, and the exceptions as one line under it. A slot of its own, so the
+   * hero band of @k2b/ui (figure type, chart) replaces it in one step.
+   */
+  const hero = () => {
+    const a = props.activity;
+    const newest = rows()
+      .filter((client) => client.registrationKind === "dynamic")
+      .sort((x, y) => Date.parse(y.createdAt) - Date.parse(x.createdAt))[0];
+    return (
+      <>
+        {/* the one figure with its real trend, in the colour of OAuth */}
+        <Cells>
+          <Cells.Cell
+            icon="plug-connected"
+            color={props.accent}
+            label={t().activeConnectionsLabel}
+            value={number(a.active)}
+            meta={t().heroMeta({ people: number(a.people), fresh: number(a.newLast7) })}
+            trend={{ values: a.perDay, label: trendWords(t().allClients, a.perDay), color: props.accent }}
+          />
+        </Cells>
+        {/* the exceptions as one line: each its sign, its number, its word and quietly who */}
+        <Show when={props.figures.dynamic > 0 || a.unused.count > 0 || props.search}>
+          <Band>
+            <Inline>
+              <Show when={props.figures.dynamic > 0}>
+                <Text>
+                  <Icon name="world-plus" /> <Text weight="strong">{number(props.figures.dynamic)}</Text> {t().selfRegisteredWord}
+                </Text>
+                <Show when={newest}>
+                  {(client) => (
+                    <Text type="meta" muted>
+                      {t().newestSince({ name: inLine(client().name), date: shortDate(client().createdAt) })}
+                    </Text>
+                  )}
+                </Show>
+              </Show>
+              <Show when={a.unused.count > 0}>
+                <Text>
+                  <Text tone="warn">●</Text> <Text weight="strong">{number(a.unused.count)}</Text> {t().unusedWord}
+                </Text>
+                <Text type="meta" muted>
+                  {a.unused.count > 1
+                    ? t().nameAndMore({ name: inLine(a.unused.names[0] ?? ""), count: number(a.unused.count - 1) })
+                    : inLine(a.unused.names[0] ?? "")}
+                </Text>
+              </Show>
+              <Show when={props.search}>
+                <Text type="meta" muted>
+                  {t().searchResult({ query: props.search, count: total() })}
+                </Text>
+              </Show>
+            </Inline>
+          </Band>
+        </Show>
+      </>
+    );
+  };
+
   const clients = () => (
-    <Pane
-      label={t().clients}
-      scrollKey="oauth-clients"
-      status={<StatusRow lead={total() === 0 ? t().emptyLead : t().clientCount({ count: total() })} />}
-    >
-      {/* clients that registered themselves are the ones to check: said once, with their colour and sign; while a
-          client is open, its own head says what it is */}
-      <Show when={props.figures.dynamic > 0 && !props.open && !props.search}>
-        <Notice
-          tone="warn"
-          icon="world"
-          actions={dynamicClients().length === 1 ? [{ label: t().openClient, href: href({ client: dynamicClients()[0]!.id }) }] : undefined}
-        >
-          {t().dynamicLead({ count: props.figures.dynamic })}
-        </Notice>
-      </Show>
+    <Pane label={t().clients} scrollKey="oauth-clients" width={props.open ? { min: 480, default: 640 } : undefined}>
+      <Show when={!nothingYet()}>{hero()}</Show>
+      {/* one line per client: its mark, name and badge; who is connected; its 30 days; when it was used last */}
       <Table
         label={t().clients}
         rows={rows()}
@@ -470,31 +637,77 @@ export default function OAuthScreen(props: OAuthScreenProps) {
                 text: t().noMatch({ query: props.search }),
                 action: { label: t().resetSearch, href: href({ search: "" }) },
               }
-            : // "Neuer Client" stands in the head (on the phone it floats): the empty state does not repeat it
-              { icon: "key", text: t().noClients }
+            : { icon: "key", text: t().noClients, action: { label: t().newClient, icon: "plus", onClick: () => start("new") } }
         }
         phone={(client) => ({
-          lines: [client.name, client.description || client.clientId],
-          time: client.created,
-          marks:
-            client.registrationKind === "dynamic" ? (
-              <Chip status="warn" icon="world">
-                {kind(client)}
-              </Chip>
-            ) : (
-              accessChip(client)
-            ),
+          lines: [client.name, secondLine(client)],
+          // two lines, always, with the client's mark; a dot only for what needs a look
+          mark: markOf(client),
+          marks: unused(client) ? unusedMark(t().unusedShort) : undefined,
         })}
         columns={[
+          // the name in its weight; a small neutral badge right after it only where the client is not the usual.
+          // The name gives way first, so the badge always stands whole.
           {
             title: t().client,
-            width: { min: 200, default: 300 },
-            cell: (client) => (client.description ? { lines: [client.name, client.description] } : client.name),
+            mark: (client) => markOf(client),
+            // in the cell's own text flow, not an Inline: the cell cuts a long name with “…”, a flex row would clip it bare
+            cell: (client) => (
+              <>
+                <Text weight="strong">{badge(client) && !props.open ? inLine(client.name) : client.name}</Text>
+                {/* beside an open client the list is narrow; the open one says its kind in its head */}
+                <Show when={!props.open && badge(client)}>
+                  {(word) => (
+                    <>
+                      {" "}
+                      <Chip>{word()}</Chip>
+                    </>
+                  )}
+                </Show>
+              </>
+            ),
           },
-          { title: t().type, width: { min: 190, default: 220 }, cell: (client) => <>{kindChips(client)}</>, drop: true },
-          { title: t().access, width: { min: 150, default: 180 }, cell: (client) => accessChip(client), drop: true },
-          { title: t().scopes, width: { min: 170, default: 220 }, cell: (client) => <>{scopeChips(client, true)}</>, drop: true },
-          { title: t().created, width: { min: 110, default: 130 }, cell: (client) => client.created, drop: true },
+          {
+            title: t().connected,
+            width: { fixed: 120 },
+            cell: (client: ClientRow) => {
+              const c = connectionsOf(client);
+              if (client.serviceAccountId) return t().serviceAccount;
+              if (nobodyMay(client)) return t().nobodyMay;
+              if (c.active === 0) return t().nobodyConnected;
+              const faces = c.people.slice(0, 2);
+              return (
+                <Inline>
+                  <Avatar.Stack people={faces} max={2} label={t().connectedPeople({ count: c.peopleCount })} />
+                  <Show when={c.active > faces.length}>
+                    <Text type="meta" muted>{`+${number(c.active - faces.length)}`}</Text>
+                  </Show>
+                </Inline>
+              );
+            },
+          },
+          // the one column of data over time stays, also beside an open client
+          {
+            title: t().last30Days,
+            width: { fixed: 110 },
+            cell: (client: ClientRow) => {
+              const c = connectionsOf(client);
+              if (client.serviceAccountId) return "–";
+              return c.perDay.some((count) => count > 0) ? (
+                <Spark values={c.perDay} label={trendWords(client.name, c.perDay)} color={props.accent} />
+              ) : (
+                t().noUse
+              );
+            },
+            drop: true,
+          },
+          {
+            title: t().lastUsed,
+            width: { fixed: 120 },
+            cell: (client: ClientRow) =>
+              unused(client) ? unusedMark(lastUse(client) === "–" ? t().neverUsed : lastUse(client)) : lastUse(client),
+            drop: true,
+          },
         ]}
       />
       <Show when={props.paging.pages > 1}>
@@ -527,7 +740,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
     const address = (label: string, path: string) => ({ label, value: at(path), mono: true, copy: at(path) });
     return (
       <Pane label={t().endpoints} scrollKey="oauth-endpoints">
-        {/* one list of addresses, so they share one label column */}
+        {/* one list of addresses and scopes, so they share one value column */}
         <Section icon="route" title={t().oauthEndpoints}>
           <Facts
             items={[
@@ -538,27 +751,11 @@ export default function OAuthScreen(props: OAuthScreenProps) {
               address(t().dynamicRegistrationEndpoint, "/oauth/register"),
               address(t().userInfoEndpoint, "/oauth/userinfo"),
               address(t().logoutUrl, "/oauth/logout"),
-            ]}
-          />
-        </Section>
-        <Section icon="key" title={t().availableScopes}>
-          <Facts
-            items={[
-              { label: "openid", value: t().requiredReturnsUserId },
-              { label: "profile", value: t().returnsProfileClaims },
-              { label: "email", value: t().returnsEmail },
-              { label: "groups", value: t().returnsGroups },
-            ]}
-          />
-        </Section>
-        <Section icon="id-badge-2" title={t().claimMapping}>
-          <Facts
-            items={[
-              { label: t().idClaim, value: `sub ${t().or} uid (${t().username})` },
-              { label: t().databaseId, value: "id (UUID)", mono: true },
-              { label: t().displayNameClaim, value: "display_name", mono: true },
-              { label: t().emailClaim, value: "email", mono: true },
-              { label: t().groupsClaim, value: "groups", mono: true },
+              // each scope with the claims it returns: every claim is named once, in the same value column
+              { label: t().scopeNamed({ scope: "openid" }), value: "sub, uid, id", mono: true, hint: t().openidClaims },
+              { label: t().scopeNamed({ scope: "profile" }), value: "name, display_name, given_name, family_name", mono: true },
+              { label: t().scopeNamed({ scope: "email" }), value: "email", mono: true },
+              { label: t().scopeNamed({ scope: "groups" }), value: "groups", mono: true, hint: t().groupsClaims },
             ]}
           />
         </Section>
@@ -567,14 +764,22 @@ export default function OAuthScreen(props: OAuthScreenProps) {
   };
 
   const opened = () => props.open;
-  const showsList = () => props.tab === "clients" && !props.open;
+  const _showsList = () => props.tab === "clients" && !props.open;
+  /** No client yet and no search: the empty state is the one way to the first client, and there is nothing to search. */
+  const nothingYet = () => props.figures.total === 0 && !props.search;
 
   return (
     <AdminWorkspace
       nav={props.nav}
-      detail={props.tab === "clients" && props.open ? 460 : undefined}
-      // the main action on the list, floating at the bottom right on the phone; never over an open client
-      primary={showsList() ? { label: t().newClient, icon: "plus", onClick: () => start("new") } : undefined}
+      // the table takes the whole width until a client opens beside it
+      detail={props.tab === "clients" && props.open ? 500 : undefined}
+      // the main action of the list, floating at the bottom right on the phone; an open client is a page of its own there,
+      // with back and its deeds in its head, so nothing floats over it
+      primary={
+        props.tab === "clients" && !nothingYet() && !props.open
+          ? { label: t().newClient, icon: "plus", onClick: () => start("new") }
+          : undefined
+      }
       head={
         <Bar
           start={
@@ -585,6 +790,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
                   label: t().clients,
                   icon: "key",
                   href: href({ tab: "clients", client: null }),
+                  count: total(),
                   current: props.tab === "clients",
                 },
                 { label: t().endpoints, icon: "route", href: href({ tab: "endpoints", client: null }), current: props.tab === "endpoints" },
@@ -593,7 +799,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
           }
           end={
             <>
-              <Show when={props.tab === "clients"}>
+              <Show when={props.tab === "clients" && !nothingYet()}>
                 <Input
                   type="search"
                   icon="search"
@@ -608,7 +814,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
                   }}
                 />
               </Show>
-              <Show when={showsList()}>
+              <Show when={props.tab === "clients" && !nothingYet()}>
                 <Button variant="primary" icon="plus" onClick={() => start("new")}>
                   {t().newClient}
                 </Button>
@@ -688,42 +894,45 @@ export default function OAuthScreen(props: OAuthScreenProps) {
           />
         </Field>
         <Show when={editing() === "new"}>
-          <Field label={t().clientKind} hint={t().publicClientDescription}>
-            <Check label={t().publicClient} checked={draft().isPublic} onChange={(checked) => change({ isPublic: checked })} />
+          <Field label={t().clientKind}>
+            <Choice
+              name="kind"
+              value={draft().isPublic ? "public" : "confidential"}
+              onChange={(value) => change({ isPublic: value === "public" })}
+              options={[
+                { value: "confidential", label: t().confidentialChoice },
+                { value: "public", label: t().publicChoice },
+              ]}
+            />
           </Field>
         </Show>
         <Show when={draft().isPublic}>
-          <Field label={t().deviceGrant} hint={t().deviceGrantDescription}>
-            <Check label={t().allowed} checked={draft().allowDeviceGrant} onChange={(checked) => change({ allowDeviceGrant: checked })} />
+          <Field label={t().deviceGrant}>
+            <Check
+              label={t().deviceGrantChoice}
+              checked={draft().allowDeviceGrant}
+              onChange={(checked) => change({ allowDeviceGrant: checked })}
+            />
           </Field>
         </Show>
-        <Field
-          label={t().whoCanUse}
-          hint={
-            {
-              user: t().fullUsersOnlyDescription,
-              everybody: t().everybodyDescription,
-              guest: t().guestsOnlyDescription,
-              none: t().noUserProfilesDescription,
-            }[draft().profiles]
-          }
-          required
-        >
-          <Select
-            value={draft().profiles}
+        <Field label={t().whoCanUse} required>
+          <Choice
+            name="access"
+            value={draft().specific ? "specific" : draft().profiles}
             onChange={(value) => {
-              if (value === "user" || value === "everybody" || value === "guest" || value === "none") change({ profiles: value });
+              // chosen people keep the profiles already set, so a client that also lets guests in stays as it was
+              if (value === "specific") change({ specific: true, profiles: draft().profiles === "none" ? "user" : draft().profiles });
+              else if (value === "user" || value === "everybody" || value === "guest" || value === "none")
+                change({ specific: false, profiles: value });
             }}
             options={[
               { value: "user", label: t().fullUsersOnly },
               { value: "everybody", label: t().everybody },
               { value: "guest", label: t().guestsOnly },
+              { value: "specific", label: t().onlyChosen },
               { value: "none", label: t().noUserProfiles },
             ]}
           />
-        </Field>
-        <Field label={t().access} hint={t().specificDescription}>
-          <Check label={t().onlyChosen} checked={draft().specific} onChange={(checked) => change({ specific: checked })} />
         </Field>
         <Show when={draft().specific}>
           <Field
@@ -769,10 +978,15 @@ export default function OAuthScreen(props: OAuthScreenProps) {
         dismissible={false}
         foot={<Button onClick={closeSecret}>{t().close}</Button>}
       >
+        <Show when={secret()?.reload}>
+          <Text>
+            <Icon name="circle-check" tone="ok" label={t().clientCreated} /> {t().createdReady}
+          </Text>
+        </Show>
         <Show when={secret()?.value} fallback={<Text>{t().publicNoSecret}</Text>}>
-          <Notice tone="warn" icon="alert-triangle">
-            {t().saveSecretNow}
-          </Notice>
+          <Text>
+            <Icon name="alert-triangle" tone="warn" /> {t().saveSecretNow}
+          </Text>
         </Show>
         <Facts
           items={[

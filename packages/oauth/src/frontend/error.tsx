@@ -1,8 +1,8 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
-import { Band, Empty, Facts } from "@k2b/ui/v2";
+import { Band, Bar, Button, Empty, Facts } from "@k2b/ui/v2";
 import { ssr } from "../config";
 import { oauth } from "../service/oauth";
-import { AuthorizationPage } from "./_components/AuthorizationPage";
+import { AuthorizationPage, signedInName } from "./_components/AuthorizationPage";
 import { type ErrorReason, isErrorReason, mayBeNamed } from "./error-reasons";
 import { oauthMessages } from "./messages";
 
@@ -21,27 +21,47 @@ const sentences: Record<ErrorReason, (t: Messages, app?: string) => string> = {
   sign_in_again: (t) => t.deviceSignInAgain,
 };
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The name of the application a device request was refused for, bound to that refusal: the request is open, its
+ * application is one an administrator set up (`mayBeNamed`), and the signed-in person is indeed not allowed to use it.
+ * Anything else names nothing, so a guessed request or client reveals no name.
+ */
+const refusedApp = async (
+  actor: AuthContext["Variables"]["actor"] | undefined,
+  request: string | undefined,
+): Promise<string | undefined> => {
+  if (actor?.kind !== "user" || !request || !UUID.test(request)) return undefined;
+  const pending = await oauth.device.getPending(request);
+  const client = pending ? await oauth.clients.getByClientId({ clientId: pending.clientId }) : null;
+  if (!client || !mayBeNamed(client)) return undefined;
+  const allowed = await oauth.clients.canAuthorizeUser({ client, userId: actor.user.id, profile: actor.user.profile });
+  return allowed ? undefined : client.name;
+};
+
 /** The page a person sees when this app refuses or cannot continue an authorization: the one reason, once. */
 export default ssr<AuthContext>(async (c) => {
   const { t } = oauthMessages.resolve([getLocale(c)]);
   const sent = c.req.query("error") ?? "";
   const reason = isErrorReason(sent) ? sent : undefined;
-  // the application's name comes from its registration, never from the address, and only a signed-in person reads it,
-  // for an application an administrator set up (see `mayBeNamed`)
-  const clientId = c.req.query("client");
-  const signedIn = c.get("actor")?.kind === "user";
-  const client =
-    reason === "account_not_allowed" && signedIn && clientId && clientId.length <= 255
-      ? await oauth.clients.getByClientId({ clientId })
-      : null;
-  const sentence = reason ? sentences[reason](t, client && mayBeNamed(client) ? client.name : undefined) : t.unknownError;
+  const sentence = reason
+    ? sentences[reason](t, reason === "account_not_allowed" ? await refusedApp(c.get("actor"), c.req.query("request")) : undefined)
+    : t.unknownError;
 
   return () => (
-    <AuthorizationPage c={c} title={t.authorizationError} heading={t.authorizationFailed}>
-      <Empty icon="shield-x" tone="bad" text={sentence} action={{ label: t.backHome, icon: "home", href: "/" }} />
-      {/* the code in a block of its own, clear of the card's edge */}
+    <AuthorizationPage c={c} person={signedInName(c.get("actor"))} title={t.authorizationError} heading={t.authorizationFailed}>
+      {/* the reason, its code, then the way on */}
+      <Empty icon="shield-x" tone="bad" text={sentence} />
       <Band>
         <Facts items={[{ label: t.errorCode, value: reason ?? "unknown_error", mono: true }]} />
+        <Bar
+          end={
+            <Button icon="home" href="/">
+              {t.backHome}
+            </Button>
+          }
+        />
       </Band>
     </AuthorizationPage>
   );

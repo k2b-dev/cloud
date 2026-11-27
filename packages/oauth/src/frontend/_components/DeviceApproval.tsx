@@ -1,8 +1,8 @@
 import { useLocale } from "@k2b/ui";
-import { Band, Canvas, Text } from "@k2b/ui/v2";
+import { Canvas, Section, Text } from "@k2b/ui/v2";
 import { Match, Switch } from "solid-js";
 import { oauthMessages } from "../messages";
-import { CautionNote, DecisionForm, Outcome, RequestedAccess } from "./AuthorizationParts";
+import { DecisionForm, Outcome, RequestedAccess } from "./AuthorizationParts";
 import { DeviceCodeDrawing } from "./DeviceCodeDrawing";
 import DeviceCodeForm from "./DeviceCodeForm.island";
 
@@ -14,7 +14,7 @@ export type DeviceApprovalView =
       kind: "confirm";
       request: string;
       code: string;
-      client: { name: string; clientId: string };
+      client: { name: string; clientId: string; kind: "first_party" | "dynamic" | "managed" };
       scopes: string[];
       reauthenticateHref: string | null;
     }
@@ -27,7 +27,7 @@ export const deviceResultTitle = (outcome: DeviceOutcome, t: ReturnType<typeof o
   ];
 
 /** The device approval; the server decides which state is shown, and the page's head names it. */
-export function DeviceApproval(props: { view: DeviceApprovalView }) {
+export function DeviceApproval(props: { view: DeviceApprovalView; person?: string }) {
   const locale = useLocale();
   const t = () => oauthMessages.resolve([locale()]).t;
 
@@ -43,21 +43,23 @@ export function DeviceApproval(props: { view: DeviceApprovalView }) {
       <Match when={props.view.kind === "confirm" && props.view}>
         {(view) => (
           <>
-            {/* the question, what to compare and the code: one block below the head, with its own top edge */}
-            <Band>
+            {/* one block: the head names the asking application; the code to compare, what it asks for, then the
+                decision with the account it is for */}
+            <Section title={t().compareCodeTitle}>
               <Text>{t().deviceConfirmCode}</Text>
               {/* comparing the code with the terminal is what keeps a person from approving someone else's sign-in */}
               <Canvas label={t().deviceCodeLabel}>
                 <DeviceCodeDrawing code={view().code} />
               </Canvas>
-            </Band>
-            <RequestedAccess scopes={view().scopes} />
-            <CautionNote text={t().deviceOwnCodeWarning} reauthenticate={!!view().reauthenticateHref} />
+            </Section>
+            <RequestedAccess scopes={view().scopes} limitNote />
             <DecisionForm
               action="/oauth/device"
               request={view().request}
               userCode={view().code}
               reauthenticateHref={view().reauthenticateHref}
+              caution={t().deviceOwnCodeWarning}
+              person={props.person}
             />
           </>
         )}

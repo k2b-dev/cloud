@@ -605,6 +605,28 @@ describe("measureV2Layout", () => {
     TEST_TIMEOUT,
   );
 
+  // A control that gave way to its symbol keeps its words only as its name (sr-only, 1 px, clipped): the outline does
+  // not take that for a cut label. A label squeezed to 1 px without being hidden so is still cut.
+  test(
+    "the outline takes a visually hidden label as a name, and a label squeezed to 1 px as cut",
+    async () => {
+      const button = (probe: string, label: string) =>
+        `<button type="button" class="k2-btn" data-probe="${probe}"><i class="ti ti-plus k2-icon" aria-hidden="true"></i><span class="k2-btn-label" style="${label}">Todo anlegen</span></button>`;
+      const folded = await open(
+        columns(button("folded", "position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap")),
+      );
+      const squeezed = await open(columns(button("squeezed", "display:inline-block; width:1px; overflow:hidden; white-space:nowrap")));
+      try {
+        expect(await describeV2Page(folded)).not.toContain("cuts its label");
+        expect(await describeV2Page(squeezed)).toContain('"Todo anlegen" cuts its label');
+      } finally {
+        await folded.close();
+        await squeezed.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   test(
     "red: a label cut by a parent that hides what overflows; a scroller does not cut",
     async () => {

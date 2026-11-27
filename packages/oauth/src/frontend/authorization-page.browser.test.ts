@@ -278,7 +278,7 @@ describe("OAuth authorization pages in a browser", () => {
       }
     }, 60_000);
 
-    test(`the device code stands large in the mono face, in a block of its own, at ${width} px`, async () => {
+    test(`the device code stands at the largest size of the scale in the mono face, in a block of its own, at ${width} px`, async () => {
       const { context, tab } = await open("confirm", "de", width);
       try {
         const code = await tab.evaluate(() => {
@@ -292,7 +292,8 @@ describe("OAuth authorization pages in a browser", () => {
           };
         });
         expect(code.text).toBe("WDJB-MJHT");
-        expect(code.size).toBeGreaterThanOrEqual(28);
+        // the largest size of the type scale (lead), in the mono face
+        expect(code.size).toBe(18);
         expect(code.family).toContain("monospace");
         expect(code.align).toBe("center");
       } finally {

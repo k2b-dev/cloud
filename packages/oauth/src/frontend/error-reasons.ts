@@ -27,6 +27,6 @@ export const isErrorReason = (code: string): code is ErrorReason => (ERROR_REASO
  */
 export const mayBeNamed = (client: OAuthClient): boolean => client.registrationKind !== "dynamic" && canUseDeviceGrant(client);
 
-/** The address of the error page for one reason; `client` names the application by its registered client ID. */
-export const errorPageHref = (reason: ErrorReason, client?: string) =>
-  `/oauth/error?${new URLSearchParams({ error: reason, ...(client ? { client } : {}) })}`;
+/** The address of the error page for one reason; `request` is the device request the reason refused, if any. */
+export const errorPageHref = (reason: ErrorReason, request?: string) =>
+  `/oauth/error?${new URLSearchParams({ error: reason, ...(request ? { request } : {}) })}`;

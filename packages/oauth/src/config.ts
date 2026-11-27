@@ -1,5 +1,8 @@
 import { appAccess, defineApp } from "@k2b/cloud";
 
+/** OAuth's own colour: the shell around and its own figures and histories carry it. */
+export const ACCENT = "#4338ca";
+
 export const app = defineApp({
   id: "oauth",
   // These protocols validate their own credentials and never use Cloud session authority.
@@ -30,7 +33,7 @@ export const app = defineApp({
     baseLocale: "en",
     translations: { de: { description: "OAuth/OIDC-Clients, Weiterleitungen, Scopes und Secrets verwalten." } },
   },
-  appearance: { accent: "#4338ca", background: { from: "#4f46e5", to: "#8b5cf6", angle: 135 } },
+  appearance: { accent: ACCENT, background: { from: "#4f46e5", to: "#8b5cf6", angle: 135 } },
   basePath: "/oauth",
   baseUrl: "http://app-oauth:3000",
   adminHref: "/admin/oauth",

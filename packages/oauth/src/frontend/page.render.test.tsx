@@ -9,7 +9,7 @@ import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { oauthService } from "../service";
-import { NORMAL } from "./_components/oauth-fixture-data";
+import { fixtureActivity, fixtureConnections, NORMAL } from "./_components/oauth-fixture-data";
 
 const root = mkdtempSync(join(tmpdir(), "oauth-page-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
@@ -51,6 +51,9 @@ const spies = [
   spyOn(services, "get").mockResolvedValue("cloud.example.test" as never),
   spyOn(oauthService.client, "list").mockResolvedValue({ items: NORMAL, page: 1, perPage: 50, total: 120, hasNext: true } as never),
   spyOn(oauthService.client, "summary").mockResolvedValue({ total: 120, public: 30, dynamic: 2 }),
+  spyOn(oauthService.client, "connectionFigures").mockResolvedValue(fixtureActivity(NORMAL)),
+  spyOn(oauthService.client, "connections").mockResolvedValue(fixtureConnections(NORMAL)),
+  spyOn(oauthService.client, "connectedPeople").mockResolvedValue({ total: 0, people: [] }),
 ];
 const get = spyOn(oauthService.client, "get").mockImplementation(async ({ id }) => (id === beyond.id ? beyond : null));
 afterEach(() => get.mockClear());
@@ -77,7 +80,7 @@ test("the clients render on v2 with a statement lead, their figures and three pa
   const html = await render("");
   expect(html).toContain('data-k2-part="Workspace"');
   const text = read(html);
-  expect(text).toContain("2 Clients haben sich selbst registriert");
+  expect(text).toContain("2 selbst registriert");
   expect(text).toContain("Grafana");
   expect(text).toContain("1 / 3");
   expect(get).not.toHaveBeenCalled();
@@ -87,7 +90,8 @@ test("an open client is read on its own, so it stays open beyond the page; one t
   const open = read(await render(`?page=2&search=archiv&client=${beyond.id}`));
   expect(get).toHaveBeenCalledWith({ id: beyond.id });
   expect(open).toContain("Archiv-Portal");
-  expect(open).toContain(beyond.clientId);
+  // the ID stands shortened, whole in its copy button
+  expect(open).toContain(beyond.clientId.slice(0, 8));
   expect(open).toContain("https://grafana.werkstatt.example/login/generic_oauth");
 
   const gone = read(await render("?client=00000000-0000-4000-8000-000000000999"));

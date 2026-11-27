@@ -1,4 +1,5 @@
 import type { OAuthClient } from "@/contracts";
+import type { ClientConnections, ConnectedPerson, ConnectionFigures } from "../../service/connections";
 import type { ClientRow } from "./OAuthScreen";
 
 // Invented clients for render and browser tests and pictures: fixed dates, no production data. The secrets are fakes
@@ -6,17 +7,22 @@ import type { ClientRow } from "./OAuthScreen";
 // whole page of clients.
 
 /** What a test or a picture shows as a freshly made secret: plainly not a real one. */
-export const FAKE_SECRET = "FAKE-secret-nur-fuer-Tests-und-Bilder-0000000000";
+// invented for tests and pictures; it opens nothing
+export const FAKE_SECRET = "oc_sk_7Kp2Vx9mQ4rT8wL3sB6dF1hJ5yC0zN2eG4aR8uW";
 
 const id = (index: number) => `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+/** Eight hex signs that look random but stay the same for an index. */
+const hex = (index: number, factor: number) => (Math.imul(index + 1, factor) >>> 0).toString(16).padStart(8, "0");
+/** A client ID as the service makes one (a random UUID), the same for an index in every run. */
+const clientUuid = (index: number) =>
+  `${hex(index, 0x9e3779b1)}-${hex(index, 0x85ebca77).slice(0, 4)}-4${hex(index, 0xc2b2ae3d).slice(1, 4)}-a${hex(index, 0x27d4eb2f).slice(1, 4)}-${hex(index, 0x165667b1)}${hex(index, 0x7feb352d).slice(0, 4)}`;
+/** The list's dates fall with its order, as the service lists the newest first. */
+const createdOn = (index: number) => `2026-11-${String(25 - (index % 15)).padStart(2, "0")}T08:00:00.000Z`;
 
 export const fixtureClient = (index: number, values: Partial<OAuthClient> & { name: string }): ClientRow => ({
   id: id(index),
   description: null,
-  clientId: `oc_${values.name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .slice(0, 48)}`,
+  clientId: clientUuid(index),
   redirectUris: [],
   logoutUri: null,
   scopes: ["openid", "profile", "email"],
@@ -29,15 +35,15 @@ export const fixtureClient = (index: number, values: Partial<OAuthClient> & { na
   registrationKind: "managed",
   isPublic: false,
   allowDeviceGrant: false,
-  createdAt: `2026-11-${String(10 + (index % 15)).padStart(2, "0")}T08:00:00.000Z`,
   createdBy: null,
+  ...values,
+  createdAt: values.createdAt ?? createdOn(index),
   // the date as the page words it (`formatDate`, German)
-  created: new Date(`2026-11-${String(10 + (index % 15)).padStart(2, "0")}T08:00:00.000Z`).toLocaleDateString("de-DE", {
+  created: new Date(values.createdAt ?? createdOn(index)).toLocaleDateString("de-DE", {
     day: "numeric",
     month: "short",
     year: "numeric",
   }),
-  ...values,
 });
 
 const person = (index: number, displayName: string) => ({
@@ -111,7 +117,7 @@ export const NORMAL: ClientRow[] = [
     registrationKind: "dynamic",
     isPublic: true,
     redirectUris: ["http://localhost:6274/oauth/callback"],
-    scopes: ["read"],
+    scopes: ["read", "offline_access"],
     allowedProfiles: ["user", "guest"],
   }),
 ];
@@ -134,6 +140,15 @@ export const WORST: ClientRow[] = [
     accessGroups: Array.from({ length: 6 }, (_, index) => team(100 + index, `werkstatt-nord-schicht-${index + 1}`)),
   }),
   fixtureClient(101, { name: "X", registrationKind: "dynamic", isPublic: true, scopes: ["read"], allowedProfiles: ["user", "guest"] }),
+  // a name with an emoji, one in another script, and one address with no place to break
+  fixtureClient(150, { name: "🧪 Labor-Notizen", description: null, scopes: ["openid", "offline_access"] }),
+  fixtureClient(151, {
+    name: "設備管理システム（第二工場）",
+    description: "生産ラインの設備点検と保守記録",
+    redirectUris: [
+      "https://werkstatt-nord-auftragsverwaltung-und-materialbestellung.intern.example/oauth2/callback?tenant=werkstatt-nord-schichtbetrieb",
+    ],
+  }),
   ...Array.from({ length: 48 }, (_, index) =>
     fixtureClient(102 + index, {
       name: `Standort ${String(index + 1).padStart(3, "0")} · Kasse`,
@@ -143,3 +158,84 @@ export const WORST: ClientRow[] = [
     }),
   ),
 ];
+
+// ── Connections ─────────────────────────────────────────────────────────────────────────────────────────────────────
+// Invented connections for the pictures and tests, relative to now, so a relative time reads the same on any day.
+
+const MINUTE = 60 * 1000;
+const PEOPLE = ["Ada Renz", "Jana Berger", "Tom Ochs", "Lena Hartwig", "Mira Sander", "Sami Yilmaz", "Felix Thal", "Jonas Kern"];
+/** Active connections and minutes since the last use, by client name; the rest get a small share. */
+const USE: Record<string, { active: number; minutesAgo: number | null }> = {
+  Wiki: { active: 58, minutesAgo: 3 },
+  "Cloud CLI": { active: 41, minutesAgo: 2 },
+  Zeiterfassung: { active: 31, minutesAgo: 9 },
+  Grafana: { active: 23, minutesAgo: 6 },
+  Nextcloud: { active: 12, minutesAgo: 16 * 60 },
+  Paperless: { active: 6, minutesAgo: 60 },
+  "Drucker-Terminal": { active: 4, minutesAgo: 3 * 60 },
+  "Claude Code": { active: 3, minutesAgo: 20 },
+  "Backup-Agent": { active: 0, minutesAgo: null },
+  "MCP Inspector": { active: 0, minutesAgo: 34 * 24 * 60 },
+};
+/** Thirty days of new connections that roughly add up to a client's connections, the same for a name every time. */
+const days = (seed: number, active: number) =>
+  Array.from({ length: 30 }, (_, day) => {
+    const wave = Math.abs(Math.sin(seed * 7.1 + day * 1.7));
+    return active === 0 ? 0 : Math.round(wave * Math.max(1, active / 12)) * (day % 6 === 5 ? 0 : 1);
+  });
+
+/** The connections of a list of clients as the service returns them, by client ID. */
+export const fixtureConnections = (clients: readonly ClientRow[]): Record<string, ClientConnections> =>
+  Object.fromEntries(
+    clients.map((client, index) => {
+      const use = USE[client.name] ?? { active: 1 + ((index * 7) % 13), minutesAgo: 30 + index * 11 };
+      const people = PEOPLE.slice(index % 4, (index % 4) + Math.min(3, use.active)).map((name) => ({ name }));
+      return [
+        client.clientId,
+        {
+          active: use.active,
+          peopleCount: Math.min(use.active, Math.max(people.length, Math.ceil(use.active * 0.6))),
+          people,
+          perDay: days(index + 1, use.active),
+          lastUsedAt: use.minutesAgo === null ? null : new Date(Date.now() - use.minutesAgo * MINUTE).toISOString(),
+        },
+      ];
+    }),
+  );
+
+/** The figures of all connections for a list of clients. */
+export const fixtureActivity = (clients: readonly ClientRow[], worst = false): ConnectionFigures => {
+  const connections = Object.values(fixtureConnections(clients));
+  const perDay = Array.from({ length: 30 }, (_, day) => connections.reduce((sum, client) => sum + (client.perDay[day] ?? 0), 0));
+  return worst
+    ? { active: 98_765, people: 12_345, newLast7: 4_321, perDay, unused: { count: 1_234, names: [clients[0]!.name, "X"] } }
+    : {
+        active: connections.reduce((sum, client) => sum + client.active, 0),
+        people: 97,
+        newLast7: perDay.slice(-7).reduce((sum, count) => sum + count, 0),
+        perDay,
+        unused: { count: 1, names: ["MCP Inspector"] },
+      };
+};
+
+/** The people connected with one client, as the service lists them: the same people the list counts, used last first. */
+export const fixtureConnectedPeople = (
+  client: ClientRow | undefined,
+  clients: readonly ClientRow[] = NORMAL,
+): { total: number; people: ConnectedPerson[] } | null => {
+  if (!client) return null;
+  const connections = fixtureConnections(clients)[client.clientId];
+  if (!connections) return { total: 0, people: [] };
+  const names = [...connections.people.map((person) => person.name), ...PEOPLE].filter((name, at, all) => all.indexOf(name) === at);
+  const shown = Math.min(connections.peopleCount, 8);
+  const people = names.slice(0, shown).map((name, at) => ({
+    // a chosen person keeps their own id, so the access list can say they are connected
+    userId:
+      client.accessUsers.find((user) => (user.displayName || user.uid) === name)?.id ??
+      `22222222-2222-4222-8222-${String(at + 1).padStart(12, "0")}`,
+    name,
+    since: new Date(Date.now() - (40 - at * 5) * 24 * 60 * MINUTE).toISOString(),
+    lastUsedAt: connections.lastUsedAt ? new Date(Date.parse(connections.lastUsedAt) - at * at * 90 * MINUTE).toISOString() : null,
+  }));
+  return { total: connections.peopleCount, people };
+};

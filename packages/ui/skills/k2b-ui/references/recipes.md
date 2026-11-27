@@ -82,6 +82,23 @@ in its words. Its footer `Bar` saves with a default button.
 - On the phone the form is the page; `back` leads to the list.
 - States: `errors`, `saving`.
 
+## settings.tsx: settings with more than text
+
+![settings at 1440 px](../images/settings-1440.png)
+![settings at 390 px](../images/settings-390.png)
+
+The sign-in settings of an app: a `Field` with an `action` that resets it
+to its default, a `Select` the operator fixed (`disabled`), allowed
+domains in a `TagsInput`, a logo in an `ImageInput`, an accent colour in a
+`ColorInput`, how dark the background is in a `Slider`, a pairing code in a
+`CodeInput`, and two `Disclosure`s with questions in a `Section`.
+
+- A field's deed stands at the end of its label line and never moves the
+  field; it takes the place of `optional`.
+- A choice the person may not change is a dimmed control with the reason
+  in its hint, not a missing one.
+- States: `empty`, `locked`.
+
 ## record.tsx: a record, first tab
 
 ![record at 1440 px](../images/record-1440.png)
@@ -132,6 +149,69 @@ sender `Row` (avatar, icon buttons in `end`), `Prose`, `Tiles`.
   with a `Field` and `<Input multiline />`, followed by a `Bar` whose `end`
   holds "Senden" as a default button (the page's primary stays "Neue
   Nachricht").
+
+## overview.tsx: an overview of things with a face
+
+![overview at 1440 px](../images/overview-1440.png)
+![overview at 390 px](../images/overview-390.png)
+
+The bases of Grids. `Nav` entries with `color`, so each base leads with its
+`Mark`; a `StatusRow` whose lead says what counts today, with chips for
+what lets a person act; `Tiles variant="card"` with `stats`, `people`,
+`foot`, `trend` and the `create` card with templates as `choices`; a
+`List` of two-line `Row`s with `mark` in the colour of their kind; a
+`Pane side` with `Digest activity`, each sentence with the thing's
+`Mark` and name.
+
+- A base has one colour and symbol, the same in the sidebar, on its card
+  and in a sentence. A kind of thing (table, board, form) has one colour
+  across the app.
+- A form or a workflow that did something is a person with its name.
+- States: `empty` (a new installation; the card that makes a base stays).
+
+## home.tsx: the home of one place
+
+![home at 1440 px](../images/home-1440.png)
+![home at 390 px](../images/home-390.png)
+
+One base: `Cells` with a `trend` on the first, the things as `Section`s of
+`Row`s with `mark`, their figures in the second line and their state as a
+chip in `marks`; then `Digest activity` under "Zuletzt geändert".
+
+- A state that needs a person (a failed workflow, new form entries) stands
+  in its row and as a `dot` on its sidebar entry.
+- States: `quiet` (a day without anything that needs a person).
+
+## files.tsx: a folder with list, grid and selection
+
+![files at 1440 px](../images/files-1440.png)
+![files at 390 px](../images/files-390.png)
+
+Two full-width rows above list and detail: a head `Bar` with `Path`, a
+sharing `Chip`, the search, "Neuer Ordner" and the primary "Hochladen";
+then the `FilterBar` with `results` and `end` (`ListOrder`, a `Menu` for
+list or grid). The list is a `Table` with `select`, `group` (folders,
+files), a `mark` column with thumbnails and types, an `avatar` column; the
+open file is a `Pane detail` with `Preview`, a bar of deeds, `Facts` and
+sections for sharing and versions. `Nav` shows storages with `color` and
+the storage's `quota`.
+
+- While files are selected, `StatusRow selection` takes the bar's place at
+  the same height; on the phone its actions float at the bottom.
+- States: `grid` (`Tiles variant="media"`), `selecting` (three photos).
+
+## settings-page.tsx: a settings page
+
+![settings-page at 1440 px](../images/settings-page-1440.png)
+![settings-page at 390 px](../images/settings-page-390.png)
+
+The state first as `Cells` (a `trend`, chips with tone); a `Table` for the
+one setting with a value per kind (a switch per row); `Setting` rows for
+everything else, one `Section` per topic; a `Pane side` with the methods
+as rows with `mark` and state, and `Digest activity` of who changed what.
+The head says "1 Änderung" and saves the page as a whole.
+
+- States: `saved` (nothing to save: the deeds are disabled).
 
 ## table.tsx: a table with a status row
 
@@ -267,10 +347,12 @@ side column keep a width `{ fixed }`. On the phone each event is a row of two
 lines with its seats. A `Pane side` holds the visit and only what the table
 does not say: free places today as one meter, the way in as `Facts`, and
 access as a `Section` of its own (good news is no notice). The status row
-names its day ("Heute"), so its chips count the rows they stand for. Each date
-is said once. `states` exports kiosk (the same page on a wall screen: no task,
-what runs now first, "aktualisiert sich jede Minute" in the head), empty and
-failed.
+names its reference ("Bis Sonntag"), so its chips count the rows the list
+shows. Seats read one way everywhere: free seats in words beside the meter of
+what is taken. The host shows as a face and a name. Each date is said once.
+`states` exports kiosk (the same page on a wall screen: no task, what runs now
+marked "läuft" on its row, "aktualisiert sich jede Minute" in the head), empty
+and failed.
 
 - A visitor page has no rail and no sidebar: the brand stands in the head.
 - A kiosk refreshes itself and says so in words, never with a button.

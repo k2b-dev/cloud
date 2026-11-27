@@ -13,7 +13,15 @@ import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { oauthService } from "../service";
-import { FAKE_SECRET, fixtureClient, NORMAL, WORST } from "./_components/oauth-fixture-data";
+import {
+  FAKE_SECRET,
+  fixtureActivity,
+  fixtureClient,
+  fixtureConnectedPeople,
+  fixtureConnections,
+  NORMAL,
+  WORST,
+} from "./_components/oauth-fixture-data";
 
 // The real page in the Cloud shell, from invented clients: its first HTML with the shell's own stylesheets, fonts
 // (Plex) and icons keeps the v2 layout rules at 1440 and 390 px. `CLOUD_OAUTH_SHELL_SHOTS=<dir>` also saves light
@@ -34,8 +42,8 @@ const user = {
   provider: "local",
   profile: "user",
   givenname: "Ada",
-  sn: "Admin",
-  displayName: "Ada Admin",
+  sn: "Renz",
+  displayName: "Ada Renz",
   mail: "admin@example.test",
   avatarHash: null,
   ipa: null,
@@ -52,8 +60,9 @@ const runtime = {
   apps: [{ id: "oauth", name: "OAuth", icon: "ti ti-key", description: "", adminHref: "/admin/oauth", routes: ["/admin/oauth"] }],
 } as unknown as CloudRuntime;
 
-type Data = "normal" | "worst" | "empty";
-const clientsOf = (data: Data) => (data === "normal" ? NORMAL : data === "worst" ? WORST : []);
+// "fresh" is a new installation: Cloud brings its own CLI client, so the list is never empty
+type Data = "normal" | "worst" | "fresh";
+const clientsOf = (data: Data) => (data === "normal" ? NORMAL : data === "worst" ? WORST : NORMAL.slice(0, 1));
 
 /** The first HTML of an address, as the page renders it for invented clients. */
 const firstHtml = async (search: string, data: Data) => {
@@ -78,6 +87,16 @@ const firstHtml = async (search: string, data: Data) => {
           },
     ),
     spyOn(oauthService.client, "get").mockImplementation(async ({ id }) => clients.find((client) => client.id === id) ?? null),
+    // invented connections, relative to now
+    spyOn(oauthService.client, "connectionFigures").mockResolvedValue(fixtureActivity(clients, data === "worst")),
+    spyOn(oauthService.client, "connections").mockResolvedValue(fixtureConnections(clients)),
+    spyOn(oauthService.client, "connectedPeople").mockImplementation(
+      async ({ clientId }) =>
+        fixtureConnectedPeople(
+          clients.find((client) => client.clientId === clientId),
+          clients,
+        ) ?? { total: 0, people: [] },
+    ),
   ];
   try {
     const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
@@ -143,19 +162,22 @@ afterAll(async () => {
 });
 
 describe("OAuth in the Cloud shell", () => {
-  test("the first picture keeps the v2 rules at 1440 and 390 px: list, open client, endpoints, empty and worst case", async () => {
+  test("the first picture keeps the v2 rules at 1440 and 390 px: list, open client, endpoints, a fresh installation and worst case", async () => {
     const cases: [string, string, Data][] = [
       ["clients", "", "normal"],
       ["client-offen", `?client=${NORMAL[2]!.id}`, "normal"],
       ["client-dynamisch", `?client=${NORMAL[4]!.id}`, "normal"],
       ["endpunkte", "?tab=endpoints", "normal"],
-      ["leer", "", "empty"],
+      ["frisch", "", "fresh"],
       ["worst-case", "", "worst"],
       ["worst-case-offen", `?client=${WORST[0]!.id}`, "worst"],
+      // another script and an address with no place to break
+      ["worst-case-schrift", `?client=${WORST[3]!.id}`, "worst"],
     ];
     for (const [name, search, data] of cases) {
       const html = await firstHtml(search, data);
-      for (const width of [1440, 1024, 390]) {
+      // 1920 too: large screens grow the detail, not the rows
+      for (const width of [1920, 1440, 1024, 390]) {
         const { context, tab, errors } = await openShellPage(browser, assets, {
           errors: pageErrors,
           path: `/admin/oauth${search}`,
@@ -194,7 +216,7 @@ describe("OAuth in the Cloud shell", () => {
               body: JSON.stringify({
                 // enough people and groups that the picker has hits beside what is chosen
                 items: [
-                  ...["Ada Renz", "Ben Okafor", "Clara Weiß", "David Nguyen", "Elif Yılmaz"].map((name, index) => ({
+                  ...["Ben Okafor", "Clara Weiß", "David Nguyen", "Elif Yılmaz", "Farid Haddad"].map((name, index) => ({
                     kind: "user",
                     user: { id: `11111111-1111-4111-8111-00000000000${index}`, uid: name.split(" ")[0]!.toLowerCase(), displayName: name },
                   })),
@@ -207,15 +229,20 @@ describe("OAuth in the Cloud shell", () => {
             },
             "/api/oauth/admin/clients": {
               type: "application/json",
-              body: JSON.stringify({ clientId: "oc_handbuch", clientSecret: FAKE_SECRET }),
+              body: JSON.stringify({ clientId: "6f1d2c84-9a3b-4e57-b210-3c8e5d7a9f42", clientSecret: FAKE_SECRET }),
             },
-            // the list read again after creating: the page's clients and the new one, as the service returns them
+            // the list read again after creating: the new client first, made today, as the service returns them
             "GET /api/oauth/admin/clients": {
               type: "application/json",
               body: JSON.stringify({
                 clients: [
+                  fixtureClient(90, {
+                    name: "Handbuch",
+                    clientId: "6f1d2c84-9a3b-4e57-b210-3c8e5d7a9f42",
+                    description: "Anleitungen der Werkstatt",
+                    createdAt: "2026-11-26T09:30:00.000Z",
+                  }),
                   ...NORMAL,
-                  fixtureClient(90, { name: "Handbuch", clientId: "oc_handbuch", description: "Anleitungen der Werkstatt" }),
                 ],
                 pagination: { page: 1, per_page: 50, total: NORMAL.length + 1, total_pages: 1, has_next: false },
               }),
@@ -230,9 +257,9 @@ describe("OAuth in the Cloud shell", () => {
         await dialog.getByRole("textbox", { name: "Weiterleitungs-URIs" }).fill("https://wiki.werkstatt.example/login/callback");
         await settled(tab);
         if (shots) await tab.screenshot({ path: join(shots, `dialog-neuer-client-${width}.png`) });
-        await dialog.getByRole("checkbox", { name: "Nur bestimmte Benutzer und Gruppen" }).check();
+        await dialog.getByRole("radio", { name: "Nur bestimmte Benutzer und Gruppen" }).check();
         await dialog.getByRole("searchbox").fill("a");
-        await dialog.getByRole("option", { name: /Ada Renz/ }).click();
+        await dialog.getByRole("option", { name: /Ben Okafor/ }).click();
         await settled(tab);
         if (shots) await tab.screenshot({ path: join(shots, `dialog-zugriff-${width}.png`) });
         await dialog.getByRole("button", { name: "Erstellen" }).click();

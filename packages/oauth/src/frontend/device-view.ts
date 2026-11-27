@@ -35,12 +35,11 @@ export const resolveDeviceView = async <E extends AuthContext>(c: Context<E>): P
     const request = c.req.query("request");
     const clientId = request && UUID.test(request) ? await oauth.device.approvedClientId({ id: request, userId: user.id }) : null;
     const client = clientId ? await oauth.clients.getByClientId({ clientId }) : null;
-    const account = user.displayName || user.uid;
     if (!client || !mayBeNamed(client)) return { kind: "result", outcome: result };
     return {
       kind: "result",
       outcome: result,
-      message: t.deviceApprovedFor({ app: client.name, account }),
+      message: t.deviceApprovedFor({ app: client.name }),
     };
   }
   if (result === "denied" || result === "expired") return { kind: "result", outcome: result };
@@ -81,7 +80,7 @@ export const resolveDeviceView = async <E extends AuthContext>(c: Context<E>): P
     kind: "confirm",
     request,
     code: oauth.device.formatUserCode(userCode),
-    client: { name: client.name, clientId: client.clientId },
+    client: { name: client.name, clientId: client.clientId, kind: client.registrationKind },
     scopes: pending.scopes,
     reauthenticateHref,
   };

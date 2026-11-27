@@ -15,6 +15,7 @@ export { useLocale } from "../intl/locale";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {
+  type ActivityEntry,
   CodeFigure,
   type CodeFigureProps,
   Digest,
@@ -68,15 +69,28 @@ export {
   type CheckProps,
   Choice,
   type ChoiceProps,
+  CodeInput,
+  type CodeInputProps,
+  ColorInput,
+  type ColorInputProps,
   DateInput,
   type DateInputProps,
   Field,
   type FieldProps,
+  ImageInput,
+  type ImageInputProps,
   Input,
   type InputProps,
+  type InputSend,
   Select,
   type SelectOption,
   type SelectProps,
+  Setting,
+  type SettingProps,
+  Slider,
+  type SliderProps,
+  TagsInput,
+  type TagsInputProps,
 } from "./controls";
 // A month of days to pick one from (with a time for points in time); DateInput opens it.
 export { DatePicker, type DatePickerProps } from "./date-picker";
@@ -96,20 +110,38 @@ export {
   Pane,
   type PaneProps,
   type Tile,
+  type TileCreate,
+  type TileStat,
   Tiles,
   type TilesProps,
   Workspace,
   type WorkspaceProps,
 } from "./layout";
 export { Lookup, type LookupLoad, type LookupProps, type LookupResolve } from "./lookup";
-export { Avatar, type AvatarProps, Chip, type ChipProps, Icon, type IconProps, Progress, type ProgressProps } from "./marks";
+export {
+  Avatar,
+  type AvatarProps,
+  type AvatarStackProps,
+  Chip,
+  type ChipProps,
+  Icon,
+  type IconProps,
+  Mark,
+  type MarkProps,
+  Preview,
+  type PreviewProps,
+  Progress,
+  type ProgressProps,
+  Spark,
+  type SparkProps,
+} from "./marks";
 // Overlays: a menu, a popover (panel or tip) and toasts; their behaviour comes from the behaviour layer.
 export { Menu, type MenuContextProps, type MenuEntry, type MenuItem, type MenuProps, type MenuSection, type TriggerProps } from "./menu";
 // The overlays: v2 shapes on the behaviour layer.
 export { type ConfirmOptions, confirm, Dialog, type DialogProps } from "./overlays";
 export { Popover, type PopoverPanelProps, type PopoverProps, type PopoverTipProps } from "./popover";
 export { Empty, type EmptyProps, Failed, type FailedProps, Loading, type LoadingProps } from "./states";
-export { Group, type GroupProps, Section, type SectionProps } from "./structure";
+export { Disclosure, type DisclosureProps, Group, type GroupProps, Section, type SectionProps } from "./structure";
 export { type ShowToast, type ToastOptions, useToast } from "./toast";
 export { fontWeights, gripTolerance, hairline, heights, radii, type TypeRole, textEdge, typeRoles } from "./tokens";
 export type { Action, OnNavigate, Person, Status, TwoActions, Width } from "./types";

@@ -1,7 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { NavProps } from "@k2b/ui/v2";
 import OAuthScreen from "./OAuthScreen";
-import { NORMAL, WORST } from "./oauth-fixture-data";
+import { fixtureActivity, fixtureConnectedPeople, fixtureConnections, NORMAL, WORST } from "./oauth-fixture-data";
 
 // The OAuth screen from invented clients (see `oauth-fixture-data.ts`); `empty` has none.
 
@@ -37,6 +37,17 @@ export const OAuthFixture = (props: { search: string; data?: OAuthFixtureData; n
               }
         }
         open={open ? { id: open, found: clients.find((client) => client.id === open) ?? null } : null}
+        activity={fixtureActivity(clients, props.data === "worst")}
+        accent="#4338ca"
+        connections={fixtureConnections(clients)}
+        connectedPeople={
+          open
+            ? fixtureConnectedPeople(
+                clients.find((client) => client.id === open),
+                clients,
+              )
+            : null
+        }
       />
     </LocaleProvider>
   );

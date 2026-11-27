@@ -136,20 +136,21 @@ const keepRanges = (text: string) => text.replace(/(\d)–(\d)/g, "$1–\u2060$2
 
 const few = (seats: Seats) => seats.free > 0 && seats.free <= Math.max(3, seats.of / 10);
 
-/**
- * The seats: a chip in colour, sign and word only for what asks to act (booked out, almost full); the usual case is
- * quiet text, so the two exceptions stand out.
- */
-const seatsChip = (seats: Seats) =>
+/** Beside the meter and its words, the chip names only the state: the free seats stand at the meter already. */
+const exceptionChip = (seats: Seats) =>
   seats.free === 0 ? (
     <Chip status="bad" icon="ban">
       Ausgebucht
     </Chip>
-  ) : few(seats) ? (
-    <Chip status="warn" icon="alert-triangle">{`Noch ${seats.free}`}</Chip>
   ) : (
-    <Text muted>{`${seats.free} frei`}</Text>
+    <Chip status="warn" icon="alert-triangle">
+      knapp
+    </Chip>
   );
+
+/** When and where, and on the wall screen what runs now, in its second line. */
+const when = (event: Listed, kiosk: boolean) =>
+  `${kiosk && event.key === "Heute-0" ? `läuft bis ${event.time.split("–")[1]}` : event.time} · ${event.room} · ${kinds[event.kind].label}`;
 
 type Listed = Event & { day: "Heute" | "Diese Woche"; key: string };
 const listed = (events: Event[], day: Listed["day"]): Listed[] => events.map((event, index) => ({ ...event, day, key: `${day}-${index}` }));
@@ -161,7 +162,7 @@ const load = (seats: Seats) => (seats.free === 0 ? ("bad" as const) : few(seats)
  * The programme as one table grouped by day: the event with when and where, its type as a tag in its colour, who
  * hosts it, how full it is as a meter, and its state. On the phone each event is one row of two lines with its state.
  */
-const programme = (events: Listed[]) => (
+const programme = (events: Listed[], kiosk = false) => (
   <Table
     label="Programm"
     rows={events}
@@ -177,13 +178,18 @@ const programme = (events: Listed[]) => (
         title: "Veranstaltung",
         // a long title takes a second line before it is cut: a year range never breaks off in the middle
         wrap: true,
-        cell: (event) => ({ lines: [keepRanges(event.title), `${event.time} · ${event.room} · ${kinds[event.kind].label}`] }),
+        cell: (event) => ({ lines: [keepRanges(event.title), when(event, kiosk)] }),
       },
       {
         title: "Leitung",
-        width: { fixed: 72 },
+        width: { fixed: 160 },
         drop: true,
-        cell: (event) => <Avatar name={event.host.name} color={event.host.color} />,
+        cell: (event) => (
+          <Inline>
+            <Avatar name={event.host.name} color={event.host.color} />
+            <Text>{event.host.name}</Text>
+          </Inline>
+        ),
       },
       {
         // the meter and, for the exceptions, their chip: title and seats share the room the host leaves
@@ -193,19 +199,27 @@ const programme = (events: Listed[]) => (
             <Progress
               value={taken(event.seats)}
               of={event.seats.of}
-              // booked out, the chip says it: the figures would only repeat it
-              label={event.seats.free === 0 ? undefined : `${taken(event.seats)}/${event.seats.of}`}
+              // booked out, the chip says it: the words would only repeat it
+              label={event.seats.free === 0 ? undefined : `${event.seats.free} frei`}
               status={load(event.seats)}
             />
-            <Show when={load(event.seats)}>{seatsChip(event.seats)}</Show>
+            <Show when={load(event.seats)}>{exceptionChip(event.seats)}</Show>
           </Inline>
         ),
       },
     ]}
     phone={(event) => ({
-      lines: [event.title, `${event.time} · ${event.room} · ${kinds[event.kind].label}`],
+      lines: [keepRanges(event.title), when(event, kiosk)],
       avatar: event.host,
-      marks: seatsChip(event.seats),
+      // the seats read as on the desktop: free seats in words, a chip only for the state
+      marks: (
+        <>
+          <Show when={event.seats.free > 0}>
+            <Text muted>{`${event.seats.free} frei`}</Text>
+          </Show>
+          <Show when={load(event.seats)}>{exceptionChip(event.seats)}</Show>
+        </>
+      ),
     })}
   />
 );
@@ -216,8 +230,9 @@ export default function VenueProgramme(props: Props) {
   const events = () => (props.empty ? [] : today);
   const free = () => events().reduce((sum, event) => sum + event.seats.free, 0);
   const seats = () => events().reduce((sum, event) => sum + event.seats.of, 0);
-  const full = () => events().filter((event) => event.seats.free === 0).length;
-  const almost = () => events().filter((event) => few(event.seats)).length;
+  const shown = () => [...events(), ...week];
+  const full = () => shown().filter((event) => event.seats.free === 0).length;
+  const almost = () => shown().filter((event) => few(event.seats)).length;
   return (
     <Workspace
       head={
@@ -243,16 +258,10 @@ export default function VenueProgramme(props: Props) {
             <Bar
               start={
                 <Inline>
-                  {/* the statement names its day: its chips count today's rows, not the week's below */}
-                  <Text weight="strong">
-                    {props.kiosk
-                      ? "Jetzt: Offene Holzwerkstatt · Werkraum"
-                      : almost() + full() > 0
-                        ? "Heute"
-                        : `Heute ${events().length} Veranstaltungen`}
-                  </Text>
+                  {/* the statement names its reference, and its chips count the rows the list shows */}
+                  <Text weight="strong">Bis Sonntag</Text>
                   <Show when={almost() > 0}>
-                    <Chip status="warn" icon="alert-triangle">{`${almost()} fast voll`}</Chip>
+                    <Chip status="warn" icon="alert-triangle">{`${almost()} knapp`}</Chip>
                   </Show>
                   <Show when={full() > 0}>
                     <Chip status="bad" icon="ban">{`${full()} ausgebucht`}</Chip>
@@ -271,14 +280,14 @@ export default function VenueProgramme(props: Props) {
                 Heute keine Veranstaltung. Das Programm der Woche steht darunter.
               </Notice>
             </Show>
-            {programme([...listed(events(), "Heute"), ...listed(week, "Diese Woche")])}
+            {programme([...listed(events(), "Heute"), ...listed(week, "Diese Woche")], props.kiosk)}
           </Show>
         </Pane>
         <Pane side label="Ihr Besuch" width={{ fixed: 360 }}>
           <Section icon="armchair" color={brand.color} title="Plätze heute">
             <Row
               lines={[`${free()} von ${seats()} frei`, "über alle Veranstaltungen"]}
-              end={<Progress value={seats() - free()} of={seats() || 1} label={`${seats() - free()}/${seats()}`} />}
+              end={<Progress value={seats() - free()} of={seats() || 1} />}
             />
           </Section>
           <Section icon="door-enter" color="#15803d" title="Ihr Weg hinein">

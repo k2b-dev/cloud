@@ -13,8 +13,8 @@ export const DeviceDecisionSchema = z.object({
   decision: z.enum(["approve", "deny"]),
 });
 
-/** The error page says the reason in the person's language by its code; `client` names the application. */
-const refused = (c: Context<AuthContext>, reason: ErrorReason, client?: string) => c.redirect(errorPageHref(reason, client), 303);
+/** The error page says the reason in the person's language by its code; `request` is the refused device request. */
+const refused = (c: Context<AuthContext>, reason: ErrorReason, request?: string) => c.redirect(errorPageHref(reason, request), 303);
 
 /** Apply one approve or deny decision from the confirmation form, then show the result page. */
 export const completeDeviceDecision = async (c: Context<AuthContext>, input: z.infer<typeof DeviceDecisionSchema>): Promise<Response> => {
@@ -35,7 +35,7 @@ export const completeDeviceDecision = async (c: Context<AuthContext>, input: z.i
   const client = pending ? await oauth.clients.getByClientId({ clientId: pending.clientId }) : null;
   if (!pending || !client || !oauth.clients.canUseDeviceGrant(client)) return c.redirect("/oauth/device?result=expired", 303);
   if (!(await oauth.clients.canAuthorizeUser({ client, userId: user.id, profile: user.profile }))) {
-    return refused(c, "account_not_allowed", client.clientId);
+    return refused(c, "account_not_allowed", pending.id);
   }
 
   let decided: boolean;
@@ -50,7 +50,7 @@ export const completeDeviceDecision = async (c: Context<AuthContext>, input: z.i
     });
   } catch (error) {
     if (!(error instanceof BrowserSignInRequiredError)) throw error;
-    if (error.code === "FORBIDDEN") return refused(c, "account_not_allowed", client.clientId);
+    if (error.code === "FORBIDDEN") return refused(c, "account_not_allowed", pending.id);
     const userCode = input.user_code ? oauth.device.normalizeUserCode(input.user_code) : null;
     const retry = userCode ? await oauth.device.findPendingByUserCode(userCode) : null;
     if (userCode && retry?.id === pending.id)

@@ -1,7 +1,6 @@
 import { useLocale } from "@k2b/ui";
-import { Facts } from "@k2b/ui/v2";
 import { oauthMessages } from "../messages";
-import { CautionNote, DecisionForm, RequestedAccess } from "./AuthorizationParts";
+import { DecisionForm, RequestedAccess, TechnicalFacts } from "./AuthorizationParts";
 
 export type ConsentDecisionView = {
   request: string;
@@ -14,28 +13,31 @@ export type ConsentDecisionView = {
 };
 
 /**
- * The consent for a dynamically registered client or the first-party command line. The client names itself, so its
- * whole name stands in the facts, where it wraps; the head never cuts it.
+ * The consent for a dynamically registered client or the first-party command line, as one block: the head names the
+ * application with its mark; then what it asks for; then the decision with the account it is for, its one caution and
+ * the two buttons. The technical facts close the card, quiet, for an administrator.
  */
-export function ConsentDecision(props: { view: ConsentDecisionView }) {
+export function ConsentDecision(props: { view: ConsentDecisionView; person?: string }) {
   const locale = useLocale();
   const t = () => oauthMessages.resolve([locale()]).t;
 
   return (
     <>
-      <Facts
+      <RequestedAccess scopes={props.view.scopes} />
+      <DecisionForm
+        action="/oauth/consent"
+        request={props.view.request}
+        reauthenticateHref={props.view.reauthenticateHref}
+        caution={props.view.firstParty ? t().firstPartyOwnRequest : t().unverifiedDynamic}
+        person={props.person}
+      />
+      <TechnicalFacts
         items={[
           { label: t().returnsTo, value: props.view.redirectHost, mono: true },
           ...(props.view.resource ? [{ label: t().resource, value: props.view.resource, mono: true }] : []),
           { label: t().clientId, value: props.view.client.clientId, mono: true },
         ]}
       />
-      <RequestedAccess scopes={props.view.scopes} />
-      <CautionNote
-        text={props.view.firstParty ? t().firstPartyOwnRequest : t().unverifiedDynamic}
-        reauthenticate={!!props.view.reauthenticateHref}
-      />
-      <DecisionForm action="/oauth/consent" request={props.view.request} reauthenticateHref={props.view.reauthenticateHref} />
     </>
   );
 }
