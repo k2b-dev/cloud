@@ -259,6 +259,25 @@ test("groups, fields and cells keep their spacing beside empty islands, and cont
       }
 }, 90_000);
 
+// what follows a table in a pane is the app's content: an empty island after its phone form counts as nothing
+test("stacked panes: a large table at the end of its pane gives its end line way, also before empty islands", async () => {
+  const empty = (count: number) => "<solid-island></solid-island>".repeat(count);
+  for (const count of [0, 1, 3])
+    for (const after of ["", '<div class="k2-notice">Hinweis</div>']) {
+      const html =
+        '<div class="k2-split"><section class="k2-pane"><div class="k2-scroll">' +
+        `<div class="k2-table-scroll" id="ts"></div><div class="k2-table-phone"><div class="k2-list"><div class="k2-row"></div></div></div>${empty(count)}${after}${after ? empty(count) : ""}` +
+        '</div></section><div class="k2-seam"></div><section class="k2-pane"></section><div class="k2-seam"></div></div>';
+      const opened = await page(shipped, html, 390);
+      try {
+        const end = await opened.evaluate(() => getComputedStyle(document.getElementById("ts")!).getPropertyValue("--k2-table-end").trim());
+        expect(end === "0", `${count} empty after the phone form${after ? ", then a notice" : ""}`).toBe(!after);
+      } finally {
+        await opened.close();
+      }
+    }
+}, 60_000);
+
 describe("a small island inside a v2 container keeps the container's layout", () => {
   test("there are recipes", () => {
     expect(recipes.length).toBeGreaterThanOrEqual(6);

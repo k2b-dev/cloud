@@ -50,11 +50,14 @@ import {
   TimeCheck,
   TimeGap,
   TimeMarker,
+  TimeMore,
   TimeOverlays,
   TimeQuickCreate,
   type TimeView,
   type TimeViewHandle,
   type TimeViewProps,
+  WEEK_HOUR_PX,
+  WEEK_PHONE_HOUR_PX,
   weekKeysOf,
 } from "./calendar-time-view";
 
@@ -985,6 +988,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
                   dayKey={key}
                   column={indexOf(key)}
                   expanded={nightsOpen()}
+                  // a phone shows a few narrow days: one entry side by side, the rest in "+n"
                   tabOf={tabOf}
                   lastPointer={() => lastPointer}
                   setLastPointer={(value) => {
@@ -1024,7 +1028,7 @@ const WeekColumn = (props: {
   const view = props.view;
   const model = createMemo(() => view.dayOf(props.dayKey));
   const wake = () => view.wake();
-  const bands = createMemo(() => dayBands(view, props.dayKey, props.expanded));
+  const bands = createMemo(() => dayBands(view, props.dayKey, props.expanded, WEEK_PHONE_HOUR_PX));
   const gaps = createMemo(() => dayGaps(view, props.dayKey));
   const markers = () => model().markers.filter((marker) => marker.minute < (props.expanded ? DAY_MINUTES : wake()));
   /** Deadlines whose pills would cover each other share the width; keyed by marker, so rows keep their elements. */
@@ -1046,12 +1050,44 @@ const WeekColumn = (props: {
   const selected = () => view.selection()?.key === props.dayKey;
   /** The quarter hour under the mouse on empty time, as a line with its time, to aim a drag at. */
   const [hover, setHover] = createSignal<number | null>(null);
-  const timeline = createMemo(() =>
-    [
-      ...gaps().map((gap) => ({ at: gap.start, kind: "gap" as const, gap })),
-      ...bands().map((band) => ({ at: Math.max(0, band.start), kind: "band" as const, band })),
-      ...markers().map((marker) => ({ at: marker.minute, kind: "marker" as const, marker })),
-    ].sort((left, right) => left.at - right.at),
+  // Unchanged rows keep their elements, so the clock that updates the gaps neither moves the focus nor closes a "+n".
+  const timeline = createMemo<
+    Array<
+      | { at: number; kind: "gap"; gap: ReturnType<typeof gaps>[number] }
+      | { at: number; kind: "band"; band: ReturnType<typeof bands>["shown"][number] }
+      | { at: number; kind: "more"; more: ReturnType<typeof bands>["more"][number] }
+      | { at: number; kind: "marker"; marker: ReturnType<typeof markers>[number] }
+    >
+  >(
+    (previous) =>
+      [
+        ...gaps().map(
+          (gap) =>
+            previous.find(
+              (row) => row.kind === "gap" && row.gap.start === gap.start && row.gap.end === gap.end && row.gap.past === gap.past,
+            ) ?? { at: gap.start, kind: "gap" as const, gap },
+        ),
+        ...bands().shown.map(
+          (band) =>
+            previous.find((row) => row.kind === "band" && row.band === band) ?? {
+              at: Math.max(0, band.start),
+              kind: "band" as const,
+              band,
+            },
+        ),
+        ...bands().more.map(
+          (more) => previous.find((row) => row.kind === "more" && row.more === more) ?? { at: more.minute, kind: "more" as const, more },
+        ),
+        ...markers().map(
+          (marker) =>
+            previous.find((row) => row.kind === "marker" && row.marker === marker) ?? {
+              at: marker.minute,
+              kind: "marker" as const,
+              marker,
+            },
+        ),
+      ].sort((left, right) => left.at - right.at),
+    [],
   );
   return (
     <div
@@ -1125,10 +1161,21 @@ const WeekColumn = (props: {
               band={entry.band}
               dayKey={props.dayKey}
               expanded={props.expanded}
-              hourPx={48}
+              hourPx={WEEK_HOUR_PX}
+              phoneHourPx={WEEK_PHONE_HOUR_PX}
+              overlay
               tabIndex={props.tabOf(`b:${entry.band.item.id}:${props.dayKey}`)}
               stop={{ id: `b:${entry.band.item.id}:${props.dayKey}`, column: props.column, minute: entry.band.start }}
               scroller={props.scroller}
+            />
+          ) : entry.kind === "more" ? (
+            <TimeMore
+              view={view}
+              more={entry.more}
+              dayKey={props.dayKey}
+              expanded={props.expanded}
+              tabIndex={props.tabOf(`x:${props.dayKey}:${entry.more.minute}`)}
+              stop={{ id: `x:${props.dayKey}:${entry.more.minute}`, column: props.column, minute: entry.more.minute }}
             />
           ) : (
             <TimeMarker
