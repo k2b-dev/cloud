@@ -267,8 +267,6 @@ export default function HostsScreen(props: HostsScreenProps) {
   const place = (host: IpaHost) => [host.locality, host.location].filter(Boolean).join(" · ");
   /** A phone row's second line in one short line: cut by grapheme, the open record says it whole. */
   const PHONE_LINE = 48;
-  /** The room of a key figure's quiet line, which does not cut itself (k2b-ui gap). */
-  const STRIP_LINE = 24;
   const short = (text: string, room = PHONE_LINE) => {
     const graphemes = [...new Intl.Segmenter(locale(), { granularity: "grapheme" }).segment(text)].map((part) => part.segment);
     return graphemes.length > room
@@ -278,9 +276,6 @@ export default function HostsScreen(props: HostsScreenProps) {
           .trimEnd()}…`
       : text;
   };
-  /** Names in one short line: the first, then how many more. */
-  const firstAndMore = (names: readonly string[]) =>
-    names.length <= 1 ? (names[0] ?? "") : t().nameAndMore({ name: names[0]!, count: number(names.length - 1) });
   /** A host marks only the exception, as dot and word: its client stored no SSH keys yet. */
   const hostState = (host: IpaHost) => (host.sshFingerprints.length === 0 ? <Text tone="warn">{`● ${t().noKeys}`}</Text> : undefined);
   /** How many hosts of a group stored no SSH keys. */
@@ -553,8 +548,8 @@ export default function HostsScreen(props: HostsScreenProps) {
         <Cells.Cell
           icon="server"
           label={t().hosts}
+          // the count only: the hosts stand by name in their section below
           value={number(group.hostTotal)}
-          meta={firstAndMore(group.hostDetails.map((host) => short(host.fqdn, STRIP_LINE))) || t().noHostsInGroup}
         />
         <Cells.Cell
           icon="key-off"
@@ -565,17 +560,17 @@ export default function HostsScreen(props: HostsScreenProps) {
         <Cells.Cell
           icon="folders"
           label={t().nested}
+          // the count only: the groups inside stand by name in the details below
           value={number(group.hostgroups.length)}
-          meta={firstAndMore(group.hostgroups.map((name) => short(name, STRIP_LINE))) || t().noNested}
         />
       </Cells>
-      <Show when={group.description || group.hostgroups.length > 1}>
+      <Show when={group.description || group.hostgroups.length > 0}>
         <Section title={t().details}>
           <Facts
             items={[
               ...(group.description ? [{ label: t().description, value: group.description }] : []),
-              // the sub-groups in full; the strip above counts them
-              ...(group.hostgroups.length > 1 ? [{ label: t().nested, value: group.hostgroups.join(", ") }] : []),
+              // the sub-groups by name; the strip above counts them
+              ...(group.hostgroups.length > 0 ? [{ label: t().nested, value: group.hostgroups.join(", ") }] : []),
             ]}
           />
         </Section>
