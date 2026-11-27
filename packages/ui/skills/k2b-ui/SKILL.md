@@ -75,17 +75,10 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | where a sub-page stands | `Path` in the head `Bar start` | – |
 | the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |
 | many like things, one per line | `List` of `Row` | `mail.tsx` |
-| a thing with a face (a base, a file, a table, a storage) | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`) | `overview.tsx` |
-| an overview of things with figures, people and a history | `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
-| who did what | `Digest activity` | `overview.tsx`, `home.tsx` |
-| several people at once (a team, who has access) | `Avatar.Stack` | `overview.tsx` |
-| a short history beside a number | `Spark`; in a cell `Cells.Cell trend` | `home.tsx` |
 | many like things with columns | `Table` | `table.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
 | rows the person sorts by a column | a column's `sort` (`href` to the sorted page) and the table's `sort` (the column sorted now) | – |
-| a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`), then `FilterBar` in `Pane status` with `results` and `ListOrder` in its `end` (one row; a `StatusRow selection` takes its place while selecting) | `files.tsx`, `filtered-table.tsx` |
-| files, photos, pages: a list, a grid, the open one | `Table` column `mark` (thumbnail), `Tiles variant="media"` with `select`, `Preview` in the detail, `Nav quota` | `files.tsx` |
-| a settings page | `Cells` for the state, `Setting` rows (`was` for an unsaved change) | `settings-page.tsx` |
+| a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`), then `FilterBar` in `Pane status` above the `StatusRow` and `ListOrder` in its `filters` | `filtered-table.tsx` |
 | filter values that load (people, customers) | a `lookup` field: `FilterBar` opens `Lookup`; in a form, `Lookup` itself | `filtered-table.tsx` |
 | saved views of a list | `FilterBar views` with the app's `ViewStore`s (cookie, own table, none); leave it out and nothing is saved | – |
 | a list beside the open entry | `Pane.Split` with a `Pane detail` | `list-detail.tsx` |
@@ -169,32 +162,23 @@ that failed to load once would stand. A connection that retries on its own
 says so in the `StatusRow` without a button; something a person must fix is
 a `Notice` that names the deed.
 
-## How a screen looks: dense, clear, with faces
-Dense is not busy: show more, never the same thing twice (design pass 26.11.).
-- **Each thing carries its mark** (`Mark`, or a person's `Avatar`), never grey.
-- **The first line says what counts today** (`StatusRow` lead, `Cells`).
-- **A state is colour, symbol and word**; a limit a bar. **Space structures,
-  lines separate groups**; no box in a card, no empty half.
-- **People beside what they did**: avatars, stacks, `Digest activity`.
-- **Four type sizes** (12, 13, 14, 18); sample data dense and real.
-- **Two head rows at most**; **settings are `Setting` rows**.
-
 ## Primitives in one line each
 
 - **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
   `width`, `detail`, `side`), `Pane.Split`, `Bar` (start, end), `Band`
-  (`tone`), `Cells`, `Tiles`, `Canvas`. **Structure:** `Section`, `Group`,
-  `Disclosure`.
+  (`tone`), `Cells`, `Tiles`, `Canvas`.
+- **Structure:** `Section`, `Group`, `Disclosure`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
-  body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
-  `Chip`, `Progress`, `Spark`, `Steps`.
-- **Controls:** `Button`, `Field`, `Field.Row`, `Setting`, `Input`,
-  `Select`, `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`,
-  `ImageInput`, `CodeInput`, `Slider`, `ColorInput`. **Media:** `Preview`.
+  body, lead), `Prose`, `Inline`, `Icon`, `Avatar`, `Chip`, `Progress`,
+  `Steps`.
+- **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
+  `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`, `ImageInput`,
+  `CodeInput`, `Slider`, `ColorInput`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,
-  `Popover` (panel or `tip`), `useToast`. **States:** `Empty`, `Loading`, `Failed`.
+  `Popover` (panel or `tip`), `useToast`.
+- **States:** `Empty`, `Loading`, `Failed`.
 - **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`),
   and `@k2b/ui/v2/testing` for Playwright tests.
 
