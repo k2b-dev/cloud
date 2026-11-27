@@ -13,8 +13,10 @@ import { measureV2Layout } from "./testing";
 // "page"`); an open detail is the page in its place.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
-const testCss =
-  "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; } .ti { display: inline-block; width: 1em; height: 1em; }";
+// Cloud's shared stylesheet gives every scroller a fixed 0.5rem bar in WebKit and Chromium (index.css, "scrollbars:
+// central rule"); the page carries it as Cloud does, so a list that would show its own bar takes room from its rows.
+const cloudScrollbar = "#root *::-webkit-scrollbar { width: 0.5rem; height: 0.5rem; }";
+const testCss = `html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; } .ti { display: inline-block; width: 1em; height: 1em; } ${cloudScrollbar}`;
 
 let browser: Browser;
 let bundle: string;
@@ -109,6 +111,9 @@ for (const width of [1440, 1024])
       const list = await box(page, ".k2-ws-side .k2-nav-list");
       expect(list.left).toBe(side.left);
       expect(Math.abs(list.right - side.right)).toBeLessThanOrEqual(1);
+      // the rows too: the list has no bar of its own that would take their end (a classic one in WebKit)
+      const row = await box(page, ".k2-ws-side .k2-nav-list .k2-row");
+      expect(Math.abs(row.right - side.right)).toBeLessThanOrEqual(1);
       const foot = await box(page, ".k2-ws-side .k2-nav-foot");
       expect(foot.bottom).toBeGreaterThan(side.bottom - 24);
       expect(list.bottom).toBeLessThanOrEqual(foot.top);

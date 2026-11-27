@@ -1,0 +1,6 @@
+### A v2 nav list's own scroll bar cut its rows' lines short in WebKit
+
+- **What happened:** In WebKit, the rows of a `Nav` `list` (#4443), such as Chat's conversations in the sidebar, ended 8 px before the right edge of the sidebar. Their bottom lines stopped short, and `measureV2Layout` reported each line ("stops 0 px short of the left and 8 px short of the right edge of its column"). Chromium showed nothing. The Chat v2 follow-up that first puts its chats into the list had eight red WebKit tests.
+- **Root cause:** `.k2-nav-list` scrolls on its own (`overflow: hidden auto`), but unlike a pane's column it did not hide its scroll bar. WebKit in the test runner draws a classic scroll bar that takes room from the content, so the rows got narrower than the list.
+- **Error class:** A v2 surface that scrolls on its own without `scrollbar-width: none` and the `::-webkit-scrollbar` rule that the other scrolling v2 columns use; it only shows in an engine with classic scroll bars.
+- **Guard:** The list hides its bar like a pane's column. `nav-list.browser.test.ts` now asserts that a row, not only the list, reaches the sidebar's edge at 1440 and 1024 px; that assertion was red in WebKit before the fix.
