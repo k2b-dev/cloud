@@ -618,9 +618,12 @@
    own measure and at most that of four cards of 240 px with their 12 px gaps between the text edges, and in the
    middle of the height. Auto margins centre it where it fits and fall to zero where it does not, so taller content
    starts at the top and scrolls with nothing cut away above (centring the flex column itself would cut it). On the
-   phone it starts at the top. */
+   phone it starts at the top. Its parts keep 12 px between them, and the text edge stands above and below it too, so
+   it never touches the head of the page. */
 .k2-ui .k2-pane[data-center] > .k2-scroll {
   align-items: center;
+  gap: 12px;
+  padding-block: var(--k2-edge);
 }
 .k2-ui .k2-pane[data-center] > .k2-scroll > * {
   width: min(100%, calc(4 * 240px + 3 * 12px + 2 * var(--k2-edge)));
