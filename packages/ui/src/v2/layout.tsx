@@ -968,7 +968,8 @@ export type TilesProps = {
   create?: TileCreate;
   /**
    * At most this many tiles share a row and grow with its width, such as the four ways to start a notebook across
-   * the page. A tile never gets narrower than 240 px for it: below that they wrap, down to one under the other.
+   * the page. A tile never gets narrower than 240 px for it: where n do not fit, they stand in rows of half of them
+   * (four as 2 × 2, never 3 + 1), and below that one under the other.
    */
   perRow?: number;
   /** One deed after the tiles, such as "Alle herunterladen". */
@@ -1056,13 +1057,19 @@ const TileMake = (props: { create: TileCreate }) => (
   </div>
 );
 
+/** How many tiles share a row, a whole number of at least one, and the half (rounded up) they fall back to. */
+const perRowStyle = (perRow: number) => {
+  const count = Math.max(1, Math.floor(perRow));
+  return custom({ "--k2-per-row": String(count), "--k2-per-row-half": String(Math.ceil(count / 2)) });
+};
+
 export const Tiles = (props: TilesProps) => (
   <div
     class="k2-tiles"
     data-k2-part="Tiles"
     data-variant={props.variant}
     data-per-row={props.perRow ? "" : undefined}
-    style={props.perRow ? custom({ "--k2-per-row": String(Math.max(1, Math.floor(props.perRow))) }) : undefined}
+    style={props.perRow ? perRowStyle(props.perRow) : undefined}
     role="list"
     aria-label={props.label}
   >
