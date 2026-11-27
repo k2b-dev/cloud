@@ -2107,10 +2107,14 @@
   border-radius: 1px;
 }
 /* the room left between the slots: spread evenly while they fit (as space-between), none once they do not, and then
-   the strip's end alignment clips its oldest slots, not its newest */
+   the strip's end alignment clips its oldest slots, not its newest. No sibling combinator: with `i + i`, a node
+   inserted deep in a page restyled more than the shell's fixed share (shell-restyle.browser.test.ts) */
 /* one primitive: Ticks draws only its slots inside the strip */
-.k2-ui .k2-ticks:not([data-stretch]) > i + i {
+.k2-ui .k2-ticks:not([data-stretch]) > i {
   margin-inline-start: auto;
+}
+.k2-ui .k2-ticks:not([data-stretch]) > i:first-child {
+  margin-inline-start: 0;
 }
 .k2-ui .k2-ticks > i[data-s="ok"] {
   background: color-mix(
