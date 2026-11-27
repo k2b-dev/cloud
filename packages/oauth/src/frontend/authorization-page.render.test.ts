@@ -132,10 +132,10 @@ describe("OAuth authorization pages", () => {
 
   test("the device confirmation and the consent page read naturally in German", async () => {
     const confirm = text(await renderAuthorizationState("confirm", "de"));
-    // one rhythm: the application, the code to compare, what it asks for, for which account, the decision
+    // one block: the application, the code to compare, what it asks for, then the decision with its account
     expect(confirm).toMatch(/^ Cloud CLI Zeigt dein Gerät denselben Code\? Prüfe/);
-    expect(confirm.indexOf("Für dein Konto AR Ada Renz")).toBeGreaterThan(confirm.indexOf("Angeforderter Zugriff"));
-    expect(confirm.indexOf("Für dein Konto AR Ada Renz")).toBeLessThan(confirm.indexOf("Ablehnen"));
+    expect(confirm.indexOf("Ada Renz in dieser Cloud angemeldet")).toBeGreaterThan(confirm.indexOf("Angeforderter Zugriff"));
+    expect(confirm.indexOf("Ada Renz in dieser Cloud angemeldet")).toBeLessThan(confirm.indexOf("Ablehnen"));
     expect(confirm).toContain("Prüfe, ob dieser Code mit dem auf deinem Gerät übereinstimmt");
     expect(confirm).not.toContain("Client-ID");
     expect(confirm).toContain("Fahre nur fort, wenn du diese Anmeldung selbst gestartet hast.");
@@ -148,9 +148,10 @@ describe("OAuth authorization pages", () => {
     expect(heading(html)).toBe(sample.dynamic.name);
     expect(consent.split(sample.dynamic.name)).toHaveLength(2);
     expect(consent).toMatch(new RegExp(`^ ${sample.dynamic.name} Nicht geprüft Angeforderter Zugriff`));
-    // the technical facts stand quiet after who decides, before the decision
-    expect(consent.indexOf("Technische Angaben")).toBeGreaterThan(consent.indexOf("Für dein Konto"));
-    expect(consent.indexOf("Technische Angaben")).toBeLessThan(consent.indexOf("Ablehnen"));
+    // one block: what it asks for, then the decision with its account; the technical facts close the card, quiet
+    expect(consent.indexOf("Ada Renz in dieser Cloud angemeldet")).toBeGreaterThan(consent.indexOf("Angeforderter Zugriff"));
+    expect(consent.indexOf("Ada Renz in dieser Cloud angemeldet")).toBeLessThan(consent.indexOf("Ablehnen"));
+    expect(consent.indexOf("Technische Angaben")).toBeGreaterThan(consent.indexOf("Zugriff erlauben"));
     expect(consent).toContain("Rückkehr zu notizen.werkstatt.example");
     expect(consent).toContain("Ressource https://cloud.werkstatt.example/api/mcp/v1");
     expect(consent).toContain(`Client-ID ${sample.dynamic.clientId}`);

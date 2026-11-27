@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Band, Bar, Button, Facts, type FactsProps, Icon, Row, Section, Text } from "@k2b/ui/v2";
+import { Avatar, Band, Bar, Button, Facts, type FactsProps, Icon, Inline, Row, Section, Text } from "@k2b/ui/v2";
 import { For } from "solid-js";
 import { oauthMessages } from "../messages";
 import { consentScopeLabel } from "../scope-labels";
@@ -25,7 +25,7 @@ const scopeIcons: Record<string, string> = {
 export function RequestedAccess(props: { scopes: readonly string[]; limitNote?: boolean }) {
   const t = useMessages();
   return (
-    <Section icon="key" title={t().requestedAccess} summary={props.limitNote ? t().permissionLimit : undefined}>
+    <Section title={t().requestedAccess} summary={props.limitNote ? t().permissionLimit : undefined}>
       <For each={props.scopes}>{(scope) => <Row icon={scopeIcons[scope] ?? "check"} lines={[consentScopeLabel(scope, t())]} />}</For>
     </Section>
   );
@@ -35,7 +35,7 @@ export function RequestedAccess(props: { scopes: readonly string[]; limitNote?: 
 export function SignedIn(props: { person: string }) {
   const t = useMessages();
   return (
-    <Section icon="user" title={t().forAccount}>
+    <Section title={t().forAccount}>
       <Row avatar={{ name: props.person }} lines={[props.person, t().signedInHere]} />
     </Section>
   );
@@ -48,7 +48,7 @@ export function SignedIn(props: { person: string }) {
 export function TechnicalFacts(props: { items: FactsProps["items"] }) {
   const t = useMessages();
   return (
-    <Section icon="code" title={t().technicalDetails} summary={t().permissionLimit}>
+    <Section title={t().technicalDetails} summary={t().permissionLimit}>
       <Facts items={props.items} />
     </Section>
   );
@@ -70,6 +70,8 @@ export function DecisionForm(props: {
   reauthenticateHref?: string | null;
   /** The one caution read right before deciding; a too old sign-in adds why the person signs in again. */
   caution: string;
+  /** The signed-in person the decision is for, named right above the caution. */
+  person?: string;
 }) {
   const t = useMessages();
   return (
@@ -78,6 +80,15 @@ export function DecisionForm(props: {
         <input type="hidden" name="request" value={props.request} />
         {props.userCode ? <input type="hidden" name="user_code" value={props.userCode} /> : null}
       </form>
+      {props.person ? (
+        <Inline>
+          <Avatar name={props.person} decorative />
+          <Text weight="strong">{props.person}</Text>
+          <Text type="meta" muted>
+            {t().signedInHere}
+          </Text>
+        </Inline>
+      ) : null}
       <Text>
         <Icon name="alert-triangle" tone="warn" />{" "}
         {props.reauthenticateHref ? `${props.caution} ${t().confirmIdentityHint}` : props.caution}

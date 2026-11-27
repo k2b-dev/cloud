@@ -2,7 +2,7 @@ import { useLocale } from "@k2b/ui";
 import { Canvas, Section, Text } from "@k2b/ui/v2";
 import { Match, Switch } from "solid-js";
 import { oauthMessages } from "../messages";
-import { DecisionForm, Outcome, RequestedAccess, SignedIn } from "./AuthorizationParts";
+import { DecisionForm, Outcome, RequestedAccess } from "./AuthorizationParts";
 import { DeviceCodeDrawing } from "./DeviceCodeDrawing";
 import DeviceCodeForm from "./DeviceCodeForm.island";
 
@@ -43,9 +43,9 @@ export function DeviceApproval(props: { view: DeviceApprovalView; person?: strin
       <Match when={props.view.kind === "confirm" && props.view}>
         {(view) => (
           <>
-            {/* the head names the asking application; first the code to compare, then what it asks for, for whom,
-                and the decision, in one rhythm of sections */}
-            <Section icon="device-desktop" title={t().compareCodeTitle}>
+            {/* one block: the head names the asking application; the code to compare, what it asks for, then the
+                decision with the account it is for */}
+            <Section title={t().compareCodeTitle}>
               <Text>{t().deviceConfirmCode}</Text>
               {/* comparing the code with the terminal is what keeps a person from approving someone else's sign-in */}
               <Canvas label={t().deviceCodeLabel}>
@@ -53,13 +53,13 @@ export function DeviceApproval(props: { view: DeviceApprovalView; person?: strin
               </Canvas>
             </Section>
             <RequestedAccess scopes={view().scopes} limitNote />
-            {props.person ? <SignedIn person={props.person} /> : null}
             <DecisionForm
               action="/oauth/device"
               request={view().request}
               userCode={view().code}
               reauthenticateHref={view().reauthenticateHref}
               caution={t().deviceOwnCodeWarning}
+              person={props.person}
             />
           </>
         )}
