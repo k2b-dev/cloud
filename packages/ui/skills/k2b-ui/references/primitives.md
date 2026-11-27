@@ -104,13 +104,14 @@ A head and a status row keep their height.
 `Hero`: the one figure of a screen right under its head, in the figure type
 (30/34, 600, tabular, once per screen) and the owner's colour: `figure`,
 `label`, `meta`, `trend` (`{ kind: "bars" | "area" | "ticks", values,
-label, start, caption, end }`, only from real data), `exceptions` (`{
+label, empty, start, caption, end }`, only from real data; with no values
+yet its place keeps its height and shows `empty`), `exceptions` (`{
 status | icon, count, word, who }`, one line of "● number word who").
 `ObjectHead` as the `head` of an open thing: `mark` (40 px), `name` (18),
 `meta`, `actions` (in the phone's bar there), up to three `facts` and a
 `problem` (`{ title, text }`, red in place), on the owner's tint. `Ticks`
-(`values` of `ok`, `bad`, `none`, `label`): one picture of a row's data
-over time. `Dot` (`status`): a good state is a neutral dot and word. Rows of
+(`slots` of `ok`, `bad`, `none`, `label`, `color`, `stretch`): one picture
+of a row's data over time. `Dot` (`status`): a good state is a neutral dot and word. Rows of
 a table or list part by a very quiet line; the strong hairline parts two
 things (head from content, list from detail, groups).
 

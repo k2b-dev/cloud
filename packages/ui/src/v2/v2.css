@@ -70,6 +70,8 @@
   --k2-bad-tint: #fef2f2;
   --k2-bad: #b91c1c;
   --k2-bad-dot: #ef4444;
+  /* the quiet line under a problem, a deeper red than the problem itself (the study's #7f1d1d) */
+  --k2-bad-deep: #7f1d1d;
   --k2-ai: #8e1b6f;
   --k2-ai-tint: #fcf3f8;
   /* the fill of the assistant's own primary action (white words on it, 7.7:1, in both themes) */
@@ -177,6 +179,7 @@
   --k2-bad-tint: #450a0a;
   --k2-bad: #fca5a5;
   --k2-bad-dot: #ef4444;
+  --k2-bad-deep: #fecaca;
   --k2-ai: #f0abdc;
   --k2-ai-tint: #3a0f2e;
   --k2-ai-fill: #8e1b6f;
@@ -867,6 +870,12 @@
 .k2-ui .k2-hero-draw > .k2-hero-failed {
   fill: var(--k2-bad-tint);
 }
+/* where it began to fail: a dashed red line across the drawing */
+.k2-ui .k2-hero-draw > .k2-hero-cut {
+  stroke: var(--k2-bad-dot);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
 .k2-ui .k2-hero-fill {
   fill: var(--k2-app, var(--k2-blue));
   fill-opacity: 0.12;
@@ -895,9 +904,9 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px 24px;
-  /* its quiet line reaches the edges of the column, as every line does */
-  margin: 0 calc(-1 * var(--k2-edge));
-  padding: 12px var(--k2-edge) 0;
+  /* its quiet line stands on the text edges, part of the hero's drawing rather than a divider (the study's band) */
+  margin: 0;
+  padding: 12px 0 0;
   list-style: none;
   border-top: var(--k2-hairline-subtle);
   min-width: 0;
@@ -966,11 +975,20 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* its deeds small (28) and 6 px apart, as the study's head (`btn sm`) */
 .k2-ui .k2-ohead-end {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
   flex: none;
+}
+.k2-ui .k2-ohead-end > .k2-btn {
+  height: var(--k2-h-control-small);
+  padding: 0 10px;
+}
+.k2-ui .k2-ohead-end > .k2-btn[data-icon-only] {
+  width: var(--k2-h-control-small);
+  padding: 0;
 }
 .k2-ui .k2-ohead-facts {
   display: flex;
@@ -1012,7 +1030,7 @@
 .k2-ui .k2-ohead-why {
   display: block;
   font: var(--k2-t-meta);
-  color: var(--k2-bad);
+  color: var(--k2-bad-deep);
 }
 /* ── Ticks: one tick per time slot, ok soft in the colour of what it belongs to, a failure red and taller ──── */
 /* The slots read in the writing direction: the oldest at the start (left, or right in a page written right to left).
@@ -2123,7 +2141,7 @@
 }
 .k2-ui .k2-table th {
   position: relative;
-  /* identity B: a head of 34 over cells of 10 px padding, the rows 46 where they lead with a mark of 28 */
+  /* identity B: a head of 34 over cells of 10 px padding; rows that lead with a mark are 44 (marks of 24 or 32) */
   height: var(--k2-h-table-head);
   text-align: left;
   font: var(--k2-t-meta);
@@ -2514,10 +2532,11 @@
   display: contents;
 }
 /* a label longer than its 116 px wraps within its column: a key such as "http.response.status_code" stays whole */
+/* a pair is 28 px, its line of 20 and 8 between pairs, as the study's facts */
 .k2-ui .k2-fact-pair > dt {
   font: var(--k2-t-row);
   color: var(--k2-subtle);
-  padding: 6px 0;
+  padding: 4px 0;
   overflow-wrap: anywhere;
 }
 .k2-ui .k2-fact-pair > dd {
@@ -2525,7 +2544,7 @@
   align-items: start;
   gap: 8px;
   line-height: 20px;
-  padding: 6px 0;
+  padding: 4px 0;
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -5949,29 +5968,10 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
-  /* On the phone each pair is one line: the label on the left, a short value at the end of the line. A value longer
-     than the rest of the line goes whole under its label and starts on the text edge (no measuring: the line wraps). */
+  /* On the phone the labels stand in a column of 100 px beside their values, as the study draws them (identity B); a
+     long value wraps beside its label. */
   .k2-ui .k2-facts {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .k2-ui .k2-facts:not([data-inline]) > .k2-fact-pair {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: start;
-    column-gap: 16px;
-    padding: 6px 0;
-    min-width: 0;
-  }
-  /* the label takes the room the value leaves, so a value beside it stands at the end and one under it at the start */
-  .k2-ui .k2-facts:not([data-inline]) > .k2-fact-pair > dt {
-    flex: 1 1 auto;
-    min-width: 0;
-    max-width: none;
-    padding: 0;
-  }
-  .k2-ui .k2-facts:not([data-inline]) > .k2-fact-pair > dd {
-    flex: 0 1 auto;
-    padding: 0;
+    grid-template-columns: 100px minmax(0, 1fr);
   }
   /* a value not there yet holds a short place of its own at the end, as in an inline line */
   .k2-ui .k2-facts:not([data-inline]) > .k2-fact-pair > dd > .k2-fact-value > .k2-skel:not([data-over]) {

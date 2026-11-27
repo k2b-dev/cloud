@@ -57,10 +57,13 @@ export type HeroProps = {
 };
 
 const BAR_HEIGHT = 56;
+/** A bar and the gap after it, 4.8 to 1 as the study draws them (30 bars in 520 with a gap of 3). */
+const BAR = 14.4;
+const BAR_GAP = 3;
 
 /** Bars of a history in one box: the last in the app's colour, the others soft, a zero a quiet stub. */
 const Bars = (props: { values: readonly number[]; label: string }) => {
-  const width = () => Math.max(props.values.length * 10, 1);
+  const width = () => Math.max(props.values.length * (BAR + BAR_GAP) - BAR_GAP, 1);
   const top = () => Math.max(...props.values, 1);
   return (
     <svg
@@ -76,9 +79,9 @@ const Bars = (props: { values: readonly number[]; label: string }) => {
           const height = () => Math.max(value > 0 ? 2 : 1, (value / top()) * BAR_HEIGHT);
           return (
             <rect
-              x={index() * 10}
+              x={index() * (BAR + BAR_GAP)}
               y={BAR_HEIGHT - height()}
-              width={7}
+              width={BAR}
               height={height()}
               rx={1.5}
               data-tone={value === 0 ? "none" : index() === props.values.length - 1 ? "now" : undefined}
@@ -111,7 +114,13 @@ const Area = (props: { values: readonly number[]; label: string; failedFrom?: nu
       preserveAspectRatio="none"
     >
       <Show when={failed()}>
-        {(from) => <rect class="k2-hero-failed" x={x(from().value)} y={0} width={width - x(from().value)} height={height} />}
+        {(from) => (
+          <>
+            <rect class="k2-hero-failed" x={x(from().value)} y={0} width={width - x(from().value)} height={height} />
+            {/* where it began to fail: a dashed red line across the drawing (the study's cut) */}
+            <line class="k2-hero-cut" x1={x(from().value)} x2={x(from().value)} y1={0} y2={height} vector-effect="non-scaling-stroke" />
+          </>
+        )}
       </Show>
       <path class="k2-hero-fill" d={`${line()}L${width},${height}L0,${height}Z`} />
       <path class="k2-hero-line" d={line()} vector-effect="non-scaling-stroke" />
@@ -125,7 +134,7 @@ const Area = (props: { values: readonly number[]; label: string; failedFrom?: nu
  * One per screen; on the phone the figure, its drawing and the exceptions stand one under the other.
  */
 export const Hero = (props: HeroProps) => (
-  <section class="k2-hero" data-k2-part="Hero" aria-label={props.label}>
+  <div class="k2-hero" data-k2-part="Hero">
     <div class="k2-hero-figure">
       <span class="k2-hero-n" data-k2-type="figure">
         {props.figure}
@@ -181,7 +190,7 @@ export const Hero = (props: HeroProps) => (
         </For>
       </ul>
     </Show>
-  </section>
+  </div>
 );
 
 // ── ObjectHead ───────────────────────────────────────────────────────────────────────────────────────────────────
@@ -239,7 +248,7 @@ export const ObjectHead = (props: ObjectHeadProps) => {
       </Show>
       <Show when={props.problem}>
         {(problem) => (
-          <p class="k2-ohead-problem" role="status">
+          <p class="k2-ohead-problem">
             <Icon name="alert-circle" />
             <span>
               {problem().title}

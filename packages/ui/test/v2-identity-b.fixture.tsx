@@ -398,7 +398,8 @@ export const PulseScreen = (props: { list?: boolean }) => (
             end: "10:42",
           }}
           exceptions={[
-            { status: "ok", count: 6, word: "liefern Daten" },
+            // good is neutral: a quiet dot and the words (look rule: state neutral when good)
+            { status: "off", count: 6, word: "liefern Daten" },
             { status: "bad", count: 1, word: "Fehler", who: "Drucker Halle 2 seit 10:40" },
             { status: "off", count: 2, word: "ruhen", who: "1 pausiert · 1 neu" },
           ]}
