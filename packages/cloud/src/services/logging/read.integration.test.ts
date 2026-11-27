@@ -94,7 +94,8 @@ suite("bounded observability reads", () => {
       const [indexes] = await sql<{ composite: boolean; single: boolean }[]>`
         SELECT to_regclass('logging.idx_logging_entries_source_created') IS NOT NULL AS composite,
           to_regclass('logging.idx_logging_entries_source') IS NOT NULL AS single`;
-      expect(indexes).toEqual({ composite: true, single: false });
+      // the single-column index stays until it can be dropped without a lock on the table; the plan takes the new one
+      expect(indexes).toEqual({ composite: true, single: true });
       await sql`ANALYZE logging.entries`;
       const [plan] = await sql<{ "QUERY PLAN": unknown }[]>`
         EXPLAIN (FORMAT JSON)

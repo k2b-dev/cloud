@@ -1,5 +1,17 @@
 import { sql } from "@k2b/cloud";
+import { logger } from "@k2b/cloud/services";
+import { buildConcurrentIndexesInBackground, createIndexIfMissing } from "@k2b/cloud/services/concurrent-index";
 import { migrateLogMetadataReader } from "./logging-metadata";
+
+/**
+ * A source's newest entries: the logs list and the runs list filter by source (one or several) and sort by created_at,
+ * id; the accounts overview reads a source's latest sync lines. Built next to live log writes after the migration.
+ */
+const SOURCE_INDEX = {
+  name: "idx_logging_entries_source_created",
+  table: "logging.entries",
+  definition: "(source, created_at DESC, id DESC)",
+};
 
 export const migrate = async (): Promise<void> => {
   await sql`CREATE SCHEMA IF NOT EXISTS logging`.simple();
@@ -18,30 +30,20 @@ export const migrate = async (): Promise<void> => {
   console.log("  ✓ logging.entries table");
   await migrateLogMetadataReader();
 
-  // A source's newest entries: the logs list and the runs list filter by source (one or several) and sort by
-  // created_at, id; the accounts overview reads a source's latest sync lines. The index also serves every
-  // source-only lookup, so the single-column index it replaces is dropped.
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_logging_entries_source_created
-    ON logging.entries(source, created_at DESC, id DESC)
-  `.simple();
-  await sql`DROP INDEX IF EXISTS logging.idx_logging_entries_source`.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_logging_entries_level
-    ON logging.entries(level)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_logging_entries_created_at
-    ON logging.entries(created_at DESC)
-  `.simple();
+  // The source index is built next to live writes (below), so every index of the table takes a lock only when the
+  // catalog lacks it; a plain CREATE INDEX IF NOT EXISTS would wait for the running build even when the index exists.
+  await createIndexIfMissing(sql, { name: "idx_logging_entries_source", table: "logging.entries", definition: "(source)" });
+  await createIndexIfMissing(sql, { name: "idx_logging_entries_level", table: "logging.entries", definition: "(level)" });
+  await createIndexIfMissing(sql, { name: "idx_logging_entries_created_at", table: "logging.entries", definition: "(created_at DESC)" });
   // Composite index for the dashboard summary query: filters of the shape
   // `WHERE level = 'error' AND created_at > <cutoff> ORDER BY created_at DESC`
   // become index-only scans. Massively cheaper than the single-column indexes
   // when the table grows past tens of thousands of rows.
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_logging_entries_level_created_at
-    ON logging.entries(level, created_at DESC)
-  `.simple();
+  await createIndexIfMissing(sql, {
+    name: "idx_logging_entries_level_created_at",
+    table: "logging.entries",
+    definition: "(level, created_at DESC)",
+  });
 
   await sql`
     CREATE TABLE IF NOT EXISTS logging.trace_spans (
@@ -142,4 +144,6 @@ export const migrate = async (): Promise<void> => {
     ON logging.trace_events(trace_id, span_id, occurred_at ASC)
   `.simple();
   console.log("  ✓ logging indexes");
+  // queries run without it until it is valid; startup never waits for the build
+  void buildConcurrentIndexesInBackground([SOURCE_INDEX], { log: logger("core:logging"), purpose: "log list by source" });
 };
