@@ -36,7 +36,7 @@ suiteFor(
     await migrate();
     const [person] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, last_login_local)
-      VALUES (${`dashboard-page-${crypto.randomUUID().slice(0, 8)}`}, 'local', 'user', 'Mara', now())
+      VALUES (${`dashboard-page-${crypto.randomUUID()}`}, 'local', 'user', 'Mara', now())
       RETURNING id`;
     created.push(person!.id);
     const headers = { cookie: `session_token=${await createTestSession(person!.id)}`, "x-forwarded-for": uniqueCallerAddress() };
