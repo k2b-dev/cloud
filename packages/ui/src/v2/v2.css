@@ -68,6 +68,11 @@
   --k2-bad-dot: #ef4444;
   --k2-ai: #8e1b6f;
   --k2-ai-tint: #fcf3f8;
+  /* the fill of the assistant's own primary action (white words on it, 7.7:1, in both themes) */
+  --k2-ai-fill: #8e1b6f;
+  /* the primary action: blue, or the main colour of an app that has its own (appearance.primary, below) */
+  --k2-primary: var(--k2-blue);
+  --k2-primary-ink: var(--k2-white);
   --k2-note: #fef9c3;
   --k2-note-tint: #fefce8;
   --k2-note-ink: #713f12;
@@ -166,6 +171,7 @@
   --k2-bad-dot: #ef4444;
   --k2-ai: #f0abdc;
   --k2-ai-tint: #3a0f2e;
+  --k2-ai-fill: #8e1b6f;
   --k2-note: #3f3a0c;
   --k2-note-tint: #2a2709;
   --k2-note-ink: #fde68a;
@@ -662,10 +668,6 @@
 .k2-ui .k2-bar[data-status-row] {
   height: var(--k2-h-status);
 }
-/* a reader beside a list: its head is 52 px, so its line meets the status row next to it (K1) */
-.k2-ui .k2-split > .k2-pane[data-detail] > [data-slot="head"] > .k2-bar {
-  height: var(--k2-h-status);
-}
 .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar {
   padding-right: 12px;
   gap: 4px;
@@ -676,6 +678,27 @@
 .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-text {
   flex: 1;
   font: var(--k2-t-lead);
+}
+/* The title of an open entry may be long (a task, a subject): it takes a second line before it is cut with "…", and
+   the head grows with it; one line keeps the head's height (56, or 52 beside a list). The app gives the title its
+   full words as `Text title`, the tooltip of a cut title. */
+.k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar {
+  height: auto;
+  min-height: var(--k2-h-head);
+  padding-block: 8px;
+}
+/* a reader beside a list: its head is 52 px while its title is one line, so its line meets the status row next to it
+   (K1). K1 holds for one line only: two lines make the head 65 px, and its line stands 13 px below the status
+   row's. */
+.k2-ui .k2-split > .k2-pane[data-detail] > [data-slot="head"] > .k2-bar {
+  min-height: var(--k2-h-status);
+}
+.k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar > .k2-bar-end {
   gap: 4px;
@@ -1944,9 +1967,18 @@
   }
 }
 .k2-ui .k2-btn[data-variant="primary"] {
-  background: var(--k2-blue);
-  border-color: var(--k2-blue);
-  color: var(--k2-white);
+  background: var(--k2-primary);
+  border-color: var(--k2-primary);
+  color: var(--k2-primary-ink);
+}
+/* An app whose main colour is the assistant's (appearance.primary "ai", which the platform puts on the page as
+   data-k2b-primary): its primary action is plum, never blue. One token; no app brings CSS of its own. */
+.k2-ui:is([data-k2b-primary="ai"] .k2-ui, [data-k2b-primary="ai"]) {
+  --k2-primary: var(--k2-ai-fill);
+}
+/* a part of such an app that keeps blue on purpose (a dialog opened with primary "blue") */
+.k2-ui:is([data-k2b-primary="ai"] [data-k2b-primary="blue"] .k2-ui, [data-k2b-primary="ai"] [data-k2b-primary="blue"]) {
+  --k2-primary: var(--k2-blue);
 }
 .k2-ui .k2-btn[data-variant="ghost"] {
   border-color: transparent;
@@ -2350,6 +2382,10 @@
   padding-right: 2px;
   background: var(--k2-n100);
   max-width: 100%;
+}
+/* a chip with its remove button: the button sits in its round end */
+.k2-ui .k2-chip:has(> .k2-chip-x) {
+  padding-right: 2px;
 }
 .k2-ui .k2-chip-x {
   display: grid;
@@ -3016,6 +3052,25 @@
     animation: none;
   }
 }
+/* Work that runs in a sidebar entry: a quiet mark of 12 px that turns in the place of the dot, its box as wide as the
+   dot, so an entry that starts or stops running moves nothing (W7 26.11.). */
+.k2-ui .k2-ni-running {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  font-size: 12px;
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-ni-running > .k2-icon {
+  animation: k2-spin 900ms linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .k2-ui .k2-ni-running > .k2-icon {
+    animation: none;
+  }
+}
 /* Notice: a band with sign, sentence, consequence and at most one deed */
 .k2-ui .k2-notice {
   display: grid;
@@ -3369,6 +3424,20 @@
   margin: 0;
   border-radius: var(--k2-r-overlay) var(--k2-r-overlay) 0 0;
   padding-bottom: env(safe-area-inset-bottom);
+}
+/* the grip of the sheet: a short bar in the middle of its top edge, shown only on the sheet */
+.k2-ui .k2-dialog-grip {
+  display: none;
+}
+.k2-ui .k2-dialog[data-presentation="sheet"] > .k2-dialog-grip {
+  display: block;
+  position: absolute;
+  top: 8px;
+  left: calc(50% - 18px);
+  width: 36px;
+  height: 4px;
+  border-radius: var(--k2-r-round);
+  background: var(--k2-n300);
 }
 .k2-ui .k2-dialog-title {
   font: var(--k2-t-body);
@@ -3897,20 +3966,10 @@
   .k2-ui .k2-ws-main:has(.k2-pane[data-detail] > [data-k2-part="Back"]) > [data-slot="head"] {
     display: none;
   }
-  /* The title of an open entry is the page's title here: it is never cut beside the actions the head keeps (a "…"),
-     it takes a second line instead, and the head grows with it; one line keeps the head's 52 px. */
+  /* the open entry is a page of its own here: its head is 52 px for one line of title, as everywhere on the phone */
   .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar,
   .k2-ui .k2-split > .k2-pane[data-detail] > [data-slot="head"] > .k2-bar {
-    height: auto;
     min-height: var(--k2-h-status);
-    padding-block: 8px;
-  }
-  .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-text {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    white-space: normal;
-    overflow-wrap: anywhere;
   }
   /* panes stand one under the other: the seam is the line between them, so the last line inside a pane gives way */
   /* one primitive: Pane.Split puts a seam after every pane */
@@ -3920,9 +3979,10 @@
     border-bottom: 0;
   }
   /* a large table ends with a line of its own: it gives way through the one scroller, not through each of its cells */
-  /* (a table with a phone form ends with that form, which stays hidden while the large table still shows) */
-  /* one primitive: Pane.Split puts a seam after every pane, a Table its phone form after the large one */
-  .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-table-scroll:is(:last-child, :has(+ .k2-table-phone:last-child)) {
+  /* (a table with a phone form ends with that form, which stays hidden while the large table still shows; the last
+     but phone forms: what follows in the pane is the app's, and an empty island there counts as nothing) */
+  /* one primitive: Pane.Split puts a seam after every pane */
+  .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-table-scroll:nth-last-child(1 of :not(.k2-table-phone)) {
     --k2-table-end: 0;
   }
   /* a menu or popover that opens from a kept button renders beside it and is in the top layer (core's popover="manual") */
@@ -4057,6 +4117,21 @@
     grid-area: time;
     justify-content: flex-start;
     padding: 8px 0 4px;
+  }
+  /* a finger hits 44 px of the row's deed (PS 26.11.); its look and its place stay. Its words never shrink (a button
+     keeps its room), so nothing of them needs the button to clip. */
+  .k2-ui .k2-row[data-action] > .k2-row-end > .k2-btn:first-child {
+    position: relative;
+    overflow: visible;
+  }
+  .k2-ui .k2-row[data-action] > .k2-row-end > .k2-btn:first-child::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: 44px;
+    transform: translate(-50%, -50%);
   }
   .k2-ui .k2-fact {
     display: none;
