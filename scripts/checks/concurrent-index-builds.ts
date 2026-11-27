@@ -17,9 +17,9 @@ const HELPER = "packages/cloud/src/services/concurrent-index.ts";
  */
 export const ALLOWED: Record<string, string> = {
   "packages/grids/src/service/field-indexes.ts": "per-field indexes a person adds at runtime, not at startup",
-  "packages/mail/src/migrate.ts": "Mail's startup indexes; moving them is Mail's own change",
-  "packages/mail/src/migrate-reply-drafts.ts": "Mail's startup indexes; moving them is Mail's own change",
-  "packages/mail/src/service/room-access-events.ts": "Mail's startup indexes; moving them is Mail's own change",
+  "packages/mail/src/migrate.ts": "Mail's startup indexes; they move onto the helper in #4491",
+  "packages/mail/src/migrate-reply-drafts.ts": "Mail's startup indexes; they move onto the helper in #4491",
+  "packages/mail/src/service/room-access-events.ts": "Mail's startup indexes; they move onto the helper in #4491",
 };
 
 const BUILD = /CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY/g;
