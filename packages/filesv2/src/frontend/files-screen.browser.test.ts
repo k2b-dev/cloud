@@ -1033,8 +1033,8 @@ describe("the views beside the folders on v2", () => {
       }
     });
 
+  // the editor on the phone waits for #4416: its endless name took the way back's words to nothing
   for (const view of [wide, narrow, phone])
-    // the editor on the phone waits for #4416: its endless name took the way back's words to nothing
     for (const address of [
       "/app/filesv2?view=activity",
       "/app/filesv2?view=shares",
