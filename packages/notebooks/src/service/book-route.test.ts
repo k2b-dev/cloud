@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import * as activity from "./activity";
 import * as notebooks from "./notebooks";
 import * as notes from "./notes";
 import * as tags from "./tags";
@@ -66,10 +67,28 @@ function fixture() {
   const tree = track(spyOn(treeLevels, "countNotes")).mockResolvedValue(1);
   const content = track(spyOn(notes, "getWithContentByShortId")).mockResolvedValue(note);
   const tagList = track(spyOn(tags, "listForNotebook")).mockResolvedValue([{ tag: "team", count: 101 }]);
-  return { permission, cursor, get, tree, content, tagList };
+  const authors = track(spyOn(activity, "noteAuthors")).mockResolvedValue({ createdBy: null, lastEditedBy: null });
+  return { permission, cursor, get, tree, content, tagList, authors };
 }
 
 describe("authorized Book refresh routes", () => {
+  test("names who wrote the note, who changed it last and when, so the head follows the note", async () => {
+    const calls = fixture();
+    const lena = { kind: "user" as const, id: "u-lena", displayName: "Lena Hartwig", avatarHash: null };
+    calls.authors.mockResolvedValue({ createdBy: lena, lastEditedBy: lena });
+    const result = await loadBookRoute(params);
+    if (result.kind !== "ok") throw new Error(result.kind);
+    expect(result.snapshot).toMatchObject({ authors: { createdBy: lena, lastEditedBy: lena }, updatedAt: timestamp });
+    expect(calls.authors).toHaveBeenCalledWith({ noteId: note.id });
+  });
+  test("a note whose people cannot be read still opens, without them", async () => {
+    const calls = fixture();
+    calls.authors.mockRejectedValue(new Error("activity unavailable"));
+    const result = await loadBookRoute(params);
+    if (result.kind !== "ok") throw new Error(result.kind);
+    expect(result.snapshot.authors).toBeNull();
+    expect(result.snapshot.html).toContain("handbook");
+  });
   test("exposes incomplete recovered history in the reading snapshot", async () => {
     const calls = fixture();
     calls.content.mockResolvedValue({ ...note, historyIncomplete: true });

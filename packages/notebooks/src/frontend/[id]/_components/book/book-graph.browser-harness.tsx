@@ -4,6 +4,7 @@ import type { NoteGraph } from "../../../../service/links";
 import BookGraphWorkspace from "../graph/BookGraphWorkspace.island";
 import type { GraphViewState } from "../graph/view-state";
 import type { BookNavigatorProps } from "./BookNavigatorBody";
+import BookPage from "./BookPage";
 
 export type BookGraphFixtureProps = { navigator: BookNavigatorProps; graph: NoteGraph | null; view: GraphViewState; now: string };
 type Box = { x: number; width: number; height: number };
@@ -28,17 +29,18 @@ export function BookGraphFixture(props: BookGraphFixtureProps) {
         now: props.now,
         timeZone: "Europe/Berlin",
       })
-    : // the Book page it opens from: until Book itself runs on v2, the same v2 shell without a graph, Links not current
-      createComponent(BookGraphWorkspace, {
-        navigator: { ...props.navigator, current: undefined },
-        notebookId: props.navigator.notebookId,
-        notebookName: props.navigator.notebookName,
-        selectedNoteId: props.navigator.selectedNoteId,
-        graph: null,
-        from: "book",
-        view: props.view,
-        now: props.now,
-        timeZone: "Europe/Berlin",
+    : // the Book page it opens from
+      createComponent(BookPage, {
+        ...props.navigator,
+        current: undefined,
+        fullWidth: false,
+        html: "<h1>Glossary</h1><p>Terms used by our team.</p>",
+        noteTitle: "Glossary",
+        canWrite: props.navigator.canWrite ?? false,
+        locked: props.navigator.locked ?? false,
+        historyIncomplete: false,
+        cursor: null,
+        now: "2026-10-16T17:30:00.000Z",
       });
 }
 

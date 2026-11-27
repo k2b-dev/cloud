@@ -32,7 +32,7 @@ describe("Book chart enhancement", () => {
       article.innerHTML = await chart("Erste Seite");
       const host = document.createElement("div");
       dom.root.append(article, host);
-      const { default: BookCharts } = await import("./BookCharts.island");
+      const { default: BookCharts } = await import("./BookCharts");
       const { LocaleProvider } = await import("@k2b/ui");
       // The page's locale reaches the island through the shared provider.
       dispose = render(

@@ -4,6 +4,7 @@ import { renderToString } from "solid-js/web";
 import { type BookSnapshot, bookNavigationTarget } from "../frontend/[id]/_components/book/book-state";
 import { bookMessages } from "../frontend/[id]/_components/book/messages";
 import { parseQueryPages, QUERY_PAGES_PARAM } from "../lib/query-blocks";
+import * as activity from "./activity";
 import { countOpenAnnotations } from "./annotation-count";
 import { loadBookNote } from "./book";
 import * as notebooks from "./notebooks";
@@ -69,6 +70,11 @@ export const loadBookRoute = async (params: {
       pages: parseQueryPages(target.searchParams.get(QUERY_PAGES_PARAM)),
     });
     if (!loaded) return { kind: "not_found" as const };
+    // the note's people and its comment count; neither keeps the note from opening
+    const [openComments, authors] = await Promise.all([
+      countOpenAnnotations(loaded.note.id).catch(() => 0),
+      activity.noteAuthors({ noteId: loaded.note.id }).catch(() => null),
+    ]);
     const snapshot: BookSnapshot = {
       ...common,
       html: loaded.document.html,
@@ -76,7 +82,9 @@ export const loadBookRoute = async (params: {
       selectedNoteId: loaded.note.shortId,
       locked: !!loaded.note.lockedAt,
       historyIncomplete: loaded.note.historyIncomplete,
-      openComments: await countOpenAnnotations(loaded.note.id).catch(() => 0),
+      openComments,
+      authors,
+      updatedAt: loaded.note.updatedAt,
     };
     return { kind: "ok" as const, snapshot };
   }

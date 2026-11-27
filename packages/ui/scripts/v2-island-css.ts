@@ -19,9 +19,15 @@ import selectorParser, { type Node, type Selector } from "postcss-selector-parse
 //   such as a seam after a pane or the icon in a button);
 // - `:has(> …)`, `:has(+ …)` and `:has(~ …)` look through a wrapper below the anchor, never past the anchor's own wrapper;
 // - `:nth-child(1 of S)` and `:nth-last-child(1 of S)` count like `:first-child` and `:last-child` among the siblings that
-//   match S;
+//   match S; S is one compound per alternative (no combinator, no structural pseudo-class). A wrapper counts as a
+//   sibling that matches S unless it is empty: one that holds only a popover counts too, so a button before it is
+//   not the last (no island holds a popover alone today);
 // - a compound without a class, id, attribute or tag (`*`, `:not(.x)`) never matches the wrapper itself;
 // - a run of compounds holds at most one sibling relation.
+// Not supported: an anchor in an island of its own whose sibling relation reaches outside it, such as a `Pane` that is
+// an island by itself before the seam of its `Pane.Split` (`.k2-pane:has(+ .k2-seam …)` then misses it). Looking
+// past the anchor's wrapper costs a restyle of the whole island on every change, on every page; render such panes
+// on the server and keep the islands inside them.
 // Every added part sits in `:where()`, so specificity, and with it the cascade, stays exactly as written; without a
 // wrapper on the page every rule matches exactly what it matched before. A rule's selector becomes a list of whole
 // selectors, one per way its last part crosses a wrapper, never one `:is()` around them all.
@@ -94,6 +100,13 @@ const compound = (nodes: Node[], context: Context, argument = false): Compound =
       // `:first-child` and `:last-child` are among all; empty wrappers count as none of S
       const among = /^:nth-(last-)?child\(\s*1\s+of\s+([\s\S]+)\)$/.exec(String(node).trim());
       if (among) {
+        // S must count the same among the siblings in a wrapper and among the wrapper's: one compound per alternative
+        const of = selectorParser().astSync(among[2] ?? "");
+        of.walk((part) => {
+          if (part.type === "combinator") fail(context, `a combinator in the S of ${name}`);
+          if (part.type === "pseudo" && /^:(?:nth-|first-|last-|only-|empty$|has$)|-of-type$/.test(part.value.toLowerCase()))
+            fail(context, `${part.value} in the S of ${name}`);
+        });
         const place = `:nth-${among[1] ?? ""}child(1 of :is(${among[2]}):not(${EMPTY}))`;
         body += `${place}:where(:not(${WRAPPER}>*),${WRAPPER}${place}>*)`;
         continue;

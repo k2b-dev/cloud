@@ -44,7 +44,7 @@ describe("Book controller", () => {
     const globals = ["HTMLInputElement", "HTMLFormElement", "FormData", "CSS"] as const;
     const previous = globals.map((key) => Object.getOwnPropertyDescriptor(globalThis, key));
     globals.forEach((key) => Object.defineProperty(globalThis, key, { configurable: true, writable: true, value: dom.window[key] }));
-    dom.root.innerHTML = `<div class="notebook-book-shell"><div class="notebook-book-main"><span id="notebook-book-name">Handbook</span>
+    dom.root.innerHTML = `<div data-k2-workspace=""><div class="notebook-book-main"><span id="notebook-book-name">Handbook</span>
       <a id="second" href="/app/notebooks/book01/notes/note02?mode=book">Second</a>
       <a id="third" href="/app/notebooks/book01/notes/note03?mode=book">Third</a>
       <a id="toc" href="#heading">TOC</a>
@@ -66,7 +66,7 @@ describe("Book controller", () => {
       },
       { preconnect: originalFetch.preconnect },
     );
-    const { default: BookController } = await import("./BookController.island.tsx");
+    const { default: BookController } = await import("./BookController");
     const dispose = render(
       () => createComponent(BookController, { notebookId: "book01", initial: current }),
       dom.root.querySelector("#controller")!,
@@ -404,39 +404,6 @@ describe("Book controller", () => {
         fallback.mockRestore();
         app.cleanup();
       }
-    }
-  });
-
-  test("keeps the text at the top of the article in place when the notebook navigation hides and shows", async () => {
-    const app = await mount();
-    const { NAVIGATION_VISIBILITY_EVENT, setNavigationHidden } = await import("../sidebar/navigation-visibility");
-    const main = app.article.closest<HTMLElement>(".notebook-book-main")!;
-    app.article.innerHTML = "<p>A long paragraph that the reader is halfway through.</p>";
-    const paragraph = app.article.querySelector("p")!;
-    // Layout stand-ins (the real rewrap runs in book-hidden-navigation.browser.test.ts): the port starts
-    // 100 px down, and the paragraph 800 px into the article takes 400 px, or 200 px while the article is wider.
-    let paragraphHeight = 400;
-    const rewrap = (event: Event) => {
-      paragraphHeight = (event as CustomEvent<{ hidden: boolean }>).detail.hidden ? 200 : 400;
-    };
-    const box = (top: number, height: number) => new app.dom.window.DOMRect(0, top, 600, height);
-    main.getBoundingClientRect = () => box(100, 600);
-    app.article.getBoundingClientRect = () => box(100 - main.scrollTop, 3000);
-    paragraph.getBoundingClientRect = () => box(900 - main.scrollTop, paragraphHeight);
-    window.addEventListener(NAVIGATION_VISIBILITY_EVENT, rewrap);
-    try {
-      // Half of the paragraph is scrolled out above the port.
-      main.scrollTo(0, 1000);
-      setNavigationHidden(true);
-      await Promise.resolve();
-      expect(main.scrollTop).toBe(900);
-      setNavigationHidden(false);
-      await Promise.resolve();
-      expect(main.scrollTop).toBe(1000);
-    } finally {
-      window.removeEventListener(NAVIGATION_VISIBILITY_EVENT, rewrap);
-      setNavigationHidden(false);
-      app.cleanup();
     }
   });
 });

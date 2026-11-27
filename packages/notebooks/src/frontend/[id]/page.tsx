@@ -6,7 +6,7 @@ import { ssr } from "../../config";
 import { katexStylesHref } from "../../lib/katex-assets";
 import { notebooksPageMessages } from "../messages";
 import { buildNoteUrl } from "../params";
-import BookSurface from "./_components/book/BookSurface";
+import BookPage from "./_components/book/BookPage";
 import BookGraphWorkspace from "./_components/graph/BookGraphWorkspace.island";
 import NotebookGraphWorkspace from "./_components/graph/NotebookGraphWorkspace.island";
 import { parseGraphViewState } from "./_components/graph/view-state";
@@ -56,7 +56,6 @@ export default ssr<AuthContext>(async (c) => {
               : `/app/notebooks/${data.notebook.id}?mode=book`,
             canWrite: data.canWrite,
             locked: !!data.selectedNote?.lockedAt,
-            navigationHidden: data.ctx.navigationHidden,
             current: "graph",
             graphBack: data.graphBack,
           }}
@@ -83,10 +82,16 @@ export default ssr<AuthContext>(async (c) => {
         c={c}
         fullPage
         fullWidth
+        ui="v2"
         title={data.notebook.name}
+        // on the phone the shell bar names the notebook (and opens its pages), so the head keeps room for the views
+        headTitle="page"
       >
+        <link rel="stylesheet" href={katexStylesHref} />
         <RememberNotebook notebookId={data.notebook.id} />
-        <BookSurface
+        {/* Like the workspace, Book follows live changes, and a revoked grant or an ended session reloads it. */}
+        <WorkspaceEventBridge notebookId={data.notebook.id} appUrl={data.appUrl} initialCursor={data.ctx.workspaceCursor} />
+        <BookPage
           userId={data.ctx.userId}
           notebookId={data.notebook.id}
           notebookName={data.notebook.name}
@@ -100,11 +105,12 @@ export default ssr<AuthContext>(async (c) => {
           canWrite={data.canWrite}
           locked={!!data.selectedNote?.lockedAt}
           historyIncomplete={data.selectedNote?.historyIncomplete ?? false}
-          appUrl={data.appUrl}
           cursor={data.ctx.workspaceCursor}
-          navigationHidden={data.ctx.navigationHidden}
           fullWidth={data.ctx.fullWidth}
           openComments={data.bookOpenComments}
+          authors={data.bookAuthors}
+          updatedAt={data.selectedNote?.updatedAt ?? null}
+          now={data.now}
         />
       </Layout>
     );

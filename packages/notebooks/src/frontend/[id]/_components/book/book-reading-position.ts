@@ -1,11 +1,10 @@
 type Anchor = { element: Element; within: number; offset: number };
 
-/** Children that stack as blocks; inline content wraps with its block and never anchors on its own. */
-const blockChildren = (parent: Element) =>
-  Array.from(parent.children).filter((child) => {
-    const display = getComputedStyle(child).display;
-    return display !== "none" && display !== "contents" && !display.startsWith("inline");
-  });
+/** A child that stacks as a block; inline content wraps with its block and never anchors on its own. */
+const isBlock = (child: Element) => {
+  const display = getComputedStyle(child).display;
+  return display !== "none" && display !== "contents" && !display.startsWith("inline");
+};
 
 /**
  * The innermost block at the port's top edge, such as a paragraph or a list
@@ -17,7 +16,8 @@ const readingAnchor = (article: HTMLElement, portTop: number): Anchor | null => 
   if (article.getBoundingClientRect().top >= portTop) return null;
   let element: Element = article;
   for (;;) {
-    const next = blockChildren(element).find((child) => child.getBoundingClientRect().bottom > portTop);
+    // Its box first, its style only then: a long note reads the style of the children at the edge, not of all.
+    const next = Array.from(element.children).find((child) => child.getBoundingClientRect().bottom > portTop && isBlock(child));
     if (!next) break;
     element = next;
     const { top } = next.getBoundingClientRect();
@@ -43,8 +43,48 @@ export const keepBookReadingPosition = (article: HTMLElement, scroller: HTMLElem
   const anchor = readingAnchor(article, scroller.getBoundingClientRect().top);
   if (!anchor) return () => {};
   return () => {
+    // the article moved on to another note meanwhile
+    if (!anchor.element.isConnected) return;
     const { top, height } = anchor.element.getBoundingClientRect();
     const delta = top + anchor.within * height - anchor.offset - scroller.getBoundingClientRect().top;
     if (Math.abs(delta) >= 1) scroller.scrollTop += delta;
+  };
+};
+
+/**
+ * Keeps the text at the top of Book's scroll port in place whenever the article's width changes: the workspace hides
+ * or shows its sidebar (its button or Mod+Alt+S), a grip moves, the window narrows. The position is read after each
+ * scroll; a new width puts it back in the same frame, after layout and before paint. Returns the stop.
+ */
+export const followBookReadingPosition = (article: HTMLElement, scroller: HTMLElement): (() => void) => {
+  let restore = keepBookReadingPosition(article, scroller);
+  let width = article.getBoundingClientRect().width;
+  let frame = 0;
+  // Whoever sees a new width first puts the text back from the position read before it: a layout forced right after
+  // the change lets the browser's scroll anchoring move the port, and its scroll can arrive before the observer does.
+  const read = () => {
+    frame = 0;
+    const next = article.getBoundingClientRect().width;
+    // a note that loads or a diagram that renders changes the height only
+    if (Math.abs(next - width) >= 1) {
+      width = next;
+      restore();
+    }
+    restore = keepBookReadingPosition(article, scroller);
+  };
+  const onScroll = () => {
+    frame ||= requestAnimationFrame(read);
+  };
+  const sizes = new ResizeObserver(() => {
+    if (Math.abs(article.getBoundingClientRect().width - width) < 1) return;
+    cancelAnimationFrame(frame);
+    read();
+  });
+  sizes.observe(article);
+  scroller.addEventListener("scroll", onScroll, { passive: true });
+  return () => {
+    sizes.disconnect();
+    cancelAnimationFrame(frame);
+    scroller.removeEventListener("scroll", onScroll);
   };
 };

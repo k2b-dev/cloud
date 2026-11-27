@@ -60,6 +60,21 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
   stands wherever its primitive stands. v2.css and `describeV2` look through
   the `<solid-island>` and `<solid-client>` wrappers, so the layout stays the
   same. Never make the whole screen one island to keep its layout.
+- The frame (`Workspace`, `Pane`, `Pane.Split`, `Nav`, heads, `Bar`) is server
+  markup. One frame entry per page brings what it needs in the browser:
+  `attachWorkspaces()` binds the drawer of the sidebar, its collapse
+  (`collapsible`, Mod+Alt+S), the grips of its seams and tables and the folds
+  of the `Nav`, and answers `Dialog.confirm` and `useToast`; the drawer, the
+  alert dialog and the toaster load on their first use, a grip when the
+  pointer or the focus reaches it. A `Table` with column widths stands inside
+  the Workspace, or its column grips do nothing. A command of the page, such as "Hide navigation"
+  in a search, calls `toggleWorkspaceSidebar()`: it does what the button and
+  Mod+Alt+S do. A Cloud page with `ui: "v2"` has it. A standalone
+  app renders one `.client.tsx` on the page:
+  `export default () => { onMount(() => onCleanup(attachWorkspaces())); return null; }`.
+- Keep islands small: a control, a row's actions, a list that updates. What
+  takes a function (a `primary` or `Nav` entry with `onClick`, a group menu)
+  works only inside an island; give it an `href` to keep it server markup.
 - Strings come from the app's message catalog; recipes inline German sample
   text only to look like the real thing.
 - A v2 island imports only from `@k2b/ui/v2`, including `useLocale` for the

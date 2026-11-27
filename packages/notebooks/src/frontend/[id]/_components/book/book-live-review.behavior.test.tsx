@@ -25,30 +25,46 @@ describe("independent Book live metadata regression", () => {
     return;
   }
 
-  test("mode actions follow current note, lock and permission without remounting", async () => {
+  test("the head's views follow the current note, its lock and the permission without remounting", async () => {
     const dom = createDomTestHarness();
-    const { default: ModeLinks } = await import("./FloatingEditButton.island");
+    const { default: BookPage } = await import("./BookPage");
     const dispose = render(
       () =>
-        createComponent(ModeLinks, {
-          href: "/app/notebooks/book01/notes/note01?mode=book",
-          mode: "book",
-          locked: false,
+        createComponent(BookPage, {
+          notebookId: "book01",
+          notebookName: "Handbook",
+          notebookIcon: null,
+          selectedNoteId: "note01",
+          navigation: bookNavigationState([{ id: "note01", title: "First", children: [] }], "note01"),
+          tags: [],
+          currentHref: "/app/notebooks/book01/notes/note01?mode=book",
+          navigationHidden: false,
+          fullWidth: false,
+          html: "<p>First</p>",
+          noteTitle: "First",
           canWrite: true,
+          locked: false,
+          historyIncomplete: false,
+          cursor: null,
+          now: "2026-10-16T17:30:00.000Z",
         }),
       dom.root,
     );
+    const head = () => dom.root.querySelector('[data-k2-workspace] [data-k2-part="Tabs"]');
+    const write = () => head()?.querySelector<HTMLAnchorElement>('a[href*="mode=write"]') ?? null;
     try {
+      const first = head();
+      expect(write()?.getAttribute("href")).toBe("/app/notebooks/book01/notes/note01?mode=write");
       window.dispatchEvent(new CustomEvent(BOOK_SNAPSHOT_EVENT, { detail: { ...metadata, locked: true } }));
-      expect(dom.root.querySelector('a[href*="mode=write"]')).toBeNull();
-      expect(dom.root.querySelectorAll("a")).toHaveLength(0);
+      expect(write()).toBeNull();
       window.dispatchEvent(new CustomEvent(BOOK_SNAPSHOT_EVENT, { detail: metadata }));
-      expect(dom.root.querySelector('a[href*="mode=write"]')).not.toBeNull();
-      expect(dom.root.querySelector("a")?.getAttribute("href")).toBe("/app/notebooks/book01/notes/note02?mode=write");
+      expect(write()?.getAttribute("href")).toBe("/app/notebooks/book01/notes/note02?mode=write");
+      // the same head, with the next note's views
+      expect(head()).toBe(first);
       window.dispatchEvent(new CustomEvent(BOOK_SNAPSHOT_EVENT, { detail: { ...metadata, selectedNoteId: null } }));
-      expect(dom.root.querySelectorAll("a")).toHaveLength(0);
+      expect(write()).toBeNull();
       window.dispatchEvent(new CustomEvent(BOOK_SNAPSHOT_EVENT, { detail: { ...metadata, canWrite: false } }));
-      expect(dom.root.querySelectorAll("a")).toHaveLength(0);
+      expect(head()).toBeNull();
     } finally {
       dispose();
       dom.cleanup();

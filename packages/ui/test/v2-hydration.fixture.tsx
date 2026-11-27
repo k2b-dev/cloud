@@ -68,6 +68,8 @@ export function Fixture() {
   globalThis.__k2FactsLoading = setLoading;
   return (
     <Workspace
+      // a sidebar: its grip's room is written on the server and must stay the same in the browser
+      sidebar={<Text>Ordner</Text>}
       head={
         <Bar
           start={<Text weight="strong">Probe</Text>}

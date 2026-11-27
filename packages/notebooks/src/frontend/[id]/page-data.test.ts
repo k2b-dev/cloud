@@ -170,7 +170,8 @@ describe("notebook page presentation authorization", () => {
     expect(html).toContain('data-layout-authenticated="true"');
     expect(html).toContain("ShellRuntime");
     expect(html).toContain("layout-content-main");
-    expect(html).toContain("notebook-book-workspace");
+    // Book is a v2 workspace inside the shell
+    expect(html).toContain("data-k2-workspace");
     expect(html).toContain("<strong>handbook</strong>");
     expect(html).not.toMatch(/NoteEditor|NotebookDetailPanel|collaboration-state-not-for-book/);
   });

@@ -25,6 +25,7 @@ export const bookMessages = i18n.define({
       loadingPages: "Loading pages…",
       selectNote: "Select a page",
       diagramError: "The diagram could not be displayed. Its source is shown below.",
+      lastChanged: ({ name, when }: { name: string; when: string }) => `last changed by ${name} · ${when}`,
     },
     de: {
       book: "Buch",
@@ -47,6 +48,7 @@ export const bookMessages = i18n.define({
       loadingPages: "Seiten werden geladen…",
       selectNote: "Wähle eine Seite",
       diagramError: "Das Diagramm konnte nicht angezeigt werden. Der Quelltext steht unten.",
+      lastChanged: ({ name, when }) => `zuletzt ${name} · ${when}`,
     },
   },
 });

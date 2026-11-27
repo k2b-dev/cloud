@@ -7,7 +7,7 @@ import { ssr } from "../../config";
 import AccountsNavigation from "../AccountsNavigation.island";
 import { accountsNavigationItems } from "../accounts-nav";
 import { accountsMessages } from "../messages";
-import AgentsScreen from "./AgentsScreen.island";
+import AgentsScreen from "./AgentsScreen";
 
 const parsePage = (value: string | undefined): number => {
   const parsed = Number.parseInt(value ?? "1", 10);

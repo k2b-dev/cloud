@@ -8,9 +8,8 @@
  *   sight (`--k2-grip-top`, layout.tsx), and what a column grip says once it has measured its column: the width the
  *   column has and the most it can take (`aria-valuenow`, `aria-valuetext`, `aria-valuemax` of a separator,
  *   `useGrip`). Add a property here only for such a measured value, never for a mismatch;
- * - the Workspace's toast region (`data-slot="toast-region"`, toast.tsx) is made a popover and measures the viewport
- *   into custom properties once core binds it: its `popover` and its `--` properties do not count. Empty, it is
- *   closed and shows nothing either way.
+ * - the live parts `attachWorkspace` adds at the end of a Workspace (`data-k2-ws-live`, attach.tsx: its drawer,
+ *   alert dialog and toaster, which the server never renders) do not count.
  *
  * Self-contained, as Playwright sends its source into the page.
  */
@@ -23,18 +22,21 @@ export const sentVsLive = (): string[] => {
   const live = document.getElementById("root");
   if (!(sent instanceof Node) || !live) return ["the page holds no sent copy (window.__k2Sent) or no #root"];
   const found: string[] = [];
-  const toastRegion = (element: Element) => element.getAttribute("data-slot") === "toast-region";
   const style = (element: Element) => {
     const probe = document.createElement("i");
     probe.setAttribute("style", element.getAttribute("style") ?? "");
     return Array.from(probe.style)
-      .filter((name) => !measured.has(name) && !(toastRegion(element) && name.startsWith("--")))
+      .filter((name) => !measured.has(name))
       .map((name) => `${name}:${probe.style.getPropertyValue(name)}`)
       .sort()
       .join(";");
   };
   const nodes = (parent: Node) =>
-    Array.from(parent.childNodes).filter((node) => node.nodeType === 1 || (node.nodeType === 3 && node.textContent !== ""));
+    Array.from(parent.childNodes).filter(
+      (node) =>
+        (node.nodeType === 1 && !(node instanceof Element && node.hasAttribute("data-k2-ws-live"))) ||
+        (node.nodeType === 3 && node.textContent !== ""),
+    );
   const walk = (a: Node, b: Node, path: string) => {
     if (a.nodeType === 3 || b.nodeType === 3) {
       if (a.nodeType !== b.nodeType || a.textContent !== b.textContent)
@@ -47,9 +49,7 @@ export const sentVsLive = (): string[] => {
       return;
     }
     const names = new Set(
-      [...a.getAttributeNames(), ...b.getAttributeNames()].filter(
-        (name) => name !== "data-hk" && !measuredAttribute(b, name) && !(toastRegion(b) && name === "popover"),
-      ),
+      [...a.getAttributeNames(), ...b.getAttributeNames()].filter((name) => name !== "data-hk" && !measuredAttribute(b, name)),
     );
     for (const name of names) {
       const same = name === "style" ? style(a) === style(b) : a.getAttribute(name) === b.getAttribute(name);

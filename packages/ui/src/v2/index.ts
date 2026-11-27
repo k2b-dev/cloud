@@ -12,6 +12,7 @@
 
 // The page's language, as in the rest of @k2b/ui, without the v1 entry: a v2 island imports it from here.
 export { useLocale } from "../intl/locale";
+export { type AttachOptions, attachWorkspace, attachWorkspaces, toggleWorkspaceSidebar } from "./attach";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {
@@ -113,6 +114,8 @@ export {
   Tiles,
   type TilesProps,
   Workspace,
+  WorkspaceLayout,
+  type WorkspaceLayoutProps,
   type WorkspaceProps,
 } from "./layout";
 export { Lookup, type LookupLoad, type LookupProps, type LookupResolve } from "./lookup";

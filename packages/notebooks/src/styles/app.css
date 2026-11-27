@@ -6,28 +6,6 @@
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* The Book surface shares tokens with the workspace, not the editor's DOM. */
-.notebook-book-shell {
-  color: var(--color-zinc-950);
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-}
-.notebook-book-shell .k2b-app-workspace.notebook-book-workspace {
-  flex: 1;
-  min-height: 0;
-}
-.dark .notebook-book-shell {
-  color: var(--color-zinc-100);
-}
-.notebook-book-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem clamp(1rem, 4vw, 3rem);
-}
 .notebook-document-surface {
   position: relative;
   min-width: 0;
@@ -42,6 +20,11 @@
   flex-direction: column;
   height: 100%;
 }
+/* k2b-ui gap: #4356 (Canvas height="fill"). Until it lands, v2 keeps the Canvas a block, so Book's one surface takes
+   the height itself; when it lands, Book's Canvas takes height="fill" and this rule goes. */
+[data-k2-canvas] > .notebook-book-document {
+  height: 100%;
+}
 /* The graph's Canvas fills what its pane has left (`height="fill"`); the graph lies over the whole Canvas, since each
    display draws to the size it is given. */
 [data-k2-canvas] > .notebook-graph {
@@ -51,34 +34,20 @@
 .notebook-book-document {
   display: flex;
 }
-.notebook-floating-edit {
-  position: absolute;
-  right: max(1.25rem, env(safe-area-inset-right));
-  bottom: max(1.25rem, env(safe-area-inset-bottom));
-  z-index: 10;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease;
+/* Book's own scroller inside its Canvas: the reading position and full width measure it. */
+.notebook-book-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
 }
-.notebook-floating-edit .notebook-floating-edit-button {
-  border-radius: 50%;
+/* The note's title has air below the head's line. */
+.notebook-book-main > .notebook-book-content {
+  padding-top: 1.5rem;
 }
-.notebook-document-surface:hover .notebook-floating-edit,
-.notebook-floating-edit:hover,
-.notebook-floating-edit:focus-within {
-  opacity: 1;
-  pointer-events: auto;
-}
-@media (hover: none) {
-  .notebook-floating-edit {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .notebook-floating-edit {
-    transition: none;
-  }
+/* A table's text stands on the text edge of the paragraphs around it. */
+.notebook-book-main .notebook-book-content table :is(th, td):first-child {
+  padding-inline-start: 0;
 }
 /* The formatting strip scrolls horizontally, so it clips anything painted
    outside a button. Keyboard focus therefore stays inside the button: a blue
