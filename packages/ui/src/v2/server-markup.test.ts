@@ -11,7 +11,7 @@ import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 const root = mkdtempSync(resolve(tmpdir(), "k2-v2-server-markup-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { Pane, Workspace } = await import("./layout");
+const { Pane, Tiles, Workspace } = await import("./layout");
 const { Input } = await import("./controls");
 const { Text } = await import("./content");
 const { Heat } = await import("./heat");
@@ -59,6 +59,22 @@ test("a workspace draws the empty detail's place only while no detail is open, a
 });
 
 // HTML drops one newline at the start of a textarea's text: the server sends one more, so leading blank lines stay.
+// A first start in the middle of the page (W2/W4): the server's markup already places it, so nothing moves when the
+// page hydrates. Both are CSS alone, set by the attributes and the one inline value the server sends.
+test("a centred pane and tiles that share a row are placed by the server's markup alone", () => {
+  const pane = renderToString(() => createComponent(Pane, { label: "Notizbücher", center: true, children: "Start" }));
+  expect(pane).toMatch(/<section[^>]*class="k2-pane"[^>]*data-center=""/);
+  expect(renderToString(() => createComponent(Pane, { label: "Notizbücher", children: "Start" }))).not.toContain("data-center");
+  const tiles = (perRow?: number) =>
+    renderToString(() => createComponent(Tiles, { label: "Wege", perRow, items: [{ icon: "notebook", title: "Tagebuch" }] }));
+  expect(tiles(4)).toMatch(/data-per-row=""[^>]*style="--k2-per-row:\s*4"/);
+  // a count is a whole number of at least one
+  expect(tiles(2.7)).toMatch(/--k2-per-row:\s*2"/);
+  expect(tiles(-3)).toMatch(/--k2-per-row:\s*1"/);
+  expect(tiles(undefined)).not.toContain("data-per-row");
+  expect(tiles(undefined)).not.toContain("--k2-per-row");
+});
+
 test("a multi-line field sends its value as the text of its textarea, leading blank lines too", () => {
   for (const value of ["Zwei <Zeilen>\nund mehr", "\nErste\nZweite", "\n\nNach zwei Leerzeilen", ""]) {
     const markup = renderToString(() => createComponent(Input, { multiline: true, label: "Notiz", value }));
