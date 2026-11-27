@@ -1399,7 +1399,7 @@ optional jobs; failed or cancelled jobs fail the full gate. The `ci-gate`
 rule and its tests check the job list, exact draft and path conditions,
 the red draft gate, skip allowances, event triggers, and concurrency policy.
 
-Unit tests run in thirteen shards, WebKit tests in twenty-five, and integration tests
+Unit tests run in thirteen shards, WebKit tests in twenty-six, and integration tests
 in six. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
 suite counts as the median of its table. The browser table contains WebKit
@@ -1795,7 +1795,7 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
 
 `bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
-them again in WebKit in twenty-five shards with `bun run test --browser`, against
+them again in WebKit in twenty-six shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
 or `scripts/` changed. At its end, it lists every process that crashed on the
