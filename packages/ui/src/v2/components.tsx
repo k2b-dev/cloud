@@ -580,8 +580,8 @@ export const StatusRow = (props: StatusRowProps) => {
   const overlay = useOverlayMessages();
   const filters = resolveChildren(() => props.filters);
   // How many deeds of a selection stand with their words: as many as the mockup shows, fewer where they do not fit,
-  // the rest in "Mehr", so no word is cut. Measured in the browser (a selection is made there), one deed per frame,
-  // again from the start when the bar changes its width or the selection its words.
+  // the rest in "Mehr", so no word is cut. Measured in the browser (a selection is made there) when the bar changes
+  // its width or the selection its words, all at once before the next frame is drawn, so no cut word ever shows.
   const [room, setRoom] = createSignal(Number.POSITIVE_INFINITY);
   const shown = () => {
     const actions = props.selection?.actions ?? [];
@@ -590,34 +590,24 @@ export const StatusRow = (props: StatusRowProps) => {
   let bar: HTMLDivElement | undefined;
   onMount(() => {
     if (!bar) return;
-    let frame = 0;
-    const step = () => {
-      frame = 0;
+    // outside of Solid's own updates every change reaches the page at once, so each step measures what it changed
+    const fit = () => {
+      setRoom(Number.POSITIVE_INFINITY);
       const start = bar?.querySelector<HTMLElement>(":scope > .k2-bar-start");
       const actions = start?.querySelector<HTMLElement>(":scope > .k2-status-actions");
       // on the phone the deeds float at the bottom, each symbol over its word: nothing to fold
       if (!props.selection || !start || !actions || getComputedStyle(actions).position === "fixed") return;
-      if (shown() > 0 && cutIn(start)) {
-        setRoom(shown() - 1);
-        frame = requestAnimationFrame(step);
-      }
+      while (shown() > 0 && cutIn(start)) setRoom(shown() - 1);
     };
-    const again = () => {
-      cancelAnimationFrame(frame);
-      setRoom(Number.POSITIVE_INFINITY);
-      frame = requestAnimationFrame(step);
-    };
-    const sizes = new ResizeObserver(again);
+    const sizes = new ResizeObserver(fit);
     sizes.observe(bar);
     createEffect(() => {
       props.selection?.count;
       props.selection?.actions.length;
-      again();
+      // after the words changed on the page, still before it is drawn
+      queueMicrotask(fit);
     });
-    onCleanup(() => {
-      cancelAnimationFrame(frame);
-      sizes.disconnect();
-    });
+    onCleanup(() => sizes.disconnect());
   });
   return (
     <div ref={bar} class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>

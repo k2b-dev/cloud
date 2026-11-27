@@ -559,7 +559,10 @@ lines instead of cutting a thing.
   [list queries](list-queries.md). `end` (the `ListOrder` and a choice of
   display such as list or grid) makes the bar the one status row of its
   list (52 px) with `results` in quiet words before it: the page head then
-  has two rows, path and deeds, then this bar. `display` (`MenuSection`s,
+  has two rows, path and deeds, then this bar. Where the statements would
+  get less than 240 px beside it, the end takes a line of its own; its
+  width follows `results`, so right at that width a longer count can move
+  it there. `display` (`MenuSection`s,
   such as "Darstellung" with list and grid, or a colour choice) puts each
   section as a menu of its own in the end on the desktop; on the phone,
   where the end has no room, sort, grouping and these sections fold into

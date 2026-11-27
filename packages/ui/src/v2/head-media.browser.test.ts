@@ -307,6 +307,36 @@ for (const width of [1440, 1024, 390])
     );
   });
 
+// while the window is dragged narrower, no drawn frame shows a cut word: the bar folds its deeds before the frame is
+// drawn, not one deed per frame (review r13)
+test("a selection folds its deeds before the next frame is drawn, so no frame shows a cut word", async () => {
+  await withPage("selection-four", async (page) => {
+    const frames = await page.evaluate(async () => {
+      const root = document.getElementById("root")!;
+      const drawn = () => new Promise<void>((done) => requestAnimationFrame(() => setTimeout(done, 0)));
+      // what a person sees after a frame: words of the bar wider than their place
+      const cut = () =>
+        [...document.querySelectorAll<HTMLElement>(".k2-bar[data-selecting] :is(.k2-status-lead, .k2-btn-label)")]
+          .filter((words) => words.getClientRects().length > 0 && getComputedStyle(words).clipPath === "none")
+          .filter((words) => words.scrollWidth > words.clientWidth + 1)
+          .map((words) => words.textContent);
+      root.style.width = "1100px";
+      await drawn();
+      await drawn();
+      const seen: string[][] = [];
+      for (const width of [900, 760, 640]) {
+        root.style.width = `${width}px`;
+        for (let frame = 0; frame < 4; frame++) {
+          await drawn();
+          seen.push(cut().filter((words): words is string => words !== null));
+        }
+      }
+      return seen;
+    });
+    expect(frames.flat()).toEqual([]);
+  });
+});
+
 // four deeds with long words and the size of the selection in a column that cannot hold them all: the last deeds go
 // into "Mehr" before any word is cut, and each deed stays reachable once (W1b #4206 r5: "In d…" at 1440)
 for (const column of [900, 760, 640])
