@@ -267,6 +267,9 @@
   --k2-ws-drawer: initial;
   --k2-drawer-w: initial;
   --k2-p: initial;
+  --k2-range-start: initial;
+  --k2-range-end: initial;
+  --k2-range-fill: initial;
   --k2-canvas-h: initial;
   --k2-steps: initial;
   --k2-sticky-left: initial;
