@@ -44,7 +44,7 @@ Many like things, one per line; `label` names it. A list that can grow without e
 
 ### Row
 
-One entry: one to three lines, a lead, a time, marks and one action; `current`, `unread` and `yours` mark it. Marks take at most half of the row and give way whole when there is no room: a tag is cut to about 12 letters first, lone symbols leave next, then the marks at the end, so pass them in the order of their weight. An address or a file name as a line is cut in the middle with `Cut`, so its domain or extension stays readable.
+One entry: one to three lines, a lead, a time, marks and one action; `current`, `unread` and `yours` mark it. Marks take at most half of the row and give way whole when there is no room: a tag is cut to about 12 letters first, lone symbols leave next, then the marks at the end, so pass them in the order of their weight. An address or a file name as a line is cut in the middle with `Cut`, so its domain or extension stays readable; words without one are cut at their end.
 
 <Props of="Row" />
 
