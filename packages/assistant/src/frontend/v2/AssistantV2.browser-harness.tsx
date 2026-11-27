@@ -8,8 +8,9 @@ import AssistantWorkspace from "../AssistantWorkspace.island";
 
 declare global {
   interface Window {
-    harness: { locale: string; props: ComponentProps<typeof AssistantWorkspace> };
-    searches: unknown[];
+    // Named after this test: test clients share one ui and assistant typecheck, where two globals of one name clash.
+    assistantV2Harness: { locale: string; props: ComponentProps<typeof AssistantWorkspace> };
+    assistantV2Searches: unknown[];
   }
 }
 
@@ -41,15 +42,15 @@ const shell: ShellData = {
   appId: "assistant",
 };
 // The shell's search host, as ShellRuntime registers it: the test reads which search the page asked for.
-window.searches = [];
+window.assistantV2Searches = [];
 window.addEventListener("cloud.search.open", (event) => {
   const request = (event as CustomEvent<{ options: unknown; accepted: boolean }>).detail;
   request.accepted = true;
-  window.searches.push(request.options);
+  window.assistantV2Searches.push(request.options);
 });
 render(
   () => (
-    <LocaleProvider locale={window.harness.locale}>
+    <LocaleProvider locale={window.assistantV2Harness.locale}>
       <ShellDataProvider data={shell} skipScript>
         <div
           class="cloud-app-canvas relative flex h-dvh w-full overflow-hidden"
@@ -65,7 +66,7 @@ render(
               // As Cloud's Layout ui="v2" with the rail: the shell's phone bar holds the page's one search.
               data-k2-host-search=""
             >
-              <AssistantWorkspace {...window.harness.props} />
+              <AssistantWorkspace {...window.assistantV2Harness.props} />
             </main>
           </div>
         </div>
