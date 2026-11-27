@@ -123,7 +123,7 @@ const message = (id: string, seq: number, role: "user" | "assistant", text: stri
 });
 
 /** The server state the routes answer from; a test changes it and tells the page through `window.live`. */
-type State = { locale: Locale; scenario: Scenario; /** The chat has a web page left open beside it. */ tabs?: boolean };
+type State = { locale: Locale; scenario: Scenario /** The chat has a web page left open beside it. */; tabs?: boolean };
 
 const tools = (locale: Locale) => {
   const fixtures = aiQuestionFixtures(locale);
