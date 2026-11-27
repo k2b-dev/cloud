@@ -201,7 +201,8 @@ such columns, as beside an open detail, and on the phone), `sort` (its head is p
 page itself if it needs one. One column takes the rest: the one with `grow`,
 else the widest that holds no number (not `align: "end"`); a table narrower
 than its columns need scrolls sideways, its edge fades and its scrollbar
-shows. Chips,
+shows. A cell cut with "…" shows its whole text as a hint under the
+pointer. Chips,
 `Progress`, text buttons are fine in cells. `open(row) => { href } | {
 onOpen }` makes each row open its entry.
 

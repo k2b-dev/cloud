@@ -104,3 +104,20 @@ test("at 1024 px a table wider than its pane scrolls sideways with a cue at its 
     expect((await page.evaluate(table, "Termine")).cue).toEqual({ start: true, end: false, mask: true });
   });
 });
+
+// A cell cut with "…" shows its whole text as a hint where the pointer rests on it (W2, Notebooks admin); a cell that
+// is whole gets none. Its whole text stays in the page, so it stays the cell's name.
+for (const width of [1440, 1024])
+  test(`at ${width} px a cut cell shows its whole text as its hint, a whole one none`, async () => {
+    await withPage(width, async (page) => {
+      const note = "Vertritt die Werkstatt bei allen Terminen mit der Innung, der Handwerkskammer und den Lieferanten";
+      const members = page.getByRole("table", { name: "Mitglieder" });
+      const cut = members.locator(".k2-cell-line", { hasText: note });
+      const whole = members.locator(".k2-cell-line", { hasText: "Lager und Inventur" });
+      expect(await cut.evaluate((line) => line.scrollWidth > line.clientWidth)).toBe(true);
+      await cut.hover();
+      await whole.hover();
+      expect([await cut.getAttribute("title"), await whole.getAttribute("title")]).toEqual([note, null]);
+      expect(await cut.textContent()).toBe(note);
+    });
+  });

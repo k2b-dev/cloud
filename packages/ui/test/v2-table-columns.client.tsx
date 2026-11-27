@@ -21,7 +21,12 @@ const areas = [
   { id: "2", name: "Lager", description: "Bestand, Lieferungen und Inventur", settings: "Nur Mitglieder" },
 ];
 const members = [
-  { id: "1", name: "Maximiliane Theodora von Hohenzollern-Sigmaringen", role: "Leitung", note: "Vertritt die Werkstatt" },
+  {
+    id: "1",
+    name: "Maximiliane Theodora von Hohenzollern-Sigmaringen",
+    role: "Leitung",
+    note: "Vertritt die Werkstatt bei allen Terminen mit der Innung, der Handwerkskammer und den Lieferanten",
+  },
   { id: "2", name: "Jonas Wille", role: "Mitglied", note: "Lager und Inventur" },
 ];
 const dates = [

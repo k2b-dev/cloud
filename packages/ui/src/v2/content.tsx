@@ -744,8 +744,20 @@ export const Table = <T,>(props: TableProps<T>) => {
     sizes.observe(element);
     const inner = element.querySelector("table");
     if (inner) sizes.observe(inner);
+    // A line cut with "…" shows its whole text as a hint where the pointer rests on it: measured then, so only a line
+    // that is cut gets one, and no cell carries an element for it. Its whole text stays in the page as its name.
+    const hint = (event: PointerEvent) => {
+      const line = event.target instanceof Element ? event.target.closest<HTMLElement>(".k2-cell-line") : null;
+      if (!line || !element.contains(line)) return;
+      const cut =
+        line.scrollWidth > line.clientWidth + 0.5 || (line.hasAttribute("data-wrap") && line.scrollHeight > line.clientHeight + 0.5);
+      if (cut) line.title = line.textContent?.trim() ?? "";
+      else line.removeAttribute("title");
+    };
+    element.addEventListener("pointerover", hint);
     onCleanup(() => {
       element.removeEventListener("scroll", measure);
+      element.removeEventListener("pointerover", hint);
       sizes.disconnect();
     });
   });
