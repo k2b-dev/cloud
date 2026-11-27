@@ -97,7 +97,8 @@ export function Demo() {
           }
           end={<Crowded />}
         />
-        {/* a long lead title beside a path: the title gives way first, down to its floor */}
+        {/* a long lead title beside a path, and an end that never folds (the bar's fold folds the end first, so only
+            such an end leaves the shortage to the start): the title gives way first, down to its floor */}
         <Bar
           start={
             <>
@@ -105,7 +106,7 @@ export function Demo() {
               <Path label="Ort neben Titel" items={deep} />
             </>
           }
-          end={<Button>Verwalten</Button>}
+          end={<Button variant="primary">Neu</Button>}
         />
       </Pane>
     </Workspace>
