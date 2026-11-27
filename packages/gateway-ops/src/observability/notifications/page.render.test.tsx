@@ -113,7 +113,7 @@ test("definitions and earlier notifications render on v2 from the address, with 
       latestCreatedAt: null,
     }),
     spyOn(notificationsService.notification, "get").mockImplementation(async ({ id }) =>
-      id === OPEN ? ({ ...earlier("9", "sent"), id: OPEN, sentBy: null, sentAt: new Date(), type: "email" } as never) : null,
+      id === OPEN ? ({ ...earlier("9", "sent"), id: OPEN, sentBy: null, sentAt: new Date("2026-11-24T09:00:00Z"), type: "email" } as never) : null,
     ),
   ];
   try {

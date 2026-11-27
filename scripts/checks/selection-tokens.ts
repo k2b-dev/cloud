@@ -211,11 +211,6 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     reason: "Data: field type color.",
   },
   {
-    file: "packages/gateway-ops/src/observability/notifications/page.tsx",
-    subject: '? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"',
-    reason: "Data: notification channel color; the chip shows the channel icon and name.",
-  },
-  {
     file: "packages/oauth/src/frontend/page.tsx",
     subject: '? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"',
     reason: "Data: client type color; the chip names the type (public or confidential).",

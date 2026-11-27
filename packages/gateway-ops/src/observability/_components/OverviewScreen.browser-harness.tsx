@@ -1,5 +1,5 @@
 import { render } from "solid-js/web";
-import { OverviewScreenFixture } from "./overview-fixture";
+import { OverviewScreenFixture } from "./OverviewScreen.browser-fixture";
 
 /** The overview for a browser test: it renders the address and data set as the page would. */
 const host = document.getElementById("root");

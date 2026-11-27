@@ -74,7 +74,7 @@ test("gateway routes: the router's table with each prefix's traffic, filtered by
     stubRailSnapshot(),
     spyOn(cloud, "listApps").mockResolvedValue(APPS),
     spyOn(services, "latestGatewayRouteSnapshot").mockResolvedValue({
-      startedAt: Date.now() - 3 * 3_600_000,
+      startedAt: Date.parse("2026-11-24T05:00:00Z"),
       tableVersion: 42,
       routeCount: 3,
       routeWarnings: [{ appId: "files", prefix: "/api/files", reason: "shadowed" }],

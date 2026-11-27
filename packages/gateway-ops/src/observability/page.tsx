@@ -7,8 +7,8 @@ import { alignCountSeries } from "../frontend/operational-charts";
 import { buildGatewayHealth } from "../health";
 import { gatewayOpsMessages } from "../messages";
 import { observabilityAdminNav } from "./_components/admin-nav";
-import type { KeyCell } from "./_components/KeyCells";
 import { INFRA_HREF } from "./_components/InfrastructureTabs";
+import type { KeyCell } from "./_components/KeyCells";
 import { readAttention } from "./_components/ObservabilityArea";
 import OverviewScreen from "./_components/OverviewScreen.island";
 import { opsCharts } from "./_components/ops-chart";
@@ -40,19 +40,20 @@ export default ssr<AuthContext>(async (c) => {
   // jobs keep no six-hour window: the next longer one
   const jobsWindow: TraceWindow = range === "6h" ? "12h" : range;
 
-  const [health, telemetry, telemetryTimeseries, failingRoutes, logSummary, logTimeseries, jobStats, apps, attention, infra] = await Promise.all([
-    settled(() => buildGatewayHealth(), null),
-    settled(() => getTelemetryOverview({ range }), null),
-    settled(() => getTelemetryTimeseries({ range }), []),
-    settled(() => listTelemetryRoutes({ range }, "errorRate", { errorsOnly: true, slowOnly: false }), []),
-    settled(() => logging.summary(), null),
-    settled(() => logging.timeseries({ sinceHours: TELEMETRY_RANGES[range].hours }), []),
-    settled(() => trace.stats({ filter: { window: jobsWindow } }), null),
-    listApps().catch(() => []),
-    readAttention(),
-    // the three services' states, shared by the area's pages for 30 s, so a call does not probe them each time
-    readInfraStates(),
-  ]);
+  const [health, telemetry, telemetryTimeseries, failingRoutes, logSummary, logTimeseries, jobStats, apps, attention, infra] =
+    await Promise.all([
+      settled(() => buildGatewayHealth(), null),
+      settled(() => getTelemetryOverview({ range }), null),
+      settled(() => getTelemetryTimeseries({ range }), []),
+      settled(() => listTelemetryRoutes({ range }, "errorRate", { errorsOnly: true, slowOnly: false }), []),
+      settled(() => logging.summary(), null),
+      settled(() => logging.timeseries({ sinceHours: TELEMETRY_RANGES[range].hours }), []),
+      settled(() => trace.stats({ filter: { window: jobsWindow } }), null),
+      listApps().catch(() => []),
+      readAttention(),
+      // the three services' states, shared by the area's pages for 30 s, so a call does not probe them each time
+      readInfraStates(),
+    ]);
 
   const offlineApps = health.value?.apps.filter((app) => app.status !== "ok") ?? [];
   const signals = buildOverviewSignals(

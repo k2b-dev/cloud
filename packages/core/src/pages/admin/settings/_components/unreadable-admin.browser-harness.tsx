@@ -2,7 +2,7 @@ import SettingsSaveStatus from "@k2b/cloud/ssr/SettingsSaveStatus.island";
 import { Button, LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import { previewViews } from "../../../../../../../scripts/fixtures/unreadable-admin/views";
-import RetentionForm from "../../../../../../gateway-ops/src/observability/retention/RetentionForm.island";
+import RetentionForm from "../../../../../../gateway-ops/src/observability/settings/RetentionForm";
 import { openMailContactDirectoryDialog } from "../../../../../../mail/src/frontend/_components/MailContactDirectoryDialog";
 import { RetentionDialog } from "../../outgoing-mail/SendLog";
 import LinuxIdentityPanel from "./LinuxIdentityPanel.island";

@@ -10,7 +10,7 @@ import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 const root = mkdtempSync(resolve(tmpdir(), "gateway-ops-runs-screen-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { RunsScreenFixture } = await import("./runs-fixture");
+const { RunsScreenFixture } = await import("./RunsScreen.browser-fixture");
 const { default: RunRecordPane } = await import("./RunRecordPane");
 const { LocaleProvider } = await import("@k2b/ui");
 
