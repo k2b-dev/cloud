@@ -95,6 +95,7 @@ export default function NotebookSidebarBody(props: {
         </Button>
         <Show when={tags().length > 0 || tagFilter()}>
           <Dropdown.Root
+            class="notebook-sidebar-chip-host"
             position="bottom-left"
             label={t().tags}
             items={[

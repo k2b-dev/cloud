@@ -72,6 +72,7 @@ export function useNotebookSidebar(props: NotebookSidebarProps) {
     workspaceError,
     workspaceRefreshing,
     refreshWorkspace,
+    refreshSnapshot,
   } = useNotebookWorkspaceState(props.ctx, treeSort);
   const canWrite = props.ctx.permission === "write" || props.ctx.permission === "admin";
   const canDeleteOrLockNotes = () => mayDeleteOrLockNotes(props.ctx.permission, notebook().noteDeletePermission);
@@ -504,6 +505,7 @@ export function useNotebookSidebar(props: NotebookSidebarProps) {
     workspaceError,
     workspaceRefreshing,
     refreshWorkspace,
+    refreshSnapshot,
     treeSort,
     treeSortOptions,
     changeTreeSort,

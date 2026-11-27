@@ -119,7 +119,7 @@ export default function NotesListScreen(props: NotesListScreenProps) {
                   type="search"
                   icon="search"
                   label={t().searchNotes}
-                  placeholder={t().searchNotes}
+                  placeholder={t().search}
                   value={state().search ?? ""}
                   onKeyDown={(event) => {
                     if (event.isComposing) return;
@@ -177,29 +177,14 @@ export default function NotesListScreen(props: NotesListScreenProps) {
                   value={number(props.figures.notes)}
                   meta={t().newNotes({ count: number(props.figures.newNotes), days: days() })}
                 />
-                <Cells.Cell
-                  icon="clock"
-                  label={t().lastChange}
-                  // the note that changed last, as plain words so a long title ends in "…"; the cell opens it
-                  value={props.figures.latest?.note?.title ?? (props.figures.latest ? t().deletedNote : t().nothingChanged)}
-                  href={
-                    props.figures.latest?.note
-                      ? buildNoteUrl(notebookId(), props.figures.latest.note.shortId, props.mode === "book" ? "book" : undefined)
-                      : undefined
-                  }
-                  meta={
-                    props.figures.latest
-                      ? t().byWhom({ name: props.figures.latest.actor.displayName, when: when(props.figures.latest.at) })
-                      : undefined
-                  }
-                />
               </Cells>
               <FilterBar
                 query={query()}
                 state={state()}
                 onChange={change}
                 icons={{ favorite: "star", tag: "hash" }}
-                results={t().notesCount({ count: number(props.total) })}
+                // the hero counts the notebook's notes; the bar counts only what a filter or search leaves
+                results={changed() || state().search ? t().notesCount({ count: number(props.total) }) : undefined}
                 end={<ListOrder query={query()} state={state()} onChange={change} />}
               />
             </>
@@ -247,6 +232,8 @@ export default function NotesListScreen(props: NotesListScreenProps) {
                 title: t().tags,
                 width: { min: 120, default: 170 },
                 drop: true,
+                // k2b-ui gap: Table cells (R) – a cell's content ends with "…" and shows its full text as a hint; until
+                // then a second tag that does not fit is cut at the column's edge.
                 cell: (note) => (
                   <Inline>
                     <For each={note.tags.slice(0, 2)}>

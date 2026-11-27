@@ -13,6 +13,8 @@ export const notesListMessages = i18n.define({
       noFavorites: "no favorites",
       tag: "Tag",
       searchNotes: "Search notes",
+      /** The head field's placeholder: short, so it is never cut; its name stays `searchNotes`. */
+      search: "Search",
       lastChanged: "Last changed",
       created: "Created",
       title: "Title",
@@ -39,10 +41,6 @@ export const notesListMessages = i18n.define({
       byPeople: ({ count }: { count: string }) => (count === "1" ? "by 1 person" : `by ${count} people`),
       noChangesYet: "no changes yet",
       newNotes: ({ count, days }: { count: string; days: number }) => `${count} new in ${days} days`,
-      lastChange: "Last change",
-      nothingChanged: "Nothing yet",
-      deletedNote: "A deleted note",
-      byWhom: ({ name, when }: { name: string; when: string }) => `${name} · ${when}`,
     },
     de: {
       notes: "Notizen",
@@ -53,6 +51,7 @@ export const notesListMessages = i18n.define({
       noFavorites: "keine Favoriten",
       tag: "Tag",
       searchNotes: "Notizen durchsuchen",
+      search: "Suchen",
       lastChanged: "Zuletzt geändert",
       created: "Erstellt",
       title: "Titel",
@@ -78,10 +77,6 @@ export const notesListMessages = i18n.define({
       byPeople: ({ count }) => (count === "1" ? "von 1 Person" : `von ${count} Personen`),
       noChangesYet: "noch keine Änderungen",
       newNotes: ({ count, days }) => `${count} neu in ${days} Tagen`,
-      lastChange: "Letzte Änderung",
-      nothingChanged: "Noch nichts",
-      deletedNote: "Eine gelöschte Notiz",
-      byWhom: ({ name, when }) => `${name} · ${when}`,
     },
   },
 });
