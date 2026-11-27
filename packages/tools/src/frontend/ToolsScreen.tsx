@@ -12,7 +12,7 @@ import { toolsWorkspaceMessages } from "./tools-messages";
  * apart at a glance. Colours from the shared data palette, none of them a state colour.
  */
 export const categoryColor: Record<ToolCategory, string> = {
-  images: "#c2410c",
+  images: "#0e7490",
   documents: "#1d4ed8",
   text: "#7c3aed",
   security: "#be123c",
