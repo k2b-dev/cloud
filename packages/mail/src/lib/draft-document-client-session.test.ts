@@ -592,7 +592,7 @@ test("a reopen without unsent input of this device keeps nothing as a copy", asy
     await expect(client.retry()).rejects.toThrow("changed");
     const rests = () => f.requests.filter((request) => new URL(request.url, "http://localhost").pathname.endsWith("/rest"));
     expect(rests()).toHaveLength(0);
-    expect(client.state()).toMatchObject({ restCopied: false, recoveryDraft: null, restUnchanged: false });
+    expect(client.state()).toMatchObject({ restCopied: null, recoveryDraft: null, restUnchanged: false });
   } finally {
     await f.cleanup();
   }

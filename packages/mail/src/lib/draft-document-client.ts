@@ -63,7 +63,9 @@ export const mailSharedDraftMessages = i18n.define({
       stopWaiting: "Stop waiting",
       restSaved: "Unsent changes were saved in a recovery draft.",
       restUnchanged: "This device has no changes beyond the saved draft.",
-      restCopied: "This device's unsent changes were kept as a recovery copy of this draft. Reopen the draft to restore them.",
+      restCopied: "This device's unsent changes were kept as a recovery copy of the open draft. Open it to restore them.",
+      restCopiedClosed:
+        "This device's unsent changes were kept as a recovery copy of this draft. It is being sent, so they can be restored only if the send is undone.",
       openRest: "Open recovery draft",
       reopen: "Reopen current draft",
       restLabel: "Recovery draft",
@@ -105,7 +107,9 @@ export const mailSharedDraftMessages = i18n.define({
       restSaved: "Ungesendete Änderungen wurden in einem Rest-Entwurf gespeichert.",
       restUnchanged: "Dieses Gerät hat keine Änderungen gegenüber dem gespeicherten Entwurf.",
       restCopied:
-        "Die ungesendeten Änderungen dieses Geräts wurden als Wiederherstellungskopie dieses Entwurfs gesichert. Öffne den Entwurf erneut, um sie wiederherzustellen.",
+        "Die ungesendeten Änderungen dieses Geräts wurden als Wiederherstellungskopie des offenen Entwurfs gesichert. Öffne ihn, um sie wiederherzustellen.",
+      restCopiedClosed:
+        "Die ungesendeten Änderungen dieses Geräts wurden als Wiederherstellungskopie dieses Entwurfs gesichert. Er wird gerade gesendet; wiederherstellen lassen sie sich nur, wenn das Senden rückgängig gemacht wird.",
       openRest: "Rest-Entwurf öffnen",
       reopen: "Aktuellen Entwurf öffnen",
       restLabel: "Rest-Entwurf",
@@ -117,7 +121,7 @@ export const mailSharedDraftMessages = i18n.define({
 const durableSchema = draftDocumentSaveSchema;
 const restSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("unchanged"), durableSourceState: z.string() }),
-  z.object({ status: z.literal("recovered"), draft: draftSchema, durableSourceState: z.string() }),
+  z.object({ status: z.enum(["kept", "recovered"]), draft: draftSchema, durableSourceState: z.string() }),
 ]);
 
 /** Includes delete sets: state vectors alone cannot prove that a deletion was stored. */
@@ -186,8 +190,11 @@ export type MailSharedDraftState = {
   recipientsChanged: boolean;
   recoveryDraft: MailDraft | null;
   restUnchanged: boolean;
-  /** Refused input became a recovery copy of this same draft; reopening offers to restore it. */
-  restCopied: boolean;
+  /**
+   * The input became a recovery copy of an existing draft (the server's `kept`): `open` when that draft can
+   * restore it, `closed` while it is being sent. `recoveryDraft` names it when it is another draft.
+   */
+  restCopied: "open" | "closed" | null;
   /** The comparison with the closed draft failed: the device's input is not known to be safe yet. */
   restFailed: boolean;
   /** A refused external proposal, independent of incoming document projections. */
@@ -377,7 +384,7 @@ export async function openMailDraftDocumentClient(options: {
       recipientsChanged: draftRecipientConfirmation(projection) !== draftRecipientConfirmation(recipientBaseline),
       recoveryDraft: null,
       restUnchanged: false,
-      restCopied: false,
+      restCopied: null,
       restFailed: false,
       rejectedEdit: null,
     };
@@ -800,10 +807,11 @@ export async function openMailDraftDocumentClient(options: {
         const sourceState = encoding.toBase64(Y.encodeStateAsUpdate(doc));
         const requestId = await draftRecoveryRequestId(identity, sourceState);
         const result = restSchema.parse(await request("/rest", { generation, clientId: requestId, state: sourceState }));
-        if (result.status === "recovered" && result.draft.id === options.draft.id) {
-          // An open reply keeps its conversation slot: the input waits as its own recovery copy.
-          state.restCopied = true;
-          state.message = t().restCopied;
+        if (result.status === "kept") {
+          // The server names the draft that holds the copy; only an open one can restore it.
+          state.restCopied = result.draft.state === "draft" ? "open" : "closed";
+          state.recoveryDraft = result.draft.id === options.draft.id ? null : result.draft;
+          state.message = state.restCopied === "open" ? t().restCopied : t().restCopiedClosed;
           acknowledge(encoding.fromBase64(result.durableSourceState));
         } else if (result.status === "recovered") {
           state.recoveryDraft = result.draft;

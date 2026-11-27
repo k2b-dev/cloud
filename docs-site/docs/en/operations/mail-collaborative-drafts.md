@@ -139,15 +139,16 @@ history requires explicit recovery and cannot be sent.
 
 A device can hold unsent input whose base the log has already pruned. An open
 draft then refuses that input instead of guessing where it belongs. The browser
-keeps the input as a recovery copy of the reply, or as a separate Rest draft for
-a new message, and clears it from the device. Reopening the draft edits the
-current version and offers to restore the copy. A draft with incomplete history
-keeps the explicit recovery below instead. A draft lists at most 100 recovery
-copies, so Mail refuses a new copy beyond that; the device keeps its text.
+keeps the input as a recovery copy of that draft and clears it from the device.
+Reopening the draft edits the current version and offers to restore the copy.
+A draft with incomplete history keeps the explicit recovery below instead. A
+draft lists at most 100 recovery copies, so Mail refuses a new copy beyond that;
+the device keeps its text.
 
-Sending or discarding a draft ends the only place that offers its recovery
-copies. Mail first turns each unrestored copy into a separate new draft. A copy
-whose sender no longer exists stays with the draft and does not block the send.
+When the reply is already scheduled or sending, for example by another person,
+a mailbox-wide writer's unsent input becomes a separate new message. An assigned-only writer may not
+start one; their input stays a recovery copy of the scheduled reply, which can
+be restored only if the send is undone.
 
 With Sync 7.1.1, a join whose missing prefix is covered by the SQL snapshot
 rebases in place. A gap in the live stream reconnects with backoff and resends

@@ -34,7 +34,7 @@ import {
 } from "../service/draft-document-snapshots";
 import * as draftDocumentService from "../service/draft-documents";
 import { acceptDraftDocumentUpdate, mailDraftDocumentLog, readDraftDocument } from "../service/draft-documents";
-import { discardDraft, getDraft, recoverDraftDocumentRest } from "../service/drafts";
+import { getDraft, MAX_DRAFT_RECOVERY_COPIES, recoverDraftDocumentRest } from "../service/drafts";
 import { localizeMailError } from "../service/error-messages";
 import { enqueueMailInvalidation, mailLive } from "../service/live";
 import { createMailbox } from "../service/mailboxes";
@@ -386,9 +386,6 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
       state: Y.mergeUpdates([base.fresh.state, typed]),
     });
   };
-  const draftsWithBody = (body: string) =>
-    sql<{ intent: string; conversation_id: string | null; state: string }[]>`SELECT intent, conversation_id, state FROM mail.drafts
-      WHERE mailbox_id = ${mailboxId}::uuid AND body_markdown = ${body}`;
   const copiesOf = (draftId: string) => sql`SELECT 1 FROM mail.draft_recovery_copies WHERE draft_id = ${draftId}::uuid`;
 
   test("device input whose base the log pruned is refused on every join; Rest keeps it as the open reply's recovery copy", async () => {
@@ -448,7 +445,7 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
       state: deviceState,
     };
     const kept = value(await recoverDraftDocumentRest(request));
-    if (kept.status !== "recovered") throw new Error("Expected the refused input to be kept");
+    if (kept.status !== "kept") throw new Error("Expected the refused input to be kept");
     // The reply keeps its conversation slot; the input waits as its own recovery copy.
     expect(kept.draft.id).toBe(value(await getDraft(context, mailboxId, target.id)).id);
     expect(Buffer.from(kept.durableSourceState)).toEqual(Buffer.from(deviceState));
@@ -481,7 +478,7 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     expect(fresh.messages.filter((packet) => packet.type === "error")).toEqual([]);
   });
 
-  test("Rest refuses refused-input copies for incomplete history; send and discard turn a reply's copy into a new draft", async () => {
+  test("Rest keeps refused input on the open draft for every intent and refuses incomplete history", async () => {
     const quarantined = await replyDraft();
     await read(); // Seeds the shared document.
     await sql`UPDATE mail.drafts SET doc_history_complete = false WHERE id = ${quarantined.id}::uuid`;
@@ -499,26 +496,54 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     expect(refused.ok).toBe(false);
     expect(await copiesOf(quarantined.id)).toHaveLength(0);
 
-    const discarded = await replyDraft();
-    value(await keepDeviceInput(discarded, "Device input before discard"));
-    expect(await copiesOf(discarded.id)).toHaveLength(1);
-    value(await discardDraft({ context, mailboxId, draftId: discarded.id, expectedRevision: (await read()).revision }));
-    expect(await copiesOf(discarded.id)).toHaveLength(0);
-    expect(await draftsWithBody("Device input before discard")).toEqual([{ intent: "new", conversation_id: null, state: "draft" }]);
+    // A new message keeps its refused input as its own copy too, not as a second full draft, and so does a second refusal.
+    const compose = await draft();
+    const drafts = async () => (await sql`SELECT 1 FROM mail.drafts WHERE mailbox_id = ${mailboxId}::uuid`).length;
+    const before = await drafts();
+    for (const body of ["Device compose", "Device compose again"]) {
+      const kept = value(await keepDeviceInput(compose, body));
+      expect(kept.status).toBe("kept");
+      if (kept.status === "unchanged") throw new Error("Expected a recovery copy");
+      expect(kept.draft.id).toBe(value(await getDraft(context, mailboxId, compose.id)).id);
+    }
+    expect(await copiesOf(compose.id)).toHaveLength(2);
+    expect(await drafts()).toBe(before);
+  });
 
-    const sent = await replyDraft();
-    value(await keepDeviceInput(sent, "Device input before send"));
-    expect(await copiesOf(sent.id)).toHaveLength(1);
-    const current = await read();
-    const checked = value(await reviewDraftComposeSafety({ context, mailboxId, draftId: sent.id, expectedRevision: current.revision }));
+  test("Rest stops at the listed recovery copies, and unchanged rests never count toward them", async () => {
+    const target = await replyDraft();
+    const base = await read();
+    if (context.actor.kind !== "user") throw new Error("User fixture required");
+    await sql`INSERT INTO mail.draft_document_rests (source_draft_id, generation, actor_kind, actor_id, client_id, source_state)
+      SELECT ${target.id}::uuid, ${base.generation}::bigint, 'user', ${context.actor.user.id}::uuid, gen_random_uuid(), decode('00', 'hex')
+      FROM generate_series(1, ${MAX_DRAFT_RECOVERY_COPIES})`;
+    expect(value(await keepDeviceInput(target, "Below the limit")).status).toBe("kept");
+    await sql`INSERT INTO mail.draft_recovery_copies (draft_id, base_revision, content, content_hash, creator_kind)
+      SELECT ${target.id}::uuid, 1, '{}'::jsonb, lpad(to_hex(n), 64, '0'), 'system'
+      FROM generate_series(1, ${MAX_DRAFT_RECOVERY_COPIES - 1}) AS n`;
+    expect(await copiesOf(target.id)).toHaveLength(MAX_DRAFT_RECOVERY_COPIES);
+    const full = await keepDeviceInput(target, "Beyond the limit");
+    expect(full.ok).toBe(false);
+    expect(await copiesOf(target.id)).toHaveLength(MAX_DRAFT_RECOVERY_COPIES);
+  });
+
+  test("input refused after another person scheduled the send becomes a separate new message", async () => {
+    const target = await replyDraft();
+    const base = await read();
+    const typed = await createDraftRevisionUpdate(
+      base.fresh.state,
+      { ...base.fresh.content, body: "Device after send" },
+      { deadline: Date.now() + 5000 },
+    );
+    const checked = value(await reviewDraftComposeSafety({ context, mailboxId, draftId: target.id, expectedRevision: base.revision }));
     const command = value(
       await createActorCommand({
-        context,
+        context: otherContext,
         mailboxId,
         enqueue: false,
         input: {
           kind: "send",
-          draftId: sent.id,
+          draftId: target.id,
           senderIdentityId: identity.id,
           expectedDraftRevision: checked.revision,
           expectedContentHash: checked.contentHash,
@@ -528,10 +553,28 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
         },
       }),
     );
-    expect(await copiesOf(sent.id)).toHaveLength(0);
-    expect(await draftsWithBody("Device input before send")).toEqual([{ intent: "new", conversation_id: null, state: "draft" }]);
-    const [outbox] = await sql<{ id: string }[]>`SELECT id FROM mail.outbox_submissions WHERE command_id=${command.id}::uuid`;
-    value(await cancelScheduledSend({ context, mailboxId, scheduledSendId: outbox!.id, input: { disposition: "draft" } }));
+    try {
+      const [scheduled] = await sql<{ state: string }[]>`SELECT state FROM mail.drafts WHERE id = ${target.id}::uuid`;
+      expect(scheduled?.state).toBe("scheduled");
+      const request = {
+        context,
+        mailboxId,
+        draftId: target.id,
+        generation: base.generation,
+        clientId: crypto.randomUUID(),
+        state: Y.mergeUpdates([base.fresh.state, typed]),
+      };
+      const rest = value(await recoverDraftDocumentRest(request));
+      // The scheduled reply still holds its slot and cannot restore a copy; the text becomes its own message.
+      if (rest.status !== "recovered") throw new Error(`Expected a new draft, got ${rest.status}`);
+      expect(rest.draft).toMatchObject({ intent: "new", conversationId: null, body: "Device after send", state: "draft" });
+      expect(rest.draft.id).not.toBe(target.id);
+      expect(await copiesOf(target.id)).toHaveLength(0);
+      expect(value(await recoverDraftDocumentRest(request))).toEqual(rest);
+    } finally {
+      const [outbox] = await sql<{ id: string }[]>`SELECT id FROM mail.outbox_submissions WHERE command_id=${command.id}::uuid`;
+      value(await cancelScheduledSend({ context: otherContext, mailboxId, scheduledSendId: outbox!.id, input: { disposition: "draft" } }));
+    }
   });
 
   test.each([

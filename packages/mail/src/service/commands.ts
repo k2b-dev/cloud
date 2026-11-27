@@ -27,7 +27,6 @@ import { checkCommandKeepProtection, isKeptMessage, keepError } from "./conversa
 import { withDraftDocumentCommit } from "./draft-document-log";
 import { type FrozenDraftSends, saveDraftSendBoundary, withFrozenDraftSends } from "./draft-document-send";
 import { invalidateDraftLeaseAfterSend } from "./draft-leases";
-import { restRecoveryCopiesInTransaction } from "./drafts";
 import { resolveMailExecution } from "./execution";
 import { mailLive } from "./live";
 import { loadInlineLogoContent } from "./mailbox-logos";
@@ -662,13 +661,6 @@ const createSendOutbox = async (params: {
     internalDate: effectiveScheduledAt,
     byteLength,
   });
-  if (params.context)
-    await restRecoveryCopiesInTransaction({
-      db: params.db,
-      context: params.context,
-      mailboxId: params.mailboxId,
-      draftId: prepared.draftId,
-    });
   await params.db`
     UPDATE mail.drafts
     SET

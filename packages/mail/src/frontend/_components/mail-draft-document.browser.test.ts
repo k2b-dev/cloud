@@ -179,7 +179,7 @@ const server = Bun.serve<{ document: boolean }>({
           return Response.json({ status: "unchanged", durableSourceState: encoding.toBase64(frozen) });
         // An open draft keeps refused input as its own recovery copy, as Mail does for a reply.
         if (!frozen && lifecycle === "draft" && body.generation === generation)
-          return Response.json({ status: "recovered", draft: { ...draft(), recoveryCopyCount: 1 }, durableSourceState: body.state });
+          return Response.json({ status: "kept", draft: { ...draft(), recoveryCopyCount: 1 }, durableSourceState: body.state });
         return Response.json({
           status: "recovered",
           draft: { ...draft(), ...readDraftDocument(doc), id: "Rest01", state: "draft" },
@@ -538,17 +538,25 @@ test("input the open draft refuses becomes its recovery copy once, and the reloa
     await editor.click();
     await page.keyboard.press("Control+Home");
     await page.keyboard.insertText("Refused ");
-    // Before the fix: "Dieser Entwurf hat sich geändert …", the bytes stay on the device and every reload repeats it.
-    await page.waitForFunction(() => window.mailSharedFixture.state()?.restCopied);
-    expect(await page.evaluate(() => window.mailSharedFixture.state()?.message)).toContain("Wiederherstellungskopie");
+    // The refusal settles either as a recovery copy or, before the fix, as "Dieser Entwurf hat sich geändert …".
+    const settled = () =>
+      page.waitForFunction(() => {
+        const state = window.mailSharedFixture?.state();
+        return Boolean(
+          state && ((state.ready && !window.mailSharedFixture.unsent()) || (state.terminal && (state.restCopied || state.error))),
+        );
+      });
+    await settled();
+    const refusal = await page.evaluate(() => window.mailSharedFixture.state()?.message);
+    await page.reload();
+    await settled();
+    // Before the fix the reload sent the stored input again and the room refused it again: terminal with the reopen prompt.
+    expect(await page.evaluate(() => window.mailSharedFixture.state()?.terminal)).toBe(false);
     expect(await page.evaluate(() => window.mailSharedFixture.state()?.error)).toBe(false);
+    expect(refusal).toContain("Wiederherstellungskopie des offenen Entwurfs");
     expect(recoveries).toHaveLength(1);
     expect(recoveries[0]?.generation).toBe("1");
     await waitStored(page, 0);
-    await page.reload();
-    await page.waitForFunction(() => window.mailSharedFixture?.state()?.ready);
-    expect(await page.evaluate(() => window.mailSharedFixture.state()?.terminal)).toBe(false);
-    expect(await page.evaluate(() => window.mailSharedFixture.state()?.error)).toBe(false);
     expect(await page.evaluate(() => window.mailSharedFixture.content().body)).toBe(base.body);
     expect(await page.locator(".cm-content").first().getAttribute("contenteditable")).toBe("true");
     refuseInput = false;

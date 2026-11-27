@@ -327,6 +327,10 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   // leave this null and cannot be mistaken for a quarantine repair receipt.
   await tx`ALTER TABLE mail.draft_document_rests ADD COLUMN IF NOT EXISTS quarantine_revision bigint
     CHECK (quarantine_revision > 0), ADD COLUMN IF NOT EXISTS quarantine_state bytea`.simple();
+  // Device input kept as a recovery copy of an existing draft. Many rests may name the same
+  // draft, so this cannot reuse the unique rest_draft_id, which names a draft the rest created.
+  await tx`ALTER TABLE mail.draft_document_rests ADD COLUMN IF NOT EXISTS kept_draft_id uuid
+    REFERENCES mail.drafts(id) ON DELETE CASCADE`.simple();
 
   await tx.unsafe(automationLogSchema).simple();
   await ensureMailWorkflowEffectOrderSchema(tx);
