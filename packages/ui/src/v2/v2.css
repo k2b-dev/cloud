@@ -1095,7 +1095,7 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.k2-ui .k2-row:where(:not([data-lines="3"]):not(.k2-list > [data-lines="2"])) > .k2-row-l1 > .k2-row-title {
+.k2-ui .k2-row:where(:not([data-lines="3"]):not([data-in-list][data-lines="2"])) > .k2-row-l1 > .k2-row-title {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -1112,6 +1112,11 @@
 }
 .k2-ui .k2-row-l2 {
   grid-area: l2;
+}
+/* A line of the other direction (`dir="auto"`, an Arabic message in a German list) stands on the page's side like the
+   others; its "…" still falls at its own end (review of #4328). */
+.k2-ui :is(.k2-row-l2, .k2-row-l3) {
+  text-align: match-parent;
 }
 /* Line 2 reaches the end of the row while nothing stands beside it: only an end beside line 2 (a row with a time and
    two or three lines), or the marks of a row of two lines, keep it in its column. */
@@ -1150,7 +1155,7 @@
    title as well, so every row of the list keeps one height (B rule 4; W9 26.11.: long names and messages grew a chat
    list to 52, 68 and 84 px). A row of two on its own, such as a step in a group, keeps two lines of title. */
 .k2-ui .k2-row[data-lines="3"] > .k2-row-l1 > .k2-row-title,
-.k2-ui .k2-list > .k2-row[data-lines="2"] > .k2-row-l1 > .k2-row-title,
+.k2-ui .k2-row[data-in-list][data-lines="2"] > .k2-row-l1 > .k2-row-title,
 .k2-ui .k2-row[data-lines="3"] > .k2-row-l2,
 .k2-ui .k2-row[data-lines="3"] > .k2-row-l3 {
   overflow: hidden;
@@ -1159,7 +1164,7 @@
 }
 /* a row of one line in a list cuts its title too (W7 26.11.: a long chat name took three lines in "Alle Chats"); on
    the phone it keeps two lines of title (see below) */
-.k2-ui .k2-list > .k2-row[data-lines="1"] > .k2-row-l1 > .k2-row-title {
+.k2-ui .k2-row[data-in-list][data-lines="1"] > .k2-row-l1 > .k2-row-title {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4311,20 +4316,26 @@
     padding: 8px 0 4px;
   }
   /* a row of one line in a list keeps two lines of title on the phone, then "…" */
-  .k2-ui .k2-list > .k2-row[data-lines="1"] > .k2-row-l1 > .k2-row-title {
+  .k2-ui .k2-row[data-in-list][data-lines="1"] > .k2-row-l1 > .k2-row-title {
     display: -webkit-box;
     white-space: normal;
   }
-  /* with a time as well, the time is a quiet line of its own under the text and the deed comes under it, so the two
-     never lie on one another (W1b 26.11.) */
+  /* with a time as well, the time and the deed share the line under the text, the time first, so the two never lie
+     on one another (W1b 26.11.) and the row grows by one line only (review of #4328: four lines made it 109 px) */
   .k2-ui .k2-row[data-action][data-time] {
-    grid-template-areas: "lead l1" "lead l2" "lead time" "lead end";
+    grid-template-areas: "lead l1 l1" "lead l2 l2" "lead time end";
+    grid-template-columns: auto auto minmax(0, 1fr);
   }
   .k2-ui .k2-row[data-action][data-time]:not(:has(> .k2-row-lead > *)):not(.k2-list:has(> .k2-row > .k2-row-lead > *) > .k2-row) {
-    grid-template-areas: "l1" "l2" "time" "end";
+    grid-template-areas: "l1 l1" "l2 l2" "time end";
+    grid-template-columns: auto minmax(0, 1fr);
   }
   .k2-ui .k2-row[data-action][data-time] > .k2-row-end {
     grid-area: end;
+    padding: 0 0 0 8px;
+  }
+  .k2-ui .k2-row[data-action][data-time] > :is(.k2-row-time, .k2-row-end) {
+    margin-top: 4px;
   }
   .k2-ui .k2-row[data-action][data-time] > .k2-row-time {
     padding-left: 0;

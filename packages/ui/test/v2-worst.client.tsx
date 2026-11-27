@@ -12,8 +12,21 @@ declare global {
     __k2GrowNote?: () => void;
     /** Opens the tab of this name. */
     __k2OpenTab?: (label: string) => void;
+    /** The hint a person gets while the pointer rests on the middle of this line: the title of the element it hits. */
+    __k2HintOf?: (line: HTMLElement) => string | null;
   }
 }
+
+window.__k2HintOf = (line) => {
+  const box = line.getBoundingClientRect();
+  const x = box.left + box.width / 2;
+  const y = box.top + box.height / 2;
+  // the element the pointer hits there, such as the link that opens a row and lies over its lines
+  const hit = document.elementFromPoint(x, y);
+  if (!hit) return null;
+  hit.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: x, clientY: y }));
+  return hit.getAttribute("title");
+};
 
 const [note, setNote] = createSignal(["Erste Zeile", "Zweite Zeile", "Dritte Zeile", "Vierte Zeile"].join("\n"));
 window.__k2GrowNote = () => setNote((text) => `${text}\nFünfte Zeile\nSechste Zeile`);
@@ -82,7 +95,28 @@ const chats = [
     text: "המשלוח נדחה ליום שני בגלל תקלה במחסן, נא לעדכן את הלקוחות ואת לוח הזמנים של ההזמנות הפתוחות לפני סוף השבוע. ".repeat(3),
   },
 ];
-if (scenario === "chats")
+// `<body data-case="deeds">`: endpoints of Tools with their one deed and the time they were last called (W1b): on the
+// phone the time and the deed share the line under the text
+if (scenario === "deeds")
+  render(
+    () => (
+      <Workspace>
+        <Pane label="Spalte">
+          <List label="Endpunkte">
+            <Row
+              icon="webhook"
+              lines={["Stripe Zahlungen", "https://cloud.example.test/tools/api/webhooks/receive/stripe"]}
+              time="zuletzt heute, 11:29"
+              action={{ label: "Adresse kopieren", onClick: () => undefined }}
+            />
+            <Row icon="webhook" lines={["Lieferanten", "https://cloud.example.test/tools/api/webhooks/receive/suppliers"]} />
+          </List>
+        </Pane>
+      </Workspace>
+    ),
+    root,
+  );
+else if (scenario === "chats")
   render(
     () => (
       <Workspace>
@@ -92,6 +126,7 @@ if (scenario === "chats")
               <Row
                 avatar={{ name: chat.name }}
                 lines={[chat.name, chat.text]}
+                href={`#chat-${chat.name.length}`}
                 meta={chat.meta}
                 time={chat.time ?? "11:45"}
                 end={<Button variant="ghost" icon="dots" label={`Mehr zu ${chat.name}`} />}

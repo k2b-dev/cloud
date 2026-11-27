@@ -213,7 +213,8 @@ const secondLines = (page: Page) =>
         return {
           past: Math.max(0, Math.round(right - inner)),
           under,
-          title: (line.getAttribute("title") ?? "").length > 200 || (line.textContent ?? "").length < 200,
+          // a cut line says all of it where the pointer rests on it
+          title: (window.__k2HintOf?.(line) ?? "").length > 200 || (line.textContent ?? "").length < 200,
         };
       }),
   );
@@ -254,7 +255,7 @@ test("a phone row of a large table keeps its long name on one line", async () =>
             height: Math.round(row.getBoundingClientRect().height),
             lines: Math.round(title.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(title).lineHeight)),
             cut: title.scrollWidth > title.clientWidth + 1,
-            hint: title.getAttribute("title") === title.textContent,
+            hint: window.__k2HintOf?.(title) === title.textContent,
           };
         }),
       );
@@ -382,7 +383,9 @@ for (const width of [1440, 390])
               lines: Math.round(title.getBoundingClientRect().height / line),
               cut: title.scrollHeight > title.clientHeight + 1 || title.scrollWidth > title.clientWidth + 1,
               // the whole text on hover where the title can be cut; no hint a screen reader would read twice where not
-              hint: title.getAttribute("title") === null ? "none" : title.getAttribute("title") === title.textContent ? "whole" : "other",
+              hint: ((said) => (said === null ? "none" : said === title.textContent ? "whole" : "other"))(
+                window.__k2HintOf?.(title) ?? null,
+              ),
             };
           }),
         );
@@ -419,7 +422,7 @@ for (const width of [1440, 1024, 390, 320])
             const text = row.querySelector<HTMLElement>(":scope > .k2-row-l2")!;
             const meta = row.querySelector<HTMLElement>(".k2-row-meta");
             const hint = (part: HTMLElement) =>
-              part.getAttribute("title") === null ? "none" : part.getAttribute("title") === part.textContent ? "whole" : "other";
+              ((said) => (said === null ? "none" : said === part.textContent ? "whole" : "other"))(window.__k2HintOf?.(part) ?? null);
             const name = title.getBoundingClientRect();
             const count = meta?.getBoundingClientRect();
             return {
@@ -427,6 +430,8 @@ for (const width of [1440, 1024, 390, 320])
               lines: [line(title), line(text)],
               cut: [title.scrollWidth > title.clientWidth + 1, text.scrollWidth > text.clientWidth + 1],
               hints: [hint(title), hint(text)],
+              // the pointer on the name hits the link that opens the row, which lies over its lines (review of #4328)
+              opens: document.elementFromPoint(name.left + name.width / 2, name.top + name.height / 2)?.classList.contains("k2-row-open"),
               // the count stands after the name, on its line
               beside: !count || (count.left >= name.right - 0.5 && count.top < name.bottom && count.bottom > name.top),
             };
@@ -435,17 +440,15 @@ for (const width of [1440, 1024, 390, 320])
         expect(new Set(rows.map((row) => row.height)).size).toBe(1);
         expect(rows.map((row) => row.lines)).toEqual(rows.map(() => [1, 1]));
         expect(rows.every((row) => row.beside)).toBe(true);
-        // what is cut says all of it on hover; a short name has no hint that a screen reader would read twice
-        for (const row of rows) for (const [index, cut] of row.cut.entries()) if (cut) expect(row.hints[index]).toBe("whole");
-        expect(rows.map((row) => row.hints[0])).toEqual(["none", "whole", "none", "none", "none", "whole", "whole", "none", "none"]);
-        // the long ones are cut where the column is narrow; a name of 20 signs fits beside its time even at 320 px
+        expect(rows.every((row) => row.opens)).toBe(true);
+        // a cut line says all of it where the pointer rests on it; a whole one has no hint a screen reader would read twice
+        expect(rows.map((row) => row.hints)).toEqual(rows.map((row) => row.cut.map((cut) => (cut ? "whole" : "none"))));
+        // the long ones are cut where the column is narrow
         if (width <= 1024)
-          expect(rows.slice(0, 5).map((row) => row.cut)).toEqual([
+          expect(rows.slice(0, 3).map((row) => row.cut)).toEqual([
             [false, true],
             [true, false],
             [false, true],
-            [false, false],
-            [false, false],
           ]);
         if (width <= 390) expect(rows.slice(5, 7).map((row) => row.cut[0])).toEqual([true, true]);
         const layout = await measureV2Layout(page, { root: "#root" });
@@ -486,6 +489,35 @@ for (const width of [1440, 390])
       "chats",
     );
   });
+
+// Review of #4328: on the phone a row with a deed and a time took four lines (93 → 109 px). The time and the deed share
+// the line under the text, the time first, apart from each other, and the row grows by that one line only.
+test("on the phone a row's time and its deed share one line under the text", async () => {
+  await withPage(
+    390,
+    async (page) => {
+      const parts = await page.locator(".k2-row[data-action][data-time]").evaluate((row) => {
+        const box = (selector: string) => row.querySelector(selector)!.getBoundingClientRect();
+        const time = box(":scope > .k2-row-time");
+        const deed = box(":scope > .k2-row-end > .k2-btn");
+        const text = box(":scope > .k2-row-l2");
+        return {
+          line: Math.abs(time.top + time.height / 2 - (deed.top + deed.height / 2)) < 2,
+          apart: time.right <= deed.left + 0.5,
+          under: time.top >= text.bottom - 0.5,
+          height: Math.round(row.getBoundingClientRect().height),
+        };
+      });
+      expect([parts.line, parts.apart, parts.under]).toEqual([true, true, true]);
+      // 8 + 20 + 16 + 4 + 28 + 8 px and its line: two lines of text, then the line of time and deed (was 109 px)
+      expect(parts.height).toBeLessThanOrEqual(85);
+      const layout = await measureV2Layout(page, { root: "#root" });
+      expect(layout.past).toEqual([]);
+      expect(layout.squeezed).toEqual([]);
+    },
+    "deeds",
+  );
+});
 
 // W1b (26.11.): a row of one line with a time and a deed put both in one place, so the deed lay on the time. The time
 // stands first, then the deed, each in a place of its own, and the measure reports parts that lie on one another.

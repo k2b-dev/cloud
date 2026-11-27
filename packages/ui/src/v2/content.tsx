@@ -14,6 +14,7 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { renderSafeMarkdown } from "../content/MarkdownView";
+import { hintAt, showHint } from "../internal/truncated-title";
 import { useLocale } from "../intl/locale";
 import { useGrip } from "./behavior/resize";
 import { ActionButton, CopyButton } from "./button";
@@ -407,16 +408,8 @@ export const RowOpen = (props: { href?: string; onNavigate?: OnNavigate; onOpen?
   </Show>
 );
 
-/**
- * The signs a row's title holds in its two lines in the narrowest column (320 px, about 256 px of title at 14 px): up
- * to this it is never cut, so it needs no hint on hover.
- */
-const TITLE_FITS_TWO_LINES = 60;
-/**
- * The signs one line of title in a list holds beside its time in the narrowest column (about 170 px of title at 320
- * px): up to this it is never cut, so it needs no hint on hover.
- */
-const TITLE_FITS_ONE_LINE = 20;
+/** The lines of a row that may be cut: its title and its second and third line. */
+const ROW_LINES = ":scope > .k2-row-l1 > .k2-row-title, :scope > .k2-row-l2, :scope > .k2-row-l3";
 
 /** One entry: from column edge to column edge, square, also when it opens something. */
 export const Row = (props: RowProps) => {
@@ -426,15 +419,11 @@ export const Row = (props: RowProps) => {
   const lines = () => text().length;
   // A row of three lines cuts each line with "…" and a row of two its second line. In a list a title is one line too (a
   // row of one: on the desktop), so every row of the list keeps one height (B rule 4, W7 and W9 26.11.); any other title
-  // stops after two lines. A cut line of words says all on hover; a title only where its lines can be too few, so a
-  // short title has no hint that a screen reader would read twice (review of #4259).
-  const cut = (index: number) => {
-    const line = text()[index];
-    if (typeof line !== "string" || !line.trim()) return undefined;
-    if (lines() === 3 || index > 0) return line;
-    const fits = inList ? TITLE_FITS_ONE_LINE : TITLE_FITS_TWO_LINES;
-    return Array.from(line).length > fits ? line : undefined;
-  };
+  // stops after two lines. A line that is cut says all of it on hover, measured while the pointer rests on it, on the
+  // element it hits (the link that opens the row lies over the lines); a line that is whole has no hint a screen reader
+  // would read twice (review of #4328).
+  const hint = (event: PointerEvent & { currentTarget: HTMLElement }) =>
+    showHint(event.target, hintAt(event.currentTarget.querySelectorAll<HTMLElement>(ROW_LINES), event.clientX, event.clientY));
   const meta = resolveChildren(() => props.meta);
   const time = resolveChildren(() => props.time);
   const end = resolveChildren(() => props.end);
@@ -445,6 +434,9 @@ export const Row = (props: RowProps) => {
       class="k2-row"
       data-k2-part="Row"
       role={inList ? "listitem" : undefined}
+      // a row of a list keeps one height: the stylesheet asks this, not where the row stands in the page (review of #4328)
+      data-in-list={inList ? "" : undefined}
+      onPointerMove={hint}
       data-open={props.href !== undefined || props.onOpen ? "" : undefined}
       data-lines={String(lines())}
       data-unread={props.unread ? "" : undefined}
@@ -505,7 +497,7 @@ export const Row = (props: RowProps) => {
       </span>
       <span class="k2-row-l1">
         {/* user text runs in its own direction (an Arabic or Hebrew line in a German page), "…" at its end */}
-        <span class="k2-row-title" id={title} title={cut(0)} dir="auto">
+        <span class="k2-row-title" id={title} dir="auto">
           {text()[0]}
         </span>
         <Show when={meta() !== undefined}>
@@ -513,12 +505,12 @@ export const Row = (props: RowProps) => {
         </Show>
       </span>
       <Show when={lines() > 1}>
-        <span class="k2-row-l2" title={cut(1)} dir="auto">
+        <span class="k2-row-l2" dir="auto">
           {text()[1]}
         </span>
       </Show>
       <Show when={lines() > 2}>
-        <span class="k2-row-l3" title={cut(2)} dir="auto">
+        <span class="k2-row-l3" dir="auto">
           {text()[2]}
         </span>
       </Show>

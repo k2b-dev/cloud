@@ -164,15 +164,15 @@ inside it.
   72 px (mail: sender, subject, preview).
   The second line of two or three is one line, cut with "…" before what
   stands beside it (an address or JSON without a break never runs under the
-  marks or a deed); a cut line of words says all of it on hover. In a
-  `List` the title is one line too (that of a row of one on the desktop; on
-  the phone it may take two), so every row of the list keeps one height; it
-  says all of it on hover when it is longer than its line holds beside a
-  time (more than 20 signs). A row of three cuts each line. Any other title
-  wraps, but stops after two lines with "…"; one longer than two lines can
-  hold (more than 60 signs) says all of it on hover. Each line runs in the
-  direction of its own text (`dir="auto"`): an Arabic or Hebrew line stands
-  right to left with its "…" at its end, also in a German page.
+  marks or a deed). In a `List` the title is one line too (that of a row of
+  one on the desktop; on the phone it may take two), so every row of the
+  list keeps one height. A row of three cuts each line. The title of a
+  `Row` outside a `List` wraps, but stops after two lines with "…". A line
+  that is cut says all of it on hover, measured while the pointer rests on
+  it, also through the link that opens the row; a whole line has no hint.
+  Each line runs in the direction of its own text (`dir="auto"`) and keeps
+  the page's alignment: an Arabic or Hebrew line in a German page has its
+  "…" at its own end.
 - lead: `icon` + `color`, or `avatar`, or a dot when `unread`.
 - `meta` (quiet note after the title, a count), `time` (top right). Title
   and `meta` share the first line in equal parts, and each takes only what
