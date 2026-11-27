@@ -1,12 +1,12 @@
 import { createSignal, Show } from "solid-js";
 import { render } from "solid-js/web";
-import { Bar, Dialog, Nav, Pane, Section, StatusRow, Text, Workspace } from "../src/v2";
+import { Bar, Button, Dialog, Nav, Pane, Section, StatusRow, Text, Workspace } from "../src/v2";
 
 // A split inside a column, as Files and the pairing screen build it, in a window like Cloud's shell (66 px beside the
 // workspace). `window.__k2Case` chooses before this bundle runs:
 // - "files": a column with a status row whose content is a list (flexible, keeps 400 px) beside a detail of 320 to
 //   380 px. The workspace declares the detail (`detail={320}`), so its room counts open or closed;
-//   `window.__k2Open(false)` closes it.
+//   `window.__k2Detail(false)` closes it.
 // - "inner": the same column, whose split holds a list of 320 to 360 px beside a main column (no detail): the column
 //   asks the workspace for 320 + 1 + 400 px.
 // - "dialog": a column of 400 px with a dialog open over it, whose content is a split of 400 + 320 px: the dialog asks
@@ -18,7 +18,7 @@ declare global {
   interface Window {
     __k2Mounted?: boolean;
     __k2Case?: "files" | "inner" | "dialog" | "record";
-    __k2Open?: (open: boolean) => void;
+    __k2Detail?: (open: boolean) => void;
   }
 }
 
@@ -39,7 +39,7 @@ const nav = (
 
 const Files = () => {
   const [open, setOpen] = createSignal(true);
-  window.__k2Open = setOpen;
+  window.__k2Detail = setOpen;
   return (
     <Workspace
       sidebar={nav}
@@ -84,7 +84,7 @@ const InDialog = () => (
   <Workspace sidebar={nav} sidebarLabel="Breite der Seitenleiste" head={<Bar start={<Text type="lead">Küche Lindqvist</Text>} />}>
     <Pane label="Küche Lindqvist">
       <Text>Front Eiche.jpg</Text>
-      <Dialog title="Neue Ablage" open onOpenChange={() => {}}>
+      <Dialog title="Neue Ablage" open onOpenChange={() => {}} foot={<Button variant="primary">Anlegen</Button>}>
         <Pane.Split>
           <Pane label="Vorlage">
             <Text>Leer</Text>

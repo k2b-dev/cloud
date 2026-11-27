@@ -88,11 +88,11 @@ test("a detail in a split inside a column opens and closes without moving the si
   for (const width of [800, 1024, 1036, 1100, 1440])
     await withPage("files", width, async (page) => {
       const open = await sidebar(page);
-      await page.evaluate(() => window.__k2Open?.(false));
+      await page.evaluate(() => window.__k2Detail?.(false));
       await page.waitForFunction(() => !document.querySelector('section[aria-label="Ansicht"]'));
       await settled(page);
       const closed = await sidebar(page);
-      await page.evaluate(() => window.__k2Open?.(true));
+      await page.evaluate(() => window.__k2Detail?.(true));
       await page.waitForFunction(() => document.querySelector('section[aria-label="Ansicht"]') !== null);
       await settled(page);
       expect([width, closed, await sidebar(page)]).toEqual([width, open, open]);
