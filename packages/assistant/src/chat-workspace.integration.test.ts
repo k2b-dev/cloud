@@ -5,6 +5,7 @@ import { createPanesLayout } from "@k2b/ui";
 import { databaseSuite, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
 import { migrateChatCode } from "./chat-code/migrate";
 import { testIdentity } from "./chat-code/test-identity";
+import { loadAssistantChatContextSnapshot } from "./chat-context";
 import type { ChatWorkspaceState } from "./chat-workspace";
 import { loadAssistantChatWorkspace, saveAssistantChatWorkspace } from "./chat-workspace-service";
 
@@ -85,6 +86,11 @@ databaseSuite()("personal chat workspace persistence", () => {
     expect(await loadAssistantChatWorkspace(owner, conversation.shortId, conversation)).toEqual({ state, revision: 1 });
     // The same chat handed for another person is not taken: the lookup with the owner check finds nothing.
     expect(await loadAssistantChatWorkspace(other, conversation.shortId, conversation)).toBeNull();
+  });
+
+  test("the chat's context takes a handed chat only for its owner; anyone else gets the owner check", async () => {
+    const conversation = await chat();
+    expect(await loadAssistantChatContextSnapshot(other, conversation.shortId, { timeZone: "UTC", conversation })).toBeNull();
   });
 
   test("non-user access subjects are rejected", async () => {

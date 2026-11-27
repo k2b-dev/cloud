@@ -352,6 +352,61 @@ test.each(["/app/assistant", "/app/assistant/panel"])(
   },
 );
 
+test("the live cursor is read before any read of the first view, so no change between them is lost", async () => {
+  // The contract of `aiLive` (packages/cloud/src/ai/live.ts): cursor first, then the snapshot. A cursor read beside the
+  // snapshot would miss an event that lands between the two, and the sidebar and chat would stay stale.
+  let cursorRead = false;
+  const readsBeforeCursor: string[] = [];
+  const watch = (name: string) => {
+    if (!cursorRead) readsBeforeCursor.push(name);
+  };
+  spies.push(
+    spyOn(live.aiLive, "cursor").mockImplementation(async () => {
+      // Several turns of the event loop, so a read started beside the cursor would show here.
+      for (let turn = 0; turn < 5; turn++) await Promise.resolve();
+      cursorRead = true;
+      return "s6t.cloud-live-core.0";
+    }),
+  );
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockImplementation(async () => {
+      watch("sidebar");
+      return {
+        counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
+        projects: [],
+        doneCount: 0,
+        questions: { items: [], count: 0 },
+        conversations: [chat],
+      };
+    }),
+  );
+  spies.push(
+    spyOn(ai.aiConversations, "getConversationByShortId").mockImplementation(async () => {
+      watch("chat");
+      return chat;
+    }),
+  );
+  spies.push(spyOn(ai.aiConversations, "markConversationViewed").mockResolvedValue(true));
+  spies.push(spyOn(ai.aiConversations, "listConversationTimeline").mockResolvedValue([]));
+  spies.push(spyOn(chatContext, "loadAssistantChatContextSnapshot").mockResolvedValue(null));
+  spies.push(
+    spyOn(chatWorkspace, "loadAssistantChatWorkspace").mockResolvedValue({ state: { tabs: [], layout: null, front: null }, revision: 0 }),
+  );
+  spies.push(
+    spyOn(ai, "loadAiStreamState").mockResolvedValue({
+      type: "state",
+      conversation: chat,
+      messages: [],
+      hasMoreMessages: false,
+      activeTurn: null,
+    }),
+  );
+  const response = await request(`https://cloud.example.test/app/assistant?conversation=${chat.shortId}`);
+  expect(response.status).toBe(200);
+  expect(cursorRead).toBe(true);
+  expect(readsBeforeCursor).toEqual([]);
+});
+
 test("?approvals=1 renders Waiting for you without selecting a chat, and the row stays when nothing waits", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({

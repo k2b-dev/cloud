@@ -73,8 +73,17 @@ const chat = (shortId: string, title: string): ai.AiConversation => ({
 });
 const own = chat("Chat01", "Velvet care");
 
+const cursorSpy = spyOn(aiLive, "cursor").mockResolvedValue("cursor-1");
+const sidebarSnapshot = (): Awaited<ReturnType<typeof sidebar.loadAssistantSidebarSnapshot>> => ({
+  counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
+  conversations: [{ ...own, id: own.shortId }],
+  projects: [],
+  doneCount: 0,
+  questions: { items: [], count: 0 },
+});
+const sidebarSpy = spyOn(sidebar, "loadAssistantSidebarSnapshot").mockImplementation(async () => sidebarSnapshot());
 const spies = [
-  spyOn(aiLive, "cursor").mockResolvedValue("cursor-1"),
+  cursorSpy,
   spyOn(ai, "assistantAiSettingsState").mockResolvedValue({
     ok: true,
     error: null,
@@ -87,13 +96,7 @@ const spies = [
     options: [],
   } as unknown as Awaited<ReturnType<typeof ai.assistantAiSettingsState>>),
   spyOn(ai, "getLiveDictationStatus").mockResolvedValue({ available: false } as Awaited<ReturnType<typeof ai.getLiveDictationStatus>>),
-  spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-    counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
-    conversations: [{ ...own, id: own.shortId }],
-    projects: [],
-    doneCount: 0,
-    questions: { items: [], count: 0 },
-  }),
+  sidebarSpy,
   spyOn(ai.aiConversations, "listConversationsPage").mockResolvedValue({ total: 1, page: 1, perPage: 1, hasNext: false, items: [] }),
   spyOn(ai, "loadAiStreamState").mockImplementation(async (conversation) => ({
     type: "state",
@@ -206,6 +209,35 @@ describe("The Assistant in the Cloud app", () => {
       userId: person.id,
     });
     expect(islandProps(document).initialDetail?.conversation.title).toBe("Velvet care");
+  });
+
+  test("the live cursor is read before any read of the first view, so no change between them is lost", async () => {
+    // The contract of `aiLive`: cursor first, then the snapshot; a cursor read beside it would miss an event between them.
+    signIn("app");
+    let cursorRead = false;
+    const readsBeforeCursor: string[] = [];
+    cursorSpy.mockImplementation(async () => {
+      for (let turn = 0; turn < 5; turn++) await Promise.resolve();
+      cursorRead = true;
+      return "cursor-1";
+    });
+    sidebarSpy.mockImplementation(async () => {
+      if (!cursorRead) readsBeforeCursor.push("sidebar");
+      return sidebarSnapshot();
+    });
+    readSpy.mockImplementationOnce(async () => {
+      if (!cursorRead) readsBeforeCursor.push("chat");
+      return own;
+    });
+    try {
+      const { response } = await render("/pwa/assistant/c/Chat01");
+      expect(response.status).toBe(200);
+      expect(cursorRead).toBe(true);
+      expect(readsBeforeCursor).toEqual([]);
+    } finally {
+      cursorSpy.mockResolvedValue("cursor-1");
+      sidebarSpy.mockImplementation(async () => sidebarSnapshot());
+    }
   });
 
   test("another person's chat or one that does not exist reads the same and names nothing", async () => {

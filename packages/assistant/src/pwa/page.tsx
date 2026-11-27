@@ -28,8 +28,9 @@ const render = async <E extends AuthContext>(c: Context<E>, address: PwaAddress)
   const user = expectUserBackedActor(c);
   const identity = { actor: c.get("actor"), accessSubject: c.get("accessSubject") };
   const part = presentation(c);
-  const [initialLiveCursor, settings, liveDictation, sidebar, total] = await Promise.all([
-    aiLive.cursor(),
+  // The live cursor comes before every read of the first view (`aiLive`), so no event between them is lost.
+  const initialLiveCursor = await aiLive.cursor();
+  const [settings, liveDictation, sidebar, total] = await Promise.all([
     assistantAiSettingsState({ type: "user", userId: user.id }),
     getLiveDictationStatus(c.get("accessSubject")),
     // A list that fails to load leaves the rest of the part usable; the island offers to try again.

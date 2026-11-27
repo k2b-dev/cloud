@@ -96,6 +96,9 @@ export default ssr<AuthContext>(async (c) => {
     ]);
     return { record, view, chats, context, settingsSeed, settingsOpen };
   };
+  // The live cursor comes before every read of the first view (`aiLive`): an event between the snapshot and a later
+  // cursor would be lost, and the sidebar and chat would stay stale until the next one.
+  const initialLiveCursor = await aiLive.cursor();
   // A chat the address names is read with everything else; without one, the page picks it from the sidebar below.
   const namedConversation =
     requestedConversationId && !requestedProjectId && !approvalsOpen && !codeOpen && !prefsTab
@@ -104,7 +107,6 @@ export default ssr<AuthContext>(async (c) => {
   // One stage for everything the first view needs that does not depend on another read (page audit 27.11.: six
   // stages one after another before).
   const [
-    initialLiveCursor,
     codePlace,
     project,
     namedChat,
@@ -124,7 +126,6 @@ export default ssr<AuthContext>(async (c) => {
       prefsRead,
     ],
   ] = await Promise.all([
-    aiLive.cursor(),
     // The panel names its place from the first paint, and knows whether that place could have Code at all.
     panelScope ? loadCodePlace(panelScope, invokeCode, catalog) : undefined,
     loadProject(),

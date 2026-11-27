@@ -126,8 +126,9 @@ suite("Gustav's page on the server", () => {
 
 /**
  * Measured on the test VM (27.11.): 56 statements (61 before the open chat was handed to its views instead of being read
- * again per view). About 30 are `@k2b/cloud/ai` reading its model configuration once per function that needs it (no
- * read per request), the rest the first view; none is read per chat. A new statement on this path shows here first.
+ * again per view). About 30 of them are `@k2b/cloud/ai` reading its model configuration again for every function that
+ * needs it, in every request, also after the warm-up (#4484 reads it once per GET request); the rest are the first
+ * view, and none is read per chat. A new statement on this path shows here first.
  */
 const STATEMENTS = 56;
 /**
