@@ -1,4 +1,4 @@
-import type { AiUsageFeedback, AiUsageGroup, AiUsagePage, AiUsageRun, AiUsageStats } from "@k2b/cloud/ai/admin";
+import type { AiUsageFeedback, AiUsageGroup, AiUsagePage, AiUsagePoint, AiUsageRun, AiUsageStats } from "@k2b/cloud/ai/admin";
 import {
   type AiUsageQuery,
   aiQuotaHref,
@@ -93,17 +93,19 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
   const runsLink = (patch: Partial<AiUsageQuery>) =>
     link({ view: "runs", kind: undefined, status: undefined, task: undefined, errorCode: undefined, search: undefined, ...patch });
 
-  // The filter bar: its names come from the report, so the first picture and the island agree.
+  // The filter bar: its names come from the server, so the first picture and the island agree.
   const nameOf = (field: string, id: string) => {
     if (field === "userId") {
       if (id === "unassigned") return t().unassigned;
-      const known = [...report().users.items, ...report().runs.items.map((run) => ({ id: run.userId, label: run.userLabel }))].find(
-        (row) => row.id === id,
-      );
-      return person(id, known?.label ?? null);
+      return person(id, id === q().userId ? props.data.userLabel : null);
     }
     return id;
   };
+  // The open view's parts of the report; every other view is a link to its own address.
+  const overviewView = () => (props.data.view.kind === "overview" ? props.data.view : undefined);
+  const comparisonView = () => (props.data.view.kind === "comparisons" ? props.data.view : undefined);
+  const feedbackView = () => (props.data.view.kind === "feedback" ? props.data.view : undefined);
+  const runsView = () => (props.data.view.kind === "runs" ? props.data.view : undefined);
   const query = createMemo(() => usageQuery(locale(), q().view, q().range, nameOf));
   const state = createMemo(() => usageState(query(), q()));
   const names = createMemo(() => {
@@ -138,10 +140,8 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
       setOpen(next);
       event.push(undefined, { scroll: "manual" });
     };
-  const openRun = () =>
-    q().view === "runs" && open().run ? (report().runs.items.find((row) => `${row.kind}:${row.id}` === open().run) ?? null) : null;
-  const openFeedback = () =>
-    q().view === "feedback" && open().feedback ? (report().feedback.items.find((row) => row.id === open().feedback) ?? null) : null;
+  const openRun = () => (open().run ? (runsView()?.runs.items.find((row) => `${row.kind}:${row.id}` === open().run) ?? null) : null);
+  const openFeedback = () => (open().feedback ? (feedbackView()?.feedback.items.find((row) => row.id === open().feedback) ?? null) : null);
   const closed = () => link({});
 
   const statusText = (value: string) =>
@@ -174,8 +174,8 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
       timeZone: props.data.timeZone,
       ...(q().range === "24h" ? { hour: "2-digit", minute: "2-digit" } : { month: "short", day: "numeric" }),
     });
-  const points = (value: (point: AiUsageData["report"]["timeline"][number]) => number | null) =>
-    report().timeline.map((point) => ({ at: Date.parse(point.bucket), value: value(point) }));
+  const points = (value: (point: AiUsagePoint) => number | null) =>
+    (overviewView()?.timeline ?? []).map((point) => ({ at: Date.parse(point.bucket), value: value(point) }));
   const costSeries = () => [{ label: t().cost, points: points((point) => point.cost) }];
   const useSeries = () => [
     { label: t().turns, points: points((point) => point.turns) },
@@ -193,7 +193,7 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
         label={`${t().cost} (${unit()})`}
         value={cost(stats.cost)}
         meta={`${coverage(stats.costCoverage)} ${t().measured}`}
-        // slot for #4208/#4223 (DP): Cells trend, the cost per step (report().timeline cost) as a spark with t().costTrend
+        // slot for #4208/#4223 (DP): Cells trend, the cost per step (the overview's timeline cost) as a spark with t().costTrend
       />
       <Cells.Cell icon="player-play" label={t().runs} value={n(stats.runs)} meta={t().errorsCount({ count: n(stats.failed) })} />
       <Cells.Cell icon="coins" label={t().tokens} value={n(stats.tokens)} meta={`${coverage(stats.tokenCoverage)} ${t().measured}`} />
@@ -211,7 +211,7 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
   );
 
   /** People, models, apps, workflows or tasks, one row each, with the drill-down into runs and ratings. */
-  const groupTable = (dimension: Dimension, title: string) => {
+  const groupTable = (dimension: Dimension, title: string, page: AiUsagePage<AiUsageGroup>) => {
     const label = (row: AiUsageGroup) =>
       dimension === "users" ? (row.id ? person(row.id, row.label) : t().unassigned) : (row.label ?? row.id ?? t().unassigned);
     const patch = (row: AiUsageGroup): Partial<AiUsageQuery> =>
@@ -228,11 +228,11 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
     const sortBy = (sort: AiUsageQuery["sort"]) =>
       sortable ? { href: link({ sort, direction: q().sort === sort && q().direction === "desc" ? "asc" : "desc" }) } : undefined;
     const SORTED = ["runs", "tokens", "cost", "errors", "negative", "negativeRate"] as const;
-    const rows = () => report()[dimension].items;
+    const rows = () => page.items;
     const position = SORTED.findIndex((sort) => sort === q().sort);
     const column = position < 0 ? undefined : position + 1;
     return (
-      <Section title={title} count={n(report()[dimension].total)}>
+      <Section title={title} count={n(page.total)}>
         <Table
           label={title}
           rows={rows()}
@@ -333,7 +333,7 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
             },
           ]}
         />
-        {pager(report()[dimension])}
+        {pager(page)}
       </Section>
     );
   };
@@ -422,12 +422,14 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
     { label: t().feedback, view: "feedback" as const },
     { label: t().runsTab, view: "runs" as const },
   ];
-  const results = () =>
-    q().view === "runs"
-      ? t().runsCount({ count: n(report().runs.total) })
-      : q().view === "feedback"
-        ? t().ratingCount({ count: n(report().feedback.total) })
-        : t().runsCount({ count: n(report().overview.runs) });
+  const results = () => {
+    const view = props.data.view;
+    return view.kind === "runs"
+      ? t().runsCount({ count: n(view.runs.total) })
+      : view.kind === "feedback"
+        ? t().ratingCount({ count: n(view.feedback.total) })
+        : t().runsCount({ count: n(view.overview.runs) });
+  };
   const kinds = ["chat", "background"] as const;
 
   return (
@@ -481,170 +483,201 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
             />
           }
         >
-          <Show when={q().view === "overview"}>
-            {figures(report().overview)}
-            <Section icon="chart-line" color={AI_COLOR} title={t().costOverTime} count={unit()} summary={usageRangeLabel(t(), q().range)}>
-              <Canvas label={t().costOverTime} height={220}>
-                <Show when={hasPoints(costSeries())} fallback={<Empty icon="chart-line" text={t().noCosts} />}>
-                  <TimeChart series={costSeries()} step={STEP[q().range]} format={(value) => cost(value)} axis={axis} />
-                </Show>
-              </Canvas>
-            </Section>
-            <Section icon="activity" title={t().usageOverTime}>
-              <Canvas label={t().usageOverTime} height={180}>
-                <Show when={hasPoints(useSeries())} fallback={<Empty icon="chart-line" text={t().noTurns} />}>
-                  <TimeChart series={useSeries()} step={STEP[q().range]} format={(value) => n(value)} axis={axis} />
-                </Show>
-              </Canvas>
-            </Section>
-            <Section icon="stack-2" title={t().tokenVolume}>
-              <Canvas label={t().tokenVolume} height={180}>
-                <Show when={hasPoints(tokenSeries())} fallback={<Empty icon="chart-line" text={t().noTokens} />}>
-                  <TimeChart series={tokenSeries()} step={STEP[q().range]} format={(value) => n(value)} axis={axis} />
-                </Show>
-              </Canvas>
-            </Section>
-            <Section icon="arrows-split" title={t().byKind}>
-              <For each={kinds}>
-                {(kind) => (
-                  <Row
-                    icon={kind === "chat" ? "message-2" : "clock-bolt"}
-                    lines={[
-                      usageKindLabel(t(), kind),
-                      t().kindLine({ runs: n(report()[kind].runs), cost: cost(report()[kind].cost), unit: unit() }),
+          <Show when={overviewView()}>
+            {(view) => (
+              <>
+                {figures(view().overview)}
+                <Section
+                  icon="chart-line"
+                  color={AI_COLOR}
+                  title={t().costOverTime}
+                  count={unit()}
+                  summary={usageRangeLabel(t(), q().range)}
+                >
+                  <Canvas label={t().costOverTime} height={220}>
+                    <Show when={hasPoints(costSeries())} fallback={<Empty icon="chart-line" text={t().noCosts} />}>
+                      <TimeChart series={costSeries()} step={STEP[q().range]} format={(value) => cost(value)} axis={axis} />
+                    </Show>
+                  </Canvas>
+                </Section>
+                <Section icon="activity" title={t().usageOverTime}>
+                  <Canvas label={t().usageOverTime} height={180}>
+                    <Show when={hasPoints(useSeries())} fallback={<Empty icon="chart-line" text={t().noTurns} />}>
+                      <TimeChart series={useSeries()} step={STEP[q().range]} format={(value) => n(value)} axis={axis} />
+                    </Show>
+                  </Canvas>
+                </Section>
+                <Section icon="stack-2" title={t().tokenVolume}>
+                  <Canvas label={t().tokenVolume} height={180}>
+                    <Show when={hasPoints(tokenSeries())} fallback={<Empty icon="chart-line" text={t().noTokens} />}>
+                      <TimeChart series={tokenSeries()} step={STEP[q().range]} format={(value) => n(value)} axis={axis} />
+                    </Show>
+                  </Canvas>
+                </Section>
+                <Section icon="arrows-split" title={t().byKind}>
+                  <For each={kinds}>
+                    {(kind) => (
+                      <Row
+                        icon={kind === "chat" ? "message-2" : "clock-bolt"}
+                        lines={[
+                          usageKindLabel(t(), kind),
+                          t().kindLine({ runs: n(view()[kind].runs), cost: cost(view()[kind].cost), unit: unit() }),
+                        ]}
+                        action={
+                          view()[kind].failed > 0
+                            ? {
+                                label: t().errorsCount({ count: n(view()[kind].failed) }),
+                                href: runsLink({ kind, status: "failed" }),
+                              }
+                            : undefined
+                        }
+                      />
+                    )}
+                  </For>
+                  <Show when={view().overview.dictationMinutes > 0}>
+                    <Row icon="microphone" lines={[t().dictationMinutes, n(view().overview.dictationMinutes)]} />
+                  </Show>
+                </Section>
+                <Disclosure title={t().additionalStatistics}>
+                  {groupTable("apps", t().application, view().apps)}
+                  {groupTable("workflows", t().workflows, view().workflows)}
+                  <Section title={t().launchedByApps} count={n(view().launches.total)}>
+                    <Table
+                      label={t().launchedByApps}
+                      rows={view().launches.items}
+                      empty={{ icon: "apps", text: t().noLaunches }}
+                      columns={[
+                        { title: t().application, cell: (row) => row.appId },
+                        { title: t().chats, width: { min: 80, default: 100 }, align: "end", cell: (row) => n(row.chats) },
+                        { title: t().users, width: { min: 80, default: 100 }, align: "end", cell: (row) => n(row.users) },
+                      ]}
+                    />
+                    {pager(view().launches)}
+                  </Section>
+                  <Text muted>
+                    {t().capabilitiesMoved} <Text href="/admin/observability/capabilities">{t().capabilities}</Text>
+                  </Text>
+                </Disclosure>
+                <Disclosure title={t().dataNotes}>
+                  <Text
+                    muted
+                  >{`${t().periodHelp} ${date(report().since)} – ${date(report().until)}. ${t().totalsHelp} ${t().costOverTimeDescription}`}</Text>
+                  <Show when={view().unassignedBackgroundRuns > 0}>
+                    <Notice
+                      tone="note"
+                      actions={[{ label: t().showUnassigned, href: runsLink({ kind: "background", userId: "unassigned" }) }]}
+                    >
+                      {t().unassignedHelp({ count: n(view().unassignedBackgroundRuns) })}
+                    </Notice>
+                  </Show>
+                </Disclosure>
+              </>
+            )}
+          </Show>
+          <Show when={comparisonView()}>
+            {(view) => (
+              <>
+                {figures(view().overview)}
+                {groupTable(props.data.compare, props.data.compare === "users" ? t().usersTitle : t().models, view().rows)}
+                <Text type="meta" muted>
+                  {t().comparisonHelp}
+                </Text>
+              </>
+            )}
+          </Show>
+          <Show when={feedbackView()}>
+            {(view) => (
+              <>
+                {figures(view().chat)}
+                <Section title={t().feedback} count={n(view().feedback.total)} summary={t().feedbackHelp}>
+                  <Table
+                    label={t().feedback}
+                    rows={view().feedback.items}
+                    rowKey={(row) => row.id}
+                    current={openFeedback()?.id}
+                    open={(row) => {
+                      const target = { run: null, feedback: row.id };
+                      return { href: link({}, { open: target }), onNavigate: inPlace(target) };
+                    }}
+                    empty={{ icon: "message-off", text: t().noMessageFeedback }}
+                    phone={(row) => ({
+                      avatar: { name: person(row.userId, row.userLabel) },
+                      lines: [
+                        row.comment ?? (row.reasons.length ? usageReasonLabel(t(), row.reasons[0]!) : t().commentOnly),
+                        `${row.rating === "up" ? t().helpful : t().needsWork} · ${person(row.userId, row.userLabel)}`,
+                      ],
+                      time: date(row.updatedAt),
+                    })}
+                    columns={[
+                      {
+                        title: t().rating,
+                        width: { min: 200, default: 210 },
+                        cell: (row) =>
+                          row.rating === "up" ? <StateWord>{t().helpful}</StateWord> : <Chip status="warn">{t().needsWork}</Chip>,
+                      },
+                      {
+                        title: t().user,
+                        width: { min: 140, default: 180 },
+                        // slot for #4208/#4223 (DP): Column avatar of the person (it replaces the Avatar in the cell)
+                        cell: (row) => (
+                          <Inline>
+                            <Avatar name={person(row.userId, row.userLabel)} decorative />
+                            {person(row.userId, row.userLabel)}
+                          </Inline>
+                        ),
+                      },
+                      {
+                        title: t().reason,
+                        width: { min: 120, default: 160 },
+                        drop: true,
+                        cell: (row) => row.reasons.map((reason) => usageReasonLabel(t(), reason)).join(", ") || "—",
+                      },
+                      { title: t().model, width: { min: 120, default: 150 }, drop: true, cell: (row) => row.modelId ?? t().unknown },
+                      { title: t().comment, drop: true, cell: (row) => row.comment ?? "" },
                     ]}
-                    action={
-                      report()[kind].failed > 0
-                        ? { label: t().errorsCount({ count: n(report()[kind].failed) }), href: runsLink({ kind, status: "failed" }) }
-                        : undefined
-                    }
                   />
-                )}
-              </For>
-              <Show when={report().overview.dictationMinutes > 0}>
-                <Row icon="microphone" lines={[t().dictationMinutes, n(report().overview.dictationMinutes)]} />
-              </Show>
-            </Section>
-            <Disclosure title={t().additionalStatistics}>
-              {groupTable("apps", t().application)}
-              {groupTable("workflows", t().workflows)}
-              <Section title={t().launchedByApps} count={n(report().launches.total)}>
+                  {pager(view().feedback)}
+                </Section>
+              </>
+            )}
+          </Show>
+          <Show when={runsView()}>
+            {(view) => (
+              <Section title={t().runsTab} count={n(view().runs.total)} summary={t().runsHelp}>
                 <Table
-                  label={t().launchedByApps}
-                  rows={report().launches.items}
-                  empty={{ icon: "apps", text: t().noLaunches }}
+                  label={t().runsTab}
+                  rows={view().runs.items}
+                  rowKey={(row) => `${row.kind}:${row.id}`}
+                  current={openRun() ? `${openRun()!.kind}:${openRun()!.id}` : undefined}
+                  open={(row) => {
+                    const target = { run: `${row.kind}:${row.id}`, feedback: null };
+                    return { href: link({}, { open: target }), onNavigate: inPlace(target) };
+                  }}
+                  empty={{ icon: "list-search", text: t().noResults }}
+                  phone={(row) => ({
+                    lines: [row.task, `${statusText(row.status)} · ${usageKindLabel(t(), row.kind)} · ${row.modelId ?? t().unknown}`],
+                    time: date(row.createdAt),
+                  })}
                   columns={[
-                    { title: t().application, cell: (row) => row.appId },
-                    { title: t().chats, width: { min: 80, default: 100 }, align: "end", cell: (row) => n(row.chats) },
-                    { title: t().users, width: { min: 80, default: 100 }, align: "end", cell: (row) => n(row.users) },
+                    {
+                      title: t().backgroundTask,
+                      width: { min: 160, default: 220 },
+                      cell: (row) => row.task,
+                    },
+                    { title: t().status, width: { min: 120, default: 140 }, cell: (row) => <RunState status={row.status} /> },
+                    { title: t().model, width: { min: 120, default: 150 }, drop: true, cell: (row) => row.modelId ?? t().unknown },
+                    {
+                      title: t().user,
+                      width: { min: 120, default: 150 },
+                      drop: true,
+                      cell: (row) => person(row.userId, row.userLabel),
+                    },
+                    { title: t().received, drop: true, cell: (row) => date(row.createdAt) },
                   ]}
                 />
-                {pager(report().launches)}
+                {pager(view().runs)}
               </Section>
-              <Text muted>
-                {t().capabilitiesMoved} <Text href="/admin/observability/capabilities">{t().capabilities}</Text>
-              </Text>
-            </Disclosure>
-            <Disclosure title={t().dataNotes}>
-              <Text
-                muted
-              >{`${t().periodHelp} ${date(report().since)} – ${date(report().until)}. ${t().totalsHelp} ${t().costOverTimeDescription}`}</Text>
-              <Show when={report().unassignedBackgroundRuns > 0}>
-                <Notice tone="note" actions={[{ label: t().showUnassigned, href: runsLink({ kind: "background", userId: "unassigned" }) }]}>
-                  {t().unassignedHelp({ count: n(report().unassignedBackgroundRuns) })}
-                </Notice>
-              </Show>
-            </Disclosure>
-          </Show>
-          <Show when={q().view === "comparisons"}>
-            {figures(report().overview)}
-            {groupTable(props.data.compare, props.data.compare === "users" ? t().usersTitle : t().models)}
-            <Text type="meta" muted>
-              {t().comparisonHelp}
-            </Text>
-          </Show>
-          <Show when={q().view === "feedback"}>
-            {figures(report().chat)}
-            <Section title={t().feedback} count={n(report().feedback.total)} summary={t().feedbackHelp}>
-              <Table
-                label={t().feedback}
-                rows={report().feedback.items}
-                rowKey={(row) => row.id}
-                current={openFeedback()?.id}
-                open={(row) => {
-                  const target = { run: null, feedback: row.id };
-                  return { href: link({}, { open: target }), onNavigate: inPlace(target) };
-                }}
-                empty={{ icon: "message-off", text: t().noMessageFeedback }}
-                phone={(row) => ({
-                  avatar: { name: person(row.userId, row.userLabel) },
-                  lines: [
-                    row.comment ?? (row.reasons.length ? usageReasonLabel(t(), row.reasons[0]!) : t().commentOnly),
-                    `${row.rating === "up" ? t().helpful : t().needsWork} · ${person(row.userId, row.userLabel)}`,
-                  ],
-                  time: date(row.updatedAt),
-                })}
-                columns={[
-                  {
-                    title: t().rating,
-                    width: { min: 200, default: 210 },
-                    cell: (row) =>
-                      row.rating === "up" ? <StateWord>{t().helpful}</StateWord> : <Chip status="warn">{t().needsWork}</Chip>,
-                  },
-                  {
-                    title: t().user,
-                    width: { min: 140, default: 180 },
-                    // slot for #4208/#4223 (DP): Column avatar of the person (it replaces the Avatar in the cell)
-                    cell: (row) => (
-                      <Inline>
-                        <Avatar name={person(row.userId, row.userLabel)} decorative />
-                        {person(row.userId, row.userLabel)}
-                      </Inline>
-                    ),
-                  },
-                  {
-                    title: t().reason,
-                    width: { min: 120, default: 160 },
-                    drop: true,
-                    cell: (row) => row.reasons.map((reason) => usageReasonLabel(t(), reason)).join(", ") || "—",
-                  },
-                  { title: t().model, width: { min: 120, default: 150 }, drop: true, cell: (row) => row.modelId ?? t().unknown },
-                  { title: t().comment, drop: true, cell: (row) => row.comment ?? "" },
-                ]}
-              />
-              {pager(report().feedback)}
-            </Section>
-          </Show>
-          <Show when={q().view === "runs"}>
-            <Section title={t().runsTab} count={n(report().runs.total)} summary={t().runsHelp}>
-              <Table
-                label={t().runsTab}
-                rows={report().runs.items}
-                rowKey={(row) => `${row.kind}:${row.id}`}
-                current={openRun() ? `${openRun()!.kind}:${openRun()!.id}` : undefined}
-                open={(row) => {
-                  const target = { run: `${row.kind}:${row.id}`, feedback: null };
-                  return { href: link({}, { open: target }), onNavigate: inPlace(target) };
-                }}
-                empty={{ icon: "list-search", text: t().noResults }}
-                phone={(row) => ({
-                  lines: [row.task, `${statusText(row.status)} · ${usageKindLabel(t(), row.kind)} · ${row.modelId ?? t().unknown}`],
-                  time: date(row.createdAt),
-                })}
-                columns={[
-                  {
-                    title: t().backgroundTask,
-                    width: { min: 160, default: 220 },
-                    cell: (row) => row.task,
-                  },
-                  { title: t().status, width: { min: 120, default: 140 }, cell: (row) => <RunState status={row.status} /> },
-                  { title: t().model, width: { min: 120, default: 150 }, drop: true, cell: (row) => row.modelId ?? t().unknown },
-                  { title: t().user, width: { min: 120, default: 150 }, drop: true, cell: (row) => person(row.userId, row.userLabel) },
-                  { title: t().received, drop: true, cell: (row) => date(row.createdAt) },
-                ]}
-              />
-              {pager(report().runs)}
-            </Section>
+            )}
           </Show>
         </Pane>
         <Show when={openRun()}>

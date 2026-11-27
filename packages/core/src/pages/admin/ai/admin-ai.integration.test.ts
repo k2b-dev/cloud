@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sql } from "@k2b/cloud";
 import { aiProjects, aiSkills } from "@k2b/cloud/ai";
-import { aiModelCatalog, aiQuotas, readAiAdminOverview } from "@k2b/cloud/ai/admin";
+import { aiModelCatalog, aiQuotas, readAiAdminCatalog } from "@k2b/cloud/ai/admin";
 import type { User } from "@k2b/cloud/contracts";
 import { registerSettings, toLegacySettingDefs } from "@k2b/cloud/services/settings/defaults";
 import { meterSql } from "../../../../../../scripts/fixtures/sql-meter";
@@ -12,8 +12,8 @@ import { databaseSuite, useMigratedDatabase } from "../../../../../../scripts/fi
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 import { CORE_SETTINGS } from "../../../_settings";
 import { parseAiAreaQuery } from "./area";
+import type { AiCatalog } from "./catalog-data";
 import type { AiPageInput } from "./page-input";
-import type { AiCatalogIndex } from "./presentation";
 
 // The settings loader words its recent changes with a Solid module; load the loaders through the SSR transform.
 const root = mkdtempSync(join(tmpdir(), "core-admin-ai-pins-"));
@@ -63,11 +63,10 @@ const input = (query: Record<string, string>): AiPageInput => ({
   dates: { locale: "de", timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
 });
 
-/** What every section of the page reads first: the overview and the catalog. */
-const overview = async () => {
-  const [read, models, variants] = await Promise.all([readAiAdminOverview(), aiModelCatalog.models(), aiModelCatalog.variants()]);
-  const index: AiCatalogIndex = { models, variants, assignments: read.assignments };
-  return { overview: read, index };
+/** What every section of the page reads first, as page.tsx reads it: the overview with its providers and models, and the variants for the sections that show them. */
+const overview = async (variantsShown = true): Promise<AiCatalog> => {
+  const [read, variants] = await Promise.all([readAiAdminCatalog(), variantsShown ? aiModelCatalog.variants() : []]);
+  return { ...read, index: { models: read.models, variants, assignments: read.overview.assignments } };
 };
 
 /** Providers and models of one more kind, and the calls, skills and projects that come with more use. */
@@ -131,25 +130,27 @@ databaseSuite()("Administration › KI: statements per section loader (integrati
     );
   }, 180_000);
 
-  const sections: [string, (catalog: Awaited<ReturnType<typeof overview>>) => Promise<unknown>][] = [
+  const sections: [string, (catalog: AiCatalog) => Promise<unknown>][] = [
     ["classes", ({ index, overview }) => loadAiClasses(index, overview, parseAiAreaQuery({}))],
     ["class open", ({ index, overview }) => loadAiClasses(index, overview, parseAiAreaQuery({ sec: "classes", slot: "balanced" }))],
-    ["providers", ({ index, overview }) => loadAiProviders(index, overview, parseAiAreaQuery({ sec: "providers" }))],
-    ["provider open", ({ index, overview }) => loadAiProviders(index, overview, parseAiAreaQuery({ sec: "providers", p: "pins-nord-1" }))],
-    [
-      "model open",
-      ({ index, overview }) =>
-        loadAiProviders(index, overview, parseAiAreaQuery({ sec: "providers", p: "pins-nord-1", m: "pins-nord-1-klein" })),
-    ],
+    ["providers", (catalog) => loadAiProviders(catalog, parseAiAreaQuery({ sec: "providers" }))],
+    ["provider open", (catalog) => loadAiProviders(catalog, parseAiAreaQuery({ sec: "providers", p: "pins-nord-1" }))],
+    ["model open", (catalog) => loadAiProviders(catalog, parseAiAreaQuery({ sec: "providers", p: "pins-nord-1", m: "pins-nord-1-klein" }))],
     ["budgets", ({ index }) => loadAiBudgets(index)],
     ["budget brake", ({ index }) => loadAiBudgets(index, { brake: true })],
-    ["people", () => loadAiPeople(input({ sec: "budgets", rule: "people" }))],
+    ["people", ({ models }) => loadAiPeople(input({ sec: "budgets", rule: "people" }), models)],
     ["general", () => loadAiSettings(input({ sec: "general" }), "general")],
     ["jobs", () => loadAiSettings(input({ sec: "jobs" }), "jobs")],
     ["tools", () => loadAiSettings(input({ sec: "tools" }), "tools")],
     ["skills", () => loadAiSkills(input({ sec: "skills" }))],
     ["projects", () => loadAiProjects(input({ sec: "projects" }))],
+    // Nutzung reads only the open view's parts; every other view is its own address.
     ["usage", () => loadAiUsage(input({ sec: "usage" }))],
+    ["usage people", () => loadAiUsage(input({ sec: "usage", view: "comparisons" }))],
+    ["usage models", () => loadAiUsage(input({ sec: "usage", view: "comparisons", compare: "models" }))],
+    ["usage feedback", () => loadAiUsage(input({ sec: "usage", view: "feedback" }))],
+    ["usage runs", () => loadAiUsage(input({ sec: "usage", view: "runs" }))],
+    ["usage person", () => loadAiUsage(input({ sec: "usage", view: "runs", userId: people[0]! }))],
   ];
 
   /** The overview and each section loader, with the statements each one sends. */
@@ -161,6 +162,7 @@ databaseSuite()("Administration › KI: statements per section loader (integrati
       const warm = await overview();
       for (const [, load] of sections) await load(warm);
       let catalog = warm;
+      report["overview without variants"] = await meter.during(() => overview(false));
       report.overview = await meter.during(async () => {
         catalog = await overview();
       });
@@ -181,29 +183,37 @@ databaseSuite()("Administration › KI: statements per section loader (integrati
     const counts = (report: Record<string, string[]>) =>
       Object.fromEntries(Object.entries(report).map(([name, list]) => [name, list.length]));
     console.log(JSON.stringify({ before: counts(before), after: counts(after) }));
-    // The overview still reads each provider's request headers on its own (aiModelCatalog.providers →
-    // presentProvider → getAiRequestHeaders in @k2b/cloud): six statements and one per provider, two then four here.
+    // The page reads the overview, providers and models once and passes them on (before: 6 + one per provider, and
+    // provider, model and people read the catalog again); Nutzung reads only the open view (before: 22 for every view).
     const fixed = {
+      "overview without variants": 5,
+      overview: 6,
       "class open": 2,
       classes: 0,
       providers: 0,
-      "provider open": 4,
-      "model open": 27,
+      "provider open": 0,
+      "model open": 21,
       budgets: 17,
       "budget brake": 18,
-      people: 18,
+      people: 17,
       general: 2,
       jobs: 4,
       tools: 2,
       skills: 4,
       projects: 3,
-      usage: 22,
+      usage: 12,
+      "usage people": 4,
+      "usage models": 4,
+      "usage feedback": 4,
+      "usage runs": 3,
+      "usage person": 4,
     };
-    expect(counts(before)).toEqual({ overview: 6 + 2, ...fixed });
-    expect(counts(after)).toEqual({ overview: 6 + 4, ...fixed });
+    expect(counts(before)).toEqual(fixed);
+    expect(counts(after)).toEqual(fixed);
+    // The providers' request headers are one read for all of them, never one per provider.
     const headers = (report: Record<string, string[]>) =>
-      report.overview!.filter((statement) => statement.startsWith("SELECT secret FROM ai.provider_request_headers")).length;
-    expect([headers(before), headers(after)]).toEqual([2, 4]);
+      report.overview!.filter((statement) => statement.includes("FROM ai.provider_request_headers")).length;
+    expect([headers(before), headers(after)]).toEqual([1, 1]);
   }, 180_000);
 });
 

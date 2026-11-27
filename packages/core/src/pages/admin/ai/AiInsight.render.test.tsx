@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { toJSON } from "seroval";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
@@ -29,6 +30,8 @@ const render = (locale: "de" | "en", screen: () => JSX.Element) =>
     }),
   );
 const input = (query: string, locale: "de" | "en" = "en", state = "normal") => ({ state, locale, params: new URLSearchParams(query) });
+/** The island's props as the server serializes them into `data-props` (`JSON.stringify(toJSON(props))`), in bytes. */
+const islandBytes = (props: object) => Buffer.byteLength(JSON.stringify(toJSON(props)));
 
 describe("usage explorer", () => {
   for (const locale of ["en", "de"] as const)
@@ -61,6 +64,36 @@ describe("usage explorer", () => {
     const html = render("en", () => createComponent(UsageScreen, { nav, data }));
     expect(html).toContain("No priced calls in this period.");
     expect(html).toContain("No AI turns in this range.");
+  });
+
+  test("each view hands its island only its own parts of the report, within a measured budget", () => {
+    const views = {
+      overview: "sec=usage",
+      people: "sec=usage&view=comparisons",
+      models: "sec=usage&view=comparisons&compare=models",
+      feedback: "sec=usage&view=feedback",
+      runs: "sec=usage&view=runs",
+    };
+    const measure = (state: string) =>
+      Object.fromEntries(
+        Object.entries(views).map(([name, query]) => {
+          const data = usageFixture(input(query, "de", state));
+          // the view still draws from its own parts alone
+          expect(render("de", () => createComponent(UsageScreen, { nav, data }))).toContain('data-k2-part="FilterBar"');
+          return [name, islandBytes({ nav, data })];
+        }),
+      );
+    const sizes = { normal: measure("normal"), worst: measure("worst") };
+    console.log(JSON.stringify({ islandBytes: sizes }));
+    // With every view's parts the island carried 77 KB on each view, 176 KB in the worst case. Now a view carries its
+    // own: the overview its charts' days and side tables, a comparison or Feedback one page of rows, Runs one page of
+    // runs with what an open run shows beside them (40 runs; 100 with long errors in the worst case).
+    const budget = { normal: { runs: 56_000, other: 20_000 }, worst: { runs: 128_000, other: 48_000 } };
+    for (const state of ["normal", "worst"] as const)
+      for (const [name, bytes] of Object.entries(sizes[state])) {
+        const limit = name === "runs" ? budget[state].runs : budget[state].other;
+        expect({ state, name, within: bytes <= limit }).toEqual({ state, name, within: true });
+      }
   });
 });
 

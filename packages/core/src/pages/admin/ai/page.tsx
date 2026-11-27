@@ -1,4 +1,4 @@
-import { aiModelCatalog, readAiAdminOverview } from "@k2b/cloud/ai/admin";
+import { aiModelCatalog, readAiAdminCatalog } from "@k2b/cloud/ai/admin";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { isAdminUser } from "@k2b/cloud/shared";
 import { AdminLayout, getLocalizedRuntimeContext, getRuntimeContext, hasDedicatedRuntimeRoute } from "@k2b/cloud/ssr";
@@ -7,7 +7,7 @@ import AiStateScreen from "./AiStateScreen.island";
 import { parseAiAreaQuery } from "./area";
 import BudgetsScreen from "./BudgetsScreen.island";
 import ClassesScreen from "./ClassesScreen.island";
-import { loadAiBudgets, loadAiClasses, loadAiProviders } from "./catalog-data";
+import { type AiCatalog, loadAiBudgets, loadAiClasses, loadAiProviders } from "./catalog-data";
 import { loadAiProjects, loadAiSkills } from "./content-data";
 import { loadAiPeople, loadAiUsage } from "./insight-data";
 import { aiNav, aiSectionLabel } from "./nav";
@@ -15,7 +15,6 @@ import PeopleScreen from "./PeopleScreen.island";
 import ProjectsScreen from "./ProjectsScreen.island";
 import ProvidersScreen from "./ProvidersScreen.island";
 import type { AiPageInput } from "./page-input";
-import type { AiCatalogIndex } from "./presentation";
 import SettingsScreen from "./SettingsScreen.island";
 import SkillsScreen from "./SkillsScreen.island";
 import { loadAiSettings } from "./settings-data";
@@ -41,10 +40,12 @@ export default ssr<AuthContext>(async (c) => {
     dates: getDateConfig(c),
   };
 
-  let catalog: { overview: Awaited<ReturnType<typeof readAiAdminOverview>>; index: AiCatalogIndex } | null = null;
+  // The overview, providers and models are read once here and passed on; the variants only where a section shows them.
+  const variantsShown = section === "classes" || section === "providers";
+  let catalog: AiCatalog | null = null;
   try {
-    const [overview, models, variants] = await Promise.all([readAiAdminOverview(), aiModelCatalog.models(), aiModelCatalog.variants()]);
-    catalog = { overview, index: { models, variants, assignments: overview.assignments } };
+    const [read, variants] = await Promise.all([readAiAdminCatalog(), variantsShown ? aiModelCatalog.variants() : []]);
+    catalog = { ...read, index: { models: read.models, variants, assignments: read.overview.assignments } };
   } catch (error) {
     console.error("[admin/ai] overview failed", error);
   }
@@ -69,7 +70,7 @@ export default ssr<AuthContext>(async (c) => {
       );
     }
     if (section === "providers") {
-      const data = await loadAiProviders(index, overview, query);
+      const data = await loadAiProviders(catalog, query);
       return () => (
         <AdminLayout c={c} ui="v2" title={title}>
           <ProvidersScreen nav={nav} data={data} />
@@ -84,7 +85,8 @@ export default ssr<AuthContext>(async (c) => {
     );
   }
   if (section === "budgets") {
-    const data = await loadAiPeople(input);
+    if (!catalog) return state("failed");
+    const data = await loadAiPeople(input, catalog.models);
     return () => (
       <AdminLayout c={c} ui="v2" title={title}>
         <PeopleScreen nav={nav} data={data} />

@@ -1,10 +1,13 @@
 import {
   type AiAdminOverview,
+  type AiModelAccessMap,
+  aiModelAccess,
   aiModelCatalog,
   aiModelUsage,
   backgroundCostState,
   quotaAdminConfig,
   quotaReport,
+  type readAiAdminCatalog,
 } from "@k2b/cloud/ai/admin";
 import { coreSettings } from "@k2b/cloud/services";
 import type { AiModel, AiModelSlot, AiModelUsage, AiModelVariant, AiProvider, AiQuotaConfig } from "@k2b/cloud/shared";
@@ -40,40 +43,45 @@ export const loadAiClasses = async (index: AiCatalogIndex, overview: AiAdminOver
   };
 };
 
-type ModelDetail = AiModel & { variants: AiModelVariant[]; access?: Awaited<ReturnType<typeof aiModelCatalog.modelDetail>>["access"] };
+type ModelDetail = AiModel & { variants: AiModelVariant[]; access?: AiModelAccessMap[string] };
+
+/** What the page reads once per request and passes to each section: the overview, providers, models and variants. */
+export type AiCatalog = Awaited<ReturnType<typeof readAiAdminCatalog>> & { index: AiCatalogIndex };
 
 /**
  * Providers: the overview's providers with the catalog; an open provider with its connection and models, an open
- * model with its variants, use and access, or the provider's connection form.
+ * model with its variants, use and access, or the provider's connection form. The provider, its models and the
+ * model's variants come from the catalog the page read; only the model's access is read here.
  */
-export const loadAiProviders = async (index: AiCatalogIndex, overview: AiAdminOverview, query: AiAreaQuery) => {
-  const summary = query.p ? overview.providers.find((candidate) => candidate.id === query.p) : undefined;
-  const provider: (AiProvider & { models: AiModel[] }) | null | typeof failed = summary
-    ? await aiModelCatalog.providerDetail(summary.id).catch(quiet)
+export const loadAiProviders = async ({ overview, providers, index }: AiCatalog, query: AiAreaQuery) => {
+  const found = query.p ? providers.find((candidate) => candidate.id === query.p) : undefined;
+  const provider: (AiProvider & { models: AiModel[] }) | null = found
+    ? { ...found, models: index.models.filter((model) => model.providerId === found.id) }
     : null;
-  const model: ModelDetail | null | typeof failed =
-    query.m && summary && provider !== failed ? await aiModelCatalog.modelDetail(query.m).catch(quiet) : null;
-  const [usage, quota] =
-    model && model !== failed
-      ? await Promise.all([
-          aiModelUsage(
-            model.variants.map((variant) => variant.id),
-            [model.id],
-          ).catch((): AiModelUsage | null => null),
-          quotaAdminConfig().catch(() => null),
-        ])
-      : [null, null];
+  const opened = query.m && provider ? index.models.find((model) => model.id === query.m) : undefined;
+  const variants = opened ? index.variants.filter((variant) => variant.modelId === opened.id) : [];
+  const [access, usage, quota] = opened
+    ? await Promise.all([
+        aiModelAccess.listForAdmin().catch(quiet),
+        aiModelUsage(
+          variants.map((variant) => variant.id),
+          [opened.id],
+        ).catch((): AiModelUsage | null => null),
+        quotaAdminConfig().catch(() => null),
+      ])
+    : [null, null, null];
+  const model: ModelDetail | null = opened && access !== failed ? { ...opened, variants, access: access?.[opened.id] } : null;
   return {
     overview,
     models: index.models,
     variants: index.variants,
     open: { p: query.p ?? null, m: query.m ?? null, connection: query.pane === "conn", dialog: query.o ?? null, mq: query.mq ?? "" },
-    provider: provider === failed ? null : provider,
-    model: model === failed ? null : model,
-    usage,
-    accountingUnit: quota?.unit ?? null,
-    /** The address names a provider or model the page could not read (not one that is gone). */
-    detailFailed: provider === failed || model === failed,
+    provider,
+    model,
+    usage: model ? usage : null,
+    accountingUnit: model ? (quota?.unit ?? null) : null,
+    /** The address names a model whose access the page could not read (not one that is gone). */
+    detailFailed: access === failed,
   };
 };
 

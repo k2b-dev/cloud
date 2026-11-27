@@ -8,7 +8,7 @@ import {
   AiUsageQuerySchema,
 } from "@k2b/cloud/shared";
 import type { AiFixtureApi, AiFixtureInput } from "./fixture-types";
-import type { AiPeopleData, AiUsageData } from "./insight-data";
+import type { AiPeopleData, AiUsageData, AiUsageViewData } from "./insight-data";
 
 const UNTIL = Date.parse("2026-11-26T12:00:00.000Z");
 const DAY = 86_400_000;
@@ -203,12 +203,38 @@ export const usageReport = (state: string, params: URLSearchParams): AiUsageRepo
   };
 };
 
-export const usageFixture = (input: AiFixtureInput): AiUsageData => ({
-  report: usageReport(input.state, input.params),
-  compare: input.params.get("compare") === "models" ? "models" : "users",
-  open: { run: input.params.get("run"), feedback: input.params.get("feedback") },
-  timeZone: "Europe/Berlin",
-});
+/** The explorer as `loadAiUsage` hands it over: the open view's parts of the report, and no other view's. */
+export const usageFixture = (input: AiFixtureInput): AiUsageData => {
+  const report = usageReport(input.state, input.params);
+  const compare = input.params.get("compare") === "models" ? "models" : "users";
+  const view: AiUsageViewData =
+    report.query.view === "overview"
+      ? {
+          kind: "overview",
+          overview: report.overview,
+          chat: report.chat,
+          background: report.background,
+          timeline: report.timeline,
+          apps: report.apps,
+          workflows: report.workflows,
+          launches: report.launches,
+          unassignedBackgroundRuns: report.unassignedBackgroundRuns,
+        }
+      : report.query.view === "comparisons"
+        ? { kind: "comparisons", overview: report.overview, rows: report[compare] }
+        : report.query.view === "feedback"
+          ? { kind: "feedback", chat: report.chat, feedback: report.feedback }
+          : { kind: "runs", runs: report.runs };
+  const userId = report.query.userId;
+  return {
+    report: { query: report.query, since: report.since, until: report.until, unit: report.unit },
+    view,
+    userLabel: userId ? (report.users.items.find((row) => row.id === userId)?.label ?? null) : null,
+    compare,
+    open: { run: input.params.get("run"), feedback: input.params.get("feedback") },
+    timeZone: "Europe/Berlin",
+  };
+};
 
 const MODEL_LIST = [
   { id: "gpt-oss-120b", label: "GPT-OSS" },
