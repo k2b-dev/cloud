@@ -52,16 +52,15 @@ suite("the Accounts overview's statements per SSR load (integration)", () => {
     for (const id of created) await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
   });
 
-  test("an administrator's overview and everyone else's read a pinned, small number of statements", async () => {
+  test("an administrator's overview reads a pinned, small number of statements", async () => {
     const adminId = await person("Ada", true);
-    const otherId = await person("Ben", false);
     const rail = stubRailSnapshot();
     const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
     app.use("*", async (c, next) => {
       c.set("runtime", { apps: [] });
       await next();
     });
-    // the route as Accounts mounts it: every signed-in person, then the page
+    // the route as Accounts mounts it: every signed-in person, then the page (which sends everyone else to the groups)
     app.route("/", new Hono<AuthContext>().get("/app/accounts", auth.requireRole("user", ssr.access), ...overviewPage));
     const load = async (userId: string) => {
       const headers = { cookie: `session_token=${await createTestSession(userId)}`, "x-forwarded-for": uniqueCallerAddress() };
@@ -81,14 +80,10 @@ suite("the Accounts overview's statements per SSR load (integration)", () => {
     };
     try {
       const admin = await load(adminId);
-      const other = await load(otherId);
-      console.info(`overview statements: admin ${admin.length}, other ${other.length}`);
+      console.info(`overview statements: admin ${admin.length}`);
       // administrators (6): the dashboard figures, the newest audit events, and their own managed and member groups (one
       // statement each, the count rides along); the number of all groups comes with the dashboard
       expect(admin.map(kind).sort()).toEqual(["audit latest", "dashboard", "groups", "groups", "screen preferences", "session person"]);
-      // everyone else (5): no dashboard and no audit log; their managed and member groups, and the number of all groups
-      // for its cell
-      expect(other.map(kind).sort()).toEqual(["groups", "groups", "groups", "screen preferences", "session person"]);
     } finally {
       rail.mockRestore();
     }

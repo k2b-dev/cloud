@@ -12,13 +12,12 @@ export type OverviewLogLink = {
   label: "syncLogs" | "ipaBackfill" | "localUserBackfill" | "guestBackfill" | "reminderRuns" | "deletedAccounts" | "reminderHistory";
 };
 
-/** One line of the lifecycle log: the run that wrote it (`source`), its level and words, and when, formatted. */
 /** One change of the audit log as the overview tells it: worded and dated by the server (`audit/rows.ts`). */
 export type OverviewActivity = AuditRow;
 
 export type OverviewRun = { run: "ipaSync" | "ipaDemotion" | "reminders"; runs: number; failed: number };
 
-/** What only administrators see: what waits today, the account runs and the newest changes of the audit log. */
+/** What waits today, the account runs and the newest changes of the audit log. */
 export type OverviewAdmin = {
   accounts: { total: number; freeIpa: number; local: number };
   openRequests: number;
@@ -53,11 +52,11 @@ export type OverviewScreenProps = {
     expires: string | null;
     expired: boolean;
   };
-  groups: Record<"managed" | "member" | "all", { count: number; href: string }>;
+  /** How many groups the person belongs to, and the list of all groups. */
+  groups: { memberCount: number; allHref: string };
   /** The person's own groups, the managed ones first, at most a handful. */
   myGroups: OverviewGroup[];
-  isAdmin: boolean;
-  admin: OverviewAdmin | null;
+  admin: OverviewAdmin;
   pendingRequests: number;
 };
 
@@ -77,8 +76,8 @@ const kind = {
 const runKind = { ipaSync: kind.sync, ipaDemotion: kind.demotion, reminders: kind.reminder } as const;
 
 /**
- * The Accounts overview on v2: the first row says what waits today, then who I am here and my groups, and for
- * administrators the account runs and, beside them, who changed what.
+ * The Accounts overview on v2, an administrator's page: the first row says what waits today, then who I am here, my
+ * groups and the account runs, and beside them who changed what.
  */
 export default function OverviewScreen(props: OverviewScreenProps) {
   const t = useAccountsMessages();
@@ -99,18 +98,16 @@ export default function OverviewScreen(props: OverviewScreenProps) {
     ) : (
       <Chip status="ok">{o().noExpiry}</Chip>
     );
-  /** The names of a few groups, as a quiet line under their count. */
-  const names = (groups: OverviewGroup[]) =>
-    groups
-      .slice(0, 3)
-      .map((group) => group.name)
-      .join(", ");
+  const admin = () => props.admin;
+  const expiring = () => admin().expiring.freeIpa + admin().expiring.local + admin().expiring.guests;
+  const sync = () => admin().health.find((row) => row.run === "ipaSync");
+  const reminders = () => admin().health.find((row) => row.run === "reminders");
   const groupWords = (group: OverviewGroup) =>
     [group.provider === "ipa" ? "FreeIPA" : t().local, group.description].filter(Boolean).join(" · ");
 
   return (
     <Workspace
-      sidebar={<AccountsNav active="dashboard" pendingRequests={props.pendingRequests} isAdmin={props.isAdmin} />}
+      sidebar={<AccountsNav active="dashboard" pendingRequests={props.pendingRequests} />}
       head={
         <Bar
           start={
@@ -118,80 +115,29 @@ export default function OverviewScreen(props: OverviewScreenProps) {
               label={o().views}
               items={[
                 { label: t().dashboard, current: true },
-                props.isAdmin
-                  ? { label: o().activity, href: "/app/accounts/activity" }
-                  : { label: t().myGroups, count: props.groups.member.count, href: props.groups.member.href },
+                { label: o().activity, href: "/app/accounts/activity" },
               ]}
             />
           }
           end={
             <>
-              <Show when={props.admin}>
-                {(admin) => (
-                  <Menu icon="file-text" items={admin().logs.map((link) => ({ label: t()[link.label], href: link.href }))}>
-                    {o().logs}
-                  </Menu>
-                )}
-              </Show>
+              <Menu icon="file-text" items={admin().logs.map((link) => ({ label: t()[link.label], href: link.href }))}>
+                {o().logs}
+              </Menu>
               <Button avatar={me()} href="/me">
                 {t().profilePage}
               </Button>
-              <Show when={props.isAdmin}>
-                <Button variant="primary" icon="user-plus" href="/app/accounts/users/new">
-                  {t().newUser}
-                </Button>
-              </Show>
+              <Button variant="primary" icon="user-plus" href="/app/accounts/users/new">
+                {t().newUser}
+              </Button>
             </>
           }
         />
       }
-      primary={props.isAdmin ? { label: t().newUser, icon: "user-plus", href: "/app/accounts/users/new" } : undefined}
+      primary={{ label: t().newUser, icon: "user-plus", href: "/app/accounts/users/new" }}
     >
       <Pane label={t().dashboard} scrollKey="accounts-dashboard">
         {/* k2b-ui gap: on the phone `Cells` stand one under the other; the approved mockup shows them two by two. */}
-        <Show
-          when={props.admin}
-          fallback={
-            <Cells>
-              <Cells.Cell
-                icon="id-badge-2"
-                color={kind.account.color}
-                label={o().yourAccount}
-                value={props.me.expired ? <Chip status="bad">{t().expired}</Chip> : <Chip status="ok">{o().active}</Chip>}
-                meta={
-                  props.me.expires
-                    ? props.me.expired
-                      ? o().expiredOn({ when: props.me.expires })
-                      : o().expiresOn({ when: props.me.expires })
-                    : o().noExpiry
-                }
-                href="/me"
-              />
-              <Cells.Cell
-                icon="shield"
-                color={kind.ipaGroup.color}
-                label={t().managedByMe}
-                value={number(props.groups.managed.count)}
-                meta={names(props.myGroups.filter((group) => group.managed)) || t().groupCount({ count: props.groups.managed.count })}
-                href={props.groups.managed.href}
-              />
-              <Cells.Cell
-                icon="users-group"
-                color={kind.localGroup.color}
-                label={t().myGroups}
-                value={number(props.groups.member.count)}
-                meta={names(props.myGroups.filter((group) => !group.managed)) || t().groupCount({ count: props.groups.member.count })}
-                href={props.groups.member.href}
-              />
-              <Cells.Cell icon="layout-grid" label={t().allGroups} value={number(props.groups.all.count)} href={props.groups.all.href} />
-            </Cells>
-          }
-        >
-          {(admin) => {
-            const expiring = () => admin().expiring.freeIpa + admin().expiring.local + admin().expiring.guests;
-            const sync = () => admin().health.find((row) => row.run === "ipaSync");
-            const reminders = () => admin().health.find((row) => row.run === "reminders");
-            return (
               <Cells>
                 <Cells.Cell
                   icon={kind.request.icon}
@@ -271,9 +217,6 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                   href="/app/accounts/users"
                 />
               </Cells>
-            );
-          }}
-        </Show>
         <Pane.Split>
           <Pane label={t().dashboard}>
             <Section title={o().yourAccount}>
@@ -284,15 +227,14 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                   props.me.name,
                   `${props.me.uid} · ${kindWord()} · ${providerWord()} · ${props.me.provider === "ipa" ? t().freeIpaPassword : t().magicLink}`,
                 ]}
-                // without the administration's figures, the first row already says when the account expires
-                marks={props.admin ? expiryChip() : undefined}
+                marks={expiryChip()}
                 href="/me"
               />
             </Section>
             <Section
               title={o().yourGroups}
-              count={number(props.groups.member.count)}
-              more={{ label: t().allGroups, href: props.groups.all.href, forward: true }}
+              count={number(props.groups.memberCount)}
+              more={{ label: t().allGroups, href: props.groups.allHref, forward: true }}
             >
               <Show when={props.myGroups.length > 0} fallback={<Text muted>{o().noGroups}</Text>}>
                 <For each={props.myGroups}>
@@ -308,8 +250,6 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                 </For>
               </Show>
             </Section>
-            <Show when={props.admin}>
-              {(admin) => (
                 <Section
                   title={t().runHealth}
                   count={admin().health.length}
@@ -342,11 +282,7 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                     }}
                   </For>
                 </Section>
-              )}
-            </Show>
           </Pane>
-          <Show when={props.admin}>
-            {(admin) => (
               <Pane side label={o().activity} width={{ min: 300, default: 380 }}>
                 <Section title={o().activity} more={{ label: o().allActivity, href: "/app/accounts/activity", forward: true }}>
                   <Show when={admin().activity} fallback={<Text muted>{o().activityFailed}</Text>}>
@@ -391,8 +327,6 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                   </Show>
                 </Section>
               </Pane>
-            )}
-          </Show>
         </Pane.Split>
       </Pane>
     </Workspace>

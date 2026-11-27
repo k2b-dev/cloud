@@ -78,11 +78,7 @@ const me: OverviewScreenProps["me"] = {
   expired: false,
 };
 
-const groups: OverviewScreenProps["groups"] = {
-  managed: { count: 2, href: "/app/accounts/groups?scope=managed" },
-  member: { count: 7, href: "/app/accounts/groups?scope=member" },
-  all: { count: 31, href: "/app/accounts/groups?scope=all" },
-};
+const groups: OverviewScreenProps["groups"] = { memberCount: 7, allHref: "/app/accounts/groups" };
 
 const group = (id: number, name: string, description: string | null, provider: "ipa" | "local", managed = false): OverviewGroup => ({
   id: `33333333-3333-4333-8333-${String(id).padStart(12, "0")}`,
@@ -141,15 +137,15 @@ const worstGroups: OverviewGroup[] = [
   ),
 ];
 
-export const OverviewFixture = (props: { admin?: boolean; worst?: boolean; empty?: boolean }) => (
+/** The overview is an administrator's page: every state is one an administrator sees. */
+export const OverviewFixture = (props: { worst?: boolean; empty?: boolean }) => (
   <LocaleProvider locale="de">
     <OverviewScreen
       me={props.worst ? worstMe : me}
-      groups={props.empty ? { ...groups, managed: { ...groups.managed, count: 0 }, member: { ...groups.member, count: 0 } } : groups}
+      groups={props.empty ? { ...groups, memberCount: 0 } : groups}
       myGroups={props.empty ? [] : props.worst ? worstGroups : myGroups}
-      isAdmin={Boolean(props.admin)}
-      admin={props.admin ? (props.worst ? worstAdmin : props.empty ? { ...overviewAdmin, activity: [] } : overviewAdmin) : null}
-      pendingRequests={props.admin ? 3 : 0}
+      admin={props.worst ? worstAdmin : props.empty ? { ...overviewAdmin, activity: [] } : overviewAdmin}
+      pendingRequests={3}
     />
   </LocaleProvider>
 );

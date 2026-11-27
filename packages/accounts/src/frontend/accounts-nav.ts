@@ -2,7 +2,12 @@ import type { AccountsMessages } from "./messages";
 
 export type AccountsNavActiveKey = "dashboard" | "users" | "duplicate-emails" | "groups" | "requests" | "agents" | "activity" | null;
 
-type NavProps = { active: AccountsNavActiveKey; pendingRequests: number };
+type NavProps = {
+  active: AccountsNavActiveKey;
+  pendingRequests: number;
+  /** Only `false` hides the administration's entries and the overview: everyone else starts at the groups. */
+  isAdmin?: boolean;
+};
 
 export type NavItem = {
   href: string;
@@ -12,13 +17,18 @@ export type NavItem = {
   badge?: string;
 };
 
-/** The entries of Accounts' navigation: everyone's, and the administration's. One list for every shell that shows them. */
+/**
+ * The entries of Accounts' navigation: everyone's, and the administration's. One list for every shell that shows them.
+ * The overview is an administrator's page; for everyone else Accounts opens at the groups.
+ */
 export const accountsNavItems = (
   messages: () => AccountsMessages,
   props: NavProps,
 ): { general: () => NavItem[]; admin: () => NavItem[] } => ({
   general: () => [
-    { href: "/app/accounts", icon: "ti ti-layout-dashboard", label: messages().dashboard, active: props.active === "dashboard" },
+    ...(props.isAdmin === false
+      ? []
+      : [{ href: "/app/accounts", icon: "ti ti-layout-dashboard", label: messages().dashboard, active: props.active === "dashboard" }]),
     { href: "/app/accounts/groups", icon: "ti ti-users-group", label: messages().groups, active: props.active === "groups" },
   ],
   admin: () => [

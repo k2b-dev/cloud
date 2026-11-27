@@ -6,7 +6,7 @@ import { OverviewFixture, RequestsFixture } from "./overview-requests.fixture";
  * The overview and the request list for a browser test: the path names the screen, `<html data-state>` its state.
  * The test stands in for the server and answers the API.
  */
-type State = { admin?: boolean; worst?: boolean; huge?: boolean; full?: boolean; empty?: boolean; freeIpa?: boolean };
+type State = { worst?: boolean; huge?: boolean; full?: boolean; empty?: boolean; freeIpa?: boolean };
 
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing harness root");
@@ -24,7 +24,7 @@ render(
         freeIpa={state.freeIpa}
       />
     ) : (
-      <OverviewFixture admin={state.admin} worst={state.worst} empty={state.empty} />
+      <OverviewFixture worst={state.worst} empty={state.empty} />
     ),
   host,
 );

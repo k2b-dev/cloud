@@ -58,7 +58,7 @@ const summary = {
   runHealthWindow: 10,
 };
 
-const render = async (user: User, freeIpa = true) => {
+const render = async (user: User, address = "/app/accounts", freeIpa = true) => {
   const dashboard = spyOn(services.accountsAppService.dashboard, "get").mockResolvedValue(summary as never);
   const activity = spyOn(services.audit, "latest").mockResolvedValue([
     {
@@ -91,11 +91,12 @@ const render = async (user: User, freeIpa = true) => {
   const groups = spyOn(services.accountsAppService.group, "list").mockImplementation(
     async ({ scope }) => ({ items: [], page: 1, perPage: 1, total: scope?.mode === "all" ? 23 : 3, hasNext: false }) as never,
   );
+  const settings = spyOn(services.coreSettings, "get").mockResolvedValue(freeIpa);
   const spies = [
     stubRailSnapshot(),
     dashboard,
     activity,
-    spyOn(services.coreSettings, "get").mockResolvedValue(freeIpa),
+    settings,
     groups,
   ];
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
@@ -107,11 +108,14 @@ const render = async (user: User, freeIpa = true) => {
   });
   app.get("/app/accounts", ...handler);
   try {
-    const response = await app.request("/app/accounts", { headers: { "Accept-Language": "en" } });
+    const response = await app.request(address, { headers: { "Accept-Language": "en" } });
     const html = await response.text();
-    expect(response.status, html).toBe(200);
     return {
+      status: response.status,
+      location: response.headers.get("location"),
       html,
+      // every service read of the page: the settings, the dashboard, the audit log, the groups
+      reads: settings.mock.calls.length + dashboard.mock.calls.length + activity.mock.calls.length + groups.mock.calls.length,
       dashboardCalls: dashboard.mock.calls.length,
       activityCalls: activity.mock.calls.length,
       activityLimits: activity.mock.calls.map(([config]) => config.limit),
@@ -123,7 +127,8 @@ const render = async (user: User, freeIpa = true) => {
 };
 
 test("an administrator sees their account, the groups and the administration, linked to the new places", async () => {
-  const { html, activityLimits, groupScopes } = await render(person(["user", "admin"]));
+  const { status, html, activityLimits, groupScopes } = await render(person(["user", "admin"]));
+  expect(status, html).toBe(200);
   // the number of all groups comes from the dashboard (17), so the groups are read only for the person's own
   expect(groupScopes.sort()).toEqual(["managed", "member"]);
   expect(html).toContain('data-k2-part="Workspace"');
@@ -161,19 +166,14 @@ test("an administrator sees their account, the groups and the administration, li
   console.info(`overview v2 DOM elements (admin): ${html.match(/<[a-z][a-z0-9-]*/gi)?.length}`);
 });
 
-test("everyone else sees only their account and their groups; the administration's data is not even read", async () => {
-  const { html, dashboardCalls, activityCalls, groupScopes } = await render(person(["user"]));
-  // without the dashboard, the cell "All groups" needs its own count
-  expect(groupScopes.sort()).toEqual(["all", "managed", "member"]);
-  expect(html).toContain(">23<");
-  expect(html).toContain("Your account");
-  expect(html).toContain("My groups");
-  expect(html).toContain('href="/app/accounts/groups?scope=managed"');
-  expect(html).not.toContain("Administration");
-  expect(html).not.toContain("Run health");
-  expect(html).not.toContain("/admin/observability/logs");
-  expect(html).not.toContain("/app/accounts/requests");
-  expect(dashboardCalls).toBe(0);
-  // no audit read at all for someone who may not read the audit log
-  expect(activityCalls).toBe(0);
+test("everyone else goes straight to the groups, with the address's query kept and before any service read", async () => {
+  for (const [address, target] of [
+    ["/app/accounts", "/app/accounts/groups"],
+    ["/app/accounts?scope=managed", "/app/accounts/groups?scope=managed"],
+  ] as const) {
+    const { status, location, reads } = await render(person(["user"]), address);
+    expect(status).toBe(302);
+    expect(location).toBe(target);
+    expect(reads).toBe(0);
+  }
 });

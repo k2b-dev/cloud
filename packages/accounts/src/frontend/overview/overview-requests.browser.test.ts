@@ -78,7 +78,7 @@ const wide: View = { width: 1440, height: 900, touch: false, name: "1440" };
 const narrow: View = { width: 1024, height: 768, touch: false, name: "1024" };
 const phone: View = { width: 390, height: 844, touch: true, name: "390" };
 
-type State = { admin?: boolean; worst?: boolean; huge?: boolean; full?: boolean; empty?: boolean; freeIpa?: boolean };
+type State = { worst?: boolean; huge?: boolean; full?: boolean; empty?: boolean; freeIpa?: boolean };
 const page = (state: State) =>
   `<!doctype html><html lang="de" class="light" data-state='${JSON.stringify(state)}'><head><meta charset="utf-8">` +
   `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
@@ -159,11 +159,10 @@ const expectClean = async (tab: Page) => {
 };
 
 describe("the Accounts overview on v2", () => {
-  test("keeps the v2 rules at 1440, 1024 and 390 px, for administrators and everyone else", async () => {
+  test("keeps the v2 rules at 1440, 1024 and 390 px, also in the worst case", async () => {
     for (const [name, state] of [
-      ["overview-admin", { admin: true }],
-      ["overview-person", {}],
-      ["overview-worst", { admin: true, worst: true }],
+      ["overview-admin", {}],
+      ["overview-worst", { worst: true }],
     ] as const) {
       for (const view of [wide, narrow, phone]) {
         const { context, tab, errors } = await open(view, "/app/accounts", state);
@@ -179,7 +178,7 @@ describe("the Accounts overview on v2", () => {
   }, 120_000);
 
   test("the logs menu leads to the system logs and to the activity kinds that replaced the old pages", async () => {
-    const { context, tab, errors } = await open(wide, "/app/accounts", { admin: true });
+    const { context, tab, errors } = await open(wide, "/app/accounts");
     try {
       // who changed what: the audit log as sentences with the person, and the way to all of it
       expect(await tab.locator('[data-k2-part="Digest.Entry"]').count()).toBe(8);
@@ -193,15 +192,6 @@ describe("the Accounts overview on v2", () => {
       );
       await shoot(tab, "overview-logs-menu-light-1440");
       await tab.keyboard.press("Escape");
-      // a person without administration sees neither the menu nor the administration's figures
-      const person = await open(wide, "/app/accounts", {});
-      try {
-        expect(await person.tab.getByRole("button", { name: "Protokolle" }).count()).toBe(0);
-        expect(await person.tab.getByText("Administration").count()).toBe(0);
-        expect(person.errors).toEqual([]);
-      } finally {
-        await person.context.close();
-      }
       expect(errors).toEqual([]);
     } finally {
       await context.close();

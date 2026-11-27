@@ -29,29 +29,31 @@ const LOG_LINKS: OverviewLogLink[] = [
   { href: "/app/accounts/activity?kind=reminders", label: "reminderHistory" },
 ];
 
-/** The Accounts overview on v2, for every signed-in person; the administration's part only for administrators. */
+/**
+ * The Accounts overview on v2, an administrator's page. Everyone else goes straight to the groups (decision 27.11.), before
+ * any read, with the address's query kept.
+ */
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const timeZone = getTimeZone(c);
   const { t } = accountsMessages.resolve([locale]);
   const user = expectUserBackedActor(c);
-  const isAdmin = isAdminUser(user);
+  if (!isAdminUser(user)) {
+    const query = new URL(c.req.url).search;
+    return c.redirect(`/app/accounts/groups${query}`);
+  }
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
   const defaultGroupScope = getDefaultGroupScope(user);
-  const [summary, activity, managedGroups, memberGroups, allGroups] = await Promise.all([
-    isAdmin ? accountsService.dashboard.get() : Promise.resolve(null),
-    // one statement, rows only: the newest changes of the audit log, only for administrators, who may read it
-    isAdmin ? audit.latest({ limit: ACTIVITY_SIZE }).catch(() => null) : Promise.resolve(null),
+  const [summary, activity, managedGroups, memberGroups] = await Promise.all([
+    accountsService.dashboard.get(),
+    // one statement, rows only: the newest changes of the audit log
+    audit.latest({ limit: ACTIVITY_SIZE }).catch(() => null),
     accountsService.group.list({ pagination: { page: 1, perPage: MY_GROUPS }, scope: { userId: user.id, mode: "managed" } }),
     accountsService.group.list({ pagination: { page: 1, perPage: MY_GROUPS }, scope: { userId: user.id, mode: "member" } }),
-    // how many groups there are in all: administrators have it from the dashboard; only the others' cell needs this read
-    isAdmin ? Promise.resolve(null) : accountsService.group.list({ pagination: { page: 1, perPage: 1 }, scope: { mode: "all" } }),
   ]);
 
   const now = new Date();
   const auditWords = auditMessages.resolve([locale]).t;
-  const groupsHref = (scope: "managed" | "member" | "all") =>
-    buildGroupsUrl({ search: "", page: 1, provider: "", scope }, { defaultScope: defaultGroupScope });
   // the person's own groups: the managed ones first, then the others they belong to, a handful in all
   const listState = { search: "", page: 1, provider: "" as const, scope: "member" as const };
   const managedIds = new Set(managedGroups.items.map((group) => group.id));
@@ -65,9 +67,7 @@ export default ssr<AuthContext>(async (c) => {
       managed: managedIds.has(group.id),
       href: buildGroupDetailUrl(group.id, listState, { defaultScope: defaultGroupScope }),
     }));
-  const admin: OverviewAdmin | null =
-    isAdmin && summary
-      ? {
+  const admin: OverviewAdmin = {
           accounts: {
             total: summary.ipaAccountsTotal + summary.localAccountsTotal,
             freeIpa: summary.ipaAccountsTotal,
@@ -91,13 +91,12 @@ export default ssr<AuthContext>(async (c) => {
             ? auditRows(activity, { t, locale, timeZone, names: [], now, today: auditWords.today, yesterday: auditWords.yesterday })
             : null,
           logs: freeIpaEnabled ? LOG_LINKS : LOG_LINKS.filter((link) => !link.href.includes("auth:ipa:")),
-        }
-      : null;
+  };
 
   return () => (
     <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.accounts }]}>
       <AccountsNavigation
-        items={accountsNavigationItems(t, { active: "dashboard", pendingRequests: summary?.openRequests ?? 0, isAdmin })}
+        items={accountsNavigationItems(t, { active: "dashboard", pendingRequests: summary.openRequests, isAdmin: true })}
       />
       <OverviewScreen
         me={{
@@ -112,14 +111,12 @@ export default ssr<AuthContext>(async (c) => {
           expired: user.accountExpires ? new Date(user.accountExpires) < now : false,
         }}
         groups={{
-          managed: { count: managedGroups.total, href: groupsHref("managed") },
-          member: { count: memberGroups.total, href: groupsHref("member") },
-          all: { count: summary?.groupsTotal ?? allGroups?.total ?? 0, href: groupsHref("all") },
+          memberCount: memberGroups.total,
+          allHref: buildGroupsUrl({ search: "", page: 1, provider: "", scope: "all" }, { defaultScope: defaultGroupScope }),
         }}
         myGroups={myGroups}
-        isAdmin={isAdmin}
         admin={admin}
-        pendingRequests={summary?.openRequests ?? 0}
+        pendingRequests={summary.openRequests}
       />
     </Layout>
   );
