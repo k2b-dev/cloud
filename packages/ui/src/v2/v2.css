@@ -600,6 +600,8 @@
 .k2-ui .k2-pane-back > .k2-pane-back-name {
   flex: 0 1 auto;
   min-width: 0;
+  /* an endless name leaves the way back a few letters and "…" (break-ui): it never takes the last 6em of the bar */
+  max-width: calc(100% - 6em);
   margin-inline-start: 8px;
   overflow: hidden;
   font: var(--k2-t-row);
