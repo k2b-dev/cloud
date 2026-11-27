@@ -250,6 +250,24 @@ for (const width of [550, 450, 400])
     });
   });
 
+// one line between groups: the last row of a group and the head of the next never draw two lines at one edge, in the
+// table and in its phone rows (Valentin 26.11., NO DOUBLE LINES)
+for (const width of [1440, 1024, 390])
+  test(`a grouped list draws one line between its groups at ${width} px`, async () => {
+    await withPage(
+      "list",
+      async (page) => {
+        if (width < 768) {
+          await page.evaluate(() => document.querySelector(".k2-pane[data-detail]")?.remove());
+          await settled(page);
+        }
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.double).toEqual([]);
+      },
+      width,
+    );
+  });
+
 // four deeds with long words and the size of the selection in a column that cannot hold them all: the last deeds go
 // into "Mehr" before any word is cut, and each deed stays reachable once (W1b #4206 r5: "In d…" at 1440)
 for (const column of [900, 760, 640])

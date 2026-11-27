@@ -74,6 +74,15 @@ test("leading a row or a cell a mark is 24, and 32 where the list or table shows
   });
 });
 
+// one line between groups: a section's last row and the head of the next section, a table and the section after it,
+// never draw two lines at one edge (Valentin 26.11., NO DOUBLE LINES)
+for (const width of [1440, 390])
+  test(`at ${width} px sections of rows and tables draw one line between them`, async () => {
+    await withPage(async (page) => {
+      expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).double).toEqual([]);
+    }, width);
+  });
+
 // the text edge of a list: a row that leads with a thing's mark, one with its thumbnail and one with a person start
 // their names on one edge, 12 px after a lead of one size (W1b #4206 r5)
 for (const width of [1440, 390])

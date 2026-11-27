@@ -7,8 +7,8 @@ import {
   Facts,
   FilterBar,
   Icon,
-  Input,
   ListOrder,
+  Menu,
   Nav,
   Pane,
   Path,
@@ -277,13 +277,19 @@ export default function Folder(props: Props) {
               items={[{ label: "Werkstatt", href: "#werkstatt" }, { label: "Projekte", href: "#projekte" }, { label: "Küche Lindqvist" }]}
             />
           }
+          // the end of the head: the search as its symbol, and ONE way to create: "+" with the ways to make something
           end={
             <>
-              <Input type="search" icon="search" label="In diesem Ordner" placeholder="In diesem Ordner" />
-              <Button icon="folder-plus" label="Neuer Ordner" />
-              <Button variant="primary" icon="upload">
-                Hochladen
-              </Button>
+              <Button icon="search" label="In diesem Ordner suchen" />
+              <Menu
+                variant="primary"
+                icon="plus"
+                label="Neu"
+                items={[
+                  { label: "Hochladen", icon: "upload" },
+                  { label: "Neuer Ordner", icon: "folder-plus" },
+                ]}
+              />
             </>
           }
         />
