@@ -44,11 +44,16 @@ const withPage = async (run: (page: Page) => Promise<void>) => {
 
 const fold = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
 const names = (page: Page) =>
-  page.evaluate(() => [...document.querySelectorAll(".k2-nav [data-k2-part='Nav.Item']")].map((item) => item.textContent?.trim()));
+  page.evaluate(() =>
+    [...document.querySelectorAll(".k2-nav [data-k2-part='Nav.Item']")]
+      .filter((item) => item.getClientRects().length > 0)
+      .map((item) => item.textContent?.trim()),
+  );
 
-test("server markup: a closed fold sends no entries; the fold that holds the open entry is open", () => {
+// The entries of a closed fold come hidden, so a Nav the server renders without an island folds open in place.
+test("server markup: a closed fold sends its entries hidden; the fold that holds the open entry is open", () => {
   expect(markup).toMatch(/aria-expanded="false"[^>]*>(?:(?!<\/button>).)*Mehr/);
-  expect(markup).not.toContain("Papierkorb");
+  expect(markup).toMatch(/class="k2-nav-fold"[^>]*hidden[^>]*>(?:(?!<\/div>).)*Papierkorb/);
   expect(markup).toMatch(/aria-expanded="true"[^>]*>(?:(?!<\/button>).)*Rechnungen/);
   expect(markup).toContain("Bezahlt");
 });
@@ -89,7 +94,7 @@ test("a fold opens and closes by the pointer and by Enter and Space; its entries
     // the keyboard: Enter closes, Space opens, the focus stays on the fold
     await more.focus();
     await page.keyboard.press("Enter");
-    await page.getByRole("button", { name: "Papierkorb" }).waitFor({ state: "detached" });
+    await page.getByRole("button", { name: "Papierkorb" }).waitFor({ state: "hidden" });
     expect(await more.getAttribute("aria-expanded")).toBe("false");
     await page.keyboard.press("Space");
     await page.getByRole("button", { name: "Papierkorb" }).waitFor();
@@ -221,9 +226,10 @@ test("a closed fold that holds the open entry carries the open entry's tint", as
     const tint = () => bills.evaluate((element) => getComputedStyle(element).backgroundColor);
     const open = await tint();
     await bills.click();
-    await page.getByRole("button", { name: "Bezahlt" }).waitFor({ state: "detached" });
+    await page.getByRole("button", { name: "Bezahlt" }).waitFor({ state: "hidden" });
     await settled(page);
-    expect(await bills.getAttribute("aria-controls")).toBeNull();
+    // it still names the group it shows, which stays there hidden
+    expect(await bills.getAttribute("aria-controls")).toBeTruthy();
     const current = await page.evaluate(() => {
       const probe = document.createElement("a");
       probe.className = "k2-ni";

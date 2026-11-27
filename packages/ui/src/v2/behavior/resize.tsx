@@ -154,6 +154,10 @@ export function useGrip(options: GripOptions) {
     get "data-dragging"() {
       return dragging() ? "" : undefined;
     },
+    // the default the grip goes back to, for a grip the server rendered, which `attachWorkspace` brings alive
+    get "data-reset"() {
+      return options.reset();
+    },
     onPointerDown: pointerdown,
     onKeyDown: keydown,
   };

@@ -69,6 +69,10 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
   stands wherever its primitive stands. v2.css and `describeV2` look through
   the `<solid-island>` and `<solid-client>` wrappers, so the layout stays the
   same. Never make the whole screen one island to keep its layout.
+- The frame (`Workspace`, `Pane`, `Nav`, heads, `Bar`) is server markup; one
+  frame entry per page (`attachWorkspaces()`, which `ui: "v2"` has) brings what
+  it needs in the browser: Workspace in [primitives](references/primitives.md).
+- Keep islands small; an `onClick` works only in one, an `href` stays server markup.
 - Strings come from the app's message catalog; recipes inline German sample
   text only to look like the real thing.
 - A v2 island imports only from `@k2b/ui/v2`, including `useLocale` for the

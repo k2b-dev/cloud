@@ -34,6 +34,9 @@ describe("transparentIslands", () => {
   test("two sibling relations in a row fail the build", () => {
     expect(() => transparentIslands(".a + .b + .c{x:1}")).toThrow("two sibling relations");
     expect(() => transparentIslands(".a ~ .b ~ .c{x:1}")).toThrow("two sibling relations");
+    // the S of `:nth-last-child(1 of S)`: one compound per alternative
+    expect(() => transparentIslands(".a:nth-last-child(1 of .b > .c){x:1}")).toThrow("a combinator in the S");
+    expect(() => transparentIslands(".a:nth-last-child(1 of :not(:last-child)){x:1}")).toThrow(":last-child in the S");
   });
 
   test("first and last child count the wrapper's place and skip empty wrappers; a pseudo-element stays at the end", () => {
