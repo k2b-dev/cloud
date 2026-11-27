@@ -88,6 +88,28 @@ describe("Filesv2 server-rendered feedback", () => {
       </LocaleProvider>
     ));
 
+  // Valentin v5: an info line over all storage was unnecessary. Only storages that could not be read say so, in one
+  // line with a red dot; an area the operator turned off says nothing, and so does everything read.
+  test("all storage names an area only when its storages could not be read", () => {
+    const line = 'data-status="bad"';
+    const overview = (issues: { area: "freeipa"; code: string }[]) =>
+      screen("/app/filesv2", {
+        bases: { items: [home, team], issues, editor: null },
+        favoritesPreview: { items: [], more: false },
+        recentByYou: { page: page([]), opened: [] },
+      });
+    expect(overview([])).not.toContain("FreeIPA storages missing");
+    expect(overview([{ area: "freeipa", code: "freeipa_disabled" }])).not.toContain("FreeIPA storages missing");
+    const failed = overview([{ area: "freeipa", code: "unavailable" }]);
+    expect(failed).toContain("FreeIPA storages missing");
+    expect(failed).toContain(line);
+    expect(failed).toContain("Try again");
+    // a configuration that is missing is a failure too, but trying again does not help
+    const unconfigured = overview([{ area: "freeipa", code: "not_configured" }]);
+    expect(unconfigured).toContain("FreeIPA storages missing");
+    expect(unconfigured).not.toContain("Try again");
+  });
+
   test("all storage, Activity and the shares render on v2 with their data and no loading state on the first picture", () => {
     const upload = entry({
       action: "file.upload",

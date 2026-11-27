@@ -26,6 +26,8 @@ import { activityUrl, filesUrl } from "./urls";
 
 /** The overview shows this many favorites; the page lists all of them. */
 export const FAVORITES_PREVIEW = 6;
+/** Issues that mean the storages of an area could not be read; a disabled area is the operator's choice, no failure. */
+const FAILED_AREA = new Set(["unavailable", "configuration_unreadable", "not_configured"]);
 /** The last few things this person did. */
 export const RECENT_LINES = 5;
 
@@ -155,22 +157,24 @@ export default function OverviewPane(props: {
       {/* no statement row: "Heute 5 Änderungen von dir" gave nothing to act on (Valentin 26.11.); a storage that is
           not there says so with its own chip */}
       <Pane label={b().allStorage} scrollKey="filesv2-overview">
-        {/* an area that could not be read is an exception of one line, not a box (B): its state, what it means, and the
-            way to read it again. It speaks of the area, not of "the storage", so it never seems to mean a storage the
-            list shows */}
-        {props.issues.map((issue) => (
-          <Bar
-            start={
-              // one line, as B: the state as a word and the way to read it again ("● FreeIPA-Ablagen fehlen")
-              <Chip status="warn">{b().v2AreaMissing({ area: t()[issue.area] })}</Chip>
-            }
-            end={
-              <Button variant="text" onClick={() => props.onRetry()}>
-                {h().retry}
-              </Button>
-            }
-          />
-        ))}
+        {/* Only a real failure speaks (Valentin v5: an info line here was unnecessary): storages that could not be read
+            are one compact exception line, a red dot with what is missing, and "Erneut versuchen" where trying again
+            can help. An area the operator turned off is no failure and says nothing; everything read says nothing. It
+            speaks of the area, not of "the storage", so it never seems to mean a storage the list shows. */}
+        {props.issues
+          .filter((issue) => FAILED_AREA.has(issue.code))
+          .map((issue) => (
+            <Bar
+              start={<Chip status="bad">{b().v2AreaMissing({ area: t()[issue.area] })}</Chip>}
+              end={
+                <Show when={issue.code === "unavailable"}>
+                  <Button variant="text" onClick={() => props.onRetry()}>
+                    {h().retry}
+                  </Button>
+                </Show>
+              }
+            />
+          ))}
         {/* The storages as a table (Valentin 26.11.: dense, not the sidebar again): what each is, who belongs to it,
             what it holds and who changed it last. On the phone each is a row of two lines. A storage that is not
             there says so with its chip. */}
