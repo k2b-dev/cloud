@@ -51,14 +51,15 @@ test("a template's preview is its first table with rows, three columns of three 
       for (const cell of [...shown.table.columns, ...shown.table.rows.flat()]) expect(cell).not.toMatch(/[|*]|^-+$/);
     }
   }
-  // the reading list shows its books; the recipes skip a table without rows and show the pantry
+  // the reading list shows its books, in German in a German notebook; the recipes skip a table without rows and show the
+  // pantry
   expect(preview("reading-list", "de")).toEqual({
     table: {
       columns: ["Titel", "Autor", "Status"],
       rows: [
-        ["The Creative Act", "Rick Rubin", "Reading"],
-        ["Braiding Sweetgrass", "Robin Wall Kimmerer", "Want"],
-        ["Four Thousand Weeks", "Oliver Burkeman", "Done"],
+        ["Momo", "Michael Ende", "Lese ich"],
+        ["Unterleuten", "Juli Zeh", "Will ich lesen"],
+        ["Der Process", "Franz Kafka", "Gelesen"],
       ],
     },
   });

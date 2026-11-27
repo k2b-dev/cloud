@@ -61,7 +61,7 @@ limit: 25
 :::
 
 @reading
-- [x] Braiding Sweetgrass in der Bibliothek ausleihen
+- [x] Unterleuten in der Bibliothek ausleihen
 - [ ] Ein Sachbuch über Aufmerksamkeit ergänzen
 - [ ] Einen kurzen Roman für den Abend auswählen
 `,
@@ -75,11 +75,11 @@ limit: 25
 @books
 | Titel | Autor | Status | Bewertung | Begonnen | Beendet | Notizen |
 |---|---|---|---:|---|---|---|
-| The Creative Act | Rick Rubin | Reading |  | ${ctx.now.getFullYear()}-05-01 |  | kurze Abschnitte für jeden Tag |
-| Braiding Sweetgrass | Robin Wall Kimmerer | Want |  |  |  | Ökologie und Aufmerksamkeit |
-| Four Thousand Weeks | Oliver Burkeman | Done | 5 | ${ctx.now.getFullYear()}-04-01 | ${ctx.now.getFullYear()}-04-14 | nützliche Grenzen |
-| A Psalm for the Wild-Built | Becky Chambers | Done | 4 | ${ctx.now.getFullYear()}-03-11 | ${ctx.now.getFullYear()}-03-15 | ruhige Fiktion |
-| The Art of Fermentation | Sandor Katz | Reference |  |  |  | einzelne Kapitel nachschlagen |
+| Momo | Michael Ende | Lese ich |  | ${ctx.now.getFullYear()}-05-01 |  | kurze Kapitel für jeden Abend |
+| Unterleuten | Juli Zeh | Will ich lesen |  |  |  | Dorfroman, Empfehlung von Anna |
+| Der Process | Franz Kafka | Gelesen | 5 | ${ctx.now.getFullYear()}-04-01 | ${ctx.now.getFullYear()}-04-14 | beklemmend und genau |
+| Altes Land | Dörte Hansen | Gelesen | 4 | ${ctx.now.getFullYear()}-03-11 | ${ctx.now.getFullYear()}-03-15 | ruhig, norddeutsch |
+| Duden – Die deutsche Rechtschreibung | Dudenredaktion | Zum Nachschlagen |  |  |  | einzelne Regeln nachschlagen |
 
 :::query
 source: notes
@@ -106,33 +106,30 @@ Halte diese Tabelle kurz. Wenn ein Buch ausführliche Notizen benötigt, lege ei
   {
     key: "creative-act",
     content: bookContentDe(
-      "The Creative Act",
-      "Rick Rubin",
-      "Reading",
+      "Momo",
+      "Michael Ende",
+      "Lese ich",
       "",
       [
-        "Aufmerksamkeit wird als Praxis verstanden, nicht als Stimmung.",
-        "Nützliche Erinnerung: zuerst breit sammeln, später bearbeiten.",
-        "Die kurzen Abschnitte eignen sich für kleine Leseeinheiten.",
+        "Zeit ist Leben, und das Leben wohnt im Herzen.",
+        "Die grauen Herren sparen Zeit, und niemand hat mehr welche.",
+        "Beppo Straßenkehrer nimmt immer nur den nächsten Schritt.",
       ],
       [
-        "Passt gut zu Notizabläufen, weil Erfassen und Bewerten getrennt werden.",
-        "Rohnotizen einmal pro Woche durchsehen, statt sie bereits beim Erfassen zu bearbeiten.",
+        "Passt gut zu Notizabläufen: einen Schritt nach dem anderen, statt alles auf einmal zu ordnen.",
+        "Zitate einmal pro Woche durchsehen, statt sie schon beim Lesen zu bewerten.",
       ],
     ),
   },
   {
     key: "braiding-sweetgrass",
     content: bookContentDe(
-      "Braiding Sweetgrass",
-      "Robin Wall Kimmerer",
-      "Want",
+      "Unterleuten",
+      "Juli Zeh",
+      "Will ich lesen",
       "",
-      ["Mit geöffnetem Gartentagebuch lesen.", "Pflanzennamen und Vorgehensweisen mit Bezug zur lokalen Ökologie festhalten."],
-      [
-        "Mögliche Verbindung zwischen Lesenotizen und dem Plan für die heimische Hecke.",
-        "Auf praktische Beobachtungen achten, nicht nur auf schöne Passagen.",
-      ],
+      ["Nach dem Lesen festhalten, welche Figur man am Ende verstanden hat.", "Notieren, wo die Erzählung die Sicht wechselt."],
+      ["Empfehlung von Anna; danach mit ihr darüber sprechen.", "Auf das Dorf als Ganzes achten, nicht nur auf einzelne Figuren."],
     ),
   },
 ];

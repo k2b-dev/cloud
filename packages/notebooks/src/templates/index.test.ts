@@ -113,8 +113,11 @@ describe("built-in notebook templates", () => {
     expect(germanText).toContain("Beginne hier");
     expect(germanText).toContain("So verwendest du dieses Gartentagebuch");
     expect(germanText).toContain("Käsespätzle mit Röstzwiebeln");
-    expect(germanText).toContain("Aufmerksamkeit wird als Praxis verstanden");
+    expect(germanText).toContain("Zeit ist Leben");
     expect(germanText).not.toMatch(/Start here|How to use|Monthly focus|Year notes|Recipe schema/);
+    // sample data speaks German too: a German reading list shows German books and states, never "Reading" or "Done"
+    expect(germanText).toContain("| Momo | Michael Ende | Lese ich |");
+    expect(germanText).not.toMatch(/\| (Reading|Want|Done|Reference) \||status: (Reading|Want|Done)\b|The Creative Act/);
     for (const [index, en] of english.entries()) {
       const de = german[index]!;
       expect(de.template.id).toBe(en.template.id);

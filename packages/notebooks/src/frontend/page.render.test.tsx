@@ -159,7 +159,9 @@ test("without a notebook, Notebooks is one line and four cards in a centred page
   const previews = await selectHtml(html, '[data-k2-part="Tiles"] .k2-tile-preview');
   expect(previews.map((preview) => preview.attributes["aria-hidden"])).toEqual(["true", "true", "true", "true"]);
   expect(previews[2]?.text).toContain("Camembert");
-  expect(previews[3]?.text).toContain("Rick Rubin");
+  expect(previews[3]?.text).toContain("Michael Ende");
+  // a German notebook speaks German in its sample data too
+  expect(previews[3]?.text).toContain("Lese ich");
   const links = await selectHtml(html, '[data-k2-part="Tiles"] .k2-tile a[href^="/app/notebooks?new="]');
   expect(links.map((link) => link.attributes.href)).toEqual([
     "/app/notebooks?new=blank",

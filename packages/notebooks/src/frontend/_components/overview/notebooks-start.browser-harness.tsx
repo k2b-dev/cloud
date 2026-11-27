@@ -38,7 +38,7 @@ const demo: StartTemplate[] = [
     name: "Leseliste",
     description: "Bücher, Leseliste, Notizen, Zitate und Bewertungen.",
     icon: "ti ti-books",
-    pageCount: pages("Leseübersicht", "Bücher", "The Creative Act", "Braiding Sweetgrass"),
+    pageCount: pages("Leseübersicht", "Bücher", "Momo", "Unterleuten"),
   },
   {
     id: "garden-planner",
@@ -70,9 +70,9 @@ const previews: Record<string, TilePreview> = {
     table: {
       columns: ["Titel", "Autor", "Status"],
       rows: [
-        ["The Creative Act", "Rick Rubin", "Reading"],
-        ["Braiding Sweetgrass", "Robin Wall Kimmerer", "Want"],
-        ["Four Thousand Weeks", "Oliver Burkeman", "Done"],
+        ["Momo", "Michael Ende", "Lese ich"],
+        ["Unterleuten", "Juli Zeh", "Will ich lesen"],
+        ["Der Process", "Franz Kafka", "Gelesen"],
       ],
     },
   },
