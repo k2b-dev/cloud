@@ -66,6 +66,7 @@ beforeAll(async () => {
   open = harness.addChat({ members: [tobias, jonas, mira], name: "Lieferung KW 49", count: 14, end: minutes(25), spacing: 2 });
   harness.addThread(open, { name: "Rechnung 4471", count: 4, unread: 1 });
   harness.addThread(open, { name: "Abholung Montag", count: 3 });
+  harness.setNotifications(open, { level: "mentions", choice: "mentions", until: null, defaultLevel: "all", following: null });
   harness.addChat({ members: [lena], count: 5, end: minutes(48) });
   harness.addChat({ members: [jonas], count: 4, end: minutes(95), unread: 1 });
   harness.addChat({ members: [ada, felix], name: "Messe Leipzig", count: 7, end: minutes(180) });
