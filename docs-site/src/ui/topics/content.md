@@ -66,6 +66,12 @@ One tick per time slot, such as the scrapes of the last 30 minutes: ok in the so
 
 <Props of="Ticks" />
 
+### RangeBar
+
+A range on the one scale its list shares, such as each day of a week from its low to its high on the week's lowest low and highest high: the rows read at a glance, a cold day left, a warm one right. It takes the width of its place on a quiet track, and a range of one value still shows as a short bar. `stops` colour the bar by meaning along the scale, such as cold to warm; the owner keeps them at 3:1 on the surface in light and dark, and text never takes them. Without `stops` the bar is neutral. Its `label` says the range in words, such as "2,9° bis 9,1°": assistive technology reads it instead of the bar. In forced colours the range draws in the text colour on an outlined track.
+
+<Props of="RangeBar" />
+
 ### Disclosure
 
 Something that opens in place, such as the answer to a question. Its content is made only while it is open: a closed answer is not in the page, so the browser's find in page does not reach it.

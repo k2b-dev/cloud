@@ -2158,6 +2158,37 @@
   background: var(--k2-ok);
 }
 
+/* A range on a shared scale: a quiet track the width of its place, the range on it from its start to its end. The bar
+   is at least 4 px, so a range of one value still shows. */
+.k2-ui .k2-range {
+  position: relative;
+  display: block;
+  min-width: 48px;
+  height: 6px;
+  border-radius: var(--k2-r-round);
+  background: var(--k2-n100);
+}
+.k2-ui .k2-range > i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--k2-range-start);
+  right: var(--k2-range-end);
+  min-width: 4px;
+  border-radius: var(--k2-r-round);
+  background: var(--k2-range-fill, var(--k2-n600));
+}
+/* forced colours replace backgrounds: the track keeps an outline, the range fills in the text colour */
+@media (forced-colors: active) {
+  .k2-ui .k2-range {
+    outline: 1px solid GrayText;
+  }
+  .k2-ui .k2-range > i {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+}
+
 /* ── Controls: round. Button, field, select, check, switch, radio ───────────────────────────────────────────── */
 .k2-ui .k2-btn {
   height: var(--k2-h-control);
