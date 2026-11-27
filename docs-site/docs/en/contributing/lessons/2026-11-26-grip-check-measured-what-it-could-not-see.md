@@ -1,0 +1,6 @@
+### The grip layout check skipped hidden grips and counted the text beside them
+
+- **What happened:** When v2 grips started to rest at `opacity: 0`, `measureV2Layout` measured no grip at all, and 22 primitive layout tests at 1440 px failed on `layout.grips.length > 0`. In Pulse (W5), a table wider than its list pane made the same check report the pill 0.5 to 1 px off its line at DPR 1, though it was painted on its line pixel for pixel.
+- **Root cause:** The check measured only visible elements, so a grip hidden until it is wanted left the rule silently. Its screenshot step looked for the pill and the line 3 px around the grip and took everything that differed from the background, so the table's content, cut at the line beside the pill, became part of both.
+- **Error class:** A layout measurement that silently skips what it cannot see, or attributes neighbouring content to the element it measures.
+- **Guard:** `measureV2Layout` shows every grip while it measures, finds the pill only inside the grip and takes the run of one colour nearest the grip's middle as the line. `primitives.browser.test.ts` requires a measured grip at 1440 px and measures `splitWideTable`; `measure-v2-layout.browser.test.ts` measures a grip beside an overflowing table at DPR 1 and 2; `grips.browser.test.ts` checks the rest, hover, focus, drag and touch states.
