@@ -881,6 +881,10 @@
 .k2-ui .k2-sec > .k2-list > .k2-row {
   border-bottom: 0;
 }
+/* a bar of deeds that ends a section (a form's "Speichern") gives its line to the section, which ends it */
+.k2-ui .k2-sec > .k2-bar:last-child {
+  border-bottom: 0;
+}
 /* the phone form of a table keeps a line between its rows; its last row gives way to the line of its section */
 .k2-ui .k2-sec > .k2-table-phone > .k2-list > .k2-row:last-child {
   border-bottom: 0;
