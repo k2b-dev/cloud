@@ -25,15 +25,18 @@ and appealing. Dense is not busy: show more, never the same thing twice.
 1. **Each thing carries its mark.** Every row, card and sidebar entry for a
    thing leads with its `Mark` (colour and symbol, or thumbnail) or a
    person's `Avatar`; without its own colour it takes its kind's, never grey.
-2. **The first line says what counts today.** `StatusRow` lead or `Cells`:
-   a statement with a number, chips with a tone for what lets one act. A
-   count such as "6 Einträge" is never the biggest text.
-3. **A state is colour, symbol and word.** A value with a limit gets a bar,
-   a short history a `Spark`.
-4. **Space structures, lines separate groups**; no box inside a card.
+2. **The first line says what counts today** (look.md §1): one hero, the
+   figure a person acts on with its trend, its exceptions as "● number
+   word". A count such as "6 Einträge" is never the biggest text.
+3. **A state is a dot and its word; colour only for problems** (look.md
+   §7). A value with a limit gets a bar, a short history a `Spark`; at most
+   one picture of data per row (look.md §3).
+4. **Space structures, lines separate groups** (look.md §6); no box inside
+   a card.
 5. **No empty half**: a detail only while open, a side column only if full.
 6. **People beside what they did:** avatars, stacks, `Digest activity`.
-7. **Four type sizes** (12, 13, 14, 18); sample data dense and real.
+7. **Five type steps** (look.md §8: 12, 13, 14, 18 and the 30 px hero
+   figure); sample data dense and real.
 8. **At most two head rows** over list and detail: path and deeds, then
    `FilterBar` with count, order and display at its `end`.
 9. **Settings are `Setting` rows**: value beside the name, never a form.
