@@ -361,6 +361,18 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     ON workflows.run(app_id, scope_id, created_at DESC, id DESC)
     WHERE parent_run_id IS NULL
   `.simple();
+  // The newest top-level runs across all workflows, of everything or of one app: the run list and the timeline
+  // of Betrieb read them without a workflow or scope filter.
+  await db`
+    CREATE INDEX IF NOT EXISTS idx_workflows_run_recent
+    ON workflows.run(created_at DESC, id DESC)
+    WHERE parent_run_id IS NULL
+  `.simple();
+  await db`
+    CREATE INDEX IF NOT EXISTS idx_workflows_run_app_recent
+    ON workflows.run(app_id, created_at DESC, id DESC)
+    WHERE parent_run_id IS NULL
+  `.simple();
   console.log("  ✓ workflows.run table");
 
   /**

@@ -18,10 +18,14 @@ export const migrate = async (): Promise<void> => {
   console.log("  ✓ logging.entries table");
   await migrateLogMetadataReader();
 
+  // A source's newest entries: the logs list and the runs list filter by source (one or several) and sort by
+  // created_at, id; the accounts overview reads a source's latest sync lines. The index also serves every
+  // source-only lookup, so the single-column index it replaces is dropped.
   await sql`
-    CREATE INDEX IF NOT EXISTS idx_logging_entries_source
-    ON logging.entries(source)
+    CREATE INDEX IF NOT EXISTS idx_logging_entries_source_created
+    ON logging.entries(source, created_at DESC, id DESC)
   `.simple();
+  await sql`DROP INDEX IF EXISTS logging.idx_logging_entries_source`.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_logging_entries_level
     ON logging.entries(level)
