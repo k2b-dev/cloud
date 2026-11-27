@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type axeCore from "axe-core";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { demoBundle } from "../../test/v2-behavior/harness";
 import type {} from "../../test/v2-menu-panel.demo";
 
@@ -413,7 +413,7 @@ test("right to left: a panel takes the place of a button menu, of a submenu and 
       await page.keyboard.press("Escape");
       await panel(page).waitFor({ state: "detached" });
       // the submenu: it takes the submenu's place and never lies over the menu it came from
-      await page.getByRole("menuitem", { name: /^Wann/ }).hover();
+      await hoverInPlace(page.getByRole("menuitem", { name: /^Wann/ }));
       const submenu = page.locator('[role="menu"]').nth(1);
       await submenu.waitFor();
       await settled(page);
