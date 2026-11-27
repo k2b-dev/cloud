@@ -11,10 +11,11 @@ import {
   Show,
   useContext,
 } from "solid-js";
-import { isServer } from "solid-js/web";
+import { Dynamic, isServer } from "solid-js/web";
 import { formatDateInput, parseDateInput } from "../inputs/date-input";
 import { dateKey, isCalendarDay, isDateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
+import { addressKey, scanAddresses } from "./addresses";
 import { useCode } from "./behavior/code";
 import { useFilePick } from "./behavior/files";
 import { usePopover } from "./behavior/overlays";
@@ -245,7 +246,7 @@ Field.Row = (props: {
 
 const useField = () => useContext(FieldContext);
 
-export type InputProps = {
+type InputBase = {
   /** The text in the field. */
   value?: string;
   /** A quiet example while the field is empty. */
@@ -310,6 +311,33 @@ export type InputProps = {
   /** Whether a phone's keyboard starts words or sentences with a capital; `off` for names, codes and keys. */
   autocapitalize?: "off" | "none" | "on" | "sentences" | "words" | "characters";
 };
+
+/** Where a search sends its text (see `InputProps.send`). */
+export type InputSend = {
+  /** The page the search loads, such as `/app/accounts/groups`. */
+  action: string;
+  /** The rest of the address that the search keeps, as name and value; the field's own name is left out. */
+  params?: Iterable<readonly [string, string]>;
+  /** Searches in place with the text, where JavaScript runs; without it the page loads. */
+  onSearch?: (text: string) => void;
+};
+
+export type InputProps = InputBase &
+  (
+    | { send?: undefined }
+    | {
+        /**
+         * A search that reaches the server also without JavaScript (with `type="search"`): the field is its own GET
+         * form, named by `label`, and Enter loads `action` with `params` (the rest of the address, such as a list's
+         * filters) and the text under `name`, which it needs. Where JavaScript runs, `onSearch` takes Enter instead and
+         * the page searches in place. The field keeps its place and look, also in a head and folded on the phone. Never
+         * put it inside another `<form>`: forms do not nest, and the browser drops the inner one.
+         */
+        send: InputSend;
+        /** The name the search text is sent under, such as `q`. */
+        name: string;
+      }
+  );
 
 /** Hands the text field to a `ref` prop; Solid turns `ref={variable}` into a function that sets the variable. */
 const forwardRef = (ref: InputProps["ref"], element: HTMLInputElement | HTMLTextAreaElement) => {
@@ -378,8 +406,26 @@ export const Input = (props: InputProps) => {
     spellcheck: props.spellcheck === undefined ? undefined : props.spellcheck ? ("true" as const) : ("false" as const),
     autocapitalize: props.autocapitalize,
   });
+  // a search sent to the server is its own GET form, with the same class and marks, so every rule of a head holds
+  const send = () => (props.type === "search" ? props.send : undefined);
+  const kept = () => {
+    const own = props.name ?? field?.name;
+    return [...(send()?.params ?? [])].filter(([name]) => name !== own);
+  };
   return (
-    <span
+    <Dynamic
+      component={send() ? "form" : "span"}
+      method={send() ? "get" : undefined}
+      action={send()?.action}
+      role={send() ? "search" : undefined}
+      // two searches on a page are two landmarks; each is named by its field's label
+      aria-label={send() ? props.label : undefined}
+      onSubmit={(event: SubmitEvent) => {
+        const search = send()?.onSearch;
+        if (!search) return;
+        event.preventDefault();
+        search(input?.value ?? "");
+      }}
       class="k2-input"
       data-k2-part="Input"
       data-invalid={field?.invalid ? "" : undefined}
@@ -388,6 +434,7 @@ export const Input = (props: InputProps) => {
       data-search={props.type === "search" ? "" : undefined}
     >
       <Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>
+      <For each={kept()}>{([name, value]) => <input type="hidden" name={name} value={value} />}</For>
       <Show
         when={props.multiline}
         fallback={
@@ -424,7 +471,7 @@ export const Input = (props: InputProps) => {
       <Show when={end() !== undefined}>
         <span class="k2-input-end">{end()}</span>
       </Show>
-    </span>
+    </Dynamic>
   );
 };
 
@@ -613,6 +660,16 @@ export type TagsInputProps = {
   /** A name when the field stands without a Field. */
   label?: string;
   disabled?: boolean;
+  /**
+   * `email`: e-mail addresses, as the To of a message. A comma, a semicolon or a new line ends an address too, a
+   * paste of several becomes several chips (`Name <address>` and `"Berg, Anna" <address>` as well), and a text that is
+   * no address stays in the field with a sentence why, and keeps the form from being sent. A value is the address in
+   * the form it was given (`Name <address>`); the same address twice, in any case, is one chip. The phone shows its
+   * keyboard for addresses.
+   */
+  type?: "email";
+  /** How many values the field takes; more are not added, and a sentence says so. With `email` 200 (one To of Mail). */
+  max?: number;
 };
 
 /**
@@ -625,21 +682,132 @@ export const TagsInput = (props: TagsInputProps) => {
   const t = useControlMessages();
   const [own, setOwn] = createSignal<string[]>([...(props.value ?? [])]);
   const values = () => (props.onChange ? [...(props.value ?? [])] : own());
+  const email = () => props.type === "email";
+  // the text being typed; with `email` it is held here, so a separator or a paste can turn it into chips
+  const [query, setQuery] = createSignal("");
+  // What the field says under its chips: a text that is no address (it keeps the form from being sent) and values it
+  // left out over `max`, each a sentence of its own; and what assistive technology hears of a change.
+  const [refused, setRefused] = createSignal<string>();
+  const [overflow, setOverflow] = createSignal<string>();
+  const [heard, setHeard] = createSignal("");
+  const rejected = () => refused() !== undefined;
+  const noticeId = createUniqueId();
+  // a status says each change, also the same words twice: it is emptied first, so the new words are a change
+  const say = (words: string) => {
+    setHeard("");
+    queueMicrotask(() => setHeard(words));
+  };
+  const max = () => props.max ?? (email() ? 200 : Number.POSITIVE_INFINITY);
+  const keyOf = (value: string) => (email() ? addressKey(value) : value);
+  // the values as the field holds them: trimmed, each once, at most `max` (for every kind of value)
+  const commit = (next: string[]) => {
+    const seen = new Set<string>();
+    const clean = next
+      .map((value) => value.trim())
+      .filter((value) => {
+        const key = keyOf(value);
+        if (!value || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    const kept = clean.slice(0, max());
+    const left = clean.length - kept.length;
+    setOverflow(left > 0 ? (email() ? t().tooManyAddresses({ max: max(), left }) : t().tooManyValues({ max: max(), left })) : undefined);
+    if (email() && kept.length < values().length) say(t().addressesRemoved({ count: values().length - kept.length }));
+    else if (email() && kept.length > values().length) say(t().addressesAdded({ count: kept.length - values().length }));
+    setOwn(kept);
+    props.onChange?.(kept);
+  };
+  // The addresses in a text become chips. While typing (not `final`) only entries a separator closed are taken, and
+  // a text with no address yet is left as it is typed; Enter, a paste and leaving the field take the last entry too,
+  // and what is no address then stays in the field with a sentence why.
+  const take = (text: string, final: boolean) => {
+    const { found, rest } = scanAddresses(text, { final });
+    if (!found.length && !final) {
+      setQuery(text);
+      setRefused(undefined);
+      return;
+    }
+    if (found.length) commit([...values(), ...found]);
+    setQuery(rest);
+    // cut by characters, so a long text never ends in half an emoji
+    const letters = Array.from(rest);
+    const shown = letters.length > 60 ? `${letters.slice(0, 59).join("")}…` : rest;
+    setRefused(final && rest ? t().notAnAddress({ text: shown }) : undefined);
+  };
   const items = (): ChoiceItem[] => [...new Set([...(props.suggestions ?? []), ...values()])].map((value) => ({ value, label: value }));
   // the core's input owns its id, so the field's label names it through aria-labelledby; a press on the label focuses it
   let input: HTMLInputElement | undefined;
   field?.named(() => input?.focus());
-  // Without `onChange` the given values are where a form's reset returns to; core reports the reset like any change.
+  // a refused text keeps the form from being sent, with the field's own sentence as the reason
+  createRenderEffect(() => {
+    // read before the input is there too, so the effect follows the sentence from the start
+    const reason = refused() ?? "";
+    input?.setCustomValidity(reason);
+  });
+  // Without `onChange` the given values are where a form's reset returns to. The values are held here for every kind
+  // (core only shows them), so `max` holds for what core keeps too, and the field puts them back itself.
   const initial = [...(props.value ?? [])];
+  let chips: HTMLElement | undefined;
+  const ours = (event: Event) => event.target instanceof HTMLFormElement && !!chips && event.target.contains(chips);
+  const onReset = (event: Event) => {
+    if (props.onChange || !ours(event)) return;
+    setOwn(initial);
+    setQuery("");
+    setRefused(undefined);
+    setOverflow(undefined);
+  };
+  // Sending while the focus is still in the field takes the typed addresses first, as leaving it would; a text that
+  // is no address then keeps the form from being sent, with its sentence.
+  const onSubmit = (event: Event) => {
+    if (!email() || !ours(event) || !query().trim()) return;
+    take(query(), true);
+    if (!rejected()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    input?.reportValidity();
+  };
+  // leaving the field and its suggestions takes the last entry, as Enter does (a press outside too: core keeps the text)
+  const onLeave = (event: FocusEvent) => {
+    const to = event.relatedTarget;
+    const list = input?.getAttribute("aria-controls");
+    const popup = list ? document.getElementById(list) : null;
+    if (to instanceof Node && (chips?.contains(to) || popup?.contains(to))) return;
+    if (query().trim()) take(query(), true);
+  };
+  onMount(() => {
+    document.addEventListener("reset", onReset);
+    document.addEventListener("submit", onSubmit, true);
+    onCleanup(() => {
+      document.removeEventListener("reset", onReset);
+      document.removeEventListener("submit", onSubmit, true);
+    });
+  });
   const combo = useCombobox(() => ({
     items: items(),
     multiple: true as const,
     allowCustomValue: true,
-    ...(props.onChange ? { value: values() } : { defaultValue: initial }),
+    // the values are held here: a paste adds several at once, and `max` leaves nothing in core that does not show
+    value: values(),
+    // typing: a separator turns the addresses before it into chips; anything else is typed on, and the sentence of a
+    // refused text goes while it is fixed
+    ...(email()
+      ? {
+          query: query(),
+          keepQuery: true,
+          onQueryChange: (next: string) => {
+            if (/[,;\n]/.test(next)) return take(next, false);
+            setQuery(next);
+            if (rejected()) setRefused(undefined);
+          },
+        }
+      : {}),
     onValueChange: (next: string[]) => {
-      const clean = [...new Set(next.map((value) => value.trim()).filter(Boolean))];
-      setOwn(clean);
-      props.onChange?.(clean);
+      if (!email()) return commit(next);
+      // Enter commits the typed text: as addresses, the rest stays in the field
+      const added = next.filter((value) => !values().includes(value));
+      if (next.length < values().length || !added.length) return commit(next);
+      take(added.join(", "), true);
     },
     disabled: props.disabled,
     required: field?.required,
@@ -648,6 +816,10 @@ export const TagsInput = (props: TagsInputProps) => {
   return (
     <>
       <combo.Chips
+        ref={(element: HTMLElement) => {
+          chips = element;
+          if (email()) element.addEventListener("focusout", onLeave);
+        }}
         class="k2-input"
         data-k2-part="TagsInput"
         data-tags=""
@@ -672,10 +844,33 @@ export const TagsInput = (props: TagsInputProps) => {
           placeholder={values().length ? undefined : props.placeholder}
           aria-labelledby={field?.label}
           aria-label={field ? undefined : props.label}
-          aria-invalid={field?.invalid ? "true" : undefined}
-          aria-describedby={field?.described}
+          aria-invalid={field?.invalid || rejected() ? "true" : undefined}
+          aria-describedby={[field?.described, refused() || overflow() ? noticeId : undefined].filter(Boolean).join(" ") || undefined}
+          inputMode={email() ? "email" : undefined}
+          autocomplete={email() ? "email" : undefined}
+          onPaste={(event: ClipboardEvent) => {
+            const text = event.clipboardData?.getData("text/plain") ?? "";
+            if (!email() || !/[,;\s]/.test(text.trim()) || !input) return;
+            event.preventDefault();
+            // the pasted text stands where the selection was, as a plain paste would put it
+            const typed = input.value;
+            const from = input.selectionStart ?? typed.length;
+            const to = input.selectionEnd ?? from;
+            take(typed.slice(0, from) + text + typed.slice(to), true);
+          }}
         />
       </combo.Chips>
+      {/* why a text was not taken, under the chips; a refused text keeps the form from being sent */}
+      <Show when={refused() || overflow()}>
+        <span class="k2-field-message" id={noticeId} data-error={refused() ? "" : undefined}>
+          {[refused(), overflow()].filter(Boolean).join(" ")}
+        </span>
+      </Show>
+      <Show when={email()}>
+        <span class="k2-hidden-text" role="status">
+          {heard()}
+        </span>
+      </Show>
       {/* core's form input validates and resets the field; the values are sent one entry each under the name */}
       <combo.FormInput />
       <Show when={props.name ?? field?.name}>

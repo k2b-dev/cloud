@@ -38,6 +38,8 @@ const fixture = (opened: string[], clicked: string[]) => {
         { label: "Archiv", icon: "archive", href: "/app/demo/archive", nested: true, dot: "ok" },
         // a fold: closed while none of its entries is the open one
         { label: "Mehr", nested: true, items: [{ label: "Spam", icon: "alert-octagon", href: "/app/demo/spam" }] },
+        // work that runs here: the old menu has no running state, and running is no unread mail
+        { label: "Entwurf", icon: "pencil", href: "/app/demo/drafts", nested: true, dot: "running" },
       ],
     },
     {
@@ -116,6 +118,7 @@ test("the menu's tree: named groups are sections, nested entries stand under the
                 defaultExpanded: false,
                 children: [{ id: "/app/demo/spam", label: "Spam", icon: "ti ti-alert-octagon", href: "/app/demo/spam" }],
               },
+              { id: "/app/demo/drafts", label: "Entwurf", icon: "ti ti-pencil", href: "/app/demo/drafts" },
             ],
           },
           { id: "group:0:menu:0", label: "Neues Postfach", icon: "ti ti-mail-plus", action: "group:0:menu:0" },
