@@ -1273,7 +1273,7 @@ const app = new Hono<AuthContext>()
       return respond(
         c,
         toPublicNotebookResult(
-          notebooksService.notebook.create({ data, creatorId: user.id, seedWelcome: welcomeNote ?? true }),
+          notebooksService.notebook.create({ data, creatorId: user.id, seedWelcome: welcomeNote ?? true, locale: getLocale(c) }),
           getLocale(c),
         ),
       );

@@ -11,7 +11,7 @@ order: 120
 :::reference
 - **Weiterleitung zur Anmeldung:** Die Anfrage enthält keine gültige Cloud-Sitzung. Prüfe, ob der Browser die normale Cloud-Anmeldung erreicht und Cookies für den erwarteten Ursprung sendet.
 - **403 Forbidden:** Die Person ist angemeldet, gehört aber keiner erlaubten Gruppe an. Prüfe wirksame und verschachtelte Gruppenmitgliedschaften.
-- **404 oder ungültiger Client:** Die Prüf-URL ist falsch oder der Client wurde gelöscht. Kopiere die aktuelle URL aus dem Aktionsmenü des Clients.
+- **404 oder ungültiger Client:** Die Prüf-URL ist falsch oder der Client wurde gelöscht. Öffne den Client in der Liste und kopiere die aktuelle URL dort.
 - **Der Upstream erhält keine Identität:** Prüfe, ob die ForwardAuth-Middleware die auf der Proxy-Auth-Seite aufgeführten Antwort-Header weiterleitet.
 :::
 
