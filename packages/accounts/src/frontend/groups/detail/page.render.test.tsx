@@ -105,10 +105,6 @@ const withGroup = async (
     relations?: () => ReturnType<typeof accountsAppService.group.relations>;
     /** The group's audit events, newest first. */
     audit?: Awaited<ReturnType<typeof audit.latest>>;
-    /** The group's direct members by kind. */
-    direct?: { type: "user" | "group" | "service_account"; id: string }[];
-    /** Who manages the group directly. */
-    managers?: { type: "user" | "group" | "service_account"; id: string }[];
   },
   run: (
     app: Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>,
@@ -121,6 +117,7 @@ const withGroup = async (
       names: unknown[];
       faces: number;
       counts: number;
+      wholeLists: number;
     },
   ) => Promise<void>,
 ) => {
@@ -130,6 +127,7 @@ const withGroup = async (
     relations: [] as unknown[],
     faces: 0,
     counts: 0,
+    wholeLists: 0,
     audit: 0,
     auditAsked: [] as Parameters<typeof audit.latest>[0][],
     names: [] as unknown[],
@@ -149,7 +147,11 @@ const withGroup = async (
     spyOn(accountsAppService.accountRequest, "countPending").mockResolvedValue(0),
     spyOn(accountsAppService.group.parent, "list").mockResolvedValue(empty),
     spyOn(accountsAppService.group.managedGroup, "list").mockResolvedValue(empty),
-    spyOn(accountsAppService.group.member, "list").mockResolvedValue({ ...empty, items: options.direct ?? [] } as never),
+    // the record pages and counts in the database: it never loads a whole member or manager list
+    spyOn(accountsAppService.group.member, "list").mockImplementation(async () => {
+      calls.wholeLists += 1;
+      return empty;
+    }),
     // like the service: the exact target, the asked actions and outcome, newest first, at most the limit
     spyOn(audit, "latest").mockImplementation(async (config) => {
       calls.audit += 1;
@@ -164,7 +166,10 @@ const withGroup = async (
         )
         .slice(0, config.limit);
     }),
-    spyOn(accountsAppService.group.manager, "list").mockResolvedValue({ ...empty, items: options.managers ?? [] } as never),
+    spyOn(accountsAppService.group.manager, "list").mockImplementation(async () => {
+      calls.wholeLists += 1;
+      return empty;
+    }),
     // Like the service: a page past the end is empty, but the total still counts every entry.
     spyOn(accountsAppService.group, "relations").mockImplementation(async (input) => {
       calls.relations.push(input);
@@ -176,9 +181,10 @@ const withGroup = async (
         calls.faces += 1;
         return { items: [ada, memberGroup(7)], page: 1, perPage: 4, total: 3, hasNext: false };
       }
-      if (input.memberOfGroupId && input.pagination?.perPage === 1) {
+      if ((input.memberOfGroupId || input.parentGroupId) && input.pagination?.perPage === 1) {
         calls.counts += 1;
-        return { items: [], page: 1, perPage: 1, total: input.kinds?.includes("group") ? 2 : 11, hasNext: true };
+        const total = input.parentGroupId ? 1 : input.kinds?.includes("group") ? 2 : input.kinds?.includes("service_account") ? 1 : 11;
+        return { items: [], page: 1, perPage: 1, total, hasNext: total > 1 };
       }
       if (input.userIds || input.groupIds || input.serviceAccountIds) {
         calls.names.push(input);
@@ -247,7 +253,7 @@ test("the members tab reads the search, the indirect members and the agents from
     expect(calls.entity[1]).not.toHaveProperty("recursive");
     // nobody to name: no read besides the tab's own
     expect(calls.names).toEqual([]);
-    expect(calls.faces).toBe(1);
+    expect(calls.faces).toBe(2);
   });
 });
 
@@ -424,33 +430,22 @@ const event = (id: number, action: string, target: string, metadata: Record<stri
   metadata,
 });
 
-test("the first row counts the direct members by kind, the managers with their faces, the sub-groups and the parents", async () => {
-  const direct = [
-    { type: "user" as const, id: "u1" },
-    { type: "user" as const, id: "u2" },
-    { type: "service_account" as const, id: "a1" },
-    { type: "group" as const, id: "g1" },
-  ];
-  await withGroup({ total: 3, direct }, async (app, calls) => {
-    const html = await (await open(app, "")).text();
-    expect(html).toContain('data-k2-part="Cells"');
-    // the members tab counts by kind from the direct members it reads anyway
-    expect(html).toContain("2 people · 1 agent");
-    expect(html).toContain(">Sub-groups<");
-    // the managers' first faces and their number come in one read
-    expect(html).toMatch(/data-k2-part="Avatar.Stack"[^>]*aria-label="Ada Renz, team-7"/);
-    expect(calls.faces).toBe(1);
-    expect(calls.counts).toBe(0);
-    expect(calls.names).toEqual([]);
-  });
-  // the managers tab shows its own managers' faces; the members are counted, one read per kind
-  await withGroup({ total: 3, entities: () => [memberGroup(7)] }, async (app, calls) => {
-    const html = await (await open(app, "?tab=managers")).text();
-    expect(html).toContain("people and agents, direct");
-    expect(calls.faces).toBe(0);
-    expect(calls.counts).toBe(2);
-    expect(calls.names).toEqual([]);
-  });
+test("the first row counts the direct members by kind, the managers with their faces and the sub-groups, from counts", async () => {
+  for (const tab of ["", "?tab=managers", "?tab=member-of"]) {
+    await withGroup({ total: 3, entities: () => [memberGroup(7)] }, async (app, calls) => {
+      const html = await (await open(app, tab)).text();
+      expect(html).toContain('data-k2-part="Cells"');
+      // one count each of people, agents and sub-groups (and of the parents where the tab does not list them)
+      expect(html).toContain("11 people · 1 agent");
+      expect(html).toContain(">Sub-groups<");
+      expect(calls.counts).toBe(tab === "?tab=member-of" ? 3 : 4);
+      // the managers' first faces and their number come in one read of four
+      expect(html).toMatch(/data-k2-part="Avatar.Stack"[^>]*aria-label="Ada Renz, team-7"/);
+      expect(calls.faces).toBe(1);
+      expect(calls.names).toEqual([]);
+      expect(calls.wholeLists).toBe(0);
+    });
+  }
 });
 
 test("administrators read the group's last changes as sentences; others never read the audit log", async () => {

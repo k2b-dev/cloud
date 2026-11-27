@@ -4,14 +4,14 @@ import { showAccountActionNotice } from "../../action-notice";
 import type { AccountsMessages } from "../../messages";
 import type { EntityType } from "./group-screen";
 
-/** A deed's answer: done, or the server's own words for why not (or the deed's fallback). */
-export type DeedResult = { ok: true } | { ok: false; message: string };
+/** A deed's answer: done, or the server's own words for why not (or the deed's fallback) and its status, if it answered. */
+export type DeedResult = { ok: true } | { ok: false; message: string; status?: number };
 
 type Words = Pick<AccountsMessages, "actionNotice" | "creationNoticeFailed">;
 
-const failed = async (response: { json: () => Promise<unknown> } | null, fallback: string): Promise<DeedResult> => {
+const failed = async (response: { status: number; json: () => Promise<unknown> } | null, fallback: string): Promise<DeedResult> => {
   const body = response ? ErrorResponseSchema.safeParse(await response.json().catch(() => null)) : null;
-  return { ok: false, message: body?.success ? body.data.message : fallback };
+  return { ok: false, message: body?.success ? body.data.message : fallback, status: response?.status };
 };
 
 /**

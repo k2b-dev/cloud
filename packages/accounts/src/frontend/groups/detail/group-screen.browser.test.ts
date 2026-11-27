@@ -209,8 +209,13 @@ const open = async (view: View, address: string, db: GroupDb, answers: Answers =
     if (path === "/api/accounts/entities") {
       log.searches.push(url);
       const kinds = url.searchParams.get("kinds") ?? "";
+      // Ada stands in the group already, off the page the dialog leaves out: the lookup still offers her
       const items = kinds.includes("service_account")
-        ? [{ kind: "service_account", serviceAccount: { id: NEW_AGENT, name: "Release integration", kind: "standalone" } }]
+        ? [
+            { kind: "service_account", serviceAccount: { id: NEW_AGENT, name: "Release integration", kind: "standalone" } },
+            { kind: "user", user: { id: "44444444-4444-4444-8444-000000000001", uid: "rike", displayName: "Rike Sommer", mail: null } },
+            { kind: "user", user: { id: ADA, uid: "ada.renz", displayName: "Ada Renz", mail: null } },
+          ]
         : kinds === "group"
           ? [{ kind: "group", group: { id: SALES, name: "sales", description: "Vertrieb" } }]
           : [{ kind: "user", user: { id: "44444444-4444-4444-8444-000000000001", uid: "rike", displayName: "Rike Sommer", mail: null } }];
@@ -237,6 +242,9 @@ const open = async (view: View, address: string, db: GroupDb, answers: Answers =
     if (path.startsWith("/api/accounts/groups/")) {
       const body = request.postData() ? request.postDataJSON() : null;
       log.writes.push({ method: request.method(), path, body });
+      // as the service: someone already in the group is refused with a conflict
+      if (request.method() === "POST" && body?.id === ADA)
+        return route.fulfill({ status: 409, json: { message: "User is already a direct member of this group" } });
       const status = answers.statuses.shift() ?? 200;
       if (status !== 200) return route.fulfill({ status, json: { message: "Refresh the group and try again" } });
       apply(db, request.method(), path, body);
@@ -263,6 +271,8 @@ const expectClean = async (tab: Page) => {
 };
 
 const record = `/app/accounts/groups/${GROUP}`;
+/** Ada Renz of the fixture, a direct member and manager of the group. */
+const ADA = "33333333-3333-4333-8333-000000000002";
 /** A tab of the record by its name; its count follows the name. */
 const tabLink = (tab: Page, name: string) => tab.locator("[data-k2-part='Tabs']").getByRole("link", { name: new RegExp(`^${name}`) });
 
@@ -338,6 +348,30 @@ describe("a group's record on v2", () => {
       expect(await dialog.count()).toBe(0);
       // an agent manages members only, and says so
       expect(await tab.getByText(`${a.agent} · ${a.machineManagementAccess}`).count()).toBe(2);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("picking someone already in the group says so in the dialog and adds the others", async () => {
+    const db = sampleDb();
+    const { context, tab, errors, log } = await open(wide, record, db);
+    try {
+      await tab.getByRole("button", { name: a.addMember }).first().click();
+      const dialog = tab.locator("[data-k2-part='Dialog']");
+      await dialog.getByRole("option", { name: /Rike Sommer/ }).click();
+      await dialog.getByRole("option", { name: /Ada Renz/ }).click();
+      await dialog.getByRole("button", { name: d.addChosen({ count: 2 }) }).click();
+      // the dialog stays and says what happened: one added, Ada was a member already; nothing stays chosen
+      await dialog.getByText(d.addedSome({ count: 1 })).waitFor();
+      await dialog.getByText(d.alreadyIn({ role: "members", names: "Ada Renz" })).waitFor();
+      expect(await dialog.getByRole("button", { name: d.addChosen({ count: 0 }) }).count()).toBe(1);
+      expect(log.writes.map((write) => (write.body as { id: string }).id)).toEqual(["44444444-4444-4444-8444-000000000001", ADA]);
+      // closing shows the page again with the one that was added
+      await dialog.getByRole("button", { name: d.done }).click();
+      await tab.waitForFunction(() => document.querySelector("[data-k2-part='Dialog']") === null);
+      expect(log.pages.length).toBeGreaterThan(1);
       expect(errors).toEqual([]);
     } finally {
       await context.close();

@@ -8,8 +8,10 @@ import { useGroupDetailMessages } from "./messages";
 const DESCRIPTION_MAX = 4000;
 
 /**
- * Adds one or several entries found in the directory: tick them in the lookup, then "Add". The entries are added one
- * after the other; a refusal stops there, names the reason, and keeps the rest ticked, so "Add" again goes on.
+ * Adds one or several entries found in the directory: tick them in the lookup, then "Add". Each one is added in
+ * turn. Whoever is in the group already (the service refuses them, `already`) is named as such and leaves the choice;
+ * any other refusal names its reason and stays ticked, so "Add" again tries those once more. While nothing went
+ * wrong the dialog closes; otherwise it stays and says what happened, until "Done".
  */
 export function AddEntriesDialog(props: {
   title: string;
@@ -17,6 +19,10 @@ export function AddEntriesDialog(props: {
   lookup: string;
   load: LookupLoad;
   add: (key: string) => Promise<DeedResult>;
+  /** Whether a refusal means "is in the group already". */
+  already: (result: { status?: number }) => boolean;
+  /** What the group is to the entries, for "Already a member: …". */
+  role: "members" | "managers" | "parents";
   /** `added`: how many were added, so the page shows them. */
   close: (added: number) => void;
 }) {
@@ -25,20 +31,43 @@ export function AddEntriesDialog(props: {
   const [chosen, setChosen] = createSignal<string[]>([]);
   const [busy, setBusy] = createSignal(false);
   const [added, setAdded] = createSignal(0);
-  const [error, setError] = createSignal<string | null>(null);
+  const [report, setReport] = createSignal<{ tone: "note" | "bad"; text: string } | null>(null);
+  // the names the lookup showed, to name the entries in the report
+  const labels = new Map<string, string>();
+  const load: LookupLoad = (query, context) =>
+    props.load(query, context).then((result) => {
+      for (const item of result.items) labels.set(item.value, item.label);
+      return result;
+    });
   const submit = async () => {
     if (busy()) return;
-    if (chosen().length === 0) return setError(t().chooseFirst);
+    if (chosen().length === 0) return setReport({ tone: "bad", text: t().chooseFirst });
     setBusy(true);
-    setError(null);
+    setReport(null);
     try {
+      let now = 0;
+      const already: string[] = [];
+      const refused: string[] = [];
       for (const key of chosen()) {
         const result = await props.add(key);
-        if (!result.ok) return setError(added() > 0 ? `${t().addedPart({ count: added() })} ${result.message}` : result.message);
-        setAdded((count) => count + 1);
-        setChosen((keys) => keys.filter((entry) => entry !== key));
+        const name = labels.get(key) ?? key;
+        if (result.ok) now += 1;
+        else if (props.already(result)) already.push(name);
+        else refused.push(t().refusedFor({ name, reason: result.message }));
+        if (result.ok || props.already(result)) setChosen((keys) => keys.filter((entry) => entry !== key));
       }
-      props.close(added());
+      setAdded((count) => count + now);
+      if (already.length === 0 && refused.length === 0) return props.close(added());
+      setReport({
+        tone: refused.length > 0 ? "bad" : "note",
+        text: [
+          now > 0 ? t().addedSome({ count: now }) : null,
+          already.length > 0 ? t().alreadyIn({ role: props.role, names: already.join(", ") }) : null,
+          ...refused,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      });
     } finally {
       setBusy(false);
     }
@@ -56,7 +85,7 @@ export function AddEntriesDialog(props: {
       foot={
         <>
           <Button onClick={close} disabled={busy()}>
-            {accounts().cancel}
+            {report() ? t().done : accounts().cancel}
           </Button>
           <Button variant="primary" icon="plus" busy={busy()} onClick={() => void submit()}>
             {t().addChosen({ count: chosen().length })}
@@ -64,11 +93,11 @@ export function AddEntriesDialog(props: {
         </>
       }
     >
-      <Lookup label={props.lookup} value={chosen()} onChange={setChosen} load={props.load} />
-      <Show when={error()}>
-        {(message) => (
-          <Notice tone="bad" icon="alert-circle">
-            {message()}
+      <Lookup label={props.lookup} value={chosen()} onChange={setChosen} load={load} />
+      <Show when={report()}>
+        {(shown) => (
+          <Notice tone={shown().tone} icon={shown().tone === "bad" ? "alert-circle" : "info-circle"}>
+            {shown().text}
           </Notice>
         )}
       </Show>

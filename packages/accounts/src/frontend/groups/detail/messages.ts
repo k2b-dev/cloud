@@ -21,11 +21,11 @@ export const groupDetailMessages = i18n.define({
       lookupGroups: "Groups",
       chooseFirst: "Choose at least one entry.",
       addChosen: ({ count }: { count: number }) => (count > 1 ? `Add ${count}` : "Add"),
-      addedPart: ({ count }: { count: number }) =>
-        i18n.plural(count, "en", {
-          one: "1 entry was added; the rest is still chosen.",
-          other: `${count} entries were added; the rest is still chosen.`,
-        }),
+      addedSome: ({ count }: { count: number }) => i18n.plural(count, "en", { one: "1 added.", other: `${count} added.` }),
+      alreadyIn: ({ role, names }: { role: "members" | "managers" | "parents"; names: string }) =>
+        role === "members" ? `Already a member: ${names}.` : role === "managers" ? `Already a manager: ${names}.` : `Already in: ${names}.`,
+      refusedFor: ({ name, reason }: { name: string; reason: string }) => `${name}: ${reason}`,
+      done: "Done",
       added: "Added",
       removed: "Removed",
       descriptionSaved: "Saved",
@@ -41,7 +41,6 @@ export const groupDetailMessages = i18n.define({
       agentsTitle: "Agents",
       subGroups: "Sub-groups",
       subGroupsMeta: "groups inside this one",
-      membersMeta: "people and agents, direct",
       parentsMeta: "groups that contain it",
       memberMix: ({ people, agents }: { people: number; agents: number }) =>
         agents > 0
@@ -83,11 +82,11 @@ export const groupDetailMessages = i18n.define({
       lookupGroups: "Gruppen",
       chooseFirst: "Wähle mindestens einen Eintrag.",
       addChosen: ({ count }) => (count > 1 ? `${count} hinzufügen` : "Hinzufügen"),
-      addedPart: ({ count }) =>
-        i18n.plural(count, "de", {
-          one: "1 Eintrag wurde hinzugefügt; die übrigen bleiben gewählt.",
-          other: `${count} Einträge wurden hinzugefügt; die übrigen bleiben gewählt.`,
-        }),
+      addedSome: ({ count }) => i18n.plural(count, "de", { one: "1 hinzugefügt.", other: `${count} hinzugefügt.` }),
+      alreadyIn: ({ role, names }) =>
+        role === "members" ? `Schon Mitglied: ${names}.` : role === "managers" ? `Schon verantwortlich: ${names}.` : `Schon darin: ${names}.`,
+      refusedFor: ({ name, reason }) => `${name}: ${reason}`,
+      done: "Fertig",
       added: "Hinzugefügt",
       removed: "Entfernt",
       descriptionSaved: "Gespeichert",
@@ -103,7 +102,6 @@ export const groupDetailMessages = i18n.define({
       agentsTitle: "Agenten",
       subGroups: "Untergruppen",
       subGroupsMeta: "Gruppen in dieser Gruppe",
-      membersMeta: "Personen und Agenten, direkt",
       parentsMeta: "Gruppen, die sie enthalten",
       memberMix: ({ people, agents }) =>
         agents > 0

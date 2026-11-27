@@ -57,7 +57,7 @@ export type GroupView = {
   managedGroups: number;
   /** Direct members: people and agents, split by kind where the page knows it, and the groups it contains. */
   members: number;
-  mix: { people: number; agents: number } | null;
+  mix: { people: number; agents: number };
   subGroups: number;
   /** How many manage it, and the first of them for their faces. */
   managers: { total: number; faces: GroupPerson[] };
@@ -451,6 +451,10 @@ export default function GroupScreen(props: GroupScreenProps) {
             lookup={spec().lookup}
             load={spec().load}
             add={spec().add}
+            role={props.tab === "managers" ? "managers" : props.tab === "member-of" ? "parents" : "members"}
+            // a local group refuses whoever stands in it already with a conflict; a personal Linux group refuses
+            // every add with one, so there it keeps the service's own words
+            already={(result) => result.status === 409 && props.group.owner === null}
             close={(added) => {
               setDialog(null);
               if (added > 0) void showChanges().then(() => toast(t().added, { status: "ok" }));
@@ -591,7 +595,7 @@ export default function GroupScreen(props: GroupScreenProps) {
                   color="#2563eb"
                   label={a().members}
                   value={String(props.group.members)}
-                  meta={props.group.mix ? t().memberMix(props.group.mix) : t().membersMeta}
+                  meta={t().memberMix(props.group.mix)}
                   href={props.tab === "members" ? undefined : tabHref("members")}
                 />
                 <Cells.Cell
