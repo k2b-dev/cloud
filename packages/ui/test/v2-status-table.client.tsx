@@ -34,6 +34,8 @@ declare global {
      * `marks={false}`, as `missing() > 0 && <Chip …/>` does while nothing is missing.
      */
     __k2Marks?: (state?: "shown" | "none") => void;
+    /** Twelve entries selected, with seven actions: the bar of what can be done with them, as Files draws it; `false` ends the selection. */
+    __k2Selection?: (on?: boolean) => void;
     /** The search of the head takes Escape itself (its onKeyDown calls preventDefault) and counts it. */
     __k2TakeEscape?: boolean;
     __k2Escapes?: number;
@@ -106,6 +108,18 @@ window.__k2MailFact = () => {
 };
 const [chips, setChips] = createSignal<"shown" | "none" | undefined>();
 window.__k2Marks = (state = "shown") => setChips(state);
+const [selecting, setSelecting] = createSignal(false);
+window.__k2Selection = (on = true) => setSelecting(on);
+/** Seven deeds for the selected entries, as Files offers them; the last one destroys. */
+const selectionActions = [
+  { label: "Herunterladen", icon: "download" },
+  { label: "Teilen", icon: "share" },
+  { label: "Verschieben", icon: "folder-symlink" },
+  { label: "Kopieren", icon: "copy" },
+  { label: "Umbenennen", icon: "pencil" },
+  { label: "Als Favorit markieren", icon: "star" },
+  { label: "In den Papierkorb", icon: "trash" },
+];
 const liveBlocked = () =>
   logs() === "until-now" ? "Live nur mit Zeitraum bis jetzt" : logs() === "first-page" ? "Live nur auf der ersten Seite" : undefined;
 
@@ -190,6 +204,9 @@ render(
                           : "4 neu"
               }
               loading={loading()}
+              selection={
+                selecting() ? { count: "12 ausgewählt", actions: selectionActions, clear: { label: "Auswahl aufheben" } } : undefined
+              }
               marks={
                 chips() === "shown" ? (
                   <>
