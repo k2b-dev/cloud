@@ -34,7 +34,7 @@ import {
 } from "../service/draft-document-snapshots";
 import * as draftDocumentService from "../service/draft-documents";
 import { acceptDraftDocumentUpdate, mailDraftDocumentLog, readDraftDocument } from "../service/draft-documents";
-import { getDraft } from "../service/drafts";
+import { getDraft, recoverDraftDocumentRest } from "../service/drafts";
 import { localizeMailError } from "../service/error-messages";
 import { enqueueMailInvalidation, mailLive } from "../service/live";
 import { createMailbox } from "../service/mailboxes";
@@ -355,6 +355,105 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     });
     const [adopted] = await sql`SELECT adopted_at FROM mail.drafts WHERE id=${target.id}::uuid`;
     expect(adopted?.adopted_at).not.toBeNull();
+  });
+
+  test("device input whose base the log pruned is refused on every join; Rest keeps it as the open reply's recovery copy", async () => {
+    const target = await draft();
+    const [message] = await sql<{ id: string }[]>`INSERT INTO mail.message_contents
+      (short_id, mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status, plain_text)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, ${`<${crypto.randomUUID()}@example.test>`}, 'Subject', now(),
+        1, ${crypto.randomUUID().replaceAll("-", "").padEnd(64, "0")}, 'complete', 'Question') RETURNING id`;
+    const [conversation] = await sql<{ id: string }[]>`INSERT INTO mail.conversations
+      (short_id, mailbox_id, subject, participant_summary, latest_message_at)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, 'Subject', 'recipient@example.test', now()) RETURNING id`;
+    await sql`UPDATE mail.drafts SET conversation_id = ${conversation!.id}::uuid, source_message_id = ${message!.id}::uuid, intent = 'reply'
+      WHERE id = ${target.id}::uuid`;
+    const base = await read();
+    // A remembered device stored this input against the base it saw and closed before its echo.
+    const typed = await createDraftRevisionUpdate(
+      base.fresh.state,
+      { ...base.fresh.content, body: "Device Original" },
+      { deadline: Date.now() + 5000 },
+    );
+    const deviceState = Y.mergeUpdates([base.fresh.state, typed]);
+
+    // A peer keeps writing; its snapshot covers the log, and Mail prunes the covered prefix.
+    const peer = await connect();
+    await peer.ready();
+    const peerUpdate = await createDraftRevisionUpdate(
+      base.fresh.state,
+      { ...base.fresh.content, body: "Original peer" },
+      { deadline: Date.now() + 5000 },
+    );
+    publish(peer, base, peerUpdate);
+    await peer.wait(
+      (packet) =>
+        packet.type === "syncPush" && !packet.payload.snapshot && packet.payload.updates.some((u) => u.payload === toBase64(peerUpdate)),
+    );
+    peer.socket.close();
+    await stopMailDraftConnections();
+    await flushDraftDocumentSnapshot(target.id);
+    await pruneDraftDocumentLog();
+    const topic = mailDraftDocumentLog.topic();
+    expect(await mailDraftDocumentLog.firstSequence()).toBeGreaterThan(topic.cursorSequence(base.durable.cursor!) + 1);
+
+    // Every reload opens the device's stored bytes again and publishes them against their stored base.
+    for (let reload = 0; reload < 2; reload++) {
+      const device = await connect();
+      await device.ready();
+      device.send({
+        type: "syncPublish",
+        payload: { docId: target.short_id, generation: base.generation, baseCursor: base.durable.cursor, payload: toBase64(deviceState) },
+      });
+      const refused = await device.wait((packet) => packet.type === "error");
+      expect(refused.payload).toMatchObject({ code: "RESYNC_REQUIRED", reopen: true });
+      await stopMailDraftConnections();
+    }
+    // Not a changed generation: the open draft only refused this input. The client must not wait for a reopen.
+    const current = await read();
+    expect(current).toMatchObject({ lifecycle: "draft", generation: base.generation, historyComplete: true, frozen: null });
+    expect(current.durable.content.body).toBe("Original peer");
+
+    const request = {
+      context,
+      mailboxId,
+      draftId: target.id,
+      generation: base.generation,
+      clientId: crypto.randomUUID(),
+      state: deviceState,
+    };
+    const kept = value(await recoverDraftDocumentRest(request));
+    if (kept.status !== "recovered") throw new Error("Expected the refused input to be kept");
+    // The reply keeps its conversation slot; the input waits as its own recovery copy.
+    expect(kept.draft.id).toBe(value(await getDraft(context, mailboxId, target.id)).id);
+    expect(Buffer.from(kept.durableSourceState)).toEqual(Buffer.from(deviceState));
+    const copies = () =>
+      sql<{ body: string }[]>`SELECT content->>'body' AS body FROM mail.draft_recovery_copies WHERE draft_id = ${target.id}::uuid`;
+    expect((await copies()).map((copy) => copy.body)).toEqual(["Device Original"]);
+    expect(value(await recoverDraftDocumentRest(request))).toEqual(kept);
+    expect(await copies()).toHaveLength(1);
+    expect(value(await recoverDraftDocumentRest({ ...request, clientId: crypto.randomUUID(), state: current.durable.state })).status).toBe(
+      "unchanged",
+    );
+    expect(await read()).toMatchObject({ generation: base.generation, revision: current.revision, historyComplete: true });
+
+    // Without the stored input, a fresh join edits the open draft again.
+    const fresh = await connect();
+    await fresh.ready();
+    const joined = fresh.messages.find((packet) => packet.type === "replayReady");
+    if (joined?.type !== "replayReady") throw new Error("Missing replay boundary");
+    const next = await read();
+    const edit = await createDraftRevisionUpdate(
+      next.fresh.state,
+      { ...next.fresh.content, body: "Original peer, continued" },
+      { deadline: Date.now() + 5000 },
+    );
+    publish(fresh, { ...next, durable: { ...next.durable, cursor: joined.payload.cursor } }, edit);
+    await fresh.wait(
+      (packet) =>
+        packet.type === "syncPush" && !packet.payload.snapshot && packet.payload.updates.some((u) => u.payload === toBase64(edit)),
+    );
+    expect(fresh.messages.filter((packet) => packet.type === "error")).toEqual([]);
   });
 
   test.each([

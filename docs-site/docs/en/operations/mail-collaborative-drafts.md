@@ -137,6 +137,12 @@ covering SQL snapshots. Mail then prunes the covered prefix. A full log
 rejects new edits; browsers keep unacknowledged input for retry. Incomplete
 history requires explicit recovery and cannot be sent.
 
+A device can hold unsent input whose base the log has already pruned. An open
+draft then refuses that input instead of guessing where it belongs. The browser
+keeps the input as a recovery copy of the reply, or as a separate Rest draft for
+a new message, and clears it from the device. Reopening the draft edits the
+current version and offers to restore the copy.
+
 With Sync 7.1.1, a join whose missing prefix is covered by the SQL snapshot
 rebases in place. A gap in the live stream reconnects with backoff and resends
 pending input. For an uncovered gap, Mail saves the valid retained updates at

@@ -914,10 +914,8 @@ export async function openMailDraftDocumentClient(options: {
           if (providerClosed) throw new Error(t().generation);
           if (state.terminal) {
             const result = provider.resume();
-            if (result === "reopen") {
-              refused = true;
-              return recover();
-            }
+            // The room refused this input: retrying returns the same idempotent recovery copy.
+            if (result === "reopen" && refused) return recover();
             if (result !== "resumed") {
               state.message = t().generation;
               state.error = true;
