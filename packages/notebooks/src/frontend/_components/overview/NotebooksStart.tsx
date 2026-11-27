@@ -5,10 +5,8 @@ import { notebooksPageMessages } from "../../messages";
 import { createNoteCommands } from "../../note-commands";
 import NewNotebookDialog, { type NewNotebookSource, type TemplateSummary } from "./NewNotebookDialog";
 
-/** One page a way to start makes: its title and the page it stands under. */
-export type StartPage = { title: string; parent: string | null };
-/** A template on the start page, with the pages it makes and what its card previews of them. */
-export type StartTemplate = TemplateSummary & { pages: readonly StartPage[]; preview?: TilePreview };
+/** A template on the start page: how many pages it makes and what its card previews of them, nothing more. */
+export type StartTemplate = TemplateSummary & { pageCount: number; preview?: TilePreview };
 
 /** The blank notebook's place in the address. */
 export const BLANK = "blank";
@@ -44,7 +42,7 @@ const startUrl = (id: string | null) => {
  */
 export default function NotebooksStart(props: {
   templates: readonly StartTemplate[];
-  blankPages: readonly StartPage[];
+  blankPageCount: number;
   blankPreview?: TilePreview;
   open?: string | null;
 }) {
@@ -81,12 +79,12 @@ export default function NotebooksStart(props: {
     onCleanup(() => window.removeEventListener("popstate", follow));
   });
   const ways = () => [
-    { id: BLANK, name: t().blankNotebook, icon: "notebook", pages: props.blankPages, preview: props.blankPreview },
+    { id: BLANK, name: t().blankNotebook, icon: "notebook", pageCount: props.blankPageCount, preview: props.blankPreview },
     ...props.templates.slice(0, START_TEMPLATES).map((template) => ({
       id: template.id,
       name: template.name,
       icon: sign(template.icon),
-      pages: template.pages,
+      pageCount: template.pageCount,
       preview: template.preview,
     })),
   ];
@@ -105,7 +103,7 @@ export default function NotebooksStart(props: {
               icon: way.icon,
               color: "var(--k2-app)",
               title: way.name,
-              meta: t().pageCount({ count: way.pages.length }),
+              meta: t().pageCount({ count: way.pageCount }),
               // a template without a table or page text still shows its sign there, so all cards keep one shape
               preview: way.preview ?? { icon: way.icon },
               href: `/app/notebooks?new=${encodeURIComponent(way.id)}`,

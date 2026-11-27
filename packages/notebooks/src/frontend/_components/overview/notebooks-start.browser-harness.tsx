@@ -2,17 +2,14 @@ import { LocaleProvider } from "@k2b/ui";
 import type { TilePreview } from "@k2b/ui/v2";
 import { render } from "solid-js/web";
 import { openNewNotebookDialog } from "../../create-notebook-dialog";
-import NotebooksStart, { type StartPage, type StartTemplate } from "./NotebooksStart";
+import NotebooksStart, { type StartTemplate } from "./NotebooksStart";
 
 // Test harness only (never shipped). `?data=` picks the templates: the four built-in ones (default), `worst` (the longest real
 // built-in names and descriptions in both languages plus a plausible longer one from a future language, with Japanese,
 // Arabic and Vietnamese pages, an address and a one-letter template without pages), `empty` (no
 // template at all) or `one`; `?lang=en` renders in English.
-const pages = (...titles: string[]): StartPage[] =>
-  titles.map((title) => {
-    const [parent, own] = title.includes(" › ") ? title.split(" › ") : [null, title];
-    return { title: own ?? title, parent };
-  });
+/** The pages a fixture template makes, as the count the start page gets (parents written as "Parent › Page"). */
+const pages = (...titles: string[]): number => titles.length;
 // the built-in templates as German Notebooks offers them, in the start page's order (diary, recipes, reading list first)
 const demo: StartTemplate[] = [
   {
@@ -20,14 +17,14 @@ const demo: StartTemplate[] = [
     name: "Tagebuch",
     description: "Tägliche Notizen, Posteingang, Gewohnheiten, Aufgaben und Wochenrückblicke.",
     icon: "ti ti-calendar-stats",
-    pages: pages("Tagebuch", "Eingang", "2026", "2026 › 11 November", "11 November › 2026-11-26", "11 November › 2026-11-27"),
+    pageCount: pages("Tagebuch", "Eingang", "2026", "2026 › 11 November", "11 November › 2026-11-26", "11 November › 2026-11-27"),
   },
   {
     id: "recipe-collector",
     name: "Rezepte und Vorräte",
     description: "Rezepte, Vorratsbestand, Einkaufsliste und Anregungen für den Einstieg.",
     icon: "ti ti-tools-kitchen-2",
-    pages: pages(
+    pageCount: pages(
       "Küchenübersicht",
       "Vorräte",
       "Rezepte",
@@ -41,14 +38,14 @@ const demo: StartTemplate[] = [
     name: "Leseliste",
     description: "Bücher, Leseliste, Notizen, Zitate und Bewertungen.",
     icon: "ti ti-books",
-    pages: pages("Leseübersicht", "Bücher", "The Creative Act", "Braiding Sweetgrass"),
+    pageCount: pages("Leseübersicht", "Bücher", "The Creative Act", "Braiding Sweetgrass"),
   },
   {
     id: "garden-planner",
     name: "Gartentagebuch",
     description: "Aussaatzeiten, Beete, Ernten und saisonale Gartenarbeiten.",
     icon: "ti ti-plant-2",
-    pages: pages("Gartenübersicht", "Pflanzen", "Beete und heimische Hecke", "Ernte"),
+    pageCount: pages("Gartenübersicht", "Pflanzen", "Beete und heimische Hecke", "Ernte"),
   },
 ];
 // what each card previews: the templates' first tables, as the server reads them; the worst set's longest words
@@ -100,21 +97,21 @@ const withPreview = (all: StartTemplate[]) => all.map((template) => ({ ...templa
 const blankPreview: TilePreview = {
   page: { title: "Welcome!", text: "This is your first note. You can use Markdown to format your text." },
 };
-const blankPages = pages("Welcome!");
+const blankPageCount = pages("Welcome!");
 const worst: StartTemplate[] = [
   {
     id: "recipes",
     name: "Rezepte und Vorräte",
     description: "Rezepte, Vorratsbestand, Einkaufsliste und Anregungen für den Einstieg.",
     icon: "ti ti-chef-hat",
-    pages: pages("Rezepte und Vorräte", "Rezepte", "Vorrat", "Einkaufsliste"),
+    pageCount: pages("Rezepte und Vorräte", "Rezepte", "Vorrat", "Einkaufsliste"),
   },
   {
     id: "daily",
     name: "Tagebuch",
     description: "Tägliche Notizen, Posteingang, Gewohnheiten, Aufgaben und Wochenrückblicke.",
     icon: "ti ti-calendar",
-    pages: pages(
+    pageCount: pages(
       "Tagebuch",
       "Eingang",
       "2026",
@@ -130,7 +127,7 @@ const worst: StartTemplate[] = [
     description:
       "Projektübersicht, Übergaben je Schicht, offene Punkte, Ansprechpersonen, Störungsverlauf und Lessons Learned – 引き継ぎ記録",
     icon: "ti ti-clipboard-list",
-    pages: pages(
+    pageCount: pages(
       "Projektdokumentation",
       "引き継ぎ記録 🛠️",
       "سجل التسليم › ملاحظات الوردية الصباحية",
@@ -138,7 +135,7 @@ const worst: StartTemplate[] = [
       "https://intranet.nordwerk-instandhaltung.example.com/wiki/uebergabe/halle-7/fruehschicht",
     ),
   },
-  { id: "j", name: "J", description: "", icon: "ti ti-notebook", pages: [] },
+  { id: "j", name: "J", description: "", icon: "ti ti-notebook", pageCount: 0 },
 ];
 const url = new URL(window.location.href);
 const data = url.searchParams.get("data");
@@ -162,7 +159,12 @@ if (root) {
     render(
       () => (
         <LocaleProvider locale={lang}>
-          <NotebooksStart templates={templates} blankPages={blankPages} blankPreview={blankPreview} open={url.searchParams.get("new")} />
+          <NotebooksStart
+            templates={templates}
+            blankPageCount={blankPageCount}
+            blankPreview={blankPreview}
+            open={url.searchParams.get("new")}
+          />
         </LocaleProvider>
       ),
       root,

@@ -27,23 +27,23 @@ export default ssr<AuthContext>(async (c) => {
     query.delete("recent");
     return c.redirect(`/app/notebooks/${target}${query.size > 0 ? `?${query}` : ""}`);
   }
-  // the ways to start with the pages each makes, the three most useful first (they stand as cards; the rest stay in
+  // the ways to start with how many pages each makes and its preview, the three most useful first (they stand as cards; the rest stay in
   // the dialog's choice); the open dialog comes from the address, so a reload shows the same
   const locale = getLocale(c);
   const templates = notebooksService.template
     .list(locale)
     .map((template) => ({
       ...template,
-      pages: notebooksService.template.outline(template.id, locale) ?? [],
+      pageCount: notebooksService.template.outline(template.id, locale)?.length ?? 0,
       preview: notebooksService.template.preview(template.id, locale) ?? undefined,
     }))
     .sort((a, b) => rank(a.id) - rank(b.id));
-  const blankPages = notebooksService.template.welcomeOutline();
+  const blankPageCount = notebooksService.template.welcomeOutline().length;
   const blankPreview = notebooksService.template.welcomePreview();
   const open = c.req.query("new") ?? null;
   return () => (
     <Layout printHint={t.printHint} c={c} fullPage fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.notebooks }]}>
-      <NotebooksStart templates={templates} blankPages={blankPages} blankPreview={blankPreview} open={open} />
+      <NotebooksStart templates={templates} blankPageCount={blankPageCount} blankPreview={blankPreview} open={open} />
     </Layout>
   );
 });
