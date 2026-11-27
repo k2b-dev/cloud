@@ -19,12 +19,17 @@ export type TipParts = {
 
 let triggers = 0;
 
-export function useTip(options: () => { onPayloadChange?: (payload: unknown) => void } = () => ({})): TipParts {
+/**
+ * `visual`: the tip only shows what its triggers already say in their own names (a day of a `Heat`), so it neither
+ * names nor describes them; without it the tip names or describes its trigger, as a `Popover` tip does.
+ */
+export function useTip(options: () => { onPayloadChange?: (payload: unknown) => void } = () => ({}), mode?: "visual"): TipParts {
   const handle = usePrimitive(tooltipPrimitive, options);
+  const omit = mode === "visual" ? ["aria-describedby", "aria-labelledby"] : [];
   return {
     bindTrigger: (element, payload) => {
       triggers += 1;
-      return bindSlot(handle, "trigger", { id: `k2-tip-${triggers}`, ...(payload === undefined ? {} : { payload }) }, element);
+      return bindSlot(handle, "trigger", { id: `k2-tip-${triggers}`, ...(payload === undefined ? {} : { payload }) }, element, omit);
     },
     Popup: popupComponent(handle, "content"),
   };
