@@ -1058,8 +1058,6 @@ export default function NoteDetails(props: NoteDetailsProps) {
           />
         </Section>
 
-        {/* k2b-ui gap: the comment thread and its composer (rich, from @k2b/editor) keep their v1 drawing until the v2
-          composer lands; they stand here unchanged. */}
         <NoteCommentsSection
           notebookId={props.notebookId}
           noteId={noteId()}
