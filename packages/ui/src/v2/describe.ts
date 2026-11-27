@@ -307,8 +307,15 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Nav": {
         const items = [...element.querySelectorAll("[data-k2-part='Nav.Item']")];
-        const current = items.find((item) => item.getAttribute("aria-current"));
-        return `Nav ${quote(label)}: ${items.length} entries${current ? `, current ${quote(current.querySelector(".k2-ni-name")?.textContent)}` : ""}`;
+        // a tree marks its open place on the tree item around the row
+        const current =
+          items.find((item) => item.getAttribute("aria-current")) ??
+          element.querySelector("[role='treeitem'][aria-current] > [data-k2-part='Nav.Item']");
+        const trees = [...element.querySelectorAll("[data-k2-part='Nav.Tree']")].map((tree) => {
+          const open = tree.querySelectorAll("[role='treeitem'][aria-expanded='true']").length;
+          return `tree ${quote(tree.getAttribute("aria-label"))} (${tree.querySelectorAll("[role='treeitem']").length} shown, ${open} open)`;
+        });
+        return `Nav ${quote(label)}: ${items.length} entries${trees.length ? `, ${trees.join(", ")}` : ""}${current ? `, current ${quote(current.querySelector(".k2-ni-name")?.textContent)}` : ""}`;
       }
       case "Band": {
         const tone = element.getAttribute("data-tone");
@@ -361,6 +368,9 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
           element.querySelector("thead th[data-select]") ? "select" : "",
           groups ? `${groups} groups` : "",
           element.querySelector("[data-sticky]") ? "sticky" : "",
+          table?.getAttribute("role") === "treegrid"
+            ? `tree, ${element.querySelectorAll("tbody > tr[aria-expanded='true']").length} open`
+            : "",
           nextOf(element)?.classList.contains("k2-table-phone") ? "phone rows" : "",
         ].filter(Boolean);
         const columns = heads.map((th) => {
@@ -400,7 +410,9 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         return `Prose ${quote(text, 50)}${paragraphs.length > 1 ? ` (${paragraphs.length} blocks)` : ""}`;
       }
       case "Canvas": {
-        const height = (element as HTMLElement).style?.getPropertyValue?.("--k2-canvas-h");
+        const height = element.hasAttribute("data-fill")
+          ? "fills its pane"
+          : (element as HTMLElement).style?.getPropertyValue?.("--k2-canvas-h");
         return `Canvas ${quote(label)}${height ? ` ${height}` : ""} (free drawing, not measured)`;
       }
       case "Field": {
