@@ -101,6 +101,7 @@ test("the sidebar's switcher stands in the menu: the same things in the same ord
           ],
           search: "Base suchen",
           noMatch: "Keine Base passt",
+          more: (hidden) => `+${hidden} weitere`,
           actions: [
             { label: "Neue Base", icon: "plus", href: "/app/grids/B1?new=blank" },
             { label: "Aus Vorlage", icon: "template", onClick: () => void made.push("template") },
