@@ -29,7 +29,6 @@ const apps = (state: import("../code-overview.fixture").AppsState, locale: Local
           userId: "fixture",
           timeZone: fixtures.FIXTURE_TIME_ZONE,
           ...fixtures.myAppsFixture(state),
-          onCreateInChat: () => {},
         });
       },
     }),

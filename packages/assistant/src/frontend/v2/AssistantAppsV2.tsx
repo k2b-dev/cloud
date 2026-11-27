@@ -35,7 +35,8 @@ const markOf = (item: CodeOverviewItem) => {
  * then one line per app (B rule 4). Explanations stand in the empty state only. The same state as v1
  * (`createCodeOverview`): the filter in the address, live runs, further pages.
  */
-export default function AssistantAppsV2(props: CodeOverviewProps) {
+// Creating in the chat is the page head's action (AssistantPageFrame), so the view takes no callback for it.
+export default function AssistantAppsV2(props: Omit<CodeOverviewProps, "onCreateInChat">) {
   const locale = useLocale();
   const t = () => viewText(locale());
   // The exception chips always stand, so they always filter, also with fewer than FILTER_FROM apps.

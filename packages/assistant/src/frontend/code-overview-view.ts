@@ -173,7 +173,7 @@ export type CodeOverviewProps = {
  * `filterFrom`: from how many entries the chosen filter applies. v1 shows its chips only from `FILTER_FROM`; v2 always
  * shows its exceptions as chips, so every chip filters (`0`).
  */
-export const createCodeOverview = (props: CodeOverviewProps, filterFrom = FILTER_FROM) => {
+export const createCodeOverview = (props: Omit<CodeOverviewProps, "onCreateInChat">, filterFrom = FILTER_FROM) => {
   const [page, setPage] = createSignal<CodeOverviewPage | null | undefined>(props.initial);
   const [more, setMore] = createSignal<"idle" | "loading" | "failed">("idle");
   const [filter, setFilter] = createSignal<Filter>(readFilter());

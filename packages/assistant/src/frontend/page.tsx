@@ -116,20 +116,14 @@ export default ssr<AuthContext>(async (c) => {
     // Gustav at a place: the same loader as navigation, so the first paint and a later switch show the same thing.
     panelScope ? loadPlaceAssistant(c, panelScope).catch(() => null) : null,
     // Gustav's settings page draws its first picture from these, as its browser reads would: the person's settings,
-    // and whether the OpenAI-compatible API is on with the models it offers, read for the request's access subject as
-    // `/status` reads them. Null: unreadable now, so the page reads them itself and says so.
-    prefsTab
-      ? Promise.all([
-          aiUserPrefs.get(user.id),
-          coreSettings.get<boolean>("ai.openai_api_enabled"),
-          assistantAiSettingsState(c.get("accessSubject")),
-        ]).catch(() => null)
-      : null,
+    // and whether the OpenAI-compatible API is on; its models are the page's own read above (`settings`). Null:
+    // unreadable now, so the page reads them itself and says so.
+    prefsTab ? Promise.all([aiUserPrefs.get(user.id), coreSettings.get<boolean>("ai.openai_api_enabled")]).catch(() => null) : null,
   ]);
   const initialPrefs = prefsRead
     ? {
         prefs: prefsRead[0],
-        access: prefsRead[1] ? { baseUrl: `${publicCloudOrigin(appUrl)}/api/ai/openai/v1`, models: prefsRead[2].options } : null,
+        access: prefsRead[1] ? { baseUrl: `${publicCloudOrigin(appUrl)}/api/ai/openai/v1`, models: settings.options } : null,
       }
     : null;
   // An app that does not answer right now leaves the place to the panel, which shows "Try again" in the bar.

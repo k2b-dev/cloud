@@ -156,7 +156,6 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
                     userId={w.props.userId}
                     timeZone={w.props.timeZone}
                     initial={w.codeRendered() ? w.props.code?.page : undefined}
-                    onCreateInChat={w.createFromCodeView}
                   />
                 )
               : w.mainView() === "prefs"

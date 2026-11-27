@@ -1,7 +1,5 @@
 import type { AiConversation } from "@k2b/cloud/ai";
-// The module itself, not the `ssr/islands` barrel: the barrel builds `Layout` from the launchpad and the help at load
-// time, so importing it would carry them, and the search bar and admin frame, into this island and its shared chunks.
-import V2WorkspaceNavigation from "@k2b/cloud/ssr/V2WorkspaceNavigation";
+import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
 import { type Action, Bar, Button, Canvas, Input, Menu, Nav, Pane, Path, Workspace } from "@k2b/ui/v2";
 import { type Accessor, createSignal, type JSX, lazy, Show, Suspense } from "solid-js";

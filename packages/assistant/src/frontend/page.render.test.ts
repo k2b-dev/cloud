@@ -451,7 +451,6 @@ test("My apps & automations shows only for a person with Code, and ?code=1 seeds
     userId: user.id,
     timeZone: "UTC",
     initial: seed?.page,
-    onCreateInChat: () => {},
   });
   expect(list).toContain("Weekly sales report");
   expect(view).toMatch(/href="\/app\/assistant\?code=1"[^>]*aria-current="page"|aria-current="page"[^>]*href="\/app\/assistant\?code=1"/);
@@ -511,7 +510,7 @@ test("an unknown Code answer keeps the entry, and the list shows its error with 
   const seed = codeSeed(view);
   // A failed list is part of the seed, so the loaded view shows the error instead of asking Core again.
   expect(seed).toMatchObject({ has: true, open: true, page: null });
-  const list = renderSeeded(AssistantAppsV2, { userId: user.id, timeZone: "UTC", initial: null, onCreateInChat: () => {} });
+  const list = renderSeeded(AssistantAppsV2, { userId: user.id, timeZone: "UTC", initial: null });
   expect(list).toContain("Your automations could not be loaded.");
   expect(list).toContain('data-k2-part="Failed"');
   expect(list).toContain("Retry");

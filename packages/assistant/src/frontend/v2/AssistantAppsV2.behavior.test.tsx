@@ -25,7 +25,7 @@ test("with 3 apps the chip 'braucht dich' shows only the app that needs the pers
     const dispose = render(
       () => (
         <LocaleProvider locale="de">
-          <AppsV2 userId="fixture" timeZone={fixtures.FIXTURE_TIME_ZONE} initial={{ items, nextCursor: null }} onCreateInChat={() => {}} />
+          <AppsV2 userId="fixture" timeZone={fixtures.FIXTURE_TIME_ZONE} initial={{ items, nextCursor: null }} />
         </LocaleProvider>
       ),
       dom.root,

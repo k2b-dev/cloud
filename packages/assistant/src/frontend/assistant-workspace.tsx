@@ -1487,11 +1487,14 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     ]);
     if (requestId !== navigationRequest) return false;
     // Another Project, or the same one again: its settings open only when asked, and never with the server's seed,
-    // which belongs to the settings page the server rendered.
-    setProjectSettingsRendered(false);
-    setProjectSettings(!props.embedded && Boolean(options.settings));
-    setMainView(null);
-    setProjectView({ projectId, page, context });
+    // which belongs to the settings page the server rendered. One batch, so no picture shows the new Project with the
+    // old page or the old Project with the new settings.
+    batch(() => {
+      setProjectSettingsRendered(false);
+      setProjectSettings(!props.embedded && Boolean(options.settings));
+      setMainView(null);
+      setProjectView({ projectId, page, context });
+    });
     return true;
   };
   const filesRefreshKey = createMemo(() => {
@@ -1590,14 +1593,16 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
         setMainView("prefs");
         return;
       }
-      setMainView(null);
       setProjectSettingsRendered(false);
       const settings = !props.embedded && assistantProjectSettingsFromHref(window.location.href);
-      setProjectSettings(settings);
       if (projectId) {
+        // The Project shown until the arriving one has loaded keeps its own page: openProject switches the Project,
+        // its view and its settings together, so Back never shows one Project's settings for another.
         void openProject(projectId, { settings }).catch(() => navigateTo(basePath));
         return;
       }
+      setMainView(null);
+      setProjectSettings(settings);
       if (!conversationId) {
         navigateTo(`${window.location.pathname}${window.location.search}${window.location.hash}`);
         return;

@@ -658,7 +658,7 @@ describe("Assistant on v2", () => {
 
   for (const view of [phone, narrow, wide, large])
     test(`${view.name}: My apps & automations states today's runs, shows the day and one row per app that opens its Code`, async () => {
-      const { context, page, errors, unanswered } = await open(view, "/app/assistant/code", { open: false, now: APPS_NOW });
+      const { context, page, errors, unanswered, created } = await open(view, "/app/assistant/code", { open: false, now: APPS_NOW });
       try {
         const pane = page.locator('[data-k2-part="Pane"][aria-label="Meine Apps & Automationen"]');
         // The phone shows the table as rows of two lines; every width has the links to the Code.
@@ -686,6 +686,10 @@ describe("Assistant on v2", () => {
         expect(rows).toHaveLength(titles.length);
         for (const [index, title] of titles.entries()) expect(rows[index]).toContain(title);
         expect(await layoutProblems(page)).toEqual([]);
+        // "Im Chat erstellen" (a symbol with its name in the head) starts a new chat, and My apps gives way to it.
+        await page.locator('[data-slot="head"]').getByRole("button", { name: "Im Chat erstellen" }).click();
+        await until(() => created() === 1);
+        await pane.waitFor({ state: "detached" });
         expect(errors).toEqual([]);
         expect(unanswered).toEqual([]);
       } finally {
@@ -716,6 +720,8 @@ describe("Assistant on v2", () => {
         // The composer starts the Project's new chat: nothing floats over it, and "Neuer Chat" stays in the head.
         expect(await page.locator(".k2-fab:visible").count()).toBe(0);
         expect(await page.locator('[data-slot="head"]').getByRole("button", { name: "Neuer Chat" }).isVisible()).toBe(true);
+        // One search on the phone: the shell's bar; the head's field (this Project's search) folds into it.
+        if (view === phone) expect(await visibleSearchControls(page)).toHaveLength(1);
         expect(await layoutProblems(page)).toEqual([]);
         expect(errors).toEqual([]);
         expect(unanswered).toEqual([]);
@@ -1140,6 +1146,42 @@ describe("Assistant on v2", () => {
       await page.getByRole("button", { name: "Projekt-Einstellungen" }).click();
       expect(await settings.getByRole("textbox", { name: "Name" }).inputValue()).toBe("Werkstatt Angebote");
       await until(() => calls.some((call) => call.startsWith("GET /api/ai/projects/Prj01/access")));
+      expect(errors).toEqual([]);
+      expect(unanswered).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("Back from another Project to a Project's settings shows only that Project's settings, and reads no other access", async () => {
+    const { context, page, errors, unanswered, calls } = await open(wide, "/app/assistant?project=Prj03&settings=1", { open: false });
+    try {
+      const settings = page.locator('[data-k2-part="Pane"][aria-label="Projekt-Einstellungen"]');
+      const name = settings.getByRole("textbox", { name: "Name" });
+      await name.waitFor();
+      await page.locator('[data-k2-part="Nav"]').getByRole("link", { name: "Werkstatt Angebote" }).click();
+      await until(() => new URL(page.url()).search === "?project=Prj01");
+      await page.getByRole("button", { name: "Projekt-Einstellungen" }).waitFor();
+      // Every name the settings page shows on its way back, picture by picture.
+      await page.evaluate(() => {
+        const seen: string[] = [];
+        (window as unknown as { assistantV2SettingsNames: string[] }).assistantV2SettingsNames = seen;
+        const look = () => {
+          const field = document.querySelector<HTMLInputElement>('[data-k2-part="Pane"][aria-label="Projekt-Einstellungen"] input');
+          if (field) seen.push(field.value);
+          requestAnimationFrame(look);
+        };
+        look();
+      });
+      await page.goBack();
+      await until(() => new URL(page.url()).search === "?project=Prj03&settings=1");
+      await name.waitFor();
+      expect(await name.inputValue()).toBe("Buchhaltung 2026");
+      await settled(page);
+      const seen = await page.evaluate(() => (window as unknown as { assistantV2SettingsNames: string[] }).assistantV2SettingsNames);
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen.filter((value) => value !== "Buchhaltung 2026")).toEqual([]);
+      expect(calls.filter((call) => call.startsWith("GET /api/ai/projects/Prj01/access"))).toEqual([]);
       expect(errors).toEqual([]);
       expect(unanswered).toEqual([]);
     } finally {
