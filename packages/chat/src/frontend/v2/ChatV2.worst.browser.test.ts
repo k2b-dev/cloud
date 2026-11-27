@@ -156,17 +156,24 @@ const load = async (path: string, width: number, height: number) => {
 
 /** The v2 rules hold, and no row, pane or message grows wider than its column. */
 const intact = async (page: Page, width: number, name: string) => {
+  // The picture first, so a break is seen as well as named.
+  if (shots) {
+    mkdirSync(shots, { recursive: true });
+    await page.screenshot({ path: join(shots, `${name}-light-${width}.png`) });
+  }
   const layout = await measureV2Layout(page, { root: "[data-k2-workspace]", skip: '[data-k2-part="Canvas"]' });
   expect({ name, width, problems: layout.problems }).toEqual({ name, width, problems: [] });
+  // v2's rows and panes, and the history itself: nothing scrolls sideways (a message row's hover tools may reach past
+  // its edge inside the clipped history; what counts is that the history never scrolls sideways).
   const wide = await page.evaluate(() =>
-    Array.from(document.querySelectorAll<HTMLElement>('[data-k2-part="Row"], [data-k2-part="Pane"], .k2b-message-row'))
+    Array.from(document.querySelectorAll<HTMLElement>('[data-k2-part="Row"], [data-k2-part="Pane"], .k2b-virtual-feed'))
       .filter((element) => element.offsetParent !== null && element.scrollWidth > element.clientWidth + 1)
-      .map((element) => `${element.dataset.k2Part ?? element.className}: ${element.textContent?.slice(0, 40)}`),
+      .map(
+        (element) =>
+          `${element.dataset.k2Part ?? element.className}: ${element.textContent?.slice(0, 40)} (${element.scrollWidth}/${element.clientWidth})`,
+      ),
   );
   expect({ name, width, wide }).toEqual({ name, width, wide: [] });
-  if (!shots) return;
-  mkdirSync(shots, { recursive: true });
-  await page.screenshot({ path: join(shots, `${name}-light-${width}.png`) });
 };
 
 const screens = (): readonly { name: string; path: () => string; ready: (page: Page) => Promise<unknown> }[] => [
