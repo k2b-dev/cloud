@@ -1,21 +1,21 @@
-import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { formatRelative } from "@k2b/cloud/shared";
+import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { Bar, Button, Chip, Icon, Inline, Mark, Menu, Pane, StatusRow, Table, Tabs, Text, useLocale } from "@k2b/ui/v2";
 import { type JSX, Show } from "solid-js";
 import type { CodeAdminApproval, CodeAdminApprovalDetail, CodeAdminDecided, CodeAdminSummary } from "../../../code/admin";
 import StateWord from "../_area/StateWord";
 import { codeAreaHref } from "./area";
-import {
-  approvalReason,
-  automationMark,
-  type CodeScreenBase,
-  type Loaded,
-  ok,
-  ownerAppLabel,
-  ownerLabel,
-} from "./data";
+import { approvalReason, automationMark, type CodeScreenBase, type Loaded, ok, ownerAppLabel, ownerLabel } from "./data";
 import { LoadFailed, Missing, useCodeText } from "./parts";
-import { type CodeReviewProps, type CodeReviewTab, createCodeReview, ReviewBody, ReviewDialog, reviewHeadActions, reviewMenu } from "./review";
+import {
+  type CodeReviewProps,
+  type CodeReviewTab,
+  createCodeReview,
+  ReviewBody,
+  ReviewDialog,
+  reviewHeadActions,
+  reviewMenu,
+} from "./review";
 import { type CodeReviewMessages, codeReviewMessages } from "./review-messages";
 
 export type ApprovalsScreenProps = CodeScreenBase & {
@@ -66,9 +66,7 @@ export function reviewProps(
     authorUserId: detail.version.author.id,
     recipient: author,
     byline:
-      origin?.kind === "ai_chat"
-        ? r.headSubChat({ who: author, when, owner: owned })
-        : r.headSubCli({ who: author, when, owner: owned }),
+      origin?.kind === "ai_chat" ? r.headSubChat({ who: author, when, owner: owned }) : r.headSubCli({ who: author, when, owner: owned }),
     next: origin?.kind === "ai_chat" ? (origin.automaticAfterReview ? "button" : "chat") : "cli",
     binding: detail.binding,
     status: detail.status,
@@ -174,7 +172,12 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
       }}
       phone={(entry) => ({
         mark: automationMark(entry.owner ?? { kind: "app", appId: "" }, props.apps),
-        lines: [entry.title, [entry.author.name ?? t().unknownAuthor, entry.reason ? t().rowLabel({ row: entry.reason.row }) : null, ago(entry.submittedAt)].filter(Boolean).join(" · ")],
+        lines: [
+          entry.title,
+          [entry.author.name ?? t().unknownAuthor, entry.reason ? t().rowLabel({ row: entry.reason.row }) : null, ago(entry.submittedAt)]
+            .filter(Boolean)
+            .join(" · "),
+        ],
       })}
       columns={[
         {
@@ -230,9 +233,7 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
           drop: true,
           cell: (entry: CodeAdminApproval) => ago(entry.submittedAt),
         },
-        ...(open
-          ? []
-          : [{ title: t().whatIsNew, drop: true, cell: (entry: CodeAdminApproval) => entry.mainChange ?? "" }]),
+        ...(open ? [] : [{ title: t().whatIsNew, drop: true, cell: (entry: CodeAdminApproval) => entry.mainChange ?? "" }]),
       ]}
     />
   );
@@ -289,7 +290,8 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
       ]}
     />
   );
-  const oldest = () => waiting.reduce<string | null>((first, entry) => (!first || entry.submittedAt < first ? entry.submittedAt : first), null);
+  const oldest = () =>
+    waiting.reduce<string | null>((first, entry) => (!first || entry.submittedAt < first ? entry.submittedAt : first), null);
   const lead = () => {
     if (decidedList) return t().decidedLead({ n: decided.length });
     const n = summary?.approvals ?? waiting.length;
@@ -337,9 +339,7 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
             end={
               <>
                 {reviewHeadActions(review)}
-                <Show when={position()}>
-                  {(at) => <Menu label={rt().moreApprovals} items={reviewMenu(rt(), at())} />}
-                </Show>
+                <Show when={position()}>{(at) => <Menu label={rt().moreApprovals} items={reviewMenu(rt(), at())} />}</Show>
                 <Button variant="ghost" icon="x" label={rt().close} href={p.listHref} />
               </>
             }

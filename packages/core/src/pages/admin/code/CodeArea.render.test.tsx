@@ -38,7 +38,12 @@ afterAll(() => setSystemTime());
 
 type State = Parameters<typeof data.codeFixtureData>[0];
 type AreaData = ReturnType<typeof data.codeFixtureData>;
-const render = (query: Record<string, string>, state: State = "normal", locale = "de", edit: (area: AreaData) => AreaData = (area) => area) =>
+const render = (
+  query: Record<string, string>,
+  state: State = "normal",
+  locale = "de",
+  edit: (area: AreaData) => AreaData = (area) => area,
+) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -56,7 +61,10 @@ const render = (query: Record<string, string>, state: State = "normal", locale =
       },
     }),
   );
-const text = (html: string) => renderedText(html.replace(/data-props="[^"]*"/g, ""), " ").replaceAll(/\s+/g, " ").replaceAll(" .", ".");
+const text = (html: string) =>
+  renderedText(html.replace(/data-props="[^"]*"/g, ""), " ")
+    .replaceAll(/\s+/g, " ")
+    .replaceAll(" .", ".");
 const review = { sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 };
 
 test("every section renders on v2: one workspace, no v1 frame, no loader in the first picture", () => {
@@ -208,7 +216,9 @@ test("all automations: filters in the address, owner, state and last run per row
     expect(words).toContain(value);
   expect(words).not.toContain("m_rechn");
   expect(
-    ownerLabel(codeAdminMessages.resolve(["de"]).t, { kind: "resource", ref: { type: "mail.mailbox", id: "m_x" } }, null, { mail: { name: "Mail" } }),
+    ownerLabel(codeAdminMessages.resolve(["de"]).t, { kind: "resource", ref: { type: "mail.mailbox", id: "m_x" } }, null, {
+      mail: { name: "Mail" },
+    }),
   ).toBe("ein Ort in Mail, den du nicht öffnen darfst");
   const detail = text(render({ sec: "code", id: "c_rechn" }));
   for (const value of ["In „Freigaben“ öffnen", "selbst freigegeben (einziger Admin)", "Letzte Läufe", "Pausieren", "Fehlgeschlagen"])
@@ -270,7 +280,9 @@ test("the open automation shows its database against its limit with export, and 
   expect(text(reported)).toContain("Die Seite fragt nach meinem Passwort.");
   expect(text(reported)).toContain(reports.resolve);
   expect(reported).toContain('href="/code/c_rechn/woche"');
-  expect(text(render({ sec: "code", id: "c_rechn" }, "normal", "de", (area) => ({ ...area, reports: "failed" })))).toContain(reports.failed);
+  expect(text(render({ sec: "code", id: "c_rechn" }, "normal", "de", (area) => ({ ...area, reports: "failed" })))).toContain(
+    reports.failed,
+  );
 });
 
 test("policy, groups and effective rights render their rows with values and sources", () => {
@@ -327,7 +339,9 @@ test("cleanup shows deletion jobs and retries, while access stays in the target'
     expect(cleanup).toContain(value);
   expect(cleanup).not.toContain("code_activation_draining");
   expect(text(render({ sec: "cleanup" }, "empty"))).toContain("Es warten keine Löschaufträge für Code.");
-  expect(text(render({ sec: "cleanup" }, "normal", "en"))).toContain("When a Code owner is deleted, Cloud stops the Code and schedules its deletion.");
+  expect(text(render({ sec: "cleanup" }, "normal", "en"))).toContain(
+    "When a Code owner is deleted, Cloud stops the Code and schedules its deletion.",
+  );
   expect(text(render({ sec: "cleanup" }, "fail"))).toContain("Erneut versuchen");
 });
 
@@ -357,7 +371,17 @@ test("limits are settings with their value beside them, grouped; runners show pl
 test("unused databases are a table with size, deadline and access, export and incarnation-bound deletion", () => {
   const html = render({ sec: "databases" });
   const words = text(html);
-  for (const label of ["Datenbanken", "4 ungenutzte Datenbanken", "Ungenutzt seit", "Löschdatum", "Letzter Zugriff", "Größe", "Lea Muster", "4 MB", "Jetzt löschen"])
+  for (const label of [
+    "Datenbanken",
+    "4 ungenutzte Datenbanken",
+    "Ungenutzt seit",
+    "Löschdatum",
+    "Letzter Zugriff",
+    "Größe",
+    "Lea Muster",
+    "4 MB",
+    "Jetzt löschen",
+  ])
     expect(words).toContain(label);
   expect(html).toContain("/api/code/authoring/database/c_rueck/export");
   expect(text(render({ sec: "databases" }, "empty"))).toContain("Keine ungenutzten Datenbanken");

@@ -146,8 +146,18 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
       recent:
         query.sec === "limits"
           ? [
-              { key: "core.code.wall_clock_ms", label: locale === "de" ? "Laufzeit je Lauf" : "Wall-clock time per run", who: "Lea Muster", when: "01.11.2026, 09:40" },
-              { key: "core.code.ai_daily_budget_usd", label: locale === "de" ? "KI-Tagesbudget" : "Daily AI budget", who: "Ben Schulz", when: "28.10.2026, 16:05" },
+              {
+                key: "core.code.wall_clock_ms",
+                label: locale === "de" ? "Laufzeit je Lauf" : "Wall-clock time per run",
+                who: "Lea Muster",
+                when: "01.11.2026, 09:40",
+              },
+              {
+                key: "core.code.ai_daily_budget_usd",
+                label: locale === "de" ? "KI-Tagesbudget" : "Daily AI budget",
+                who: "Ben Schulz",
+                when: "28.10.2026, 16:05",
+              },
             ]
           : undefined,
     };

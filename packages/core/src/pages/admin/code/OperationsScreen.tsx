@@ -1,5 +1,5 @@
-import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { formatDateTime, formatRelative } from "@k2b/cloud/shared";
+import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { Bar, Button, Cells, Empty, Inline, Notice, Pane, Progress, Section, StatusRow, Table, Text, useLocale } from "@k2b/ui/v2";
 import { type JSX, Show } from "solid-js";
 import type { CodeAdminSummary } from "../../../code/admin";
@@ -84,7 +84,10 @@ export default function OperationsScreen(props: OperationsScreenProps) {
                 empty={{ icon: "recycle", text: t().emptyCleanupSub }}
                 phone={(job) => ({
                   mark: { icon: job.kind === "database.delete" ? "database-x" : "trash", color: CODE_COLOR },
-                  lines: [job.title, `${job.kind === "database.delete" ? t().jobDeleteDatabase : t().jobDelete} · ${t().jobState({ s: job.state })}`],
+                  lines: [
+                    job.title,
+                    `${job.kind === "database.delete" ? t().jobDeleteDatabase : t().jobDelete} · ${t().jobState({ s: job.state })}`,
+                  ],
                 })}
                 columns={[
                   {
@@ -137,7 +140,9 @@ export default function OperationsScreen(props: OperationsScreenProps) {
         status={
           ok(page) ? (
             <StatusRow
-              lead={page.items.length ? t().databasesCount({ n: page.items.length, more: page.nextCursor !== null }) : t().noUnusedDatabases}
+              lead={
+                page.items.length ? t().databasesCount({ n: page.items.length, more: page.nextCursor !== null }) : t().noUnusedDatabases
+              }
               facts={
                 page.items.some((row) => row.bytes !== null)
                   ? [{ value: size(page.items.reduce((sum, row) => sum + (row.bytes ?? 0), 0)), after: t().databasesTotal }]
@@ -231,19 +236,35 @@ export default function OperationsScreen(props: OperationsScreenProps) {
                   <Cells.Cell
                     icon="layout-grid"
                     label={t().freeSlots}
-                    value={behind ? <Text tone="warn">{t().slotsOf({ free: current().freeSlots, total: slots })}</Text> : t().slotsOf({ free: current().freeSlots, total: slots })}
-                    meta={<Progress value={slots - current().freeSlots} of={slots} label={t().slotsBusyShort({ n: slots - current().freeSlots })} />}
+                    value={
+                      behind ? (
+                        <Text tone="warn">{t().slotsOf({ free: current().freeSlots, total: slots })}</Text>
+                      ) : (
+                        t().slotsOf({ free: current().freeSlots, total: slots })
+                      )
+                    }
+                    meta={
+                      <Progress
+                        value={slots - current().freeSlots}
+                        of={slots}
+                        label={t().slotsBusyShort({ n: slots - current().freeSlots })}
+                      />
+                    }
                   />
                   <Cells.Cell
                     icon="clock-pause"
                     label={t().queue}
-                    value={current().queued > 0 && (behind || none) ? <Text tone="warn">{num(current().queued)}</Text> : num(current().queued)}
+                    value={
+                      current().queued > 0 && (behind || none) ? <Text tone="warn">{num(current().queued)}</Text> : num(current().queued)
+                    }
                     meta={t().runsWaiting({ n: current().queued })}
                   />
                   <Cells.Cell
                     icon="hourglass"
                     label={t().waitTime}
-                    value={behind || none ? <Text tone="warn">{waitText(current().oldestWaitingMs)}</Text> : waitText(current().oldestWaitingMs)}
+                    value={
+                      behind || none ? <Text tone="warn">{waitText(current().oldestWaitingMs)}</Text> : waitText(current().oldestWaitingMs)
+                    }
                     meta={t().longestWait}
                   />
                 </Cells>
@@ -268,7 +289,12 @@ export default function OperationsScreen(props: OperationsScreenProps) {
                           cell: (runner) => t().runnerName({ n: current().runners.indexOf(runner) + 1 }),
                         },
                         // k2b-ui gap: a monospace table cell for identifiers; the short instance ID stands as quiet text
-                        { title: t().instance, width: { min: 100, default: 120 }, drop: true, cell: (runner) => <Text type="meta">{short(runner.instanceId)}</Text> },
+                        {
+                          title: t().instance,
+                          width: { min: 100, default: 120 },
+                          drop: true,
+                          cell: (runner) => <Text type="meta">{short(runner.instanceId)}</Text>,
+                        },
                         {
                           title: t().places,
                           width: { min: 200, default: 280 },
@@ -280,7 +306,12 @@ export default function OperationsScreen(props: OperationsScreenProps) {
                             return <Progress value={busy} of={total} label={t().slotsBusy({ busy, total })} />;
                           },
                         },
-                        { title: t().state, width: { min: 110, default: 130 }, drop: true, cell: () => <StateWord>{t().connected}</StateWord> },
+                        {
+                          title: t().state,
+                          width: { min: 110, default: 130 },
+                          drop: true,
+                          cell: () => <StateWord>{t().connected}</StateWord>,
+                        },
                         { title: t().lastSeen, drop: true, cell: (runner) => ago(runner.lastSeenAt) },
                       ]}
                     />

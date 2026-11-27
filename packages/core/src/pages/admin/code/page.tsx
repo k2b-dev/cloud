@@ -101,7 +101,10 @@ export default ssr<AuthContext>(async (c) => {
   }
   const documentationBase = await coreSettings.get<string>("app.documentation_url").catch(() => undefined);
   const apps: Record<string, CodeApp> = Object.fromEntries(
-    runtime.apps.map((app) => [app.id, { name: app.name, ...(declaredIconColor(app.appearance) ? { color: declaredIconColor(app.appearance) } : {}) }]),
+    runtime.apps.map((app) => [
+      app.id,
+      { name: app.name, ...(declaredIconColor(app.appearance) ? { color: declaredIconColor(app.appearance) } : {}) },
+    ]),
   );
   const limits = data && ok(data.limits) ? data.limits : null;
 

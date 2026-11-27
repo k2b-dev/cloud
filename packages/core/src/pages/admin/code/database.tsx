@@ -18,8 +18,7 @@ export function createDatabaseDelete(codeId: string, unused: { namespace: string
   const remove = async () => {
     if (state() !== "idle") return;
     // k2b-ui gap: a destructive question asks with a red button once #4275 lands (danger: true).
-    if (!(await Dialog.confirm({ title: t().databaseDelete, description: t().databaseDeleteConfirm, confirm: t().databaseDelete })))
-      return;
+    if (!(await Dialog.confirm({ title: t().databaseDelete, description: t().databaseDeleteConfirm, confirm: t().databaseDelete }))) return;
     setState("busy");
     try {
       const response = await fetch("/api/code/authoring/database/delete", {

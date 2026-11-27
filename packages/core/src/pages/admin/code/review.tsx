@@ -1,7 +1,7 @@
 import type { CodeVersionReadModel } from "@k2b/cloud/contracts";
 import { formatRelative } from "@k2b/cloud/shared";
-import type { DateContext } from "@k2b/stdlib";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
+import type { DateContext } from "@k2b/stdlib";
 import type { CodeDiffLocation } from "@k2b/ui/code-diff";
 import {
   Band,
@@ -22,7 +22,12 @@ import {
 } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
-import { CODE_REVIEW_COMMENT_LENGTH, type CodeReviewComment, CodeReviewCommentSchema, codeReviewCommentContracts } from "../../../code/review-contracts";
+import {
+  CODE_REVIEW_COMMENT_LENGTH,
+  type CodeReviewComment,
+  CodeReviewCommentSchema,
+  codeReviewCommentContracts,
+} from "../../../code/review-contracts";
 import { type CodeVersionBinding, type CodeVersionDiffFile, codeVersionContracts } from "../../../code/version-contracts";
 import StateWord from "../_area/StateWord";
 import { codeAreaHref } from "./area";
@@ -516,8 +521,7 @@ function ReviewStatement(props: { review: CodeReview }) {
     if (decision) {
       const who = decision.by;
       if (decision.outcome === "approved") return mine ? t().youApproved({ n: p.number }) : t().otherApproved({ who, n: p.number });
-      if (decision.outcome === "changes_requested")
-        return mine ? t().youChanges({ n: p.number }) : t().otherChanges({ who, n: p.number });
+      if (decision.outcome === "changes_requested") return mine ? t().youChanges({ n: p.number }) : t().otherChanges({ who, n: p.number });
       return mine ? t().youRejected({ n: p.number }) : t().otherRejected({ who, n: p.number });
     }
     if (p.status === "withdrawn") return t().withdrawnSentence({ who: p.recipient, n: p.number });
@@ -612,7 +616,8 @@ function ReviewNotices(props: { review: CodeReview }) {
             {[
               previous().message,
               ...previous().comments.map(
-                (comment) => `${comment.author.id === p.viewerId ? t().youCap : (comment.author.name ?? t().unknownAuthor)}: ${comment.body}`,
+                (comment) =>
+                  `${comment.author.id === p.viewerId ? t().youCap : (comment.author.name ?? t().unknownAuthor)}: ${comment.body}`,
               ),
             ].join(" · ")}
           </Notice>
@@ -722,7 +727,11 @@ function ReviewChanges(props: { review: CodeReview }) {
               <Show
                 when={showSame()}
                 fallback={
-                  <Row icon="equal" lines={[t().sameMore({ n: same().length })]} action={{ label: t().show, onClick: () => setShowSame(true) }} />
+                  <Row
+                    icon="equal"
+                    lines={[t().sameMore({ n: same().length })]}
+                    action={{ label: t().show, onClick: () => setShowSame(true) }}
+                  />
                 }
               >
                 <For each={same()}>{(row) => <Row icon="equal" lines={row.note ? [row.text, row.note] : [row.text]} />}</For>
@@ -798,9 +807,7 @@ function ReviewOverview(props: { review: CodeReview }) {
                 <Row
                   icon={example.state === "succeeded" ? "circle-check" : "circle-x"}
                   lines={[example.name, example.sentence]}
-                  end={
-                    example.state === "succeeded" ? <StateWord>{example.status}</StateWord> : <Text tone="bad">{example.status}</Text>
-                  }
+                  end={example.state === "succeeded" ? <StateWord>{example.status}</StateWord> : <Text tone="bad">{example.status}</Text>}
                 />
               )}
             </For>

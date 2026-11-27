@@ -1,6 +1,6 @@
-import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { formatDateTime, formatRelative } from "@k2b/cloud/shared";
 import { codeRunName } from "@k2b/cloud/ssr/code-page/targets";
+import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import {
   type Action,
   Bar,
@@ -32,16 +32,7 @@ import { CodePageReportPageSchema } from "../../../code/page-report-contracts";
 import StateWord from "../_area/StateWord";
 import { codeAreaHref } from "./area";
 import { CodeAdminRequestError, postCodeAdmin, reloadCodeArea } from "./client";
-import {
-  automationMark,
-  type CodeScreenBase,
-  type Loaded,
-  ok,
-  ownerAppId,
-  ownerAppLabel,
-  ownerLabel,
-  statusText,
-} from "./data";
+import { automationMark, type CodeScreenBase, type Loaded, ok, ownerAppId, ownerAppLabel, ownerLabel, statusText } from "./data";
 import { createDatabaseDelete, databaseExportHref } from "./database";
 import { codeListHref, codeListQuery } from "./list-query";
 import { CodeHead, CodeStatus, LoadFailed, Missing, useCodeText } from "./parts";
@@ -264,7 +255,11 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
       empty={
         filtered
           ? { icon: "filter-off", text: t().emptyFilter, action: { label: t().resetFilters, href: codeAreaHref({ sec: "code" }) } }
-          : { icon: "code", text: t().emptyCodeSub, action: { label: t().viewPolicy, icon: "table-options", href: codeAreaHref({ sec: "policy" }) } }
+          : {
+              icon: "code",
+              text: t().emptyCodeSub,
+              action: { label: t().viewPolicy, icon: "table-options", href: codeAreaHref({ sec: "policy" }) },
+            }
       }
       phone={(code) => ({
         mark: automationMark(code.owner, props.apps),
@@ -309,7 +304,12 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
     const back = { label: t().sectionLabel({ s: "code" }), href: listHref };
     if (!detail)
       return (
-        <Pane detail label={t().sectionLabel({ s: "code" })} back={back} head={<Bar end={<Button variant="ghost" icon="x" label={t().close} href={listHref} />} />}>
+        <Pane
+          detail
+          label={t().sectionLabel({ s: "code" })}
+          back={back}
+          head={<Bar end={<Button variant="ghost" icon="x" label={t().close} href={listHref} />} />}
+        >
           <Show when={props.code === "missing"} fallback={<LoadFailed />}>
             <Missing text={t().codeMissing} back={{ sec: "code" }} />
           </Show>
@@ -342,7 +342,12 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
               <>
                 <Show when={pause}>
                   {(current) => (
-                    <Button icon={code.state === "paused" ? "player-play" : "player-pause"} keep busy={current().busy()} onClick={() => void current().change()}>
+                    <Button
+                      icon={code.state === "paused" ? "player-play" : "player-pause"}
+                      keep
+                      busy={current().busy()}
+                      onClick={() => void current().change()}
+                    >
                       {code.state === "paused" ? t().resume : t().pause}
                     </Button>
                   )}
@@ -356,14 +361,22 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
         <Show when={pause?.failure()}>{(message) => <Notice tone="bad">{message()}</Notice>}</Show>
         <Show when={query.version}>
           {(versionId) => (
-            <Notice tone="note" icon="arrow-forward-up" actions={[{ label: t().openReview, href: codeAreaHref({ sec: "approvals", id: versionId(), tab: "code" }) }]}>
+            <Notice
+              tone="note"
+              icon="arrow-forward-up"
+              actions={[{ label: t().openReview, href: codeAreaHref({ sec: "approvals", id: versionId(), tab: "code" }) }]}
+            >
               {t().sourceMoved}
             </Notice>
           )}
         </Show>
         <Show when={detail.pendingVersionId}>
           {(versionId) => (
-            <Notice tone="warn" icon="hourglass" actions={[{ label: t().openApproval, href: codeAreaHref({ sec: "approvals", id: versionId() }) }]}>
+            <Notice
+              tone="warn"
+              icon="hourglass"
+              actions={[{ label: t().openApproval, href: codeAreaHref({ sec: "approvals", id: versionId() }) }]}
+            >
               {t().waitsForApproval}
             </Notice>
           )}
@@ -406,7 +419,9 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
         <Show when={ok(reports) && reports.items.length ? reports : null}>
           {(page) => <Reports codeId={code.id} page={page()} dateConfig={props.dateConfig} />}
         </Show>
-        <Show when={detail.database}>{(database) => <Database codeId={code.id} database={database()} dateConfig={props.dateConfig} />}</Show>
+        <Show when={detail.database}>
+          {(database) => <Database codeId={code.id} database={database()} dateConfig={props.dateConfig} />}
+        </Show>
         <Section icon="git-commit" title={t().versions} count={detail.versions.length || undefined}>
           <Show when={detail.versions.length} fallback={<Row icon="circle-off" lines={[t().noVersions]} />}>
             <For each={detail.versions}>

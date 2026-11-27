@@ -12,7 +12,13 @@ import PolicyScreen from "./PolicyScreen.island";
 /** The limit settings in groups: what one run may use, the database, AI money, then the runner and submission sizes. */
 export const codeLimitSections = (locale: string, keys: readonly string[]): RegistryFormSection[] => {
   const t = codeAdminMessages.resolve([locale]).t;
-  const run = ["core.code.wall_clock_ms", "core.code.calls_per_run", "core.code.calls_per_second", "core.code.concurrency_per_code", "core.code.concurrency_per_owner"];
+  const run = [
+    "core.code.wall_clock_ms",
+    "core.code.calls_per_run",
+    "core.code.calls_per_second",
+    "core.code.concurrency_per_code",
+    "core.code.concurrency_per_owner",
+  ];
   const database = [
     "core.code.database_bytes",
     "core.code.database_owner_bytes",
@@ -57,8 +63,11 @@ export default function CodeScreen(props: CodeScreenProps) {
   const data = props.data;
   const section = codeAreaSection(props.query);
   if (section === "approvals")
-    return <ApprovalsScreen {...base()} summary={data.summary} approvals={data.approvals} decided={data.decided} approval={data.approval} />;
-  if (section === "code") return <AutomationsScreen {...base()} summary={data.summary} codes={data.codes} code={data.code} reports={data.reports} />;
+    return (
+      <ApprovalsScreen {...base()} summary={data.summary} approvals={data.approvals} decided={data.decided} approval={data.approval} />
+    );
+  if (section === "code")
+    return <AutomationsScreen {...base()} summary={data.summary} codes={data.codes} code={data.code} reports={data.reports} />;
   if (section === "policy" || section === "groups" || section === "effective" || section === "history")
     return <PolicyScreen {...base()} section={section} policy={data.policy} effective={data.effective} history={data.history} />;
   return (

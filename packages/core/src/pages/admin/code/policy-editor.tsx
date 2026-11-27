@@ -230,7 +230,11 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
         </Notice>
       </Show>
       <Show when={status().kind === "unknown"}>
-        <Notice tone="warn" title={t().policyUnknownTitle} actions={[{ label: t().checkState, icon: "refresh", onClick: () => reloadCodeArea() }]}>
+        <Notice
+          tone="warn"
+          title={t().policyUnknownTitle}
+          actions={[{ label: t().checkState, icon: "refresh", onClick: () => reloadCodeArea() }]}
+        >
           {t().unknownPolicySub}
         </Notice>
       </Show>
@@ -310,7 +314,9 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
               (row) =>
                 `„${t().rowLabel({ row })}“: ${cellLabel(cellOf(baseline(), props.groupId, row))} → ${cellLabel(cellOf(draft(), props.groupId, row))}.`,
             ),
-            ...(draft().preset !== baseline().preset ? [`${t().presets}: ${presetLabel(baseline().preset)} → ${presetLabel(draft().preset)}.`] : []),
+            ...(draft().preset !== baseline().preset
+              ? [`${t().presets}: ${presetLabel(baseline().preset)} → ${presetLabel(draft().preset)}.`]
+              : []),
             affected(),
           ].join(" ")}
         </Notice>

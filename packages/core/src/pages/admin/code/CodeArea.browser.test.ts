@@ -39,7 +39,9 @@ const review = `sec=approvals&id=${FIXTURE_VERSIONS.rueckruf3}`;
 const main = () => page.locator("main");
 const button = (name: string) => main().getByRole("button", { name, exact: true }).filter({ visible: true });
 const tab = (name: string) =>
-  main().getByRole("navigation", { name: "Ansichten" }).getByRole("link", { name: new RegExp(`^${name}\\b`) });
+  main()
+    .getByRole("navigation", { name: "Ansichten" })
+    .getByRole("link", { name: new RegExp(`^${name}\\b`) });
 
 beforeAll(async () => {
   fixture = await codeAreaBrowserFixture();
@@ -94,7 +96,18 @@ test("every section keeps the v2 rules at every width, the worst case included, 
 test("the sections stand nested under Code in the admin bar, with the waiting approvals counted and the open one current", async () => {
   await goto("sec=code");
   const nav = page.locator('[data-k2-part="Nav"]').first();
-  for (const label of ["Freigaben", "Alle Automationen", "Richtlinie", "Gruppen", "Wirksame Rechte", "Verlauf", "Aufräumen", "Datenbanken", "Grenzen", "Runner"])
+  for (const label of [
+    "Freigaben",
+    "Alle Automationen",
+    "Richtlinie",
+    "Gruppen",
+    "Wirksame Rechte",
+    "Verlauf",
+    "Aufräumen",
+    "Datenbanken",
+    "Grenzen",
+    "Runner",
+  ])
     await nav.getByRole("link", { name: new RegExp(`^${label}`) }).waitFor();
   expect(await nav.getByRole("link", { name: /^Freigaben/ }).innerText()).toContain("4");
   expect(await nav.getByRole("link", { name: /^Alle Automationen/ }).getAttribute("aria-current")).toBe("page");
@@ -163,7 +176,8 @@ test("requesting changes asks for a text that names who gets it, keeps the draft
   const dialog = page.getByRole("dialog");
   await dialog.getByText("Lea Muster bekommt deine Nachricht.", { exact: false }).waitFor();
   await dialog.getByText("3 Kommentare am Code gehen mit.").waitFor();
-  for (const name of ["Ablehnen …", "Änderungen anfordern …"]) expect(await dialog.getByRole("radio", { name, exact: true }).count()).toBe(1);
+  for (const name of ["Ablehnen …", "Änderungen anfordern …"])
+    expect(await dialog.getByRole("radio", { name, exact: true }).count()).toBe(1);
   await dialog.getByRole("button", { name: "Änderungen anfordern" }).click();
   await dialog.getByText("Schreib kurz, was sich ändern soll.").waitFor();
   expect(fixture.requests).toEqual([]);
@@ -177,7 +191,12 @@ test("requesting changes asks for a text that names who gets it, keeps the draft
   expect(fixture.requests).toEqual([
     {
       path: "decide",
-      body: { binding: fixtureApprovalDetail().binding, approved: false, outcome: "changes_requested", comment: "Bitte nur Rückrufwünsche." },
+      body: {
+        binding: fixtureApprovalDetail().binding,
+        approved: false,
+        outcome: "changes_requested",
+        comment: "Bitte nur Rückrufwünsche.",
+      },
     },
   ]);
   // Decided: comments are frozen.
@@ -200,9 +219,17 @@ test("a refused decision keeps the dialog with its text; approving sends the bin
   await button("Version 3 freigeben").click();
   await reload();
   await main().getByText("Du hast Version 3 freigegeben.", { exact: false }).waitFor();
-  expect(fixture.requests).toEqual([{ path: "decide", body: { binding: fixtureApprovalDetail().binding, approved: true, outcome: "approved" } }]);
+  expect(fixture.requests).toEqual([
+    { path: "decide", body: { binding: fixtureApprovalDetail().binding, approved: true, outcome: "approved" } },
+  ]);
   // The waiting count of the admin bar drops with it.
-  expect(await page.locator('[data-k2-part="Nav"]').first().getByRole("link", { name: /^Freigaben/ }).innerText()).toContain("3");
+  expect(
+    await page
+      .locator('[data-k2-part="Nav"]')
+      .first()
+      .getByRole("link", { name: /^Freigaben/ })
+      .innerText(),
+  ).toContain("3");
 });
 
 test("a lost answer leaves only Check state; a conflict and a withdrawal say what happened", async () => {
@@ -311,7 +338,10 @@ test("choosing a group opens its rules by address", async () => {
   await button("Gruppe hinzufügen").click();
   await page.getByRole("dialog").getByRole("combobox").or(page.getByRole("dialog").getByRole("searchbox")).first().waitFor();
   await page.getByRole("dialog").getByRole("button", { name: "Abbrechen" }).click();
-  await main().getByRole("link", { name: /Buchhaltung/ }).first().click();
+  await main()
+    .getByRole("link", { name: /Buchhaltung/ })
+    .first()
+    .click();
   await reload();
   expect(new URL(page.url()).searchParams.get("id")).toBe("66666666-6666-4666-8666-666666666666");
   await main().getByText("Wie Standard", { exact: false }).first().waitFor();
@@ -320,7 +350,11 @@ test("choosing a group opens its rules by address", async () => {
 test("filtering all automations writes the address with the old parameter names and loads that list", async () => {
   await goto("sec=code");
   await button("Filter").click();
-  await page.getByRole("menuitem", { name: /Status/ }).or(page.getByRole("option", { name: /Status/ })).first().click();
+  await page
+    .getByRole("menuitem", { name: /Status/ })
+    .or(page.getByRole("option", { name: /Status/ }))
+    .first()
+    .click();
   await page.getByRole("option", { name: "Pausiert" }).click();
   await page.waitForURL(/status=paused/);
   await reload();
@@ -332,7 +366,10 @@ test("filtering all automations writes the address with the old parameter names 
 test("a Cloud admin pauses any automation from its detail, and a refused resume says why", async () => {
   await goto("sec=code&id=c_rechn");
   await button("Pausieren").click();
-  await Promise.all([page.waitForEvent("load"), page.getByRole("alertdialog").or(page.getByRole("dialog")).getByRole("button", { name: "Pausieren" }).click()]);
+  await Promise.all([
+    page.waitForEvent("load"),
+    page.getByRole("alertdialog").or(page.getByRole("dialog")).getByRole("button", { name: "Pausieren" }).click(),
+  ]);
   expect(fixture.requests).toEqual([{ path: "pause", body: { codeId: "c_rechn", paused: true } }]);
   await goto("sec=code&id=c_woche&state=savefail");
   await button("Fortsetzen").click();

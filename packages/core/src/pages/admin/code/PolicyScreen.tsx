@@ -1,23 +1,6 @@
-import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { formatDateTime } from "@k2b/cloud/shared";
-import {
-  Bar,
-  Button,
-  Dialog,
-  Digest,
-  Empty,
-  Facts,
-  Icon,
-  Inline,
-  Lookup,
-  Pane,
-  Row,
-  Section,
-  StatusRow,
-  Table,
-  Text,
-  useLocale,
-} from "@k2b/ui/v2";
+import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
+import { Bar, Button, Dialog, Digest, Empty, Facts, Icon, Lookup, Pane, Row, Section, StatusRow, Table, Text, useLocale } from "@k2b/ui/v2";
 import type { LookupItem } from "@k2b/ui/v2/list-query";
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { z } from "zod";
@@ -39,7 +22,10 @@ export type PolicyScreenProps = CodeScreenBase & {
 const EntitiesSchema = z.object({
   items: z.array(
     z.union([
-      z.object({ kind: z.literal("user"), user: z.object({ id: z.string(), displayName: z.string().nullish(), uid: z.string(), mail: z.string().nullish() }) }),
+      z.object({
+        kind: z.literal("user"),
+        user: z.object({ id: z.string(), displayName: z.string().nullish(), uid: z.string(), mail: z.string().nullish() }),
+      }),
       z.object({ kind: z.literal("group"), group: z.object({ id: z.string(), name: z.string(), description: z.string().nullish() }) }),
       z.object({ kind: z.string() }),
     ]),
@@ -62,7 +48,13 @@ const searchEntities =
         "user" in entity
           ? [{ value: entity.user.id, label: entity.user.displayName || entity.user.uid, meta: entity.user.mail ?? entity.user.uid }]
           : "group" in entity
-            ? [{ value: entity.group.id, label: entity.group.name, ...(entity.group.description ? { meta: entity.group.description } : {}) }]
+            ? [
+                {
+                  value: entity.group.id,
+                  label: entity.group.name,
+                  ...(entity.group.description ? { meta: entity.group.description } : {}),
+                },
+              ]
             : [],
       ),
     };
@@ -119,15 +111,27 @@ export default function PolicyScreen(props: PolicyScreenProps) {
   const [picking, setPicking] = createSignal(false);
 
   const policyPane = (): JSX.Element => (
-    <Pane label={t().sectionLabel({ s: "policy" })} scrollKey="admin-code-policy" status={
-      // k2b-ui gap: Hero figure (#4360); the preset in force is the statement
-      policy ? (
-        <StatusRow
-          lead={t().presetInForce({ preset: { off: t().presetOff, admin: t().presetAdmin, open: t().presetOpen, custom: t().presetCustom }[policy.policy.definition.preset] })}
-          facts={policy.updatedByName ? [{ value: t().lastChange({ who: policy.updatedByName, when: when(policy.policy.updatedAt) }) }] : undefined}
-        />
-      ) : undefined
-    }>
+    <Pane
+      label={t().sectionLabel({ s: "policy" })}
+      scrollKey="admin-code-policy"
+      status={
+        // k2b-ui gap: Hero figure (#4360); the preset in force is the statement
+        policy ? (
+          <StatusRow
+            lead={t().presetInForce({
+              preset: { off: t().presetOff, admin: t().presetAdmin, open: t().presetOpen, custom: t().presetCustom }[
+                policy.policy.definition.preset
+              ],
+            })}
+            facts={
+              policy.updatedByName
+                ? [{ value: t().lastChange({ who: policy.updatedByName, when: when(policy.policy.updatedAt) }) }]
+                : undefined
+            }
+          />
+        ) : undefined
+      }
+    >
       <Show when={policy} fallback={<LoadFailed />}>
         {(current) => (
           <>
@@ -149,54 +153,58 @@ export default function PolicyScreen(props: PolicyScreenProps) {
     const open = props.query.id;
     const group = policy?.groups.find((entry) => entry.id === open);
     const list = () => (
-        <Pane
-          label={t().groups}
-          width={open ? { min: 320, default: 420 } : undefined}
-          scrollKey="admin-code-groups"
-          status={policy ? <StatusRow lead={t().groupsSub({ n: policy.groups.length })} /> : undefined}
-        >
-          <Show when={policy} fallback={<LoadFailed />}>
-            {(current) => (
-              <Table
-                label={t().groups}
-                rows={current().groups}
-                rowKey={(entry) => entry.id}
-                current={open}
-                open={(entry) => ({ href: codeAreaHref({ sec: "groups", id: entry.id }) })}
-                empty={{ icon: "users-group", text: t().noGroupsSub, action: { label: t().addGroup, icon: "plus", onClick: () => setPicking(true) } }}
-                phone={(entry) => ({
-                  avatar: { name: entry.name },
-                  lines: [entry.name, t().groupRules({ rules: entry.rules, members: entry.members })],
-                })}
-                columns={[
-                  {
-                    title: t().group,
-                    width: { min: 160, default: open ? 220 : 260 },
-                    avatar: (entry) => ({ name: entry.name }),
-                    cell: (entry) => entry.name,
-                  },
-                  { title: t().rules, width: { min: 80, default: 100 }, align: "end", drop: true, cell: (entry) => num(entry.rules) },
-                  ...(open
-                    ? []
-                    : [
-                        {
-                          title: t().members,
-                          width: { min: 80, default: 100 },
-                          align: "end" as const,
-                          drop: true,
-                          cell: (entry: CodeAdminPolicy["groups"][number]) => num(entry.members),
-                        },
-                      ]),
-                  {
-                    title: t().parentGroup,
-                    drop: true,
-                    cell: (entry) => entry.parents.join(", ") || <Text muted>{t().none}</Text>,
-                  },
-                ]}
-              />
-            )}
-          </Show>
-        </Pane>
+      <Pane
+        label={t().groups}
+        width={open ? { min: 320, default: 420 } : undefined}
+        scrollKey="admin-code-groups"
+        status={policy ? <StatusRow lead={t().groupsSub({ n: policy.groups.length })} /> : undefined}
+      >
+        <Show when={policy} fallback={<LoadFailed />}>
+          {(current) => (
+            <Table
+              label={t().groups}
+              rows={current().groups}
+              rowKey={(entry) => entry.id}
+              current={open}
+              open={(entry) => ({ href: codeAreaHref({ sec: "groups", id: entry.id }) })}
+              empty={{
+                icon: "users-group",
+                text: t().noGroupsSub,
+                action: { label: t().addGroup, icon: "plus", onClick: () => setPicking(true) },
+              }}
+              phone={(entry) => ({
+                avatar: { name: entry.name },
+                lines: [entry.name, t().groupRules({ rules: entry.rules, members: entry.members })],
+              })}
+              columns={[
+                {
+                  title: t().group,
+                  width: { min: 160, default: open ? 220 : 260 },
+                  avatar: (entry) => ({ name: entry.name }),
+                  cell: (entry) => entry.name,
+                },
+                { title: t().rules, width: { min: 80, default: 100 }, align: "end", drop: true, cell: (entry) => num(entry.rules) },
+                ...(open
+                  ? []
+                  : [
+                      {
+                        title: t().members,
+                        width: { min: 80, default: 100 },
+                        align: "end" as const,
+                        drop: true,
+                        cell: (entry: CodeAdminPolicy["groups"][number]) => num(entry.members),
+                      },
+                    ]),
+                {
+                  title: t().parentGroup,
+                  drop: true,
+                  cell: (entry) => entry.parents.join(", ") || <Text muted>{t().none}</Text>,
+                },
+              ]}
+            />
+          )}
+        </Show>
+      </Pane>
     );
     if (!open || !policy) return list();
     return (
@@ -239,13 +247,24 @@ export default function PolicyScreen(props: PolicyScreenProps) {
       <Pane
         label={t().sectionLabel({ s: "effective" })}
         scrollKey="admin-code-effective"
-        status={ok(effective) ? <StatusRow lead={effective.person.name} facts={[{ value: effective.groups.length, after: t().groupsWord({ n: effective.groups.length }) }]} /> : undefined}
+        status={
+          ok(effective) ? (
+            <StatusRow
+              lead={effective.person.name}
+              facts={[{ value: effective.groups.length, after: t().groupsWord({ n: effective.groups.length }) }]}
+            />
+          ) : undefined
+        }
       >
         <Show
           when={ok(effective) ? effective : null}
           fallback={
             effective === null ? (
-              <Empty icon="user-search" text={t().choosePerson} action={{ label: t().choosePersonTitle, icon: "search", onClick: () => setPicking(true) }} />
+              <Empty
+                icon="user-search"
+                text={t().choosePerson}
+                action={{ label: t().choosePersonTitle, icon: "search", onClick: () => setPicking(true) }}
+              />
             ) : effective === "missing" ? (
               <Missing text={t().personMissing} back={{ sec: "effective" }} />
             ) : (
@@ -265,7 +284,9 @@ export default function PolicyScreen(props: PolicyScreenProps) {
                         label: t().groups,
                         value: current().groups.length
                           ? current()
-                              .groups.map((group) => (group.parents.length ? `${group.name} (${t().subgroupOf({ p: group.parents.join(", ") })})` : group.name))
+                              .groups.map((group) =>
+                                group.parents.length ? `${group.name} (${t().subgroupOf({ p: group.parents.join(", ") })})` : group.name,
+                              )
                               .join(", ")
                           : t().none,
                       },
@@ -281,7 +302,11 @@ export default function PolicyScreen(props: PolicyScreenProps) {
                           if (!row) return null;
                           const groups = row.groups.join(", ");
                           const source =
-                            row.source === "veto" ? t().sourceVeto({ groups }) : row.source === "group" ? t().sourceGroup({ groups }) : t().sourceDefault;
+                            row.source === "veto"
+                              ? t().sourceVeto({ groups })
+                              : row.source === "group"
+                                ? t().sourceGroup({ groups })
+                                : t().sourceDefault;
                           return (
                             <Row
                               icon={row.source === "default" ? "world" : "users"}
@@ -314,7 +339,9 @@ export default function PolicyScreen(props: PolicyScreenProps) {
       <>
         <Text weight="strong">{entry.by ?? t().unknownAuthor}</Text>{" "}
         {[
-          ...(entry.preset ? [t().historyPresetChange({ before: presetLabel(entry.preset.before), after: presetLabel(entry.preset.after) })] : []),
+          ...(entry.preset
+            ? [t().historyPresetChange({ before: presetLabel(entry.preset.before), after: presetLabel(entry.preset.after) })]
+            : []),
           ...entry.changes.map((change) =>
             t().historyChange({
               row: t().historyRow({ row: t().rowLabel({ row: change.row }), group: change.group }),
@@ -333,11 +360,23 @@ export default function PolicyScreen(props: PolicyScreenProps) {
               <Section icon="history" title={t().historyChanges} count={page().items.length}>
                 <Digest
                   label={t().historyChangesLabel}
-                  activity={page().items.map((entry) => ({ person: { name: entry.by ?? t().unknownAuthor }, text: sentence(entry), time: when(entry.at) }))}
+                  activity={page().items.map((entry) => ({
+                    person: { name: entry.by ?? t().unknownAuthor },
+                    text: sentence(entry),
+                    time: when(entry.at),
+                  }))}
                 />
               </Section>
               <Show when={page().nextPage}>
-                {(next) => <Bar end={<Button icon="chevron-down" href={codeAreaHref({ sec: "history", after: String(next()) })}>{t().olderChanges}</Button>} />}
+                {(next) => (
+                  <Bar
+                    end={
+                      <Button icon="chevron-down" href={codeAreaHref({ sec: "history", after: String(next()) })}>
+                        {t().olderChanges}
+                      </Button>
+                    }
+                  />
+                )}
               </Show>
             </Show>
           )}
@@ -352,7 +391,15 @@ export default function PolicyScreen(props: PolicyScreenProps) {
       nav={props.nav}
       detail={props.section === "groups" && props.query.id ? 520 : undefined}
       detailEmpty={{ icon: "users-group", text: t().chooseGroup }}
-      primary={pick ? { label: pick === "group" ? t().addGroup : t().choosePersonTitle, icon: pick === "group" ? "plus" : "search", onClick: () => setPicking(true) } : undefined}
+      primary={
+        pick
+          ? {
+              label: pick === "group" ? t().addGroup : t().choosePersonTitle,
+              icon: pick === "group" ? "plus" : "search",
+              onClick: () => setPicking(true),
+            }
+          : undefined
+      }
       head={
         <CodeHead
           section={props.section}
@@ -375,7 +422,13 @@ export default function PolicyScreen(props: PolicyScreenProps) {
         />
       }
     >
-      {props.section === "policy" ? policyPane() : props.section === "groups" ? groupsPanes() : props.section === "effective" ? effectivePane() : historyPane()}
+      {props.section === "policy"
+        ? policyPane()
+        : props.section === "groups"
+          ? groupsPanes()
+          : props.section === "effective"
+            ? effectivePane()
+            : historyPane()}
       <Show when={pick}>{(kind) => <PickDialog kind={kind()} open={picking()} onClose={() => setPicking(false)} />}</Show>
     </AdminWorkspace>
   );

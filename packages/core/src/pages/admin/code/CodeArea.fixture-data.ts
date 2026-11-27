@@ -1140,7 +1140,12 @@ const UNBROKEN = "rechnungseingang.niederlassung-nord-ost.buchhaltung@verwaltung
 function worstData(data: CodeAreaData, query: Record<string, string | undefined>): CodeAreaData {
   const approvals = fixtureApprovals();
   const worstApprovals: CodeAdminApproval[] = [
-    { ...approvals[0]!, title: LONG, ownerName: UNBROKEN, author: { id: FIXTURE_PEOPLE.lea, name: "Maximiliane-Theodora von Hohenzollern-Sigmaringen" } },
+    {
+      ...approvals[0]!,
+      title: LONG,
+      ownerName: UNBROKEN,
+      author: { id: FIXTURE_PEOPLE.lea, name: "Maximiliane-Theodora von Hohenzollern-Sigmaringen" },
+    },
     { ...approvals[1]!, title: "X", author: { id: null, name: null }, ownerName: null, number: 1234 },
     { ...approvals[2]!, title: "請求書を経理に転送する 📨", author: { id: FIXTURE_PEOPLE.mia, name: "李小龍" } },
     { ...approvals[3]!, title: "🧾🧾🧾", reason: null },
@@ -1189,12 +1194,24 @@ function worstData(data: CodeAreaData, query: Record<string, string | undefined>
           lastAccess: null,
           namespace: "code_c_worst_fixture",
         },
-        { codeId: "c_x", title: "X", owner: "李", bytes: 0, since: "2026-11-01T00:00:00.000Z", deleteAt: "2026-12-01T00:00:00.000Z", lastAccess: "2026-11-01T00:00:00.000Z", namespace: "code_c_x_fixture" },
+        {
+          codeId: "c_x",
+          title: "X",
+          owner: "李",
+          bytes: 0,
+          since: "2026-11-01T00:00:00.000Z",
+          deleteAt: "2026-12-01T00:00:00.000Z",
+          lastAccess: "2026-11-01T00:00:00.000Z",
+          namespace: "code_c_x_fixture",
+        },
       ],
       nextCursor: "c_zzzz",
     },
     cleanup: {
-      items: [{ ...fixtureCleanup()[0]!, title: LONG, attempts: 9_999 }, { ...fixtureCleanup()[1]!, title: "Ö" }],
+      items: [
+        { ...fixtureCleanup()[0]!, title: LONG, attempts: 9_999 },
+        { ...fixtureCleanup()[1]!, title: "Ö" },
+      ],
       nextCursor: "70000000-0000-4000-8000-000000000009",
     },
     runners: {
@@ -1220,7 +1237,13 @@ function worstData(data: CodeAreaData, query: Record<string, string | undefined>
             updatedByName: "李小龍",
             usage: { ...data.policy.usage, read: 1_234_567 },
             groups: [
-              { id: FIXTURE_GROUPS.buchhaltung, name: `${LONG} 👥`, rules: 17, members: 123_456, parents: ["Verwaltung", "Niederlassung Nord-Ost", "Holding"] },
+              {
+                id: FIXTURE_GROUPS.buchhaltung,
+                name: `${LONG} 👥`,
+                rules: 17,
+                members: 123_456,
+                parents: ["Verwaltung", "Niederlassung Nord-Ost", "Holding"],
+              },
               { id: FIXTURE_GROUPS.praktikum, name: "Ü", rules: 0, members: 0, parents: [] },
             ],
           }

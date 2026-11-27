@@ -18,10 +18,7 @@ export function CodeHead(props: { section: CodeAreaSection; start?: JSX.Element;
     <Bar
       start={
         props.start ?? (
-          <Path
-            label={t().area}
-            items={[{ label: t().area, href: codeAreaHref({}) }, { label: t().sectionLabel({ s: props.section }) }]}
-          />
+          <Path label={t().area} items={[{ label: t().area, href: codeAreaHref({}) }, { label: t().sectionLabel({ s: props.section }) }]} />
         )
       }
       end={props.end}
@@ -42,10 +39,7 @@ export function CodeStatus(props: { code: Pick<CodeAdminCode, "status" | "pauseR
         <Show
           when={props.code.status === "waiting"}
           fallback={
-            <Show
-              when={props.code.status === "paused"}
-              fallback={<StateWord muted>{statusText(t(), props.code)}</StateWord>}
-            >
+            <Show when={props.code.status === "paused"} fallback={<StateWord muted>{statusText(t(), props.code)}</StateWord>}>
               <Chip status="warn">{statusText(t(), props.code)}</Chip>
             </Show>
           }
