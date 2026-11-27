@@ -66,6 +66,7 @@ export {
   Check,
   type CheckProps,
   Choice,
+  type ChoiceOption,
   type ChoiceProps,
   CodeInput,
   type CodeInputProps,
