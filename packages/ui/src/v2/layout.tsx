@@ -452,7 +452,8 @@ export type PaneProps = {
    * The content stands in the middle of the column: across at its own measure, at most that of four cards (4 × 240 px
    * with their gaps, between the text edges), and in the middle of the height where it fits. Taller content starts at
    * the top and scrolls, as in any pane; on the phone it always starts at the top. For a page with little on it and
-   * nothing beside it, such as the first start of an app without any data: one line and a few `Tiles`. It draws no
+   * nothing beside it, such as the first start of an app without any data: one line and a few `Tiles`. A line of text
+   * stands centred over them, on the phone at the start. It draws no
    * line and no box of its own, and it is CSS alone, so the server's first render already stands there.
    */
   center?: boolean;

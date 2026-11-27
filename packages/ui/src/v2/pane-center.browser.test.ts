@@ -55,6 +55,7 @@ const read = (page: Page) =>
       scroll: box(scroll),
       lead: box(document.querySelector(".k2-text")!),
       tiles: box(document.querySelector(".k2-tiles")!),
+      align: getComputedStyle(document.querySelector(".k2-text")!).textAlign,
       tile: Array.from(document.querySelectorAll(".k2-tile")).map(box),
       overflows: scroll.scrollHeight > scroll.clientHeight,
     };
@@ -74,6 +75,7 @@ for (const width of [1440, 1920])
       // the line stands over the cards, on the same text edge, with room between them
       expect(Math.round(found.lead.left)).toBe(Math.round(found.tiles.left));
       expect(found.tiles.top - found.lead.bottom).toBeGreaterThanOrEqual(12);
+      expect(found.align).toBe("center");
       // four cards in one row, each at least 240 px, sharing the row evenly
       expect(new Set(found.tile.map((tile) => Math.round(tile.top))).size).toBe(1);
       for (const tile of found.tile) expect(tile.width).toBeGreaterThanOrEqual(240);
@@ -117,6 +119,7 @@ test("on the phone a centred pane starts at the top with the normal edge and the
     expect(Math.round(found.tiles.width)).toBe(390);
     // the text edge above it, so it never touches the head of the page; the cards a gap below
     expect(Math.round(found.lead.top - found.scroll.top)).toBe(textEdge.phone);
+    expect(found.align).toBe("start");
     expect(found.tiles.top - found.lead.bottom).toBeGreaterThanOrEqual(12);
     // two cards a row, as the approved first start draws it (2 × 2), the first on the phone's text edge
     const rows = new Map<number, number>();
