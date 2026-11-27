@@ -1,7 +1,7 @@
 import { i18n, password as pwdGen } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import { Band, Button, Canvas, Check, Chip, Choice, Facts, Field, Inline, Progress, Section, Slider } from "@k2b/ui/v2";
-import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onMount, Show } from "solid-js";
 import ToolsScreen, { ToolPanes } from "../ToolsScreen";
 import { useToolCopy } from "../tool-copy";
 
@@ -15,13 +15,10 @@ export const passwordMessages = i18n.define({
       modeRandom: "Random",
       modeMemorable: "Memorable",
       modePin: "PIN",
-      randomTitle: "Random passwords",
       randomBody:
         "Use a longer random password for the strongest general-purpose protection. Add numbers and symbols when the password should be stronger and harder to guess.",
-      memorableTitle: "Memorable passwords",
       memorableBody:
         "Readable word-based passwords are easier to type and remember. You can still add a random number or symbol when password rules require extra variation.",
-      pinTitle: "PIN passwords",
       pinBody: "Use a short numeric PIN when a device or lock screen only allows digits.",
       characters: "Characters",
       uppercase: "Uppercase",
@@ -50,13 +47,10 @@ export const passwordMessages = i18n.define({
       modeRandom: "Zufällig",
       modeMemorable: "Merkbar",
       modePin: "PIN",
-      randomTitle: "Zufällige Passwörter",
       randomBody:
         "Ein langes zufälliges Passwort eignet sich für die meisten Anmeldungen. Aktiviere Zahlen und Symbole, wenn die Passwortregeln sie verlangen.",
-      memorableTitle: "Merkbare Passwörter",
       memorableBody:
         "Passwörter aus Wörtern lassen sich leichter eingeben und merken. Ergänze eine zufällige Zahl oder ein Symbol, wenn die Passwortregeln es verlangen.",
-      pinTitle: "PIN-Passwörter",
       pinBody: "Verwende eine kurze numerische PIN nur, wenn ein Gerät oder Sperrbildschirm ausschließlich Ziffern zulässt.",
       characters: "Zeichen",
       uppercase: "Großbuchstaben",
@@ -111,8 +105,13 @@ export default function PasswordGenerator() {
   const [memorableSymbol, setMemorableSymbol] = createSignal(false);
   const [pinLength, setPinLength] = createSignal(6);
   const [nonce, setNonce] = createSignal(0);
+  // made in the browser only: a password made while the server renders would differ from the one the island makes, and
+  // a secret has no business in the page's markup. Until then the drawing keeps its place empty.
+  const [mounted, setMounted] = createSignal(false);
+  onMount(() => setMounted(true));
   const password = createMemo(() => {
     nonce();
+    if (!mounted()) return "";
     switch (mode()) {
       case "memorable":
         return pwdGen.memorable({
@@ -179,9 +178,7 @@ export default function PasswordGenerator() {
                       "place-items": "center",
                       height: "100%",
                       padding: "0 20px",
-                      // three fixed steps by length keep the 120 px drawing whole, the short ones as the figure of the page (30):
-                      // 64 signs with symbols take two lines at 16 px on a phone; anything longer scrolls inside
-                      font: `600 ${password().length <= 20 ? 30 : password().length <= 40 ? 22 : 16}px/1.3 var(--k2-font-mono)`,
+                      "container-type": "inline-size",
                       "overflow-y": "auto",
                       "text-align": "center",
                       "overflow-wrap": "anywhere",
@@ -190,7 +187,17 @@ export default function PasswordGenerator() {
                       "user-select": "all",
                     }}
                   >
-                    <span>
+                    {/* three steps by length keep the 120 px drawing whole, the short ones as the figure of the page (30); no
+                        step is wider than the drawing (100cqw) allows for one line of mono signs (0.7 em, room for any mono face), so 20 signs stay
+                        on one line on a phone instead of leaving one sign alone; anything longer scrolls inside */}
+                    <span
+                      style={{
+                        "font-family": "var(--k2-font-mono)",
+                        "font-weight": 600,
+                        "line-height": 1.3,
+                        "font-size": `min(${password().length <= 20 ? 30 : password().length <= 40 ? 22 : 16}px, max(16px, calc(100cqw / ${Math.max(1, Math.min(password().length, 20)) * 0.7})))`,
+                      }}
+                    >
                       <For each={password().split("")}>{(char) => <span style={{ color: tone(mode(), char) }}>{char}</span>}</For>
                     </span>
                   </div>
@@ -200,7 +207,11 @@ export default function PasswordGenerator() {
                   <Progress
                     value={Math.min(128, Math.round(strength().entropy))}
                     of={128}
-                    label={`${t().strength}: ${t().strengthLabel({ word: t().strengthWord({ score: strength().score }), bits: Math.round(strength().entropy) })}`}
+                    label={
+                      password()
+                        ? `${t().strength}: ${t().strengthLabel({ word: t().strengthWord({ score: strength().score }), bits: Math.round(strength().entropy) })}`
+                        : `${t().strength}: –`
+                    }
                   />
                 </Inline>
                 {/* what the password holds, as quiet chips: its length and its kinds of signs */}

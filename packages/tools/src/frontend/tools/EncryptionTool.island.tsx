@@ -126,6 +126,8 @@ export default function EncryptionTool() {
   const [asymPayload, setAsymPayload] = createSignal("");
   const [output, setOutput] = createSignal("");
   const [error, setError] = createSignal("");
+  // the deed that failed names the notice: encrypting, decrypting, or making a key pair
+  const [failedDeed, setFailedDeed] = createSignal<"encrypt" | "decrypt" | "keys">("encrypt");
   const [running, setRunning] = createSignal<"encrypt" | "decrypt" | "keys">();
   const run = async (deed: "encrypt" | "decrypt" | "keys", work: () => Promise<unknown>, fallback: string) => {
     setError("");
@@ -134,6 +136,7 @@ export default function EncryptionTool() {
     try {
       await work();
     } catch (failure) {
+      setFailedDeed(deed);
       setError(getErrorMessage(failure, fallback));
     } finally {
       setRunning(undefined);
@@ -297,7 +300,12 @@ export default function EncryptionTool() {
           children: (
             <>
               <Show when={error()}>
-                <Notice tone="bad" title={t().errEncryptFailed}>
+                <Notice
+                  tone="bad"
+                  title={
+                    failedDeed() === "decrypt" ? t().errDecryptFailed : failedDeed() === "keys" ? t().errKeyGenFailed : t().errEncryptFailed
+                  }
+                >
                   {error()}
                 </Notice>
               </Show>

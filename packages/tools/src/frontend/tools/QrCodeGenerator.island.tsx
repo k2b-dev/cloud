@@ -147,6 +147,18 @@ export default function QrCodeGenerator() {
     }
   });
 
+  // What the page shows of the content: a Wi-Fi password stands masked, as anyone beside the screen could read it;
+  // copying still gives the whole content, as the code itself holds it.
+  const shownPayload = () =>
+    mode() === "wifi" && wifiPassword() && wifiSsid().trim()
+      ? qr.wifi({
+          ssid: wifiSsid(),
+          password: "••••••••",
+          encryption: wifiEncryption() as "WPA" | "WEP" | "nopass",
+          hidden: wifiHidden(),
+        })
+      : payload();
+
   // === QR rendering ===
   const qrSvg = createMemo(() => {
     const p = payload();
@@ -423,7 +435,7 @@ export default function QrCodeGenerator() {
                 </Show>
               </Canvas>
               <Show when={payload()}>
-                <Facts items={[{ label: t().contentHeading, value: payload(), mono: true, copy: payload() }]} />
+                <Facts items={[{ label: t().contentHeading, value: shownPayload(), mono: true, copy: payload() }]} />
               </Show>
             </Section>
             <Band label={t().localNote}>

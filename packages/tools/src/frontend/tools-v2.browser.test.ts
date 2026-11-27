@@ -176,3 +176,125 @@ test("encoding shows its error at the field and the hash of the text", async () 
     await page.close();
   }
 });
+
+// The deeds of the rebuilt tools, end to end in the browser (review round 1).
+const tool = async (screen: string, width = 1440) => {
+  const page = await browser.newPage({ viewport: { width, height: width < 600 ? 844 : 900 }, acceptDownloads: true });
+  await page.goto(`${server.url.href}?screen=${screen}`);
+  await page.locator('[data-k2-part="Workspace"]').waitFor();
+  return page;
+};
+const factValue = (page: Page, label: string) =>
+  page.locator('[data-k2-part="Facts"]').getByText(label, { exact: true }).locator("xpath=following-sibling::*[1]").first();
+
+test("encrypting and decrypting with the same key gives the text back", async () => {
+  const page = await tool("encryption");
+  try {
+    await page.getByRole("textbox", { name: "Inhalt" }).fill("Zugang Werkstatt: 4711");
+    await page.getByLabel("Schlüssel / Passwort").fill("korrekt Pferd Batterie");
+    await page.getByRole("button", { name: "Verschlüsseln", exact: true }).click();
+    const output = factValue(page, "Ausgabe");
+    await page.waitForFunction(() => document.querySelector('[data-k2-part="Facts"]')?.textContent?.includes("–") === false);
+    const sealed = (await output.textContent())?.trim() ?? "";
+    expect(sealed.length).toBeGreaterThan(20);
+    expect(sealed).not.toContain("Zugang");
+    await page.getByRole("textbox", { name: "Inhalt" }).fill(sealed);
+    await page.getByRole("button", { name: "Entschlüsseln", exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('[data-k2-part="Facts"]')?.textContent?.includes("Zugang Werkstatt: 4711"));
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("the password modes give their kind: words joined by dashes, a PIN of digits", async () => {
+  const page = await tool("password");
+  try {
+    const drawn = () => page.locator('[data-k2-part="Canvas"]').first().innerText();
+    await page.getByText("Merkbar", { exact: true }).click();
+    await page.waitForFunction(() =>
+      /^[A-Za-z]+(-[A-Za-z]+){3}$/.test(document.querySelector('[data-k2-part="Canvas"]')?.textContent?.trim() ?? ""),
+    );
+    await page.getByText("PIN", { exact: true }).click();
+    await page.waitForFunction(() => /^\d{6}$/.test(document.querySelector('[data-k2-part="Canvas"]')?.textContent?.trim() ?? ""));
+    expect((await drawn()).trim()).toMatch(/^\d{6}$/);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("a 20-sign password stays on one line on a phone", async () => {
+  const page = await tool("password", 390);
+  try {
+    await page.waitForFunction(() => (document.querySelector('[data-k2-part="Canvas"] span')?.textContent?.length ?? 0) === 20);
+    // the signs stand on one line: their tops are all the same
+    const tops = await page
+      .locator('[data-k2-part="Canvas"] > div > span')
+      .first()
+      .evaluate((span) => [...new Set([...span.children].map((sign) => Math.round(sign.getBoundingClientRect().top)))]);
+    expect(tops).toHaveLength(1);
+    expect(
+      await page
+        .locator('[data-k2-part="Canvas"] > div > span')
+        .first()
+        .evaluate((span) => getComputedStyle(span).fontFamily),
+    ).toContain("mono");
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("a colour typed as HEX turns up as RGB and HSL", async () => {
+  const page = await tool("color");
+  try {
+    const hex = page.getByLabel("HEX");
+    await hex.fill("#ff0000");
+    expect(await page.getByLabel("RGB").inputValue()).toBe("255, 0, 0");
+    expect(await page.getByLabel("HSL").inputValue()).toBe("0, 100%, 50%");
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("the mail link carries recipient, copies and subject", async () => {
+  const page = await tool("mailto");
+  try {
+    await page.getByRole("textbox", { name: "An", exact: true }).fill("ada@example.org");
+    // the field's name carries its "optional" too; "begins with CC" leaves BCC out
+    const cc = page
+      .getByRole("textbox", { name: /^CC/ })
+      .or(page.getByRole("combobox", { name: /^CC/ }))
+      .first();
+    await cc.fill("jo@example.org");
+    await cc.press("Enter");
+    await page.getByRole("textbox", { name: /^Betreff/ }).fill("Angebot 2026");
+    await page.waitForFunction(() => document.querySelector('[data-k2-part="Facts"]')?.textContent?.includes("mailto:ada%40example.org"));
+    const link = (await factValue(page, "Mailto-Link").textContent()) ?? "";
+    // the recipient is percent-encoded, as in v1 (encodeURIComponent)
+    expect(link).toContain("mailto:ada%40example.org?");
+    expect(link).toContain("cc=jo%40example.org");
+    expect(link).toContain("subject=Angebot%202026");
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("a QR code downloads as SVG, and an event with an unreadable start says so and makes none", async () => {
+  const page = await tool("qr");
+  try {
+    await page.getByLabel("Link oder Text").fill("https://example.org/kontakt");
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "SVG herunterladen" }).first().click();
+    expect((await download).suggestedFilename()).toMatch(/\.svg$/);
+    await page.getByRole("combobox", { name: "Inhaltstyp" }).click();
+    await page.getByRole("option", { name: "Kalendertermin" }).click();
+    await page.getByLabel("Termintitel").fill("Wartung");
+    await page.getByLabel(/^Beginn/).fill("morgen früh");
+    await page.getByText("Datum und Uhrzeit, z. B. 15.06.2026 14:30").first().waitFor();
+    expect(await page.getByRole("button", { name: "SVG herunterladen" }).first().isDisabled()).toBe(true);
+    await page.getByLabel(/^Beginn/).fill("15.06.2026 14:30");
+    await page.waitForFunction(() => !document.body.textContent?.includes("Datum und Uhrzeit, z. B."));
+    expect(await page.getByRole("button", { name: "SVG herunterladen" }).first().isDisabled()).toBe(false);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
