@@ -68,7 +68,12 @@ render(
             label="Angebot Küche Lindqvist"
             detail
             back={{ label: "Liste", href: "#liste" }}
-            head={<Bar start={<Text>Angebot Küche Lindqvist</Text>} end={<Button variant="ghost" icon="x" label="Schließen" href="#liste" closes />} />}
+            head={
+              <Bar
+                start={<Text>Angebot Küche Lindqvist</Text>}
+                end={<Button variant="ghost" icon="x" label="Schließen" href="#liste" closes />}
+              />
+            }
           >
             <Text>Das offene Angebot.</Text>
           </Pane>
