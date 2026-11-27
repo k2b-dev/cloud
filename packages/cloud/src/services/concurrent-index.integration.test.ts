@@ -96,6 +96,23 @@ databaseSuite()("index builds next to live writes", () => {
     expect(await sql`SELECT 1 FROM pg_catalog.pg_class WHERE relname = 'ai_conversations_unique_test'`).toHaveLength(0);
   });
 
+  test("a unique index over duplicate rows fails once, is reported, and is not retried by the same process", async () => {
+    const log = logger("concurrent-index-test");
+    const error = spyOn(log, "error").mockImplementation(() => {});
+    const index = { name: "concurrent_index_duplicates_v", table: "ai.concurrent_index_duplicates", definition: "(v)", unique: true };
+    await sql`CREATE TABLE ai.concurrent_index_duplicates (v integer NOT NULL)`.simple();
+    await sql`INSERT INTO ai.concurrent_index_duplicates (v) VALUES (1), (1)`;
+    try {
+      expect(await ensureConcurrentIndexes([index], { log, purpose: "test" })).toBe("failed");
+      expect(await ensureConcurrentIndexes([index], { log, purpose: "test" })).toBe("failed");
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(await sql`SELECT 1 FROM pg_catalog.pg_class WHERE relname = 'concurrent_index_duplicates_v'`).toHaveLength(0);
+    } finally {
+      error.mockRestore();
+      await sql`DROP TABLE ai.concurrent_index_duplicates`.simple();
+    }
+  });
+
   test("a malformed index never throws: it is logged and nothing is built", async () => {
     const log = logger("concurrent-index-test");
     const warn = spyOn(log, "warn").mockImplementation(() => {});

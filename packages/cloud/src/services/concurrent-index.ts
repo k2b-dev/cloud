@@ -71,7 +71,19 @@ const readIndex = async (db: SQL, index: ConcurrentIndex) => {
 const dropIndex = (db: SQL, index: ConcurrentIndex) =>
   db.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS ${index.table.split(".")[0]}.${index.name}`).simple();
 
+/**
+ * Unique indexes whose build found duplicate rows. Each later attempt would read the whole table and fail the same way,
+ * so this process gives up on them; the next start tries once more.
+ */
+const duplicated = new Set<string>();
+const sqlState = (error: unknown) => {
+  const candidate = error as { errno?: unknown; code?: unknown } | null;
+  return typeof candidate?.errno === "string" ? candidate.errno : typeof candidate?.code === "string" ? candidate.code : null;
+};
+
 const buildIndex = async (db: SQL, index: ConcurrentIndex, options: ConcurrentIndexOptions): Promise<ConcurrentIndexOutcome> => {
+  const key = `${index.table}.${index.name}`;
+  if (duplicated.has(key)) return "failed";
   const before = await readIndex(db, index);
   if (before.valid) return "ready";
   if (before.building) return "busy";
@@ -86,10 +98,18 @@ const buildIndex = async (db: SQL, index: ConcurrentIndex, options: ConcurrentIn
     const after = await readIndex(db, index);
     if (after.valid) return "ready";
     if (after.building) return "busy";
-    options.log.warn(`The ${options.purpose} index was not built; queries run without it until the next attempt`, {
-      index: index.name,
-      error: message(error),
-    });
+    if (index.unique && sqlState(error) === "23505") {
+      duplicated.add(key);
+      options.log.error(`The ${options.purpose} index cannot be built: rows that it would keep apart exist twice`, {
+        index: index.name,
+        error: message(error),
+      });
+    } else {
+      options.log.warn(`The ${options.purpose} index was not built; queries run without it until the next attempt`, {
+        index: index.name,
+        error: message(error),
+      });
+    }
     if (after.present) await dropIndex(db, index);
     return "failed";
   }
