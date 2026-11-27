@@ -729,6 +729,22 @@ describe("text a person cannot read", () => {
   );
 
   test(
+    "green: a link in a sentence that wraps onto the next line lies on no text; red: a link laid over its sentence",
+    async () => {
+      // the box around both lines of the link covers the words before and after it; the lines themselves do not
+      const wraps = await measure(
+        '<p class="k2-t-body" style="width:240px;margin:0">Wir haben alle Fragen zur Annahme beantwortet, siehe <a href="#a">die Annahme von Aufträgen im Lager</a>.</p>',
+      );
+      expect(wraps.overlap).toEqual([]);
+      const over = await measure(
+        '<p class="k2-t-body" style="position:relative;width:240px;margin:0">Wir haben alle Fragen beantwortet.<a href="#a" style="position:absolute;left:0;top:0">die Annahme</a></p>',
+      );
+      expect(over.overlap).toEqual([expect.stringContaining('lies on control "die Annahme"')]);
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
     "red: an amount in a cut table cell; green: the cell holds the whole amount",
     async () => {
       const cell = (width: number) =>
