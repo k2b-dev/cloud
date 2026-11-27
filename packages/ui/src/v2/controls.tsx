@@ -184,7 +184,11 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
     <Show when={props.was}>
       {(value) => (
         <span class="k2-field-was" id={before}>
-          <Chip yours>{t().changedFrom({ value: value() })}</Chip>
+          {/* "geändert · vorher 12 Std.": on a very narrow line the word gives way to what it was, read still */}
+          <Chip yours>
+            <span class="k2-field-was-word">{t().changed} · </span>
+            {t().before({ value: value() })}
+          </Chip>
         </span>
       )}
     </Show>

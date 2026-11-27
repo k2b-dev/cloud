@@ -725,6 +725,13 @@ const changedPlaces = (page: Page) =>
           deed.top >= control.bottom - 0.5 ||
           (Math.abs(deed.top + deed.height / 2 - (control.top + control.height / 2)) < 2 && deed.left >= control.right),
         inside: inside(chip) && inside(deed),
+        // what it was can be read whole (a long value may end in "…"); on a very narrow line the word "geändert" gives
+        // way to it
+        whole: (() => {
+          const shown = setting.querySelector<HTMLElement>(".k2-field-was > .k2-chip")!;
+          return shown.scrollWidth <= shown.clientWidth + 1;
+        })(),
+        word: setting.querySelector(".k2-field-was-word")!.getBoundingClientRect().width > 1,
         apart: apart(chip, deed) && others.every((other) => apart(chip, other) && apart(deed, other)),
       };
     }),
@@ -742,6 +749,12 @@ for (const width of [1440, 700, 390, 320])
         const places = await changedPlaces(page);
         expect(places.length).toBe(4);
         expect(places.filter((place) => !place.after || !place.inside || !place.apart)).toEqual([]);
+        // (this page draws in the browser's own font, wider than IBM Plex: whole is measured where the row is wide; the
+        // recipe's outline in Plex checks the phone)
+        const short = places.filter((place) => place.name === "Angemeldet bleiben" || place.name === "Neue Apps fragen");
+        expect(short.map((place) => ({ name: place.name, whole: place.whole || width < 640, word: place.word }))).toEqual(
+          short.map((place) => ({ name: place.name, whole: true, word: width >= 390 })),
+        );
         // beside the names the values of all settings stand in one line down the page, a short one too (on the phone a
         // short one stands at the end of its name's line instead)
         if (width >= 640) expect(new Set(before.settings.map((setting) => setting.control.split(",")[0])).size).toBe(1);
