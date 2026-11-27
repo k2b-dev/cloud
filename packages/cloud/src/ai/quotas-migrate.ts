@@ -1,22 +1,22 @@
 import type { SQL } from "bun";
 import { sql } from "../runtime/clients";
+import { type ConcurrentIndex, ensureConcurrentIndexes } from "../services/concurrent-index";
 import { logger } from "../services/logging";
-import { ensureAiConcurrentIndex } from "./concurrent-index";
 
 const log = logger("ai:quotas");
 
-/** Outside transactions, on a reserved connection so snapshot waits cannot trap
- * ordinary pool queries. Interrupted builds are replaced; active builds are
- * left alone. Failure is logged and retried at the next migration, never thrown. */
-export const ensureAiInferenceTurnIndex = (db: SQL = sql): Promise<boolean> =>
-  ensureAiConcurrentIndex(db, {
-    name: "inference_calls_all_turn",
-    table: "inference_calls",
-    definition: "(turn_id)",
-    log,
-    failed: "Inference turn index build failed; retrying at the next migration",
-    unavailable: "Inference turn index unavailable; retrying at the next migration",
-  });
+/** Turn lookups on inference calls; built in the background after the AI migration (`migrateCloudAi`). */
+export const AI_INFERENCE_TURN_INDEX: ConcurrentIndex = {
+  name: "inference_calls_all_turn",
+  table: "ai.inference_calls",
+  definition: "(turn_id)",
+};
+
+/** Builds the turn index now; true once it is valid. Startup never awaits it (`buildConcurrentIndexesInBackground`). */
+export const ensureAiInferenceTurnIndex = async (db: SQL = sql): Promise<boolean> => {
+  const outcome = await ensureConcurrentIndexes([AI_INFERENCE_TURN_INDEX], { db, log, purpose: "inference turn" });
+  return outcome === "ready" || outcome === "built";
+};
 
 export async function migrateAiQuotas() {
   await sql.begin(async (db) => {
@@ -80,5 +80,4 @@ export async function migrateAiQuotas() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(), config JSONB NOT NULL
     )`;
   });
-  await ensureAiInferenceTurnIndex();
 }

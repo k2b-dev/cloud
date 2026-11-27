@@ -1,13 +1,15 @@
 import { CapabilityActionReviewDataSchema } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
 import { APPROVAL_MAX_WAIT_MS, approvalAssurance, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
+import { buildConcurrentIndexesInBackground } from "../services/concurrent-index";
+import { logger } from "../services/logging";
 import { migrateAiCapabilityTargets } from "./capability-targets-migrate";
-import { ensureAiConversationSidebarIndex } from "./conversation-indexes";
+import { AI_CONVERSATION_SIDEBAR_INDEX } from "./conversation-indexes";
 import { migrateAiMaps } from "./map-store";
 import { migrateAiMessageQueue } from "./message-queue";
 import { migrateAiModelAccess } from "./model-access-migrate";
 import { migrateAiNextMessages } from "./next-message-store";
-import { migrateAiQuotas } from "./quotas-migrate";
+import { AI_INFERENCE_TURN_INDEX, migrateAiQuotas } from "./quotas-migrate";
 import { retireChatRoutines } from "./retired-routines-migrate";
 import { withAiShortId } from "./short-id";
 import { migrateAiWakeups } from "./wakeup-store";
@@ -2411,8 +2413,6 @@ export const migrateCloudAi = async (): Promise<void> => {
   await migrateAiModelAccess();
   await migrateAiQuotas();
   await migrateAiModelClasses();
-  // Built next to live writes; a failed build is logged and retried at the next start.
-  await ensureAiConversationSidebarIndex();
 
   await sql`CREATE OR REPLACE FUNCTION ai.sidebar_tool_label(blocks jsonb) RETURNS jsonb AS $$
     SELECT jsonb_build_object('label', left(COALESCE(block->'presentation'->>'title', block->>'name'),200), 'status', block->>'status')
@@ -2482,6 +2482,11 @@ export const migrateCloudAi = async (): Promise<void> => {
     ON ai.messages (conversation_id, (meta->>'submittedDraftRevision')) WHERE role = 'user'`.simple();
   console.log("  ✓ ai conversation tables");
   await migrateAiNextMessages();
+  // Built next to live writes after the migration; startup never waits for them, and queries run without them meanwhile.
+  void buildConcurrentIndexesInBackground([AI_INFERENCE_TURN_INDEX, AI_CONVERSATION_SIDEBAR_INDEX], {
+    log: logger("ai:migrate"),
+    purpose: "AI",
+  });
 };
 
 const backfillApprovalRequests = async (): Promise<void> => {
