@@ -99,6 +99,43 @@ export const worstNotes = (): PageListEntry[] => [
   ...sampleNotes(),
 ];
 
+/** Non-Latin text: Japanese, Chinese, Arabic (right to left) and Vietnamese titles, tags and people, one-letter names. */
+export const intlNotes = (): PageListEntry[] =>
+  (
+    [
+      [
+        "倉庫の棚卸し手順書（二〇二六年度版・東京第三物流センター）",
+        "棚番号ごとに数量を確認し、差異は担当者に報告する。",
+        ["倉庫", "手順"],
+        "山田太郎",
+      ],
+      ["供应商评估报告：华东区域冷链运输服务商综合比较", "交货准时率、温控记录和价格三项指标。", ["供应商"], "王小明"],
+      [
+        "خطة توزيع المستودع للربع الأول من العام القادم",
+        "مراجعة المخزون الأسبوعية مع فريق النقل.",
+        ["مستودع", "تخطيط"],
+        "فاطمة الزهراء عبد الرحمن بن سعيد آل مكتوم",
+      ],
+      [
+        "Kế hoạch kiểm kê kho hàng quý bốn năm hai nghìn không trăm hai mươi sáu",
+        "Đếm hàng theo từng kệ, đối chiếu với sổ sách.",
+        ["kho-hàng"],
+        "Nguyễn Thị Phương Thảo",
+      ],
+      ["B", "X", ["x"], "Q"],
+      ["🚚📦🧾", "😀", ["🚚"], "🙂"],
+    ] as const
+  ).map(([title, preview, tags, name], index) => ({
+    shortId: `I${String(index).padStart(5, "0")}`,
+    title,
+    preview,
+    tags: [...tags],
+    createdAt: at(index * 5 + 20),
+    updatedAt: at(index * 2 + 1),
+    lockedAt: index === 2 ? at(4) : null,
+    editors: [{ kind: "user" as const, id: `u-intl-${index}`, name, avatarHash: null }],
+  }));
+
 /** The notebook's key figures: 30 days of changes with a quiet weekend rhythm and a busy last week. */
 export const sampleFigures = (): NotesFigures => {
   const days = Array.from({ length: 30 }, (_, index) => {

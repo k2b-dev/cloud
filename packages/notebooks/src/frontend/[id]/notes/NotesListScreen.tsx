@@ -232,7 +232,8 @@ export default function NotesListScreen(props: NotesListScreenProps) {
               },
               {
                 title: t().tags,
-                width: { min: 120, default: 170 },
+                // two usual tags fit side by side ("#vertrieb" and "#planung"); a longer one is the gap below
+                width: { min: 120, default: 210 },
                 drop: true,
                 // k2b-ui gap: Table cells (R) – a cell's content ends with "…" and shows its full text as a hint; until
                 // then a second tag that does not fit is cut at the column's edge.

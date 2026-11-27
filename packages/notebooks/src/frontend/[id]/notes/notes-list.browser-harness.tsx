@@ -1,19 +1,38 @@
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import NotesListScreen from "./NotesListScreen";
-import { filterNotes, NOTES_NOW, notesContext, sampleFigures, sampleNotes, tagsOf, worstFigures, worstNotes } from "./notes-list.fixture";
+import {
+  filterNotes,
+  intlNotes,
+  NOTES_NOW,
+  notesContext,
+  sampleFigures,
+  sampleNotes,
+  tagsOf,
+  worstFigures,
+  worstNotes,
+} from "./notes-list.fixture";
 import { NOTES_PER_PAGE, notesQuery, parseNotesAddress } from "./query";
 
 /**
  * The notes list for a browser test, rendered as the server would render it for the page's address: the address is
  * parsed with the same declaration and the sample is filtered like the service does. `data-sample` picks the notes
- * (`normal`, `worst`, `huge` with 1,200 notes, `empty`) and `data-permission` the person's access.
+ * (`normal`, `worst`, `intl` with non-Latin text, `huge` with 1,200 notes, `empty`) and `data-permission` the person's access.
  */
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing harness root");
 const sample = document.documentElement.dataset.sample ?? "normal";
 const permission = document.documentElement.dataset.permission === "read" ? "read" : "write";
-const all = sample === "empty" ? [] : sample === "worst" ? worstNotes() : sample === "huge" ? sampleNotes(1200) : sampleNotes();
+const all =
+  sample === "empty"
+    ? []
+    : sample === "worst"
+      ? worstNotes()
+      : sample === "intl"
+        ? intlNotes()
+        : sample === "huge"
+          ? sampleNotes(1200)
+          : sampleNotes();
 const favorites = all.filter((_, index) => index % 2 === 0).map((note) => note.shortId);
 const params = new URLSearchParams(location.search);
 const address = parseNotesAddress(notesQuery("de", tagsOf(all)), params);
