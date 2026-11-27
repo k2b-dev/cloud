@@ -18,7 +18,7 @@ const deep = [
 ];
 
 // a crowded end beside a deep path: seven buttons that may fold and the primary, which never does
-const crowded = (
+const Crowded = () => (
   <>
     <Button variant="ghost" icon="share" label="Teilen" />
     <Button variant="ghost" icon="printer" label="Drucken" />
@@ -82,7 +82,7 @@ export function Demo() {
             />
           }
         />
-        <Bar start={<Path label="Ort und Aktionen" items={deep} />} end={crowded} />
+        <Bar start={<Path label="Ort und Aktionen" items={deep} />} end={<Crowded />} />
         <Bar
           start={
             <Path
@@ -95,7 +95,7 @@ export function Demo() {
               ]}
             />
           }
-          end={crowded}
+          end={<Crowded />}
         />
       </Pane>
     </Workspace>
