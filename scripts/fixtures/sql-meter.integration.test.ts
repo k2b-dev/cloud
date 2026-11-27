@@ -50,7 +50,7 @@ testFor("database")("opens and closes any number of meters in one process, and e
       } finally {
         await meter.close();
       }
-      expect(await sql`SELECT ${round}::int AS direct`).toEqual([{ direct: round }]);
+      expect(await sql<{ direct: number }[]>`SELECT ${round}::int AS direct`).toEqual([{ direct: round }]);
       // Two at once: the pool opens a new connection, not only its idle one.
       expect(await Promise.all([lazy!`SELECT 1 AS one`, lazy!`SELECT 2 AS two`])).toEqual([[{ one: 1 }], [{ two: 2 }]]);
     }
@@ -67,12 +67,12 @@ testFor("database")("overlapping meters closed out of order leave the handle on 
   expect(await second.during(() => sql`SELECT 1`)).toHaveLength(1);
   await second.close();
   await second.close();
-  expect(await sql`SELECT 1 AS direct`).toEqual([{ direct: 1 }]);
+  expect(await sql<{ direct: number }[]>`SELECT 1 AS direct`).toEqual([{ direct: 1 }]);
   const third = await meterSql();
   try {
     expect(await third.during(() => sql`SELECT 1`)).toHaveLength(1);
   } finally {
     await third.close();
   }
-  expect(await sql`SELECT 1 AS direct`).toEqual([{ direct: 1 }]);
+  expect(await sql<{ direct: number }[]>`SELECT 1 AS direct`).toEqual([{ direct: 1 }]);
 });

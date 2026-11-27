@@ -123,7 +123,10 @@ export const meterSql = async (): Promise<SqlMeter> => {
   const target = new URL(base);
   const server = `${target.hostname}:${target.port || 5432}`;
   let port = proxies.get(server);
-  if (!port) proxies.set(server, (port = listen(target.hostname, Number(target.port || 5432))));
+  if (!port) {
+    port = listen(target.hostname, Number(target.port || 5432));
+    proxies.set(server, port);
+  }
   const metered = new URL(base);
   metered.hostname = "127.0.0.1";
   metered.port = String(await port);
