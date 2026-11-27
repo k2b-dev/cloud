@@ -138,8 +138,9 @@ test("a deed that runs past its row is a finding", async () => {
   await withPage(
     390,
     async (page) => {
-      // the head held on one line, as it was before the deeds could go under the title
-      await page.addStyleTag({ content: ".k2-ui .k2-sh { flex-wrap: nowrap !important; }" });
+      // a deed wider than its row, forced: the head no longer lets one run past (its deeds go under the title, and since
+      // #4216 the title gives way too), but the check must still find one that does
+      await page.addStyleTag({ content: ".k2-ui .k2-sh .k2-btn { min-width: 600px !important; }" });
       await settled(page);
       expect(await describeV2Page(page, "#root")).toMatch(/runs \d+ px past its row/);
     },
