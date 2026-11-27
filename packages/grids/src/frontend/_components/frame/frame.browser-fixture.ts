@@ -162,6 +162,8 @@ const tablesOf = (variant: FixtureVariant): PublicTable[] => {
     table("T1", "Aufträge", "ti ti-clipboard-list"),
     table("T2", "Ersatzteile", "ti ti-package"),
     table("T3", "Termine", "ti ti-calendar"),
+    table("T4", "Kunden", "ti ti-users"),
+    table("T5", "Lieferanten", "ti ti-truck"),
   ];
 };
 
@@ -198,13 +200,21 @@ export const baseHomeFixture = (variant: FixtureVariant, options: { edit: boolea
               entries: [
                 { type: "table", id: first.id },
                 { type: "form", id: "F1" },
+                ...(tables[3] ? [{ type: "table", id: tables[3].id }] : []),
               ],
+            },
+            {
+              id: "G3",
+              name: "Lager",
+              entries: [tables[1], tables[4]].flatMap((each) => (each ? [{ type: "table", id: each.id }] : [])),
             },
             {
               id: "G2",
               name: variant === "worst" ? "Auswertungen-und-Berichte-für-die-Geschäftsführung-2026" : "Auswertung",
               entries: [
                 { type: "view", id: "V1" },
+                { type: "view", id: "V2" },
+                { type: "documentTemplate", id: "D1" },
                 { type: "workflow", id: "W1" },
               ],
             },
@@ -279,14 +289,19 @@ export const homeActivityFixture = (variant: FixtureVariant): HomeActivity => {
   const orders = fortnight(variant === "worst" ? 3_400 : 9);
   const parts = fortnight(variant === "worst" ? 40 : 3, 2);
   const people = ["Mira Solberg", "Jonas Kern", "Felix Thal", "Sami Yilmaz"];
+  const perTable: HomeActivity["tables"] = {
+    [tables[0]!.id]: { total: variant === "worst" ? 128_340_118 : 1_284, points: orders },
+    [tables[1]!.id]: { total: variant === "worst" ? 5_092 : 312, points: parts },
+    ...(tables[2] ? { [tables[2].id]: { total: 58, points: Array.from({ length: 14 }, () => 0) } } : {}),
+    ...(tables[3] ? { [tables[3].id]: { total: variant === "worst" ? 1 : 214, points: fortnight(variant === "worst" ? 0 : 1, 4) } } : {}),
+    ...(tables[4] ? { [tables[4].id]: { total: 46, points: fortnight(0.4, 1) } } : {}),
+  };
+  const series = Object.values(perTable);
   return {
-    total: variant === "worst" ? 128_345_210 : 1_654,
-    points: orders.map((value, day) => value + (parts[day] ?? 0)),
-    tables: {
-      [tables[0]!.id]: { total: variant === "worst" ? 128_340_118 : 1_284, points: orders },
-      [tables[1]!.id]: { total: variant === "worst" ? 5_092 : 312, points: parts },
-      ...(tables[2] ? { [tables[2].id]: { total: 58, points: Array.from({ length: 14 }, () => 0) } } : {}),
-    },
+    // the base's figures are the sum of its tables, as the server counts them
+    total: series.reduce((sum, each) => sum + each.total, 0),
+    points: Array.from({ length: 14 }, (_, day) => series.reduce((sum, each) => sum + (each.points?.[day] ?? 0), 0)),
+    tables: perTable,
     pendingFinalizations: variant === "worst" ? 1_204 : 3,
     failedRuns24h: variant === "worst" ? 87 : 2,
     recent: [
