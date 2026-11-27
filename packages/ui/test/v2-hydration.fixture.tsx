@@ -22,6 +22,7 @@ import {
   Row,
   Section,
   Select,
+  Setting,
   Slider,
   Table,
   TagsInput,
@@ -173,6 +174,15 @@ export function Fixture() {
             <Field name="session" label="Sitzungsdauer" action={{ label: "Auf Standard zurücksetzen", icon: "restore" }}>
               <Input value="7 Tage" disabled />
             </Field>
+            <Setting
+              name="keep"
+              label="Angemeldet bleiben"
+              was="12 Std."
+              action={{ label: "Standard wiederherstellen", icon: "restore" }}
+              compact
+            >
+              <Input type="number" value="8" />
+            </Setting>
             <Field name="hosts" label="Server">
               <TagsInput value={["mx1.example", "mx2.example"]} placeholder="Server" />
             </Field>

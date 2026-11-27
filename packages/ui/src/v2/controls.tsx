@@ -190,15 +190,16 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
     </Show>
   );
   // A setting's end after its value: what it was and its deed, in this order. Where the settings stand one under the
-  // other it is the line kept under the value; where the row is wide its two parts take their own places.
-  const end = (
+  // other it is the line kept under the value; where the row is wide its two parts take their own places. Made only for
+  // a setting: an element made and not placed would leave the browser's hydration without its node.
+  const end = frame.setting ? (
     <Show when={props.was || props.action}>
       <span class="k2-field-end">
         {was}
         {deed}
       </span>
     </Show>
-  );
+  ) : undefined;
   // A group of choices is named by its label line; one control is labelled by it.
   return grouped ? (
     <div

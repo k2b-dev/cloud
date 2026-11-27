@@ -176,6 +176,10 @@ test("every cell and every field is made once, on the server and in the browser;
     // the head of each group is in the table and in the phone list, each its own
     expect(await page.locator(".k2-table tr[data-group] .k2-chip").allTextContents()).toEqual(["Offen", "Erledigt"]);
     expect(await page.locator(".k2-table-phone-group .k2-chip").allTextContents()).toEqual(["Offen", "Erledigt"]);
+    // a changed setting's end (what it was, then its deed) stands once, in both places the same
+    expect(
+      await page.locator("[data-k2-part='Setting'] > .k2-field-end > *").evaluateAll((parts) => parts.map((part) => part.className)),
+    ).toEqual(["k2-field-was", "k2-field-action"]);
   });
 });
 
