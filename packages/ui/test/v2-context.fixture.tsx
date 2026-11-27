@@ -12,25 +12,28 @@ import { Bar, Button, Facts, Nav, Pane, Row, Section, Table, Text, Workspace } f
 // The test sets the window like Cloud's shell (66 px beside the workspace) and reads where the columns stand.
 
 // - `short`: `form` with two rows only, so the split has room left below when the context column gives way;
+// - `tall`: `table` with 200 rows, far taller than the window: beside its context column, the main column scrolls;
 // - `three`: a list, its reader and an info column (`Pane side`): not a main column with its context, so it stays as
 //   every split is: three columns beside each other, the info column counted in the workspace's room.
-export type Kind = "form" | "short" | "table" | "detail" | "three";
+export type Kind = "form" | "short" | "tall" | "table" | "detail" | "three";
 
 const items = [
   { icon: "plug", label: "Quellen", href: "#quellen" },
   { icon: "settings", label: "Einstellungen", href: "#einstellungen" },
 ];
-const rows = Array.from({ length: 14 }, (_, index) => ({
+const source = (index: number) => ({
   id: `q${index}`,
   name: `Quelle ${index + 1}`,
   kind: index % 2 ? "Webhook" : "Abruf",
-  seen: `09:${String(40 - index).padStart(2, "0")}`,
-}));
+  seen: `09:${String(40 - (index % 40)).padStart(2, "0")}`,
+});
+const rows = Array.from({ length: 14 }, (_, index) => source(index));
+const many = Array.from({ length: 200 }, (_, index) => source(index));
 
-const Sources = (props: { few?: boolean }) => (
+const Sources = (props: { few?: boolean; many?: boolean }) => (
   <Table
     label="Quellen"
-    rows={props.few ? rows.slice(0, 2) : rows}
+    rows={props.few ? rows.slice(0, 2) : props.many ? many : rows}
     rowKey={(row) => row.id}
     columns={[
       { title: "Quelle", width: { min: 160, default: 240 }, cell: (row) => row.name },
@@ -105,9 +108,13 @@ export function Fixture(props: { kind: Kind }) {
         ) : (
           <Pane.Split>
             <Pane label="Haupt">
-              <Sources few={props.kind === "short"} />
+              <Sources few={props.kind === "short"} many={props.kind === "tall"} />
             </Pane>
-            <Pane side={props.kind === "table" ? { from: 1400 } : true} label="Kontext" width={{ min: 280, default: 340 }}>
+            <Pane
+              side={props.kind === "table" || props.kind === "tall" ? { from: 1400 } : true}
+              label="Kontext"
+              width={{ min: 280, default: 340 }}
+            >
               <Context />
             </Pane>
           </Pane.Split>

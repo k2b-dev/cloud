@@ -627,15 +627,20 @@ const SplitBody = (props: {
   };
   // Below that room (from 768 px on; the phone stacks every split) the split wraps: the context column and the line
   // before it take a row each, under the main column at the full width, and the split scrolls in one piece, to the end
-  // of its content. Above it nothing wraps, whatever width a grip gave a column. The query asks the split's place
-  // (`k2-host`: the workspace's main column, or the pane the split stands in), which is as wide as the split; an element
-  // cannot ask its own width. The grips' reach (their `::after`) stays inside its line, so the scroller ends at the
-  // content. Made per split, as the room is the split's own.
+  // of its content. Above it nothing wraps, whatever width a grip gave a column. An element cannot ask its own width:
+  // the split itself asks its place (`k2-host`: the workspace's main column, or the pane the split stands in), which is
+  // as wide as the split. What stands inside the split asks the split, under a name only this split carries: the
+  // nearest `k2-host` of a column's scroller is that column, which is narrower than the room beside its context, so a
+  // rule there would always hold (#4340: the main column could not scroll). The grips' reach (their `::after`) stays
+  // inside its line, so the scroller ends at the content. Made per split, as the room is the split's own.
   const split = `.k2-ui .k2-split[data-k2-split="${id}"][data-context]`;
+  const own = `k2-split-${id}`;
   const flowRule = (px: number) =>
+    `.k2-ui .k2-split[data-k2-split="${id}"] { container: ${own} / inline-size; } ` +
     `@media (min-width: 768px) { @container k2-host (width < ${px}px) { ` +
     `${split} { flex-wrap: wrap; align-content: flex-start; overflow-x: hidden; overflow-y: auto; scrollbar-width: none; } ` +
-    `${split}::-webkit-scrollbar { display: none; } ` +
+    `${split}::-webkit-scrollbar { display: none; } } ` +
+    `@container ${own} (width < ${px}px) { ` +
     `${split} > .k2-pane, ${split} > .k2-seam + .k2-pane[data-width] { flex: 0 0 100%; width: auto; min-width: 0; min-height: auto; overflow: visible; } ` +
     `${split} > .k2-pane > .k2-scroll { flex: none; overflow: visible; -webkit-mask-image: none; mask-image: none; animation: none; } ` +
     `${split} > .k2-seam { flex: 0 0 100%; width: auto; height: 1px; } ${split} > .k2-seam > .k2-grip { display: none; } ` +
