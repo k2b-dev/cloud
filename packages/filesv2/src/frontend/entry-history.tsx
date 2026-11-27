@@ -1,6 +1,6 @@
 import { query } from "@k2b/stdlib/solid";
-import { formatFileViewSize, prompts, toast } from "@k2b/ui";
-import { Bar, Section as Group, List, Menu, Notice, Row, Text } from "@k2b/ui/v2";
+import { formatFileViewSize, prompts } from "@k2b/ui";
+import { Bar, Section as Group, List, Menu, Notice, Row, Text, useToast } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch, untrack } from "solid-js";
 import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
@@ -209,6 +209,7 @@ export function EntryHistory(props: {
 }) {
   const h = useHistoryMessages();
   const t = useBrowserMessages();
+  const toast = useToast();
   // Numbers count the saved versions, oldest first; the current content comes after them.
   const ordered = createMemo(() => [...(props.versions.items() ?? [])].sort((a, b) => a.created.localeCompare(b.created)));
   const versionOf = (entry: ActivityEntry) => (props.versions.state() === "ready" ? activityVersion(entry, props.entry, ordered()) : null);
@@ -216,7 +217,7 @@ export function EntryHistory(props: {
     const previous = ordered().at(-1);
     if (!previous || !versionOf(entry)?.restorable) throw new Error(h().actionFailed);
     await restoreVersion(props.base.id, props.entry, previous.id, h().actionFailed);
-    toast.success(t().versionRestored);
+    toast(t().versionRestored, { status: "ok" });
     props.onChanged(props.entry.path);
   };
   const request = () => itemHistoryRequest(props.base, { ...props.entry, resourceId: props.entry.resourceId ?? props.resourceId });
@@ -263,6 +264,7 @@ export function EntryVersions(props: {
 }) {
   const h = useHistoryMessages();
   const t = useBrowserMessages();
+  const toast = useToast();
   const f = useFilesMessages();
   const [busy, setBusy] = createSignal(false);
   const items = () => props.versions.items() ?? [];
@@ -273,14 +275,14 @@ export function EntryVersions(props: {
   const run = async (work: () => Promise<void>) => {
     if (busy() || props.busy) return;
     if (!canAct()) {
-      toast.error(h().versionsFailed);
+      toast(h().versionsFailed, { status: "bad" });
       return;
     }
     setBusy(true);
     try {
       await work();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : f().unavailable);
+      toast(error instanceof Error ? error.message : f().unavailable, { status: "bad", retry: () => run(work) });
     } finally {
       setBusy(false);
     }
@@ -302,7 +304,7 @@ export function EntryVersions(props: {
         json: { path: path(), id: version.id, comment: String(values.comment ?? "") },
       });
       if (!response.ok) await apiFailure(response, f().unavailable);
-      toast.success(t().versionCommented);
+      toast(t().versionCommented, { status: "ok" });
       await props.versions.refresh();
     });
   };
@@ -315,7 +317,7 @@ export function EntryVersions(props: {
         json: { path: path(), id: version.id, expectedRevision: props.entry.revision },
       });
       if (!response.ok) await apiFailure(response, f().unavailable);
-      toast.success(t().versionRestored);
+      toast(t().versionRestored, { status: "ok" });
       props.onChanged(path());
     });
   const restoreAs = async (version: FileVersion) => {
@@ -336,7 +338,7 @@ export function EntryVersions(props: {
         json: { path: path(), id: version.id, name: values.name },
       });
       if (!response.ok) await apiFailure(response, f().unavailable);
-      toast.success(t().versionRestored);
+      toast(t().versionRestored, { status: "ok" });
       props.onChanged((await response.json()).entry.path);
     });
   };

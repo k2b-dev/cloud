@@ -6,7 +6,7 @@ import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { navigate as commitHistory, type LinkNavigateEvent, listenPopState } from "@k2b/ssr/nav";
 import { cookies } from "@k2b/stdlib/browser";
-import { formatFileViewSize, toast, useLocale } from "@k2b/ui";
+import { formatFileViewSize, useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
@@ -35,6 +35,7 @@ import {
   Text,
   Tiles,
   type TwoActions,
+  useToast,
   Workspace,
 } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, mapArray, on, onCleanup, onMount, Show } from "solid-js";
@@ -133,6 +134,7 @@ export default function FilesScreen(props: {
   const t = useFilesMessages();
   const b = useBrowserMessages();
   const h = useHistoryMessages();
+  const toast = useToast();
   const assets = useAssetMessages();
   const locale = useLocale();
   const timeZone = () => props.timeZone ?? "UTC";
@@ -616,7 +618,11 @@ export default function FilesScreen(props: {
           if (ownsAddress(new URL(href, ORIGIN))) await go(href);
           else window.location.assign(href);
         } catch (error) {
-          if (!signal.aborted) toast.error(error instanceof Error && error.message ? error.message : h().actionFailed);
+          if (!signal.aborted)
+            toast(error instanceof Error && error.message ? error.message : h().actionFailed, {
+              status: "bad",
+              retry: () => history().actions.onOpen(target),
+            });
         }
       },
       onRecheck: async (entry: Parameters<typeof recheckActivity>[0]) => {
@@ -634,13 +640,15 @@ export default function FilesScreen(props: {
    */
   const activityActions: HistoryActions = {
     loadVersion: createActivityVersionLoader(() => h().historyFailed),
-    onContact: async ({ userId }) => {
+    onContact: async function contact(person) {
+      const { userId } = person;
       const signal = workspace.navigationSignal();
+      const retry = () => contact(person);
       try {
         const opened = await openCommand("chat.conversation.compose", { userId }, {}, signal);
-        if (!signal.aborted && !opened) toast.error(h().actionFailed);
+        if (!signal.aborted && !opened) toast(h().actionFailed, { status: "bad", retry });
       } catch (error) {
-        if (!signal.aborted) toast.error(error instanceof Error && error.message ? error.message : h().actionFailed);
+        if (!signal.aborted) toast(error instanceof Error && error.message ? error.message : h().actionFailed, { status: "bad", retry });
       }
     },
     onOpen: (target) => void history().actions.onOpen(target),
