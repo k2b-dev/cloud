@@ -36,6 +36,7 @@ export default function CustomerDeliveries(props: Props) {
   const ready = !props.empty && !props.loading && !props.failed;
   return (
     <Workspace
+      title="Ottilie Brandner"
       head={
         <Bar
           start={

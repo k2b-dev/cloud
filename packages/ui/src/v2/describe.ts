@@ -264,7 +264,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
           kid(kid(element, ".k2-ws-main"), "[data-slot=head]") ? "head" : "",
         ].filter(Boolean);
         const fab = kid(element, ".k2-fab");
-        return `Workspace${slots.length ? ` (${slots.join(", ")})` : ""}${fab ? ` primary ${quote(fab.textContent)}` : ""}`;
+        const title = kid(kid(element, ".k2-ws-main"), "[data-slot=head]")?.querySelector("h1");
+        return `Workspace${title ? ` ${quote(title.textContent)}` : ""}${slots.length ? ` (${slots.join(", ")})` : ""}${fab ? ` primary ${quote(fab.textContent)}` : ""}`;
       }
       case "Pane": {
         const width = (element as HTMLElement).style?.getPropertyValue?.("--k2-pane-w");
@@ -551,6 +552,29 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     allPrimaries.some((button) => surfaceOf(button) === root && !button.classList.contains("k2-fab"))
   )
     problems.push("the primary action is hidden at this width: give Workspace a `primary` action so the phone shows it");
+  // A head with deeds but no name looks as if something were missing, and the page has no heading.
+  // one heading names the page: a second h1 (a record's name beside the page's name) says the page twice
+  const pageHeadings = root.querySelectorAll("h1").length + (root.matches("h1") ? 1 : 0);
+  if (pageHeadings > 1)
+    problems.push(
+      `${pageHeadings} page headings (h1): one names the page; build the head inside its Workspace so a RecordHead can name it`,
+    );
+  // the root itself counts: describeV2(workspace) checks the Workspace it is given
+  for (const workspace of [root, ...root.querySelectorAll("[data-k2-part='Workspace']")].filter((element) =>
+    element.matches("[data-k2-part='Workspace']"),
+  ))
+    if (
+      workspace.querySelector(":scope > .k2-ws-main > [data-slot=head] > .k2-bar") &&
+      !workspace.querySelector(":scope > .k2-ws-main > [data-slot=head] h1")
+    )
+      problems.push("the head names no page: give Workspace a `title` (or its sidebar a Nav with a current entry)");
+    // (a head of only the sidebar's toggle has no Bar: its name is heard, and nothing is missing)
+    else if (
+      workspace.querySelector(":scope > .k2-ws-main > [data-slot=head] > h1") &&
+      workspace.querySelector(":scope > .k2-ws-main > [data-slot=head] > .k2-bar") &&
+      !workspace.querySelector(":scope > .k2-ws-main > [data-slot=head] > .k2-bar > .k2-bar-start")
+    )
+      problems.push("the head's Bar was made before the Workspace, so it cannot show the page's name: write it in `head`");
   for (const [surface, primaries] of bySurface)
     if (primaries.length > 1)
       problems.push(

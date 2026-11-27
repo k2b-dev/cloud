@@ -43,7 +43,7 @@ const app = defineApp({
 });
 const admin: User = { ...person, roles: ["admin"] } as User;
 type Env = { Variables: { runtime: RuntimeContext; user: User | undefined; adminCodeApprovals: number | undefined } };
-const page = (sections: Parameters<typeof adminNavigation>[1]) =>
+const page = (sections: Parameters<typeof adminNavigation>[1], title?: string) =>
   app.ssr<Env>(
     (c) => () =>
       createComponent(AdminLayout, {
@@ -53,8 +53,12 @@ const page = (sections: Parameters<typeof adminNavigation>[1]) =>
         get children() {
           return createComponent(AdminWorkspace, {
             nav: adminNavigation(c, sections),
+            title,
             get head() {
-              return createComponent(Bar, { start: createComponent(Text, { children: "Speicher" }) });
+              // a page with a title names itself in the head; its Bar holds only the deeds
+              return title === undefined
+                ? createComponent(Bar, { start: createComponent(Text, { children: "Speicher" }) })
+                : createComponent(Bar, { end: createComponent(Text, { children: "Aktion" }) });
             },
             get children() {
               return createComponent(Pane, {
@@ -78,6 +82,7 @@ const server = new Hono<Env>()
     await next();
   })
   .get("/admin/rail", ...page([]))
+  .get("/admin/titled", ...page([], "Speicherorte"))
   .get(
     "/admin/storage",
     ...page([
@@ -122,6 +127,11 @@ describe("an admin page on v2", () => {
     ]);
     // other areas keep their place without sections
     expect(items.filter((item) => item.level === "2")).toHaveLength(2);
+  });
+
+  test("the screen's title names the page in its one h1, before the admin bar's open entry", async () => {
+    const headings = [...(await request("/admin/titled")).matchAll(/<h1[^>]*>([^<]*)<\/h1>/g)].map((found) => found[1]);
+    expect(headings).toEqual(["Speicherorte"]);
   });
 
   test("the phone menu comes with the first render and lists the same admin bar", async () => {

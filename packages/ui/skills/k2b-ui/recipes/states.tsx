@@ -31,6 +31,7 @@ export default function IncomingGoods(props: Props) {
   return (
     <Workspace
       primary={{ label: "Einlieferung erfassen", icon: "plus", href: "#neu" }}
+      title="Einlieferungen"
       head={
         <Bar
           start={

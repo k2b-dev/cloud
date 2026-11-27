@@ -6,6 +6,7 @@ import {
   createUniqueId,
   For,
   type JSX,
+  on,
   onCleanup,
   onMount,
   children as resolveChildren,
@@ -13,7 +14,7 @@ import {
   splitProps,
   useContext,
 } from "solid-js";
-import { Dynamic } from "solid-js/web";
+import { Dynamic, isServer } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { useDrawer } from "./behavior/overlays";
 import { type GripOptions, useGrip } from "./behavior/resize";
@@ -22,6 +23,7 @@ import { RowOpen } from "./content";
 import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
 import { ConfirmDialog } from "./overlays";
+import { NavCurrentContext, PageTitleContext } from "./page-title";
 import { Empty, PlaceholderValue } from "./states";
 import { Toasts } from "./toast";
 import type { Action, Width } from "./types";
@@ -142,13 +144,21 @@ const slackOf = (element: Element) => {
 // ── Workspace ────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type WorkspaceProps = {
+  /**
+   * The page's name, such as "Offene Rechnungen": the head shows it as the page's one heading (`h1`) where its start
+   * holds nothing else, and names the page with it for assistive technology beside tabs or a path. A title alone
+   * gives the Workspace its head. Without it the current entry of the sidebar's `Nav` names the page, a Nav written
+   * inside the Workspace (one made before it, kept in a variable, is not heard); a head that names no page is a
+   * finding of `describeV2`. In the browser a title that changes changes the document's title too.
+   */
+  title?: string;
   /** The sidebar column, such as `Nav`. */
   sidebar?: JSX.Element;
   /** The sidebar's minimum and default width; 200 and 248 px when not set. */
   sidebarWidth?: Width;
   /** The name of the sidebar's grip, such as "Width of the sidebar". */
   sidebarLabel?: string;
-  /** The head across the main column: a `Bar` (56 px here) with tabs or a path and the actions. */
+  /** The head across the main column: a `Bar` (56 px here) with tabs or a path and the actions; the page's name stands in its start by itself. */
   head?: JSX.Element;
   /** The main action; on the phone it floats at the bottom right. */
   primary?: Action;
@@ -204,8 +214,48 @@ export const Workspace = (props: WorkspaceProps) => {
   const width = () => props.sidebarWidth ?? sidebarDefault;
   // A part passed as JSX is made once, here, and read from here: reading the prop again would make it again (the
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
-  const sidebar = resolveChildren(() => props.sidebar);
-  const head = resolveChildren(() => props.head);
+  // the current entry of the sidebar's Nav names the page while the Workspace has no title
+  const [navCurrent, setNavCurrent] = createSignal<string>();
+  const sidebar = resolveChildren(() => <NavCurrentContext.Provider value={setNavCurrent}>{props.sidebar}</NavCurrentContext.Provider>);
+  const title = () => props.title ?? navCurrent();
+  // the first Bar in the head that still stands shows the page's name; a title alone makes that Bar
+  const [claims, setClaims] = createSignal<readonly (() => Element | undefined)[]>([]);
+  // The first in the page among the claims whose bar stands in it; before any stands (on the server, in the first
+  // render), the first made. So a bar that comes back takes the name in the order of the page, as a reload draws it.
+  // (A function, not a memo: a memo on the server is computed once, before any bar claims.)
+  const holder = () => {
+    const placed = claims().filter((element) => element()?.isConnected);
+    if (placed.length === 0) return claims()[0];
+    return placed.reduce((first, next) => (first()!.compareDocumentPosition(next()!) & Node.DOCUMENT_POSITION_PRECEDING ? next : first));
+  };
+  // a RecordHead in the head is the page's one heading: then neither the Bar nor the Workspace adds another
+  const [named, setNamed] = createSignal(0);
+  const page = {
+    title,
+    claim: (element: () => Element | undefined) => {
+      setClaims((list) => [...list, element]);
+      onCleanup(() => setClaims((list) => list.filter((other) => other !== element)));
+      return () => holder() === element;
+    },
+    claimed: () => claims().length > 0,
+    nameItself: () => {
+      setNamed((count) => count + 1);
+      onCleanup(() => setNamed((count) => count - 1));
+    },
+    namedItself: () => named() > 0,
+  };
+  const head = resolveChildren(() => (
+    <PageTitleContext.Provider value={page}>{props.head ?? (props.title !== undefined ? <Bar /> : undefined)}</PageTitleContext.Provider>
+  ));
+  // The document's title follows a title that changes in the browser; the first run has no title before it, so the
+  // server's first title stays as it was sent. (Not `defer`: a deferred `on` forgets the first title.)
+  if (!isServer)
+    createEffect(
+      on(title, (now, before) => {
+        if (now === undefined || before === undefined || now === before) return;
+        document.title = document.title.includes(before) ? document.title.replace(before, now) : now;
+      }),
+    );
   const [columns, setColumns] = createSignal<readonly Column[]>([]);
   const register = (column: Column) => {
     setColumns((list) => [...list, column]);
@@ -315,6 +365,8 @@ export const Workspace = (props: WorkspaceProps) => {
         <Show when={head() || sidebar()}>
           <div class="k2-slot" data-slot="head" data-toggle-only={head() ? undefined : ""}>
             <Show when={sidebar()}>{toggleButton()}</Show>
+            {/* a head made before the Workspace (kept in a variable) cannot show the page's name: it is still heard */}
+            <Show when={!page.claimed() && !page.namedItself() && title()}>{(name) => <h1 class="k2-hidden-text">{name()}</h1>}</Show>
             {head()}
           </div>
         </Show>
@@ -618,15 +670,29 @@ export type BarProps = {
  * 52 as a status row, 40 on its own. Controls in it take the height that leaves equal air above and below. The
  * stylesheet reads the place from the slot the bar stands in, so a bar built ahead and passed on behaves the same.
  * In a column narrower than 480 px, a bar in the flow whose start is an `Inline` wraps instead of cutting: its things
- * and its end flow as one line, one line stays 40, and only a second line makes the bar higher.
+ * and its end flow as one line, one line stays 40, and only a second line makes the bar higher. In the Workspace's head
+ * it shows the page's name (the Workspace's `title`) as the page's one heading, before what its start holds.
  */
 export const Bar = (props: BarProps) => {
+  // in the Workspace's head the bar shows the page's name, before what its start holds (claimed before the parts are made)
+  const page = useContext(PageTitleContext);
+  // the bar's element joins its claim once it stands in the page (a ref comes before that)
+  const [element, setElement] = createSignal<Element>();
+  let bar: HTMLDivElement | undefined;
+  onMount(() => setElement(bar));
+  const holds = page?.claim(element);
   const start = resolveChildren(() => props.start);
+  // read after the start is made: a RecordHead in it names the page itself
+  const title = () => (holds?.() && !page?.namedItself() ? page?.title() : undefined);
   const end = resolveChildren(() => props.end);
   return (
-    <div class="k2-bar" data-k2-part="Bar">
-      <Show when={start() !== undefined}>
-        <div class="k2-bar-start">{start()}</div>
+    <div ref={bar} class="k2-bar" data-k2-part="Bar">
+      <Show when={start() !== undefined || title() !== undefined}>
+        <div class="k2-bar-start">
+          {/* the page's one heading: seen where the start holds nothing else, else only heard beside tabs or a path */}
+          <Show when={title()}>{(name) => <h1 class={start() === undefined ? "k2-head-title" : "k2-hidden-text"}>{name()}</h1>}</Show>
+          {start()}
+        </div>
       </Show>
       <Show when={end() !== undefined}>
         <div class="k2-bar-end">{end()}</div>

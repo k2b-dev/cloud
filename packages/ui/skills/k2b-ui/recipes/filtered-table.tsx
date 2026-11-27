@@ -65,6 +65,7 @@ export default function FilteredOrders(props: Props) {
   );
   return (
     <Workspace
+      title="Aufträge"
       head={
         <Bar
           start={

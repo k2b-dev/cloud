@@ -1,7 +1,7 @@
 // Recipe: a table with a status row. The lead says the one main fact, key figures follow, filters sit at the end.
 // Each row opens its invoice and has one deed; on the phone the table becomes two-line rows that open the invoice.
 // Empty, loading and failed stand where the rows would stand, and nothing above them moves (see `states` at the end).
-import { Bar, Button, Chip, Failed, Pane, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
+import { Button, Chip, Failed, Pane, StatusRow, Table, Workspace } from "@k2b/ui/v2";
 
 type Invoice = { number: string; customer: string; due: string; overdue: boolean; amount: string };
 
@@ -17,7 +17,7 @@ export default function OpenInvoices(props: Props) {
   const rows = () => props.rows ?? invoices;
   const ready = () => !props.loading && !props.failed && rows().length > 0;
   return (
-    <Workspace head={<Bar start={<Text type="body">Offene Rechnungen</Text>} />}>
+    <Workspace title="Offene Rechnungen">
       <Pane
         label="Offene Rechnungen"
         status={

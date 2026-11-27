@@ -48,6 +48,12 @@ const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
 
 const counts = (page: Page) => page.evaluate(() => ({ ...window.__k2Counts! }));
 
+test("the record's name in the head is the page's one heading, beside a sidebar whose entry is current", async () => {
+  await withPage(async (page) => {
+    expect(await page.locator("h1").allTextContents()).toEqual(["Wochenbericht"]);
+  });
+});
+
 test("an avatar shows its picture over its initials in the same place, and its initials when the picture fails", async () => {
   await withPage(async (page) => {
     const found = await page.evaluate(() => {

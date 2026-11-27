@@ -28,7 +28,7 @@ type Props = { locked?: boolean; empty?: boolean };
 
 export default function SignInSettings(props: Props) {
   return (
-    <Workspace head={<Bar start={<Text type="body">Anmeldung</Text>} />}>
+    <Workspace title="Anmeldung">
       <Pane label="Anmeldung">
         <Band>
           <Field

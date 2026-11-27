@@ -1,7 +1,7 @@
 // Recipe: a page to read. The text in Prose (Markdown, rendered safely), a token to copy in Facts mono, the files as
 // Tiles, and a drawing of its own in a Canvas inside its Section. What has no v2 primitive yet is a k2b-ui gap.
 // Empty, loading and failed stand where the text would stand; the head with its deeds stays (see `states` at the end).
-import { Band, Bar, Button, Canvas, Empty, Facts, Failed, Loading, Pane, Prose, Section, Text, Tiles, Workspace } from "@k2b/ui/v2";
+import { Band, Bar, Button, Canvas, Empty, Facts, Failed, Loading, Pane, Prose, Section, Tiles, Workspace } from "@k2b/ui/v2";
 
 const guide = `## Was wir annehmen
 
@@ -20,9 +20,9 @@ export default function IntakeGuide(props: Props) {
   const text = () => props.text ?? guide;
   return (
     <Workspace
+      title="Leitfaden Annahme"
       head={
         <Bar
-          start={<Text type="lead">Leitfaden Annahme</Text>}
           end={
             <>
               <Button variant="ghost" icon="share" label="Teilen" />

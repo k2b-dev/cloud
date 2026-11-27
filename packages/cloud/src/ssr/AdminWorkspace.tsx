@@ -17,6 +17,7 @@ export default function AdminWorkspace(props: AdminWorkspaceProps) {
       <V2WorkspaceNavigation label={props.nav.title} groups={props.nav.groups} />
       <Workspace
         sidebar={<Nav title={props.nav.title} icon={props.nav.icon} groups={props.nav.groups} />}
+        title={props.title}
         head={props.head}
         primary={props.primary}
         detail={props.detail}

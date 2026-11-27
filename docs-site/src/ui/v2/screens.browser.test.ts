@@ -86,7 +86,8 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
   // akte-einlieferungen.html
   deliveries: {
     1440: {
-      section: [".k2-sec", "250,101 1125x945"],
+      // the section is the column's last part: it draws no line under itself (the maintainer's call after the mockup), 1 px
+      section: [".k2-sec", "250,101 1125x944"],
       group: [".k2-group", "270,185 1085x254"],
       groupHead: [".k2-gh", "271,186 1083x56"],
       steps: [".k2-steps", "271,286 1083x72"],
@@ -98,7 +99,7 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
     },
     390: {
       // mockup v17: the steps stand 12 px apart on the phone, so all below them moves 16 px down
-      section: [".k2-sec", "0,101 390x1421"],
+      section: [".k2-sec", "0,101 390x1420"],
       group: [".k2-group", "16,205 358x382"],
       groupHead: [".k2-gh", "17,206 356x84"],
       steps: [".k2-steps", "17,354 356x148"],

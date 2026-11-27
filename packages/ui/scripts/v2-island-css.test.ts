@@ -91,3 +91,14 @@ describe("transparentIslands", () => {
     expect(() => transparentIslands(source)).not.toThrow();
   });
 });
+
+// The shipped sheet: a rule that relates two parts of one primitive carries its marker directly before it, so its `+`
+// steps over no island wrapper. A merge that kept the prose comment but lost the marker expanded it (#4203).
+test("the shipped end of a large table relates its two parts directly, through no island wrapper", () => {
+  const shipped = transparentIslands(readFileSync(resolve(import.meta.dir, "../src/v2/v2.css"), "utf8"));
+  const rule = shipped.split("}").find((block) => block.includes(".k2-table-scroll") && block.includes("--k2-table-end: 0"));
+  expect(rule).toBeDefined();
+  expect(rule).toContain("/* one primitive:");
+  // its `+` steps over no empty wrapper (`:last-child` counts empty wrappers as none, that part stays)
+  expect(rule).not.toContain("+:where(solid-island:empty,solid-client:empty)+");
+});

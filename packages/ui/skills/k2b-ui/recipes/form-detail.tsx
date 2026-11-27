@@ -31,9 +31,9 @@ export default function NewAppointment(props: Props) {
   return (
     <Workspace
       detail
+      title="Termine"
       head={
         <Bar
-          start={<Text type="body">Termine</Text>}
           end={
             <Button variant="primary" icon="plus" href="#neu">
               Neuer Termin

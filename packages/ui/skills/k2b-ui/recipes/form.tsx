@@ -1,7 +1,7 @@
 // Recipe: a form with a required field, a range limit, an error from the server at its field, and a conflict that
 // blocks saving. The form state lives in the app; the primitives only show it. This form has a page of its own; a
 // form over the page is a `Dialog`.
-import { Band, Bar, Button, Check, Choice, Field, Input, Notice, Pane, Select, Text, Workspace } from "@k2b/ui/v2";
+import { Band, Bar, Button, Check, Choice, Field, Input, Notice, Pane, Select, Workspace } from "@k2b/ui/v2";
 
 type Values = { name: string; kind: string; interval: string; url: string };
 type Errors = Partial<Record<keyof Values, string>>;
@@ -17,7 +17,7 @@ export default function SourceForm(props: Props) {
   const errors = props.errors ?? answer;
   const conflict = props.conflict ?? true;
   return (
-    <Workspace head={<Bar start={<Text type="body">Neue Quelle</Text>} />}>
+    <Workspace title="Neue Quelle">
       <Pane label="Neue Quelle">
         {conflict && (
           <Notice tone="warn" title="Inzwischen geändert" actions={[{ label: "Neu laden", icon: "refresh" }]}>

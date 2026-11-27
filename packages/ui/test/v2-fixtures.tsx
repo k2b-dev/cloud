@@ -41,7 +41,8 @@ import { AccessScreen } from "./v2-access.fixture";
 // Fixtures for the v2 browser tests: every primitive in the place where the mockup puts it, inside a workspace so its
 // lines have column edges to reach. Only primitives, no CSS of their own, like an app.
 
-const nav = (
+// made inside the Workspace (`sidebar={nav()}`), so its current entry names the page
+const nav = () => (
   <Nav
     title="Mail"
     icon="mail"
@@ -60,8 +61,9 @@ const nav = (
   />
 );
 
-const shell = (children: JSX.Element, head?: JSX.Element) => (
-  <Workspace sidebar={nav} sidebarLabel="Breite der Seitenleiste" head={head} primary={{ label: "Neu", icon: "plus" }}>
+// the head is made inside the Workspace (`head` as a function), so a RecordHead in it names the page
+const shell = (children: JSX.Element, head?: () => JSX.Element) => (
+  <Workspace sidebar={nav()} sidebarLabel="Breite der Seitenleiste" head={head?.()} primary={{ label: "Neu", icon: "plus" }}>
     {children}
   </Workspace>
 );
@@ -183,22 +185,24 @@ export const LayoutFixture = (props: { open?: boolean; back?: string }) =>
         </Pane>
       </Show>
     </Pane.Split>,
-    <Bar
-      start={
-        <Tabs
-          label="Ansichten"
-          items={[
-            { label: "Alle", count: 42, current: true },
-            { label: "Handlungsbedarf", count: 5 },
-          ]}
-        />
-      }
-      end={
-        <Button variant="primary" icon="pencil">
-          Neue Nachricht
-        </Button>
-      }
-    />,
+    () => (
+      <Bar
+        start={
+          <Tabs
+            label="Ansichten"
+            items={[
+              { label: "Alle", count: 42, current: true },
+              { label: "Handlungsbedarf", count: 5 },
+            ]}
+          />
+        }
+        end={
+          <Button variant="primary" icon="pencil">
+            Neue Nachricht
+          </Button>
+        }
+      />
+    ),
   );
 
 /** Section, Group, Digest, Facts, Table in a group, Canvas, RecordHead, Tabs as the head of a pane. */
@@ -342,21 +346,23 @@ export const StructureFixture = () =>
         </Pane>
       </Pane.Split>
     </Pane>,
-    <Bar
-      start={
-        <RecordHead
-          name="Ottilie Brandner"
-          avatar={{ name: "Ottilie Brandner", color: "#1d4ed8" }}
-          kinds={["Privat"]}
-          ids={[{ label: "Kunde", value: "7K4QX", copy: true }]}
-        />
-      }
-      end={
-        <Button variant="primary" icon="plus" menu>
-          Neu
-        </Button>
-      }
-    />,
+    () => (
+      <Bar
+        start={
+          <RecordHead
+            name="Ottilie Brandner"
+            avatar={{ name: "Ottilie Brandner", color: "#1d4ed8" }}
+            kinds={["Privat"]}
+            ids={[{ label: "Kunde", value: "7K4QX", copy: true }]}
+          />
+        }
+        end={
+          <Button variant="primary" icon="plus" menu>
+            Neu
+          </Button>
+        }
+      />
+    ),
   );
 
 const longText =
@@ -454,7 +460,7 @@ export const GridFixture = () =>
         ]}
       />
     </Pane>,
-    <Bar start={<Path label="Ort" items={[{ label: "Werkstatt", href: "#werkstatt" }, { label: "Aufträge" }]} />} />,
+    () => <Bar start={<Path label="Ort" items={[{ label: "Werkstatt", href: "#werkstatt" }, { label: "Aufträge" }]} />} />,
   );
 
 const sources = Array.from({ length: 16 }, (_, index) => ({
