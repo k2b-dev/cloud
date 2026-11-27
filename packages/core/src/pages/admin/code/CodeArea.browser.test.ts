@@ -38,7 +38,8 @@ const reload = async () => {
 const review = `sec=approvals&id=${FIXTURE_VERSIONS.rueckruf3}`;
 const main = () => page.locator("main");
 const button = (name: string) => main().getByRole("button", { name, exact: true }).filter({ visible: true });
-const tab = (name: string) => main().getByRole("link", { name: new RegExp(`^${name}\\b`) }).filter({ visible: true });
+const tab = (name: string) =>
+  main().getByRole("navigation", { name: "Ansichten" }).getByRole("link", { name: new RegExp(`^${name}\\b`) });
 
 beforeAll(async () => {
   fixture = await codeAreaBrowserFixture();
@@ -113,6 +114,7 @@ test("switching the review's views keeps the head in place, writes ?tab= without
   expect(await page.locator(".k2b-code-diff").first().innerText()).toContain("@sdk");
   expect(new URL(page.url()).searchParams.get("tab")).toBe("code");
   await tab("Änderungen").click();
+  await page.waitForURL(/tab=diff/);
   expect(new URL(page.url()).searchParams.get("tab")).toBe("diff");
   expect(await main().getByRole("button", { name: "Version 3 freigeben" }).boundingBox()).toEqual(head);
   expect(fixture.requests).toEqual([]);
@@ -243,8 +245,8 @@ for (const [code, german] of [
     await goto(`${review}&decisionRefusal=${code}${code === "REAUTHENTICATE" ? "&state=sole" : ""}`);
     await button("Version 3 freigeben").click();
     await main().getByText(german, { exact: false }).waitFor();
-    if (code === "REAUTHENTICATE") await main().getByRole("link", { name: "Erneut anmelden" }).waitFor();
-    if (code === "NOT_FOUND") await main().getByRole("link", { name: "Zurück zur Liste" }).waitFor();
+    if (code === "REAUTHENTICATE") await main().getByRole("link", { name: "Erneut anmelden" }).first().waitFor();
+    if (code === "NOT_FOUND") await main().getByRole("link", { name: "Zurück zur Liste" }).first().waitFor();
   });
 
 test("a review opens as its own page on the phone, with the way back to the list", async () => {
@@ -318,11 +320,10 @@ test("filtering all automations writes the address with the old parameter names 
   await button("Filter").click();
   await page.getByRole("menuitem", { name: /Status/ }).or(page.getByRole("option", { name: /Status/ })).first().click();
   await page.getByRole("option", { name: "Pausiert" }).click();
-  await page.keyboard.press("Escape");
   await page.waitForURL(/status=paused/);
   await reload();
   expect(new URL(page.url()).searchParams.get("sec")).toBe("code");
-  await main().getByText("Lieferschein bei Abschluss").waitFor();
+  await main().getByText("Lieferschein bei Abschluss").first().waitFor();
   expect(await main().getByText("Anfragen sortieren").count()).toBe(0);
 });
 

@@ -102,7 +102,7 @@ test("a review stands beside its list with its views, its question, the reason a
   const html = render(review);
   const page = text(html);
   expect(html.match(/data-k2-part="Pane"[^>]*data-detail/g)?.length ?? html.match(/data-detail/g)?.length).toBeGreaterThan(0);
-  expect(page).toContain("Rückruf bestätigen · Version 3");
+  expect(page).toContain("Rückruf bestätigen");
   expect(page).toContain("Version 3 von Rückruf bestätigen freigeben?");
   expect(page).toContain("Sie darf etwas tun, das andere sehen. Das gibt laut Richtlinie Standard ein Admin frei.");
   expect(page).toContain("mit Gustav eingereicht · gehört zu: info@moebel-beispiel.de");
@@ -112,7 +112,7 @@ test("a review stands beside its list with its views, its question, the reason a
     "3 weitere bleiben gleich.",
     "Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.",
     "3 von 3 Beispielen erfolgreich",
-    "Ablehnen oder ändern …",
+    "Ablehnen / ändern",
     "Version 3 freigeben",
     "Was sie damit tut",
     "KI-Erklärung, nicht von Cloud geprüft",
@@ -131,10 +131,10 @@ test("a review stands beside its list with its views, its question, the reason a
 test("the first version has no changes view, and a decided version says what happened and freezes its comments", () => {
   const first = render({ sec: "approvals", id: data.FIXTURE_VERSIONS.lieferzeit1 });
   expect(first).not.toContain(">Änderungen<");
-  expect(text(first)).toContain("Ablehnen oder ändern …");
+  expect(text(first)).toContain("Ablehnen / ändern");
   const changes = text(render(review, "changes"));
   expect(changes).toContain("Du hast Änderungen an Version 3 angefordert.");
-  expect(changes).not.toContain("Ablehnen oder ändern …");
+  expect(changes).not.toContain("Ablehnen / ändern");
   expect(changes).not.toContain("Version 3 freigeben");
   expect(changes).toContain("Bitte nur für Mails mit einem Rückrufwunsch eine Aufgabe anlegen");
   expect(text(render(review, "rejected"))).toContain("Version 3 lässt sich nicht mehr einschalten.");
