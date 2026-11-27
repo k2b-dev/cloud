@@ -5,6 +5,7 @@ import { announce, type DropdownItem, useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
+  Heat,
   Input,
   Menu,
   type MenuEntry,
@@ -16,6 +17,7 @@ import {
   StatusRow,
   type Tab,
   Tabs,
+  Text,
   Workspace,
 } from "@k2b/ui/v2";
 import { type Accessor, createComputed, createMemo, createSignal, on, Show } from "solid-js";
@@ -377,6 +379,34 @@ export default function MailWorkspaceV2(props: {
     const folder = folders.find((entry) => entry.id === data.folderId) ?? folders.find((entry) => entry.role === "inbox");
     return folder?.unread ?? 0;
   };
+  // While no mail is open, the reader shows the mails this mailbox received per day over the last 53 weeks.
+  const number = createMemo(() => new Intl.NumberFormat(locale()));
+  // the same days draw once: a navigation inside the mailbox keeps the picture (and the focus in it)
+  const receivedPerDay = createMemo(() => c().data.receivedPerDay ?? null, null, {
+    equals: (before, after) =>
+      before === after ||
+      (!!before &&
+        !!after &&
+        before.today === after.today &&
+        before.days.length === after.days.length &&
+        before.days.every((day, index) => day.date === after.days[index]!.date && day.count === after.days[index]!.count)),
+  });
+  const receivedHero = () => {
+    const received = receivedPerDay();
+    if (!received) return undefined;
+    const total = received.days.reduce((sum, day) => sum + day.count, 0);
+    return (
+      <>
+        <Text type="body">{total ? text().receivedYear({ count: number().format(total) }) : text().receivedNone}</Text>
+        <Heat
+          days={received.days}
+          today={received.today}
+          label={text().receivedPerDay}
+          unit={(count) => text().receivedCount({ count, number: number().format(count) })}
+        />
+      </>
+    );
+  };
   const selectionCount = () => c().selectedConversationIds().size;
   const selecting = () => c().canWrite() && c().selectionMode() && selectionCount() > 0;
   const runOnSelection = (actionId: "archive" | "trash") => void c().runAction(actionId);
@@ -389,7 +419,7 @@ export default function MailWorkspaceV2(props: {
         // The reader opens beside the list: the workspace keeps room for it, open or not, so opening a mail never
         // moves the sidebar between column and drawer, and its place says so while none is open (#4123).
         detail
-        detailEmpty={{ icon: "mail", text: text().noneOpen }}
+        detailEmpty={{ icon: "mail", text: text().noneOpen, hero: receivedHero() }}
         primary={c().canWrite() && !c().assignedOnly() ? { label: text().newShort, icon: "pencil", href: composeHref() } : undefined}
         sidebar={<Nav title="Mail" icon="mail" groups={navGroups()} foot={navFoot()} />}
         head={

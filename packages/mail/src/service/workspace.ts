@@ -57,6 +57,7 @@ import * as mailboxes from "./mailboxes";
 import type { ConversationRowState, ConversationSummary, ConversationViewCounts, MailFolderView, MessageDetail } from "./messages";
 import * as messages from "./messages";
 import * as publicResources from "./public-resources";
+import { loadReceivedPerDay, type MailReceivedPerDay } from "./received-per-day";
 import type { ConversationReminder } from "./reminders";
 import * as reminders from "./reminders";
 import type { SavedConversationView } from "./saved-views";
@@ -252,6 +253,11 @@ export type MailboxPageData = {
    * people who may not assign (they read only or see assigned conversations only) and when the lookup failed.
    */
   dropAssignees: MailDropAssignees | null;
+  /**
+   * The mails this mailbox received per day over the last 53 weeks, for the v2 reader while no mail is open. Loaded
+   * with the page and a mailbox switch when asked for (`receivedPerDay: "load"`); null otherwise and when it failed.
+   */
+  receivedPerDay?: MailReceivedPerDay | null;
   activity: MailActivityEvent[];
   reminder: ConversationReminder | null;
   keep: ConversationKeep | null;
@@ -1104,6 +1110,12 @@ export const loadMailboxPageData = async (pageParams: {
    * and answers null; the first load and a mailbox switch load them ("load", the default).
    */
   dropAssignees?: "load" | "keep";
+  /**
+   * "load": the mails received per day in `timeZone`, one bounded aggregate (a v2 page load or mailbox switch). Without
+   * it the answer leaves them out (null), so navigating inside a mailbox never counts again.
+   */
+  receivedPerDay?: "load" | "keep";
+  timeZone?: string;
 }): Promise<Result<MailboxPageData>> => {
   const params = { ...pageParams, context: withOneAccessRead(pageParams.context) };
   const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
@@ -1140,6 +1152,7 @@ export const loadMailboxPageData = async (pageParams: {
     workspacePreference,
     doneTodayCounts,
     dropAssigneesResult,
+    receivedPerDay,
   ] = await Promise.all([
     mailboxes.getMailbox(params.context, params.mailboxId),
     folders,
@@ -1164,6 +1177,18 @@ export const loadMailboxPageData = async (pageParams: {
       ? loadDropAssigneesOrNull(
           () => collaboration.listDropAssignees({ context: params.context, mailboxId: params.mailboxId }),
           params.mailboxId,
+        )
+      : null,
+    pageParams.receivedPerDay === "load" && pageParams.timeZone
+      ? loadReceivedPerDay({ mailboxId: params.mailboxId, access: permission.data, timeZone: pageParams.timeZone }).catch(
+          (error: unknown) => {
+            // The reader's picture is extra: without it the empty reader shows its sentence alone.
+            log.warn("Failed to load the mails received per day", {
+              mailboxId: params.mailboxId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return null;
+          },
         )
       : null,
   ]);
@@ -1213,6 +1238,7 @@ export const loadMailboxPageData = async (pageParams: {
     scheduledCount: listView.scheduledPage ? listView.scheduledPage.total : scheduledCountResult.ok ? scheduledCountResult.data : 0,
     localTags: localTagResult.ok ? localTagResult.data : [],
     dropAssignees: dropAssigneesResult ?? null,
+    receivedPerDay,
     savedViews: savedViewResult.ok ? savedViewResult.data : [],
     viewCounts: viewCountsResult.ok ? viewCountsResult.data : EMPTY_VIEW_COUNTS,
     selectedConversationId,

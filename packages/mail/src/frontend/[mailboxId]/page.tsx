@@ -49,18 +49,26 @@ export default ssr<AuthContext>(async (c) => {
     // The sidebar's mailboxes load beside the mailbox, so the page waits for neither one after the other.
     // Started first and never awaited longer than the page's own data: a slow Core only loses the dot.
     const codeAttention = startMailboxCodeAttention(c, mailboxShortId);
+    // Provisional: the pilot of @k2b/ui v2 shows the same mailbox, data and permissions in the new interface.
+    const ui = showsMailV2(readMailV2Pilot(c), user.mail) ? "v2" : undefined;
+    const dateConfig = getDateConfig(c);
     const [internalData, spacesIntegration, sidebar, appUrl, liveDictation] = await Promise.all([
-      loadMailboxPageData({ context, mailboxId, ...request, listMode: workspacePreferences.listMode, locale }),
+      loadMailboxPageData({
+        context,
+        mailboxId,
+        ...request,
+        listMode: workspacePreferences.listMode,
+        locale,
+        // only the v2 reader shows the year of mail while none is open
+        ...(ui === "v2" ? { receivedPerDay: "load" as const, timeZone: dateConfig.timeZone } : {}),
+      }),
       getSpacesMailIntegrationAvailability(appAccessAuthority(c)),
       loadMailSidebarData(context),
       coreSettings.get<string>("app.url"),
       getLiveDictationStatus(c.get("accessSubject")),
     ]);
-    // Provisional: the pilot of @k2b/ui v2 shows the same mailbox, data and permissions in the new interface.
-    const ui = showsMailV2(readMailV2Pilot(c), user.mail) ? "v2" : undefined;
     if (!internalData.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, internalData.error.status));
     const data = { ...(await projectMailboxPageData(internalData.data)), codeAttention: await codeAttention.settle() };
-    const dateConfig = getDateConfig(c);
 
     const directory = await requestContactDirectory(c);
     const now = new Date().toISOString();
@@ -78,6 +86,7 @@ export default ssr<AuthContext>(async (c) => {
       initialTheme: themePreference === "system" ? null : themePreference,
       calendarIntegrationAvailable: spacesIntegration.invitations,
       liveDictation: liveDictation.available,
+      loadsReceivedPerDay: ui === "v2",
       sidebar,
     };
     return () => (

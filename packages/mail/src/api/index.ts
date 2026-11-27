@@ -4,6 +4,7 @@ import { CloudResourceRefSchema, ErrorResponseSchema } from "@k2b/cloud/contract
 import {
   auth,
   getLocale,
+  getTimeZone,
   jsonResponse,
   REQUEST_IDLE_TIMEOUT_SECONDS,
   rateLimit,
@@ -344,6 +345,8 @@ const workspaceRouteQuerySchema = z.object({
   listMode: z.enum(["conversations", "messages"]).default("conversations"),
   /** "keep": the browser already holds the drag's people for this mailbox; the answer then leaves them out (null). */
   dropAssignees: z.enum(["load", "keep"]).default("load"),
+  /** "load": the mails received per day, for the v2 reader (a mailbox switch); otherwise the answer leaves them out. */
+  receivedPerDay: z.enum(["load", "keep"]).default("keep"),
 });
 const attachmentQuerySchema = z.object({
   inline: z
@@ -1161,6 +1164,8 @@ const mailOperationsApi = new Hono<MailApiContext>()
         listMode: query.listMode,
         locale: getLocale(c),
         dropAssignees: query.dropAssignees,
+        receivedPerDay: query.receivedPerDay,
+        timeZone: getTimeZone(c),
       });
       return respondAggregate(
         c,
