@@ -92,21 +92,15 @@ const measure = (entry: Watched): Found => {
   // A bar that wraps (a line of things in a narrow column) has the room of its lines; a record's head (`RecordHead`)
   // keeps its own way: its name gives way beside its actions, and on the phone it wraps.
   if (style.flexWrap !== "nowrap" || start?.querySelector(".k2-record-name")) return { folded: [], host: undefined };
+  const room = bar.clientWidth - (Number.parseFloat(style.paddingLeft) || 0) - (Number.parseFloat(style.paddingRight) || 0);
   const gap = Number.parseFloat(style.columnGap) || 0;
   const endStyle = getComputedStyle(end);
   const endGap = Number.parseFloat(endStyle.columnGap) || 0;
-  // An end that floats on its own (the actions of a selection on the phone) has the room of its own box, not the line
-  // beside the start.
-  const floats = endStyle.position === "fixed";
-  const room = floats
-    ? end.clientWidth - (Number.parseFloat(endStyle.paddingLeft) || 0) - (Number.parseFloat(endStyle.paddingRight) || 0)
-    : bar.clientWidth - (Number.parseFloat(style.paddingLeft) || 0) - (Number.parseFloat(style.paddingRight) || 0);
   // the end's room for the rings of its buttons (v2.css: 4 px inside its cut, the one at the far edge outside the bar)
-  const rings = floats
-    ? 0
-    : (Number.parseFloat(endStyle.paddingLeft) || 0) +
-      (Number.parseFloat(endStyle.paddingRight) || 0) +
-      (Number.parseFloat(endStyle.marginRight) || 0);
+  const rings =
+    (Number.parseFloat(endStyle.paddingLeft) || 0) +
+    (Number.parseFloat(endStyle.paddingRight) || 0) +
+    (Number.parseFloat(endStyle.marginRight) || 0);
   const controls = laidOut(end).filter((control) => control.getClientRects().length > 0);
   const widths = controls.map((control) => control.getBoundingClientRect().width);
   // the gap before each part: its own line's (the chips of an `Inline` stand at that line's gap), the end's between
@@ -131,7 +125,7 @@ const measure = (entry: Watched): Found => {
     : (more?.getBoundingClientRect().width ?? Math.max(control, ...controls.map((part) => part.getBoundingClientRect().height)));
   let used =
     rings +
-    (start && !floats ? start.getBoundingClientRect().width + gap : 0) +
+    (start ? start.getBoundingClientRect().width + gap : 0) +
     widths.reduce((sum, width) => sum + width, 0) +
     gaps.reduce((sum, width) => sum + width, 0);
   const folded: HTMLElement[] = [];

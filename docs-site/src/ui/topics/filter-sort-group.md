@@ -14,7 +14,7 @@ Orders with two active filters: "Status ist Offen oder In Arbeit" and "Betrag ab
 
 ## A folder: two rows above list and detail
 
-A page head has at most two full-width rows above its list and its detail: the path with the deeds, then the filters with the count, the order and the display at the `FilterBar`'s `end`. Without a `StatusRow` under it, the bar is the status row of the list (52 px); while files are selected, a `StatusRow selection` takes its place at the same height, and on the phone its actions float at the bottom. Switch the state: the grid of pictures, and three photos selected.
+A page head has at most two full-width rows above its list and its detail: the path with the deeds, then the filters with the count, the order and the display at the `FilterBar`'s `end`. Without a `StatusRow` under it, the bar is the status row of the list (52 px); while files are selected, a `StatusRow selection` takes its place at the same height. Switch the state: the grid of pictures, and three photos selected.
 
 <Example recipe="files" height="720" default="List" />
 

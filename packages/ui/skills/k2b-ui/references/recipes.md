@@ -258,7 +258,7 @@ sections for sharing and versions. `Nav` shows storages with `color` and
 the storage's `quota`.
 
 - While files are selected, `StatusRow selection` takes the bar's place at
-  the same height; on the phone its actions float at the bottom.
+  the same height.
 - States: `grid` (`Tiles variant="media"`), `selecting` (three photos).
 
 ## settings-page.tsx: a settings page
