@@ -779,7 +779,9 @@ export type Tile = {
   /**
    * Cards only: a glance of what the thing holds, across the top of the card above its name: a small table (its
    * columns and first rows, as words), a page (its title and first words), or a sign for a thing that holds nothing yet.
-   * It is a picture of the content: assistive technology reads the card by its name.
+   * It is a picture of the content: assistive technology reads the card by its name. Keep its values short: the app
+   * chooses columns and rows whose words fit, at most about 12 characters a cell, so nothing is cut with "…" at 1440 or
+   * on the phone (two columns there); leave out what does not fit, such as a book's author. A cut cell reads as cheap.
    */
   preview?: TilePreview;
 };

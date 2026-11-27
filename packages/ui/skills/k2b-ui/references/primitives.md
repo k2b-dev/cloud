@@ -147,7 +147,8 @@ the card's colour), `preview` (a glance of what it holds across its top,
 112 px, 84 px on the phone: `{ table: { columns, rows } }` as a small
 table of words (a column `{ label, align: "end" }` for amounts), two columns on the phone, `{ page: { title, text? } }`, or
 `{ icon }` for a thing that holds nothing yet; it is a picture, the card
-keeps its name). The whole card opens its `href`. `create` adds the last
+keeps its name; keep its values short, about 12 characters a cell, so
+nothing is cut at 1440 or on the phone: leave out what does not fit). The whole card opens its `href`. `create` adds the last
 card that makes a new thing: dashed, `title`, `meta`, `href` or `onClick`,
 and `choices` as round chips (templates). Cards hold no box and no line.
 Among media, `create` is the last tile too: a dashed picture with a plus,
