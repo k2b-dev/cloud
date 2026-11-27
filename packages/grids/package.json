@@ -43,10 +43,10 @@
     "solid-js": "catalog:",
     "yaml": "catalog:",
     "zod": "catalog:",
-    "zxing-wasm": "3.1.6"
+    "zxing-wasm": "3.1.7"
   },
   "devDependencies": {
-    "@stackforge-eu/factur-x": "1.4.3",
+    "@stackforge-eu/factur-x": "1.4.7",
     "@nats-io/jetstream": "catalog:",
     "@types/bun": "catalog:",
     "playwright": "catalog:",
