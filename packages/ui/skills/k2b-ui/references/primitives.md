@@ -326,6 +326,10 @@ lines instead of cutting a thing.
   plain; `icon`; `onClick` or `href` makes it a control, `pressed` marks an
   active filter. Never a colour without a word. There is no neutral status:
   "Pausiert" is `warn` or a plain chip.
+  With `status`, `quiet` drops the tinted round: the dot in the colour of
+  the state and the word in the ink of the text ("● Aktiv"), on the chip's
+  height. Use it for a column of states in a dense table or list, where a
+  chip on every line is too loud.
 - `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
 - `Ticks`: `slots` (`"ok" | "bad" | "none"` per time slot, oldest first, in
   the writing direction; at most 60 in a table cell, more are cut at its
