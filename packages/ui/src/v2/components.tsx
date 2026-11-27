@@ -509,12 +509,22 @@ export const Path = (props: PathProps) => {
       document.fonts?.removeEventListener("loadingdone", later);
     });
   });
+  // The least of the whole path, from its words alone, so the server's page and the live one keep the same: each place
+  // at most 12 characters, the page at most 16 (`--k2-start-least`), a chevron and two gaps between each two. Beside a
+  // title in a bar's start, the title gives way until the path has this.
+  const least = () => {
+    const chars = props.items.reduce(
+      (sum, item, index) => sum + Math.min(item.label.length, index === props.items.length - 1 ? 16 : 12),
+      0,
+    );
+    return `calc(${chars}ch + ${Math.max(0, props.items.length - 1) * 30}px)`;
+  };
   const fold = (): MenuEntry[] =>
     props.items
       .filter((_, index) => folds(index))
       .map((item) => (item.href !== undefined ? { label: item.label, href: item.href } : { label: item.label, disabled: true }));
   return (
-    <nav ref={nav} class="k2-path" data-k2-part="Path" data-fold={level()} aria-label={props.label}>
+    <nav ref={nav} class="k2-path" data-k2-part="Path" data-fold={level()} aria-label={props.label} style={custom({ "--k2-path-least": least() })}>
       <For each={props.items}>
         {(item, index) => {
           const away = () => folds(index());

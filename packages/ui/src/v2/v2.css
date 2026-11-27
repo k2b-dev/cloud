@@ -2944,10 +2944,11 @@
   min-width: 0;
   overflow: hidden;
 }
-/* Beside other content of the start, such as a lead title, the path keeps its own width as its basis: the title, which
-   gives way a thousand times faster down to its floor, takes the shortage first, and only then does the path. */
+/* Beside other content of the start, such as a lead title, the path keeps its least (`--k2-path-least`, from its
+   words, the same on the server's page and the live one; never more than the start): the title gives way first. */
 .k2-ui .k2-bar-start > .k2-path {
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  min-width: min(var(--k2-path-least, 0px), 100%);
 }
 /* A place and the page start at their least (12 characters, the page `--k2-start-least`, never more than their own
    width). Room goes to the page first, until it stands whole, then to the places. The page never goes below its
