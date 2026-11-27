@@ -41,7 +41,7 @@ describe("ObjectListInput read-first presentation", () => {
     expect(html).toContain("<table");
     expect(html).toContain('data-layout="table"');
     expect(html).toContain("9007199254740993.25");
-    expect(html).toContain("18014398509481986.5");
+    expect(html).toContain("18,014,398,509,481,986.5");
     expect(html).toContain('aria-label="Amount · Entry 1"');
     expect(html).toContain('aria-label="Amount · Entry 2"');
     expect(html).not.toContain('aria-label="Total · Entry 1"');
@@ -117,6 +117,6 @@ describe("ObjectListInput read-first presentation", () => {
     expect(html).toContain(">25%</output>");
     expect(html).toContain(">00:01:30</output>");
     expect(html).toContain(">Yes</output>");
-    expect(html).toContain(">EUR 12.50</output>");
+    expect(html).toContain(">€12.50</output>");
   });
 });

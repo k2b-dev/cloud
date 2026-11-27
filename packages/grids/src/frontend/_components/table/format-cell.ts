@@ -1,4 +1,4 @@
-import { type DateContext, dates } from "@k2b/stdlib";
+import { type DateContext, dates, money } from "@k2b/stdlib";
 import Decimal from "decimal.js";
 import type { FormatSpec } from "../../../contracts";
 import { ResourceValueSchema } from "../../../field-types/resource";
@@ -74,8 +74,8 @@ const DEFAULT_RENDERERS: Record<string, CellRenderer> = {
     const parsed = ResourceValueSchema.safeParse(value);
     return parsed.success ? (parsed.data.title ?? `${parsed.data.type} · ${parsed.data.id}`) : "";
   },
-  date: (value, fieldConfig, dateConfig) =>
-    typeof value === "string" ? formatDateDefault(value, fieldConfig, dateConfig) : fallbackValue(value),
+  date: (value, fieldConfig, dateConfig, locale) =>
+    typeof value === "string" ? formatDateDefault(value, fieldConfig, dateConfig, locale) : fallbackValue(value),
   boolean: (value, _fieldConfig, _dateConfig, locale) => {
     const { t } = tableMessages.resolve([locale]);
     return value ? t.yes : t.no;
@@ -98,8 +98,23 @@ const zonedDateTimeText = (value: string, dateConfig?: DateContext): string => {
   }
 };
 
-const formatDateDefault = (value: string, fieldConfig: Record<string, unknown>, dateConfig?: DateContext): string =>
-  fieldConfig.includeTime ? zonedDateTimeText(value, dateConfig) : value.slice(0, 10);
+/**
+ * A date as the reader writes it, short and numeric ("14.11.2026", "11/14/2026"); with its time in the base's time
+ * zone ("14.11.2026, 13:53"). A value that is no date stays as it is.
+ */
+const formatDateDefault = (
+  value: string,
+  fieldConfig: Record<string, unknown>,
+  dateConfig: DateContext | undefined,
+  locale: string,
+): string => {
+  const day = value.slice(0, 10);
+  const instant = new Date(fieldConfig.includeTime ? value : `${day}T00:00:00.000Z`);
+  if (Number.isNaN(instant.getTime())) return value;
+  if (!fieldConfig.includeTime) return dates.formatDate(instant, { locale, style: "numeric" });
+  const context = { locale, timeZone: dateConfig?.timeZone };
+  return `${dates.formatDate(instant, { ...context, style: "numeric" })}, ${dates.formatTime(instant, context)}`;
+};
 
 const formatSelect = (ids: unknown[], fieldConfig: Record<string, unknown>): string => {
   const options = (fieldConfig.options as Array<{ id: string; label: string }> | undefined) ?? [];
@@ -115,9 +130,30 @@ const formatNumberDefault = (value: unknown, fieldConfig: Record<string, unknown
       ? (value as { amount?: string | number }).amount
       : (value as string | number);
   const precision = fieldConfig.integerOnly ? 0 : typeof fieldConfig.decimalPlaces === "number" ? fieldConfig.decimalPlaces : undefined;
-  const formatted =
-    typeof amount === "string" || typeof amount === "number" ? formatDecimal(amount, { kind: "decimal", precision }, locale) : amount;
-  return formatWithUnit(formatted, unit, unitPosition);
+  if (typeof amount !== "string" && typeof amount !== "number") return formatWithUnit(amount, unit, unitPosition);
+  const currency = currencyAmount(amount, unit, precision, locale);
+  if (currency !== null) return currency;
+  return formatWithUnit(formatDecimal(amount, { kind: "decimal", precision, thousandsSeparator: true }, locale), unit, unitPosition);
+};
+
+const CURRENCIES = new Set(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("currency") : []);
+
+/**
+ * An amount whose unit is a currency code ("EUR") in the reader's form with its sign ("12.400,00 €", "€12,400.00").
+ * Null where the field's decimal places are not the currency's own, or the amount has more: those keep their digits
+ * and stand with the unit as written.
+ */
+const currencyAmount = (amount: string | number, unit: string, precision: number | undefined, locale: string): string | null => {
+  if (!CURRENCIES.has(unit)) return null;
+  const digits = money.currencyDigits(unit);
+  if (precision !== undefined && precision !== digits) return null;
+  try {
+    const value = new Decimal(typeof amount === "number" ? String(amount) : amount);
+    if (!value.isFinite() || value.decimalPlaces() > digits) return null;
+    return money.format(money.fromDecimal(value.toFixed(digits), { currency: unit }), { locale });
+  } catch {
+    return null;
+  }
 };
 
 const formatDuration = (value: number): string => {

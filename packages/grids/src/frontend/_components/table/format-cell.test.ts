@@ -7,14 +7,20 @@ describe("formatCell", () => {
     expect(formatCell(0.25125, "percent", { range: "fraction" })).toBe("25.125%");
     expect(formatCell(0, "percent", { range: "fraction" })).toBe("0%");
   });
-  test("normalizes date timestamps to date-only by default", () => {
-    expect(formatCell("2026-05-14T00:00:00+00:00", "date", {})).toBe("2026-05-14");
+  test("a date reads short and numeric in the reader's locale, its day never shifted by a time zone", () => {
+    expect(formatCell("2026-05-14T00:00:00+00:00", "date", {}, undefined, undefined, "de")).toBe("14.05.2026");
+    expect(formatCell("2026-05-14", "date", {}, undefined, { timeZone: "America/Los_Angeles" }, "en")).toBe("05/14/2026");
+    expect(formatCell("not a date", "date", {}, undefined, undefined, "de")).toBe("not a date");
   });
 
-  test("renders date-time instants in the configured timezone", () => {
-    expect(formatCell("2026-05-14T08:30:00.000Z", "date", { includeTime: true }, undefined, { timeZone: "Europe/Berlin" })).toBe(
-      "2026-05-14 10:30",
-    );
+  test("renders date-time instants in the configured timezone and the reader's locale", () => {
+    const berlin = { timeZone: "Europe/Berlin" };
+    expect(formatCell("2026-05-14T08:30:00.000Z", "date", { includeTime: true }, undefined, berlin, "de")).toBe("14.05.2026, 10:30");
+    expect(formatCell("2026-05-14T08:30:00.000Z", "date", { includeTime: true }, undefined, berlin, "en")).toBe("05/14/2026, 10:30");
+  });
+
+  test("an explicit ISO date format stays ISO", () => {
+    expect(formatCell("2026-05-14", "date", {}, { kind: "date", format: "iso" }, undefined, "de")).toBe("2026-05-14");
   });
 
   test("does not timezone-shift date-only formatted values", () => {
@@ -35,12 +41,27 @@ describe("formatCell", () => {
   });
 
   test("renders exact numeric values with configured precision, locale and unit", () => {
-    expect(formatCell("12.3400", "number", { unit: "EUR", unitPosition: "prefix" })).toBe("EUR 12.34");
     expect(formatCell("12.3400", "number", { unit: "kg" })).toBe("12.34 kg");
-    expect(formatCell("22.6", "number", { decimalPlaces: 2, unit: "EUR" }, undefined, undefined, "de")).toBe("22,60 EUR");
+    expect(formatCell("12400", "number", { decimalPlaces: 1, unit: "kg" }, undefined, undefined, "de")).toBe("12.400,0 kg");
     expect(formatCell("1.0000", "number", { integerOnly: true }, undefined, undefined, "de")).toBe("1");
-    expect(formatCell("9007199254740993.2500", "number", { decimalPlaces: 2 }, undefined, undefined, "de")).toBe("9007199254740993,25");
+    expect(formatCell("9007199254740993.2500", "number", { decimalPlaces: 2 }, undefined, undefined, "de")).toBe(
+      "9.007.199.254.740.993,25",
+    );
     expect(formatCell("10.0000", "number", { unit: "EUR", decimalPlaces: 4 }, { kind: "decimal" }, undefined, "de")).toBe("10 EUR");
+  });
+
+  test("an amount in a currency reads with its sign and thousands in the reader's locale", () => {
+    const eur = { decimalPlaces: 2, unit: "EUR", unitPosition: "suffix" };
+    expect(formatCell("12400", "number", eur, undefined, undefined, "de")).toBe("12.400,00\u00a0€");
+    expect(formatCell("12400", "number", eur, undefined, undefined, "en")).toBe("€12,400.00");
+    expect(formatCell("-987654321.5", "number", eur, undefined, undefined, "de")).toBe("-987.654.321,50\u00a0€");
+    expect(formatCell("22.6", "number", { decimalPlaces: 2, unit: "EUR" }, undefined, undefined, "de")).toBe("22,60\u00a0€");
+    expect(formatCell("12.3400", "number", { unit: "EUR", unitPosition: "prefix" }, undefined, undefined, "en")).toBe("€12.34");
+    // more digits than the currency keeps, or other decimal places, keep the field's digits and its unit as written
+    expect(formatCell("1.2345", "number", { unit: "EUR" }, undefined, undefined, "de")).toBe("1,2345 EUR");
+    expect(formatCell("12400", "number", { decimalPlaces: 0, unit: "EUR" }, undefined, undefined, "de")).toBe("12.400 EUR");
+    // a unit that is no currency code stays a unit
+    expect(formatCell("12400", "number", { decimalPlaces: 2, unit: "€" }, undefined, undefined, "de")).toBe("12.400,00 €");
   });
 
   test("applies decimal format overrides only to numeric/formula values", () => {
