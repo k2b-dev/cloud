@@ -5540,19 +5540,19 @@
    places, targets of 44 px 4 px apart with a radius of 12 px, symbols of 20 px. Below 768 px the tab bar takes its
    place. The platform may set the colours (see `Rail`). */
 .k2-ui .k2-rail {
-  display: none;
+  box-sizing: border-box;
+  display: flex;
+  width: 56px;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex: none;
 }
-@media (min-width: 768px) {
+@media not all and (min-width: 768px) {
   .k2-ui .k2-rail {
-    box-sizing: border-box;
-    display: flex;
-    width: 56px;
-    height: 100%;
-    min-height: 0;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    flex: none;
+    display: none;
   }
 }
 .k2-ui .k2-rail-logo {
