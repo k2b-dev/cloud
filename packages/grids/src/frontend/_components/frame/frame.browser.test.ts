@@ -4,8 +4,8 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
-import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../../ui/test/browser";
 import { renderCloudShell } from "../../../../../../tests/fixtures/cloud-shell";
+import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../../ui/test/browser";
 import { FIXTURE_NOW, FIXTURE_REVISION, type FixtureVariant } from "./frame.browser-fixture";
 
 // The bases overview and a base home on v2, in a real browser: the address holds what is open and narrowed, the
@@ -15,14 +15,18 @@ const ui = resolve(import.meta.dir, "../../../../../ui");
 const origin = "https://cloud.example.test";
 const shots = process.env.GRIDS_FRAME_SHOTS;
 
-const buildHarness = async (): Promise<string> => {
+/** The harness as the page loads it: an ES module and its chunks by address, split as an app's islands ship. */
+const buildHarness = async (): Promise<{ entry: string; scripts: Map<string, string> }> => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
   const build = await Bun.build({
     entrypoints: [resolve(import.meta.dir, "frame.browser-harness.tsx")],
     target: "browser",
-    format: "iife",
+    // as islands ship: an ES module whose on-demand parts are chunks of their own (an IIFE bundle left a
+    // lazily-read Cloud contract unset when Grids read it through the barrel)
+    format: "esm",
+    splitting: true,
     // the page parses and runs the whole harness before it shows anything: minified, as an app's islands ship
     minify: true,
     conditions: ["browser"],
@@ -44,7 +48,11 @@ const buildHarness = async (): Promise<string> => {
     ],
   });
   if (!build.success) throw new AggregateError(build.logs, "Grids frame harness build failed");
-  return build.outputs[0]!.text();
+  const scripts = new Map<string, string>();
+  for (const output of build.outputs) scripts.set(`/${output.path.replace(/^\.\//, "")}`, await output.text());
+  const entry = [...scripts.keys()].find((path) => path.includes("frame.browser-harness"));
+  if (!entry) throw new Error("the Grids frame harness has no entry");
+  return { entry, scripts };
 };
 
 const buildCss = async (entry: string): Promise<string> => {
@@ -58,7 +66,7 @@ let browser: Browser;
 // the real Cloud shell (icon rail, page title, phone bar) around the screens, as a person sees the page
 let shell: Awaited<ReturnType<typeof renderCloudShell>>;
 let css: string;
-let harness: string;
+let harness: Awaited<ReturnType<typeof buildHarness>>;
 let icons: { css: string; font: string };
 // the real type of Cloud (IBM Plex) instead of the system fallback, so the pictures count as evidence
 let plex: { css: string; dir: string };
@@ -105,7 +113,7 @@ const page = async (address: string, variant: FixtureVariant) => {
         "</head>",
         `<link rel="stylesheet" href="${origin}/plex.css"><link rel="stylesheet" href="${origin}/tabler-icons.css"><style>${css}</style></head>`,
       )
-      .replace("</body>", '<script src="/harness.js"></script></body>')
+      .replace("</body>", `<script type="module" src="${harness.entry}"></script></body>`)
   );
 };
 
@@ -155,7 +163,8 @@ const open = async (view: View, address: string, variant: FixtureVariant = "plai
       seen.created.push(route.request().postDataJSON());
       return route.fulfill({ status: 503, json: { message: "Base creation unavailable" } });
     }
-    if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
+    const script = harness.scripts.get(url.pathname);
+    if (script !== undefined) return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: script });
     if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
     if (url.pathname === "/plex.css") return route.fulfill({ contentType: "text/css", body: plex.css });
     if (url.pathname.startsWith("/fonts/")) return route.fulfill({ path: join(plex.dir, url.pathname.slice("/fonts/".length)) });
