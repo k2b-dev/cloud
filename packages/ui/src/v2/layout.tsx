@@ -18,6 +18,7 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
+import { Announcer } from "./announce";
 import { type Fold, watchFold } from "./bar-fold";
 import { useDrawer } from "./behavior/overlays";
 import { type GripOptions, useGrip } from "./behavior/resize";
@@ -378,6 +379,8 @@ export const Workspace = (props: WorkspaceProps) => {
       <ConfirmDialog host={() => element} />
       {/* the one toaster of the page: every `useToast` shows here, also one called above the Workspace */}
       <Toasts />
+      {/* the page's one live region: `announce` says its news here, also from another island */}
+      <Announcer />
     </div>
   );
 };
@@ -741,7 +744,8 @@ export type BarProps = {
  * The start keeps a least: its name at `--k2-start-least` (16ch; its whole content, where narrower), or its open
  * tab. Where the end does not fit beside the whole start (six actions beside tabs on the phone), the end folds first:
  * its buttons that do not fit move into a menu "…" at its end, in their order, the last first. Where the end's last
- * plain `Menu` "…" is followed only by parts that never fold, they are that menu's first section; an end made outside
+ * `Menu` "…" (no symbol of its own, whatever its `label`) is followed only by parts that never fold (the primary, a
+ * closing ×, a menu with a symbol or words of its own), they are that menu's first section; an end made outside
  * the bar (an island of its own) gets the bar's own "…" instead. The primary action, a closing ×, a menu and a search
  * never fold. Only when nothing more can fold does the start shorten its words with "…", down to its least. The
  * browser measures the fold once the page is alive; before that the bar stands as it does when nothing folds (the end
@@ -950,16 +954,28 @@ export type Tile = {
   /**
    * Cards only: a glance of what the thing holds, across the top of the card above its name: a small table (its
    * columns and first rows, as words), a page (its title and first words), or a sign for a thing that holds nothing yet.
-   * It is a picture of the content: assistive technology reads the card by its name.
+   * It is a picture of the content: assistive technology reads the card by its name. Keep its values short: the app
+   * chooses columns and rows whose words fit, at most about 12 characters a cell, so nothing is cut with "…" at 1440 or
+   * on the phone (two columns there); leave out what does not fit, such as a book's author. A cut cell reads as cheap.
    */
   preview?: TilePreview;
 };
 
 /** What a card's preview shows: the app gives the words, the card draws them. */
 export type TilePreview =
-  | { table: { columns: readonly string[]; rows: readonly (readonly string[])[] } }
+  | { table: { columns: readonly TilePreviewColumn[]; rows: readonly (readonly string[])[] } }
   | { page: { title: string; text?: string } }
   | { icon: string };
+
+/**
+ * A column of a preview's table: its head, or its head and its place. `align: "end"` sets the column at the end with
+ * figures of one width, for amounts and counts.
+ */
+export type TilePreviewColumn = string | { label: string; align?: "end" };
+
+const columnLabel = (column: TilePreviewColumn) => (typeof column === "string" ? column : column.label);
+const columnAlign = (column: TilePreviewColumn | undefined) =>
+  column !== undefined && typeof column !== "string" ? column.align : undefined;
 
 /** The columns of a preview's table that the phone's narrow card shows; the rest are marked `data-past`. */
 const TILE_PREVIEW_PHONE_COLUMNS = 2;
@@ -973,7 +989,11 @@ const TilePreviewView = (props: { preview: TilePreview }) => (
             <thead>
               <tr>
                 <For each={table().columns}>
-                  {(column, index) => <th data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined}>{column}</th>}
+                  {(column, index) => (
+                    <th data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined} data-align={columnAlign(column)}>
+                      {columnLabel(column)}
+                    </th>
+                  )}
                 </For>
               </tr>
             </thead>
@@ -982,7 +1002,14 @@ const TilePreviewView = (props: { preview: TilePreview }) => (
                 {(row) => (
                   <tr>
                     <For each={row}>
-                      {(cell, index) => <td data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined}>{cell}</td>}
+                      {(cell, index) => (
+                        <td
+                          data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined}
+                          data-align={columnAlign(table().columns[index()])}
+                        >
+                          {cell}
+                        </td>
+                      )}
                     </For>
                   </tr>
                 )}

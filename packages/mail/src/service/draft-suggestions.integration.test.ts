@@ -755,15 +755,16 @@ suite("Mail service-account suggestions", () => {
         state: Y.encodeStateAsUpdate(doc),
       };
       const recovered = unwrap(await drafts.recoverDraftDocumentRest(recovery));
-      expect(recovered.status).toBe("recovered");
-      if (recovered.status !== "recovered") throw new Error("Expected a distinct recovery draft");
+      // The newer reply holds the slot: the input is kept as its recovery copy, not as a new draft.
+      expect(recovered.status).toBe("kept");
+      if (recovered.status !== "kept") throw new Error("Expected a recovery copy on the newer reply");
       expect(recovered.draft.id).toBe(newer.id);
       const copies = unwrap(await drafts.listDraftRecoveryCopies({ context: owner, mailboxId, draftId: newer.id }));
       expect(copies.some((copy) => copy.content.body === "Offline recovered content")).toBeTrue();
       expect(unwrap(await drafts.getDraft(owner, mailboxId, newer.id)).body).toBe("New suggestion");
       const retry = unwrap(await drafts.recoverDraftDocumentRest(recovery));
-      expect(retry.status).toBe("recovered");
-      if (retry.status === "recovered") expect(retry.draft.id).toBe(recovered.draft.id);
+      expect(retry.status).toBe("kept");
+      if (retry.status === "kept") expect(retry.draft.id).toBe(recovered.draft.id);
     } finally {
       doc.destroy();
     }
