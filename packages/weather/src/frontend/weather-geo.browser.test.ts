@@ -365,14 +365,15 @@ for (const width of [1440, 390])
       }
       // the record's week: seven bars on one scale, the coldest day starting at the scale's start
       await page.goto(`${server.url.href}?screen=record`);
-      const bars = page.locator('[data-k2-part="RangeBar"]');
+      // the table holds the desktop and the phone rows; the visible ones are the week
+      const bars = page.locator('[data-k2-part="RangeBar"]:visible');
       expect(await bars.count()).toBe(7);
       expect(await bars.nth(3).getAttribute("aria-label")).toBe("-3,4° bis 4,6°");
       // a sunny day's sign is amber, a rainy one blue: data colours, not the text ink
       const colors = await page.evaluate(() => ({
         ink: getComputedStyle(document.querySelector('[data-k2-part="Table"]')!).color,
         signs: ["sun", "cloud-rain"].map(
-          (name) => getComputedStyle(document.querySelector(`[data-k2-part="Icon"][data-name="${name}"]`)!).color,
+          (name) => getComputedStyle(document.querySelector(`[data-k2-part="Table"] [data-k2-part="Icon"][data-name="${name}"]`)!).color,
         ),
       }));
       expect(colors.signs[0]).not.toBe(colors.signs[1]);
@@ -381,7 +382,8 @@ for (const width of [1440, 390])
       await page.goto(`${server.url.href}?screen=worst`);
       const week = page.getByRole("region", { name: "7-Tage-Vorhersage" });
       await week.getByText("Keine Vorhersage").waitFor();
-      expect((await week.boundingBox())!.height).toBeLessThan(90);
+      // its head and one line (93 px); the empty state with its sign stood about 180 px high (v3)
+      expect((await week.boundingBox())!.height).toBeLessThan(120);
     } finally {
       await page.close();
     }
