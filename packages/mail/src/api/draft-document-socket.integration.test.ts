@@ -367,6 +367,8 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     const [conversation] = await sql<{ id: string }[]>`INSERT INTO mail.conversations
       (short_id, mailbox_id, subject, participant_summary, latest_message_at)
       VALUES (${newShortId()}, ${mailboxId}::uuid, 'Subject', 'recipient@example.test', now()) RETURNING id`;
+    await sql`INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)
+      VALUES (${conversation!.id}::uuid, ${message!.id}::uuid, 0, 'headers')`;
     await sql`UPDATE mail.drafts SET conversation_id = ${conversation!.id}::uuid, source_message_id = ${message!.id}::uuid, intent = 'reply'
       WHERE id = ${target.id}::uuid`;
     return target;
@@ -388,59 +390,6 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     sql<{ intent: string; conversation_id: string | null; state: string }[]>`SELECT intent, conversation_id, state FROM mail.drafts
       WHERE mailbox_id = ${mailboxId}::uuid AND body_markdown = ${body}`;
   const copiesOf = (draftId: string) => sql`SELECT 1 FROM mail.draft_recovery_copies WHERE draft_id = ${draftId}::uuid`;
-
-  test("Rest refuses refused-input copies for incomplete history; send and discard turn a reply's copy into a new draft", async () => {
-    const quarantined = await replyDraft();
-    await read(); // Seeds the shared document.
-    await sql`UPDATE mail.drafts SET doc_history_complete = false WHERE id = ${quarantined.id}::uuid`;
-    // read() requires complete history; the device still holds the generation it opened.
-    const [{ generation } = { generation: "" }] = await sql<{ generation: string }[]>`SELECT doc_generation::text AS generation
-      FROM mail.drafts WHERE id = ${quarantined.id}::uuid`;
-    const refused = await recoverDraftDocumentRest({
-      context,
-      mailboxId,
-      draftId: quarantined.id,
-      generation,
-      clientId: crypto.randomUUID(),
-      state: (await sql<{ doc_state: Uint8Array }[]>`SELECT doc_state FROM mail.drafts WHERE id = ${quarantined.id}::uuid`)[0]!.doc_state,
-    });
-    expect(refused.ok).toBe(false);
-    expect(await copiesOf(quarantined.id)).toHaveLength(0);
-
-    const discarded = await replyDraft();
-    value(await keepDeviceInput(discarded, "Device input before discard"));
-    expect(await copiesOf(discarded.id)).toHaveLength(1);
-    value(await discardDraft({ context, mailboxId, draftId: discarded.id, expectedRevision: (await read()).revision }));
-    expect(await copiesOf(discarded.id)).toHaveLength(0);
-    expect(await draftsWithBody("Device input before discard")).toEqual([{ intent: "new", conversation_id: null, state: "draft" }]);
-
-    const sent = await replyDraft();
-    value(await keepDeviceInput(sent, "Device input before send"));
-    expect(await copiesOf(sent.id)).toHaveLength(1);
-    const current = await read();
-    const checked = value(await reviewDraftComposeSafety({ context, mailboxId, draftId: sent.id, expectedRevision: current.revision }));
-    const command = value(
-      await createActorCommand({
-        context,
-        mailboxId,
-        enqueue: false,
-        input: {
-          kind: "send",
-          draftId: sent.id,
-          senderIdentityId: identity.id,
-          expectedDraftRevision: checked.revision,
-          expectedContentHash: checked.contentHash,
-          undoSeconds: 60,
-          idempotencyKey: crypto.randomUUID(),
-          safetyApproval: { revision: checked.revision, fingerprint: checked.fingerprint, warningIds: checked.warnings.map((w) => w.id) },
-        },
-      }),
-    );
-    expect(await copiesOf(sent.id)).toHaveLength(0);
-    expect(await draftsWithBody("Device input before send")).toEqual([{ intent: "new", conversation_id: null, state: "draft" }]);
-    const [outbox] = await sql<{ id: string }[]>`SELECT id FROM mail.outbox_submissions WHERE command_id=${command.id}::uuid`;
-    value(await cancelScheduledSend({ context, mailboxId, scheduledSendId: outbox!.id, input: { disposition: "draft" } }));
-  });
 
   test("device input whose base the log pruned is refused on every join; Rest keeps it as the open reply's recovery copy", async () => {
     const target = await replyDraft();
@@ -530,6 +479,59 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
         packet.type === "syncPush" && !packet.payload.snapshot && packet.payload.updates.some((u) => u.payload === toBase64(edit)),
     );
     expect(fresh.messages.filter((packet) => packet.type === "error")).toEqual([]);
+  });
+
+  test("Rest refuses refused-input copies for incomplete history; send and discard turn a reply's copy into a new draft", async () => {
+    const quarantined = await replyDraft();
+    await read(); // Seeds the shared document.
+    await sql`UPDATE mail.drafts SET doc_history_complete = false WHERE id = ${quarantined.id}::uuid`;
+    // read() requires complete history; the device still holds the generation it opened.
+    const [{ generation } = { generation: "" }] = await sql<{ generation: string }[]>`SELECT doc_generation::text AS generation
+      FROM mail.drafts WHERE id = ${quarantined.id}::uuid`;
+    const refused = await recoverDraftDocumentRest({
+      context,
+      mailboxId,
+      draftId: quarantined.id,
+      generation,
+      clientId: crypto.randomUUID(),
+      state: (await sql<{ doc_state: Uint8Array }[]>`SELECT doc_state FROM mail.drafts WHERE id = ${quarantined.id}::uuid`)[0]!.doc_state,
+    });
+    expect(refused.ok).toBe(false);
+    expect(await copiesOf(quarantined.id)).toHaveLength(0);
+
+    const discarded = await replyDraft();
+    value(await keepDeviceInput(discarded, "Device input before discard"));
+    expect(await copiesOf(discarded.id)).toHaveLength(1);
+    value(await discardDraft({ context, mailboxId, draftId: discarded.id, expectedRevision: (await read()).revision }));
+    expect(await copiesOf(discarded.id)).toHaveLength(0);
+    expect(await draftsWithBody("Device input before discard")).toEqual([{ intent: "new", conversation_id: null, state: "draft" }]);
+
+    const sent = await replyDraft();
+    value(await keepDeviceInput(sent, "Device input before send"));
+    expect(await copiesOf(sent.id)).toHaveLength(1);
+    const current = await read();
+    const checked = value(await reviewDraftComposeSafety({ context, mailboxId, draftId: sent.id, expectedRevision: current.revision }));
+    const command = value(
+      await createActorCommand({
+        context,
+        mailboxId,
+        enqueue: false,
+        input: {
+          kind: "send",
+          draftId: sent.id,
+          senderIdentityId: identity.id,
+          expectedDraftRevision: checked.revision,
+          expectedContentHash: checked.contentHash,
+          undoSeconds: 60,
+          idempotencyKey: crypto.randomUUID(),
+          safetyApproval: { revision: checked.revision, fingerprint: checked.fingerprint, warningIds: checked.warnings.map((w) => w.id) },
+        },
+      }),
+    );
+    expect(await copiesOf(sent.id)).toHaveLength(0);
+    expect(await draftsWithBody("Device input before send")).toEqual([{ intent: "new", conversation_id: null, state: "draft" }]);
+    const [outbox] = await sql<{ id: string }[]>`SELECT id FROM mail.outbox_submissions WHERE command_id=${command.id}::uuid`;
+    value(await cancelScheduledSend({ context, mailboxId, scheduledSendId: outbox!.id, input: { disposition: "draft" } }));
   });
 
   test.each([

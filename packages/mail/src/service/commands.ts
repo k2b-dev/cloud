@@ -663,7 +663,12 @@ const createSendOutbox = async (params: {
     byteLength,
   });
   if (params.context)
-    await restRecoveryCopiesInTransaction({ db: params.db, context: params.context, mailboxId: params.mailboxId, draftId: prepared.draftId });
+    await restRecoveryCopiesInTransaction({
+      db: params.db,
+      context: params.context,
+      mailboxId: params.mailboxId,
+      draftId: prepared.draftId,
+    });
   await params.db`
     UPDATE mail.drafts
     SET

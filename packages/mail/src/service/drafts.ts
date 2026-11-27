@@ -631,7 +631,7 @@ const storeRecoveryCopy = async (params: {
 /**
  * Send and discard end the draft's editing, and with it the only place that offers its recovery copies.
  * Each unrestored copy becomes a separate new draft first, as a device's unsent input would; nothing stays
- * unreachable. A copy that cannot become a draft (its sender is gone) stays on the draft and never blocks the send.
+ * unreachable. A copy whose sender is gone cannot become a draft; it stays on the draft and never blocks the send.
  */
 export const restRecoveryCopiesInTransaction = async (params: {
   db: typeof sql;
@@ -650,39 +650,36 @@ export const restRecoveryCopiesInTransaction = async (params: {
     if (!parsed.success) continue;
     // A new message: the source's conversation slot may still be held until its send completes.
     const content = { ...parsed.data, quoteSource: null };
-    const kept = await params.db
-      .savepoint(async (db) => {
-        const created = await insertComposeDraftInTransaction({
+    const db = params.db;
+    // Fails before any write when the copy's sender is gone; that copy stays where it is.
+    const created = await insertComposeDraftInTransaction({
+      db,
+      context: params.context,
+      mailboxId: params.mailboxId,
+      actor,
+      adopted: humanDraftEditor(params.context) ? true : undefined,
+      content,
+      prepared: { conversationId: null, intent: "new", sourceMessageId: null, content, attachments: [] },
+    });
+    if (!created.ok) continue;
+    if (copy.has_attachment_snapshot) {
+      const attachments = await db<
+        { blob_id: string; filename: string; content_type: string; byte_length: string; content_hash: string; position: number }[]
+      >`SELECT blob_id, filename, content_type, byte_length, content_hash, position FROM mail.draft_recovery_attachments
+        WHERE recovery_copy_id = ${copy.id}::uuid ORDER BY position`;
+      for (const attachment of attachments)
+        await withShortIdDb(
           db,
-          context: params.context,
-          mailboxId: params.mailboxId,
-          actor,
-          adopted: humanDraftEditor(params.context) ? true : undefined,
-          content,
-          prepared: { conversationId: null, intent: "new", sourceMessageId: null, content, attachments: [] },
-        });
-        if (!created.ok) throw Object.assign(new Error(created.error.message), created.error);
-        if (copy.has_attachment_snapshot) {
-          const attachments = await db<
-            { blob_id: string; filename: string; content_type: string; byte_length: string; content_hash: string; position: number }[]
-          >`SELECT blob_id, filename, content_type, byte_length, content_hash, position FROM mail.draft_recovery_attachments
-            WHERE recovery_copy_id = ${copy.id}::uuid ORDER BY position`;
-          for (const attachment of attachments)
-            await withShortIdDb(
-              db,
-              "draftAttachment",
-              (tx, shortId) => tx`INSERT INTO mail.draft_attachments
-                (short_id, draft_id, blob_id, filename, content_type, byte_length, content_hash, position)
-                VALUES (${shortId}, ${created.data.id}::uuid, ${attachment.blob_id}::uuid, ${attachment.filename},
-                  ${attachment.content_type}, ${attachment.byte_length}::bigint, ${attachment.content_hash}, ${attachment.position})`,
-            );
-        }
-        await db`DELETE FROM mail.draft_recovery_copies WHERE id = ${copy.id}::uuid`;
-        await queueDraftProjectionInTransaction({ db, draftId: created.data.id });
-        return true;
-      })
-      .catch(() => false);
-    if (kept) rested++;
+          "draftAttachment",
+          (tx, shortId) => tx`INSERT INTO mail.draft_attachments
+            (short_id, draft_id, blob_id, filename, content_type, byte_length, content_hash, position)
+            VALUES (${shortId}, ${created.data.id}::uuid, ${attachment.blob_id}::uuid, ${attachment.filename},
+              ${attachment.content_type}, ${attachment.byte_length}::bigint, ${attachment.content_hash}, ${attachment.position})`,
+        );
+    }
+    await db`DELETE FROM mail.draft_recovery_copies WHERE id = ${copy.id}::uuid`;
+    await queueDraftProjectionInTransaction({ db, draftId: created.data.id });
+    rested++;
   }
   return rested;
 };
