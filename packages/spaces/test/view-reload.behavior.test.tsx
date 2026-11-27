@@ -132,6 +132,7 @@ describe("Spaces unavailable-view reloads", () => {
               baseUrl: path,
               wormholes: [],
               initialBuckets: [],
+              pulse: { done: Array(14).fill(0), overdue: 0, unassigned: 0 },
               foldedColumns: [],
               selectedItemId: "",
               canWrite: false,
