@@ -73,7 +73,8 @@ export const Text = (props: TextProps) => {
       data-k2-part="Text"
       data-type={props.type}
       data-tone={props.tone}
-      // the full words the app gives; a lead (the title of a head) of plain words may be cut, so it says them on hover
+      // the full words the app gives; a title (the lead of a head) may be cut where it has no room, so it says all of
+      // its words on hover without them
       title={props.title ?? (props.type === "lead" && typeof words() === "string" ? String(words()) : undefined)}
     >
       {words()}
@@ -836,16 +837,6 @@ export const Table = <T,>(props: TableProps<T>) => {
     return shape === true ? { rows: 3, lines: 1 as const } : shape ? { rows: shape.rows ?? 3, lines: shape.lines ?? 1 } : undefined;
   };
   const empty = () => (loading() || props.rows.length > 0 ? undefined : props.empty);
-  // Every cell is made once per showing of its row: what `cell` returns is placed, never rendered a second time. The
-  // cells of the first page are made before the table, on the server and in the browser alike, so hydration finds them
-  // in the same order, and they live with the table (they also say whether rows have two lines). A row further down
-  // makes its cells when it comes into the page and lets them go with it, so a row that comes back makes them anew and
-  // shows what they read now.
-  const firstCells = createMemo(
-    () => new Map(props.rows.slice(0, SERVER_ROWS).map((row) => [row, props.columns.map((column) => column.cell(row))] as const)),
-  );
-  const cellsOf = (row: T): CellValue[] => firstCells().get(row) ?? props.columns.map((column) => column.cell(row));
-  const lines = () => (loading()?.lines === 2 || [...firstCells().values()].some((cells) => cells.some(isPair)) ? "2" : "1");
   const key = (row: T, index: number) => props.rowKey?.(row) ?? String(index);
   const items = createMemo((): TableItem<T>[] => {
     const out: TableItem<T>[] = [];
@@ -858,6 +849,22 @@ export const Table = <T,>(props: TableProps<T>) => {
     });
     return out;
   });
+  // Every cell is made once per showing of its row: what `cell` returns is placed, never rendered a second time. The
+  // cells of the first page are made before the table, on the server and in the browser alike, so hydration finds them
+  // in the same order, and they live with the table (they also say whether rows have two lines). The first page is the
+  // entries the server sends, group heads counted (`SERVER_ROWS`): a cell made for a row it did not send would be a
+  // node hydration cannot find. A row further down makes its cells when it comes into the page and lets them go with
+  // it, so a row that comes back makes them anew and shows what they read now.
+  const firstCells = createMemo(
+    () =>
+      new Map(
+        items()
+          .slice(0, SERVER_ROWS)
+          .flatMap((item) => ("row" in item ? [[item.row, props.columns.map((column) => column.cell(item.row))] as const] : [])),
+      ),
+  );
+  const cellsOf = (row: T): CellValue[] => firstCells().get(row) ?? props.columns.map((column) => column.cell(row));
+  const lines = () => (loading()?.lines === 2 || [...firstCells().values()].some((cells) => cells.some(isPair)) ? "2" : "1");
   // A table of any length keeps only the rows in view in the page (see `createVirtualWindow`); its head stays.
   const itemKey = (item: TableItem<T>) => ("group" in item ? `group:${item.group.key}` : `row:${key(item.row, item.index)}`);
   const view = createVirtualWindow({ items: () => (loading() ? [] : items()), key: itemKey });
@@ -1145,27 +1152,31 @@ export const Table = <T,>(props: TableProps<T>) => {
                     (() => {
                       const form = phone()(item.row);
                       const target = props.open?.(item.row);
+                      // a row says its place among the rows of the table: the heads of its groups are no rows
+                      const place = { index: () => item.index, size: () => props.rows.length };
                       return (
-                        <Row
-                          lines={form.lines}
-                          avatar={form.avatar}
-                          time={form.time}
-                          marks={form.marks}
-                          end={form.end}
-                          strong
-                          href={target?.href}
-                          onNavigate={target?.onNavigate}
-                          onOpen={target?.onOpen}
-                          current={props.current !== undefined && props.current === key(item.row, item.index)}
-                          select={
-                            props.select
-                              ? {
-                                  selected: selected(item.row, item.index),
-                                  onChange: (on) => toggle(key(item.row, item.index), on),
-                                }
-                              : undefined
-                          }
-                        />
+                        <ListItemContext.Provider value={place}>
+                          <Row
+                            lines={form.lines}
+                            avatar={form.avatar}
+                            time={form.time}
+                            marks={form.marks}
+                            end={form.end}
+                            strong
+                            href={target?.href}
+                            onNavigate={target?.onNavigate}
+                            onOpen={target?.onOpen}
+                            current={props.current !== undefined && props.current === key(item.row, item.index)}
+                            select={
+                              props.select
+                                ? {
+                                    selected: selected(item.row, item.index),
+                                    onChange: (on) => toggle(key(item.row, item.index), on),
+                                  }
+                                : undefined
+                            }
+                          />
+                        </ListItemContext.Provider>
                       );
                     })()
                   )

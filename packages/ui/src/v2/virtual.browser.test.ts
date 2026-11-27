@@ -16,8 +16,10 @@ import type {} from "../../test/v2-virtual.client";
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 /** Scrolling 40,000 px a frame at a time takes WebKit a few seconds. */
 const TEST_TIMEOUT = 20_000;
-const testCss =
-  "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; } .ti { display: inline-block; width: 1em; height: 1em; } .k2-scroll, .k2-table-scroll { overflow-anchor: none; }";
+const baseCss =
+  "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; } .ti { display: inline-block; width: 1em; height: 1em; }";
+/** Scroll anchoring off, as Safari has none; one test keeps it on, as Chromium and Firefox have it. */
+const noAnchoring = ".k2-scroll, .k2-table-scroll { overflow-anchor: none; }";
 
 let browser: Browser;
 let client: string;
@@ -50,13 +52,13 @@ const countObserved = () => {
   (window as unknown as { __k2Watched: () => number }).__k2Watched = () => [...own.values()].reduce((sum, set) => sum + set.size, 0);
 };
 
-const withPage = async (run: (page: Page) => Promise<void>, width = 1200, scenario = "") => {
+const withPage = async (run: (page: Page) => Promise<void>, width = 1200, scenario = "", anchoring = false) => {
   const page = await browser.newPage({ viewport: { width, height: 700 } });
   page.setDefaultTimeout(3000);
   const errors = pageErrors(page);
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui" data-case="${scenario}"><div id="root"></div></body></html>`,
+      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${baseCss}${anchoring ? "" : noAnchoring}</style></head><body class="k2-ui" data-case="${scenario}"><div id="root"></div></body></html>`,
     );
     await page.evaluate(countObserved);
     await page.addScriptTag({ content: client });
@@ -110,27 +112,34 @@ test(
   TEST_TIMEOUT,
 );
 
-test(
-  "a change of width keeps the first row in view where it was",
-  async () => {
-    await withPage(async (page) => {
-      await scrollTo(page, '.k2-pane[aria-label="Liste"] > .k2-scroll', 12000);
-      await settled(page);
-      const before = await firstInView(page);
-      await page.setViewportSize({ width: 820, height: 700 });
-      await settled(page);
-      const narrow = await firstInView(page);
-      expect(narrow.at).toBe(before.at);
-      await settled(page);
-      await page.setViewportSize({ width: 1200, height: 700 });
-      await settled(page);
-      const after = await firstInView(page);
-      expect(after.at).toBe(before.at);
-      expect(Math.abs(after.top - before.top)).toBeLessThanOrEqual(2);
-    });
-  },
-  TEST_TIMEOUT,
-);
+// with the browser's own scroll anchoring too (Chromium, Firefox): it and the window never move the place twice
+for (const anchoring of [false, true])
+  test(
+    `a change of width keeps the first row in view where it was, ${anchoring ? "with" : "without"} the browser's scroll anchoring`,
+    async () => {
+      await withPage(
+        async (page) => {
+          await scrollTo(page, '.k2-pane[aria-label="Liste"] > .k2-scroll', 12000);
+          await settled(page);
+          const before = await firstInView(page);
+          await page.setViewportSize({ width: 820, height: 700 });
+          await settled(page);
+          const narrow = await firstInView(page);
+          expect(narrow.at).toBe(before.at);
+          await settled(page);
+          await page.setViewportSize({ width: 1200, height: 700 });
+          await settled(page);
+          const after = await firstInView(page);
+          expect(after.at).toBe(before.at);
+          expect(Math.abs(after.top - before.top)).toBeLessThanOrEqual(2);
+        },
+        1200,
+        "",
+        anchoring,
+      );
+    },
+    TEST_TIMEOUT,
+  );
 
 test(
   "Tab out of a focused row that scrolled away goes to the next row, not to the window",
@@ -363,6 +372,37 @@ test(
       },
       1200,
       "groups",
+    );
+  },
+  TEST_TIMEOUT,
+);
+
+// W1b (Files, "Alle Ablagen" with #4340): in a main column with its context column under it, the split scrolls, not the
+// column's own scroller, and the window took the whole list (201 rows at 1440 px). The window follows what really scrolls.
+test(
+  "a list in a main column whose context column stands under it keeps only the rows in view, and its window follows the scroll",
+  async () => {
+    await withPage(
+      async (page) => {
+        const shown = () => page.locator('.k2-pane[aria-label="Liste"] [data-k2-part="Row"]').count();
+        // the context stands under the list: the split is what scrolls
+        expect(await page.locator(".k2-split[data-context]").evaluate((split) => split.scrollHeight > split.clientHeight + 1)).toBe(true);
+        expect(await shown()).toBeLessThan(80);
+        await scrollTo(page, ".k2-split[data-context]", 20000);
+        await settled(page);
+        expect(await shown()).toBeLessThan(80);
+        const first = await page.evaluate(() => {
+          const top = document.querySelector(".k2-split[data-context]")!.getBoundingClientRect().top;
+          const row = [...document.querySelectorAll('.k2-pane[aria-label="Liste"] [data-k2-part="Row"]')].find(
+            (each) => each.getBoundingClientRect().bottom > top + 1,
+          );
+          return Number(row?.getAttribute("aria-posinset") ?? 0);
+        });
+        // the rows in view are the ones far down the list, not the first ones
+        expect(first).toBeGreaterThan(300);
+      },
+      1440,
+      "context",
     );
   },
   TEST_TIMEOUT,

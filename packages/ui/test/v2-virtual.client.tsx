@@ -114,6 +114,29 @@ else if (document.body.dataset.case === "groups")
     ),
     root,
   );
+// `<body data-case="context">`: the list in a main column with its context column (Files, "Alle Ablagen"), which asks
+// for more room than 1440 px gives: the context stands under the list, and the split scrolls in one piece
+else if (document.body.dataset.case === "context")
+  render(
+    () => (
+      <Workspace>
+        <Pane.Split>
+          <Pane label="Liste">
+            <List
+              label="Einträge"
+              items={entries}
+              rowKey={(entry) => entry.key}
+              row={(entry) => <Row lines={[entry.title]} href={`#${entry.key}`} />}
+            />
+          </Pane>
+          <Pane label="Kontext" side={{ from: 1600 }}>
+            <Row lines={["Speicher"]} />
+          </Pane>
+        </Pane.Split>
+      </Workspace>
+    ),
+    root,
+  );
 else
   render(
     () => (
