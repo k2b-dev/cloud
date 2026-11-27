@@ -116,7 +116,9 @@ Rule 9. You drew it with your own element or a `Bar` between entries.
   `Pane`.
 - `double line: … and … at … px`: two parts draw a line at the same place,
   usually a `Bar` right under a `Bar`, or a `Band` before a `Section` end.
-  Drop one of them.
+  Drop one of them. `… N px apart at …`: two lines a few px apart (less
+  than 12), such as a last row's line above the line of its section; nothing
+  fits between them, so the last part gives its line away.
 - `line inside …: … separates parts of one thing`: a line between the
   parts of one band or group, at any distance (rule 9). Remove the element
   that draws it; spacing alone separates the parts.

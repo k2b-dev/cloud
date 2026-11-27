@@ -78,9 +78,10 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x57"],
       tabs: ['[data-slot="head"] > .k2-tabs-nav', "0,57 390x44"],
       notice: [".k2-notice", "0,101 390x137"],
-      cells: [".k2-cells", "0,238 390x279"],
-      section: [".k2-sec", "0,517 390x245"],
-      todo: [".k2-sec .k2-row", "0,569 390x92"],
+      // the key figures stand two in a row and the last one across its row (lane M, 26.11.), not one under the other
+      cells: [".k2-cells", "0,238 390x242"],
+      section: [".k2-sec", "0,480 390x245"],
+      todo: [".k2-sec .k2-row", "0,532 390x92"],
     },
   },
   // akte-einlieferungen.html

@@ -225,6 +225,25 @@ describe("measureV2Layout", () => {
   );
 
   test(
+    "red: two lines a few px apart, a last row's line above the line of its section (the phone table of #4342)",
+    async () => {
+      const page = await open(
+        `<style>.sec { padding-bottom: 8px; border-bottom: var(--k2-hairline); }</style>` +
+          columns('<div class="sec"><div class="row">One</div><div class="row">Two</div></div><div class="row">After</div>'),
+      );
+      try {
+        const { double } = await measureV2Layout(page);
+        expect(double).toEqual([
+          expect.stringMatching(/^double line: div\.row border-bottom and div\.sec border-bottom 8 px apart at \d+ px over 1191 px$/),
+        ]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
     "red: a pseudo line whose stand-in would change a :last-child neighbour is reported, not measured as a false double line",
     async () => {
       const page = await open(

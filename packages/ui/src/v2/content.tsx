@@ -126,6 +126,16 @@ export const Inline = (props: InlineProps) => (
   </div>
 );
 
+/** After a run of the signs that join the parts of a technical value (a URL, a path, a list of names). */
+const signRun = /(?<=[/.?&=#:,;_@+-])(?=[^/.?&=#:,;_@+-])/;
+/**
+ * A technical value read sign by sign (a URL, a token, an ID): it may break after each run of signs, so a redirect
+ * address breaks between its parts and never inside a word; a part longer than its line still breaks within it (the
+ * CSS `overflow-wrap: anywhere`). Other content stays as it is.
+ */
+const signBreaks = (value: JSX.Element): JSX.Element =>
+  typeof value === "string" ? value.split(signRun).flatMap((part, index) => (index === 0 ? [part] : [<wbr />, part])) : value;
+
 // ── Facts ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type Fact = {
@@ -138,8 +148,8 @@ export type Fact = {
   /** Offers a copy button at the value; the text that is copied. */
   copy?: string;
   /**
-   * A value to be read sign by sign, such as a token, a key or an ID: monospace, it breaks at any sign instead of
-   * mid-word, and one click selects all of it for copying.
+   * A value to be read sign by sign, such as a token, a key, an ID or a redirect address: monospace, it breaks after
+   * its signs (`/`, `.`, `?`, `=` …) instead of mid-word, and one click selects all of it for copying.
    */
   mono?: boolean;
 };
@@ -176,7 +186,7 @@ export const Facts = (props: FactsProps) => {
             <dd>
               <span class="k2-fact-value" data-mono={item.mono ? "" : undefined}>
                 <Show when={!props.loading} fallback={<PlaceholderValue>{item.value}</PlaceholderValue>}>
-                  {item.value}
+                  {item.mono ? signBreaks(item.value) : item.value}
                 </Show>
                 <Show when={item.hint}>
                   <small>{item.hint}</small>
@@ -482,6 +492,11 @@ export type Column<T> = {
   width?: { min: number; default: number };
   /** A text column that may wrap to at most three lines; the row grows, every other cell stays on its first line. */
   wrap?: boolean;
+  /**
+   * Technical values read sign by sign, such as IDs, keys or redirect addresses: monospace at the row's height, cut
+   * with "…" in a table with column widths and broken after their signs where the cell wraps, like `Facts` `mono`.
+   */
+  mono?: boolean;
   /** Drops away on the phone (rule 7: columns drop, they do not shrink). */
   drop?: boolean;
   /**
@@ -671,21 +686,27 @@ export const Table = <T,>(props: TableProps<T>) => {
   const cell = (column: Column<T>, value: CellValue, target?: OpenTarget) => {
     // Every line of a cell is a block of its own: cut with "…" in a sized table, wrapped in a small one.
     const line = (content: JSX.Element, second = false) => (
-      <span class="k2-cell-line" data-wrap={!second && column.wrap ? "" : undefined} data-second={second ? "" : undefined}>
+      <span
+        class="k2-cell-line"
+        data-wrap={!second && column.wrap ? "" : undefined}
+        data-second={second ? "" : undefined}
+        data-mono={column.mono ? "" : undefined}
+      >
         {content}
       </span>
     );
+    const text = (content: JSX.Element) => (column.mono ? signBreaks(content) : content);
     const first = (content: JSX.Element) =>
       line(
         target ? (
           <RowOpen href={target.href} onNavigate={target.onNavigate} onOpen={target.onOpen}>
-            {content}
+            {text(content)}
           </RowOpen>
         ) : (
-          content
+          text(content)
         ),
       );
-    return isPair(value) ? [first(value.lines[0]), line(value.lines[1], true)] : first(value);
+    return isPair(value) ? [first(value.lines[0]), line(text(value.lines[1]), true)] : first(value);
   };
 
   const table = () => (

@@ -103,7 +103,8 @@ fields. A message in a thread is one `Band`.
 
 ### Cells and Cells.Cell
 
-2–4 equal cells with a line between; stacked on the phone. A cell:
+2–4 equal cells with a line between; two in a row in a narrow pane (the
+phone), a last one alone across its row, never one per row. A cell:
 `icon`, `color` (data colour of its area), `label`, `value`, `meta`,
 `href` (adds a chevron), `loading` (a bar lies on value and `meta`;
 what is there keeps its room unseen under it, a value not there yet is one
@@ -193,7 +194,9 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
 never widens it, a grip in the head that a drag or the keys move), `wrap` (one text column may take 3
-lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
+lines), `mono` (technical values such as IDs, fingerprints or redirect
+addresses: monospace at the row's height, cut with "…", broken after their
+signs where the cell wraps), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
 `href` stays in the address there; offer another order on the phone in the
@@ -227,8 +230,9 @@ per row; the label column is as wide as the longest label of that list
 (80–160 px), so two `Facts` lists may start their values at different
 edges.
 `copy` adds a copy button with that text; `mono` shows a value read sign by
-sign (a token, a key, an ID) in monospace, broken at any sign and selected
-whole by one click. `inline` puts all on one
+sign (a token, a key, an ID, a redirect address) in monospace, broken after
+its signs (`/`, `.`, `?`, `=` …), never inside a word, and selected whole by
+one click. `inline` puts all on one
 line with `end` (such as a print button). `loading` while the values are on
 their way: labels, hints and copy buttons (not yet usable) stay, and a
 quiet bar lies on each value. A value that is there (a refresh) keeps its

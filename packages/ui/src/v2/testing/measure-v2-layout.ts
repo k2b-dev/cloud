@@ -4,7 +4,9 @@
  *
  * - **edge:** a horizontal hairline or a tinted band reaches both edges of its column (within 1.5 px). A column edge
  *   is a vertical hairline, an element matched by `columns`, or the edge of `root`.
- * - **double:** no two parallel lines lie at most 1 px apart over more than 1 px of length, also across components.
+ * - **double:** no two parallel lines lie at most 1 px apart over more than 1 px of length, also across components;
+ *   and no two horizontal dividers lie less than 12 px apart over 160 px or more (a last row's line above the line of
+ *   its section): nothing fits between them, so they read as one doubled line.
  * - **type:** every run of text is set in a type role: 12, 13, 14 or 18 px on a 16, 20 or 24 px line, in 400, 500 or
  *   600. Reading text (`prose`) may also use 16 px and a 22 px line.
  * - **grip:** the pill of every grip is centred on its 1 px line within ±0.25 CSS px, measured in the DOM and again
@@ -475,11 +477,23 @@ function measureInPage(options: InPage): DomResult {
       return !!table && table === b.closest("table") && getComputedStyle(table).borderCollapse === "collapse";
     };
     const double: string[] = [];
-    for (const list of [hairlines(horizontal), hairlines(vertical)]) {
+    const horizontalLines = hairlines(horizontal);
+    for (const list of [horizontalLines, hairlines(vertical)]) {
       list.sort((a, b) => a.across0 - b.across0);
       for (const [index, a] of list.entries())
         for (const b of list.slice(index + 1)) {
-          if (b.across0 - a.across1 > 1) break;
+          const gap = b.across0 - a.across1;
+          if (list === horizontalLines ? gap >= 12 : gap > 1) break;
+          if (gap > 1) {
+            // two dividers a few px apart: lines between parts, never the frame of a control or a box
+            if (a.element === b.element || a.boxed || b.boxed || list !== horizontalLines) continue;
+            const along = Math.min(a.along1, b.along1) - Math.max(a.along0, b.along0);
+            if (along >= 160)
+              double.push(
+                `double line: ${name(a.element)} ${a.how} and ${name(b.element)} ${b.how} ${round(gap)} px apart at ${round(a.across0)} px over ${round(along)} px`,
+              );
+            continue;
+          }
           if (a.element === b.element || a.round || b.round || collapsedPair(a.element, b.element)) continue;
           const shared = Math.min(a.along1, b.along1) - Math.max(a.along0, b.along0);
           if (shared > 1)
