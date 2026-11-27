@@ -97,8 +97,10 @@ const toolColumn = { min: 320, default: 400 };
  * at a fixed width; a converter (hash, encoding) takes what goes in at a fixed width on the left and shows the result
  * beside it. On the phone the two stand one under the other in this order: the result first for a generator.
  *
- * k2b-ui gap: a block of two columns that ends with its content. `Pane.Split` runs both columns and their seam to
- * the end of the page, so under a short result the column stays white to the bottom; the parts are made dense instead.
+ * k2b-ui gap: waits #4360 (`Section.Columns`): two sections side by side in one pane that end with their content,
+ * without a line between them. `Pane.Split` runs both columns and their seam to the end of the page, so under a short
+ * result the column stays white. When #4360 lands, this becomes one `Pane` with `<Section.Columns>` holding the
+ * result and the options (each a `Section`), in this order, so the phone keeps the result first.
  */
 export const ToolPanes = (props: {
   kind: "generator" | "converter";
