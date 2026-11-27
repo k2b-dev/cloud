@@ -1158,6 +1158,13 @@
   font: var(--k2-t-body);
   font-weight: 600;
 }
+/* a name that opens (a link, or a button with `onOpen`) is cut with "…" like a plain one: a button would cut hard */
+.k2-ui .k2-tile-title > .k2-row-open {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .k2-ui .k2-tile-top > .k2-tile-name > .k2-tile-title > .k2-row-open::after,
 .k2-ui .k2-tile-name > .k2-tile-title > .k2-row-open::after {
   border-radius: var(--k2-r-control);

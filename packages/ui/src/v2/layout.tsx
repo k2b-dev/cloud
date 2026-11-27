@@ -932,6 +932,11 @@ export type Tile = {
   href?: string;
   /** … in place on a plain click (see `OnNavigate`). */
   onNavigate?: OnNavigate;
+  /**
+   * Without `href`: the deed of the whole tile, such as opening the dialog that makes a notebook from a template. The
+   * tile's name is then a button, and the whole tile presses it.
+   */
+  onOpen?: () => void;
   /** The data colour of the thing: its symbol becomes its mark on a tint of this colour. */
   color?: string;
   /** Cards only: figures and states under the name, such as tables, forms and "8 knapp". */
@@ -1040,7 +1045,7 @@ export type TilesProps = {
 const TileName = (props: { tile: Tile }) => (
   <span class="k2-tile-name">
     <span class="k2-tile-title">
-      <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate}>
+      <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate} onOpen={props.tile.onOpen}>
         {props.tile.title}
       </RowOpen>
     </span>
@@ -1054,7 +1059,7 @@ const TileCard = (props: { tile: Tile }) => (
   <div
     class="k2-tile"
     role="listitem"
-    data-open={props.tile.href !== undefined ? "" : undefined}
+    data-open={props.tile.href !== undefined || props.tile.onOpen ? "" : undefined}
     data-preview={props.tile.preview ? "" : undefined}
     style={custom({ "--k2-c": props.tile.color })}
   >
@@ -1139,7 +1144,7 @@ export const Tiles = (props: TilesProps) => (
       fallback={
         <For each={props.items}>
           {(tile) => (
-            <div class="k2-tile" role="listitem" data-open={tile.href !== undefined ? "" : undefined}>
+            <div class="k2-tile" role="listitem" data-open={tile.href !== undefined || tile.onOpen ? "" : undefined}>
               <Show when={tile.color} fallback={<Icon name={tile.icon} />}>
                 {(color) => <Mark icon={tile.icon} color={color()} />}
               </Show>
