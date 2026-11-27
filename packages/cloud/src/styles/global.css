@@ -55,6 +55,7 @@
 @import "./profile-picture.css";
 @import "./panel.css";
 @import "./privacy-screen.css";
+@import "./v2-rail.css";
 
 @theme {
   --color-dark: rgb(9 9 11);

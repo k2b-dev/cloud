@@ -3,8 +3,9 @@ import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { Row } from "./content";
 import { linkOr } from "./link";
-import { Icon } from "./marks";
+import { custom, Icon } from "./marks";
 import { Dialog } from "./overlays";
+import { Popover } from "./popover";
 import type { OnNavigate } from "./types";
 
 // ── Unread ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -81,7 +82,7 @@ const TabLink = (props: { item: TabBarItem }) => (
  * The navigation of an app on the phone, at the bottom edge: a symbol and its words per place, the open one in the
  * app's colour, a count that calls for attention as a filled figure on its symbol. It takes the bottom safe area into
  * its own height. With more than five places, "More" opens a sheet with the others; while one of them is the open
- * place, "More" is the current one. From 768 px it leaves, and the app's `Nav` takes its place. Its height is known to
+ * place, "More" is the current one. From 768 px it leaves, and the app's `Nav` or `Rail` takes its place. Its height is known to
  * the stylesheet (the head's height, its line and the safe area), so a `NoticeStack` on the page stands above it from the
  * server's page on.
  */
@@ -138,6 +139,76 @@ export const TabBar = (props: TabBarProps) => {
     </nav>
   );
 };
+
+// ── Rail ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+export type RailItem = TabBarItem & {
+  /**
+   * The colour of its symbol at rest in each theme, such as its app's colour, which the platform derives to read on the
+   * canvas. Without it the symbol takes the rail's quiet ink.
+   */
+  tone?: { light: string; dark: string };
+};
+
+export type RailProps = {
+  /** The name of the rail for assistive technology, such as the installation's name. */
+  label: string;
+  /** The installation's logo at the top. */
+  logo?: string;
+  /** Every place of the app, in order; with more than fit, they scroll between the logo and the foot. */
+  items: readonly RailItem[];
+  /** Places at the foot, such as Settings; they always stay in view. */
+  foot?: readonly RailItem[];
+};
+
+const RailLink = (props: { item: RailItem }) => (
+  <Popover tip={props.item.label} side="right">
+    <Dynamic
+      component={linkOr(props.item.href, "a")}
+      href={props.item.href}
+      onNavigate={props.item.onNavigate}
+      class="k2-rail-item"
+      data-k2-part="Rail.Item"
+      aria-current={props.item.current ? "page" : undefined}
+      style={
+        props.item.tone ? custom({ "--k2-rail-tone-light": props.item.tone.light, "--k2-rail-tone-dark": props.item.tone.dark }) : undefined
+      }
+    >
+      <Icon name={props.item.icon} />
+      <span class="k2-hidden-text">{props.item.label}</span>
+      <Unread count={props.item.unread} />
+    </Dynamic>
+  </Popover>
+);
+
+/**
+ * The navigation of an app from 768 px, on the canvas beside its page, in the measures of Cloud's app bar: a column of
+ * 56 px with the logo at the top, one symbol of 20 px per place as a target of 44 px, the open one filled, a count that
+ * calls for attention on the symbol's corner, and the places of the foot at the bottom, always in view while the
+ * places above them scroll. Each place is a link in the tab order; its name names it for assistive technology and
+ * shows as a hint to its right. Below 768 px it leaves, and the `TabBar` takes its place with the same places.
+ * The platform may set its colours (`--k2-rail-ink`, `--k2-rail-hover`, `--k2-rail-current`, `--k2-rail-current-ink`,
+ * `--k2-rail-unread`); without them the rail takes v2's quiet ink and the app's tint.
+ */
+export const Rail = (props: RailProps) => (
+  <nav class="k2-rail" data-k2-part="Rail" aria-label={props.label}>
+    <Show when={props.logo}>
+      {(logo) => (
+        <div class="k2-rail-logo">
+          <img src={logo()} alt="" />
+        </div>
+      )}
+    </Show>
+    <div class="k2-rail-scroll">
+      <For each={props.items}>{(item) => <RailLink item={item} />}</For>
+    </div>
+    <Show when={props.foot?.length}>
+      <div class="k2-rail-foot">
+        <For each={props.foot}>{(item) => <RailLink item={item} />}</For>
+      </div>
+    </Show>
+  </nav>
+);
 
 // ── NoticeStack ──────────────────────────────────────────────────────────────────────────────────────────────────
 

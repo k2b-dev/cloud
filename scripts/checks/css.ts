@@ -27,6 +27,7 @@ const canonicalSharedStylesheetImports: readonly string[] = [
   "profile-picture.css",
   "panel.css",
   "privacy-screen.css",
+  "v2-rail.css",
 ];
 
 const withoutCssComments = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, "");

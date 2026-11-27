@@ -12,7 +12,16 @@
 
 // The page's language, as in the rest of @k2b/ui, without the v1 entry: a v2 island imports it from here.
 export { useLocale } from "../intl/locale";
-export { NoticeStack, type NoticeStackProps, TabBar, type TabBarItem, type TabBarProps } from "./app-frame";
+export {
+  NoticeStack,
+  type NoticeStackProps,
+  Rail,
+  type RailItem,
+  type RailProps,
+  TabBar,
+  type TabBarItem,
+  type TabBarProps,
+} from "./app-frame";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {

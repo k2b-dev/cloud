@@ -1,0 +1,21 @@
+/* A v2 `Rail` in Cloud is Cloud's app bar: the open place in the app's selected fill and ink, the bar's quiet ink and
+   hover, counts in the action colour, each theme's own. The value beside each name is tokens.css's default, for a v2
+   page without Cloud's tokens (Core's v2.css); rail.browser.test.ts compares the rail with the shell's at 1440 px. */
+.k2-ui {
+  --k2-rail-ink: var(--ui-text-dimmed, #55555e);
+  --k2-rail-hover: var(--ui-hover, rgb(239 240 239 / 0.9));
+  --k2-rail-current: var(--app-selected-nav-light, #eaf2ff);
+  --k2-rail-current-ink: var(--app-ink-light, #2469d4);
+  --k2-rail-unread: var(--k2b-action-solid, #1d4ed8);
+}
+
+/* v2's three ways into its dark theme (see v2.css) */
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui),
+.k2-ui.dark,
+.k2-ui[data-theme="dark"] {
+  --k2-rail-ink: var(--ui-text-dimmed, #a8a8b2);
+  --k2-rail-hover: var(--ui-hover, #252c35);
+  --k2-rail-current: var(--app-selected-nav-dark, #152742);
+  --k2-rail-current-ink: var(--app-ink-dark, #589aff);
+  --k2-rail-unread: var(--k2b-action-solid, #2563eb);
+}
