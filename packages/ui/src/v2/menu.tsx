@@ -1,4 +1,18 @@
-import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
+import {
+  type Accessor,
+  createContext,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  type JSX,
+  onCleanup,
+  onMount,
+  children as resolveChildren,
+  Show,
+  untrack,
+  useContext,
+} from "solid-js";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
@@ -140,7 +154,9 @@ const Entries = (props: { level: MenuLevelParts; entries: readonly MenuEntry[]; 
           ? `separator:${index}`
           : isSection(entry)
             ? `${entry.choice === undefined ? "section" : "choice"}:${entry.title}`
-            : `${kindOf(entry)}:${entry.label}`;
+            : // the behaviour layer reads `disabled` once, when the entry comes: an entry that turns (un)usable while
+              // the menu is open comes anew
+              `${kindOf(entry)}:${entry.label}${entry.disabled ? ":off" : ""}`;
       const count = seen.get(base) ?? 0;
       seen.set(base, count + 1);
       return { key: count ? `${base}#${count}` : base, entry };
@@ -333,6 +349,16 @@ const MenuRoot = (props: MenuProps) => {
   const iconOnly = () => words() === undefined;
   const name = () => props.label ?? t().moreActions;
   let trigger: HTMLElement | undefined;
+  // The "…" at the end of a bar takes the buttons the bar has no room for, as its first section (see `Bar`), so no
+  // second "…" stands beside it. Only a menu without words offers itself.
+  const fold = useContext(BarFold);
+  onMount(() => {
+    if (fold && trigger && iconOnly()) onCleanup(fold.offer(trigger));
+  });
+  const items = (): readonly MenuEntry[] => {
+    const folded = fold && trigger && fold.host() === trigger ? fold.entries() : [];
+    return folded.length ? [...folded, "separator", ...props.items] : props.items;
+  };
   const [align, setAlign] = createSignal<"start" | "end">("end");
   const level = useMenuLevels(() => ({
     onOpenChange: (open: boolean) => {
@@ -359,17 +385,34 @@ const MenuRoot = (props: MenuProps) => {
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
       </level.Trigger>
       <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
-        <Entries level={level} entries={props.items} />
+        <Entries level={level} entries={items()} />
       </level.Popup>
     </>
   );
 };
 
 /**
+ * What a `Bar` hands the menus of its end: the menu that takes its folded buttons (`host`), those buttons as entries,
+ * and the offer of an icon-only menu to take them. Internal to `Bar` and `Menu`.
+ */
+export type BarFoldHost = {
+  offer: (trigger: HTMLElement) => () => void;
+  host: Accessor<HTMLElement | undefined>;
+  entries: Accessor<readonly MenuItem[]>;
+};
+export const BarFold = createContext<BarFoldHost | undefined>();
+
+/**
  * A tab that opens a menu of further views (internal to `Tabs`): it looks like a tab, with the chevron after its
  * words, and is the menu's button, so Enter, Space and the arrow down open it and Escape brings the focus back.
  */
-export const MenuTab = (props: { items: readonly MenuEntry[]; current?: boolean; children: JSX.Element }) => {
+export const MenuTab = (props: {
+  items: readonly MenuEntry[];
+  current?: boolean;
+  /** The "Mehr" that `Tabs` adds for the tabs without room (`data-k2-more`). */
+  more?: boolean;
+  children: JSX.Element;
+}) => {
   let trigger: HTMLElement | undefined;
   const [align, setAlign] = createSignal<"start" | "end">("start");
   const level = useMenuLevels(() => ({
@@ -385,6 +428,7 @@ export const MenuTab = (props: { items: readonly MenuEntry[]; current?: boolean;
         }}
         class="k2-tab"
         data-menu=""
+        data-k2-more={props.more ? "" : undefined}
         aria-current={props.current ? "page" : undefined}
       >
         {props.children}

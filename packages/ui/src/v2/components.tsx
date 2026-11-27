@@ -402,7 +402,8 @@ export const Tabs = (props: TabsProps) => {
         )}
       </Index>
       <Show when={withMenu().length === 0 && more().length > 0}>
-        <MenuTab items={more()} current={hidden().some((tab) => tab.current)}>
+        {/* marked, so a bar that measures its start's whole width leaves it out (see `Bar`) */}
+        <MenuTab items={more()} current={hidden().some((tab) => tab.current)} more>
           <TabFace tab={{ label: t().more, count: `+${more().length}` }} />
         </MenuTab>
       </Show>

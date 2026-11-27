@@ -577,7 +577,13 @@ function measureInPage(options: InPage): DomResult {
       const clip = hardClipX(control);
       for (const r of textBoxes(control, (node) => shortened.some((part) => part.contains(node))))
         if (r.left < Math.max(box.left, clip.left) - 0.5 || r.right > Math.min(box.right, clip.right) + 0.5) clipped = true;
-      if (clipped) cut.push(`control ${name(control)} cuts its label "${labelOf(control)}"; it needs the room of its whole label`);
+      // A button the end of a bar cuts before the page is alive folds into its "…" once the bar measures (`Bar`): on the
+      // server's page the end cuts what it has no room for, from its start, so the primary at its end stays whole.
+      const folds =
+        control.closest('.k2-bar[data-k2-part="Bar"]:not([data-k2-fitted]) > .k2-bar-end') !== null &&
+        control.matches('.k2-btn:not([data-variant="primary"], [data-floats], [data-closes], [aria-haspopup], [popover])');
+      if (clipped && !folds)
+        cut.push(`control ${name(control)} cuts its label "${labelOf(control)}"; it needs the room of its whole label`);
     }
     // A box of text that clips (overflow hidden or clip, not a scroller) shows every line of it whole and cuts a line at
     // its end only with "…". Only boxes of text count: text of their own or inline children. A control's label is

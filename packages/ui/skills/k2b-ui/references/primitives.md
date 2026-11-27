@@ -95,14 +95,17 @@ column narrower than 480 px, a bar inside a pane whose `start` is an
 40 px, and only a second line makes the bar higher; a bar in `status` too.
 A head and a status row keep their height.
 
-Where the `end` does not fit beside the whole `start` (six kept actions
-beside tabs on the phone), its buttons that do not fit move into a menu
-"…" at its end, in their order, the last first. The primary action, a
-`Menu`, a search and a button that opens a menu never fold. Only when
-nothing more can fold does the `start` give way: its text and buttons
-shorten with "…". The browser measures this once the page is alive; a
-bar that fits is never changed. Do not build a second "…" by hand for
-the same actions.
+The `start` keeps a least: its name at 120 px (or all of it, where it is
+narrower), or its open tab. Where the `end` does not fit beside the whole
+`start` (six kept actions beside tabs on the phone), the end folds first:
+its buttons that do not fit move into a menu "…" at its end, in their
+order, the last first. If the end ends with an icon-only `Menu`, they are
+its first section; no second "…" stands beside it. The primary action, a
+closing ×, a `Menu`, a search and a button that opens a menu never fold.
+Only when nothing more can fold does the `start` shorten with "…", down
+to its least, never to nothing. The browser measures the fold once the
+page is alive; before that the start keeps its least and the end cuts,
+so at load only buttons turn into "…". A bar that fits never changes.
 
 ### Band
 

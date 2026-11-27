@@ -652,37 +652,64 @@
   flex: 0 1 auto;
   min-width: 0;
 }
-/* the start gives way to its last pixel: a button in it ("1.000 Kommentare") shortens its words with "…" too */
-.k2-ui .k2-bar-start > .k2-btn {
+.k2-ui .k2-bar-end {
+  margin-left: auto;
+  gap: 8px;
+}
+/* ── The fold of a `Bar` (bar-fold.ts) ──
+   The start of a Bar keeps a least: 120 px of its name (or less, where its whole content is narrower), or its open
+   tab; it gives way down to that and never to nothing. `width` gives the least (the flex minimum is the smaller of it
+   and the start's content), `flex-basis: content` its whole width. A button in it ("1.000 Kommentare") shortens its
+   words with "…" too. */
+.k2-ui .k2-bar[data-k2-part="Bar"] > .k2-bar-start {
+  flex: 0 1 content;
+  width: 120px;
+  min-width: auto;
+}
+.k2-ui .k2-bar[data-k2-part="Bar"] > .k2-bar-start > .k2-btn {
   flex: 0 1 auto;
   min-width: 0;
 }
-.k2-ui .k2-bar-start > .k2-btn > .k2-btn-label {
+.k2-ui .k2-bar[data-k2-part="Bar"] > .k2-bar-start > .k2-btn > .k2-btn-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The end keeps its controls whole: what does not fit beside the least the start can give way to folds into "…"
-   (Bar). While the bar is measured, the end stands at its whole width, the folded controls too, and the start at that
-   least: words and buttons count nothing (they shorten with "…"), tabs their open tab. */
-.k2-ui .k2-bar-end {
-  margin-left: auto;
-  gap: 8px;
-  flex-shrink: 0;
+/* The end folds first: the buttons that do not fit beside the whole start go into "…". Before the page is alive (no
+   `data-k2-fitted`) the start keeps its whole width, up to the bar's (not a fraction less, which would hide a tab),
+   and the end cuts what it has no room for from its start, so its primary at the end stays whole: at load only
+   buttons turn into "…". Once measured, the start gives way first, down to its least, and the end cuts only what no
+   fold could take. 4 px inside the cut keep the rings of its buttons. */
+.k2-ui .k2-bar[data-k2-part="Bar"] > .k2-bar-end {
+  margin-right: -4px;
+  padding-inline: 4px;
+  overflow: clip;
 }
-.k2-ui .k2-bar:not([data-k2-measuring]) > .k2-bar-end [data-k2-folded] {
+.k2-ui .k2-bar[data-k2-part="Bar"]:not([data-k2-fitted]) > .k2-bar-start {
+  flex-shrink: 0;
+  max-width: 100%;
+}
+.k2-ui .k2-bar[data-k2-part="Bar"]:not([data-k2-fitted]) > .k2-bar-end {
+  justify-content: flex-end;
+}
+.k2-ui .k2-bar[data-k2-fitted] > .k2-bar-end {
+  flex-shrink: 0.001;
+}
+.k2-ui .k2-bar:not([data-k2-measuring]) > .k2-bar-end > [data-k2-folded] {
   display: none;
 }
-.k2-ui .k2-bar[data-k2-measuring] > .k2-bar-end,
-.k2-ui .k2-bar[data-k2-measuring] > .k2-bar-end > * {
+/* while the bar is measured, every part stands at its whole width, the folded buttons too */
+.k2-ui .k2-bar[data-k2-measuring] > :is(.k2-bar-start, .k2-bar-end),
+.k2-ui .k2-bar[data-k2-measuring] > :is(.k2-bar-start, .k2-bar-end) > * {
   flex: none;
 }
-.k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start {
-  flex: none;
-  width: min-content;
+.k2-ui .k2-bar[data-k2-part="Bar"][data-k2-measuring] > .k2-bar-start {
+  width: max-content;
+  max-width: none;
 }
-.k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > :is(.k2-text, .k2-inline, .k2-btn) {
+/* the whole start is every tab, not the "Mehr" that holds the tabs without room */
+.k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-tabs-nav > .k2-tab[data-k2-more] {
   display: none;
 }
 .k2-ui .k2-bar-fold {
@@ -2781,10 +2808,6 @@
    the open tab still stands on it. */
 .k2-ui .k2-bar-start > .k2-tabs-nav {
   flex: 0 1 auto;
-}
-/* the actions beside tabs keep their room; the tabs give way, whole tab by whole tab */
-.k2-ui .k2-bar:has(> .k2-bar-start > .k2-tabs-nav) > .k2-bar-end {
-  flex: none;
 }
 .k2-ui .k2-tabs-nav {
   display: flex;
