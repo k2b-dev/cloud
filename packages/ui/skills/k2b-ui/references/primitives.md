@@ -597,8 +597,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   stands at the end and its `count` counts its own entries. A tab is never
   cut: one without room hides whole and joins that menu (and its count),
   opening from there as it does as a tab; without a menu tab a tab "Mehr"
-  holds them. Known: while tabs hide, a gap of less than one tab may stand
-  before the menu tab.
+  holds them. A tab that holds the focus and hides hands it to the menu tab,
+  and a "Mehr" that goes hands it to the last tab. Known: while tabs hide, a
+  gap of less than one tab may stand before the menu tab.
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"; cut with "…"
   first where it does not fit, its whole words as a hint on hover),
   `loading` (results
@@ -747,7 +748,9 @@ status row above it never move.
 
 - `Empty`: `icon`, `text` (one sentence that says what is the matter: "Noch
   keine Einlieferung." is not "Keine Treffer mit diesem Filter."), `action`
-  (the one way out).
+  (the one way out), `tone` (`bad` or `warn` for a place empty because
+  something went wrong or waits and cannot be retried there, such as an error
+  page; data to load again is `Failed`).
 - `Loading`: `rows` (3 when not set; give as many as usually come),
   `lines` (1, 2 or 3, as the rows that will come). It stands where the
   `List` will stand; a `Table` takes `loading` itself.

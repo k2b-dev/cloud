@@ -14,6 +14,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Pane, Tiles, Workspace } = await import("./layout");
 const { Input } = await import("./controls");
 const { List, Row, Text } = await import("./content");
+const { Empty } = await import("./states");
 const { Heat } = await import("./heat");
 
 const split = (more: JSX.Element) =>
@@ -128,6 +129,20 @@ test("a text field sends autocomplete, length, keyboard, spelling and capitals i
   expect(renderToString(() => createComponent(Input, { label: "Suche" }))).not.toMatch(
     /autocomplete|maxlength|inputmode|spellcheck|autocapitalize/,
   );
+});
+
+test("an empty state that went wrong carries its tone on its sign; a plain one stays neutral", () => {
+  const sign = (markup: string) => markup.match(/<span class="k2-sign"[^>]*>/)?.[0] ?? "";
+  const failed = renderToString(() =>
+    createComponent(Empty, { icon: "alert-triangle", text: "Die Seite konnte nicht geöffnet werden.", tone: "bad" }),
+  );
+  expect(sign(failed)).toContain('data-tone="bad"');
+  const waiting = renderToString(() => createComponent(Empty, { icon: "clock", text: "Der Dienst startet gerade.", tone: "warn" }));
+  expect(sign(waiting)).toContain('data-tone="warn"');
+  // without a tone nothing is guessed, and no retry appears: it is not `Failed`
+  const plain = renderToString(() => createComponent(Empty, { icon: "inbox", text: "Noch keine Einlieferung." }));
+  expect(sign(plain)).not.toContain("data-tone");
+  expect(failed).not.toContain("refresh");
 });
 
 // A note's outline comes from the server already at its levels, heard as such before any script runs.
