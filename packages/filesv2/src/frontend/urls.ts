@@ -60,8 +60,11 @@ export const screenViewOf = (params: URLSearchParams, storageCount: number): Scr
 const WHEN: readonly ActivityWhen[] = ["today", "7", "30", "365"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The Activity address: `base`, `path`, `scope`, `who`, `what`, `when` and `q` keep the filters across reload, back and links. */
-export function activityUrl(filters: ActivityFilters = {}) {
+/**
+ * The Activity address: `base`, `path`, `scope`, `who`, `what`, `when` and `q` keep the filters across reload, back and
+ * links; `run` opens the run of one entry beside the list, so its details also survive reload, back and links.
+ */
+export function activityUrl(filters: ActivityFilters = {}, run?: string | null) {
   const query = new URLSearchParams({ view: "activity" });
   if (filters.baseId) query.set("base", filters.baseId);
   if (filters.baseId && filters.path !== undefined) {
@@ -72,7 +75,15 @@ export function activityUrl(filters: ActivityFilters = {}) {
   if (filters.action) query.set("what", filters.action);
   if (filters.when) query.set("when", filters.when);
   if (filters.q) query.set("q", filters.q);
+  if (run) query.set("run", run);
   return `/app/filesv2?${query}`;
+}
+
+/** The entry whose run Activity shows beside its list: `undefined` without one, `null` for a value that is no entry ID. */
+export function parseActivityRun(params: URLSearchParams): string | null | undefined {
+  const run = params.get("run");
+  if (run === null) return undefined;
+  return UUID.test(run) ? run.toLowerCase() : null;
 }
 
 /**

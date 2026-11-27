@@ -1,12 +1,12 @@
 import { useLocale } from "@k2b/ui";
-import { Chip, Empty, Failed, List, Notice, type OnNavigate, Pane, Row, Section, Tiles } from "@k2b/ui/v2";
+import { Empty, Failed, List, Notice, type OnNavigate, Pane, Row, Section, Tiles } from "@k2b/ui/v2";
 import { createMemo, createSignal, Show } from "solid-js";
 import type { ActivityPage } from "../activity-contracts";
 import type { BaseSummary, BasesResult, MarkedEntry } from "../contracts";
 import { type ActivityListLine, activityDays, activityListLines } from "./activity-lines";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
-import { entryMark, FILES_COLOR, storageMark } from "./entry-mark";
+import { entryMark, FILES_COLOR } from "./entry-mark";
 import { favoriteHref } from "./FavoritesPane";
 import { favoritePlace } from "./favorite-place";
 import { issueText } from "./feedback";
@@ -14,7 +14,7 @@ import { formatWhen, type HistoryEnvironment, historyRows, runDestination } from
 import { useHistoryMessages } from "./history-messages";
 import { ActivityLineRow } from "./history-v2";
 import { useFilesMessages } from "./messages";
-import { activityUrl, filesUrl } from "./urls";
+import { activityUrl } from "./urls";
 
 /** The overview shows this many favorites; the page lists all of them. */
 export const FAVORITES_PREVIEW = 6;
@@ -76,38 +76,45 @@ export default function OverviewPane(props: {
   });
 
   return (
-    // Two columns: the storages and favorites, and beside them what this person did last; on the phone one under the other.
+    // "Fewer but better" (Valentin 27.11.): the storages stand in the sidebar, so the overview does not list them again.
+    // It leads with what this person did last; beside it their favorites and what they opened. On the phone one under
+    // the other.
     <Pane.Split>
-      {/* no statement row: "Heute 5 Änderungen von dir" gave nothing to act on (Valentin 26.11.); a storage that is
-          not there says so with its own chip */}
-      <Pane label={b().allStorage} scrollKey="filesv2-overview">
+      <Pane label={b().recentByYou} scrollKey="filesv2-overview">
         {props.issues.map((issue) => (
           <Notice tone="warn" title={t()[issue.area]}>
-            {/* an area that could not be read has no storage of its own in the list: the notice speaks of the area,
-                not of "the storage", so it never seems to mean a storage the list shows */}
+            {/* an area that could not be read has no storage of its own: the notice speaks of the area */}
             {issueText(t(), issue.code, b().v2AreaUnread({ area: t()[issue.area] }))}
           </Notice>
         ))}
-        {/* The storages, compact: the page's job (below 970 px the sidebar is a drawer). One line each with its kind;
-            a storage that is not there says so. The dense table with usage, people and last change follows with its data. */}
-        <Section icon="folders" color={FILES_COLOR} title={t().storage} count={props.bases.length}>
-          <List
-            label={b().allStorage}
-            items={props.bases}
-            rowKey={(base) => base.id}
-            row={(base) => (
-              <Row
-                mark={storageMark(base)}
-                lines={[baseLabel(base, b(), locale())]}
-                // a storage is a group's as a rule; only the personal one says so
-                meta={base.kind === "users" ? b().onlyYou : undefined}
-                href={filesUrl(base.id)}
-                onNavigate={props.onNavigate}
-                end={base.status !== "existing" ? <Chip status="warn">{t()[base.status]}</Chip> : undefined}
+        {/* a storage that is not there says so here, as the list of storages did */}
+        {props.bases
+          .filter((base) => base.status !== "existing")
+          .map((base) => (
+            <Notice tone="warn" title={baseLabel(base, b(), locale())}>
+              {t()[base.status]}
+            </Notice>
+          ))}
+        <Section
+          icon="history"
+          color={FILES_COLOR}
+          title={b().recentByYou}
+          more={{ label: b().showAllActivity, href: activityUrl({ actor: "me" }), onNavigate: props.onNavigate }}
+        >
+          <Show when={props.recent} fallback={<Failed text={b().recentFailed} onRetry={props.onRetry} />}>
+            <Show when={recent().length} fallback={<Empty icon="history" text={b().noRecentByYou} />}>
+              <List
+                label={b().recentByYou}
+                items={recent()}
+                rowKey={(item) => item.key}
+                group={(item) => ({ key: item.day.key, label: item.day.label })}
+                row={(item) => <ActivityLineRow item={item} env={props.env} mode="me" notes bases={labels()} onToggle={toggle} />}
               />
-            )}
-          />
+            </Show>
+          </Show>
         </Section>
+      </Pane>
+      <Pane label={b().favorites} side width={{ min: 320, default: 400 }} scrollKey="filesv2-overview-marks">
         <Section
           icon="star"
           color="#ca8a04"
@@ -137,14 +144,13 @@ export default function OverviewPane(props: {
           </Show>
         </Section>
         <Show when={props.recent?.opened.length}>
-          {/* what this person opened last, as tiles beside the favorites: the way back to the work of the last days */}
+          {/* what this person opened last: the way back to the work of the last days */}
           <Section
             icon="clock"
             color={FILES_COLOR}
             title={b().v2RecentlyOpened}
             count={props.recent!.opened.slice(0, FAVORITES_PREVIEW).length}
           >
-            {/* rows, not tiles: a few files fill the column, and on the phone no tile stands alone in its row */}
             <List label={b().v2RecentlyOpened}>
               {props.recent!.opened.slice(0, FAVORITES_PREVIEW).map((item) => (
                 <Row
@@ -158,26 +164,6 @@ export default function OverviewPane(props: {
             </List>
           </Section>
         </Show>
-      </Pane>
-      <Pane label={b().recentByYou} side width={{ min: 320, default: 400 }} scrollKey="filesv2-overview-recent">
-        <Section
-          icon="history"
-          color={FILES_COLOR}
-          title={b().recentByYou}
-          more={{ label: b().showAllActivity, href: activityUrl({ actor: "me" }), onNavigate: props.onNavigate }}
-        >
-          <Show when={props.recent} fallback={<Failed text={b().recentFailed} onRetry={props.onRetry} />}>
-            <Show when={recent().length} fallback={<Empty icon="history" text={b().noRecentByYou} />}>
-              <List
-                label={b().recentByYou}
-                items={recent()}
-                rowKey={(item) => item.key}
-                group={(item) => ({ key: item.day.key, label: item.day.label })}
-                row={(item) => <ActivityLineRow item={item} env={props.env} mode="me" notes bases={labels()} onToggle={toggle} />}
-              />
-            </Show>
-          </Show>
-        </Section>
       </Pane>
     </Pane.Split>
   );

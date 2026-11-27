@@ -20,9 +20,10 @@ import { activityRequest, itemHistoryRequest, itemHistorySource, movedEntry } fr
 import { filesMessages } from "./messages";
 import { FAVORITES_PREVIEW, RECENT_LINES } from "./OverviewPane";
 import { filesPageScope } from "./page-scope";
+import { readRun } from "./run-read";
 import { searchRequest } from "./search-state";
 import { snapshotTitle } from "./trail";
-import { activityUrl, filesUrl, parseActivityFilters, showsOverview } from "./urls";
+import { activityUrl, filesUrl, parseActivityFilters, parseActivityRun, showsOverview } from "./urls";
 import type { DirectoryView, WorkspaceSnapshot } from "./workspace-state";
 
 /**
@@ -72,11 +73,14 @@ export default ssr<AuthContext>(async (c) => {
   if (view === "recent") return c.redirect(activityUrl({ actor: "me" }));
   const activityFilters = view === "activity" ? parseActivityFilters(new URL(c.req.url).searchParams) : undefined;
   if (activityFilters === null) return ssr.error(c, 400);
+  // the run beside Activity's list; only Activity has one, and an ID that is none is refused like a filter
+  const run = activityFilters ? parseActivityRun(new URL(c.req.url).searchParams) : undefined;
+  if (run === null) return ssr.error(c, 400);
   const trashView = view === "trash";
   const editView = view === "edit" && !!requestedFile;
   const source = new URL(
     activityFilters
-      ? activityUrl(activityFilters)
+      ? activityUrl(activityFilters, run)
       : folderView
         ? `${url.pathname}${url.search}`
         : filesUrl(requestedBase, query.data.path, query.data.after, requestedFile),
@@ -118,13 +122,17 @@ export default ssr<AuthContext>(async (c) => {
     if (activityFilters) {
       // The same request as the client's loader; a failed first page leaves the view to load and report it itself.
       const request = activityRequest(activityFilters, { now, timeZone });
-      [initial.activity, initial.marks] = await Promise.all([
+      [initial.activity, initial.marks, initial.run] = await Promise.all([
         filesService
           .activity(requestCall(c), request)
           .then((page) => ({ filters: activityFilters, page }))
           .catch(() => null),
         // "Me" also lists the files this person opened; without them it still shows the changes.
         activityFilters.actor === "me" ? filesService.recent(requestCall(c)).catch(() => undefined) : undefined,
+        // the open run is in the first picture beside the list; a refusal and a failure each say so in its place
+        run
+          ? readRun(run, () => filesService.activityEntry({ ...requestCall(c), requestAbort: c.req.raw.signal }, { activityId: run }))
+          : undefined,
       ]);
     } else if (view === "shares") initial.shares = await filesService.listShares(requestCall(c)).catch(() => null);
     else if (view === "favorites") initial.marks = await filesService.favorites(requestCall(c));

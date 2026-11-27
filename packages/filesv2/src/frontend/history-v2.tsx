@@ -173,7 +173,8 @@ function moreDeeds(
   actions?: HistoryActions,
 ): MenuEntry[] {
   const run = entry.execution ? env.executionHref?.(entry) : null;
-  return [...(run ? [{ label: h.viewExecution, icon: "player-play", href: run }] : [])];
+  // the run opens in place beside Activity's list, as a row opens a file
+  return [...(run ? [{ label: h.viewExecution, icon: "player-play", href: run, onNavigate: env.onNavigate }] : [])];
 }
 
 /** The lead of an own change whose thing has no mark of its own, and of an own run of changes: one symbol for both. */
@@ -286,8 +287,6 @@ export function ActivityRow(props: ActivityRowProps) {
   const sentenceLine = () => <SentenceText parts={linked()} mark={props.notes ? null : mark()} />;
   // The web is how most changes come; only another channel (the API, an app, the Assistant) is worth a word.
   const channel = () => meta().filter((part) => !(part.kind === "via" && entry().via === "web"));
-  // A row with a deed keeps its end for the deed: the time moves into its quiet line, so the two never overlap.
-  const crowded = () => !!deed() || more().length > 0;
   // the time as a machine reads it too, wherever the row says it
   const stamp = () => <time dateTime={entry().time}>{time()}</time>;
   const facts = () =>
@@ -302,22 +301,11 @@ export function ActivityRow(props: ActivityRowProps) {
       .join(" · ");
   return (
     <Row
-      lines={
-        crowded()
-          ? [
-              sentenceLine(),
-              <>
-                {stamp()}
-                {facts() ? ` · ${facts()}` : ""}
-              </>,
-            ]
-          : facts()
-            ? [sentenceLine(), facts()]
-            : [sentenceLine()]
-      }
+      // the time stays at the end of the row, a deed beside it: a row with a deed is as tall as its neighbours
+      lines={facts() ? [sentenceLine(), facts()] : [sentenceLine()]}
       avatar={props.notes ? undefined : personOf(actor())}
       mark={props.notes ? (mark()?.mark ?? CHANGE_MARK) : undefined}
-      time={crowded() ? undefined : stamp()}
+      time={stamp()}
       href={props.toggle ? undefined : hrefOf(linked())}
       onNavigate={props.env.onNavigate}
       onOpen={props.toggle?.onToggle}
@@ -357,10 +345,8 @@ export function RunRow(props: {
   const own = () => props.mode === "me" && actor().kind === "person";
   return (
     <Row
-      lines={[
-        <SentenceText parts={runSentence(props.rows, h(), props.env, locale())} />,
-        h().changesCount.replace("{count}", String(props.rows.length)),
-      ]}
+      // one line, as the rows around it: the sentence already says how many ("6 Dateien hochgeladen")
+      lines={[<SentenceText parts={runSentence(props.rows, h(), props.env, locale())} />]}
       avatar={own() ? undefined : personOf(actor())}
       mark={own() ? CHANGE_MARK : undefined}
       time={span()}

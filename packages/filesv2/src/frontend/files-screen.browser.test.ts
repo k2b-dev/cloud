@@ -9,6 +9,7 @@ import type { ActivityPage } from "../activity-contracts";
 import "../../../ui/test/solid-ssr-preload";
 import {
   FIXTURE_NOW,
+  FIXTURE_RUN_ID,
   type FixtureCase,
   fixtureActivity,
   fixtureBase,
@@ -21,6 +22,7 @@ import {
   fixtureMine,
   fixtureOpened,
   fixturePage,
+  fixtureRun,
   fixtureSearch,
   fixtureSearchHistory,
   fixtureShareAccess,
@@ -262,6 +264,11 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
       });
     if (url.pathname === `${api}/bases/demo/versions`)
       return route.fulfill({ json: fixture === "worst" ? fixtureWorstVersions() : fixtureVersions() });
+    // one entry read again (the run beside Activity's list, when the address changes in place)
+    if (/^\/api\/filesv2\/activity\/[0-9a-f-]{36}$/.test(url.pathname))
+      return url.pathname.endsWith(FIXTURE_RUN_ID)
+        ? route.fulfill({ json: fixtureRun() })
+        : route.fulfill({ status: 404, json: { code: "not_found" } });
     // the trashed file of the search can come back from the trash, as the server checks it now
     if (url.pathname.startsWith(`${api}/activity/`) && url.pathname.endsWith("/recovery"))
       return route.fulfill({
@@ -365,6 +372,45 @@ describe("a folder of Files on v2", () => {
     try {
       await tab.locator("[data-k2-part=Pane][data-detail] [data-k2-part=Facts]").waitFor();
       await settled(tab);
+      await expectClean(tab);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  // Look rule 30 (Valentin 27.11.): the head and the list's status row are one block with one line under it. At 1440 they
+  // are two rows close together, without a line between; on a large screen the status row joins the head's row.
+  test("the head and the status row are one block, one row on a large screen", async () => {
+    const { context, tab, errors } = await open(wide, "/app/filesv2?base=demo");
+    try {
+      const head = tab.locator("[data-k2-part=Pane][aria-label='Dateien'] > [data-slot=head]");
+      const path = head.locator("[data-k2-part=Path]");
+      const filter = head.getByRole("button", { name: /^Filter/ });
+      await filter.waitFor();
+      // lines across the block (a control's frame is no line): the head's, the status row's, the block's own
+      const lines = () =>
+        head.evaluate((block) => {
+          const pane = block.parentElement!.getBoundingClientRect().width;
+          return [block, ...block.querySelectorAll<HTMLElement>("*")].filter((element) => {
+            const style = getComputedStyle(element);
+            const drawn = style.display !== "contents" && parseFloat(style.borderBottomWidth) > 0 && style.borderBottomStyle !== "none";
+            return drawn && element.getBoundingClientRect().width >= pane * 0.8;
+          }).length;
+        });
+      const middle = async (locator: typeof path) => {
+        const box = (await locator.boundingBox())!;
+        return box.y + box.height / 2;
+      };
+      // 1440: two rows, the filter under the path, and one line under the block
+      expect((await middle(filter)) - (await middle(path))).toBeGreaterThan(30);
+      expect(await lines()).toBe(1);
+      await tab.setViewportSize({ width: 1920, height: 1080 });
+      await settled(tab);
+      // 1920: one row, path, filters and the head's actions beside each other
+      expect(Math.abs((await middle(filter)) - (await middle(path)))).toBeLessThan(4);
+      expect(await lines()).toBe(1);
+      await shoot(tab, "27-folder-1920");
       await expectClean(tab);
       expect(errors).toEqual([]);
     } finally {
@@ -825,11 +871,12 @@ describe("the views beside the folders on v2", () => {
 
       await nav.getByRole("link", { name: "Alle Ablagen" }).click();
       await tab.waitForFunction(() => !new URL(location.href).search);
-      // the storages, compact: the page's job, also where the sidebar is a drawer
-      await tab.locator("[data-k2-part=List][aria-label='Alle Ablagen'] [data-k2-part=Row]").first().waitFor();
-      await tab.locator("[data-k2-part=List][aria-label='Zuletzt geöffnet'] [data-k2-part=Row]").first().waitFor();
-      // beside the storages, the viewer's own last changes in the row design of Activity, under their day
+      // "fewer but better" (Valentin 27.11.): the overview leads with the viewer's own last changes in the row design of
+      // Activity, under their day; the storages stand in the sidebar and are not listed again
       const recent = tab.locator("[data-k2-part=List][aria-label='Zuletzt von dir']");
+      await recent.locator("[data-k2-part=Row]").first().waitFor();
+      await tab.locator("[data-k2-part=List][aria-label='Zuletzt geöffnet'] [data-k2-part=Row]").first().waitFor();
+      expect(await tab.locator("[data-k2-part=Workspace] [data-k2-part=List][aria-label='Alle Ablagen']").count()).toBe(0);
       expect(await recent.innerText()).toContain("Ansicht Front Eiche.jpg");
       expect(await recent.locator("[data-k2-part=Row] [data-k2-part=Avatar]").count()).toBe(0);
       expect(await tab.locator("[data-k2-part=Workspace] [data-k2-part=Path]").count()).toBe(0);
@@ -871,6 +918,39 @@ describe("the views beside the folders on v2", () => {
           await context.close();
         }
       });
+
+  // The execution page (v1) became the run beside Activity's list (page audit 27.11.): the address opens it with the
+  // page, and closing it (×, or the way back on the phone) returns to the list without it.
+  for (const view of [wide, phone])
+    test(`a run stands beside Activity at ${view.name}px and closes back to the list`, async () => {
+      const { context, tab, errors, seen } = await open(view, `/app/filesv2?view=activity&run=${FIXTURE_RUN_ID}`);
+      try {
+        const run = tab.locator("[data-k2-part=Pane][aria-label='Ausführung in Dateien']");
+        await run.getByText("Rechnung Holzhandel Sommer.pdf").first().waitFor();
+        // the first picture holds it: nothing reads it again after the page
+        expect(seen.api.filter((request) => request.startsWith(`GET /activity/${FIXTURE_RUN_ID}`))).toEqual([]);
+        // the technical references stay closed until someone asks for them
+        expect(await run.getByText("inv-7f3a2d61").count()).toBe(0);
+        await settled(tab);
+        await shoot(tab, `26-run-${view.name}`);
+        await expectClean(tab);
+        if (view === wide) {
+          // the list keeps its place beside the run, and the references open in place
+          expect(await tab.locator("[data-k2-part=Pane][aria-label='Aktivität']").first().isVisible()).toBe(true);
+          await run.getByRole("button", { name: "Quellkontext und Referenzen" }).click();
+          await run.getByText("inv-7f3a2d61").waitFor();
+        }
+        await (view === wide
+          ? run.getByRole("link", { name: "Schließen" })
+          : tab.locator("[data-k2-part=Back]").getByRole("link", { name: "Aktivität" })
+        ).click();
+        await tab.waitForFunction(() => !new URL(location.href).searchParams.has("run"));
+        await run.waitFor({ state: "detached" });
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
 
   test("Activity's search finds a vanished file in the address, and a link is revoked after a question", async () => {
     const { context, tab, errors, seen } = await open(wide, "/app/filesv2?view=activity");
@@ -1078,26 +1158,6 @@ describe("the views beside the folders on v2", () => {
           await context.close();
         }
       });
-
-  // waits for #4340 (fixed at 5bcb6bd677, queued): inside a split with a context column the virtual list does not find
-  // its scroller yet, so it renders every row
-  test.todo("all storage of 200 storages opens at once and stays whole (#4340)", async () => {
-    const started = performance.now();
-    const { context, tab, errors } = await open(wide, "/app/filesv2", "huge");
-    try {
-      const ready = performance.now() - started;
-      // the storages are one list that keeps only its rows in view; it says how many it holds
-      const storages = tab.locator("[data-k2-part=List][aria-label='Alle Ablagen'] [data-k2-part=Row]");
-      expect(await storages.first().getAttribute("aria-setsize")).toBe("201");
-      expect(await storages.count()).toBeLessThan(80);
-      console.info(`overview of 200 storages ready in ${Math.round(ready)} ms`);
-      await expectClean(tab);
-      expect(ready).toBeLessThan(5000);
-      expect(errors).toEqual([]);
-    } finally {
-      await context.close();
-    }
-  });
 
   // Activity's list stands beside its context column (who, where, what): it waits for #4340, where the virtual list
   // finds its scroller inside such a split; the shares have no context column and run as ever

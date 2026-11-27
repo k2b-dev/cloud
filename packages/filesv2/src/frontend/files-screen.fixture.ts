@@ -298,6 +298,21 @@ const plainActivity = (): ActivityEntry[] => [
   change("item.copy", 4_400, 1, { after: side("Vorlagen/Angebot Vorlage.docx") }),
 ];
 
+/** The one run of an assistant in the fixture: it filed an invoice for Mira, which Activity opens beside its list. */
+export const FIXTURE_RUN_ID = "30000000-0000-4000-8000-000000000901";
+export const fixtureRun = (): ActivityEntry =>
+  change(
+    "item.move",
+    35,
+    0,
+    { before: side("Eingang/Rechnung Holzhandel Sommer.pdf"), after: side("Büro/Rechnungen 2026/Rechnung Holzhandel Sommer.pdf") },
+    {
+      id: FIXTURE_RUN_ID,
+      via: "agent",
+      execution: { origin: "assistant", callingApp: null, requestId: "req-5c1e9a", invocationId: "inv-7f3a2d61" },
+    },
+  );
+
 /**
  * What Activity's search finds beyond the day: the vanished draft's earlier steps on other days, by other people, and a
  * second draft that went to the trash before it. Only the search answers with them, so Activity's day stays as it is.

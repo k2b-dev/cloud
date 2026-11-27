@@ -25,7 +25,7 @@ const show = (run: RunSnapshot, locale = "en") =>
       get children() {
         return createComponent(RunDetail, {
           run,
-          timeZone: "Europe/Berlin",
+          env: { now: "2026-10-20T12:12:00.000Z", timeZone: "Europe/Berlin" },
           closeHref: "/app/filesv2?view=activity",
           onNavigate: () => {},
           onRetry: () => {},
@@ -43,14 +43,14 @@ describe("the run beside Activity's list", () => {
       "Assistant on behalf of Lukas Pohl",
       "Result in Files",
       "Completed",
-      "team/Old/Plan.pdf",
-      "team/New/Plan.pdf",
-      "source conversation is not available",
-      "does not describe the outcome of the whole originating run",
+      "Plan.pdf",
+      // the places as the path names them, never the raw stored path
+      "team › Old · then",
+      "team › New",
     ])
       expect(html).toContain(text);
     expect(html).toContain('datetime="2026-10-20T12:12:00.000Z"');
-    expect(html).toContain("Recorded path; this does not confirm its current location.");
+    expect(html).not.toContain("team/Old/Plan.pdf");
     // the references are behind a closed disclosure, made only while it is open, so they are not in the first picture
     expect(html).toContain('data-k2-part="Disclosure"');
     expect(html).toContain("Source context and references");
@@ -103,11 +103,11 @@ describe("the run beside Activity's list", () => {
     expect(html).toContain("&lt;img");
     expect(html).not.toContain("<img src=x");
   });
-  test("German copy retains the same scope and unavailable source boundary", () => {
+  test("German copy names the run and a recorded place in the reader's words", () => {
     const html = render(record(), "de");
     expect(html).toContain("Ausführung in Dateien");
     expect(html).toContain("Ergebnis in Dateien");
-    expect(html).toContain("Quellkonversation ist über diesen Eintrag nicht verfügbar");
+    expect(html).toContain("team › Old · damals");
   });
   test("a run that is not there, or not to be seen, says so without any stored data", () => {
     const html = show({ id: record().id, problem: "missing" });

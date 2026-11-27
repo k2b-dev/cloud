@@ -1,6 +1,21 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Empty, Failed, FilterBar, List, ListOrder, type MarkProps, Notice, Pane, Row, Section, Text } from "@k2b/ui/v2";
-import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js";
+import {
+  Bar,
+  Button,
+  Empty,
+  Failed,
+  FilterBar,
+  List,
+  ListOrder,
+  type MarkProps,
+  Notice,
+  Pane,
+  Row,
+  Section,
+  Text,
+  type Width,
+} from "@k2b/ui/v2";
+import { createEffect, createMemo, createSignal, type JSX, Match, on, onCleanup, Show, Switch } from "solid-js";
 import type { ActivityBatchContext, ActivityChain, ActivityEntry, ActivityPage } from "../activity-contracts";
 import type { MarkedEntry } from "../contracts";
 import ActivitySearch from "./ActivitySearch";
@@ -27,6 +42,10 @@ const FILTER_ICONS = { who: "user", base: "folders", what: "activity", when: "ca
 const opened = new Set<string>();
 
 export type ActivityPaneProps = {
+  /** The screen's head: with the filter row it is one block over the list. */
+  head?: JSX.Element;
+  /** Beside an open run: the list's own width, with a grip. */
+  width?: Width;
   /** The filters of the address; the request is made from them. */
   filters: ActivityFilters;
   query: ActivityQuery;
@@ -208,6 +227,9 @@ export default function ActivityPane(props: ActivityPaneProps) {
   return (
     <Pane
       label={h().activity}
+      // the list takes the whole width; only beside an open run it keeps its own, with a grip (as beside an open file)
+      head={props.head}
+      width={props.width}
       scrollKey="filesv2-activity"
       status={
         <>

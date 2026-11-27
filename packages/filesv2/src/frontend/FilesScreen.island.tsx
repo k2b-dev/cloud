@@ -53,7 +53,7 @@ import { directoryContext, directoryPageCount, directoryPages } from "./director
 import EntryDetail, { FolderContents } from "./EntryDetail";
 import { entryMark, storageMark } from "./entry-mark";
 import { entryThumbnail } from "./entry-thumbnail";
-import { historyExecutionHref } from "./execution-url";
+import { runHref } from "./execution-url";
 import FavoritesPane from "./FavoritesPane";
 import { issueText } from "./feedback";
 import { createFilesUploads } from "./files-uploads";
@@ -78,6 +78,7 @@ import {
   loadFavorites,
   loadRecent,
   loadRecovery,
+  loadRun,
   moveActivityBack,
   recheckActivity,
   resolveTarget,
@@ -91,13 +92,14 @@ import { useFilesMessages } from "./messages";
 import OfficePane from "./OfficePane";
 import OverviewPane, { FAVORITES_PREVIEW, RECENT_LINES } from "./OverviewPane";
 import { filesPageScope } from "./page-scope";
+import RunDetail from "./RunDetail";
 import { openShareDialog } from "./ShareDialog";
 import SharesPane from "./SharesPane";
 import { searchRequest } from "./search-state";
 import { createSeenTiles } from "./seen-tiles";
 import TrashPane from "./TrashPane";
 import { snapshotTitle } from "./trail";
-import { activityUrl, editorUrl, filesUrl, parseActivityFilters, screenViewOf } from "./urls";
+import { activityUrl, editorUrl, filesUrl, parseActivityFilters, parseActivityRun, screenViewOf } from "./urls";
 import { createWorkspaceState, type DirectoryView, type WorkspaceSnapshot } from "./workspace-state";
 
 /** Listings are read again while the tab is visible; Filegate has no change feed yet. */
@@ -185,15 +187,18 @@ export default function FilesScreen(props: {
       const base = { source, bases, selectedId: chosen?.id ?? null, directory: null, errorCode: null, now };
       if (filters) {
         const env = { now, timeZone: timeZone() };
-        const [page, marks] = await Promise.all([
+        const runId = parseActivityRun(params) ?? undefined;
+        const [page, marks, run] = await Promise.all([
           loadActivity(activityRequest(filters, env), signal, h().errorTitle).catch((error: unknown) => {
             if (signal.aborted) throw error;
             return null;
           }),
           filters.actor === "me" ? loadRecent(signal, b().loadFailed).catch(() => undefined) : undefined,
+          // the run comes with its page, as on the server: the detail and the list stand together
+          runId ? loadRun(runId, signal) : undefined,
         ]);
         if (page) notePeople(page.items);
-        return { ...base, activity: page ? { filters, page } : null, marks };
+        return { ...base, activity: page ? { filters, page } : null, marks, run };
       }
       if (view === "shares") {
         const response = await apiClient.shares.$get({ query: {} }, { init: { signal } });
@@ -595,7 +600,8 @@ export default function FilesScreen(props: {
     env: {
       now: snapshot().now ?? props.initial.now ?? new Date().toISOString(),
       timeZone: timeZone(),
-      executionHref: historyExecutionHref,
+      // a run opens beside Activity under its filters; elsewhere (an entry's history) beside Activity without filters
+      executionHref: (entry: ActivityEntry) => runHref(activityFilters())(entry),
       describePlace: placeDescriber(snapshot().bases.items, b(), locale()),
       onNavigate: (event: LinkNavigateEvent) => onNavigate(event),
     },
@@ -663,6 +669,12 @@ export default function FilesScreen(props: {
     onOpenOldLocation: (place) => void go(filesUrl(place.baseId, place.path)),
   };
   const activityFilters = createMemo(() => (screen() === "activity" ? (parseActivityFilters(params()) ?? {}) : {}));
+  /** The run Activity shows beside its list: only while the address names one and the snapshot read it. */
+  const openRun = createMemo(() => {
+    const id = screen() === "activity" ? parseActivityRun(params()) : undefined;
+    const run = snapshot().run;
+    return id && run?.id === id ? run : undefined;
+  });
   const activityLists = createMemo(() =>
     activityQuery(
       h(),
@@ -1060,6 +1072,84 @@ export default function FilesScreen(props: {
     return links ? b().v2WhoAndLinks({ who, links, more: partial ? "+" : "" }) : who;
   };
 
+  /**
+   * The head of the screen: the path with the folder's sharing, or the open file's state, and the search and "+".
+   * A view that only the sidebar names has no head row at all: no row without content. Where the screen's main column
+   * has a status row (a folder, Activity), the head goes to that column, so head and status row are one block.
+   */
+  const paneHead = () => (screen() === "folder" && !snapshot().moved) || screen() === "activity";
+  const headStart = () => {
+    // a folder says who reaches it beside its path, as the mockup's "Team + 1 Link"
+    if (screen() === "folder" && !snapshot().moved && selected())
+      return (
+        <Inline>
+          <Path label={b().v2Where} items={pathItems()} />
+          <Chip icon={selected()?.kind === "groups" ? "users" : "lock"}>{folderSharing()}</Chip>
+        </Inline>
+      );
+    return pathItems().length > 0 ? <Path label={b().v2Where} items={pathItems()} /> : undefined;
+  };
+  const screenHead = () =>
+    screen() === "favorites" || screen() === "shares" || screen() === "overview" ? undefined : (
+      <Bar
+        start={headStart()}
+        end={
+          <>
+            {/* the draft's state beside the file's name in the one head row; saving ends the editor's own bar */}
+            <Show when={screen() === "edit" && editorHead()}>
+              {(head) => (
+                // a saved draft is the good case and stays neutral; colour only while something waits (B rule 7)
+                <Show when={head().dirty()} fallback={<Chip>{head().state()}</Chip>}>
+                  <Chip status="warn">{head().state()}</Chip>
+                </Show>
+              )}
+            </Show>
+            <Show when={screen() === "activity"}>
+              <Input
+                type="search"
+                icon="search"
+                label={h().searchLabel}
+                placeholder={b().v2SearchShort}
+                value={activityFilters().q ?? ""}
+                onKeyDown={(event) => {
+                  if (event.isComposing) return;
+                  const input = event.currentTarget as HTMLInputElement;
+                  if (event.key === "Enter") submitActivitySearch(input.value);
+                  if (event.key === "Escape" && input.value) {
+                    input.value = "";
+                    submitActivitySearch("");
+                  }
+                }}
+              />
+            </Show>
+
+            <Show when={screen() === "folder" && !snapshot().moved}>
+              <Input
+                type="search"
+                icon="search"
+                label={b().searchIn(folderName(folder()))}
+                placeholder={b().v2SearchShort}
+                value={address().state.search ?? ""}
+                onKeyDown={(event) => {
+                  if (event.isComposing) return;
+                  const input = event.currentTarget as HTMLInputElement;
+                  if (event.key === "Enter") submitSearch(input.value);
+                  if (event.key === "Escape" && input.value) {
+                    input.value = "";
+                    submitSearch("");
+                  }
+                }}
+              />
+              <Show when={canCreate() && !searching()}>
+                {/* ONE create action, never "+" beside "Hochladen" (Valentin 26.11.) */}
+                <Menu icon="plus" label={b().add} items={addMenu()} disabled={actions.busy()} />
+              </Show>
+            </Show>
+          </>
+        }
+      />
+    );
+
   return (
     <>
       <V2WorkspaceNavigation label={placeName()} groups={navGroups()} foot={navFoot()} />
@@ -1068,85 +1158,10 @@ export default function FilesScreen(props: {
         sidebarLabel={b().v2SidebarWidth}
         sidebar={<Nav title={t().files} icon="folders" groups={navGroups()} foot={navFoot()} />}
         // No empty half (look rule 5): the detail stands only while an entry is open.
-        detail={screen() === "folder" && !snapshot().moved && openPath() ? true : undefined}
+        detail={(screen() === "folder" && !snapshot().moved && openPath()) || openRun() ? true : undefined}
         // no floating main action: the head's "+" is the one create action (Valentin 26.11.), and nothing floats over
         // an open file on the phone. A view that only the sidebar names has no head row at all: no row without content.
-        head={
-          screen() === "favorites" || screen() === "shares" || screen() === "overview" ? undefined : (
-            <Bar
-              start={
-                // a folder says who reaches it beside its path, as the mockup's "Team + 1 Link"
-                <Show
-                  when={screen() === "folder" && !snapshot().moved && selected()}
-                  fallback={
-                    <Show when={pathItems().length > 0}>
-                      <Path label={b().v2Where} items={pathItems()} />
-                    </Show>
-                  }
-                >
-                  <Inline>
-                    <Path label={b().v2Where} items={pathItems()} />
-                    <Chip icon={selected()?.kind === "groups" ? "users" : "lock"}>{folderSharing()}</Chip>
-                  </Inline>
-                </Show>
-              }
-              end={
-                <>
-                  {/* the draft's state beside the file's name in the one head row; saving ends the editor's own bar */}
-                  <Show when={screen() === "edit" && editorHead()}>
-                    {(head) => (
-                      // a saved draft is the good case and stays neutral; colour only while something waits (B rule 7)
-                      <Show when={head().dirty()} fallback={<Chip>{head().state()}</Chip>}>
-                        <Chip status="warn">{head().state()}</Chip>
-                      </Show>
-                    )}
-                  </Show>
-                  <Show when={screen() === "activity"}>
-                    <Input
-                      type="search"
-                      icon="search"
-                      label={h().searchLabel}
-                      placeholder={b().v2SearchShort}
-                      value={activityFilters().q ?? ""}
-                      onKeyDown={(event) => {
-                        if (event.isComposing) return;
-                        const input = event.currentTarget as HTMLInputElement;
-                        if (event.key === "Enter") submitActivitySearch(input.value);
-                        if (event.key === "Escape" && input.value) {
-                          input.value = "";
-                          submitActivitySearch("");
-                        }
-                      }}
-                    />
-                  </Show>
-
-                  <Show when={screen() === "folder" && !snapshot().moved}>
-                    <Input
-                      type="search"
-                      icon="search"
-                      label={b().searchIn(folderName(folder()))}
-                      placeholder={b().v2SearchShort}
-                      value={address().state.search ?? ""}
-                      onKeyDown={(event) => {
-                        if (event.isComposing) return;
-                        const input = event.currentTarget as HTMLInputElement;
-                        if (event.key === "Enter") submitSearch(input.value);
-                        if (event.key === "Escape" && input.value) {
-                          input.value = "";
-                          submitSearch("");
-                        }
-                      }}
-                    />
-                    <Show when={canCreate() && !searching()}>
-                      {/* ONE create action, never "+" beside "Hochladen" (Valentin 26.11.) */}
-                      <Menu icon="plus" label={b().add} items={addMenu()} disabled={actions.busy()} />
-                    </Show>
-                  </Show>
-                </>
-              }
-            />
-          )
-        }
+        head={paneHead() ? undefined : screenHead()}
       >
         <Show when={screen() === "overview"}>
           <OverviewPane
@@ -1163,31 +1178,46 @@ export default function FilesScreen(props: {
           <SharesPane initial={snapshot().shares ?? null} bases={snapshot().bases.items} timeZone={timeZone()} onNavigate={onNavigate} />
         </Show>
         <Show when={screen() === "activity"}>
-          <ActivityPane
-            filters={activityFilters()}
-            query={activityLists()}
-            state={activityState()}
-            onChange={changeActivity}
-            initial={snapshot().activity?.page ?? null}
-            marks={snapshot().marks}
-            bases={snapshot().bases.items.map((base) => ({ id: base.id, label: label(base) }))}
-            env={history().env}
-            actions={activityActions}
-            loadChain={(entry, signal) => loadChain(entry, signal, h().chainFailed)}
-            loadBatch={(entry, signal) => loadBatchContext(entry, signal, h().batchFailed)}
-            retentionDays={props.retentionDays ?? 365}
-            pending={workspace.pending()}
-            onReload={() => void go(snapshot().source, true)}
-            onPeople={notePeople}
-            who={
-              activityFilters().actor
-                ? {
-                    value: activityFilters().actor!,
-                    label: activityFilters().actor === "me" ? h().whoMe : (people()[activityFilters().actor!] ?? h().selectedPerson),
-                  }
-                : undefined
-            }
-          />
+          <Pane.Split>
+            <ActivityPane
+              head={screenHead()}
+              width={openRun() ? { min: 440, default: 720 } : undefined}
+              filters={activityFilters()}
+              query={activityLists()}
+              state={activityState()}
+              onChange={changeActivity}
+              initial={snapshot().activity?.page ?? null}
+              marks={snapshot().marks}
+              bases={snapshot().bases.items.map((base) => ({ id: base.id, label: label(base) }))}
+              env={history().env}
+              actions={activityActions}
+              loadChain={(entry, signal) => loadChain(entry, signal, h().chainFailed)}
+              loadBatch={(entry, signal) => loadBatchContext(entry, signal, h().batchFailed)}
+              retentionDays={props.retentionDays ?? 365}
+              pending={workspace.pending()}
+              onReload={() => void go(snapshot().source, true)}
+              onPeople={notePeople}
+              who={
+                activityFilters().actor
+                  ? {
+                      value: activityFilters().actor!,
+                      label: activityFilters().actor === "me" ? h().whoMe : (people()[activityFilters().actor!] ?? h().selectedPerson),
+                    }
+                  : undefined
+              }
+            />
+            <Show when={openRun()} keyed>
+              {(run) => (
+                <RunDetail
+                  run={run}
+                  env={history().env}
+                  closeHref={activityUrl(activityFilters())}
+                  onNavigate={onNavigate}
+                  onRetry={() => void go(snapshot().source, true)}
+                />
+              )}
+            </Show>
+          </Pane.Split>
         </Show>
         <Show when={screen() === "edit" ? (snapshot().editor ?? false) : undefined} keyed>
           {(launch) =>
@@ -1269,6 +1299,8 @@ export default function FilesScreen(props: {
           <Pane.Split>
             <Pane
               label={t().files}
+              // the screen's head and the list's status row are one block over the list (look rule 30)
+              head={screenHead()}
               // the list takes the whole width; only beside an open file it keeps its own, with a grip
               width={openPath() ? { min: 440, default: 720 } : undefined}
               scrollKey={`filesv2:${snapshot().selectedId ?? ""}:${folder()}`}

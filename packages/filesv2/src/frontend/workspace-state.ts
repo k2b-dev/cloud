@@ -27,6 +27,12 @@ export type DirectoryView = Omit<DirectoryResult, "items"> & {
   failure?: string;
   loadedPages?: number;
 };
+/**
+ * The run of one Activity entry: the entry as this reader may see it, or why it is not there. `missing` covers an
+ * unknown entry, one this reader may not see, and one that no run made, alike: none of them says which.
+ */
+export type RunSnapshot = { id: string } & ({ entry: ActivityEntry } | { problem: "missing" | "failed" });
+
 export type WorkspaceSnapshot = {
   source: string;
   bases: BasesResult;
@@ -49,6 +55,8 @@ export type WorkspaceSnapshot = {
   now?: string;
   /** Authorized first Activity page for these filters; without it the view loads its own. */
   activity?: { filters: ActivityFilters; page: ActivityPage } | null;
+  /** The run Activity shows beside its list (`run` in the address), read with the page; never loaded after it. */
+  run?: RunSnapshot;
   /** Authorized first history page of the selected entry in `detail`. */
   history?: { source: string; page: ActivityPage } | null;
   moved?: MovedSnapshot | null;

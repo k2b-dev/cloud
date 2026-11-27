@@ -2,11 +2,13 @@ import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
 import { type EntryResult, ErrorSchema, type FileEntry, type ShareView } from "../contracts";
 import { stableEntryRefId } from "../resource-ref";
+import { runOf } from "./execution-url";
 import { apiFailure } from "./file-preview";
 import type { HistoryTarget, RestoreOutcome } from "./history-actions";
 import type { ActivityRequest, ItemHistoryRequest } from "./history-requests";
 import type { ShareAccessRequest } from "./ShareHistory";
 import { filesUrl } from "./urls";
+import type { RunSnapshot } from "./workspace-state";
 
 /*
  * Browser calls of the history reader and the existing action endpoints. Every call is checked again on the server;
@@ -22,6 +24,18 @@ export async function loadActivity(
   const response = await apiClient.activity.$get({ query: request }, { init: { signal } });
   if (!response.ok) return apiFailure(response, fallback);
   return response.json();
+}
+
+/** The run beside Activity's list: one entry read again with current rights, or why it is not there. */
+export async function loadRun(activityId: string, signal: AbortSignal): Promise<RunSnapshot> {
+  try {
+    const response = await apiClient.activity[":activityId"].$get({ param: { activityId } }, { init: { signal } });
+    if (!response.ok) return { id: activityId, problem: response.status < 500 ? "missing" : "failed" };
+    return runOf(activityId, await response.json());
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return { id: activityId, problem: "failed" };
+  }
 }
 
 /** Files this person opened, each resolved against current access on the server. */

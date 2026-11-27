@@ -6,16 +6,17 @@ import { ssr } from "../config";
 import { requestCall } from "../files-call";
 import { FilesError, filesService } from "../service";
 import adminPage from "./admin";
-import executionPage from "./execution-page";
 import filesPage from "./page";
 import { pdfPage } from "./pdf-page";
 import { publicInboxPage, publicSharePage } from "./public-pages";
-import { filesUrl } from "./urls";
+import { activityUrl, filesUrl, parseActivityRun } from "./urls";
 
 export default new Hono<AuthContext>()
   .use("/app/filesv2/*", (c, next) => {
     // Editor launches embed a private WOPI token or download lease beside the stored filename.
     if (c.req.query("view") === "edit" && c.req.query("file")) return middleware.noTransform()(c, next);
+    // A run's record shows the names and context strings that historical writers chose beside another actor's record.
+    if (c.req.query("run")) return middleware.noTransform()(c, next);
     return next();
   })
   .use("/admin/filesv2/*", (c, next) => {
@@ -24,8 +25,12 @@ export default new Hono<AuthContext>()
     return next();
   })
   .get("/app/filesv2", auth.requireRole("authenticated", ssr.access), ...filesPage)
-  // Historical writers choose names and context strings beside another actor's authorized record.
-  .get("/app/filesv2/execution/:activityId", auth.requireRole("user", ssr.access), middleware.noTransform(), ...executionPage)
+  // The execution page (v1) is the run beside Activity's list since 27.11.2026; old links and bookmarks keep working.
+  .get("/app/filesv2/execution/:activityId", auth.requireRole("authenticated", ssr.access), async (c) => {
+    const run = parseActivityRun(new URLSearchParams({ run: c.req.param("activityId") }));
+    if (!run) return ssr.error(c, 404);
+    return c.redirect(activityUrl({}, run), 301);
+  })
   .get("/app/filesv2/ref/:id", auth.requireRole("authenticated", ssr.access), async (c) => {
     try {
       // A stable ref opens wherever the file is now; a path ref where it was named.

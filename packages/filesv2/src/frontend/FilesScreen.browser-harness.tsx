@@ -2,9 +2,11 @@ import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import { browserMessages } from "./browser-messages";
 import { defaultView } from "./browser-preferences";
+import { runOf } from "./execution-url";
 import FilesScreen from "./FilesScreen.island";
 import {
   FIXTURE_NOW,
+  FIXTURE_RUN_ID,
   FIXTURE_TIME_ZONE,
   type FixtureCase,
   fixtureActivity,
@@ -16,6 +18,7 @@ import {
   fixtureMine,
   fixturePage,
   fixtureRecent,
+  fixtureRun,
   fixtureSearch,
   fixtureShares,
   fixtureSnapshot,
@@ -25,7 +28,7 @@ import {
   fixtureWorstTrash,
 } from "./files-screen.fixture";
 import { browseOf, folderQueries, readFolderAddress, searchOf } from "./folder-query";
-import { parseActivityFilters, screenViewOf } from "./urls";
+import { parseActivityFilters, parseActivityRun, screenViewOf } from "./urls";
 
 /**
  * The v2 folder screen for a browser test, rendered as the server renders it for the page's address: the address is
@@ -76,6 +79,9 @@ if (view === "activity") {
   // "Me" shows this person's own changes, as the reader answers it
   snapshot.activity = { filters, page: filters.actor === "me" && fixture === "plain" ? fixtureMine() : fixtureActivity(fixture) };
   snapshot.marks = filters.actor === "me" ? [] : undefined;
+  // the run beside the list, read with the page as the server reads it; an unknown one is "missing"
+  const run = parseActivityRun(params);
+  if (run) snapshot.run = run === FIXTURE_RUN_ID ? runOf(run, fixtureRun()) : { id: run, problem: "missing" };
 }
 if (view === "edit") snapshot.editor = fixtureMarkdown(location.origin, fixture);
 // An old folder address: the server found where its folder went.
