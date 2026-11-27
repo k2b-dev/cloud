@@ -45,7 +45,7 @@ The one button: `primary` once per page, framed by default, `ghost` and `text` f
 
 More deeds behind a button or behind "…": items, sections, one choice, toggles and submenus. An entry whose `onClick` returns a Promise keeps the menu open and turns until it settles.
 
-An entry can also open a `panel` beside it, such as a `DatePicker`. The panel is a dialog of its own over the menu: its keys and focus are its own, Escape closes it first, and on the phone it is a sheet with a head that leads back. An entry that sets a value through its submenu or panel shows that value with `current` at its end, in the app's colour, in place of `meta`. A choice whose options say enough by themselves, such as offered times with the one set now ticked, may go without a heading (`title: ""`).
+An entry can also open a `panel` beside it, such as a `DatePicker`: `panel: menuPanel((close) => …)`, which brings the panel's code along, so a menu without a panel loads none of it. The panel is a dialog of its own over the menu: its keys and focus are its own, Escape closes it first, and on the phone it is a sheet with a head that leads back. An entry that sets a value through its submenu or panel shows that value with `current` at its end, in the app's colour, in place of `meta`. A choice whose options say enough by themselves, such as offered times with the one set now ticked, may go without a heading (`title: ""`).
 
 <Props of="Menu MenuItem MenuSection" />
 

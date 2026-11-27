@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { NavGroup, NavItem } from "@k2b/ui/v2";
+import { type NavGroup, type NavItem, navTree } from "@k2b/ui/v2";
 import { delegateEvents, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 
@@ -190,7 +190,7 @@ test("a tree group keeps its loaded places: a place with children folds them beh
   const groups: NavGroup[] = [
     {
       label: "Ordner",
-      tree: {
+      tree: navTree({
         label: "Ordner",
         current: "texte",
         items: [
@@ -204,7 +204,7 @@ test("a tree group keeps its loaded places: a place with children folds them beh
           // children not loaded yet: a plain link, the folder opens as a page
           { key: "archiv", label: "Archiv", icon: "archive", href: "/files/archiv", branch: true },
         ],
-      },
+      }),
     },
   ];
   const page = render(() => <V2WorkspaceNavigation label="Dateien" groups={groups} />, dom.root);

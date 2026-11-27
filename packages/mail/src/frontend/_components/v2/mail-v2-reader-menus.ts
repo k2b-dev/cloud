@@ -1,7 +1,7 @@
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { DateContext } from "@k2b/stdlib";
 import { type DropdownAction, type DropdownItem, toast, useLocale } from "@k2b/ui";
-import type { MenuEntry, MenuItem } from "@k2b/ui/v2";
+import { type MenuEntry, type MenuItem, menuPanel } from "@k2b/ui/v2";
 import { createComponent, createMemo, onCleanup } from "solid-js";
 import type { MailboxController } from "../../mail-workspace";
 import { useMailCloudId } from "../mail-cloud-id";
@@ -95,7 +95,7 @@ export function createMailV2ReaderMenus(props: {
       "separator",
       {
         label: v2Text().laterPick,
-        panel: (close) =>
+        panel: menuPanel((close) =>
           createComponent(MailV2TimePicker, {
             label,
             timeZone: mailV2TimeZone(props.dateConfig),
@@ -106,6 +106,7 @@ export function createMailV2ReaderMenus(props: {
               pick(at);
             },
           }),
+        ),
       },
     ];
   };
