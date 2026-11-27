@@ -32,7 +32,7 @@ import {
 import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import type { AlertRule } from "../../alert-contracts";
-import type { FetchMinute, FetchSlot, PulseBaseRead, PulseSource, SourceAlert } from "../../contracts";
+import type { FetchMinute, FetchSlot, PulseBaseRead, PulseSource, SourceAlert, SourceEvent } from "../../contracts";
 import { localizedSourceError } from "../../messages";
 import type { AlertAttention } from "../../service/base-attention";
 import { jsonFetch } from "../http";
@@ -496,6 +496,7 @@ export default function SourcesScreen(props: SourcesScreenProps) {
               scrapes={queries.currentDetail()?.scrapes ?? []}
               minutes={queries.currentDetail()?.minutes ?? []}
               alerts={queries.currentDetail()?.alerts ?? []}
+              history={queries.currentDetail()?.history ?? []}
               alertHref={(alertId) => buildPulseWorkspaceHref({ baseId, state: { view: "sql", alertId } })}
               now={props.initialNow}
               timeZone={dateContext().timeZone}
@@ -616,6 +617,8 @@ function SourceDetail(props: {
   minutes: FetchMinute[];
   /** The alert rules that concern the source, firing first. */
   alerts: SourceAlert[];
+  /** What happened to the source, newest first. */
+  history: SourceEvent[];
   /** Where an alert opens: its SQL in the console. */
   alertHref: (alertId: string) => string;
   /** Now, for the hour's end. */
@@ -638,6 +641,7 @@ function SourceDetail(props: {
   const source = () => props.source;
   const status = () => source().status;
   const command = () => curlExample(props.origin);
+  const [connecting, setConnecting] = createSignal(false);
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
   // what the source is, in one line: its kind, how often it is read, how many series it fills
   const metaLine = () =>
@@ -649,6 +653,15 @@ function SourceDetail(props: {
     ]
       .filter(Boolean)
       .join(" · ");
+  // one entry of the history as a sentence: who did what, or what happened by itself
+  const historyLine = (event: SourceEvent) =>
+    event.kind === "stale"
+      ? words().historyStale
+      : event.kind === "fresh"
+        ? words().historyFresh
+        : event.kind === "created"
+          ? words().historyCreated({ name: event.actor?.name ?? words().someone })
+          : words().historyUpdated({ name: event.actor?.name ?? words().someone });
   // an alert's state in words: when it fired, since when it has no data or cannot be checked, or that it is quiet
   const alertLine = (alert: SourceAlert) => {
     const since = alert.since ? props.when(alert.since) : "";
@@ -721,8 +734,23 @@ function SourceDetail(props: {
       : []),
     { label: t().removeSource, icon: "trash", danger: true, disabled: props.loading, onClick: props.remove },
   ];
+  // the keys the connect dialog creates or revokes count in the settings fact at once
+  const [keys, setKeys] = createSignal(props.apiKeys);
+  createEffect(on(() => props.apiKeys, setKeys, { defer: true }));
+  const createKey: Parameters<typeof ResourceApiKeySection>[0]["createKey"] = async (input) => {
+    const created = await props.createKey(input);
+    setKeys((current) => [created.credential, ...current]);
+    return created;
+  };
+  const revokeKey: Parameters<typeof ResourceApiKeySection>[0]["revokeKey"] = async (credentialId) => {
+    await props.revokeKey(credentialId);
+    setKeys((current) => current.filter((key) => key.id !== credentialId));
+  };
+  const activeKeys = () =>
+    keys().filter((key) => !key.revokedAt && (!key.expiresAt || Date.parse(key.expiresAt) > Date.parse(props.now))).length;
   const facts = () => [
     { label: words().kindColumn, value: source().kind === "metrics" ? t().metricsEndpoint : t().httpIngest },
+    ...(source().kind === "http_ingest" ? [{ label: t().apiKeys, value: words().activeKeys({ count: activeKeys() }) }] : []),
     {
       label: t().target,
       // an address breaks at its slashes like words, not sign by sign as a token would
@@ -794,6 +822,11 @@ function SourceDetail(props: {
               <Show when={source().kind === "metrics"}>
                 <Button icon="refresh" keep disabled={props.loading || !source().enabled} onClick={props.scrape}>
                   {words().fetchNow}
+                </Button>
+              </Show>
+              <Show when={source().kind === "http_ingest"}>
+                <Button icon="plug-connected" keep onClick={() => setConnecting(true)}>
+                  {words().connect}
                 </Button>
               </Show>
               <Menu label={t().moreSourceActions} items={deeds()} />
@@ -872,28 +905,60 @@ function SourceDetail(props: {
           </Show>
         </Section>
       </Show>
-      <Show when={source().kind === "http_ingest"}>
+      {/* connecting a push source is a flow of its own (rule g): numbered steps in a dialog the head opens;
+          k2b-ui gap: no side sheet and no steps part yet, so the dialog carries the steps as numbered sections */}
+      <Dialog
+        title={words().connectTitle({ name: source().name })}
+        open={connecting()}
+        onOpenChange={setConnecting}
+        foot={
+          <Button variant="primary" onClick={() => setConnecting(false)}>
+            {words().done}
+          </Button>
+        }
+      >
         <ResourceApiKeySection
-          title={t().apiKeys}
+          title={words().connectStepKey}
           description={`${t().apiKeysDescription} ${t().bearerTokenHint}`}
           initialKeys={props.apiKeys}
           permissionOptions={[{ value: "write", label: t().ingest, description: t().ingestDescription }]}
-          createKey={props.createKey}
-          revokeKey={props.revokeKey}
+          createKey={createKey}
+          revokeKey={revokeKey}
         />
         <Section
-          icon="send"
-          title={words().setupTitle}
+          title={words().connectStepSend}
           summary={t().idempotencyHint}
           actions={[{ label: t().copy, icon: "copy", onClick: () => props.copy(command()) }]}
         >
           {/* k2b-ui gap: no code block in v2 yet; Prose renders the command as preformatted Markdown. */}
           <Prose markdown={`\`\`\`bash\n${command()}\n\`\`\``} />
         </Section>
-      </Show>
+        <Section title={words().connectStepCheck}>
+          <Text>{words().connectCheckText}</Text>
+        </Section>
+      </Dialog>
       <Section title={words().sourceSettings}>
         <Facts items={facts()} />
       </Section>
+      {/* who set the source up and changed it, and when it stopped or started delivering (study B: "Verlauf" last) */}
+      <Show when={props.history.length > 0}>
+        <Section title={words().historyTitle}>
+          <List label={words().historyTitle}>
+            <For each={props.history}>
+              {(event) => (
+                <Row
+                  {...(event.actor
+                    ? { avatar: { name: event.actor.name } }
+                    : event.kind === "stale"
+                      ? { mark: { icon: "plug-connected-x", color: "#b91c1c" } }
+                      : { mark: { icon: "plug-connected", color: "var(--k2-muted)" } })}
+                  lines={[historyLine(event), props.when(event.at)]}
+                />
+              )}
+            </For>
+          </List>
+        </Section>
+      </Show>
     </Pane>
   );
 }

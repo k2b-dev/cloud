@@ -4,6 +4,7 @@ import { BaseColorSchema, BaseIconSchema, BaseTimezoneSchema } from "../base-set
 import { FETCH_BUCKET_MINUTES, FETCH_TICKS, METRIC_TYPES, SOURCE_HOUR_MINUTES, SOURCE_KINDS, SOURCE_PAGE_MAX } from "../contracts";
 
 export { SOURCE_ALERTS_MAX } from "../service/source-alerts";
+export { SOURCE_HISTORY_MAX } from "../service/source-history";
 export { SOURCE_HOUR_MINUTES, SOURCE_PAGE_MAX };
 
 import { PULSE_EXTERNAL_INGEST_BATCH_LIMIT, PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT } from "../ingest-limits";
@@ -312,6 +313,12 @@ export const SourceSchema = z.object({
   lastErrorAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
+});
+
+export const SourceEventSchema = z.object({
+  at: z.string(),
+  kind: z.enum(["created", "updated", "stale", "fresh"]),
+  actor: z.object({ kind: z.enum(["user", "service_account"]), name: z.string() }).nullable(),
 });
 
 export const SourceAlertSchema = z.object({

@@ -61,6 +61,12 @@ export const FETCH_BUCKET_MINUTES = 10;
 export type FetchSlot = "ok" | "bad" | "none";
 /** Minutes of fetches the open source shows. */
 export const SOURCE_HOUR_MINUTES = 60;
+/** One entry of a source's history: who created or changed it, or when it stopped delivering or delivered again. */
+export type SourceEvent = {
+  at: string;
+  kind: "created" | "updated" | "stale" | "fresh";
+  actor: { kind: "user" | "service_account"; name: string } | null;
+};
 /** An alert rule that concerns one source, as its open detail lists it. */
 export type SourceAlert = {
   id: string;

@@ -12,6 +12,7 @@ import {
   fixtureApiKeys,
   fixtureBase,
   fixtureBases,
+  fixtureHistoryFor,
   fixtureMinutesFor,
   fixtureScrapesFor,
   fixtureSources,
@@ -189,6 +190,7 @@ const answer = async (route: Route, calls: Call[], override?: (call: Call) => { 
   if (call.path.endsWith("/scrapes")) return route.fulfill({ json: fixtureScrapesFor(call.path.split("/").at(-2) ?? "") });
   if (call.path.endsWith("/minutes")) return route.fulfill({ json: fixtureMinutesFor(call.path.split("/").at(-2) ?? "") });
   if (call.path.endsWith("/alerts")) return route.fulfill({ json: fixtureAlertsFor(call.path.split("/").at(-2) ?? "") });
+  if (call.path.endsWith("/history")) return route.fulfill({ json: fixtureHistoryFor(call.path.split("/").at(-2) ?? "") });
   if (call.path.endsWith("/api-keys")) return route.fulfill({ json: call.path.includes("s4Cc5Dd6") ? fixtureApiKeys : [] });
   if (call.path.startsWith(`${base}/sources/`) && call.method === "PATCH")
     return route.fulfill({
@@ -347,6 +349,29 @@ describe("Pulse on v2", () => {
       expect((await measureV2Layout(tab, { root: "#root" })).problems).toEqual([]);
       await detail.getByRole("link", { name: "Quelldetails schließen" }).click();
       await tab.waitForURL(`${origin}/app/pulse/${baseId}`);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a push source names its active keys and connects in three numbered steps from its head", async () => {
+    const { context, tab, errors } = await open(desktop, `/app/pulse/${baseId}/sources/s4Cc5Dd6`);
+    try {
+      const detail = tab.locator('[data-k2-part="Pane"][aria-label="Webshop-Ereignisse"]');
+      expect(await detail.getByText("1 aktiv").isVisible()).toBe(true);
+      // the keys and the command live in the connect flow, not in the detail
+      expect(await detail.getByText("curl").count()).toBe(0);
+      await detail.getByRole("button", { name: "Verbinden" }).click();
+      const dialog = tab.getByRole("dialog", { name: "Webshop-Ereignisse verbinden" });
+      await dialog.waitFor();
+      for (const step of ["1 · API-Schlüssel anlegen", "2 · Werte senden", "3 · Prüfen"]) {
+        expect(await dialog.getByText(step).isVisible()).toBe(true);
+      }
+      expect(await dialog.getByText("Webshop-Backend").isVisible()).toBe(true);
+      await shoot(tab, "source-connect-1440");
+      await dialog.getByRole("button", { name: "Fertig" }).click();
+      await dialog.waitFor({ state: "hidden" });
       expect(errors).toEqual([]);
     } finally {
       await context.close();

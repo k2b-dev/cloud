@@ -11,6 +11,7 @@ import {
   type PulseSourceScrape,
   SOURCE_HOUR_MINUTES,
   type SourceAlert,
+  type SourceEvent,
   type SourceFigures,
 } from "../../contracts";
 import type { BaseAttention } from "../../service/base-attention";
@@ -331,6 +332,16 @@ export const fixtureMinutesFor = (sourceId: string): FetchMinute[] => {
   });
 };
 
+/** What happened to a source: the printer stopped delivering this morning; someone set it up and changed it before. */
+export const fixtureHistoryFor = (sourceId: string): SourceEvent[] =>
+  sourceId === "s7Ee8Ff9"
+    ? [
+        { at: "2026-11-25T09:41:00.000Z", kind: "stale", actor: null },
+        { at: "2026-11-18T10:05:00.000Z", kind: "updated", actor: { kind: "user", name: "Felix Thal" } },
+        { at: "2026-11-03T08:30:00.000Z", kind: "created", actor: { kind: "user", name: "Felix Thal" } },
+      ]
+    : [{ at: "2026-03-02T08:00:00.000Z", kind: "created", actor: { kind: "user", name: "Jana Petersen" } }];
+
 /** The alert rules that concern a source: the printer's "no values" rule fires since 10:41, its toner rule is quiet. */
 export const fixtureAlertsFor = (sourceId: string): SourceAlert[] =>
   sourceId === "s7Ee8Ff9"
@@ -451,6 +462,7 @@ export const sourcesProps = (
     initialSourceScrapes: open ? { [open]: fixtureScrapesFor(open) } : {},
     initialSourceMinutes: open ? { [open]: fixtureMinutesFor(open) } : {},
     initialSourceAlerts: open ? { [open]: fixtureAlertsFor(open) } : {},
+    initialSourceHistory: open ? { [open]: fixtureHistoryFor(open) } : {},
     // a source that receives data has the key it receives them with
     initialSourceApiKeys: open && sources.find((source) => source.id === open)?.kind === "http_ingest" ? { [open]: fixtureApiKeys } : {},
     initialQueryCoverage: { bases: true, baseData: true, sourceDetail: true },

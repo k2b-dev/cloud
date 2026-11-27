@@ -1,7 +1,7 @@
 import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import { query } from "@k2b/stdlib/solid";
 import { type Accessor, createMemo } from "solid-js";
-import type { FetchMinute, PulseBase, PulseSource, PulseSourceScrape, SourceAlert, SourceFigures } from "../../contracts";
+import type { FetchMinute, PulseBase, PulseSource, PulseSourceScrape, SourceAlert, SourceEvent, SourceFigures } from "../../contracts";
 import { jsonFetch } from "../http";
 import { SOURCES_PAGE } from "./source-page";
 import type { PulseWorkspaceProps } from "./types";
@@ -15,6 +15,8 @@ type SourceDetail = {
   minutes: FetchMinute[];
   /** The alert rules that concern the source. */
   alerts: SourceAlert[];
+  /** What happened to the source, newest first. */
+  history: SourceEvent[];
 };
 
 export const createPulseWorkspaceQueries = (
@@ -79,6 +81,7 @@ export const createPulseWorkspaceQueries = (
               apiKeys: props.initialSourceApiKeys[initialId] ?? [],
               minutes: props.initialSourceMinutes?.[initialId] ?? [],
               alerts: props.initialSourceAlerts?.[initialId] ?? [],
+              history: props.initialSourceHistory?.[initialId] ?? [],
             },
           }
         : undefined,
@@ -86,13 +89,14 @@ export const createPulseWorkspaceQueries = (
     isSameSource: (a, b) => a.baseId === b.baseId && a.sourceId === b.sourceId && a.kind === b.kind,
     load: async ({ baseId, sourceId, kind }, { abortSignal }): Promise<SourceDetail> => {
       const path = `/api/pulse/bases/${baseId}/sources/${sourceId}`;
-      const [scrapes, apiKeys, minutes, alerts] = await Promise.all([
+      const [scrapes, apiKeys, minutes, alerts, history] = await Promise.all([
         jsonFetch<PulseSourceScrape[]>(`${path}/scrapes`, { signal: abortSignal }),
         kind === "http_ingest" ? jsonFetch<ResourceApiKey[]>(`${path}/api-keys`, { signal: abortSignal }) : Promise.resolve([]),
         kind === "metrics" ? jsonFetch<FetchMinute[]>(`${path}/minutes`, { signal: abortSignal }) : Promise.resolve([]),
         jsonFetch<SourceAlert[]>(`${path}/alerts`, { signal: abortSignal }),
+        jsonFetch<SourceEvent[]>(`${path}/history`, { signal: abortSignal }),
       ]);
-      return { baseId, sourceId, scrapes, apiKeys, minutes, alerts };
+      return { baseId, sourceId, scrapes, apiKeys, minutes, alerts, history };
     },
   });
   const currentDetail = () => {

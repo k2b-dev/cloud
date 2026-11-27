@@ -6,6 +6,7 @@ import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { accessScopeFor } from "./access-control";
 import { sourceHour } from "./fetch-timeline";
 import { sourceAlerts } from "./source-alerts";
+import { sourceHistory } from "./source-history";
 import { listSources, sourceFigures } from "./source-management";
 
 // 10:42 in Berlin; the base's day began at 23:00 UTC the evening before
@@ -117,6 +118,27 @@ suiteFor("database", "valkey")("Pulse fetch timeline", () => {
     expect(alerts.data.map((alert) => alert.name)).toEqual(["By target", "By id"]);
     expect(alerts.data[0]).toMatchObject({ state: "firing" });
     expect((await sourceAlerts({ baseId: otherBaseId, sourceId, user: scope() })).ok).toBe(false);
+  });
+
+  test("an open source's history names who created and changed it and when it stopped delivering, newest first", async () => {
+    const [server] = await sql<{ short_id: string }[]>`SELECT short_id FROM pulse.sources WHERE id = ${sourceId}::uuid`;
+    const entry = async (kind: string, at: string, data: Record<string, unknown>, actor: Record<string, unknown> | null) =>
+      sql`INSERT INTO pulse.base_activity(base_id, kind, actor, data, at)
+        VALUES (${baseId}::uuid, ${kind}, (${JSON.stringify(actor)}::jsonb #>> '{}')::jsonb,
+          (${JSON.stringify(data)}::jsonb #>> '{}')::jsonb, ${at}::timestamptz)`;
+    const me = { kind: "user", id: memberId, name: "Fetch member" };
+    await entry("source.created", "2026-11-03T08:30:00Z", { sourceId: server!.short_id, name: "Server" }, me);
+    await entry("source.updated", "2026-11-18T10:05:00Z", { sourceId: server!.short_id, name: "Server" }, me);
+    await entry("source_freshness", "2026-11-25T09:41:00Z", { sourceId: server!.short_id, stale: true }, null);
+    // another source's entry and another kind of entry stay out
+    await entry("source.created", "2026-11-20T08:00:00Z", { sourceId: "Zz9Yy8", name: "Other" }, me);
+    await entry("query.saved", "2026-11-21T08:00:00Z", { sourceId: server!.short_id }, me);
+    const history = await sourceHistory({ baseId, sourceId, user: scope() });
+    if (!history.ok) throw new Error("The history is not readable");
+    expect(history.data.map((event) => event.kind)).toEqual(["stale", "updated", "created"]);
+    expect(history.data[1]).toMatchObject({ at: "2026-11-18T10:05:00.000Z", actor: { kind: "user", name: "Fetch member" } });
+    expect(history.data[0]!.actor).toBeNull();
+    expect((await sourceHistory({ baseId: otherBaseId, sourceId, user: scope() })).ok).toBe(false);
   });
 
   test("the figures count today's fetches since midnight in the base's zone, in ten-minute buckets", async () => {

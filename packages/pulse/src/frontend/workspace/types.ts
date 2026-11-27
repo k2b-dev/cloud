@@ -1,7 +1,7 @@
 import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import type { PermissionLevel } from "@k2b/cloud/contracts";
 import type { DateContext } from "@k2b/stdlib";
-import type { FetchMinute, PulseBase, PulseSource, PulseSourceScrape, SourceAlert, SourceFigures } from "../../contracts";
+import type { FetchMinute, PulseBase, PulseSource, PulseSourceScrape, SourceAlert, SourceEvent, SourceFigures } from "../../contracts";
 import type { BaseAttention } from "../../service/base-attention";
 import type { WorkspaceRouteState } from "./routes";
 import type { SavedQuery, SqlClientError, SqlLimits } from "./sql-client";
@@ -34,6 +34,8 @@ export type PulseWorkspaceProps = {
   initialSourceMinutes?: Record<string, FetchMinute[]>;
   /** The open source's alert rules, read on the server. */
   initialSourceAlerts?: Record<string, SourceAlert[]>;
+  /** The open source's history, read on the server. */
+  initialSourceHistory?: Record<string, SourceEvent[]>;
   initialSourceApiKeys: Record<string, ResourceApiKey[]>;
   initialQueryCoverage: { bases: boolean; baseData: boolean; sourceDetail: boolean };
   /** The figures of all sources of the base, read on the server for the sources view; null when they could not be read. */
