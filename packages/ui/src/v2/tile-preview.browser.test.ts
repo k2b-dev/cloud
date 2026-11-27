@@ -127,3 +127,21 @@ for (const width of [1440, 390])
       if (width === 390) expect(cut.fits).toBe(false);
     });
   });
+
+// W4 (Grids): amounts in a preview stand at the end of their column with figures of one width; the other columns
+// stay at the start.
+test("a preview column with align end sets its head and cells at the end with figures of one width", async () => {
+  await withPage({ width: 1440, height: 900 }, false, async (page) => {
+    const found = await page.evaluate(() => {
+      const table = document.querySelectorAll(".k2-tile-pv-table")[0]!;
+      const style = (cell: Element) => ({ align: getComputedStyle(cell).textAlign, figures: getComputedStyle(cell).fontVariantNumeric });
+      return {
+        head: [...table.querySelectorAll("th")].map(style),
+        cell: [...table.querySelectorAll("tbody tr:first-child td")].map(style),
+      };
+    });
+    expect(found.head.map((cell) => cell.align)).toEqual(["start", "start", "end"]);
+    expect(found.cell.map((cell) => cell.align)).toEqual(["start", "start", "end"]);
+    expect(found.cell[2]?.figures).toBe("tabular-nums");
+  });
+});

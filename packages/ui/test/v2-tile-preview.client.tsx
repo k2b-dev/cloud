@@ -41,11 +41,12 @@ render(
               href: "?new=finance",
               preview: {
                 table: {
-                  columns: ["Datum", "Zahlungspartner", "Konto"],
+                  // the amount stands at the end of its column, its figures of one width
+                  columns: ["Datum", "Zahlungspartner", { label: "Betrag", align: "end" }],
                   rows: [
-                    ["01.04.", worst ? "Arbeitgeber-Gesellschaft-mit-beschränkter-Haftung-Nordhausen" : "Arbeitgeber GmbH", "Hauptkonto"],
-                    ["02.04.", "Vermieter", "Hauptkonto"],
-                    ["05.04.", "Markt vor Ort", "Visa"],
+                    ["01.04.", worst ? "Arbeitgeber-Gesellschaft-mit-beschränkter-Haftung-Nordhausen" : "Arbeitgeber GmbH", "2.640,00"],
+                    ["02.04.", "Vermieter", "−980,00"],
+                    ["05.04.", "Markt vor Ort", "−64,20"],
                   ],
                 },
               },

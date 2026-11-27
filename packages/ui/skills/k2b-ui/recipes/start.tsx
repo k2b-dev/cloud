@@ -30,7 +30,7 @@ const notebooks: Tile[] = [
     color: APP,
     preview: {
       table: {
-        columns: ["Zutat", "Menge", "Einheit"],
+        columns: ["Zutat", { label: "Menge", align: "end" }, "Einheit"],
         rows: [
           ["Camembert", "250", "g"],
           ["Frischkäse", "200", "g"],
@@ -69,7 +69,7 @@ const bases: Tile[] = [
     color: GRIDS,
     preview: {
       table: {
-        columns: ["Datum", "Text", "Betrag"],
+        columns: ["Datum", "Text", { label: "Betrag", align: "end" }],
         rows: [
           ["03.11.", "Miete", "−980,00"],
           ["05.11.", "Gehalt", "2.640,00"],
@@ -103,7 +103,7 @@ const bases: Tile[] = [
     color: GRIDS,
     preview: {
       table: {
-        columns: ["Nr.", "Kunde", "Betrag"],
+        columns: ["Nr.", "Kunde", { label: "Betrag", align: "end" }],
         rows: [
           ["041", "Brandt", "1.240,00"],
           ["042", "Oswald", "380,00"],

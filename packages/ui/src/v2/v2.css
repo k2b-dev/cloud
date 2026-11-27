@@ -1098,6 +1098,11 @@
   text-overflow: ellipsis;
   border-bottom: var(--k2-hairline);
 }
+/* a column of amounts or counts stands at the end, its figures of one width */
+.k2-ui .k2-tile-pv-table :is(th, td)[data-align="end"] {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
 /* the line under the preview closes the table: its last row draws none of its own */
 .k2-ui .k2-tile-pv-table tr:last-child td {
   border-bottom: 0;
