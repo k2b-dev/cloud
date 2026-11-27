@@ -87,6 +87,14 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   side`, `width={{ min: 280, default: 320 }}`). It stands in two columns
   from 720 px of the detail (a window of ~1680 px beside a list of 640 px)
   and in reading order below that.
+- `center`: the content stands in the middle of the column, across at its
+  own measure (at most four cards of 240 px with their gaps) and in the
+  middle of the height where it fits; taller content starts at the top and
+  scrolls, and on the phone it always starts at the top. Only for a page
+  with little on it and nothing beside it, such as the first start of an
+  app without data: one `Text type="lead"` line and `Tiles perRow={4}` with
+  the ways to start, without a sidebar. No line or box of its own; CSS
+  alone, so the server's first render already stands there.
 - children: bands, sections, groups, lists, tables, notices, `Text`.
 
 ### Pane.Split
@@ -149,6 +157,9 @@ line; symbol and label stay). Use for the key statements of a record.
 
 Like things to press, such as attachments: `items: { icon, title, meta?,
 href? }[]`, `more` (an action after them), `label`. Never nested.
+`perRow={n}`: at most n tiles share a row and grow with its width; a tile
+never gets narrower than 240 px for it, so below that they wrap, down to
+one under the other.
 
 ### Canvas
 
