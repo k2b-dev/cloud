@@ -30,16 +30,17 @@
   --k2-muted: #4b4b55;
   --k2-subtle: #6b6b74;
 
-  /* the one hairline, the edge of a control, a grip at rest. Three weights, all 1 px (identity B, look.md 6): the
-     clear line separates what must be told apart (a head from its content, panes, frames); the line between sections
-     is stronger still, so a page reads in its parts at once (Valentin 27.11.: "die Linien verschieden dick"); the
-     quiet line, very subtle, stands between the rows of a list or a table. */
+  /* Lines in two weights, all 1 px (taste study rule 8): the clear line (#e4e4e7) separates what must be told apart: a
+     head block from its content, one section from the next, a table's head from its rows, panes, frames. The hair
+     (#f0f0f2) stands between the rows of a list or a table and is barely there; between a table's columns it is
+     quieter still (#f5f5f6). Nothing under the last, never two lines at one edge. A control's edge is its own grey. */
   --k2-line: var(--k2-n200);
   --k2-hairline: 1px solid var(--k2-line);
-  --k2-hairline-section: 1px solid var(--k2-n300);
-  --k2-line-subtle: var(--k2-n100);
+  --k2-hairline-section: var(--k2-hairline);
+  --k2-line-subtle: #f0f0f2;
   --k2-hairline-subtle: 1px solid var(--k2-line-subtle);
-  --k2-line-control: var(--k2-n300);
+  --k2-line-column: #f5f5f6;
+  --k2-line-control: #dadade;
   --k2-grip: #8a8a94;
 
   /* action and selection */
@@ -89,7 +90,8 @@
   --k2-h-tabs: 44px;
   --k2-h-bar: 40px;
   --k2-h-columns: 36px;
-  --k2-h-row: 40px;
+  --k2-h-row: 46px;
+  --k2-h-cell: 44px;
   --k2-h-row2: 52px;
   --k2-h-row3: 72px;
   --k2-h-dense: 32px;
@@ -152,6 +154,11 @@
   --k2-n600: #bdbdc6;
   --k2-n800: #f1f1f3;
   --k2-n950: #fafafa;
+
+  /* the hair and the quieter column line a step and a half step off the surface; a control keeps a clear edge */
+  --k2-line-subtle: #1d2228;
+  --k2-line-column: #181d23;
+  --k2-line-control: #3a4552;
 
   --k2-canvas: #090d12;
   --k2-surface: #11151b;
@@ -1182,7 +1189,7 @@
    cut. */
 .k2-ui .k2-sh {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(min(14ch, 100%), 1fr) auto;
   grid-template-areas: "title end" "summary .";
   align-content: center;
   column-gap: 8px;
@@ -1207,8 +1214,8 @@
 }
 .k2-ui .k2-sh-title > .k2-sh-count {
   margin-left: 6px;
-  font: var(--k2-t-body);
-  color: var(--k2-subtle);
+  font: var(--k2-t-row);
+  color: var(--k2-n500);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -1218,9 +1225,39 @@
   align-self: center;
   height: 22px;
   display: flex;
-  gap: 4px;
+  gap: 8px;
   align-items: center;
+}
+/* Actions are buttons (taste rule 5): a framed button of 30 px with its symbol and its verb, never a bare text link.
+   Only the fold's chevron stays a quiet symbol. */
+.k2-ui .k2-sh > .k2-sh-end > .k2-btn:not([data-fold]) {
+  height: 30px;
+  padding: 0 11px;
+  gap: 6px;
+  font: var(--k2-t-row);
+  font-weight: 500;
+  color: var(--k2-text);
+}
+.k2-ui .k2-sh > .k2-sh-end > .k2-btn:not([data-fold]) > .k2-icon {
+  font-size: 15px;
+  color: var(--k2-n600);
+}
+.k2-ui .k2-sh > .k2-sh-end > .k2-btn[data-fold] {
   margin-right: -8px;
+}
+/* on the phone two buttons with their words leave the title's line and stand under the summary, so the title keeps
+   its line whole; one button stays beside the title */
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-sh:has(> .k2-sh-end > .k2-btn:not([data-fold]) + .k2-btn:not([data-fold])) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "title" "summary" "end";
+  }
+  .k2-ui .k2-sh:has(> .k2-sh-end > .k2-btn:not([data-fold]) + .k2-btn:not([data-fold])) > .k2-sh-end {
+    justify-self: start;
+    flex-wrap: wrap;
+    height: auto;
+    margin-top: 10px;
+  }
 }
 /* A section that can fold: its content stands in a body without a box of its own, so its rhythm and lines are those of
    any section; folded, the body is out of the page and the head stands alone above the section's line. The chevron
@@ -1233,35 +1270,45 @@
 }
 .k2-ui .k2-sh > .k2-sec-summary {
   grid-area: summary;
+  margin-top: 2px;
   font: var(--k2-t-row);
-  color: var(--k2-muted);
+  color: var(--k2-n600);
   overflow-wrap: anywhere;
 }
-/* B, a section of a settings or form screen in a wide pane (Valentin 27.11.): its title, summary and buttons in a
-   column of 240 px at the left, its content 40 px beside it. A narrower pane keeps A; the pane decides, not the
-   window. The head floats, so the content keeps its own children (rows, fields, a table) as they are. */
-@container k2-pane (min-width: 800px) {
-  .k2-ui .k2-sec[data-form] {
+/* Measure, not canvas (taste rules 1 and 4): in a pane of 960 px and more every section is B. Its title, summary and
+   buttons stand in a column of 232 px at the start, its content 48 px beside it, and the whole section, its line too,
+   ends at 1040 px, so the deeds stand at the end of what they act on, never at the far edge of a wide window. A
+   section that holds a table, tiles or a drawing keeps A and its full width: lists and tables use the room. A narrower
+   pane is A; the pane decides, not the window. The head floats, so the content keeps its own children as they are. */
+@container k2-pane (min-width: 960px) {
+  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells)), :has(> .k2-sec-body > :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells))) {
     display: flow-root;
-    padding-block: 24px;
+    max-width: 1040px;
+    margin-inline: var(--k2-edge) 0;
+    padding-block: 28px 26px;
   }
-  .k2-ui .k2-sec[data-form] > .k2-sh {
+  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells)), :has(> .k2-sec-body > :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells))) > .k2-sh {
     float: left;
-    width: 240px;
+    box-sizing: border-box;
+    width: 232px;
     min-height: 0;
-    padding: 0 0 0 var(--k2-edge);
+    padding: 0;
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: "title" "summary" "end";
     align-content: start;
   }
-  .k2-ui .k2-sec[data-form] > .k2-sh > .k2-sh-end {
+  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells)), :has(> .k2-sec-body > :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells))) > .k2-sh > .k2-sh-end {
     justify-self: start;
     height: auto;
-    margin: 12px 0 0 -8px;
+    margin-top: 14px;
   }
-  .k2-ui .k2-sec[data-form] > :not(.k2-sh, .k2-sec-body),
-  .k2-ui .k2-sec[data-form] > .k2-sec-body > * {
-    margin-left: calc(240px + 40px - var(--k2-edge));
+  /* the content is a column of its own 48 px after the head column, up to the section's end: its rows, fields and
+     notices start and end on it, so their hair and their tint stay inside the measure */
+  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells)), :has(> .k2-sec-body > :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells))) > :not(.k2-sh, .k2-sec-body),
+  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells)), :has(> .k2-sec-body > :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells))) > .k2-sec-body > * {
+    --k2-edge: 0px;
+    --k2-edge-icon: 24px;
+    margin-left: calc(232px + 48px);
   }
 }
 .k2-ui .k2-stile {
@@ -1277,9 +1324,18 @@
 .k2-ui .k2-stile > .k2-icon {
   font-size: 14px;
 }
-/* Rule 9: lines separate groups, not the items of a group. No line under the head, none between its rows. */
+/* Rule 9 with taste rule 8: no line under the head; the rows of a section stand apart by the hair, which is barely
+   there, and nothing stands under the last row (the section's own line follows). */
 .k2-ui :is(.k2-sec, .k2-sec-body) > .k2-row,
 .k2-ui :is(.k2-sec, .k2-sec-body) > .k2-list > .k2-row {
+  border-bottom: 0;
+}
+.k2-ui :is(.k2-sec, .k2-sec-body) > .k2-row + .k2-row,
+.k2-ui :is(.k2-sec, .k2-sec-body) > .k2-list > .k2-row + .k2-row {
+  border-top: var(--k2-hairline-subtle);
+}
+/* the last section of a page draws no line under itself: there is nothing below it to separate */
+.k2-ui .k2-pane > .k2-scroll > .k2-sec:last-child {
   border-bottom: 0;
 }
 /* in a side column (the info column of a record) a section is quieter: a row title, 28 px head */
@@ -1635,6 +1691,45 @@
 .k2-ui .k2-row[data-avatar] {
   column-gap: 12px;
 }
+/* Row anatomy (taste rule 6): a row of one or two lines names its thing in 13/500, so the name stands above its quiet
+   note; a row of three lines (a message) keeps 400 and turns 600 while unread. A row of one line leads with its sign
+   of 28 px (a person, a mark), and a control at its end (the role of a person) is 30 px. */
+.k2-ui .k2-row:not([data-lines="3"]) .k2-row-title {
+  font-weight: 500;
+}
+.k2-ui .k2-row[data-avatar][data-lines="1"] > .k2-row-lead {
+  width: 28px;
+}
+.k2-ui .k2-row[data-avatar][data-lines="1"] > .k2-row-lead > .k2-av {
+  width: 28px;
+  height: 28px;
+  font-size: 10.5px;
+}
+.k2-ui .k2-row-end > .k2-input {
+  height: 30px;
+  min-width: 124px;
+  padding: 0 8px 0 10px;
+}
+/* people at a row's end keep their room beside its control on a wide screen; on the phone the stack gives way first */
+@media (min-width: 768px) {
+  .k2-ui .k2-row-end > .k2-avs {
+    flex-shrink: 0;
+  }
+}
+/* on the phone a row's quiet note leaves the name's line and stands under it: two lines of at least 52 px, the name
+   whole, its control still at the end */
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-row[data-lines="1"]:has(> .k2-row-l1 > .k2-row-meta) {
+    min-height: var(--k2-h-row2);
+  }
+  .k2-ui .k2-row[data-lines="1"] > .k2-row-l1:has(> .k2-row-meta) {
+    grid-auto-flow: row;
+    row-gap: 1px;
+  }
+  .k2-ui .k2-row-end > .k2-input {
+    min-width: 0;
+  }
+}
 .k2-ui .k2-row[data-avatar] > .k2-row-lead {
   width: 32px;
 }
@@ -1735,7 +1830,7 @@
   text-overflow: ellipsis;
 }
 .k2-ui .k2-table td {
-  height: var(--k2-h-row);
+  height: var(--k2-h-cell);
   padding: 0 12px;
   border-bottom: var(--k2-hairline-subtle);
   vertical-align: middle;
@@ -1815,7 +1910,7 @@
   margin-right: -8px;
 }
 .k2-ui .k2-group .k2-table:not([data-lines="2"]) td {
-  height: var(--k2-h-row);
+  height: var(--k2-h-cell);
 }
 /* a table in a group starts at the group's text edge */
 .k2-ui .k2-group .k2-table th:first-child,
@@ -1844,7 +1939,7 @@
 /* the cells keep the side padding of every table, so the first and the last start and end on the text edge of the
    head and the group rows */
 .k2-ui .k2-table[data-grid] td {
-  height: var(--k2-h-row);
+  height: var(--k2-h-cell);
   padding-block: 0;
   vertical-align: middle;
   white-space: nowrap;
@@ -2846,6 +2941,15 @@
 }
 .k2-ui .k2-row[data-mark] {
   column-gap: 12px;
+}
+/* leading a row of one line: 28 (taste rule 6) */
+.k2-ui .k2-row[data-mark][data-lines="1"] > .k2-row-lead > .k2-mk {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+.k2-ui .k2-row[data-mark][data-lines="1"] > .k2-row-lead > .k2-mk > .k2-icon {
+  font-size: 16px;
 }
 /* on a tile: 36 */
 .k2-ui .k2-tiles[data-variant="card"] .k2-mk {
@@ -5835,16 +5939,6 @@
     grid-row: auto;
     padding: 4px 0 0;
     flex-wrap: wrap;
-  }
-  /* a head action with a leading symbol keeps only the symbol; its words stay its title and name (not `display: none`,
-     which took them). One without a leading symbol keeps its words, also with a trailing chevron (forward, menu) */
-  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn:has(> .k2-icon:first-child) > .k2-btn-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
   .k2-ui .k2-facts {
     grid-template-columns: minmax(0, 1fr);

@@ -16,7 +16,6 @@ declare global {
 
 const hours = () => (
   <Section
-    form
     title="Regelmäßige Öffnungszeiten"
     count="6 Tage"
     summary="Gelten jede Woche, außer an abweichenden Tagen."
@@ -29,7 +28,7 @@ const hours = () => (
 );
 
 const shifts = () => (
-  <Section form title="Schichten" count={5} summary="Wiederkehrende Schichten, für die sich Mitarbeitende eintragen.">
+  <Section title="Schichten" count={5} summary="Wiederkehrende Schichten, für die sich Mitarbeitende eintragen.">
     <Row lines={["Inventur", "Mittwoch · 14:00–17:00 · 2–3 Personen"]} />
     <Row lines={["Mittagstheke", "Donnerstag · 11:00–14:00 · 3–4 Personen"]} />
   </Section>

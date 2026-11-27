@@ -46,7 +46,10 @@ export const heights = {
   tabs: 44,
   bar: 40,
   columns: 36,
-  row: 40,
+  /** A row of one line (taste study rule 6): its sign of 28 px, the name and its quiet note on one line. */
+  row: 46,
+  /** A cell of a table: one line per record. */
+  cell: 44,
   row2: 52,
   row3: 72,
   dense: 32,

@@ -10,10 +10,7 @@ const HeadActions = (props: { actions?: TwoActions }) => (
   <For each={props.actions}>
     {(action) => (
       <Button
-        variant="text"
         icon={action.icon}
-        // on the phone the head keeps only the symbol: the words stay the button's name and hint
-        title={action.icon ? action.label : undefined}
         forward={action.forward}
         href={action.href}
         onNavigate={action.onNavigate}
@@ -31,16 +28,10 @@ export type SectionProps = {
   title: string;
   /** A quiet count after the title. */
   count?: number | string;
-  /** At most two text buttons in the head; on the phone they keep only their symbol. */
+  /** At most two buttons in the head: framed, with their symbol and their verb, also on the phone. */
   actions?: TwoActions;
   /** One sentence that says what the section is for: the quiet line right under the title. */
   summary?: JSX.Element;
-  /**
-   * A section of a settings or form screen. Where its pane is wide (800 px and more), its title, summary and buttons
-   * stand in a column of 240 px at the left and its content at the right; in a narrower pane it is an ordinary section.
-   * Leave it out on detail and overview pages.
-   */
-  form?: boolean;
   /**
    * Its head, its sentence and its rows stay at the reading measure of `Prose` (720 px of text), so in a wide pane a
    * short list stays together instead of its words standing at the left edge and its deeds at the right. The section's
@@ -65,9 +56,10 @@ export type SectionProps = {
 };
 
 /**
- * A section: a calm head (title, a quiet count, the summary under it, at most two text buttons at the end) and its
- * content. A `form` section of a settings screen takes a column of its own for its head where its pane is wide. Rule
- * 9: no line under the head, none between the entries, one line at the end. A section that can fold keeps the same
+ * A section: a calm head (title, a quiet count, the summary under it, at most two framed buttons at the end) and its
+ * content. In a pane of 960 px and more its head takes a column of its own and the section keeps the measure of
+ * 1040 px; a section of a table, tiles or a drawing keeps its full width. Rule 9: no line under the head, a hair
+ * between the entries, one line at the end and none under the last section. A section that can fold keeps the same
  * head, rhythm and lines; the server and the first render show it as `open` says.
  */
 export const Section = (props: SectionProps) => {
@@ -92,7 +84,6 @@ export const Section = (props: SectionProps) => {
       data-k2-part="Section"
       aria-label={props.title}
       data-measure={props.measure ? "" : undefined}
-      data-form={props.form ? "" : undefined}
     >
       <div class="k2-sh">
         <div class="k2-sh-title">

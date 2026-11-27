@@ -8,6 +8,7 @@ import MailTabletScreen from "./MailTabletScreen.island";
 import MenusScreen from "./MenusScreen.island";
 import { MailScreen } from "./mail-screen";
 import { DeliveriesScreen, RecordScreen } from "./record-screen";
+import { GridsAccessScreen, VenueTimesScreen } from "./taste-screens";
 import TableScreen from "./TableScreen.island";
 import V2Inspect from "./V2Inspect.island";
 import V2InspectSwitch from "./V2InspectSwitch.island";
@@ -158,6 +159,26 @@ export const v2Screens = {
     phone: { app: "Benutzer" },
     query: "?role=member,guest&group=groups",
     render: (search) => <FilterScreen list="people" search={search} />,
+  },
+  "grids-access": {
+    title: "Einstellungen · Zugriff einer Base",
+    description:
+      "Who may open a base in Grids: wide settings sections with their head in a column of its own, rows with their sign and the control that changes them, a choice of three as connected cards, and the exceptions of what inherits.",
+    mockup: "v2-taste-study v2 (a · Grids › Zugriff)",
+    app: "#16a34a",
+    phone: { app: "Grids" },
+    rail: { apps: ["home", "mail", "folder", "table", "notebook", "coffee"], current: "table" },
+    render: () => <GridsAccessScreen />,
+  },
+  "venue-times": {
+    title: "Einstellungen · Zeiten und Schichten",
+    description:
+      "Opening hours, exceptions and shifts of a venue: section heads with a framed button under their summary on a wide pane, beside the title on the phone.",
+    mockup: "v2-taste-study v2 (b · Standorte › Zeiten)",
+    app: "#ea580c",
+    phone: { app: "Standorte" },
+    rail: { apps: ["home", "mail", "folder", "building-store", "notebook", "coffee"], current: "building-store" },
+    render: () => <VenueTimesScreen />,
   },
 } satisfies Record<string, V2Screen>;
 

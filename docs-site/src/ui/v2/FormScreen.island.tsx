@@ -98,7 +98,7 @@ export default function FormScreen() {
         <Notice tone="warn" title="Kunde hat noch offene Rechnungen" actions={[{ label: "Ansehen", forward: true }]}>
           Familie Oswald hat 2 Rechnungen über 1.234,50 € offen, eine davon seit 15. Okt. überfällig.
         </Notice>
-        <Section form title="Kunde">
+        <Section title="Kunde">
           <Field.Row>
             <Field name="customer" label="Kunde">
               <Select options={["Familie Oswald", "Architekturbüro Winter", "Stadtwerke Auental"]} value="Familie Oswald" />
@@ -108,7 +108,7 @@ export default function FormScreen() {
             </Field>
           </Field.Row>
         </Section>
-        <Section form title="Auftrag">
+        <Section title="Auftrag">
           <Field.Row>
             <Field name="name" label="Bezeichnung" hint="So erscheint der Auftrag in der Liste.">
               <Input value="Einbauschrank Flur" />
@@ -131,7 +131,7 @@ export default function FormScreen() {
             </Field>
           </Field.Row>
         </Section>
-        <Section form title="Ablauf">
+        <Section title="Ablauf">
           <Choice
             name="delivery"
             label="Übergabe"

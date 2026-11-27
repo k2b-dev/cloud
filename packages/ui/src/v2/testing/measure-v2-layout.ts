@@ -421,10 +421,10 @@ function measureInPage(options: InPage): DomResult {
     };
     const edge: string[] = [];
     // Collinear pieces of one line (the cells of a row) merge first.
-    // The content of a `Section form` that stands beside its head column (B) has its own column: its rows' lines start
-    // there, as in the settings layout, and are measured by the section's own line instead.
+    // A section that stands beside its head column (B, a pane of 960 px and more) has its own measure: its rows' lines
+    // start at its content column and its own line ends at 1040 px, where its content ends (taste rule 1).
     const besideHead = (element: Element) => {
-      const section = element.closest(".k2-sec[data-form]");
+      const section = element.closest(".k2-sec");
       const head = section?.querySelector(":scope > .k2-sh");
       return !!head && !head.contains(element) && getComputedStyle(head).float === "left";
     };
