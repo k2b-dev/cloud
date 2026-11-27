@@ -212,6 +212,7 @@ const rules: readonly V2Rule[] = [
 const roleExamples: Record<keyof typeof typeRoles, string> = {
   lead: "the main statement or a name",
   body: "a title in a head, reading text",
+  title: "the title of a section",
   row: "rows and controls",
   meta: "labels, times, counters",
 };

@@ -125,7 +125,7 @@ export default function MailtoGenerator() {
           label: w().result,
           children: (
             <>
-              <Section icon="link" title={w().result} summary={mailto() ? undefined : w().nothingYet}>
+              <Section title={w().result} summary={mailto() ? undefined : w().nothingYet}>
                 <Facts
                   items={[
                     { label: t().mailtoLink, value: mailto() || "–", mono: true, copy: mailto() || undefined },

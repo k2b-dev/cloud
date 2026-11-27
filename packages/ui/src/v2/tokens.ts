@@ -12,6 +12,8 @@ export const typeRoles = {
   row: { size: 13, lineHeight: 20, weight: 400 },
   /** Titles in a head, reading text. */
   body: { size: 14, lineHeight: 20, weight: 400 },
+  /** The title of a section: calm and a step larger than the text, never small and bold. */
+  title: { size: 15, lineHeight: 22, weight: 600 },
   /** The one main statement or name. */
   lead: { size: 18, lineHeight: 24, weight: 600 },
 } as const;

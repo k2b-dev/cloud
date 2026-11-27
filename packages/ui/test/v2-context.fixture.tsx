@@ -45,7 +45,7 @@ const Sources = (props: { few?: boolean; many?: boolean }) => (
 
 const Context = () => (
   <>
-    <Section icon="info-circle" title="Angaben">
+    <Section title="Angaben">
       <Facts
         items={[
           { label: "Quellen", value: "14" },
@@ -53,7 +53,7 @@ const Context = () => (
         ]}
       />
     </Section>
-    <Section icon="history" title="Zuletzt">
+    <Section title="Zuletzt">
       <Row icon="plug" lines={["Quelle 1 angelegt", "Ada Renz · gestern"]} />
       <Row icon="plug" lines={["Quelle 2 geändert", "Felix Thal · Mo."]} />
     </Section>
@@ -78,7 +78,7 @@ export function Fixture(props: { kind: Kind }) {
             <Pane detail label="Quelle 1" back={{ label: "Quellen", href: "#" }} head={<Bar start={<Text type="lead">Quelle 1</Text>} />}>
               <Pane.Split>
                 <Pane label="Was sie ist">
-                  <Section icon="plug" title="Verbindung">
+                  <Section title="Verbindung">
                     <Facts
                       items={[
                         { label: "Art", value: "Abruf alle 5 Minuten" },

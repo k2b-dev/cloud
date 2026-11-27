@@ -416,7 +416,7 @@ export default function QrCodeGenerator() {
                 </Match>
               </Switch>
             </Band>
-            <Section icon="adjustments" title={t().advancedTitle} summary={t().advancedSubtitle}>
+            <Section title={t().advancedTitle} summary={t().advancedSubtitle}>
               <Field label={t().ecLabel} hint={t().ecDescription}>
                 <Select
                   value={ecLevel()}
@@ -444,7 +444,7 @@ export default function QrCodeGenerator() {
             </Section>
           </Pane>
           <Pane label={t().previewHeading}>
-            <Section icon="qrcode" title={t().previewHeading} count={`${size()} px`} summary={t().previewSubtitle}>
+            <Section title={t().previewHeading} count={`${size()} px`} summary={t().previewSubtitle}>
               <Canvas label={t().qrAlt} height={320}>
                 <Show
                   when={qrSvg()}

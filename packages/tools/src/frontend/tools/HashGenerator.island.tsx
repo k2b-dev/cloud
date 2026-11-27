@@ -55,7 +55,7 @@ export default function HashGenerator() {
         result={{
           label: w().result,
           children: (
-            <Section icon="hash" title={w().result} summary={input() ? undefined : w().nothingYet}>
+            <Section title={w().result} summary={input() ? undefined : w().nothingYet}>
               {/* before any text, one quiet line where the result will stand */}
               <Facts
                 items={[

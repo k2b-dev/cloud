@@ -227,7 +227,7 @@ export default function ColorConverter() {
         result={{
           label: w().result,
           children: (
-            <Section icon="palette" title={t().colorPicker} summary={t().hint}>
+            <Section title={t().colorPicker} summary={t().hint}>
               {/* the colour itself, large: the page's hero; it is picked with the colour field beside it */}
               <Canvas label={t().colorPicker} height={240}>
                 <span

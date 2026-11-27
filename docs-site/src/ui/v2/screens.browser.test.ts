@@ -85,26 +85,29 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
   },
   // akte-einlieferungen.html
   deliveries: {
+    // The section head of 27.11. (Valentin, settings-headings-study A): its summary stands right under the title, so the
+    // head is 14 px lower than in the mockup and all below it moves 14 px up (section 945 → 931, group 185 → 171).
     1440: {
-      section: [".k2-sec", "250,101 1125x945"],
-      group: [".k2-group", "270,185 1085x254"],
-      groupHead: [".k2-gh", "271,186 1083x56"],
-      steps: [".k2-steps", "271,286 1083x72"],
-      table: [".k2-group .k2-table", "271,636 1083x124"],
+      section: [".k2-sec", "250,101 1125x931"],
+      group: [".k2-group", "270,171 1085x254"],
+      groupHead: [".k2-gh", "271,172 1083x56"],
+      steps: [".k2-steps", "271,272 1083x72"],
+      table: [".k2-group .k2-table", "271,622 1083x124"],
       // the inline facts with their end: the part is the line around the list
-      facts: ['[data-k2-part="Facts"]', "271,836 1083x32"],
-      folded: [".k2-group[data-folded]", "270,897 1085x58"],
+      facts: ['[data-k2-part="Facts"]', "271,822 1083x32"],
+      folded: [".k2-group[data-folded]", "270,883 1085x58"],
       railApp: [".ui-v2-rail__app[data-current]", "-48,92 40x36"],
     },
     390: {
-      // mockup v17: the steps stand 12 px apart on the phone, so all below them moves 16 px down
-      section: [".k2-sec", "0,101 390x1421"],
-      group: [".k2-group", "16,205 358x382"],
-      groupHead: [".k2-gh", "17,206 356x84"],
-      steps: [".k2-steps", "17,354 356x148"],
-      table: [".k2-group .k2-table", "17,908 356x204"],
-      facts: ['[data-k2-part="Facts"]', "17,1192 356x64"],
-      folded: [".k2-group[data-folded]", "16,1285 358x102"],
+      // mockup v17: the steps stand 12 px apart on the phone, so all below them moves 16 px down; the section head of
+      // 27.11. is 14 px lower (its summary right under the title), so all below it moves 14 px up
+      section: [".k2-sec", "0,101 390x1407"],
+      group: [".k2-group", "16,191 358x382"],
+      groupHead: [".k2-gh", "17,192 356x84"],
+      steps: [".k2-steps", "17,340 356x148"],
+      table: [".k2-group .k2-table", "17,894 356x204"],
+      facts: ['[data-k2-part="Facts"]', "17,1178 356x64"],
+      folded: [".k2-group[data-folded]", "16,1271 358x102"],
     },
   },
   keys: { 1440: {}, 390: {} },

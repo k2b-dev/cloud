@@ -157,7 +157,7 @@ export const RecordScreen = () => (
     </Cells>
     <Pane.Split>
       <Pane label="Überblick">
-        <Section icon="checklist" color="#2563eb" title="Anstehend" count={2} actions={[{ label: "Todo anlegen", icon: "plus" }]}>
+        <Section title="Anstehend" count={2} actions={[{ label: "Todo anlegen", icon: "plus" }]}>
           <Row
             yours
             strong
@@ -172,7 +172,7 @@ export const RecordScreen = () => (
             action={{ label: "Herausgabe vorbereiten" }}
           />
         </Section>
-        <Section icon="list-details" color={deliveries} title="Vorgänge" more={{ label: "Alle Einlieferungen", forward: true }}>
+        <Section title="Vorgänge" more={{ label: "Alle Einlieferungen", forward: true }}>
           <Digest
             label="Vorgänge"
             items={[
@@ -225,7 +225,7 @@ export const RecordScreen = () => (
             ]}
           />
         </Section>
-        <Section icon="messages" color="#0f766e" title="Kontaktverlauf" count={14}>
+        <Section title="Kontaktverlauf" count={14}>
           <Field.Row>
             <Input icon="phone" placeholder="Was wurde besprochen?" label="Was wurde besprochen?" />
           </Field.Row>
@@ -244,7 +244,6 @@ export const RecordScreen = () => (
           <MapDrawing address="Am Beispielhang 12, 12345 Beispielstadt" />
         </Canvas>
         <Section
-          icon="phone"
           title="Kontakt"
           actions={[{ label: "Ändern", icon: "pencil" }]}
           more={{ label: "Alle Angaben", meta: "Bank, Person, Ausweis, Boten, Portal" }}
@@ -278,8 +277,6 @@ export const RecordScreen = () => (
 export const DeliveriesScreen = () => (
   <RecordFrame tab="deliveries">
     <Section
-      icon="package"
-      color={deliveries}
       title="Einlieferungen"
       count={4}
       actions={[

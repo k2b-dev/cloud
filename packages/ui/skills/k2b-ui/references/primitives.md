@@ -177,8 +177,13 @@ drawing: a second child stands in a row of its own under it and is cut away.
 
 ### Section
 
-A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
-`actions` (≤ 2 text buttons in the head), `summary` (one sentence),
+A titled part with a calm head and no symbol: `title` (15/22 600), `count`
+(quiet beside it), `actions` (≤ 2 text buttons at the end of the title's
+row), `summary` (the one sentence that says what it is for, the quiet line
+right under the title), `form` (a section of a settings or form screen:
+where its pane is 800 px and wider, title, summary and buttons stand in a
+column of 240 px at the left and the content 40 px beside it; leave it out
+on detail and overview pages),
 `measure` (its head, sentence and rows keep the reading measure of `Prose`,
 720 px of text, so a short list in a wide pane stays together; its line
 still reaches the column's edges), `more` (one link under the rows, its

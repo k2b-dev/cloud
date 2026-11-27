@@ -309,7 +309,7 @@ export default function EncryptionTool() {
                   {error()}
                 </Notice>
               </Show>
-              <Section icon="file-code" title={t().output} summary={output() ? undefined : w().nothingYet}>
+              <Section title={t().output} summary={output() ? undefined : w().nothingYet}>
                 <Facts items={[{ label: t().output, value: output() || "–", mono: true, copy: output() || undefined }]} />
               </Section>
             </>

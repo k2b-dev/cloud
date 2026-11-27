@@ -132,7 +132,7 @@ test("the line between sections is clearly stronger than the very subtle lines b
         cell: color(document.querySelector(".k2-table tbody tr:first-child td")),
       };
     });
-    // identity B: structure n200, rows n100, both 1 px
-    expect(lines).toEqual({ section: "rgb(228, 228, 231)", row: "rgb(244, 244, 245)", cell: "rgb(244, 244, 245)" });
+    // all 1 px: between sections n300, between rows n100 (structure keeps n200)
+    expect(lines).toEqual({ section: "rgb(212, 212, 216)", row: "rgb(244, 244, 245)", cell: "rgb(244, 244, 245)" });
   });
 });

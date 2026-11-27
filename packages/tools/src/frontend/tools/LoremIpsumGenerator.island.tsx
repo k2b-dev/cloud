@@ -240,7 +240,7 @@ export default function LoremIpsumGenerator() {
           label: w().result,
           children: (
             <>
-              <Section icon="align-left" title={w().result}>
+              <Section title={w().result}>
                 <For each={paragraphs()}>{(paragraph) => <Text type="body">{paragraph}</Text>}</For>
               </Section>
             </>

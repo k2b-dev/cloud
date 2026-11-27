@@ -68,7 +68,7 @@ export default function UuidGenerator() {
           label: w().result,
           children: (
             // technical values in monospace, each with its copy; the count is a quiet number at the head
-            <Section icon="fingerprint" title={w().result} count={uuids().length || undefined}>
+            <Section title={w().result} count={uuids().length || undefined}>
               <Facts items={uuids().map((uuid, index) => ({ label: String(index + 1), value: uuid, mono: true, copy: uuid }))} />
             </Section>
           ),

@@ -136,7 +136,7 @@ export default function EncodingTool() {
           label: w().result,
           children: (
             <>
-              <Section icon="transform" title={w().result} summary={result().output ? undefined : w().nothingYet}>
+              <Section title={w().result} summary={result().output ? undefined : w().nothingYet}>
                 <Facts items={[{ label: outputLabel(), value: result().output || "–", mono: true, copy: result().output || undefined }]} />
               </Section>
             </>

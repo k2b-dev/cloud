@@ -190,11 +190,7 @@ export default function PasswordGenerator() {
           label: t().generatedPassword,
           children: (
             <>
-              <Section
-                icon="key"
-                title={t().generatedPassword}
-                actions={[{ label: t().refreshPassword, icon: "refresh", onClick: refresh }]}
-              >
+              <Section title={t().generatedPassword} actions={[{ label: t().refreshPassword, icon: "refresh", onClick: refresh }]}>
                 {/* The password is drawn: large, sign by sign, digits and symbols in their own colour, wrapped anywhere. */}
                 <Canvas label={t().generatedPassword} height={120}>
                   <div
@@ -246,7 +242,7 @@ export default function PasswordGenerator() {
                 </Inline>
               </Section>
               <Show when={recent().length > 0}>
-                <Section icon="history" title={t().recent} count={recent().length} summary={t().recentHint}>
+                <Section title={t().recent} count={recent().length} summary={t().recentHint}>
                   <Facts items={recent().map((entry) => ({ label: entry.time, value: entry.value, mono: true, copy: entry.value }))} />
                 </Section>
               </Show>
