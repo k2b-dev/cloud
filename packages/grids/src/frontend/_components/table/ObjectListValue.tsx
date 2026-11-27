@@ -35,8 +35,9 @@ export function ObjectListValue(props: {
       row[column.id],
       column.type,
       column.config,
+      // a number stands exact without its storage padding ("1.0000" reads 1), grouped in the reader's language
       column.type === "number"
-        ? { kind: "decimal" }
+        ? { kind: "decimal", thousandsSeparator: true }
         : column.type === "date"
           ? { kind: "date", format: "short", includeTime: column.config.includeTime === true }
           : undefined,

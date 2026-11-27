@@ -10,7 +10,9 @@
   },
   "scripts": {
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false",
-    "test": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*'"
+    "test": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*'",
+    "test:part:frontend-lib": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' ./src/frontend/lib",
+    "test:part:rest": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' --path-ignore-patterns 'src/frontend/lib/**'"
   },
   "dependencies": {
     "@codemirror/autocomplete": "catalog:",

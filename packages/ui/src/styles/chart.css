@@ -65,6 +65,18 @@
   max-width: 100%;
   overflow-wrap: anywhere;
 }
+/* a state timeline's now: a thin line in the accent over the lanes, its word on the time axis in the accent's ink,
+   which reads on the surface in both themes */
+:is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart-state-now {
+  stroke: var(--k2-blue, var(--k2b-color-primary, #2563eb));
+}
+/* above the v2 rule for axis labels (0,4,0), which would paint the word grey */
+:is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart .stdlib-chart-heatmap-label.stdlib-chart-state-now-label {
+  fill: var(--k2-blue-ink, var(--k2b-color-primary, #1d4ed8));
+  opacity: 1;
+  font-weight: 600;
+}
+
 :is(.k2b-ui, .k2-ui) .k2b-chart__legend-swatch {
   flex: none;
   width: 10px;
@@ -108,6 +120,31 @@
   :is(.k2b-ui, .k2-ui) .k2b-chart[data-interactive="true"]:focus-visible {
     outline: var(--k2b-focus-width) solid CanvasText;
     outline-offset: calc(-1 * var(--k2b-focus-width));
+  }
+  :is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart .stdlib-chart-state-now {
+    stroke: CanvasText;
+  }
+  :is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart .stdlib-chart-heatmap-label.stdlib-chart-state-now-label {
+    fill: CanvasText;
+  }
+  /* A line's colour scale becomes the text colour, bars and quiet ranges the muted one: each stays apart from the
+     page, and a band stays behind the data. The scale's gradient is the line's own style, so this outranks it. */
+  :is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart .k2b-line-scaled {
+    forced-color-adjust: none;
+    stroke: CanvasText !important;
+  }
+  :is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart [data-scaled-fill] {
+    forced-color-adjust: none;
+    fill: GrayText !important;
+  }
+  :is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart .k2b-line-bar {
+    forced-color-adjust: none;
+    fill: GrayText;
+  }
+  :is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart .k2b-line-band {
+    forced-color-adjust: none;
+    fill: GrayText;
+    fill-opacity: 0.2;
   }
 }
 

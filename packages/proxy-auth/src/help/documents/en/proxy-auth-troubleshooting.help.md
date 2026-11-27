@@ -11,7 +11,7 @@ order: 120
 :::reference
 - **Redirect to login:** The request has no valid Cloud session. Confirm the browser can reach the normal Cloud login and that cookies are sent for the expected origin.
 - **403 Forbidden:** The user is signed in but belongs to none of the allowed groups. Check effective and nested group membership.
-- **404 or invalid client:** The verify URL is wrong or the client was deleted. Copy the current URL from the client action menu.
+- **404 or invalid client:** The verify URL is wrong or the client was deleted. Open the client in the list and copy the current URL there.
 - **Upstream receives no identity:** Confirm the ForwardAuth middleware forwards the response headers listed on the Proxy Auth page.
 :::
 

@@ -343,6 +343,23 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
     }
   }, 20_000);
 
+  // #4189: under Playwright's clock (`page.clock.install`), requestAnimationFrame runs on fake time, which advances only
+  // as the test lets it; a paused clock never shows a frame. settled() waits for real frames, so it still settles.
+  test("settled() settles a page whose fake clock is paused", async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.clock.install({ time: new Date("2026-11-27T12:00:00Z") });
+      await page.setContent(`<!doctype html><p id="text">text</p>`);
+      await page.clock.pauseAt(new Date("2026-11-27T12:01:00Z"));
+      // before the fix this waited for a frame of the paused fake clock and never returned
+      await settled(page);
+      expect(await page.locator("#text").textContent()).toBe("text");
+    } finally {
+      await context.close();
+    }
+  }, 20_000);
+
   test("settled() names the animations of a page that keeps animating", async () => {
     const context = await browser.newContext();
     try {
@@ -454,6 +471,36 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
       expect(error.message).toContain("has been closed");
       expect(error.message).toContain(error.cause.message.split("\n")[0] ?? "");
       expect(error.message.endsWith("\nthe page reported: TypeError: boom")).toBe(true);
+    } finally {
+      await context.close();
+    }
+  });
+
+  // Guard for #4402 and #4393: a page whose client never booted (a module request that failed, an answer of 404) let
+  // the test fail later with "window.mountChat is not a function" or a bare timeout, and the evidence was gone.
+  test("waitInPage() names the scripts that failed to load or were answered with 400 and above", async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      page.setDefaultTimeout(1_000);
+      await page.route("http://boot.test/**", async (route) => {
+        const { pathname } = new URL(route.request().url());
+        if (pathname === "/client.js") return route.abort();
+        if (pathname === "/chunk.js") return route.fulfill({ status: 404, body: "" });
+        return route.fulfill({
+          contentType: "text/html",
+          body: '<!doctype html><script type="module" src="/client.js"></script><script type="module" src="/chunk.js"></script>',
+        });
+      });
+      await page.goto("http://boot.test/");
+      const error = await waitInPage(page, "the client defines window.ready", () => Reflect.get(window, "ready") === true).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      if (!(error instanceof Error)) throw new Error(`waitInPage() did not fail: ${String(error)}`);
+      expect(error.message.startsWith("the client defines window.ready: ")).toBe(true);
+      expect(error.message).toContain("\nscripts and documents that failed to load: GET http://boot.test/client.js: ");
+      expect(error.message).toContain("\nscripts and documents answered with 400 and above: 404 GET http://boot.test/chunk.js");
     } finally {
       await context.close();
     }

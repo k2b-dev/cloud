@@ -8,18 +8,20 @@ const overlayMessages = i18n.define({
     en: {
       moreActions: "More actions",
       more: "More",
-      levelsAbove: "Levels above",
+      moreInBar: "More in this bar",
       undo: "Undo",
       retry: "Try again",
       actionsFor: ({ name }: { name: string }) => `Actions for ${name}`,
+      backTo: ({ name }: { name: string }) => `Back to ${name}`,
     },
     de: {
       moreActions: "Weitere Aktionen",
       more: "Mehr",
-      levelsAbove: "Übergeordnete Ebenen",
+      moreInBar: "Mehr in dieser Leiste",
       undo: "Rückgängig",
       retry: "Erneut versuchen",
       actionsFor: ({ name }: { name: string }) => `Aktionen für ${name}`,
+      backTo: ({ name }: { name: string }) => `Zurück zu ${name}`,
     },
   },
 });

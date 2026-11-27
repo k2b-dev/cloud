@@ -158,3 +158,20 @@ test("registry readers drop unknown permissions without dropping routes or grant
   expect(asAppRegistryEntry({ ...valid, platformPermissions: ["future:permission"] })).toEqual({ ...valid, platformPermissions: [] });
   expect(entry.platformPermissions).toContain("future:permission");
 });
+
+test("accepts an unknown application through the generic registry contract", () => {
+  const entry = {
+    ...valid,
+    id: "retired-app",
+    package: "retired-app",
+    name: "Retired app",
+    baseUrl: "http://app-retired-app:3000",
+    routes: ["/retired-app", "/api/retired-app", "/admin/retired-app", "/public/retired-app"],
+    access: { kind: "signedIn", publicRoutes: ["/retired-app", "/api/retired-app/openapi.json"] },
+    nav: { href: "/retired-app", section: "hidden" },
+    legalLinks: [{ label: "Public reference", href: "/retired-app", icon: "ti ti-help-circle" }],
+  };
+  expect(validateAppRegistryEntry(entry)).toBeNull();
+  expect(asAppRegistryEntry(entry)).toMatchObject(entry);
+  expect(resolveApplicationPackage(entry.id, entry.package)).toBe("retired-app");
+});

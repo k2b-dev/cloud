@@ -357,24 +357,6 @@
         "yjs",
       ],
     },
-    "packages/faq": {
-      "name": "@k2b/cloud-app-faq",
-      "version": "0.0.0",
-      "dependencies": {
-        "@k2b/cloud": "workspace:*",
-        "@k2b/ssr": "workspace:*",
-        "@k2b/stdlib": "workspace:*",
-        "@k2b/ui": "workspace:*",
-        "hono": "catalog:",
-        "hono-openapi": "catalog:",
-        "solid-js": "catalog:",
-        "zod": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "packages/filesv2": {
       "name": "@k2b/cloud-app-filesv2",
       "version": "0.0.0",
@@ -632,6 +614,8 @@
       },
       "devDependencies": {
         "@types/bun": "catalog:",
+        "bun-plugin-tailwind": "catalog:",
+        "playwright": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -1334,8 +1318,6 @@
     "@k2b/cloud-app-core": ["@k2b/cloud-app-core@workspace:packages/core"],
 
     "@k2b/cloud-app-dashboard": ["@k2b/cloud-app-dashboard@workspace:packages/dashboard"],
-
-    "@k2b/cloud-app-faq": ["@k2b/cloud-app-faq@workspace:packages/faq"],
 
     "@k2b/cloud-app-filesv2": ["@k2b/cloud-app-filesv2@workspace:packages/filesv2"],
 
