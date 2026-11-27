@@ -87,6 +87,15 @@ export const behaviorIgnore = "--path-ignore-patterns=**/*.behavior.test.*";
 /** The prediction a CI shard is planned to; the time between this and its budget is the margin for slow runners. */
 export const shardTargetMinutes = (browser?: boolean): number => (browser ? 11 : 15);
 
+/** How far a suite may run over its committed weight before its shard names it: #4386 hid 1.44x (693 s, 1000 s). */
+export const suiteDrift = 1.2;
+
+/** A suite that ran well above its own measured weight; the shard may still be green, but the plan no longer is. */
+export const suiteTimeNotice = (name: string, seconds: number, weight: number | undefined): string | undefined =>
+  weight === undefined || seconds <= weight * suiteDrift
+    ? undefined
+    : `::warning title=Test suite above its weight::${name} took ${seconds.toFixed(1)} s, ${(seconds / weight).toFixed(2)}x its ${weight} s in scripts/test-weights.json; refresh it with \`bun scripts/test-weights.ts --run <id>\` or split it`;
+
 /** A shard over its budget fails; one above the target stays green and asks for fresh weights before it fails. */
 export const shardTimeNotice = (label: string, minutes: number, maxMinutes: number | undefined, browser?: boolean): string | undefined => {
   if (maxMinutes === undefined) return undefined;
@@ -532,6 +541,12 @@ Example: bun run test --filter packages/core --filter packages/cloud`);
       if (warmup !== 0) throw new Error("browser warm-up failed");
     }
 
+    const table: Record<string, number> = options.integration
+      ? committedWeights.integration
+      : options.browser
+        ? committedWeights.browser
+        : committedWeights.unit;
+    const drifted: string[] = [];
     for (const suite of suites) {
       console.log(`\n=== ${suite.name} ===`);
       const started = performance.now();
@@ -545,7 +560,12 @@ Example: bun run test --filter packages/core --filter packages/cloud`);
         // Read it at once: CI Postgres drops a statement of a lost client after client_connection_check_interval.
         if (options.integration && env.CLOUD_TEST_DATABASE_URL) console.log(await describeDatabaseActivity(env.CLOUD_TEST_DATABASE_URL));
       }
-      console.log(`=== ${suite.name}: ${((performance.now() - started) / 1000).toFixed(1)}s`);
+      const seconds = (performance.now() - started) / 1000;
+      console.log(`=== ${suite.name}: ${seconds.toFixed(1)}s`);
+      // only a planned shard is measured against the table; a suite without its own entry has no weight to drift from
+      const weight = Object.hasOwn(table, suite.name) ? table[suite.name] : undefined;
+      const notice = options.shard && code === 0 ? suiteTimeNotice(suite.name, seconds, weight) : undefined;
+      if (notice) drifted.push(notice);
     }
 
     if (!options.integration && !options.browser && !hasIntegrationTarget()) {
@@ -560,6 +580,7 @@ Example: bun run test --filter packages/core --filter packages/cloud`);
     const overLimit = options.maxMinutes !== undefined && minutes > options.maxMinutes;
     const notice = shardTimeNotice(label, minutes, options.maxMinutes, options.browser);
     if (notice) console.log(notice);
+    for (const line of drifted) console.log(line);
     if (failed.length > 0) {
       console.error(`\nFailed test suites (${failed.length}): ${failed.join(", ")}`);
       process.exitCode = 1;

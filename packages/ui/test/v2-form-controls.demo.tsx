@@ -1,6 +1,8 @@
-import { createSignal } from "solid-js";
+import { createSignal, For } from "solid-js";
 import {
   Band,
+  Chip,
+  Choice,
   CodeInput,
   ColorInput,
   Disclosure,
@@ -40,6 +42,8 @@ export function Demo() {
   const [accent, setAccent] = createSignal("#b45309");
   const [banner, setBanner] = createSignal<string | null>(null);
   const [zoom, setZoom] = createSignal(30);
+  const [notify, setNotify] = createSignal<string[]>(["mail"]);
+  const [people, setPeople] = createSignal(["Anna Berg", "Jonas Wolf"]);
   return (
     <Workspace>
       <Pane label="Einstellungen">
@@ -72,6 +76,16 @@ export function Demo() {
               onChange={(value) => did(`plan:${value}`)}
             />
           </Field>
+          <Field name="sender" label="Absender">
+            <Select
+              options={[
+                "Annabelle Wohlgemuth-Lindqvist <annabelle.wohlgemuth-lindqvist@tischlerei-wohlgemuth-lindqvist.example>",
+                "Büro <buero@tischlerei-wohlgemuth-lindqvist.example>",
+              ]}
+              value="Annabelle Wohlgemuth-Lindqvist <annabelle.wohlgemuth-lindqvist@tischlerei-wohlgemuth-lindqvist.example>"
+              onChange={(value) => did(`sender:${value}`)}
+            />
+          </Field>
           <Field name="domains" label="Erlaubte Domains">
             <TagsInput
               value={tags()}
@@ -92,6 +106,9 @@ export function Demo() {
               }}
             />
           </Field>
+          <Field name="radius" label="Ecken">
+            <Slider value={12} min={0} max={40} unit="px" />
+          </Field>
           <Field name="dim" label="Abdunkeln">
             <Slider value={dim()} onChange={setDim} onCommit={(value) => did(`dim:${value}`)} min={0} max={100} step={10} />
           </Field>
@@ -108,10 +125,98 @@ export function Demo() {
           </Field>
         </Band>
         {/* a form that sends what it holds: uncontrolled tags, a locked list, a required image, a slider and a colour */}
+        {/* several to choose, at least one (outside the form below, whose other checks it would hold up) */}
+        <Band>
+          {/* several to choose, at least one */}
+          <Field name="crew" label="Mannschaft" required>
+            <Choice name="crew" multiple options={["Anna Berg", "Jonas Wolf"]} />
+          </Field>
+        </Band>
+        {/* an address in a right-to-left page */}
+        <div dir="rtl">
+          <Band>
+            <Field name="rtl-sender" label="المرسل">
+              <Select
+                options={["Anna Berg <anna.berg@werkstatt-lindqvist.example>"]}
+                value="Anna Berg <anna.berg@werkstatt-lindqvist.example>"
+                onChange={() => undefined}
+              />
+            </Field>
+          </Band>
+        </div>
+        {/* people as chips with their remove button */}
+        <Band>
+          <Text type="body">
+            <For each={people()}>
+              {(name) => (
+                <Chip
+                  tag
+                  remove={{
+                    name,
+                    onClick: () => {
+                      setPeople((list) => list.filter((each) => each !== name));
+                      did(`unassign:${name}`);
+                    },
+                  }}
+                >
+                  {name}
+                </Chip>
+              )}
+            </For>
+          </Text>
+        </Band>
         <form id="sent" onSubmit={(event) => event.preventDefault()}>
           <Band>
+            {/* people to choose, each with their face: one who is responsible, several who take part */}
+            <Field name="owner" label="Zuständig">
+              <Choice
+                name="owner"
+                value="anna"
+                options={[
+                  { value: "anna", label: "Anna Berg", person: { name: "Anna Berg", color: "#0f766e" } },
+                  { value: "jonas", label: "Jonas Wolf", person: { name: "Jonas Wolf", color: "#7c3aed" } },
+                  { value: "mia", label: "Mia Lindqvist-Oswald", person: { name: "Mia Lindqvist-Oswald" } },
+                ]}
+              />
+            </Field>
+            {/* held by the page: a form's reset must not show other boxes than the page holds */}
+            <Field name="notify" label="Benachrichtigen">
+              <Choice
+                name="notify"
+                multiple
+                value={notify()}
+                onChange={setNotify}
+                options={[
+                  { value: "mail", label: "Per Mail" },
+                  { value: "push", label: "Auf dem Telefon" },
+                ]}
+              />
+            </Field>
+            <Field name="team" label="Beteiligt">
+              <Choice
+                name="team"
+                multiple
+                value={["jonas"]}
+                options={[
+                  { value: "anna", label: "Anna Berg", person: { name: "Anna Berg", color: "#0f766e" } },
+                  { value: "jonas", label: "Jonas Wolf", person: { name: "Jonas Wolf", color: "#7c3aed" } },
+                  { value: "mia", label: "Mia Lindqvist-Oswald", person: { name: "Mia Lindqvist-Oswald" } },
+                ]}
+              />
+            </Field>
             <Field name="hosts" label="Server">
-              <TagsInput value={["mx1.example"]} />
+              <TagsInput value={["mx1.example"]} max={2} />
+            </Field>
+            {/* addresses as chips: typed, pasted several at once, "Name <address>" too */}
+            <Field name="to" label="An">
+              <TagsInput type="email" value={["anna.berg@werkstatt.example"]} />
+            </Field>
+            <Field name="cc" label="Kopie">
+              <TagsInput type="email" max={3} />
+            </Field>
+            {/* addresses with suggestions to pick from while typing */}
+            <Field name="bcc" label="Weitere Empfänger">
+              <TagsInput type="email" suggestions={["lea@werkstatt.example", "tom@werkstatt.example"]} />
             </Field>
             <Field name="locked" label="Gesperrte Server">
               <TagsInput value={["mx9.example"]} disabled />

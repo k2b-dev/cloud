@@ -108,7 +108,27 @@ export const IdentityScreen = (props: { onChoice?: (name: string) => void; onCre
           <Row mark={{ icon: "photo", color: "#be185d", image: photo }} lines={["Ansicht Front Eiche.jpg", "4,2 MB · heute 09:42"]} />
           <Row mark={{ icon: "photo", color: "#be185d", image: broken }} lines={["Bestand Küche vorher.jpg", "5,6 MB · gestern"]} />
           <Row mark={{ icon: "file-type-pdf", color: "#dc2626", kind: "PDF", label: "PDF" }} lines={["Angebot 2026-118.pdf", "312 KB"]} />
+          {/* a person among the files (who shares them) starts on their edge */}
+          <Row avatar={{ name: "Jana Berger" }} lines={["Jana Berger", "teilt 4 Dateien"]} />
         </List>
+      </Section>
+      {/* who or what a thing is, without a picture: a data list and a table of bases keep the mark's 24 */}
+      <Section title="Bases" count={2}>
+        <List label="Bases">
+          <Row mark={{ ...table }} lines={["Aufträge"]} time="vor 2 Min" />
+          <Row mark={{ ...form }} lines={["Auftrag annehmen", "Formular · 12 Felder"]} />
+        </List>
+        <Table
+          label="Tabellen"
+          rows={[
+            { key: "a", name: "Aufträge", rows: 318 },
+            { key: "k", name: "Kunden", rows: 42 },
+          ]}
+          columns={[
+            { title: "Tabelle", width: { min: 140, default: 200 }, mark: () => table, cell: (row) => row.name },
+            { title: "Einträge", width: { min: 80, default: 90 }, align: "end", cell: (row) => String(row.rows) },
+          ]}
+        />
       </Section>
       <Section title="Aktivität">
         <Digest

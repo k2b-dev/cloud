@@ -409,6 +409,7 @@ const renderNotebookWithNotes = async (
         taskProgress: { done: 0, total: 0 },
         panelAttachments: [],
         backlinks: [],
+        backlinksTotal: 0,
         relations: { outgoing: [], tags: [] },
       }),
     );
@@ -525,6 +526,7 @@ const renderEditorPage = async (
       taskProgress: { done: 0, total: 0 },
       namedBlocks: [],
       backlinks: [],
+      backlinksTotal: 0,
       relations: { outgoing: [], tags: [] },
       panelAttachments: [],
     }),

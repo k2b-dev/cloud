@@ -27,17 +27,42 @@ afterAll(async () => {
   await browser?.close();
 });
 
-type Options = { width?: number; touch?: boolean; theme?: "light" | "dark" };
+type Options = { width?: number; touch?: boolean; theme?: "light" | "dark"; slowSheet?: boolean; reducedMotion?: boolean };
 
-const withPage = async (run: (page: Page) => Promise<void>, { width = 1440, touch = false, theme = "light" }: Options = {}) => {
-  const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: touch, isMobile: touch, colorScheme: theme });
+// Core loads its sheet module on its own time (a dynamic import, a chunk of its own in an app). The bundle of a slow
+// load waits for the page's `__k2LoadSheet()`, so a test can let it come after everything else of the popover.
+declare global {
+  interface Window {
+    __k2LoadSheet?: () => void;
+  }
+}
+const sheetImport = "loading ??= Promise.resolve().then(() => (init_sheet_presentation()";
+const slowSheetBundle = () => {
+  expect(bundle.split(sheetImport).length).toBe(2);
+  return bundle.replace(
+    sheetImport,
+    "loading ??= new Promise((done) => { window.__k2LoadSheet = done; }).then(() => (init_sheet_presentation()",
+  );
+};
+
+const withPage = async (
+  run: (page: Page) => Promise<void>,
+  { width = 1440, touch = false, theme = "light", slowSheet = false, reducedMotion = false }: Options = {},
+) => {
+  const page = await browser.newPage({
+    viewport: { width, height: 900 },
+    hasTouch: touch,
+    isMobile: touch,
+    colorScheme: theme,
+    reducedMotion: reducedMotion ? "reduce" : "no-preference",
+  });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
     await page.setContent(
       `<!doctype html><html lang="de"${theme === "dark" ? ' class="dark"' : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
     );
-    await page.addScriptTag({ content: bundle });
+    await page.addScriptTag({ content: slowSheet ? slowSheetBundle() : bundle });
     await page.waitForFunction(() => window.__mounted === true);
     await settled(page);
     await run(page);
@@ -401,6 +426,42 @@ test("popover: a panel of 280 px under the start of its button with a title; Esc
   });
 });
 
+// A person who asks for less motion sees a sheet appear where it rests: from the first frame it shows in, its top stays
+// put (it may fade in, it never slides up). Every frame after the press is recorded, the menu's sheet and the popover's,
+// with a mouse and on a touch screen (core moves a touch screen's sheet another way).
+for (const [name, panel] of [
+  ["Weitere Aktionen", ".k2-menu"],
+  ["Vorschau", ".k2-pop"],
+] as const)
+  for (const touch of [false, true])
+    test(`reduced motion: the sheet of "${name}"${touch ? " on a touch screen" : ""} stands where it rests from its first frame`, async () => {
+      await withPage(
+        async (page) => {
+          await page.evaluate((selector) => {
+            const tops: number[] = [];
+            Object.assign(window, { __k2Tops: tops });
+            const take = () => {
+              const sheet = document.querySelector<HTMLElement>(selector);
+              const box = sheet?.getBoundingClientRect();
+              if (sheet && box && box.height > 0 && getComputedStyle(sheet).visibility !== "hidden") tops.push(Math.round(box.top));
+              if (tops.length < 90) requestAnimationFrame(take);
+            };
+            requestAnimationFrame(take);
+          }, panel);
+          const trigger = page.getByRole("button", { name, exact: true });
+          await (touch ? trigger.tap() : trigger.click());
+          await page.waitForFunction(() => (window as unknown as { __k2Tops: number[] }).__k2Tops.length >= 90, undefined, {
+            timeout: 5000,
+          });
+          const tops = await page.evaluate(() => (window as unknown as { __k2Tops: number[] }).__k2Tops);
+          expect(await page.locator(panel).first().getAttribute("data-presentation")).toBe("sheet");
+          // one top only: the place it rests at
+          expect([...new Set(tops)]).toEqual([tops.at(-1)!]);
+        },
+        { width: 390, touch, reducedMotion: true },
+      );
+    });
+
 // A panel behind a button without words in a head keeps the menu's phone contract: the button stays beside the "…",
 // and its panel is a sheet from the bottom, the whole width (#4151). On a wide screen it is the floating panel.
 for (const width of [1440, 390])
@@ -418,8 +479,8 @@ for (const width of [1440, 390])
         if (width < 768) {
           expect(await panel.getAttribute("data-presentation")).toBe("sheet");
           expect([p.x, p.width, Math.round(p.y + p.height)]).toEqual([0, 390, 900]);
-          // as high as its content (title and box), never squeezed to a sliver
-          expect(p.height).toBeGreaterThan(80);
+          // as high as its content (title, box and three lines), never squeezed to a sliver
+          expect(p.height).toBeGreaterThan(120);
         } else {
           expect(await panel.getAttribute("data-presentation")).not.toBe("sheet");
           expect(p.width).toBe(280);
@@ -429,6 +490,64 @@ for (const width of [1440, 390])
         await closed(page, ".k2-pop");
       },
       width < 768 ? { width, touch: true } : { width },
+    );
+  });
+
+// The popover's sheet stands on the bottom like a dialog's: when its content gets shorter it is lower in the very next
+// frame, never a frame higher up (a tap there would hit the backdrop and close it, #4141), also when core's sheet
+// module loads after the panel is open.
+for (const [change, touch, slowSheet] of [
+  ["shorter", false, false],
+  ["shorter", true, false],
+  ["shorter", false, true],
+  ["taller", false, false],
+  ["taller", true, false],
+] as const)
+  test(`popover sheet${touch ? " on a touch screen" : ""}${slowSheet ? " whose module loads late" : ""}: content that gets ${change} keeps its bottom`, async () => {
+    await withPage(
+      async (page) => {
+        const trigger = page.getByRole("button", { name: "Vorschau" });
+        await (touch ? trigger.tap() : trigger.click());
+        const panel = page.locator(".k2-pop");
+        if (slowSheet) {
+          await panel.waitFor({ state: "attached" });
+          // two frames with the panel in the page, then the module comes
+          await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+          expect(await page.evaluate(() => typeof window.__k2LoadSheet)).toBe("function");
+          await page.evaluate(() => window.__k2LoadSheet?.());
+        }
+        await panel.waitFor();
+        await settled(page);
+        expect(await panel.getAttribute("data-presentation")).toBe("sheet");
+        // taller: the box ticked first (the lines go), so unticking it brings them back
+        if (change === "taller") {
+          await page.locator('.k2-pop input[name="images"]').evaluate((box: HTMLInputElement) => box.click());
+          await settled(page);
+        }
+        const before = await box(panel);
+        expect(Math.round(before.y + before.height)).toBe(900);
+        // as high as its content: title, box and three lines, never squeezed to a sliver
+        if (change === "shorter") expect(before.height).toBeGreaterThan(120);
+        const frames = await page.evaluate(async () => {
+          const sheet = document.querySelector(".k2-pop") as HTMLElement;
+          // the place each frame is drawn at: read after the frame (a task after its animation frame)
+          const drawn = () => new Promise((done) => requestAnimationFrame(() => setTimeout(done)));
+          document.querySelector<HTMLInputElement>('.k2-pop input[name="images"]')?.click();
+          const places: number[] = [];
+          for (let index = 0; index < 4; index++) {
+            await drawn();
+            const { top, bottom } = sheet.getBoundingClientRect();
+            places.push(Math.round(top), Math.round(bottom));
+          }
+          return places;
+        });
+        await settled(page);
+        const after = await box(panel);
+        if (change === "taller") expect(after.height).toBeGreaterThan(before.height);
+        else expect(after.height).toBeLessThan(before.height);
+        expect(frames).toEqual([after.y, 900, after.y, 900, after.y, 900, after.y, 900].map(Math.round));
+      },
+      { width: 390, touch, slowSheet },
     );
   });
 
@@ -494,32 +613,69 @@ test("toast: at the bottom in the middle with Undo; Undo runs and closes it", as
   });
 });
 
-test("phone: the head keeps the '…', its menu opens on screen; toasts stay inside the width", async () => {
+/**
+ * Waits until the menu's sheet rests: slid in all the way, its bottom on the bottom of the window, its top still for
+ * five frames. A step changes the sheet's height and it glides to its new place; a tap while it moves scrolls the
+ * sheet, which takes that for a swipe down and closes (seen on slow CI runners).
+ */
+const sheetAtRest = (page: Page) =>
+  page.waitForFunction(
+    () => {
+      const state = window as unknown as { sheetTop?: number; sheetStill?: number };
+      const sheet = document.querySelector<HTMLElement>('.k2-menu[data-presentation="sheet"]:not([data-nested])');
+      const box = sheet?.getBoundingClientRect();
+      const placed = !!box && sheet?.style.getPropertyValue("--drawer-progress") === "1" && Math.round(box.bottom) === window.innerHeight;
+      state.sheetStill = placed && box?.top === state.sheetTop ? (state.sheetStill ?? 0) + 1 : 0;
+      state.sheetTop = box?.top;
+      return (state.sheetStill ?? 0) >= 5;
+    },
+    undefined,
+    { polling: "raf", timeout: 5_000 },
+  );
+
+test("phone: the head keeps the '…', its menu is a sheet at the bottom; a submenu is its next step, with the way back", async () => {
   await withPage(
     async (page) => {
       const trigger = headMenu(page);
       expect(await trigger.isVisible()).toBe(true);
       await trigger.tap();
       await page.locator(menu).waitFor();
-      await settled(page);
-      // the menu is a popup beside its kept button: the head's rule that hides other buttons must not hide it
+      await sheetAtRest(page);
+      // the head's rule that hides other buttons must not hide the menu of its kept button
       expect(await page.locator(menu).isVisible()).toBe(true);
+      expect(await page.locator(menu).getAttribute("data-presentation")).toBe("sheet");
       const m = await box(page.locator(menu));
-      expect(m.x).toBeGreaterThanOrEqual(7);
-      expect(m.x + m.width).toBeLessThanOrEqual(390 - 7);
+      expect([m.x, m.width, Math.round(m.y + m.height)]).toEqual([0, 390, 900]);
+      for (const height of await page.locator(`${menu} > .k2-mi`).evaluateAll((all) => all.map((el) => el.getBoundingClientRect().height)))
+        expect(height).toBe(44);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
-      await page.keyboard.press("Escape");
+      // the submenu shows in the sheet's place under its entry, which leads back; the other entries give way
+      await page.getByRole("menuitem", { name: "Verschieben nach" }).tap();
+      await page.getByRole("menuitem", { name: "Werkstatt" }).waitFor();
+      await sheetAtRest(page);
+      const step = await box(page.locator(`${menu}[data-nested]`));
+      expect(step.x).toBeGreaterThanOrEqual(0);
+      expect(step.x + step.width).toBeLessThanOrEqual(390);
+      expect(await page.getByRole("menuitem", { name: "Als Vorlage speichern" }).isVisible()).toBe(false);
+      await page.getByRole("menuitem", { name: "Verschieben nach" }).tap();
+      await page.waitForFunction(() => !document.querySelector(".k2-menu[data-nested]"));
+      await sheetAtRest(page);
+      expect(await page.getByRole("menuitem", { name: "Als Vorlage speichern" }).isVisible()).toBe(true);
+      await page.getByRole("menuitem", { name: "Verschieben nach" }).tap();
+      await page.getByRole("menuitem", { name: "Lager" }).waitFor();
+      await sheetAtRest(page);
+      await page.getByRole("menuitem", { name: "Lager" }).tap();
       await closed(page, menu);
-      // the tab "Weitere" opens its menu with a tap, on screen
+      expect(await deeds(page)).toEqual(["move:lager"]);
+      // the tab "Weitere" opens its menu as the same sheet
       await page
         .getByRole("navigation", { name: "Ansichten" })
         .getByRole("button", { name: /Weitere/ })
         .tap();
       await page.locator(menu).waitFor();
-      await settled(page);
+      await sheetAtRest(page);
       const views = await box(page.locator(menu));
-      expect(views.x).toBeGreaterThanOrEqual(7);
-      expect(views.x + views.width).toBeLessThanOrEqual(390 - 7);
+      expect([views.x, views.width]).toEqual([0, 390]);
     },
     { width: 390, touch: true },
   );
@@ -571,6 +727,33 @@ test("a hidden tab with an address opens in place from the menu of further views
     },
     { width: 390 },
   );
+});
+
+// A tab that holds the focus and hides for lack of room hands the focus to the menu tab ("Mehr" or "Weitere"), so it
+// never falls to the page; a "Mehr" that held it and goes, as every tab has room again, hands it to the last tab.
+test("a tab that hides hands its focus to the menu tab, and a menu tab that goes to the last tab", async () => {
+  await withPage(async (page) => {
+    const focused = () => page.evaluate(() => document.activeElement?.textContent?.replace(/\s+/g, "") ?? "");
+    const areas = page.getByRole("navigation", { name: "Bereiche" });
+    await areas.getByRole("button", { name: "Reklamationen" }).focus();
+    await settled(page);
+    expect(await focused()).toBe("Reklamationen");
+    await page.setViewportSize({ width: 390, height: 900 });
+    await settled(page);
+    expect(await focused()).toMatch(/^Mehr\+\d+$/);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await settled(page);
+    expect(await areas.getByRole("button", { name: /Mehr/ }).count()).toBe(0);
+    expect(await focused()).toBe("Reklamationen");
+    // the views have a menu tab of their own that always stands
+    const views = page.getByRole("navigation", { name: "Ansichten" });
+    await views.getByRole("link", { name: /Wartet auf Material/ }).focus();
+    await settled(page);
+    expect(await focused()).toMatch(/^WartetaufMaterial/);
+    await page.setViewportSize({ width: 390, height: 900 });
+    await settled(page);
+    expect(await focused()).toMatch(/^Weitere\+\d+$/);
+  });
 });
 
 // The menu tab's count grows by the tabs that hide, and a count that gains a digit ("+8" to "+12") makes the tab
