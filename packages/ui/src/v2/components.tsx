@@ -396,6 +396,7 @@ const countWith = (count: Tab["count"], hidden: number): Tab["count"] => {
  * tab is a link or a button the Tab key reaches; a tab with `menu` is the button of a menu of further views and
  * stands at the end. A tab is never cut: one that has no room hides whole and is an entry of that menu (without a
  * menu tab a tab "More" opens them), opened from there as its tab opens it, and the menu tab itself always stays whole.
+ * A tab that holds the focus and hides hands it to the menu tab; a "More" that goes hands it to the last tab.
  * Known: while tabs hide, a gap of less than one tab may stand before the menu tab (closing it would move the menu tab
  * after the page loads).
  */
@@ -408,6 +409,18 @@ export const Tabs = (props: TabsProps) => {
   // Measured in the browser; the server sends every tab, and the stylesheet already hides what wraps.
   const [fit, setFit] = createSignal(Number.POSITIVE_INFINITY);
   let row: HTMLDivElement | undefined;
+  let nav: HTMLElement | undefined;
+  // A tab that holds the focus and hides for lack of room hands it to the menu tab ("Mehr" or the views' own), so it
+  // never falls to the page; a "Mehr" that holds it and goes, as every tab has room again, hands it to the last tab.
+  const place = (next: number) => {
+    const held = document.activeElement;
+    const fromMore = held !== null && nav?.querySelector(":scope > .k2-tab[data-k2-more]")?.contains(held) === true;
+    setFit(next);
+    if (!row || !nav || !held) return;
+    if (row.contains(held) && held.closest(".k2-tab")?.hasAttribute("data-overflow"))
+      [...nav.querySelectorAll<HTMLElement>(":scope > .k2-tab[data-menu]")].at(-1)?.focus();
+    else if (fromMore && !held.isConnected) [...row.querySelectorAll<HTMLElement>(":scope > .k2-tab:not([data-overflow])")].at(-1)?.focus();
+  };
   onMount(() => {
     if (!row) return;
     const measure = () => {
@@ -422,11 +435,11 @@ export const Tabs = (props: TabsProps) => {
         const navGap = Number.parseFloat(getComputedStyle(row.parentElement!).columnGap) || 0;
         const need = tabs.reduce((sum, tab) => sum + tab.getBoundingClientRect().width, 0) + gap * (tabs.length - 1);
         if (need <= row.getBoundingClientRect().width + navGap + more.getBoundingClientRect().width) {
-          setFit(Number.POSITIVE_INFINITY);
+          place(Number.POSITIVE_INFINITY);
           return;
         }
       }
-      setFit(index < 0 ? Number.POSITIVE_INFINITY : index);
+      place(index < 0 ? Number.POSITIVE_INFINITY : index);
     };
     // What the measurement changes (the count of the menu tab, "+8" to "+12") can change the room of the tabs again.
     // So it runs in the next frame, once per frame, never inside the observer's own turn (WebKit reports that as a
@@ -460,7 +473,7 @@ export const Tabs = (props: TabsProps) => {
   const hidden = () => plain().slice(fit());
   const more = () => hidden().map((tab) => asEntry(tab, locale()));
   return (
-    <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
+    <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label} ref={nav}>
       <div class="k2-tabs" ref={row}>
         <Index each={plain()}>
           {(tab, index) => (
