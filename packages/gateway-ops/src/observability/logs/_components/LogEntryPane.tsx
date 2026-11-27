@@ -4,7 +4,8 @@ import { createSignal, Show } from "solid-js";
 import { gatewayOpsMessages } from "../../../messages";
 import type { LogEntry } from "../contracts";
 import { logsMessages } from "../messages";
-import { logRowFormatter } from "../rows";
+import { fitsRequestFilter, LOG_REQUEST_MAX } from "../query";
+import { logRowFormatter, requestIdOf } from "../rows";
 
 type Props = {
   selected: { entry: LogEntry | null; error: string | null } | null;
@@ -12,6 +13,8 @@ type Props = {
   /** The list's address without the open entry. */
   closeHref: string;
   listLabel: string;
+  /** Shows only the entries of this entry's request in the list beside it. */
+  onRequest: (id: string) => void;
 };
 
 const valueText = (value: unknown): string =>
@@ -87,7 +90,17 @@ export default function LogEntryPane(props: Props) {
             <Band>
               <Text type="body">{open().message}</Text>
             </Band>
-            <Section icon="info-circle" title={t().detail}>
+            <Section
+              icon="info-circle"
+              title={t().detail}
+              actions={(() => {
+                const id = requestIdOf(open().metadata);
+                if (!id) return undefined;
+                // a request ID longer than the filter allows: the action stays, unavailable, and the ID says why below
+                const fits = fitsRequestFilter(id);
+                return [{ label: words().onlyThisRequest, icon: "filter", disabled: !fits, onClick: () => fits && props.onRequest(id) }];
+              })()}
+            >
               <Facts
                 items={[
                   {
@@ -104,6 +117,19 @@ export default function LogEntryPane(props: Props) {
                   { label: words().source, value: open().source },
                   { label: words().at, value: `${dateFormat().format(new Date(open().createdAt))} · ${clock(open())}` },
                   { label: "ID", value: open().id, mono: true, copy: open().id },
+                  ...(() => {
+                    const id = requestIdOf(open().metadata);
+                    if (!id) return [];
+                    return [
+                      {
+                        label: words().request,
+                        value: id,
+                        mono: true,
+                        copy: id,
+                        ...(fitsRequestFilter(id) ? {} : { hint: words().requestTooLong({ max: LOG_REQUEST_MAX }) }),
+                      },
+                    ];
+                  })(),
                 ]}
               />
             </Section>

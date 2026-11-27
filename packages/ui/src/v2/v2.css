@@ -100,6 +100,8 @@
   --k2-w-detail: 380px;
   --k2-w-list: 432px;
   --k2-w-info: 360px;
+  /* the reading measure: how wide a line of text runs before the eye loses it (Prose, a section with `measure`) */
+  --k2-measure: 720px;
 
   /* radii by role: marks, controls and overlays, the app card; structure stays square */
   --k2-r-mark: 4px;
@@ -448,8 +450,11 @@
 }
 
 /* The seam is the one line between two columns and the home of its grip (K13). A grip is a small round pill,
-   11 x 20 (odd, so its centre is the centre of the 1 px line), with 2 x 3 dots, visible at rest; it is something
-   you press, so it is round (rule 8). Two layers in its own stacking context: ::after (z 1) is the line overlay,
+   11 x 20 (odd, so its centre is the centre of the 1 px line), with 2 x 3 dots; it is something you press, so it is
+   round (rule 8). It shows only where it is wanted (design review 26.11.: grips at rest made every screen busy): under
+   the pointer along its line, on keyboard focus, while pressed or dragged; with touch (no hover, or a coarse pointer)
+   it stays. Only its
+   opacity changes, so nothing moves, and it takes the pointer also while it is not shown. Two layers in its own stacking context: ::after (z 1) is the line overlay,
    ::before (z 2) the opaque pill over it, so the line runs BEHIND the pill (Valentin 22.11.).
    Geometry: grip left = seam x - 5, width 11 → pill centre = line centre = x + 0.5. The strip ::after is the 13 px
    grab area along the whole line; the container of the line clips it, so the blue reaches exactly as far as the line.
@@ -477,6 +482,22 @@
   cursor: col-resize;
   touch-action: none;
   outline: none;
+  opacity: 0;
+}
+.k2-ui .k2-grip:is(:hover, :focus-visible, :active, [data-dragging]) {
+  opacity: 1;
+}
+/* without a hovering pointer as the only pointer (touch, a touch laptop, a tablet with a trackpad) every grip stays */
+@media (hover: none), (any-pointer: coarse) {
+  .k2-ui .k2-grip {
+    opacity: 1;
+  }
+}
+/* forced colours drop the blue of a focused grip; the system's focus colour marks it instead */
+@media (forced-colors: active) {
+  .k2-ui .k2-grip:focus-visible {
+    outline: 2px solid Highlight;
+  }
 }
 .k2-ui .k2-grip::before {
   content: "";
@@ -567,6 +588,23 @@
 .k2-ui .k2-pane-back > .k2-btn[data-variant="text"] > .k2-btn-label {
   min-width: 0;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* the name of what stands open after the way back, strong as a row's title: it is the page. The way back keeps at
+   most half the bar and is cut first; the name is cut only when it alone is longer than the rest */
+.k2-ui .k2-pane-back:has(> .k2-pane-back-name) > .k2-btn[data-variant="text"] {
+  flex-shrink: 999;
+  max-width: 50%;
+}
+.k2-ui .k2-pane-back > .k2-pane-back-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-inline-start: 8px;
+  overflow: hidden;
+  font: var(--k2-t-row);
+  font-weight: 600;
+  color: var(--k2-text);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -848,6 +886,11 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+/* a section with `measure` keeps its head, its sentence and its rows to the reading measure, as Prose: in a wide pane
+   a short list stays together; the section itself, and so its line, still reaches the edges of its column */
+.k2-ui .k2-sec[data-measure] > * {
+  max-width: calc(var(--k2-measure) + 2 * var(--k2-edge));
 }
 .k2-ui .k2-sec > * {
   flex: none;
@@ -1540,8 +1583,10 @@
   font-size: 9px;
 }
 
-/* column width grip in the head: the same pill, smaller (9 x 18), at the left edge of the following head. At rest
-   only the dots show; there is no column line, the blue line appears only at the grip. */
+/* column width grip in the head: the same pill, smaller (9 x 18), at the left edge of the following head. It shows
+   only while the head is under the pointer (the dots), on the grip itself (the pill), on keyboard focus and while
+   dragged; with touch it stays, like the seam's grip (a hidden 9 px target cannot be found). Only its opacity changes,
+   so nothing moves. There is no column line, the blue line appears only at the grip. */
 .k2-ui .k2-cgrip {
   --k2-pill: transparent;
   --k2-pill-edge: transparent;
@@ -1557,6 +1602,22 @@
   /* a touch drag is the grip's, never a pan of the table */
   touch-action: none;
   outline: none;
+  opacity: 0;
+}
+.k2-ui .k2-cgrip:is(:hover, :focus-visible, :active, [data-dragging]),
+.k2-ui .k2-table thead:hover .k2-cgrip {
+  opacity: 1;
+}
+/* with touch it stays, as the seam's grip does */
+@media (hover: none), (any-pointer: coarse) {
+  .k2-ui .k2-cgrip {
+    opacity: 1;
+  }
+}
+@media (forced-colors: active) {
+  .k2-ui .k2-cgrip:focus-visible {
+    outline: 2px solid Highlight;
+  }
 }
 .k2-ui .k2-cgrip::before {
   content: "";
@@ -1688,7 +1749,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-width: calc(720px + 2 * var(--k2-edge));
+  max-width: calc(var(--k2-measure) + 2 * var(--k2-edge));
   overflow-wrap: anywhere;
 }
 /* the gap of 8 px is the only space between blocks of reading text */
@@ -4198,8 +4259,9 @@
     padding: 4px 0 0;
     flex-wrap: wrap;
   }
-  /* a section's actions keep only their symbols; the words stay their names (not `display: none`, which took them) */
-  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn-label {
+  /* a head action with a leading symbol keeps only the symbol; its words stay its title and name (not `display: none`,
+     which took them). One without a leading symbol keeps its words, also with a trailing chevron (forward, menu) */
+  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn:has(> .k2-icon:first-child) > .k2-btn-label {
     position: absolute;
     width: 1px;
     height: 1px;
