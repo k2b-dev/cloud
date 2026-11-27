@@ -101,5 +101,6 @@ test("a heat sends every day of its 53 weeks, today marked, in the server's mark
   expect(markup.match(/role="gridcell"/g)).toHaveLength(370);
   expect(markup).toContain('role="grid"');
   expect(markup.match(/tabindex="0"/g)).toHaveLength(1);
-  expect(markup).toMatch(/data-tone="1" aria-label="3 Mails on Fri, Nov 27" aria-current="date"/);
+  // one day with a count is the strongest tone
+  expect(markup).toMatch(/data-tone="4" aria-label="Fri, Nov 27 · 3 Mails" aria-current="date"/);
 });

@@ -211,7 +211,9 @@ export const Workspace = (props: WorkspaceProps) => {
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
   const sidebar = resolveChildren(() => props.sidebar);
   const head = resolveChildren(() => props.head);
-  const emptyHero = resolveChildren(() => props.detailEmpty?.hero);
+  // `detailEmpty` written as an object in JSX is a getter that makes its hero anew on every read: read it once here.
+  const detailEmpty = createMemo(() => props.detailEmpty);
+  const emptyHero = resolveChildren(() => detailEmpty()?.hero);
   const [columns, setColumns] = createSignal<readonly Column[]>([]);
   const register = (column: Column) => {
     setColumns((list) => [...list, column]);
@@ -219,10 +221,11 @@ export const Workspace = (props: WorkspaceProps) => {
   };
   // the detail the workspace declares, at its minimum; it counts open or closed
   const declared = () => (props.detail === undefined ? undefined : props.detail === true ? flexibleMin : props.detail);
-  const empty = () =>
+  const empty = createMemo(() =>
     declared() === undefined || columns().some((column) => column.detail)
       ? undefined
-      : { icon: props.detailEmpty?.icon ?? "click", text: props.detailEmpty?.text ?? t().nothingSelected, hero: emptyHero() };
+      : { icon: detailEmpty()?.icon ?? "click", text: detailEmpty()?.text ?? t().nothingSelected, hero: emptyHero() },
+  );
   // The room the sidebar needs beside the columns: its default, every column's minimum and the lines between them, in
   // the workspace's content box (inside its edge), which the container query measures. A declared detail counts at
   // its declared minimum, open or closed, so the room stays the same when it opens.

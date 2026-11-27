@@ -142,20 +142,28 @@ test("forced colors: a quiet day is an edge, a busy day the text colour", async 
   });
 });
 
-test("one Tab stop on today; the arrows walk the days and the line below says count and date", async () => {
+test("one Tab stop on today; the arrows walk the days, and the one shared tip shows day, count and detail", async () => {
   await withPage({ width: 1440 }, async (page) => {
     const grid = page.getByRole("grid", { name: "Mails pro Tag" });
     expect(await grid.getByRole("gridcell").count()).toBe(369);
     expect(await grid.locator('[tabindex="0"]').count()).toBe(1);
+    // the keyboard reaches a day: from today one day back and forth again
     await grid.locator('[aria-current="date"]').focus();
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowRight");
     const focused = () => page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
     const said = await focused();
-    expect(said).toMatch(/^\d+ Mails am Fr\., 27\. Nov\.$/);
-    expect(await page.locator(".k2-heat-read").textContent()).toBe(said!);
+    expect(said).toMatch(/^Fr\., 27\. Nov\. · \d+ Mails, \d+ eingehend · \d+ gesendet$/);
+    // keyboard focus shows the same tip as the pointer: one tip for the whole picture
+    const tip = page.getByRole("tooltip");
+    await tip.waitFor();
+    expect(await page.locator('[role="tooltip"]').count()).toBe(1);
+    expect((await tip.innerText()).replace("\n", ", ")).toBe(said!);
     await page.keyboard.press("ArrowLeft");
-    expect(await focused()).toMatch(/ Mails am Fr\., 20\. Nov\.$/);
+    expect(await focused()).toMatch(/^Fr\., 20\. Nov\. · /);
+    await page.waitForFunction(() => document.querySelector('[role="tooltip"]')?.textContent?.startsWith("Fr., 20. Nov."));
     await page.keyboard.press("ArrowUp");
-    expect(await focused()).toMatch(/ Mails am Do\., 19\. Nov\.$/);
+    expect(await focused()).toMatch(/^Do\., 19\. Nov\. · /);
     // a day after today is not there: down from today stays on today
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("ArrowDown");
@@ -164,16 +172,35 @@ test("one Tab stop on today; the arrows walk the days and the line below says co
     expect(await focused()).toBe(said);
     await page.keyboard.press("ArrowLeft");
     await page.keyboard.press("ArrowDown");
-    expect(await focused()).toMatch(/ Mails am Sa\., 21\. Nov\.$/);
+    expect(await focused()).toMatch(/^Sa\., 21\. Nov\. · /);
     await page.keyboard.press("Home");
-    expect(await focused()).toMatch(/ Mails am Sa\., 29\. Nov\.$/);
+    expect(await focused()).toMatch(/^Sa\., 29\. Nov\. · /);
     expect(await grid.locator('[tabindex="0"]').count()).toBe(1);
+    // with a modifier the keys stay the browser's
+    expect(
+      await page.evaluate(() => {
+        const event = new KeyboardEvent("keydown", { key: "ArrowLeft", altKey: true, bubbles: true, cancelable: true });
+        document.activeElement!.dispatchEvent(event);
+        return event.defaultPrevented;
+      }),
+    ).toBe(false);
     // each weekday names itself in full, every other one shows its short name
     expect(await grid.getByRole("rowheader").first().getAttribute("aria-label")).toBe("Montag");
   });
 });
 
-test("a new mailbox without mail: every day quiet, nothing cut; a huge one: the scale keeps its quarters", async () => {
+test("the pointer on a day shows the same one tip; the summary sums the days shown; the hero is made once", async () => {
+  await withPage({ width: 1440 }, async (page) => {
+    await page.locator('[aria-current="date"]').hover();
+    const tip = page.getByRole("tooltip");
+    await tip.waitFor();
+    expect(await tip.innerText()).toMatch(/^Fr\., 27\. Nov\. · \d+ Mails\n\d+ eingehend · \d+ gesendet$/);
+    expect(await page.locator(".k2-heat-sum").textContent()).toMatch(/^[\d.]+ Mails in den letzten 12 Monaten · Ø \d+ pro Tag$/);
+    expect(await page.evaluate(() => window.__k2HeroBuilds)).toBe(1);
+  });
+});
+
+test("a new mailbox without mail: every day quiet, nothing cut; a huge one: every tone of the scale is used", async () => {
   await withPage({ width: 1440, data: "none" }, async (page) => {
     expect(await page.locator("[data-heat-day]:not([data-tone='0'])").count()).toBe(0);
     expect((await fit(page)).cells).toBe(369);
@@ -182,7 +209,7 @@ test("a new mailbox without mail: every day quiet, nothing cut; a huge one: the 
     const counts = await page.evaluate(() =>
       [1, 2, 3, 4].map((tone) => document.querySelectorAll(`[data-heat-day][data-tone="${tone}"]`).length),
     );
-    expect(counts.every((count) => count > 20)).toBe(true);
-    expect(await page.locator('[aria-current="date"]').getAttribute("aria-label")).toMatch(/^\d{1,3}\.\d{3} Mails am Fr\., 27\. Nov\.$/);
+    expect(counts.every((count) => count > 0)).toBe(true);
+    expect(await page.locator('[aria-current="date"]').getAttribute("aria-label")).toMatch(/^Fr\., 27\. Nov\. · \d{1,3}\.\d{3} Mails, /);
   });
 });

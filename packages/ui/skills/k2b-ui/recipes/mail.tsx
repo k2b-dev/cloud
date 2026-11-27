@@ -69,7 +69,6 @@ const received: HeatDay[] = Array.from({ length: 369 }, (_, index) => {
   const date = new Date(Date.UTC(2025, 10, 24 + index)).toISOString().slice(0, 10);
   return { date, count: index % 7 >= 5 ? index % 3 : ((index * 37) % 11) + (index % 7 === 0 ? 6 : 1) };
 });
-const total = received.reduce((sum, day) => sum + day.count, 0);
 const number = new Intl.NumberFormat("de-DE");
 
 type Props = {
@@ -79,20 +78,23 @@ type Props = {
 
 export default function MailScreen(props: Props) {
   const open = props.closed ? undefined : threads[0];
+  // The hero is made once, here: written inside the `detailEmpty` object it would be made again on every read.
+  const hero = (
+    <Heat
+      days={received}
+      today={today}
+      label="Mails pro Tag"
+      unit={(count) => (count === 1 ? "1 Nachricht" : `${number.format(count)} Nachrichten`)}
+      summary={({ total, days }) =>
+        `${number.format(total)} Mails in den letzten 12 Monaten · Ø ${number.format(Math.round(total / days))} pro Tag`
+      }
+    />
+  );
   return (
     <Workspace
       // a detail opens beside the list: the sidebar keeps room for it, and its place says so while none is open
       detail
-      detailEmpty={{
-        icon: "mail",
-        text: "Keine Nachricht ausgewählt",
-        hero: (
-          <>
-            <Text type="body">{`${number.format(total)} Mails in den letzten 12 Monaten`}</Text>
-            <Heat days={received} today={today} label="Mails pro Tag" unit={(count) => `${number.format(count)} Mails`} />
-          </>
-        ),
-      }}
+      detailEmpty={{ icon: "mail", text: "Keine Nachricht ausgewählt", hero }}
       sidebar={
         <Nav
           title="Mail"
