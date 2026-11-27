@@ -23,8 +23,10 @@ The deliveries of the same customer. A `Band` in a tone carries the one statemen
 ### Section
 
 - A titled part of the page: "Anstehend", "Vorgänge", "Kontakt". A long title, such as a question, wraps.
+- Its head is calm and has no symbol: the title, a quiet count beside it, the summary as the quiet line right under it, at most two text buttons at the end.
+- On a settings or form screen, give it `form`: where the pane is 800 px and wider, its head stands in a column of 240 px at the left and the content beside it. On detail and overview pages it stays as it is.
 - Rows, `Facts`, a `Digest` or groups stand directly in it.
-- One line at its end, none under its head or between its entries.
+- One line at its end, stronger than the lines between rows; none under its head or between its entries.
 
 ### Group
 

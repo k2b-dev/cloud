@@ -421,8 +421,15 @@ function measureInPage(options: InPage): DomResult {
     };
     const edge: string[] = [];
     // Collinear pieces of one line (the cells of a row) merge first.
+    // The content of a `Section form` that stands beside its head column (B) has its own column: its rows' lines start
+    // there, as in the settings layout, and are measured by the section's own line instead.
+    const besideHead = (element: Element) => {
+      const section = element.closest(".k2-sec[data-form]");
+      const head = section?.querySelector(":scope > .k2-sh");
+      return !!head && !head.contains(element) && getComputedStyle(head).float === "left";
+    };
     const dividers = hairlines(horizontal)
-      .filter((line) => !line.frame)
+      .filter((line) => !line.frame && !besideHead(line.element))
       .sort((a, b) => a.across0 - b.across0 || a.along0 - b.along0);
     const merged: Line[] = [];
     for (const line of dividers) {

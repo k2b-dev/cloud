@@ -19,12 +19,7 @@ render(
     <Workspace>
       <Pane.Split>
         <Pane label="Endpunkt">
-          <Section
-            icon="list"
-            title="Letzte Ereignisse"
-            count={2}
-            more={{ label: "Alle Ereignisse", forward: true, onClick: () => undefined }}
-          >
+          <Section title="Letzte Ereignisse" count={2} more={{ label: "Alle Ereignisse", forward: true, onClick: () => undefined }}>
             <Row icon="alert-circle" lines={["Zeitüberschreitung", "nach 30 s"]} time="gestern" />
             <Row icon="check" lines={["38 Ereignisse angenommen"]} time="Mo." />
           </Section>
@@ -34,7 +29,7 @@ render(
         </Pane>
         {/* in a side column the way is a row of its own, from edge to edge (as before) */}
         <Pane label="Angaben" side>
-          <Section icon="address-book" title="Kontakt" more={{ label: "Alle Angaben", meta: "Bank, Person", onClick: () => undefined }}>
+          <Section title="Kontakt" more={{ label: "Alle Angaben", meta: "Bank, Person", onClick: () => undefined }}>
             <Row lines={["o.brandner@example.de"]} />
           </Section>
         </Pane>

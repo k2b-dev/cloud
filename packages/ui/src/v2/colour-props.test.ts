@@ -15,7 +15,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Avatar, Chip, custom } = await import("./marks");
 const { Row } = await import("./content");
 const { Cells } = await import("./layout");
-const { Section } = await import("./structure");
+const { Group } = await import("./structure");
 
 const unsafe = [
   "red;position:fixed;inset:0;background:url(https://example.org/x.png)",
@@ -58,7 +58,7 @@ const parts: [string, (color: string) => JSX.Element][] = [
   ["Chip", (color) => createComponent(Chip, { tag: true, color, children: "Lager" })],
   ["Row", (color) => createComponent(Row, { lines: ["Lager"], mark: { icon: "box", color } })],
   ["Cells.Cell", (color) => createComponent(Cells.Cell, { icon: "box", label: "Lager", value: "12", color })],
-  ["Section", (color) => createComponent(Section, { title: "Lager", icon: "box", color, children: "" })],
+  ["Group", (color) => createComponent(Group, { title: "Lager", icon: "box", color, children: "" })],
 ];
 
 for (const [name, draw] of parts)

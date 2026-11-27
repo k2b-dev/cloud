@@ -50,7 +50,7 @@ Rule 3, fixed places. A wrapper element in a `Pane`, `List`, `Section`,
 <Pane><div><h2>Kontakt</h2><p>+49 30 5550 142</p></div></Pane>
 // right
 <Pane>
-  <Section icon="phone" title="Kontakt">
+  <Section title="Kontakt">
     <Facts items={[{ label: "Telefon", value: "+49 30 5550 142" }]} />
   </Section>
 </Pane>

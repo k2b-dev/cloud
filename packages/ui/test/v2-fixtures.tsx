@@ -218,7 +218,7 @@ export const StructureFixture = () =>
     >
       <Pane.Split>
         <Pane label="Überblick">
-          <Section icon="checklist" color="#2563eb" title="Anstehend" count={2} actions={[{ label: "Todo anlegen", icon: "plus" }]}>
+          <Section title="Anstehend" count={2} actions={[{ label: "Todo anlegen", icon: "plus" }]}>
             <Row strong icon="signature" lines={["Quittung wartet auf Unterschrift", "seit 18. Nov."]} action={{ label: "Zur Quittung" }} />
             <Row
               strong
@@ -227,7 +227,7 @@ export const StructureFixture = () =>
               action={{ label: "Herausgabe vorbereiten" }}
             />
           </Section>
-          <Section icon="list-details" color="#c2410c" title="Vorgänge" more={{ label: "Alle Einlieferungen", forward: true }}>
+          <Section title="Vorgänge" more={{ label: "Alle Einlieferungen", forward: true }}>
             <Digest
               items={[
                 {
@@ -245,7 +245,7 @@ export const StructureFixture = () =>
               ]}
             />
           </Section>
-          <Section icon="package" color="#c2410c" title="Einlieferungen" count={2} summary="10 Artikel sind ausgelaufen.">
+          <Section title="Einlieferungen" count={2} summary="10 Artikel sind ausgelaufen.">
             <Group
               icon="package"
               title="EL-2611-00009"
@@ -326,12 +326,7 @@ export const StructureFixture = () =>
           <Canvas label="Karte" height={176}>
             <span />
           </Canvas>
-          <Section
-            icon="phone"
-            title="Kontakt"
-            actions={[{ label: "Ändern", icon: "pencil" }]}
-            more={{ label: "Alle Angaben", meta: "Bank, Person" }}
-          >
+          <Section title="Kontakt" actions={[{ label: "Ändern", icon: "pencil" }]} more={{ label: "Alle Angaben", meta: "Bank, Person" }}>
             <Facts
               items={[
                 { label: "Telefon", value: "+49 30 5550 142", hint: "Standard", copy: "+49 30 5550 142" },
@@ -704,7 +699,6 @@ export const fixtures = {
     >
       <Pane label="Auftrag">
         <Section
-          icon="info-circle"
           title="Angaben"
           actions={[
             { label: "Filtern", icon: "filter" },
@@ -720,7 +714,7 @@ export const fixtures = {
             ]}
           />
         </Section>
-        <Section icon="braces" title="Daten" actions={[{ label: "Rohdaten anzeigen" }]}>
+        <Section title="Daten" actions={[{ label: "Rohdaten anzeigen" }]}>
           <Row icon="ruler" lines={["Aufmaß", "2,40 × 0,60 m"]} />
           <Row icon="palette" lines={["Oberfläche", "Eiche geölt"]} />
         </Section>

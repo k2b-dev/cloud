@@ -125,7 +125,6 @@ export function ResourceApiKeysV2(props: ResourceApiKeysProps) {
 
   return (
     <Section
-      icon="key"
       title={props.title ?? t().apiKeys}
       count={keys().length > 0 ? keys().length : undefined}
       summary={props.description ?? t().apiKeysDescription}

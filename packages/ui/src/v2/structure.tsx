@@ -27,18 +27,20 @@ const HeadActions = (props: { actions?: TwoActions }) => (
 );
 
 export type SectionProps = {
-  /** The symbol of the section. With `color` it stands on a tinted tile, otherwise plain. */
-  icon?: string;
-  /** The data colour of the section's area, such as the colour of deliveries. */
-  color?: string;
   /** The title of the section. */
   title: string;
   /** A quiet count after the title. */
   count?: number | string;
   /** At most two text buttons in the head; on the phone they keep only their symbol. */
   actions?: TwoActions;
-  /** One sentence under the head that sums the section up. */
+  /** One sentence that says what the section is for: the quiet line right under the title. */
   summary?: JSX.Element;
+  /**
+   * A section of a settings or form screen. Where its pane is wide (800 px and more), its title, summary and buttons
+   * stand in a column of 240 px at the left and its content at the right; in a narrower pane it is an ordinary section.
+   * Leave it out on detail and overview pages.
+   */
+  form?: boolean;
   /**
    * Its head, its sentence and its rows stay at the reading measure of `Prose` (720 px of text), so in a wide pane a
    * short list stays together instead of its words standing at the left edge and its deeds at the right. The section's
@@ -46,8 +48,8 @@ export type SectionProps = {
    */
   measure?: boolean;
   /**
-   * The way to all of it ("All deliveries ›"): under the rows, its words on their text edge (after the symbol where the
-   * section has one), never at the right. In a side column it is a row of its own.
+   * The way to all of it ("All deliveries ›"): under the rows, its words on their text edge, never at the right. In a
+   * side column it is a row of its own.
    */
   more?: Action;
   /** `Row`s, a `Digest`, `Facts` or `Group`s. */
@@ -63,9 +65,10 @@ export type SectionProps = {
 };
 
 /**
- * A section: a head with symbol, title, count and at most two text buttons. Rule 9: no line under the head, none
- * between the entries, one line at the end. A section that can fold keeps the same head, rhythm and lines; the
- * server and the first render show it as `open` says.
+ * A section: a calm head (title, a quiet count, the summary under it, at most two text buttons at the end) and its
+ * content. A `form` section of a settings screen takes a column of its own for its head where its pane is wide. Rule
+ * 9: no line under the head, none between the entries, one line at the end. A section that can fold keeps the same
+ * head, rhythm and lines; the server and the first render show it as `open` says.
  */
 export const Section = (props: SectionProps) => {
   const summary = resolveChildren(() => props.summary);
@@ -79,28 +82,27 @@ export const Section = (props: SectionProps) => {
     : undefined;
   const body = () => (
     <>
-      <Show when={summary() !== undefined}>
-        <p class="k2-sec-summary">{summary()}</p>
-      </Show>
       {props.children}
       <SectionMore more={props.more} />
     </>
   );
   return (
-    <section class="k2-sec" data-k2-part="Section" aria-label={props.title} data-measure={props.measure ? "" : undefined}>
+    <section
+      class="k2-sec"
+      data-k2-part="Section"
+      aria-label={props.title}
+      data-measure={props.measure ? "" : undefined}
+      data-form={props.form ? "" : undefined}
+    >
       <div class="k2-sh">
-        <Show when={props.icon}>
-          {(name) => (
-            <Show when={props.color} fallback={<Icon name={name()} />}>
-              <span class="k2-stile" style={custom({ "--k2-c": props.color })}>
-                <Icon name={name()} />
-              </span>
-            </Show>
-          )}
-        </Show>
-        <h3>{props.title}</h3>
-        <Show when={props.count !== undefined}>
-          <span class="k2-sh-count">{props.count}</span>
+        <div class="k2-sh-title">
+          <h3>{props.title}</h3>
+          <Show when={props.count !== undefined}>
+            <span class="k2-sh-count">{props.count}</span>
+          </Show>
+        </div>
+        <Show when={summary() !== undefined}>
+          <p class="k2-sec-summary">{summary()}</p>
         </Show>
         <Show when={props.actions?.length || fold}>
           <span class="k2-sh-end">
