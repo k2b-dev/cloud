@@ -177,6 +177,11 @@ inside it.
   text of a row with a symbol or person moves (intended).
 - `href` (+ `onNavigate` to open in place) makes the whole row open its
   entry; `onOpen` only for what has no address.
+- `level` (1–6): the depth of the entry in a flat list, such as the
+  headings of a note's outline. Each level stands 20 px further in (the
+  step of `Table tree`), the sixth five steps; in a `List` it is heard as
+  `aria-level`. Nothing folds: places that open and close are a `Nav`
+  group's `tree` or a `Table tree`.
 
 Rows may also stand directly in a `Section` or `Band`.
 
