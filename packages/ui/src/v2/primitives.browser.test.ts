@@ -590,34 +590,42 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       TEST_TIMEOUT,
     );
 
-  // The floating main action never covers the last row or field of a pane (W3, Spaces #4197): scrolled to its end, an
-  // open entry's last field stands above the button, and describeV2 finds nothing it covers.
-  test(
-    "390 px: the last field of an open entry stands above the floating main action once its pane is scrolled to the end",
-    async () => {
-      const page = await open("detailForm", { width: 390 });
-      try {
-        await page.evaluate(() => {
-          for (const element of document.querySelectorAll<HTMLElement>("*"))
-            if (element.scrollHeight > element.clientHeight + 1) element.scrollTop = element.scrollHeight;
-          document.scrollingElement?.scrollTo(0, document.scrollingElement.scrollHeight);
-        });
-        await settled(page);
-        const found = await page.evaluate(() => {
-          const fab = document.querySelector(".k2-fab")!.getBoundingClientRect();
-          const inputs = [...document.querySelectorAll(".k2-pane[data-detail] input")];
-          const last = inputs.at(-1)!.getBoundingClientRect();
-          return { fabShown: fab.width > 0, lastBottom: last.bottom, fabTop: fab.top };
-        });
-        expect(found.fabShown).toBe(true);
-        expect(found.lastBottom).toBeLessThanOrEqual(found.fabTop);
-        expect(await describeV2Page(page, "body")).not.toContain("floating main action");
-      } finally {
-        await page.close();
-      }
-    },
-    TEST_TIMEOUT,
-  );
+  // The floating main action never covers the last thing of any scroller (W3, Spaces #4197 and break-ui v4): scrolled to
+  // its end, the last deed or field stands above the button, and describeV2 finds nothing it covers. One case per kind.
+  for (const [fixture, kind, last] of [
+    ["detailForm", "an open entry (detail pane)", ".k2-pane[data-detail] input"],
+    ["fabList", "a list", ".k2-list .k2-btn"],
+    ["fabTable", "a table's phone rows", ".k2-table-phone .k2-row"],
+    ["fabRecord", "a record", ".k2-pane .k2-btn"],
+    ["fabBoard", "a board of status columns", ".k2-sec .k2-list .k2-btn"],
+  ] as const)
+    test(
+      `390 px: the last thing of ${kind} stands above the floating main action once its scroller is at the end`,
+      async () => {
+        const page = await open(fixture, { width: 390 });
+        try {
+          await page.evaluate(() => {
+            for (const element of document.querySelectorAll<HTMLElement>("*"))
+              if (element.scrollHeight > element.clientHeight + 1) element.scrollTop = element.scrollHeight;
+            document.scrollingElement?.scrollTo(0, document.scrollingElement.scrollHeight);
+          });
+          await settled(page);
+          const found = await page.evaluate((selector) => {
+            const fab = document.querySelector(".k2-fab")!.getBoundingClientRect();
+            const shown = [...document.querySelectorAll(selector)].filter((element) => element.getBoundingClientRect().height > 0);
+            const end = shown.at(-1)!.getBoundingClientRect();
+            return { fabShown: fab.width > 0, count: shown.length, lastBottom: end.bottom, fabTop: fab.top };
+          }, last);
+          expect(found.fabShown).toBe(true);
+          expect(found.count).toBeGreaterThan(0);
+          expect(found.lastBottom).toBeLessThanOrEqual(found.fabTop);
+          expect(await describeV2Page(page, "body")).not.toContain("floating main action");
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
 
   test(
     "a last column of digits keeps every figure in sight at exactly the width the table reckons as its least",

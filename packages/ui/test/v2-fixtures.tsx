@@ -705,6 +705,67 @@ export const fixtures = {
         </Pane>
       </Pane.Split>,
     ),
+  // every kind of scroller under the floating main action on the phone (W3, Spaces break-ui v4): a list, a table's
+  // phone rows, a record, a board of status columns; each long enough to scroll, its last thing a deed
+  fabList: () =>
+    shell(
+      <Pane label="Aufgaben">
+        <List label="Aufgaben">
+          {Array.from({ length: 24 }, (_, index) => (
+            <Row icon="checkbox" lines={[`Aufgabe ${index + 1}`, "Werkstatt · heute"]} action={{ label: "Erledigt" }} />
+          ))}
+        </List>
+      </Pane>,
+    ),
+  fabTable: () =>
+    shell(
+      <Pane label="Rechnungen">
+        <Table
+          label="Rechnungen"
+          rows={Array.from({ length: 24 }, (_, index) => ({
+            number: `RE-${1000 + index}`,
+            customer: `Kunde ${index + 1}`,
+            amount: "1.280,00 €",
+          }))}
+          columns={[
+            { title: "Nummer", cell: (row) => row.number },
+            { title: "Kunde", cell: (row) => row.customer },
+            { title: "Betrag", align: "end", cell: (row) => row.amount },
+          ]}
+          phone={(row) => ({ lines: [row.customer, row.number], time: row.amount })}
+          open={() => ({ href: "#rechnung" })}
+        />
+      </Pane>,
+    ),
+  fabRecord: () =>
+    shell(
+      <Pane label="Kunde">
+        {Array.from({ length: 4 }, (_, section) => (
+          <Section title={`Angaben ${section + 1}`}>
+            <Facts
+              items={Array.from({ length: 6 }, (_, index) => ({ label: `Feld ${index + 1}`, value: `Wert ${section * 6 + index + 1}` }))}
+            />
+          </Section>
+        ))}
+        <Section title="Zum Schluss">
+          <Bar end={<Button label="Kunde archivieren">Archivieren</Button>} />
+        </Section>
+      </Pane>,
+    ),
+  fabBoard: () =>
+    shell(
+      <Pane label="Tafel">
+        {["Offen", "In Arbeit", "Erledigt"].map((state) => (
+          <Section title={state} count={8}>
+            <List label={state}>
+              {Array.from({ length: 8 }, (_, index) => (
+                <Row icon="checkbox" lines={[`${state}: Aufgabe ${index + 1}`]} action={{ label: "Verschieben" }} />
+              ))}
+            </List>
+          </Section>
+        ))}
+      </Pane>,
+    ),
   // a last column of digits only at exactly the width the table reckons as its least (delta review r4): digits are the
   // widest signs, and a fallback font draws them wider than Plex
   tableDigits: () =>
