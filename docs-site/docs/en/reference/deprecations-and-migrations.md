@@ -5,13 +5,29 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-25
+updated: 2026-11-28
 ---
 
 # Deprecations and migrations
 
 Studio entries below describe older releases. Studio apps, their APIs and app data
 are now retired without transfer; follow [Studio retirement](/en/docs/operations/studio-retirement).
+
+## The Venue list returns one page
+
+`GET /api/venue/venues` returns at most 100 venues per request, newest first.
+Before, it returned every venue the caller could read, ordered by name.
+
+- To read further, page with `limit` (1 to 100, default 100) and `offset`. A
+  page shorter than `limit` is the last one.
+- The order is stable while venues are renamed or edited, so paging misses
+  none and repeats none.
+- To find a venue by name or slug, pass `q`.
+- A `limit` above 100 answers `400`.
+
+The response keeps its shape, `{ "venues": [...] }`. `cld venue list` pages
+through all venues for you. A command that takes a venue by name or slug
+searches for it with `q`.
 
 ## The log list keeps its filters in new address parameters
 

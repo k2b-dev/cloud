@@ -29,6 +29,8 @@ export const migrate = async (): Promise<void> => {
   await sql`ALTER TABLE venue.venues ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_venue_venues_short_id ON venue.venues(short_id)`.simple();
   await sql`CREATE INDEX IF NOT EXISTS idx_venue_venues_slug ON venue.venues(slug)`.simple();
+  // The venue list pages newest first.
+  await sql`CREATE INDEX IF NOT EXISTS idx_venue_venues_created ON venue.venues(created_at DESC, id)`.simple();
   // Calendar links are personal (venue.user_ical_tokens); the venue-wide token had no route and only leaked to readers.
   await sql`ALTER TABLE venue.venues DROP COLUMN IF EXISTS ical_token`.simple();
   console.log("  ✓ venue.venues table");
