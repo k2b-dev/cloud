@@ -68,7 +68,7 @@ Places in levels: a `Nav` group's `tree` (each place a `NavTreeNode`) and a tabl
 
 ### StatusRow
 
-Above the rows: the one statement, key figures and filters; a selection bar while rows are selected. Deeds without room go whole into a "…" menu from the end, the way out stays at the end; on the phone the deeds float at the bottom. An exception
+Above the rows: the one statement, key figures and filters; a selection bar while rows are selected. Deeds without room go whole into a "…" menu from the end, the way out stays at the end. An exception
 belongs to the statement as a tinted chip in `marks`, such as `<Chip status="bad">1 ohne Zugriff</Chip>`; it stays on
 the phone. In a narrow row the lead is cut and the figures fold first; the chips give way last, whole, where about a
 word of the lead would no longer fit. A chip that must never leave belongs in the lead itself. Put only chips there, no

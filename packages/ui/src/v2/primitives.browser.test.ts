@@ -778,25 +778,14 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     async () => {
       const page = await open("grid", { width: 390 });
       try {
-        // The count stays in the row; the actions and the way out float in a bar at the bottom (in reach of the thumb),
-        // inside the window, each word whole under its symbol; the way out may keep only its ×.
         const buttons = await page.evaluate(() => {
           const row = document.querySelector('[data-k2-part="StatusRow"]')!;
-          const end = row.querySelector<HTMLElement>(":scope > .k2-bar-end")!;
-          const floating = end.getBoundingClientRect();
-          const floats = getComputedStyle(end).position === "fixed";
-          return [...end.querySelectorAll<HTMLElement>(".k2-btn")]
-            .filter((button) => button.getClientRects().length > 0)
-            .map((button) => {
-              const box = button.getBoundingClientRect();
-              const closes = !!button.closest(".k2-status-clear");
-              const label = button.querySelector(".k2-btn-label") ?? button;
-              return [
-                button.textContent?.trim(),
-                floats && box.left >= floating.left && box.right <= floating.right && floating.bottom <= innerHeight,
-                closes ? button.scrollWidth <= button.clientWidth : label.scrollWidth <= label.clientWidth + 1,
-              ];
-            });
+          const right = row.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(row).paddingRight);
+          return [...row.querySelectorAll(".k2-btn")].map((button) => [
+            button.textContent?.trim(),
+            button.getBoundingClientRect().right <= right + 0.5,
+            button.scrollWidth <= button.clientWidth,
+          ]);
         });
         expect(buttons).toEqual([
           ["Exportieren", true, true],
