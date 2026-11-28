@@ -345,18 +345,13 @@ const focusedInTray = (page: Page) =>
   });
 
 describe(`Spaces task tray in ${browserName}`, () => {
-  // One case per screen. On the phone a fill drawing's pane grows with its content since #4223 (packages/ui/src/v2/v2.css:4806,
-  // `min-height: min-content`), so the calendar cannot scroll and hydration moves the day; that case waits for the fix.
+  // One case per screen.
   for (const [name, view] of [
     ["desktop-1440", desktop],
     ["ipad-1024", tablet],
     ["phone-390", phone],
   ] as const) {
     const title = `keeps the tray below the day at ${name}, and the day in place whether the tray is full, empty, or loading`;
-    if (view === phone) {
-      test.todo(`${title} (waits for #4223: v2.css:4806 lets a phone pane with a fill drawing outgrow its split)`, () => {});
-      continue;
-    }
     test(title, async () => {
       mkdirSync(shots, { recursive: true });
       const server = await open(view, { javaScript: false });

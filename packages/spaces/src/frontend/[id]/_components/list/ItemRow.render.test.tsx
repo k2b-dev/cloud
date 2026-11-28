@@ -159,10 +159,11 @@ test("SSR renders a German all-day deadline as the same calendar day", () => {
 });
 
 test("a status colour reaches the row's style only as a colour", () => {
-  expect(renderRow(task(), true, "en", "#ef4444")).toContain("background-color:#ef4444");
+  // On v2 the status colour is the row mark's data colour (`--k2-c`); anything else leaves the mark at its default.
+  expect(renderRow(task(), true, "en", "#ef4444")).toContain("--k2-c:#ef4444");
   for (const color of ["#ef4444;position:fixed;inset:0", "red;background:url(https://example.org/x.png)", "#ef4444}body{display:none"]) {
     const html = renderRow(task(), true, "en", color);
     expect(html).not.toMatch(/position:\s*fixed|url\(|display:\s*none/);
-    expect(html).toContain("background-color:#6b7280");
+    expect(html).not.toContain("--k2-c:");
   }
 });
