@@ -59,6 +59,8 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   limits, Enter back to the default) move the width; a reload starts at the
   default again. The sidebar's grip works the same. A grip shows only under the
   pointer, on keyboard focus and while dragged (on touch screens it stays).
+  `width={{ fixed }}` keeps one width without a grip, for a page to read
+  rather than to arrange (a visitor page, a wall screen).
 - `detail`: the reader beside a list. What is open belongs in the address:
   render the detail only while the address names an entry. On the phone
   the detail is the page, and the title in its head is never cut: beside the
@@ -311,7 +313,7 @@ open row in the tint of the app it belongs to, a chosen row blue; rows part
 with the quiet line, the column head with the clear one). A column: `title`, `cell(row)`
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
-never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer or holds the focus, and while dragged; on touch screens it stays, and after a touch on the head it takes a 44 px target), `wrap` (one text column may take 3
+never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer or holds the focus, and while dragged; on touch screens it stays, and after a touch on the head it takes a 44 px target; `{ fixed }`: one width, no grip), `wrap` (one text column may take 3
 lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
@@ -404,7 +406,7 @@ lines instead of cutting a thing. In a table cell its `Text` gives way to
 the marks beside it (a symbol, an `Avatar`, a `Chip` keep their size): the
 name wraps in a small table and ends with "…" in one with column widths.
 
-### Icon, Avatar, Chip, Progress, Ticks, Heat
+### Icon, Avatar, Chip, Progress, Ticks, RangeBar, Heat
 
 - `Icon`: `name`, `label` (without one it is decoration), `tone`.
 - `Avatar`: a `Person`; the place sets the size. With `image` the picture
@@ -420,7 +422,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   the state and the word in the ink of the text ("● Aktiv"), on the chip's
   height. Use it for a column of states in a dense table or list, where a
   chip on every line is too loud.
-- `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
+- `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22"), `status`
+  (`warn` almost full, `bad` full: the bar says it in colour too, beside the
+  chip or words that say why).
 - `Mark`: what a thing looks like. `icon` + `color` (its data colour, or
   the colour of its kind: table, form, PDF), `image` (a thumbnail over the
   symbol; while it loads and when it fails the symbol shows), `kind` (the
@@ -452,6 +456,11 @@ name wraps in a small table and ends with "…" in one with column widths.
   keeps the strip at its start). Ok is soft, a failure red and taller, a
   slot without data a low stub; 140 × 20 px in a table cell. The one column
   of a list that shows its data over time; never decoration.
+- `RangeBar`: `from` and `to`, or `ranges` (several on one track, such as
+  opening hours with a break; `[]` for a closed day), on the `domain` the
+  rows of a list share; `stops` (colours by meaning along the scale),
+  `label` (every range in words: "Di.: 08:00 bis 12:00 und 14:00 bis
+  18:00") or `decorative` when the values stand beside it as text.
 - `Heat`: `days` (`{ date, count }` per day, at most the 53 weeks shown, from
   one bounded aggregate), `today` (a date key from the server: the last day,
   marked), `label` ("Mails pro Tag"), `unit` (a count in the app's words),

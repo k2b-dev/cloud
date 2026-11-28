@@ -9,6 +9,7 @@ export const loadCatalog = async (baseId: string, user: AuthUser, includeCustomA
     baseId,
     userId: user.id,
     userGroups: user.memberofGroupIds,
+    customApps: includeCustomApps,
   });
   const tables = catalogRaw.tables;
   const formTables = catalogRaw.formTables ?? [];
@@ -33,11 +34,10 @@ export const loadCatalog = async (baseId: string, user: AuthUser, includeCustomA
   }
   sidebarDocumentTemplates.sort((left, right) => left.template.name.localeCompare(right.template.name, undefined, { sensitivity: "base" }));
 
-  const [allWorkflows, workflowLaunchers, customApps] = await Promise.all([
-    gridsService.workflow?.listForBase ? gridsService.workflow.listForBase(baseId) : Promise.resolve([]),
-    includeCustomApps ? gridsService.workflow.launcher.listForBase(baseId, true) : Promise.resolve([]),
-    includeCustomApps ? gridsService.customApp.listSummariesByBase(baseId) : Promise.resolve([]),
-  ]);
+  // the workflows and (for who manages the base) the apps came with the catalog's one statement
+  const allWorkflows = catalogRaw.workflows;
+  const customApps = catalogRaw.customApps;
+  const workflowLaunchers = includeCustomApps ? await gridsService.workflow.launcher.listForBase(baseId, true) : [];
   const baseLevel = await resolveBaseLevel(user, baseId);
   const workflowLevels = Object.fromEntries(allWorkflows.map((workflow) => [workflow.id, baseLevel]));
   const workflows = allWorkflows

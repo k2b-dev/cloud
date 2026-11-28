@@ -302,9 +302,10 @@ brings its own head, so the shell's row of the way up stays hidden above it.
 
 On a signed-in phone the search of a v2 page's head sits in the phone bar, as
 in the approved Mail mockup: the bar's search button, named “Search”, opens the
-head's search field (`Input type="search"`), which opens over the head and
-brings the phone's keyboard; Escape folds it away with its words and returns
-the focus to the button, however the field got it. The Tab key reaches the
+head's search field (`HeadSearch`), which opens over the head and brings the
+phone's keyboard; Escape leaves it with its words and returns the focus to the
+button, however the field got it. Empty, the field folds away; its words keep
+it open over the head. The Tab key reaches the
 field only through that button. The head keeps its room for its views. The global
 search then leads the app menu (the ⠿ sheet) as its first entry, “Search
 everywhere”. Without such a field, or while an open detail hides the head, the
@@ -545,8 +546,24 @@ layout then adds no wrapper around the content. The older corner values
 `top-left`, `top-right`, `bottom-left`, and `bottom-right` are deprecated and
 behave like the default.
 
-The application remains responsible for its one semantic `main` landmark and
-all page styling. Do not add a second language or theme control or a second
+Set `ui="v2"` (provisional, like `@k2b/ui/v2`) when the page is built with
+`@k2b/ui/v2`, such as a venue's public programme, a public form, a share or a
+kiosk screen. The layout then puts the content in the `main` landmark as the
+v2 scope in the application's colours, as `Layout ui="v2"` does, with no Cloud
+chrome. The content fills the window above the footer: return one `Workspace`
+without a sidebar, with the brand and the one task in its head. With
+`preferences={false}`, a kiosk screen takes the whole window and its `Pane`
+scrolls inside. The k2b-ui recipe `public-page` shows such a page and its kiosk
+state.
+
+```tsx
+<MinimalLayout c={c} ui="v2">
+  <VenueProgramme />
+</MinimalLayout>
+```
+
+Without `ui`, the application remains responsible for its one semantic `main`
+landmark and all page styling. Do not add a second language or theme control or a second
 legal-links footer to the page. Do not use `MinimalLayout` as an
 access-control signal: route middleware, public grants, and share-token
 validation remain separate server responsibilities.

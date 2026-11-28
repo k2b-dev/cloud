@@ -2,6 +2,8 @@ export type AttachmentPreviewKind = "image" | "pdf" | "text" | "audio" | "video"
 
 export const IMAGE_PREVIEW_CONTENT_TYPES: readonly string[] = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 export const MAX_IMAGE_PREVIEW_BYTES = 25 * 1024 * 1024;
+/** Smaller images are signature logos and spacers: list previews and the Mail file source leave them out. */
+export const MIN_LIST_IMAGE_BYTES = 4096;
 const MAX_DOCUMENT_PREVIEW_BYTES = 50 * 1024 * 1024;
 const MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024;
 
