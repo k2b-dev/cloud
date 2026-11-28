@@ -161,10 +161,11 @@ test("at 390 px the phone form of another app's table keeps that app's tint for 
   }
 });
 
-test("the quiet text of an open or chosen row keeps 4.5:1 on the tint of every app colour, in light and dark", async () => {
-  const apps = { teal: "#14b8a6", blue: "#3b82f6", violet: "#8b5cf6", yellow: "#eab308", green: "#22c55e" };
-  for (const theme of [undefined, "dark"] as const) {
-    for (const [name, app] of Object.entries(apps)) {
+// One test per theme and app colour, one page each, so each stays far inside its time in WebKit.
+const appColours = { teal: "#14b8a6", blue: "#3b82f6", violet: "#8b5cf6", yellow: "#eab308", green: "#22c55e" };
+for (const theme of [undefined, "dark"] as const)
+  for (const [name, app] of Object.entries(appColours))
+    test(`the quiet text of an open or chosen row keeps 4.5:1 on the tint of the app colour ${name}, ${theme ?? "light"}`, async () => {
       const page = await open({ theme, app });
       try {
         const found = await page.evaluate(() => {
@@ -197,13 +198,11 @@ test("the quiet text of an open or chosen row keeps 4.5:1 on the tint of every a
           };
         });
         for (const [place, value] of Object.entries(found))
-          expect([theme ?? "light", name, place, typeof value === "number" && value >= 4.5]).toEqual([theme ?? "light", name, place, true]);
+          expect([place, typeof value === "number" && value >= 4.5]).toEqual([place, true]);
       } finally {
         await page.close();
       }
-    }
-  }
-});
+    });
 
 test("a list ends without a line; only a grid table keeps its clear end line", async () => {
   const page = await open({ app: "#0f766e" });
