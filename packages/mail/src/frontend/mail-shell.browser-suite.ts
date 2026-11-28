@@ -1430,6 +1430,13 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             expect(await first.getAttribute("aria-current")).toBe("page");
             expect(await first.textContent()).toBe("All");
             const entries = Object.entries(viewCounts).filter(([id]) => id !== "send_problems");
+            // a tab's words as a person reads them: the width its count reserves is hidden from everyone
+            const shownText = (link: Locator) =>
+              link.evaluate((element) => {
+                const shown = element.cloneNode(true) as Element;
+                for (const hidden of shown.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+                return shown.textContent;
+              });
             for (const [id, count] of entries) {
               const href = `${path}?view=${id}`;
               let link = tabs(page).locator(`a[href="${href}"]`);
@@ -1437,9 +1444,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 await tabs(page).getByRole("button", { name: /More/ }).click();
                 // Dropdown document links carry the menuitem role themselves.
                 link = page.locator(`[role="menuitem"][href="${href}"]`);
-                expect(await link.textContent()).toMatch(new RegExp(`${count}$`));
+                expect(await shownText(link)).toMatch(new RegExp(`${count}$`));
                 await page.keyboard.press("Escape");
-              } else expect(await link.textContent()).toMatch(new RegExp(`${count}$`));
+              } else expect(await shownText(link)).toMatch(new RegExp(`${count}$`));
             }
             expect(await page.locator(".k2b-app-workspace .k2b-paper").count()).toBe(0);
           } finally {
