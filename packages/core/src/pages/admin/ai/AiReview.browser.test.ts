@@ -444,10 +444,11 @@ test.each([false, true])("variant merge forwards price overrides for server norm
 
 test("detail failures, missing models and no selection have distinct recovery states", async () => {
   await goto("sec=providers&p=cortecs&m=gpt-oss-120b&state=detailfail");
-  await page.getByText("AI settings could not be loaded", { exact: false }).first().waitFor();
+  // the pane's back name on the phone repeats the title hidden; the visible one is the failure itself
+  await page.getByText("AI settings could not be loaded", { exact: false }).filter({ visible: true }).first().waitFor();
   expect(await button(/^(Retry|Try again)$/).count()).toBeGreaterThan(0);
   await goto("sec=providers&p=cortecs&m=missing&state=detailempty");
-  await page.getByText("This model no longer exists", { exact: true }).first().waitFor();
+  await page.getByText("This model no longer exists", { exact: true }).filter({ visible: true }).first().waitFor();
   await goto("sec=providers&p=cortecs");
   expect(await page.getByText("This model no longer exists", { exact: true }).count()).toBe(0);
 });

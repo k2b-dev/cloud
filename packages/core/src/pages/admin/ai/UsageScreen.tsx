@@ -626,14 +626,24 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
                           </Inline>
                         ),
                       },
-                      {
-                        title: t().reason,
-                        width: { min: 120, default: 160 },
-                        drop: true,
-                        cell: (row) => row.reasons.map((reason) => usageReasonLabel(t(), reason)).join(", ") || "—",
-                      },
-                      { title: t().model, width: { min: 120, default: 150 }, drop: true, cell: (row) => row.modelId ?? t().unknown },
-                      { title: t().comment, drop: true, cell: (row) => row.comment ?? "" },
+                      // beside an open rating its reasons, model and comment stand in the detail; the columns only fit without one
+                      ...(openFeedback()
+                        ? []
+                        : [
+                            {
+                              title: t().reason,
+                              width: { min: 120, default: 160 },
+                              drop: true,
+                              cell: (row: AiUsageFeedback) => row.reasons.map((reason) => usageReasonLabel(t(), reason)).join(", ") || "—",
+                            },
+                            {
+                              title: t().model,
+                              width: { min: 120, default: 150 },
+                              drop: true,
+                              cell: (row: AiUsageFeedback) => row.modelId ?? t().unknown,
+                            },
+                            { title: t().comment, drop: true, cell: (row: AiUsageFeedback) => row.comment ?? "" },
+                          ]),
                     ]}
                   />
                   {pager(view().feedback)}
@@ -672,7 +682,8 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
                       drop: true,
                       cell: (row) => person(row.userId, row.userLabel),
                     },
-                    { title: t().received, drop: true, cell: (row) => date(row.createdAt) },
+                    // beside an open run its time stands in the detail; the column only fits without one
+                    ...(openRun() ? [] : [{ title: t().received, drop: true, cell: (row: AiUsageRun) => date(row.createdAt) }]),
                   ]}
                 />
                 {pager(view().runs)}

@@ -175,7 +175,7 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
       columns={[
         {
           title: t().automation,
-          width: { min: 180, default: 260 },
+          width: { min: 180, default: 200 },
           // slot for #4208/#4223 (DP): Column mark, the Code sign "code" in the colour of the app it belongs to (else CODE_COLOR)
           cell: (entry): JSX.Element => (
             <>
@@ -203,14 +203,14 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
           : [
               {
                 title: t().belongsTo,
-                width: { min: 120, default: 150 },
+                width: { min: 120, default: 140 },
                 drop: true,
                 cell: (entry: CodeAdminApproval) => ownerOf(entry),
               },
             ]),
         {
           title: t().waitingSince,
-          ...(open ? {} : { width: { min: 110, default: 130 } }),
+          ...(open ? {} : { width: { min: 110, default: 120 } }),
           drop: true,
           cell: (entry: CodeAdminApproval) => ago(entry.submittedAt),
         },
