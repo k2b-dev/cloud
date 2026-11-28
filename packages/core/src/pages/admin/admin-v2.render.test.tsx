@@ -14,7 +14,6 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { LocaleProvider } = await import("@k2b/ui");
 const { adminNavFixture } = await import("./admin-v2.fixture");
-const { default: OverviewScreen } = await import("./OverviewScreen");
 const { default: BaseScreen } = await import("./base/BaseScreen");
 const { generalSections } = await import("./base/sections");
 const { fixtureEntries } = await import("./base/BaseArea.browser-fixture");
@@ -62,42 +61,6 @@ const loaders = (body: { querySelectorAll(selector: string): { length: number } 
   body.querySelectorAll('[data-k2-part="Loading"], [aria-busy="true"]').length;
 
 describe("v2 admin screens on the server", () => {
-  test("the overview names the services and leads to every place in sections of rows", () => {
-    const { body, text } = render(() =>
-      createComponent(OverviewScreen, {
-        nav: adminNavFixture("/admin"),
-        title: "Administration",
-        lead: "12 registrierte Dienste",
-        facts: ["3 App-Verwaltungsbereiche"],
-        sections: [
-          {
-            title: "Hier starten",
-            summary: "Wähle, was du erledigen willst.",
-            tasks: [{ href: "/admin/observability", title: "System untersuchen", description: "Signale zuerst.", icon: "stethoscope" }],
-          },
-          {
-            title: "Plattform",
-            summary: "Einstellungen.",
-            tasks: [{ href: "/admin/storage", title: "Speicher", description: "Garage.", icon: "database" }],
-          },
-          { title: "App-Verwaltung", summary: "Von Apps.", tasks: [] },
-        ],
-      }),
-    );
-    expect(text).toContain("12 registrierte Dienste");
-    expect(text).toContain("System untersuchen");
-    // a section without places leaves no empty head behind
-    expect([...body.querySelectorAll('[data-k2-part="Section"] h3')].map((head) => head.textContent)).toEqual([
-      "Hier starten",
-      "Plattform",
-    ]);
-    expect(
-      body.querySelector('a[href="/admin/storage"][data-k2-part="Row"], [data-k2-part="Row"] a[href="/admin/storage"]'),
-    ).not.toBeNull();
-    expect(body.querySelector('[data-k2-part="Nav.Item"][aria-current="page"]')?.textContent).toContain("Übersicht");
-    expect(loaders(body)).toBe(0);
-  });
-
   test("a Base section shows its fields, values and sources, the footer save and the legacy list from the server", () => {
     const { body, text } = render(() =>
       createComponent(BaseScreen, {

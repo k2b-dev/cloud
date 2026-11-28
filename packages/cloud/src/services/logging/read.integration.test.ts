@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { Hono } from "hono";
+import { meterSql } from "../../../../../scripts/fixtures/sql-meter";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { sql } from "../../runtime/clients";
 import { logging, trace, withObservabilityRead } from "./index";
@@ -79,6 +80,44 @@ suite("bounded observability reads", () => {
     } finally {
       controller.abort();
       await response;
+    }
+  });
+
+  test("a source's newest entries read through (source, created_at, id), in two bounded reads", async () => {
+    const source = `newest-${crypto.randomUUID()}`;
+    const other = `other-${crypto.randomUUID()}`;
+    try {
+      // the shape of a real log: a source with a thousand lines among a busy one, over a day; enough that reading them
+      // all and sorting costs more than reading the newest 50 in order
+      await sql`INSERT INTO logging.entries(source, message, created_at)
+        SELECT CASE WHEN n % 50 = 0 THEN ${source} ELSE ${other} END, 'line', now() - (n || ' seconds')::interval
+        FROM generate_series(1, 50000) n`;
+      const [indexes] = await sql<{ composite: boolean; single: boolean }[]>`
+        SELECT to_regclass('logging.idx_logging_entries_source_created') IS NOT NULL AS composite,
+          to_regclass('logging.idx_logging_entries_source') IS NOT NULL AS single`;
+      // the single-column index stays until it can be dropped without a lock on the table (#4529); the plan takes the
+      // new one
+      expect(indexes).toEqual({ composite: true, single: true });
+      await sql`ANALYZE logging.entries`;
+      const [plan] = await sql<{ "QUERY PLAN": unknown }[]>`
+        EXPLAIN (FORMAT JSON)
+        SELECT id, level, source, message, metadata, created_at FROM logging.entries
+        WHERE source = ${source} AND created_at >= now() - INTERVAL '24 hours'
+        ORDER BY created_at DESC, id DESC LIMIT 50`;
+      expect(JSON.stringify(plan)).toContain("idx_logging_entries_source_created");
+
+      const meter = await meterSql();
+      try {
+        // the count and the page, each in its own bounded read transaction (begin, three limits, the backend for a
+        // cancel, the read, commit)
+        const statements = await meter.during(() => logging.list({ page: 1, perPage: 50, offset: 0 }, { source }));
+        expect(statements.filter((statement) => statement.includes("logging.entries"))).toHaveLength(2);
+        expect(statements).toHaveLength(14);
+      } finally {
+        await meter.close();
+      }
+    } finally {
+      await sql`DELETE FROM logging.entries WHERE source IN (${source}, ${other})`;
     }
   });
 });

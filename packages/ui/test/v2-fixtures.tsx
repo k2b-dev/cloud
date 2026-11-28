@@ -123,8 +123,8 @@ export const LayoutFixture = (props: { open?: boolean; back?: string }) =>
               end={
                 <>
                   <Button icon="check">Erledigt</Button>
-                  <Button variant="ghost" icon="dots" label="Weitere Aktionen" keep />
-                  <Button variant="ghost" icon="x" label="Schließen" href="#posteingang" />
+                  <Button variant="ghost" icon="dots" label="Weitere Aktionen" />
+                  <Button variant="ghost" icon="x" label="Schließen" href="#posteingang" closes />
                 </>
               }
             />
@@ -194,7 +194,7 @@ export const LayoutFixture = (props: { open?: boolean; back?: string }) =>
         />
       }
       end={
-        <Button variant="primary" icon="pencil">
+        <Button variant="primary" icon="pencil" floats>
           Neue Nachricht
         </Button>
       }
@@ -352,7 +352,7 @@ export const StructureFixture = () =>
         />
       }
       end={
-        <Button variant="primary" icon="plus" menu>
+        <Button variant="primary" icon="plus" menu floats>
           Neu
         </Button>
       }

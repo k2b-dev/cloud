@@ -102,8 +102,8 @@ describe("buildAdminGroups", () => {
       }),
     ]);
 
-    expect(groups.map((group) => group.label)).toEqual([undefined, "Set up", "Operations", "Operations"]);
-    expect(groups[3]?.links).toEqual([{ href: "/admin/example/jobs", icon: "ti-activity", label: "Jobs" }]);
+    expect(groups.map((group) => group.label)).toEqual(["Set up", "Operations", "Operations"]);
+    expect(groups[2]?.links).toEqual([{ href: "/admin/example/jobs", icon: "ti-activity", label: "Jobs" }]);
     expect(groups.find((group) => group.label === "Set up")?.links).toEqual(SETUP);
   });
 
@@ -140,7 +140,6 @@ describe("buildAdminGroups", () => {
     }
     expect(activeAdminLink("/admin/ai", links)?.href).toBe("/admin/ai");
     expect(buildAdminGroups([], "de").map((group) => [group.label, group.links.map((link) => link.label)])).toEqual([
-      [undefined, ["Übersicht"]],
       ["Einrichten", ["Grundeinstellungen", "Speicher", "Anmeldung & Sicherheit", "Ausgehende Mail", "Ankündigungen", "KI"]],
       ["Betrieb", ["Apps", "Code", "Wartungsmodus"]],
     ]);
@@ -183,7 +182,7 @@ describe("buildAdminGroups", () => {
       }),
     ]);
 
-    expect(groups.map((group) => group.label)).toEqual([undefined, "Set up", "Operations"]);
+    expect(groups.map((group) => group.label)).toEqual(["Set up", "Operations"]);
   });
 
   it("places the People page of the app that manages accounts under Operations, also outside /admin", () => {
