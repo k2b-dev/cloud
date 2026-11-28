@@ -2257,6 +2257,16 @@
 .k2-ui .k2-facts[data-inline] > .k2-fact-pair > dd {
   margin-right: 8px;
 }
+/* one line of facts keeps its quiet 12 px labels and its 32 px */
+.k2-ui .k2-facts[data-inline] > .k2-fact-pair > dt {
+  font: var(--k2-t-meta);
+  line-height: 20px;
+  color: var(--k2-subtle);
+  padding: 6px 8px 6px 0;
+}
+.k2-ui .k2-facts[data-inline] > .k2-fact-pair > dd {
+  padding: 6px 0;
+}
 /* an inline line with an end: the list and the end beside it, on the text edge */
 .k2-ui .k2-facts-line {
   display: flex;
