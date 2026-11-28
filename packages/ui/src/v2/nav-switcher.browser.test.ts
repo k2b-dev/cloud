@@ -71,6 +71,12 @@ test("the panel holds the bases in their groups, the search from 8, and the deed
   await withPage(1440, async (page) => {
     // the closed switcher keeps the v2 rules (an open panel lies over the sidebar's grip on purpose)
     expect((await measureV2Layout(page)).problems).toEqual([]);
+    // the open base's sign stands at its own size on the button (24 px, as the taste study draws it), not as an entry's
+    expect(
+      await button(page)
+        .locator(".k2-mk")
+        .evaluate((mark) => mark.getBoundingClientRect().width),
+    ).toBe(24);
     await button(page).click();
     await page.locator(".k2-switcher").waitFor();
     const shown = await panel(page);
