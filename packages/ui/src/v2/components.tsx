@@ -30,6 +30,7 @@ import type { NavTreeGroup } from "./nav-tree";
 import { useOverlayMessages } from "./overlay-messages";
 import { useStatusToolbar } from "./status-toolbar";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
+import { createVirtualWindow, SERVER_ROWS } from "./virtual";
 
 // Layer 2: components made only of the primitives. They exist where a form must be the same everywhere.
 
@@ -234,10 +235,13 @@ const NavLink = (props: { item: NavItem; level: number }) => (
   </Dynamic>
 );
 
+/** Whether an entry is the current page, or a fold that holds it at any depth. */
+const isOrHoldsCurrent = (item: NavItem): boolean => !!item.current || !!item.items?.some(isOrHoldsCurrent);
+
 /** A folding entry: a button that shows or hides its entries below it, one level further in. */
 const NavFold = (props: { item: NavItem; items: readonly NavItem[]; level: number }) => {
   const id = createUniqueId();
-  const holdsCurrent = () => props.items.some((item) => item.current);
+  const holdsCurrent = () => props.items.some(isOrHoldsCurrent);
   const [open, setOpen] = createSignal(untrack(holdsCurrent));
   // an entry inside that becomes the open one shows itself
   createComputed(() => {
@@ -272,13 +276,75 @@ const NavFold = (props: { item: NavItem; items: readonly NavItem[]; level: numbe
 const groupMenu = (action: NavGroup["action"]) => (action && "items" in action ? action : undefined);
 const groupDeed = (action: NavGroup["action"]) => (action && !("items" in action) ? action : undefined);
 
+/** Scrolls a sidebar's entries so its current page shows whole (the least scroll that does). */
+const showCurrent = (scroll: HTMLElement) => {
+  const current = scroll.querySelector<HTMLElement>('[aria-current="page"]');
+  if (!current) return;
+  const view = scroll.getBoundingClientRect();
+  const box = current.getBoundingClientRect();
+  if (box.top < view.top) scroll.scrollTop += box.top - view.top;
+  else if (box.bottom > view.bottom) scroll.scrollTop += box.bottom - view.bottom;
+};
+
+/**
+ * The entries of a long group (a base with 1,000 tables): only those in view and a margin around them are in the
+ * page, in the same window as a list of items (`createVirtualWindow`); the server renders the first of them.
+ */
+const NavWindow = (props: { items: readonly NavItem[] }) => {
+  let box: HTMLDivElement | undefined;
+  // one place per position, kept while the list changes, so an entry's place is made once
+  const places: { index: number }[] = [];
+  const at = createMemo(() => {
+    for (let index = places.length; index < props.items.length; index++) places.push({ index });
+    return places.slice(0, props.items.length);
+  });
+  // the current page (or the fold that holds it) always stays in the page, and the sidebar shows it on load
+  const current = () => {
+    const index = props.items.findIndex(isOrHoldsCurrent);
+    return index < 0 ? undefined : String(index);
+  };
+  const view = createVirtualWindow({ items: at, key: (place) => String(place.index), pinned: current });
+  onMount(() => {
+    if (!box) return;
+    view.mount(box);
+    const shown = current();
+    if (shown === undefined) return;
+    view.reveal(shown);
+  });
+  return (
+    <div ref={box} class="k2-nav-window" style={custom({ "--k2-before": `${view.before()}px`, "--k2-after": `${view.after()}px` })}>
+      <For each={view.shown()}>
+        {(place) => {
+          // each entry in a place of its own, so an open fold counts with its entries
+          const node = (
+            <div class="k2-nav-place">
+              <NavEntry item={props.items[place.index]!} />
+            </div>
+          );
+          if (typeof Element !== "undefined" && node instanceof Element) view.observe(node, place);
+          return node;
+        }}
+      </For>
+    </div>
+  );
+};
+
 /**
  * The sidebar of an app: its name, its search and main action, groups of round entries with counts, its own rows, and
- * entries at the foot.
+ * entries at the foot. The groups scroll between the head and the foot; a group longer than a screen keeps only the
+ * entries in view in the page.
  */
 export const Nav = (props: NavProps) => {
   // A part passed as JSX is made once, here, and read from here (as `Workspace` does with its parts).
   const list = resolveChildren(() => props.list);
+  let scroll: HTMLDivElement | undefined;
+  // the current page shows on load (a long group shows its own once its window stands, see `NavWindow`)
+  onMount(() => {
+    // after the first render settles: a long group has put its window at the current entry by then (`NavWindow`)
+    queueMicrotask(() => {
+      if (scroll) showCurrent(scroll);
+    });
+  });
   return (
     <nav class="k2-nav" data-k2-part="Nav" aria-label={props.title}>
       <div class="k2-nav-title">
@@ -308,7 +374,7 @@ export const Nav = (props: NavProps) => {
         )}
       </Show>
       {/* the groups scroll between the head and the foot, so many places never push the foot out of the sidebar */}
-      <div class="k2-nav-groups">
+      <div class="k2-nav-groups" ref={scroll}>
         <Index each={props.groups}>
           {(group) => (
             <>
@@ -319,7 +385,18 @@ export const Nav = (props: NavProps) => {
                   <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
                 </div>
               </Show>
-              <Show when={group().tree} fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}>
+              {/* a tree of places draws itself; a group longer than a screen keeps only the entries in view */}
+              <Show
+                when={group().tree}
+                fallback={
+                  <Show
+                    when={(group().items?.length ?? 0) > SERVER_ROWS}
+                    fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}
+                  >
+                    <NavWindow items={group().items ?? []} />
+                  </Show>
+                }
+              >
                 {(tree) => <Dynamic component={tree().view} {...tree()} />}
               </Show>
             </>

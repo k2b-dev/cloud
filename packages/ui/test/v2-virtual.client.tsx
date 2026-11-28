@@ -1,0 +1,186 @@
+import { createSignal } from "solid-js";
+import { render } from "solid-js/web";
+import { List, type ListController, Nav, type NavItem, Pane, Row, Table, Workspace } from "../src/v2";
+
+// A list of 1,000 entries whose titles wrap at narrow widths, and a table of 200 rows whose cells read a live value:
+// the virtual window of v2 (review of #4211) under scrolling, resizing, Tab and a reveal by key.
+
+declare global {
+  interface Window {
+    __k2Mounted?: boolean;
+    /** Changes the live value every cell of the table reads. */
+    __k2Tick?: () => void;
+    /** Brings the entry with this key into view and gives back its row. */
+    __k2Reveal?: (key: string) => HTMLElement | null;
+    /** Appends ten entries to the list and ten rows to the table, as "Weitere laden" does; the others stay the same. */
+    __k2More?: () => void;
+    /** The rows of the window by key, kept by the test to compare elements after a change. */
+    __k2Saved?: Map<string, Element>;
+    /** Gives the list new objects of the same entries, with a new title, as a refresh does. */
+    __k2Renew?: () => void;
+  }
+}
+
+const entries = Array.from({ length: 1000 }, (_, index) => ({
+  key: `e${index + 1}`,
+  title:
+    `Eintrag ${index + 1} ${index % 3 === 0 ? "mit einem langen Titel, der in einer schmalen Spalte auf eine zweite Zeile umbricht" : ""}`.trim(),
+}));
+const rows = Array.from({ length: 200 }, (_, index) => ({ id: `r${index + 1}` }));
+const [tick, setTick] = createSignal(0);
+window.__k2Tick = () => setTick((value) => value + 1);
+const [listed, setListed] = createSignal(entries);
+const [tabled, setTabled] = createSignal(rows);
+window.__k2More = () => {
+  setListed((now) => [...now, ...Array.from({ length: 10 }, (_, index) => ({ key: `n${index + 1}`, title: `Neu ${index + 1}` }))]);
+  setTabled((now) => [...now, ...Array.from({ length: 10 }, (_, index) => ({ id: `m${index + 1}` }))]);
+};
+window.__k2Renew = () => setListed((now) => now.map((entry) => ({ ...entry, title: `${entry.title} (neu)` })));
+let list: ListController | undefined;
+window.__k2Reveal = (key) => list?.reveal(key) ?? null;
+
+const root = document.getElementById("root");
+if (!root) throw new Error("virtual: #root is missing");
+// `<body data-case="groups">`: the same entries, seven a day under a head of their day, in a list and in a table
+const day = (index: number) => Math.floor(index / 7) + 1;
+// `<body data-case="nav">`: a sidebar whose group holds 1,000 entries (a base with 1,000 tables), and a foot
+// `nav`: 1,000 entries, the current one at 700; `navfold`: 500, the 301st a fold of 30 holding the current page as
+// its last; `navshort`: 40 entries (no window), the current one at 38
+const navCase = document.body.dataset.case ?? "";
+const navItems = (): NavItem[] => {
+  const plain = (count: number, current: number): NavItem[] =>
+    Array.from({ length: count }, (_, index) => ({
+      label: `Tabelle ${index + 1}`,
+      icon: "table",
+      href: `#t${index + 1}`,
+      current: index === current,
+    }));
+  if (navCase === "navshort") return plain(40, 37);
+  if (navCase !== "navfold" && navCase !== "navdeep") return plain(1000, 699);
+  const inner = plain(30, 29).map((item) => ({ ...item, label: `Archiv ${item.label}` }));
+  const year: NavItem = { label: "Archiv 2025", items: plain(30, 29).map((item) => ({ ...item, label: `Archiv 2025 ${item.label}` })) };
+  // `navdeep`: the fold holds a fold of its own, which holds the current page as its last
+  const fold: NavItem = navCase === "navdeep" ? { label: "Archiv", items: [...plain(5, -1), year] } : { label: "Archiv", items: inner };
+  const items = plain(500, -1);
+  items[300] = fold;
+  return items;
+};
+if (navCase.startsWith("nav"))
+  render(
+    () => (
+      <Workspace
+        sidebar={
+          <Nav
+            title="Grids"
+            icon="table"
+            groups={[
+              {
+                label: "Tabellen",
+                items: navItems(),
+              },
+            ]}
+            foot={[{ label: "Papierkorb", icon: "trash", href: "#trash" }]}
+          />
+        }
+      >
+        <Pane label="Inhalt">
+          <Row lines={["Inhalt"]} />
+        </Pane>
+      </Workspace>
+    ),
+    root,
+  );
+else if (document.body.dataset.case === "groups")
+  render(
+    () => (
+      <Workspace>
+        <Pane.Split>
+          <Pane label="Liste">
+            <List
+              label="Einträge"
+              items={entries}
+              rowKey={(entry) => entry.key}
+              group={(entry) => {
+                const at = day(Number(entry.key.slice(1)) - 1);
+                return { key: `d${at}`, label: `Tag ${at}`, count: "7" };
+              }}
+              controller={(handle) => {
+                list = handle;
+              }}
+              row={(entry) => <Row lines={[entry().key, "Zweite Zeile"]} href={`#${entry().key}`} />}
+            />
+          </Pane>
+          <Pane label="Tabelle" width={{ min: 240, default: 320 }}>
+            <Table
+              label="Zeilen"
+              rows={entries}
+              rowKey={(entry) => entry.key}
+              group={(entry) => {
+                const at = day(Number(entry.key.slice(1)) - 1);
+                return { key: `d${at}`, head: () => `Tag ${at}`, meta: "7" };
+              }}
+              columns={[{ title: "Eintrag", cell: (entry) => entry.key, width: { min: 80, default: 160 } }]}
+            />
+          </Pane>
+        </Pane.Split>
+      </Workspace>
+    ),
+    root,
+  );
+// `<body data-case="context">`: the list in a main column with its context column (Files, "Alle Ablagen"), which asks
+// for more room than 1440 px gives: the context stands under the list, and the split scrolls in one piece
+else if (document.body.dataset.case === "context")
+  render(
+    () => (
+      <Workspace>
+        <Pane.Split>
+          <Pane label="Liste">
+            <List
+              label="Einträge"
+              items={entries}
+              rowKey={(entry) => entry.key}
+              row={(entry) => <Row lines={[entry().title]} href={`#${entry().key}`} />}
+            />
+          </Pane>
+          <Pane label="Kontext" side={{ from: 1600 }}>
+            <Row lines={["Speicher"]} />
+          </Pane>
+        </Pane.Split>
+      </Workspace>
+    ),
+    root,
+  );
+else
+  render(
+    () => (
+      <Workspace>
+        <Pane.Split>
+          <Pane label="Liste">
+            <List
+              label="Einträge"
+              items={listed()}
+              rowKey={(entry) => entry.key}
+              controller={(handle) => {
+                list = handle;
+              }}
+              row={(entry) => <Row lines={[entry().title, "Zweite Zeile"]} href={`#${entry().key}`} />}
+            />
+          </Pane>
+          <Pane label="Tabelle" width={{ min: 240, default: 320 }}>
+            <Table
+              label="Zeilen"
+              rows={tabled()}
+              rowKey={(row) => row.id}
+              sticky
+              columns={[
+                { title: "Zeile", cell: (row) => row.id, width: { min: 80, default: 120 } },
+                { title: "Wert", cell: (row) => <span data-cell={row.id}>{`${row.id}:${tick()}`}</span>, width: { min: 80, default: 120 } },
+              ]}
+            />
+          </Pane>
+        </Pane.Split>
+      </Workspace>
+    ),
+    root,
+  );
+window.__k2Mounted = true;

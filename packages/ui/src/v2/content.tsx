@@ -1,5 +1,6 @@
 import { Link } from "@k2b/ssr/nav";
 import {
+  type Accessor,
   createComputed,
   createContext,
   createMemo,
@@ -30,6 +31,7 @@ import { Empty, type EmptyProps, Loading, LoadingStatus, PlaceholderValue } from
 import type { TypeRole } from "./tokens";
 import { useTreeMessages } from "./tree-messages";
 import { type Action, type ColumnWidth, columnPx, draggable, type OnNavigate, type Person, type Status } from "./types";
+import { createVirtualWindow, SERVER_ROWS } from "./virtual";
 
 // ── Text ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -278,10 +280,59 @@ export const Facts = (props: FactsProps) => {
 // ── Row and List ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 const ListContext = createContext(false);
+/** Where a row of a list of items stands in the whole list, for assistive technology ("3 of 1,000"). */
+const ListItemContext = createContext<{ index: () => number; size: () => number }>();
 
-export type ListProps = {
+/** A list of a few rows, written out. */
+type WrittenList = {
   /** The entries, each a `Row`. */
   children: JSX.Element;
+  items?: never;
+  rowKey?: never;
+  row?: never;
+  total?: never;
+  controller?: never;
+  group?: never;
+};
+
+/** The group of an item in a list of items: its stable key, its words and a quiet count. */
+export type ListGroup = { key: string; label: string; count?: string };
+
+/** What an app may ask of a list of items: a row that is not in the page now, such as the row to give the focus back to. */
+export type ListController = {
+  /** Brings the item with this key into view and gives back its row; null for a key the list does not hold. Call it from
+   * an event or `onMount`: inside a reactive batch or effect the new rows are not in the page yet. */
+  reveal: (key: string) => HTMLElement | null;
+};
+
+/**
+ * A list of items that can grow without end, such as conversations: only the rows in view and a margin around them
+ * are in the page (see `createVirtualWindow`), the server renders the first rows, and each row says where it stands.
+ */
+type ItemList<T> = {
+  /** All loaded items, in order. */
+  items: readonly T[];
+  /** The stable key of an item. */
+  rowKey: (item: T) => string;
+  /**
+   * The `Row` of an item, made once per key while it is in the page. `item` reads the item now: a new object with the
+   * same key (a refresh, a page more, a memo that maps the items anew) keeps the row, its focus and what runs in it,
+   * and only what reads `item()` follows (review of #4211).
+   */
+  row: (item: Accessor<T>, index: Accessor<number>) => JSX.Element;
+  /**
+   * The group an item belongs to, such as its day: items of one group follow one another, and a head stands before
+   * the first of them (its words in 600 and a quiet count, no band, no line).
+   */
+  group?: (item: T) => ListGroup;
+  /** Receives the list's controller once it is in the page (see `ListController`). */
+  controller?: (list: ListController) => void;
+  /** How many items the whole list has, when more than are loaded; the rows count against it. */
+  total?: number;
+  children?: never;
+};
+
+export type ListProps<T = unknown> = (WrittenList | ItemList<T>) & {
   /** A name for the list, for assistive technology. */
   label?: string;
   /**
@@ -352,23 +403,128 @@ const keepPlace = (list: HTMLElement) => {
   });
 };
 
-/** Rows one under the other. (Selection, keyboard and drag come with the behaviour layer.) */
-export const List = (props: ListProps) => {
+/**
+ * Rows one under the other: written out (`children`), or made from `items` with `row`, which keeps only the rows in
+ * view in the page, so a list of any length stays fast. (Selection, keyboard and drag come with the behaviour layer.)
+ */
+export const List = <T,>(props: ListProps<T>) => {
   let list: HTMLDivElement | undefined;
+  const items = () => props.items;
   onMount(() => {
     if (list) keepPlace(list);
   });
+  return (
+    <Show
+      when={items()}
+      fallback={
+        <div
+          ref={list}
+          class="k2-list"
+          data-k2-part="List"
+          data-k2-owner={props.color ? "" : undefined}
+          style={custom({ "--k2-app": props.color })}
+          role="list"
+          aria-label={props.label}
+        >
+          <ListContext.Provider value={true}>{props.children}</ListContext.Provider>
+        </div>
+      }
+    >
+      {(loaded) => <ItemRows {...(props as ItemList<T> & { label?: string; color?: string })} items={loaded()} />}
+    </Show>
+  );
+};
+
+/** The rows of a list of items, in a window (see `List`). */
+const ItemRows = <T,>(props: ItemList<T> & { label?: string; color?: string }) => {
+  let list: HTMLDivElement | undefined;
+  // What stands in the list: the rows, each group's head before its first row. A row's entry keeps its object while its
+  // key stays, and hands a new object of its item on to the row (`item()`): a refresh or a page more, whose items are
+  // new objects with the same keys, makes no row anew, so its focus and what runs in it stay (review of #4211).
+  type RowEntry = { key: string; item: Accessor<T>; put: (item: T) => void };
+  type Entry = { key: string; head: ListGroup } | RowEntry;
+  let made = new Map<string, Entry>();
+  const at = new Map<string, number>();
+  const entries = createMemo(() => {
+    const kept = made;
+    made = new Map();
+    at.clear();
+    const out: Entry[] = [];
+    let last: string | undefined;
+    props.items.forEach((item, index) => {
+      const group = props.group?.(item);
+      if (group && group.key !== last) {
+        const key = `group:${group.key}`;
+        const before = kept.get(key);
+        const head =
+          before && "head" in before && before.head.label === group.label && before.head.count === group.count
+            ? before
+            : { key, head: group };
+        made.set(key, head);
+        out.push(head);
+      }
+      last = group?.key;
+      const key = `row:${props.rowKey(item)}`;
+      const before = kept.get(key);
+      let row: RowEntry;
+      if (before && "item" in before) {
+        before.put(item);
+        row = before;
+      } else {
+        const [now, put] = createSignal(item);
+        row = { key, item: now, put: (next) => put(() => next) };
+      }
+      made.set(key, row);
+      at.set(key, index);
+      out.push(row);
+    });
+    return out;
+  });
+  const view = createVirtualWindow({ items: entries, key: (entry: Entry) => entry.key });
+  onMount(() => {
+    if (!list) return;
+    // the window keeps the reading place itself, around changes of the items only (see `createVirtualWindow`)
+    view.mount(list);
+    props.controller?.({ reveal: (key) => view.reveal(`row:${key}`) });
+  });
+  const size = () => Math.max(props.total ?? 0, props.items.length);
   return (
     <div
       ref={list}
       class="k2-list"
       data-k2-part="List"
+      data-virtual=""
       data-k2-owner={props.color ? "" : undefined}
-      style={custom({ "--k2-app": props.color })}
       role="list"
       aria-label={props.label}
+      style={custom({ "--k2-app": props.color, "--k2-before": `${view.before()}px`, "--k2-after": `${view.after()}px` })}
     >
-      <ListContext.Provider value={true}>{props.children}</ListContext.Provider>
+      <ListContext.Provider value={true}>
+        <For each={view.shown()}>
+          {(entry) => {
+            if ("head" in entry) {
+              // a head is no entry of the list: it names the rows after it, as the group rows of a table on the phone
+              const head = (
+                <div class="k2-list-head" role="presentation">
+                  <span>{entry.head.label}</span>
+                  <Show when={entry.head.count}>
+                    <span class="k2-list-head-count">{entry.head.count}</span>
+                  </Show>
+                </div>
+              );
+              if (typeof Element !== "undefined" && head instanceof Element) view.observe(head, entry);
+              return head;
+            }
+            const index = () => (entries(), at.get(entry.key) ?? -1);
+            const node = <ListItemContext.Provider value={{ index, size }}>{props.row(entry.item, index)}</ListItemContext.Provider>;
+            const element = resolveChildren(() => node)
+              .toArray()
+              .find((part): part is Element => typeof Element !== "undefined" && part instanceof Element);
+            if (element) view.observe(element, entry);
+            return node;
+          }}
+        </For>
+      </ListContext.Provider>
     </div>
   );
 };
@@ -476,6 +632,7 @@ export const RowOpen = (props: {
 /** One entry: from column edge to column edge, square, also when it opens something. */
 export const Row = (props: RowProps) => {
   const inList = useContext(ListContext);
+  const place = useContext(ListItemContext);
   // Parts passed as JSX are made once and read from here: reading a prop again would make its JSX again.
   const text = createMemo(() => props.lines);
   const lines = () => text().length;
@@ -496,11 +653,14 @@ export const Row = (props: RowProps) => {
     return given !== undefined && Number.isInteger(given) && given >= 1 && given <= 6 ? given : undefined;
   };
   return (
-    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: aria-level is set only with the listitem role, which supports it (ARIA 1.2).
+    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: aria-level and the place in the list are set only with the listitem role, which supports them (ARIA 1.2)
     <div
       class="k2-row"
       data-k2-part="Row"
       role={inList ? "listitem" : undefined}
+      // in a list of items only some rows are in the page: each says where it stands in the whole list
+      aria-posinset={place ? place.index() + 1 : undefined}
+      aria-setsize={place ? place.size() : undefined}
       data-open={props.href !== undefined || props.onOpen ? "" : undefined}
       data-lines={String(lines())}
       data-level={level()}
@@ -801,6 +961,8 @@ export type TableGroup = { key: string; head: () => JSX.Element; meta?: string; 
 type TreePlace = { level: number; parent: string | null; position: number; size: number; branch: boolean; expanded: boolean };
 
 type TableItem<T> = { group: TableGroup } | { row: T; index: number; tree?: TreePlace } | { more: MoreRow };
+const groupOf = <T,>(item: TableItem<T>) => ("group" in item ? item.group : undefined);
+const rowOf = <T,>(item: TableItem<T>) => ("row" in item ? item : undefined);
 
 /** The "Weitere laden" row of a level: where it stands, how many are still to come, the size of its level. */
 type MoreRow = { parent: string | null; level: number; count: true | number; position: number; size: number };
@@ -909,12 +1071,13 @@ export const Table = <T,>(props: TableProps<T>) => {
   });
   const shownRows = createMemo(() => flat().flatMap((entry) => ("row" in entry ? [entry] : [])));
   // Every cell is made once: what `cell` returns is placed, never rendered a second time. In a tree, the cells of a row
-  // stay while rows open and close around it.
+  // stay while rows open and close around it; all its shown rows stand in the page (the keys of a tree move between
+  // them). A table without a tree keeps only the rows in view (see `firstCells` and the window below).
   let made = new Map<T, CellValue[]>();
   let madeFor: readonly Column<T>[] | undefined;
   const values = createMemo(() => {
     const columns = props.columns;
-    if (!props.tree) return shownRows().map((entry) => columns.map((column) => column.cell(entry.row)));
+    if (!props.tree) return [];
     const before = madeFor === columns ? made : new Map<T, CellValue[]>();
     const next = new Map<T, CellValue[]>();
     const list = shownRows().map((entry) => {
@@ -926,10 +1089,13 @@ export const Table = <T,>(props: TableProps<T>) => {
     madeFor = columns;
     return list;
   });
-  /** The made cells of a row: by its place without a tree, by the row itself in a tree (its place moves). */
-  const cellsOf = (item: { row: T; index: number }) => {
-    const list = values();
-    return (props.tree ? made.get(item.row) : undefined) ?? list[item.index]!;
+  /** The made cells of a row: in a tree by the row itself (its place moves), else those of the first page or new ones. */
+  const cellsOf = (item: { row: T; index: number }): CellValue[] => {
+    if (props.tree) {
+      const list = values();
+      return made.get(item.row) ?? list[item.index]!;
+    }
+    return firstCells().get(item.row) ?? props.columns.map((column) => column.cell(item.row));
   };
   // the shape of the placeholders while the rows load
   const loading = () => {
@@ -937,8 +1103,6 @@ export const Table = <T,>(props: TableProps<T>) => {
     return shape === true ? { rows: 3, lines: 1 as const } : shape ? { rows: shape.rows ?? 3, lines: shape.lines ?? 1 } : undefined;
   };
   const empty = () => (loading() || props.rows.length > 0 ? undefined : props.empty);
-  const lines = () => (loading()?.lines === 2 || values().some((row) => row.some(isPair)) ? "2" : "1");
-
   // the row object of each key of the tree now, so an item made once reads the newest one
   const rowsByKey = createMemo(() => {
     const out = new Map<string, T>();
@@ -952,7 +1116,9 @@ export const Table = <T,>(props: TableProps<T>) => {
     index,
     tree,
   });
-  // the entries of a tree stay the same objects while nothing about their row changes, so its `tr` stays
+  // What stands in the table: the rows, each group's head before its first row, and a "Weitere laden" row after a level
+  // of a tree that has more. An entry keeps its object while its row (at its place, or by its key in a tree) or its
+  // group stays, so new rows (a page more) make no row of the window anew (review of #4211), and a tree's `tr` stays.
   let lastItems = new Map<string, TableItem<T>>();
   const items = createMemo((): TableItem<T>[] => {
     const out: TableItem<T>[] = [];
@@ -974,7 +1140,13 @@ export const Table = <T,>(props: TableProps<T>) => {
       }
       const row = entry.row;
       const group = props.tree ? undefined : props.group?.(row);
-      if (group && group.key !== last) out.push({ group });
+      if (group && group.key !== last) {
+        const before = lastItems.get(`group:${group.key}`);
+        const head =
+          before && "group" in before && before.group.meta === group.meta && before.group.count === group.count ? before : { group };
+        kept.set(`group:${group.key}`, head);
+        out.push(head);
+      }
       last = group?.key;
       const place = entry.tree;
       if (place) {
@@ -985,12 +1157,43 @@ export const Table = <T,>(props: TableProps<T>) => {
         const item = before && "row" in before ? before : treeItem(rowKey, row, index, place);
         kept.set(rowKey, item);
         out.push(item);
-      } else out.push({ row, index });
+      } else {
+        const before = lastItems.get(`row:${key(row, index)}`);
+        const item = before && "row" in before && before.row === row && before.index === index ? before : { row, index };
+        kept.set(`row:${key(row, index)}`, item);
+        out.push(item);
+      }
       index += 1;
     }
     lastItems = kept;
     return out;
   });
+  // A table without a tree makes the cells of its first page before the table, on the server and in the browser alike,
+  // so hydration finds them in the same order, and they live with the table (they also say whether rows have two lines).
+  // The first page is the entries the server sends, group heads counted (`SERVER_ROWS`): a cell made for a row it did
+  // not send would be a node hydration cannot find. A row further down makes its cells when it comes into the page and
+  // lets them go with it, so a row that comes back makes them anew and shows what they read now.
+  const firstCells = createMemo(
+    () =>
+      new Map(
+        props.tree
+          ? []
+          : items()
+              .slice(0, SERVER_ROWS)
+              .flatMap((item) => ("row" in item ? [[item.row, props.columns.map((column) => column.cell(item.row))] as const] : [])),
+      ),
+  );
+  const lines = () =>
+    loading()?.lines === 2 || (props.tree ? values() : [...firstCells().values()]).some((cells) => cells.some(isPair)) ? "2" : "1";
+  // A table of any length keeps only the rows in view in the page (see `createVirtualWindow`); its head stays. A tree
+  // keeps all its shown rows, as its keys move the focus between them.
+  const itemKey = (item: TableItem<T>) =>
+    "group" in item
+      ? `group:${item.group.key}`
+      : "more" in item
+        ? `${MORE_ROW}${item.more.parent ?? ""}`
+        : `row:${key(item.row, item.index)}`;
+  const view = createVirtualWindow({ items: () => (loading() || props.tree ? [] : items()), key: itemKey });
   // where each row of the tree stands now, by its key
   const places = createMemo(() => {
     const out = new Map<string, TreePlace>();
@@ -1029,6 +1232,9 @@ export const Table = <T,>(props: TableProps<T>) => {
   // each row asks whether it is the stop; a move of the stop updates two rows, not all of them
   const isTabStop = createSelector(tabStop);
   let body: HTMLTableSectionElement | undefined;
+  onMount(() => {
+    if (body) view.mount(body);
+  });
   // The focus a moved row lost goes to the page itself; a focus anywhere else is where the person went meanwhile.
   const focusLost = () => document.activeElement === null || document.activeElement === document.body;
   // the element of each row of the tree, by its key
@@ -1245,6 +1451,9 @@ export const Table = <T,>(props: TableProps<T>) => {
           style={custom({ "--k2-table-min": restFloor() === undefined ? undefined : `${restFloor()}px` })}
           aria-label={props.label}
           aria-busy={loading() ? "true" : undefined}
+          // only the rows in view are in the page: the table says how many it has (its head is the first); a tree has
+          // all its shown rows in the page
+          aria-rowcount={loading() || props.tree ? undefined : items().length + 1}
           role={props.tree ? "treegrid" : undefined}
           data-tree={props.tree ? "" : undefined}
         >
@@ -1365,141 +1574,160 @@ export const Table = <T,>(props: TableProps<T>) => {
                 </For>
               )}
             </Show>
-            <For each={loading() ? [] : items()}>
-              {(item) =>
-                "group" in item ? (
-                  <tr data-group="">
-                    <td colSpan={span()}>
-                      <span class="k2-group-row">
-                        {item.group.head()}
-                        <Show when={item.group.meta}>
-                          <span class="k2-group-row-meta">{item.group.meta}</span>
-                        </Show>
-                      </span>
-                    </td>
-                  </tr>
-                ) : "more" in item ? (
-                  (() => {
-                    const moreKey = `${MORE_ROW}${item.more.parent ?? ""}`;
-                    return (
-                      <tr
-                        ref={rowRef(moreKey)}
-                        data-tree-row=""
-                        data-more=""
-                        data-open=""
-                        data-failed={failedMore().includes(moreKey) ? "" : undefined}
-                        tabindex={isTabStop(moreKey) ? 0 : -1}
-                        aria-level={item.more.level}
-                        aria-posinset={item.more.position}
-                        aria-setsize={item.more.size}
-                        aria-busy={loadingMore().includes(moreKey) ? "true" : undefined}
-                        onKeyDown={(event) => treeKey(event, moreKey)}
-                        onFocusIn={() => setFocused(moreKey)}
-                        onClick={() => loadMore(item.more)}
-                        style={custom({ "--k2-tree-level": String(item.more.level) })}
-                      >
-                        <td colSpan={span()} data-tree-cell="">
-                          <span
-                            class="k2-tree-chev"
-                            data-loading={loadingMore().includes(moreKey) ? "" : undefined}
-                            data-failed={failedMore().includes(moreKey) ? "" : undefined}
-                            aria-hidden="true"
-                          >
-                            <Icon name="loader-2" />
-                            <Icon name="alert-circle" />
-                          </span>
-                          <span class="k2-cell-line">
-                            {failedMore().includes(moreKey)
-                              ? t().loadMoreFailed
-                              : t().loadMore({ count: item.more.count === true ? undefined : item.more.count })}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })()
-                ) : (
-                  (() => {
-                    // read again when the row's object changes (a refetch hands a new one for the same key)
-                    const target = createMemo(() => props.open?.(item.row));
-                    const rowKey = key(item.row, item.index);
-                    // in a tree: the row's place now, read by its key (the element stays while the row stays)
-                    const inTree = item.tree !== undefined;
-                    const at = () => places().get(rowKey) ?? item.tree;
-                    return (
-                      <tr
-                        data-open={target() ? "" : undefined}
-                        data-selected={props.select && selected(item.row, item.index) ? "" : undefined}
-                        aria-current={props.current !== undefined && props.current === rowKey ? "true" : undefined}
-                        onClick={openRow}
-                        data-tree-row={inTree ? "" : undefined}
-                        ref={inTree ? rowRef(rowKey) : undefined}
-                        tabindex={inTree ? (isTabStop(rowKey) ? 0 : -1) : undefined}
-                        aria-level={at()?.level}
-                        aria-posinset={at()?.position}
-                        aria-setsize={at()?.size}
-                        aria-expanded={at()?.branch ? (at()?.expanded ? "true" : "false") : undefined}
-                        aria-selected={inTree && props.select ? (selected(item.row, item.index) ? "true" : "false") : undefined}
-                        aria-busy={inTree && busy().includes(rowKey) ? "true" : undefined}
-                        onKeyDown={inTree ? (event) => treeKey(event, rowKey) : undefined}
-                        onFocusIn={inTree ? () => setFocused(rowKey) : undefined}
-                        style={inTree ? custom({ "--k2-tree-level": String(at()?.level ?? 1) }) : undefined}
-                      >
-                        <Show when={props.select}>
-                          {(select) => (
-                            <td data-select="" data-sticky={props.sticky ? "" : undefined}>
-                              <MarkCheck
-                                label={select().row(item.row)}
-                                checked={selected(item.row, item.index)}
-                                onChange={(on) => toggle(rowKey, on)}
-                                // in a tree the row takes the focus and Space selects it
-                                focusable={inTree ? false : undefined}
-                              />
-                            </td>
-                          )}
-                        </Show>
-                        <For each={props.columns}>
-                          {(column, columnIndex) => (
-                            <td
-                              data-align={column.align}
-                              data-drop={column.drop ? "" : undefined}
-                              data-sticky={firstSticky(columnIndex())}
-                              data-tree-cell={inTree && columnIndex() === 0 ? "" : undefined}
-                              style={firstSticky(columnIndex()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
+            {/* the rows before and after those in the page hold their place */}
+            <Show when={view.before() > 0}>
+              <tr data-spacer="" aria-hidden="true">
+                <td colSpan={span()} style={custom({ "--k2-space": `${view.before()}px` })} />
+              </tr>
+            </Show>
+            {/* a tree has all its shown rows in the page; any other table the rows of its window */}
+            <For each={props.tree ? (loading() ? [] : items()) : view.shown()}>
+              {(item) => {
+                const rowIndex = () => (props.tree ? undefined : view.indexOf(item) + 2);
+                const node =
+                  "group" in item ? (
+                    <tr data-group="" aria-rowindex={rowIndex()}>
+                      <td colSpan={span()}>
+                        <span class="k2-group-row">
+                          {item.group.head()}
+                          <Show when={item.group.meta}>
+                            <span class="k2-group-row-meta">{item.group.meta}</span>
+                          </Show>
+                        </span>
+                      </td>
+                    </tr>
+                  ) : "more" in item ? (
+                    (() => {
+                      const moreKey = `${MORE_ROW}${item.more.parent ?? ""}`;
+                      return (
+                        <tr
+                          ref={rowRef(moreKey)}
+                          data-tree-row=""
+                          data-more=""
+                          data-open=""
+                          data-failed={failedMore().includes(moreKey) ? "" : undefined}
+                          tabindex={isTabStop(moreKey) ? 0 : -1}
+                          aria-level={item.more.level}
+                          aria-posinset={item.more.position}
+                          aria-setsize={item.more.size}
+                          aria-busy={loadingMore().includes(moreKey) ? "true" : undefined}
+                          onKeyDown={(event) => treeKey(event, moreKey)}
+                          onFocusIn={() => setFocused(moreKey)}
+                          onClick={() => loadMore(item.more)}
+                          style={custom({ "--k2-tree-level": String(item.more.level) })}
+                        >
+                          <td colSpan={span()} data-tree-cell="">
+                            <span
+                              class="k2-tree-chev"
+                              data-loading={loadingMore().includes(moreKey) ? "" : undefined}
+                              data-failed={failedMore().includes(moreKey) ? "" : undefined}
+                              aria-hidden="true"
                             >
-                              <Show when={inTree && columnIndex() === 0 ? at() : undefined}>
-                                {(at) => (
-                                  // the arrow folds the row open and shut; Right and Left on the row do the same
-                                  <span
-                                    class="k2-tree-chev"
-                                    aria-hidden="true"
-                                    data-branch={at().branch ? "" : undefined}
-                                    data-expanded={at().expanded ? "" : undefined}
-                                    data-loading={busy().includes(rowKey) ? "" : undefined}
-                                    data-failed={failed().includes(rowKey) && !busy().includes(rowKey) ? "" : undefined}
-                                    onClick={(event) => {
-                                      if (!at().branch) return;
-                                      event.stopPropagation();
-                                      toggleOpen(rowKey, rowLabel(event.currentTarget.closest("tr")));
-                                    }}
-                                  >
-                                    <Show when={at().branch}>
-                                      <Icon name="chevron-right" />
-                                      <Icon name="loader-2" />
-                                      <Icon name="alert-circle" />
-                                    </Show>
-                                  </span>
-                                )}
-                              </Show>
-                              {cell(column, cellsOf(item)[columnIndex()]!, columnIndex() === 0 ? target() : undefined, inTree)}
-                            </td>
-                          )}
-                        </For>
-                      </tr>
-                    );
-                  })()
-                )
-              }
+                              <Icon name="loader-2" />
+                              <Icon name="alert-circle" />
+                            </span>
+                            <span class="k2-cell-line">
+                              {failedMore().includes(moreKey)
+                                ? t().loadMoreFailed
+                                : t().loadMore({ count: item.more.count === true ? undefined : item.more.count })}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })()
+                  ) : (
+                    (() => {
+                      // read again when the row's object changes (a refetch hands a new one for the same key)
+                      const target = createMemo(() => props.open?.(item.row));
+                      const rowKey = key(item.row, item.index);
+                      // in a tree: the row's place now, read by its key (the element stays while the row stays)
+                      const inTree = item.tree !== undefined;
+                      const at = () => places().get(rowKey) ?? item.tree;
+                      // outside a tree a row's cells are made once for this showing of the row (see `firstCells`)
+                      const cells = inTree ? undefined : cellsOf(item);
+                      return (
+                        <tr
+                          aria-rowindex={rowIndex()}
+                          data-open={target() ? "" : undefined}
+                          data-selected={props.select && selected(item.row, item.index) ? "" : undefined}
+                          aria-current={props.current !== undefined && props.current === rowKey ? "true" : undefined}
+                          onClick={openRow}
+                          data-tree-row={inTree ? "" : undefined}
+                          ref={inTree ? rowRef(rowKey) : undefined}
+                          tabindex={inTree ? (isTabStop(rowKey) ? 0 : -1) : undefined}
+                          aria-level={at()?.level}
+                          aria-posinset={at()?.position}
+                          aria-setsize={at()?.size}
+                          aria-expanded={at()?.branch ? (at()?.expanded ? "true" : "false") : undefined}
+                          aria-selected={inTree && props.select ? (selected(item.row, item.index) ? "true" : "false") : undefined}
+                          aria-busy={inTree && busy().includes(rowKey) ? "true" : undefined}
+                          onKeyDown={inTree ? (event) => treeKey(event, rowKey) : undefined}
+                          onFocusIn={inTree ? () => setFocused(rowKey) : undefined}
+                          style={inTree ? custom({ "--k2-tree-level": String(at()?.level ?? 1) }) : undefined}
+                        >
+                          <Show when={props.select}>
+                            {(select) => (
+                              <td data-select="" data-sticky={props.sticky ? "" : undefined}>
+                                <MarkCheck
+                                  label={select().row(item.row)}
+                                  checked={selected(item.row, item.index)}
+                                  onChange={(on) => toggle(rowKey, on)}
+                                  // in a tree the row takes the focus and Space selects it
+                                  focusable={inTree ? false : undefined}
+                                />
+                              </td>
+                            )}
+                          </Show>
+                          <For each={props.columns}>
+                            {(column, columnIndex) => (
+                              <td
+                                data-align={column.align}
+                                data-drop={column.drop ? "" : undefined}
+                                data-sticky={firstSticky(columnIndex())}
+                                data-tree-cell={inTree && columnIndex() === 0 ? "" : undefined}
+                                style={firstSticky(columnIndex()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
+                              >
+                                <Show when={inTree && columnIndex() === 0 ? at() : undefined}>
+                                  {(at) => (
+                                    // the arrow folds the row open and shut; Right and Left on the row do the same
+                                    <span
+                                      class="k2-tree-chev"
+                                      aria-hidden="true"
+                                      data-branch={at().branch ? "" : undefined}
+                                      data-expanded={at().expanded ? "" : undefined}
+                                      data-loading={busy().includes(rowKey) ? "" : undefined}
+                                      data-failed={failed().includes(rowKey) && !busy().includes(rowKey) ? "" : undefined}
+                                      onClick={(event) => {
+                                        if (!at().branch) return;
+                                        event.stopPropagation();
+                                        toggleOpen(rowKey, rowLabel(event.currentTarget.closest("tr")));
+                                      }}
+                                    >
+                                      <Show when={at().branch}>
+                                        <Icon name="chevron-right" />
+                                        <Icon name="loader-2" />
+                                        <Icon name="alert-circle" />
+                                      </Show>
+                                    </span>
+                                  )}
+                                </Show>
+                                {cell(column, (cells ?? cellsOf(item))[columnIndex()]!, columnIndex() === 0 ? target() : undefined, inTree)}
+                              </td>
+                            )}
+                          </For>
+                        </tr>
+                      );
+                    })()
+                  );
+                if (!props.tree && typeof Element !== "undefined" && node instanceof Element) view.observe(node, item);
+                return node;
+              }}
             </For>
+            <Show when={view.after() > 0}>
+              <tr data-spacer="" aria-hidden="true">
+                <td colSpan={span()} style={custom({ "--k2-space": `${view.after()}px` })} />
+              </tr>
+            </Show>
           </tbody>
         </table>
       </div>
@@ -1508,75 +1736,93 @@ export const Table = <T,>(props: TableProps<T>) => {
           <div class="k2-table-phone">
             {/* while the rows load, the phone shows rows of placeholders of two lines, not an empty list */}
             <Show when={!loading()} fallback={<Loading rows={loading()?.rows} lines={2} />}>
-              <List label={props.label} color={props.color}>
-                {/* a tree shows its top level on the phone; its rows open as pages */}
-                <For
-                  each={items().filter(
-                    (item) =>
-                      ("row" in item
-                        ? item.tree
-                          ? (places().get(key(item.row, item.index))?.level ?? 1)
-                          : 1
-                        : "more" in item
-                          ? item.more.level
-                          : 1) === 1,
-                  )}
-                >
-                  {(item) =>
-                    "group" in item ? (
+              <List
+                label={props.label}
+                color={props.color}
+                // a tree shows its top level on the phone; its rows open as pages
+                items={items().filter(
+                  (item) =>
+                    ("row" in item
+                      ? item.tree
+                        ? (places().get(key(item.row, item.index))?.level ?? 1)
+                        : 1
+                      : "more" in item
+                        ? item.more.level
+                        : 1) === 1,
+                )}
+                rowKey={itemKey}
+                row={(entry) => {
+                  // an entry's key says what it is (a head, a "Weitere laden" or a row); what it holds follows `entry()`
+                  const first = entry();
+                  if ("group" in first) {
+                    const group = () => groupOf(entry()) ?? first.group;
+                    return (
                       <div class="k2-bar" role="presentation">
                         <div class="k2-bar-start">
-                          {item.group.head()}
-                          <Show when={item.group.count ?? item.group.meta}>
-                            <span class="k2-t-meta">{item.group.count ?? item.group.meta}</span>
+                          {group().head()}
+                          <Show when={group().count ?? group().meta}>
+                            <span class="k2-t-meta">{group().count ?? group().meta}</span>
                           </Show>
                         </div>
                       </div>
-                    ) : "more" in item ? (
+                    );
+                  }
+                  if ("more" in first) {
+                    const more = () => {
+                      const now = entry();
+                      return "more" in now ? now.more : first.more;
+                    };
+                    const count = () => {
+                      const left = more().count;
+                      return left === true ? undefined : left;
+                    };
+                    return (
                       <div class="k2-bar" role="presentation">
                         <div class="k2-bar-start">
                           <ActionButton
                             action={{
-                              label: t().loadMore({ count: item.more.count === true ? undefined : item.more.count }),
-                              onClick: () => loadMore(item.more),
+                              label: t().loadMore({ count: count() }),
+                              onClick: () => loadMore(more()),
                             }}
                             variant="text"
                           />
                         </div>
                       </div>
-                    ) : (
-                      (() => {
-                        // read again when the row's object changes (a refetch hands a new one for the same key)
-                        const form = createMemo(() => phone()(item.row));
-                        const target = createMemo(() => props.open?.(item.row));
-                        return (
-                          <Row
-                            lines={form().lines}
-                            avatar={form().avatar}
-                            mark={form().mark}
-                            time={form().time}
-                            marks={form().marks}
-                            end={form().end}
-                            strong
-                            href={target()?.href}
-                            onNavigate={target()?.onNavigate}
-                            onOpen={target()?.onOpen}
-                            current={props.current !== undefined && props.current === key(item.row, item.index)}
-                            select={
-                              props.select
-                                ? {
-                                    selected: selected(item.row, item.index),
-                                    onChange: (on) => toggle(key(item.row, item.index), on),
-                                  }
-                                : undefined
-                            }
-                          />
-                        );
-                      })()
-                    )
+                    );
                   }
-                </For>
-              </List>
+                  const item = () => rowOf(entry()) ?? first;
+                  // read again when the row's object changes (a refetch hands a new one for the same key)
+                  const form = createMemo(() => phone()(item().row));
+                  const target = createMemo(() => props.open?.(item().row));
+                  // a row says its place among the rows of the table: the heads of its groups are no rows
+                  const place = { index: () => item().index, size: () => props.rows.length };
+                  return (
+                    <ListItemContext.Provider value={place}>
+                      <Row
+                        lines={form().lines}
+                        avatar={form().avatar}
+                        mark={form().mark}
+                        time={form().time}
+                        marks={form().marks}
+                        end={form().end}
+                        strong
+                        href={target()?.href}
+                        onNavigate={target()?.onNavigate}
+                        onOpen={target()?.onOpen}
+                        current={props.current !== undefined && props.current === key(item().row, item().index)}
+                        select={
+                          props.select
+                            ? {
+                                selected: selected(item().row, item().index),
+                                onChange: (on) => toggle(key(item().row, item().index), on),
+                              }
+                            : undefined
+                        }
+                      />
+                    </ListItemContext.Provider>
+                  );
+                }}
+              />
             </Show>
           </div>
         )}

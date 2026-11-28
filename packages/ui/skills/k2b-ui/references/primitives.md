@@ -263,7 +263,42 @@ inside it.
 rows belong to, for the tint of the open row, the page's app
 by default). Rows part with the quiet line (`--k2-hairline-subtle`); the
 clear line (`--k2-hairline`) only separates two things: a head and its
-content, a list and its detail, one section and the next. A `Row`:
+content, a list and its detail, one section and the next. A list that can
+grow without end
+(conversations, records, a log) takes its data instead of written rows:
+`items`, `rowKey(item)` and `row(item, index) => <Row … />`, and `total`
+when more exist than are loaded. `item` and `index` are accessors: read
+`item()` where the row shows the item. A row is made once per key, so a new
+object with the same key (a refresh, a page more, items mapped anew in a
+memo) keeps the row, its focus and what runs in it, and what reads
+`item()` follows. Use it by default for every list whose
+length you do not control: only the rows in view and a margin around them
+are in the page, the server renders the first rows (no shift on hydration),
+a list of at most 40 entries stays whole as the server sent it, the focused row stays while it scrolls away, and each row says where it
+stands (`aria-posinset`, `aria-setsize`). "Weitere laden" stays a `Band`
+with a text `Button` after the list. Write rows out only for a few fixed
+ones. A row that is not in the page now (the row to give the focus back
+to after a detail closes) is reached through `controller`: its `reveal(key)`
+brings the row into view and gives it back. Tab out of a focused row that
+scrolled away goes to its neighbour in the list. `group(item) => { key,
+label, count? }` puts a head before the first item of each group (a day):
+its words in 600 and a quiet count, no band and no line; heads are no rows
+and do not count as one.
+
+What a window cannot do (known, decided 26.11.): the browser's find (Ctrl+F)
+finds only rows in the page, so a list people search in needs its own
+search; printing prints only the rows in the page, so a list people print
+needs its own export or print view; Shift+Tab from below the list (a foot) lands on the last row in the
+page, not the last item; Tab out of a row that scrolled away looks at most
+20 entries further for the next stop (past 20 heads or rows without a
+control the browser decides); a group head is no entry of the list for a screen
+reader (as the group rows of a table on the phone), its rows say their place
+in the whole list; a `Nav` group that grows past 40 entries is made anew
+once (the focus in it is lost then), and its entries are known by their
+position, so an entry put in above a parked one moves the parking to its
+neighbour.
+
+A `Row`:
 
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
@@ -358,6 +393,11 @@ Give every table whose column widths add up to more than a phone (about
 are cut off at 390 px (the outline reports it). A phone row opens what
 `open(row)` names; a row's other deeds live on the page it opens.
 
+A table of any length keeps only the rows in view in the page (its head
+stays, empty rows hold the place of the others, `aria-rowcount` and
+`aria-rowindex` say where a row stands); a cell is made when its row first
+shows. Whether rows have two lines is read from the first page of rows.
+
 Rows in levels (Files, a page tree): `tree: { children(row), branch(row),
 expanded?, onExpandedChange?, load?, more?, loadMore? }` with `rowKey`, not
 with `group`. `rows` are the top level; an open row's `children` stand under
@@ -374,7 +414,8 @@ with `select` (the boxes are no Tab stops). A level that pages says its
 whole size (`aria-setsize`, -1 while `more` is `true`); a page that
 fails says so on its "Weitere laden" row, and Enter tries again; the focus
 follows the new rows only while it waited on that row. `expanded` left out: the table keeps it, starting
-with the way to `current`. On the phone only the top level shows.
+with the way to `current`. On the phone only the top level shows. A tree keeps all its shown rows in the page; any other table keeps only
+the rows in view.
 
 `loading` (`true` or `{ rows?, lines? }`): the head stays and placeholder
 rows hold the place of the rows. `empty` (`{ icon, text, action? }`): with
@@ -615,6 +656,8 @@ name wraps in a small table and ends with "…" in one with column widths.
   search is the phone's page while no pane is open beside it; the title,
   the groups and the foot are then in the platform's menu, and any pane
   that opens (a detail or a page of its own) is the page in its place.
+  The groups scroll between the title and the foot; a group of more than 40
+  entries keeps only the entries in view in the page.
   A group's `action` is one quiet icon button, or `{ label, items }`: a "…"
   with the group's deeds ("Neues Postfach", "Gelöschte Postfächer").
   An item: `label`, `icon`, `href` or `onClick`, `count`, `current`,

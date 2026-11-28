@@ -1663,6 +1663,49 @@
   flex-direction: column;
   min-width: 0;
 }
+/* a list of items keeps only the rows in view in the page; its padding holds the place of the others. The two spaces
+   change with every move of the window: registered as not inherited, a change restyles the list alone, never its
+   rows (inherited, it cost 15 ms of style per frame with 1,000 rows; 4 ms without). */
+@property --k2-before {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --k2-after {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+.k2-ui .k2-list[data-virtual] {
+  --k2-before: 0px;
+  --k2-after: 0px;
+  padding-top: var(--k2-before);
+  padding-bottom: var(--k2-after);
+}
+/* The head of a group of rows (a day): words in 600 and a quiet count on the text edge; no band, no line, the space
+   above it sets the group apart */
+.k2-ui .k2-list-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 16px var(--k2-edge) 4px;
+  font: var(--k2-t-row);
+  color: var(--k2-text);
+}
+.k2-ui .k2-list-head > :first-child {
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2-ui .k2-list-head-count {
+  flex: none;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+  font-variant-numeric: tabular-nums;
+}
 .k2-ui .k2-row {
   /* the column of time, end and marks: as wide as they are, but marks never take more than half of the row */
   --k2-row-side: auto;
@@ -2073,6 +2116,16 @@
   height: var(--k2-h-row2);
   padding-block: 8px;
   vertical-align: top;
+}
+/* a table of any length keeps only the rows in view in the page; an empty row holds the place of the others */
+.k2-ui .k2-table tr[data-spacer] > td,
+.k2-ui .k2-table[data-grid] tr[data-spacer] > td {
+  --k2-space: 0px;
+  height: var(--k2-space);
+  padding: 0;
+  border: 0;
+  background: none;
+  pointer-events: none;
 }
 /* a group's head row is one short line in every table, as high as the column heads, its words in the middle; it never
    takes the height of two-line rows */
@@ -4271,6 +4324,27 @@
   background: var(--k2-app, var(--k2-blue));
   color: var(--k2-white);
   font-size: 17px;
+}
+/* the entries of a long group (1,000 tables) in its window, in the groups that scroll (`.k2-nav-groups`) */
+.k2-ui .k2-nav-window > * {
+  flex: none;
+}
+/* an entry of a long group with what it folds open: one place, measured whole by the window */
+.k2-ui .k2-nav-place {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+/* a long group keeps only the entries in view; its padding holds the place of the others */
+.k2-ui .k2-nav-window {
+  --k2-before: 0px;
+  --k2-after: 0px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: var(--k2-before);
+  padding-bottom: var(--k2-after);
 }
 .k2-ui .k2-nav-label {
   font: var(--k2-t-meta);

@@ -44,7 +44,7 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 ### List
 
-Many like things, one per line; `label` names it. Rows part with a quiet line, and the open row takes the tint of the app the rows belong to (`color`, the page's app by default); a row chosen in a selection is blue. A list ends without a line; only a grid table ends with the clear one.
+Many like things, one per line; `label` names it. Rows part with a quiet line, and the open row takes the tint of the app the rows belong to (`color`, the page's app by default); a row chosen in a selection is blue. A list ends without a line; only a grid table ends with the clear one. A list that can grow without end takes its data (`items`, `rowKey`, `row`) instead of written rows: only the rows in view and a margin around them are in the page, the server renders the first rows, the focused row stays while it scrolls away, and each row says where it stands. Use it for every list whose length you do not control.
 
 <Props of="List" />
 
@@ -56,7 +56,7 @@ One entry: one to three lines, a lead, a time, marks and one action; `current`, 
 
 ### Table
 
-Columns of like things: fixed widths, cut text, dropped columns and two-line rows on the phone; a column of states takes `Chip status quiet`, a dot and a word. Rows part with a quiet line, the head with a clear one; the open row takes the tint of its app (`color`), a chosen row the blue of a selection. One column may show each row's data over time as [`Ticks`](/en/ui/v2/content). On a touch screen the grips of the head stay visible; after a touch on the head each takes a 44 px target until a touch lands elsewhere.
+Columns of like things: fixed widths, cut text, dropped columns and two-line rows on the phone; a column of states takes `Chip status quiet`, a dot and a word. Rows part with a quiet line, the head with a clear one; the open row takes the tint of its app (`color`), a chosen row the blue of a selection. One column may show each row's data over time as [`Ticks`](/en/ui/v2/content). On a touch screen the grips of the head stay visible; after a touch on the head each takes a 44 px target until a touch lands elsewhere. A table of any length keeps only the rows in view in the page; its head stays.
 
 <Props of="Table Column" />
 
@@ -98,7 +98,7 @@ Reorder by dragging. Until it ships, use the nearest part and write `// k2b-ui g
 ### Do
 
 - Open an entry by `href`; add `onNavigate` to open it in place.
-- Give every wide table a `phone(row)`, with the row's deeds as `phone(row).end`.
+- Give a list that can grow without end its `items` (write rows out only for a few fixed ones), and every wide table a `phone(row)`, with the row's deeds as `phone(row).end`.
 - Put the count and key figures in the `StatusRow`, an exception as a tinted chip in its `marks`.
 - Keep row text short; long text is cut with "…" and shows whole on hover.
 

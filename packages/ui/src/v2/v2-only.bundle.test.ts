@@ -19,6 +19,7 @@ const allowed: Record<string, number> = {
   "content/markdown-info-blocks.ts": 7_200,
   "content/markdown-links.ts": 3_600,
   "content/markdown-reference-messages.ts": 700,
+  "content/virtual-sizes.ts": 300, // the size model of a window, shared with VirtualFeed
   "inputs/date-input.ts": 6_600, // formatDateInput, parseDateInput
   "inputs/date-picker.ts": 450, // dateKey, isCalendarDay, isDateKey
   "surfaces/notice-card-classes.ts": 370, // the notice classes of Markdown's info blocks
@@ -100,8 +101,11 @@ const lean = `import { Menu, Nav, Workspace } from ${v2Index};\nconsole.log(Menu
 // `Input` (5.5 KB) for the nav's search (#4443), which nearly every page loads anyway; a tree or a panel never.
 // The head block (look rule 30) is always on in every pane with a head and a toolbar, so its measured bytes count
 // exactly, without a reserve of their own: 294 in `Pane`/`Bar` and 11 in `status-toolbar` (#4537). The head search
-// adds nothing here: it comes with `HeadSearch` (see below).
-const leanBudget = Math.ceil(64_453 * 1.1) + 305; /* head block, measured 28.11.2026 on 1574c0a269 */
+// adds nothing here: it comes with `HeadSearch` (see below). A `Nav` group of more than 40 entries keeps only those in
+// view (#4211): the window (`v2/virtual.ts`, `content/virtual-sizes.ts`) and the nav's use of it count exactly too, 7 155
+// bytes measured against the island without it (70 012 on 7651929961).
+const leanBudget =
+  Math.ceil(64_453 * 1.1) + 305 /* head block, measured 28.11.2026 on 1574c0a269 */ + 7_155; /* nav window, measured 28.11.2026 */
 
 test("an island with a Workspace, a Nav and a Menu loads no tree and no menu panel, and stays under its measure", async () => {
   const modules = await islandModules(lean);
