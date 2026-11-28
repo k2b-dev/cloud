@@ -65,8 +65,11 @@
 111 packages/grids/src/migrate.ts
 2 packages/grids/src/service/document-data-schema.ts
 2 packages/ipa-hosts/src/migrate.ts
+7 packages/mail/src/automation-log-schema.sql
 62 packages/mail/src/migrate.ts
+11 packages/mail/src/schema.sql
 1 packages/mail/src/service/source-names-migrate.ts
+2 packages/mail/src/service/workflow-effect-order-schema.sql
 58 packages/notebooks/src/migrate.ts
 44 packages/oauth/src/migrate.ts
 2 packages/proxy-auth/src/migrate.ts

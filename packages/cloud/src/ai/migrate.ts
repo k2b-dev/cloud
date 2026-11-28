@@ -230,10 +230,16 @@ export const migrateCloudAi = async (): Promise<void> => {
       END IF;
     END $$`.simple(),
   );
-  await addColumns(sql, "ai.conversations", {
+  const addedSearchColumns = await addColumns(sql, "ai.conversations", {
     search_text: "TEXT NOT NULL DEFAULT ''",
     search_document: "TSVECTOR NOT NULL DEFAULT ''::tsvector",
   });
+  const searchFunction = async () =>
+    (
+      await sql<{ source: string | null }[]>`SELECT md5(prosrc) AS source FROM pg_proc
+        WHERE oid = to_regprocedure('ai.refresh_conversation_search()')`
+    )[0]?.source ?? null;
+  const searchFunctionBefore = await searchFunction();
   await sql`
     CREATE OR REPLACE FUNCTION ai.refresh_conversation_search() RETURNS trigger AS $$
     BEGIN
@@ -249,14 +255,18 @@ export const migrateCloudAi = async (): Promise<void> => {
     END
     $$ LANGUAGE plpgsql
   `.simple();
-  await replaceTrigger(
+  const searchTriggerReplaced = await replaceTrigger(
     sql,
     "ai.conversations",
     "ai_conversations_search_refresh",
     "CREATE TRIGGER ai_conversations_search_refresh BEFORE INSERT OR UPDATE OF title, description, keywords, search_summary " +
       "ON ai.conversations FOR EACH ROW EXECUTE FUNCTION ai.refresh_conversation_search()",
   );
-  await sql`UPDATE ai.conversations SET search_summary = search_summary`.simple();
+  // Rewriting every conversation locks every row, so it runs only when the search columns, the function or the trigger
+  // changed, with a bounded lock wait (#4515).
+  if (addedSearchColumns.length > 0 || searchTriggerReplaced || (await searchFunction()) !== searchFunctionBefore) {
+    await withTableLock(sql, "ai.conversations", (tx) => tx`UPDATE ai.conversations SET search_summary = search_summary`.simple());
+  }
   await createIndexes(sql, "ai.conversations", [
     { name: "idx_ai_conversations_search_document", definition: "USING GIN(search_document)" },
   ]);

@@ -28,7 +28,11 @@ test("allows the baseline, reports growth and stale entries, ignores the helper 
       "await sql`ALTER TABLE n.t ADD COLUMN IF NOT EXISTS a TEXT`;\n\nawait sql`CREATE INDEX IF NOT EXISTS i ON n.t(a)`;\n",
     );
     await writeFile(join(root, "packages/notes/src/old.ts"), "await sql`ALTER TABLE n.o ADD COLUMN IF NOT EXISTS a TEXT`;\n");
-    await writeFile(join(root, BASELINE), "# header\n1 packages/notes/src/migrate.ts\n3 packages/notes/src/old.ts\n");
+    await writeFile(join(root, "packages/notes/src/schema.sql"), "CREATE INDEX IF NOT EXISTS s ON n.t(a);\n");
+    await writeFile(
+      join(root, BASELINE),
+      "# header\n1 packages/notes/src/migrate.ts\n3 packages/notes/src/old.ts\n1 packages/notes/src/schema.sql\n",
+    );
     const run = (fix: boolean) => rule.run({ workspaceRoot: root, fix, flags: new Set() });
 
     const findings = await run(false);
@@ -39,7 +43,8 @@ test("allows the baseline, reports growth and stale entries, ignores the helper 
 
     expect((await run(true)).map((finding) => finding.file)).toEqual(["packages/notes/src/migrate.ts"]);
     const baseline = await readFile(join(root, BASELINE), "utf8");
-    expect(baseline).toContain("1 packages/notes/src/migrate.ts\n1 packages/notes/src/old.ts\n");
+    // SQL scripts count too: the schema.sql entry is neither stale nor lowered.
+    expect(baseline).toContain("1 packages/notes/src/migrate.ts\n1 packages/notes/src/old.ts\n1 packages/notes/src/schema.sql\n");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

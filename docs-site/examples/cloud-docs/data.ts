@@ -1,6 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { type AccessSubject, buildAccessPrincipalCondition, err, fail, ok, type RequestActor, type Result } from "@k2b/cloud/server";
 import { escapeLikePattern, isUniqueViolation, requestPublicHttps, secrets, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
+import { addColumns, createIndexes } from "@k2b/cloud/services/migration-ddl";
 import { createPgOutbox } from "@k2b/cloud/services/outbox";
 
 type InventoryItem = {
@@ -48,10 +49,12 @@ export const migrateInventory = async (): Promise<void> => {
     )
   `.simple();
 
-  await sql`
-    CREATE INDEX IF NOT EXISTS inventory_items_created_at
-    ON inventory.items (created_at DESC, id)
-  `.simple();
+  await createIndexes(sql, "inventory.items", [{ name: "inventory_items_created_at", definition: "(created_at DESC, id)" }]);
+
+  await addColumns(sql, "inventory.items", {
+    description: "TEXT",
+    archived: "BOOLEAN NOT NULL DEFAULT false",
+  });
 
   await sql`
     CREATE TABLE IF NOT EXISTS inventory.item_access (

@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { isDirectory, isTestFile, listFiles, sourceFilePattern } from "./files";
+import { isDirectory, isTestFile, listFiles } from "./files";
 import type { Finding, Rule } from "./rule";
 
 /**
@@ -11,6 +11,8 @@ import type { Finding, Rule } from "./rule";
  */
 const HELPER = "packages/cloud/src/services/migration-ddl.ts";
 export const BASELINE = "scripts/checks/startup-ddl-locks.baseline";
+/** Migration sources: TypeScript and the plain SQL scripts that migrations run. */
+export const FILES = /\.(?:ts|tsx|sql)$/;
 const STATEMENT = /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS|CREATE\s+(?:UNIQUE\s+)?INDEX\s+IF\s+NOT\s+EXISTS/gi;
 const header = [
   "# Startup DDL that locks a table even when nothing changes, per file: <count> <file>.",
@@ -57,7 +59,7 @@ export const rule: Rule = {
     const counts = new Map<string, number[]>();
     for (const entry of readdirSync(packages, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
-      for (const path of listFiles(join(packages, entry.name, "src"), sourceFilePattern)) {
+      for (const path of listFiles(join(packages, entry.name, "src"), FILES)) {
         const file = relative(workspaceRoot, path);
         if (isTestFile(path) || file === HELPER) continue;
         const lines = lockingStatements(readFileSync(path, "utf8"));

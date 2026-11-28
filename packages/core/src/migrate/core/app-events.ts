@@ -78,12 +78,12 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), UNIQUE(subscription_id,event_id)
     )`.simple();
     await addColumns(tx, "events.app_deliveries", { unreachable_count: "INTEGER NOT NULL DEFAULT 0", retained_from: "TIMESTAMPTZ" });
-    await tx`UPDATE events.app_deliveries SET retained_from = created_at WHERE retained_from IS NULL`;
     // ALTER COLUMN locks the table even without a change, so the catalog decides first.
     await tx`DO $$ BEGIN
       IF EXISTS (SELECT 1 FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
         WHERE a.attrelid = 'events.app_deliveries'::regclass AND a.attname = 'retained_from' AND NOT a.attisdropped
           AND (NOT a.attnotnull OR pg_get_expr(d.adbin, d.adrelid) IS DISTINCT FROM 'now()')) THEN
+        UPDATE events.app_deliveries SET retained_from = created_at WHERE retained_from IS NULL;
         ALTER TABLE events.app_deliveries ALTER COLUMN retained_from SET DEFAULT now(), ALTER COLUMN retained_from SET NOT NULL;
       END IF;
     END $$`.simple();

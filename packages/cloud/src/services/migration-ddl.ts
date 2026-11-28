@@ -4,11 +4,14 @@ import { toPgTextArray } from "./postgres";
 
 /**
  * Startup DDL that leaves live writers alone. Postgres takes the table lock of `ALTER TABLE … ADD COLUMN IF NOT EXISTS`
- * (ACCESS EXCLUSIVE), `CREATE INDEX IF NOT EXISTS` (SHARE) and `DROP TRIGGER IF EXISTS` before it checks whether the
- * object exists. Such a statement waits behind a dump, an index build or a long transaction, and every reader or writer
+ * (ACCESS EXCLUSIVE), `CREATE INDEX IF NOT EXISTS` (SHARE) and `CREATE OR REPLACE TRIGGER` (SHARE ROW EXCLUSIVE) before
+ * it checks whether anything changes. Such a statement waits behind a dump, an index build or a long transaction, and every reader or writer
  * of the table queues behind the waiting statement. These helpers read the catalog first: when nothing changes, as on
  * every start after the first, they take no table lock. A change runs in a short transaction that waits at most
  * {@link MIGRATION_LOCK_WAIT_MS} for its lock and retries with backoff.
+ *
+ * Tables are schema-qualified lowercase identifiers, and so are column, index and trigger names. Definitions are
+ * constants of the code, never input: they reach SQL as written, so `;`, `--` and `/*` are refused.
  */
 
 const log = logger("cloud:migrations");
@@ -43,9 +46,10 @@ const assertTable = (table: string) => {
   if (!TABLE.test(table)) throw new Error(`Migration table must be a schema-qualified plain identifier: ${table}`);
 };
 
-// Definitions are code constants that reach SQL as written; a `;` would end the statement.
+// Definitions are code constants that reach SQL as written; a `;` would end the statement and a comment would hide
+// the rest of it.
 const assertDefinition = (definition: string) => {
-  if (definition.includes(";")) throw new Error(`Migration definition must be one clause without ";": ${definition}`);
+  if (/;|--|\/\*/.test(definition)) throw new Error(`Migration definition must be one clause without ";", "--" or "/*": ${definition}`);
 };
 
 const assertIdentifier = (name: string) => {
@@ -128,11 +132,15 @@ export const withTableLock = async (
       const holders = await lockHolders(db, tables);
       if (attempt >= ATTEMPTS) {
         throw new Error(
-          `Migration could not lock ${tables.join(", ")} in ${ATTEMPTS} attempts; held by ${holders.join(", ") || "a session that ended meanwhile"}`,
+          `Migration could not lock ${tables.join(", ")} in ${ATTEMPTS} attempts; held by ${holders.join(", ") || "no table lock holder (an advisory or row lock, or a session that ended meanwhile)"}`,
           { cause: error },
         );
       }
-      log.warn("Migration waits for a table lock and tries again", { table: tables.join(", "), attempt, holders: holders.join(", ") });
+      log.warn("Migration waits for a lock and tries again", {
+        table: tables.join(", "),
+        attempt,
+        holders: holders.join(", ") || "no table lock holder (an advisory or row lock, or a session that ended meanwhile)",
+      });
       await Bun.sleep(pause(attempt));
     }
   }
@@ -177,22 +185,22 @@ const triggerDefinition = async (db: SQL, table: string, name: string) => {
 };
 
 /**
- * Creates trigger `name` with `definition`, or replaces it when Postgres reports another definition, and returns whether
- * it did. Without a change it takes no table lock. Replaces `DROP TRIGGER IF EXISTS` plus `CREATE TRIGGER`. Write
- * `definition` the way `pg_get_triggerdef()` prints it; any other spelling replaces the trigger on every start, which
- * the helper logs.
+ * Creates trigger `name` with `definition`, or replaces it with `CREATE OR REPLACE TRIGGER` when Postgres reports another
+ * definition, and returns whether it did. Without a change it takes no table lock. Replaces `DROP TRIGGER IF EXISTS`
+ * plus `CREATE TRIGGER`. Write `definition` the way `pg_get_triggerdef()` prints it, starting with `CREATE TRIGGER`; any
+ * other spelling replaces the trigger on every start, which the helper logs.
  */
 export const replaceTrigger = async (db: SQL, table: string, name: string, definition: string): Promise<boolean> => {
   assertTable(table);
   assertIdentifier(name);
   assertDefinition(definition);
+  if (!definition.startsWith(`CREATE TRIGGER ${name} `)) throw new Error(`Trigger definition must start with "CREATE TRIGGER ${name} "`);
   if ((await triggerDefinition(db, table, name)) === definition) return false;
   let replaced = false;
   await withTableLock(db, table, async (tx) => {
     replaced = false;
     if ((await triggerDefinition(tx, table, name)) === definition) return;
-    await tx.unsafe(`DROP TRIGGER IF EXISTS ${name} ON ${table}`).simple();
-    await tx.unsafe(definition).simple();
+    await tx.unsafe(definition.replace(/^CREATE TRIGGER /, "CREATE OR REPLACE TRIGGER ")).simple();
     replaced = true;
     const stored = await triggerDefinition(tx, table, name);
     if (stored !== definition) {
@@ -202,21 +210,25 @@ export const replaceTrigger = async (db: SQL, table: string, name: string, defin
   return replaced;
 };
 
+/** Indexes are found by name: an existing index of that name counts, whatever its definition or validity. */
 const missingIndexes = async (db: SQL, table: string, indexes: readonly MigrationIndex[]) => {
   const schema = table.split(".")[0]!;
-  const present = new Set(
-    (
-      await db<{ name: string }[]>`
-        SELECT name FROM unnest(${toPgTextArray(indexes.map((index) => index.name))}::text[]) AS wanted(name)
-        WHERE to_regclass(${schema} || '.' || wanted.name) IS NOT NULL`
-    ).map((row) => row.name),
-  );
+  const rows = await db<{ name: string; valid: boolean }[]>`
+    SELECT wanted.name, COALESCE(i.indisvalid, true) AS valid
+    FROM unnest(${toPgTextArray(indexes.map((index) => index.name))}::text[]) AS wanted(name)
+    LEFT JOIN pg_catalog.pg_index i ON i.indexrelid = to_regclass(${schema} || '.' || wanted.name)
+    WHERE to_regclass(${schema} || '.' || wanted.name) IS NOT NULL`;
+  for (const row of rows) {
+    if (!row.valid) log.warn("Index exists but is invalid; drop it so the next start builds it again", { table, index: row.name });
+  }
+  const present = new Set(rows.map((row) => row.name));
   return indexes.filter((index) => !present.has(index.name));
 };
 
 /**
  * Creates the indexes that `table` lacks and returns their names. Without a missing index it takes no table lock.
- * Replaces `CREATE INDEX IF NOT EXISTS` in startup migrations. The build blocks the table's writers while it runs, so
+ * Replaces `CREATE INDEX IF NOT EXISTS` in startup migrations. The check is by name, so a changed definition needs a
+ * new name. The build blocks the table's writers while it runs, so
  * use it for a new or small table; an index on a large live table is built concurrently in the background instead.
  */
 export const createIndexes = async (db: SQL, table: string, indexes: readonly MigrationIndex[]): Promise<string[]> => {

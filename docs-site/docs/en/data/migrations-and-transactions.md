@@ -119,8 +119,23 @@ Set `SET LOCAL lock_timeout` in that transaction and retry it as a whole.
 Use it for a new or small table. For a large table that is in use, build the
 index concurrently in the background after setup.
 
-Write a trigger definition the way `pg_get_triggerdef()` prints it. Otherwise
-every start replaces the trigger and logs a warning.
+`createIndexes()` finds an index by its name only. An index with that name
+counts as present, whatever its definition. To change a definition, give the
+index a new name. An index that exists but is invalid, such as the rest of an
+interrupted concurrent build, logs a warning; drop it so the next start builds
+it again.
+
+Write a trigger definition the way `pg_get_triggerdef()` prints it, starting
+with `CREATE TRIGGER`. Otherwise every start replaces the trigger and logs a
+warning.
+
+The helpers check their input before any SQL runs:
+
+- Tables are schema-qualified, such as `inventory.items`. Table, column,
+  index and trigger names are plain lowercase identifiers.
+- Definitions are constants in your code, never request input. They reach
+  SQL as written.
+- A definition that contains `;`, `--` or `/*` is refused.
 
 > **Do not add and later drop the same column on every startup.**
 >

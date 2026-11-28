@@ -41,6 +41,12 @@ const within = <T>(limitMs: number, run: Promise<T>) =>
 databaseSuite()("startup migrations next to a dump or an index build", () => {
   // The issue's reproduction: Core's AI migration on an installation that already has every column and index.
   test("migrateCloudAi takes no lock on ai.conversations and lets its writers through", async () => {
+    // A writer that keeps one conversation row locked: the start must not rewrite every row (#4515).
+    const shortId = `held-${crypto.randomUUID()}`;
+    await sql`INSERT INTO ai.conversations (short_id) VALUES (${shortId})`;
+    const rowWriter = new SQL({ url: database!.url, max: 1 });
+    await rowWriter`BEGIN`.simple();
+    await rowWriter`SELECT 1 FROM ai.conversations WHERE short_id = ${shortId} FOR UPDATE`;
     const dump = await holdLock("ai.conversations", "ACCESS SHARE");
     const build = await holdLock("ai.conversations", "SHARE UPDATE EXCLUSIVE", "index build");
     const migration = migrateCloudAi();
@@ -52,6 +58,8 @@ databaseSuite()("startup migrations next to a dump or an index build", () => {
     } finally {
       await dump.release();
       await build.release();
+      await rowWriter`ROLLBACK`.simple();
+      await rowWriter.close();
       await migration.catch(() => undefined);
     }
   }, 60_000);
@@ -125,7 +133,7 @@ databaseSuite()("migration DDL helpers", () => {
     expect(await within(15_000, adding)).toEqual(["late"]);
     const logged = JSON.stringify(warn.mock.calls);
     warn.mockRestore();
-    expect(logged).toContain("Migration waits for a table lock");
+    expect(logged).toContain("Migration waits for a lock");
     expect(logged).toContain("pg_dump");
   }, 30_000);
 
@@ -181,5 +189,7 @@ databaseSuite()("migration DDL helpers", () => {
     await expect(addColumns(sql, table, { "a; DROP TABLE x": "TEXT" })).rejects.toThrow("plain lowercase");
     await expect(createIndexes(sql, table, [{ name: "Bad Name", definition: "(id)" }])).rejects.toThrow("plain lowercase");
     await expect(addColumns(sql, table, { a: "TEXT; DROP TABLE x" })).rejects.toThrow("without");
+    await expect(addColumns(sql, table, { a: "TEXT -- hidden" })).rejects.toThrow("without");
+    await expect(createIndexes(sql, table, [{ name: "i", definition: "(id) /* hidden */" }])).rejects.toThrow("without");
   });
 });
