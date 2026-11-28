@@ -102,6 +102,13 @@ test("a day that is not a date asks for a day in its field; runs that cannot be 
   expect(text(missing)).toContain("Dieser Lauf konnte nicht gelesen werden.");
 });
 
+test("a reader who may not read the runs is told so, with no retry that cannot succeed", () => {
+  const html = renderData({ ...mailCodeHistoryFixture("tag"), runs: null, runsForbidden: true, run: { id: "other", failed: true } });
+  expect(text(html)).toContain("Frühere Läufe sieht nur, wer das ganze Postfach lesen darf.");
+  expect(text(html)).not.toContain("Erneut versuchen");
+  expect(text(html)).not.toContain("konnte nicht gelesen werden");
+});
+
 test("only history=1 opens the step; the former page leads there and keeps day, entry and runs", () => {
   expect(opensMailCodeHistory(new URL("https://cloud.test/app/mail/Mb4kd2/code?history=1"))).toBe(true);
   expect(opensMailCodeHistory(new URL("https://cloud.test/app/mail/Mb4kd2/code"))).toBe(false);

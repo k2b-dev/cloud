@@ -18,6 +18,7 @@ export const mailCodeHistoryFixture = (state: MailCodeHistoryState): MailCodeHis
   codeHref: "/app/mail/Mb4kd2/code",
   day: "2026-10-26",
   dayInvalid: state === "fehler",
+  runsForbidden: false,
   today: "2026-10-27",
   before: null,
   items: state === "leer" ? [] : logFixtureItems,

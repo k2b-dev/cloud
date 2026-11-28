@@ -1,7 +1,6 @@
 import { ok, type Result, type ServiceError } from "@k2b/stdlib";
 import { z } from "zod";
 import type { MailRequestContext } from "../service";
-import { withOneAccessRead } from "../service/access";
 import { getAutomationLogItem, listAutomationLog } from "../service/automation-log";
 import { readRetiredRuleRuns, readRetiredRunSteps, retiredRunQuerySchema } from "../service/retired-rule-runs";
 import type { MailCodeHistoryData } from "./MailCodeHistory";
@@ -15,13 +14,12 @@ const dayKey = z.iso.date();
  * that cannot be read show an error in their section, not an error page.
  */
 export const loadMailCodeHistory = async (
-  request: MailRequestContext,
+  /** The page's context; it reads the grants once for the whole page (`withOneAccessRead`). */
+  context: MailRequestContext,
   mailboxId: string,
   url: URL,
   codeHref: string,
 ): Promise<Result<MailCodeHistoryData, ServiceError>> => {
-  // the log, the entry and the runs check the same mailbox access: read it once for the whole step
-  const context = withOneAccessRead(request);
   const entry = z.uuid().safeParse(url.searchParams.get("entry")).data ?? null;
   const asked = url.searchParams.get("day");
   const dayInvalid = asked !== null && !dayKey.safeParse(asked).success;
@@ -59,6 +57,8 @@ export const loadMailCodeHistory = async (
           nextCursor: runs.data.nextCursor,
         }
       : null,
+    // runs span the whole mailbox: a reader of only their assigned conversations may never read them
+    runsForbidden: !runs.ok && runs.error.status === 403,
     run: openRun && opened ? (opened.ok ? opened.data : { id: openRun, failed: true as const }) : null,
   });
 };

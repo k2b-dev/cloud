@@ -39,8 +39,8 @@ export type RetiredRunSteps = { id: string; createdAt: string; name: string; sta
 const STEPS_SHOWN = 50;
 
 /**
- * One retired run with its steps in words, for the Code page. An allowlist, unlike the retained `/retired-runs`
- * snapshot: no rule source, no event, no step input or output, only each step's key, state and error message.
+ * One retired run with its steps in words, for the Code page. An allowlist: no rule source, no event, no step input
+ * or output, only each step's key, state and error message.
  */
 export const readRetiredRunSteps = async (
   context: MailRequestContext,

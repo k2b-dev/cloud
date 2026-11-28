@@ -31,6 +31,8 @@ export type MailCodeHistoryData = {
   runAfter: string | null;
   /** Null when the runs could not be read. */
   runs: { items: MailRetiredRun[]; nextCursor: string | null } | null;
+  /** The reader may not read the runs at all (they span the whole mailbox): no retry can help. */
+  runsForbidden: boolean;
   /** The run the address names with its steps, or the run that could not be read. */
   run: MailRetiredRunOpen | { id: string; failed: true } | null;
 };
@@ -263,7 +265,7 @@ export default function MailCodeHistory(props: { data: MailCodeHistoryData }): J
           </Show>
         </Section>
         <Section title={t().runs} size="md">
-          <Show when={props.data.run && "failed" in props.data.run}>
+          <Show when={!props.data.runsForbidden && props.data.run && "failed" in props.data.run}>
             <Placeholder
               variant="compact"
               state="error"
@@ -279,17 +281,21 @@ export default function MailCodeHistory(props: { data: MailCodeHistoryData }): J
           <Show
             when={props.data.runs}
             fallback={
-              <Placeholder
-                variant="compact"
-                state="error"
-                icon="ti ti-alert-triangle"
-                title={t().runsFailed}
-                action={
-                  <ButtonLink href={href(current())} variant="secondary" size="sm">
-                    {t().tryAgain}
-                  </ButtonLink>
-                }
-              />
+              props.data.runsForbidden ? (
+                <Placeholder variant="compact" state="no-access" icon="ti ti-lock" title={t().runsForbidden} />
+              ) : (
+                <Placeholder
+                  variant="compact"
+                  state="error"
+                  icon="ti ti-alert-triangle"
+                  title={t().runsFailed}
+                  action={
+                    <ButtonLink href={href(current())} variant="secondary" size="sm">
+                      {t().tryAgain}
+                    </ButtonLink>
+                  }
+                />
+              )
             }
           >
             {(runs) => (

@@ -2,6 +2,7 @@ import { type AuthContext, getLocale, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTi
 import { Layout, loadCodePage } from "@k2b/cloud/ssr";
 import { ssr } from "../../../config";
 import type { MailRequestContext } from "../../../service";
+import { withOneAccessRead } from "../../../service/access";
 import { requestContactDirectory } from "../../../service/contact-directory";
 import { CountRefreshBusy } from "../../../service/view-count-cache";
 import { loadMailboxCodePageData } from "../../../service/workspace";
@@ -32,11 +33,12 @@ export default ssr<AuthContext>(async (c) => {
     const actor = c.get("actor");
     const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
     if (!user) return ssr.error(c, 403);
-    const context: MailRequestContext = {
+    // the page only reads: its mailbox, the sidebar and the history step check access against one read of the grants
+    const context = withOneAccessRead({
       actor,
       accessSubject: c.get("accessSubject"),
       requestId: c.req.header("x-request-id") ?? null,
-    };
+    } satisfies MailRequestContext);
     const [internal, sidebar] = await Promise.all([loadMailboxCodePageData(context, mailboxId), loadMailSidebarData(context)]);
     if (!internal.ok) return ssr.error(c, internal.error.status);
     const mailbox = await projectMailboxCodePageData(internal.data);

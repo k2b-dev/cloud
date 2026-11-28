@@ -11,6 +11,7 @@ import { loadMailCodeHistory } from "../frontend/mail-code-history-data";
 import { loadMailSidebarData } from "../frontend/mail-sidebar-data";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
+import { withOneAccessRead } from "./access";
 import type { MailRequestContext } from "./auth";
 import { getAutomationLogItem, listAutomationLog } from "./automation-log";
 import { loadMailboxCodePageData } from "./workspace";
@@ -20,6 +21,7 @@ suite("Retired Mail rule history", () => {
   let mailboxId: string;
   let mailboxShortId: string;
   let context: MailRequestContext;
+  let assignedReader: MailRequestContext;
   const item = automationLogItemSchema.parse({
     id: "11111111-1111-4111-8111-111111111111",
     at: "2026-11-01T12:00:00.000Z",
@@ -55,6 +57,16 @@ suite("Retired Mail rule history", () => {
     if (!grant) throw new Error("Missing history read grant");
     await sql`INSERT INTO mail.mailbox_access(mailbox_id,access_id) VALUES(${mailboxId}::uuid,${grant.id}::uuid)`;
     context = { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id } };
+    // a reader of only the conversations assigned to them
+    const [assignedPerson] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,admin)
+      VALUES(${`rule-history-assigned-${crypto.randomUUID()}`},'local','user',false) RETURNING id`;
+    const assignedUser = assignedPerson && (await accounts.users.get({ id: assignedPerson.id }));
+    if (!assignedUser) throw new Error("Missing assigned history reader");
+    const [assignedGrant] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission)
+      VALUES(${assignedUser.id}::uuid,'read') RETURNING id`;
+    if (!assignedGrant) throw new Error("Missing assigned read grant");
+    await sql`INSERT INTO mail.mailbox_assigned_access(mailbox_id,access_id) VALUES(${mailboxId}::uuid,${assignedGrant.id}::uuid)`;
+    assignedReader = { actor: { kind: "user", user: assignedUser }, accessSubject: { type: "user", userId: assignedUser.id } };
     await sql`INSERT INTO mail.automation_log(id,mailbox_id,item,chain,created_at)
       VALUES(${item.id}::uuid,${mailboxId}::uuid,${item}::jsonb,${chain}::jsonb,${item.at}::timestamptz)`;
   });
@@ -66,6 +78,17 @@ suite("Retired Mail rule history", () => {
     expect(detail).toMatchObject({ ok: true, data: { effects: item.effects, chain, undo: { state: "none" } } });
     const [stored] = await sql<{ item: unknown; chain: unknown }[]>`SELECT item,chain FROM mail.automation_log WHERE id=${item.id}::uuid`;
     expect(stored).toEqual({ item, chain });
+  });
+
+  test("a reader of only assigned conversations sees the day but is told the runs are not theirs to read, without a retry", async () => {
+    const code = `/app/mail/${mailboxShortId}/code`;
+    const history = await loadMailCodeHistory(
+      withOneAccessRead(assignedReader),
+      mailboxId,
+      new URL(`https://cloud.test${code}?history=1&day=2026-11-01`),
+      code,
+    );
+    expect(history).toMatchObject({ ok: true, data: { day: "2026-11-01", runs: null, runsForbidden: true } });
   });
 
   test("historical read routes have no Undo or Redo mutation even for an existing entry", async () => {
@@ -88,13 +111,23 @@ suite("Retired Mail rule history", () => {
       const code = `/app/mail/${mailboxShortId}/code`;
       let day: Awaited<ReturnType<typeof loadMailCodeHistory>> | undefined;
       const byDay = await meter.during(async () => {
-        day = await loadMailCodeHistory(context, mailboxId, new URL(`https://cloud.test${code}?history=1&day=2026-11-01`), code);
+        day = await loadMailCodeHistory(
+          withOneAccessRead(context),
+          mailboxId,
+          new URL(`https://cloud.test${code}?history=1&day=2026-11-01`),
+          code,
+        );
       });
       expect(day).toMatchObject({ ok: true, data: { day: "2026-11-01", items: [{ id: item.id }], entry: null, run: null } });
       // a link to one entry without a day opens that entry's day
       let entry: Awaited<ReturnType<typeof loadMailCodeHistory>> | undefined;
       const byEntry = await meter.during(async () => {
-        entry = await loadMailCodeHistory(context, mailboxId, new URL(`https://cloud.test${code}?history=1&entry=${item.id}`), code);
+        entry = await loadMailCodeHistory(
+          withOneAccessRead(context),
+          mailboxId,
+          new URL(`https://cloud.test${code}?history=1&entry=${item.id}`),
+          code,
+        );
       });
       expect(entry).toMatchObject({ ok: true, data: { day: "2026-11-01", entry: item.id } });
       // one access read for the step; the log page with its counts, the runs; the entry adds its own read
@@ -113,10 +146,12 @@ suite("Retired Mail rule history", () => {
         const code = `/app/mail/${mailboxShortId}/code`;
         // Mail's part of the page: the mailbox with its counts, the sidebar, and the history step the address asks for
         const page = async (query: string) => {
+          // one read of the grants for the whole page, as the page reads them
+          const scoped = withOneAccessRead(context);
           const [mailbox, , history] = await Promise.all([
-            loadMailboxCodePageData(context, mailboxId),
-            loadMailSidebarData(context),
-            loadMailCodeHistory(context, mailboxId, new URL(`https://cloud.test${code}?history=1&${query}`), code),
+            loadMailboxCodePageData(scoped, mailboxId),
+            loadMailSidebarData(scoped),
+            loadMailCodeHistory(scoped, mailboxId, new URL(`https://cloud.test${code}?history=1&${query}`), code),
           ]);
           expect(mailbox.ok && history.ok).toBe(true);
         };
