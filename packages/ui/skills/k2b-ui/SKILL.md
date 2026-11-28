@@ -28,9 +28,8 @@ code, one hero with its real trend, the app's colour where it means
 something, one data picture per row, a tinted head for the open object, a
 large screen that uses its room; dense, not busy: each thing has its mark
 (`Mark`, a person's `Avatar`), a state is a dot and its word, colour only
-for problems, people stand beside what they did; two head rows at most,
-settings as `Setting` rows. Run its wireframe check on your pictures: a
-screen that fails it is not done, however clean it is.
+for problems, people stand beside what they did. Run its wireframe check on
+your pictures: a screen that fails it is not done, however clean it is.
 
 ## Start here
 
