@@ -26,7 +26,7 @@ export const providerValues = (
   t: {
     trafficValue: (p: { requests: string; rate: string; ms: string | null }) => string;
     noMeasurements: string;
-    errorsValue: (p: { count: number }) => string;
+    errorsValue: (p: { count: number; shown: string }) => string;
   },
   f: AppsFormat,
   numbers: ReadonlyArray<{ traffic: { requests: number; errors: number; avgMs: number | null } | null }>,
@@ -44,7 +44,11 @@ export const providerValues = (
       : measured || !unavailable
         ? t.noMeasurements
         : null,
-    errors: traffic ? t.errorsValue({ count: traffic.errors }) : measured || !unavailable ? t.noMeasurements : null,
+    errors: traffic
+      ? t.errorsValue({ count: traffic.errors, shown: f.number(traffic.errors) })
+      : measured || !unavailable
+        ? t.noMeasurements
+        : null,
     errorsTone: traffic && traffic.requests > 0 && traffic.errors / traffic.requests >= 0.01 ? ("danger" as const) : undefined,
     unavailable: unavailable && !traffic,
   };
