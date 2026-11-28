@@ -603,9 +603,10 @@ name wraps in a small table and ends with "…" in one with column widths.
   problem there, `"running"` for work that runs now: a small turning mark
   in the dot's place that says "Läuft"), `color` (the place's data colour:
   its symbol becomes its `Mark`, the same as in its rows and on its card).
-  `quota: { label, value, of, text }` shows what the open place uses above
-  the foot ("Werkstatt · 38,2 von 100 GB" over a bar; amber from 75 %, red
-  from 90 %). An item with `items` instead of `icon` and a link folds
+  `quota={<NavQuota label value of text />}` shows what the open place uses
+  above the foot ("Werkstatt · 38,2 von 100 GB" over a bar; amber from
+  75 %, red from 90 %); a part of its own, so a sidebar without one loads
+  none of it. An item with `items` instead of `icon` and a link folds
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.

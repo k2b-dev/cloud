@@ -10,6 +10,7 @@ import {
   ListOrder,
   Menu,
   Nav,
+  NavQuota,
   Pane,
   Path,
   Preview,
@@ -265,7 +266,7 @@ export default function Folder(props: Props) {
               ],
             },
           ]}
-          quota={{ label: "Werkstatt", value: 38.2, of: 100, text: "38,2 von 100 GB" }}
+          quota={<NavQuota label="Werkstatt" value={38.2} of={100} text="38,2 von 100 GB" />}
           foot={[{ label: "Papierkorb", icon: "trash" }]}
         />
       }

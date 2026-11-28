@@ -19,7 +19,7 @@ import {
 declare global {
   interface Window {
     __k2Mounted?: boolean;
-    __k2Case?:
+    __k2HeadMediaCase?:
       | "list"
       | "grid"
       | "selecting"
@@ -46,7 +46,7 @@ declare global {
 
 const root = document.getElementById("root");
 if (!root) throw new Error("head-media: #root is missing");
-const which = window.__k2Case ?? "list";
+const which = window.__k2HeadMediaCase ?? "list";
 render(
   () => (
     // the recipes write German sample text, so the library's own words are German too

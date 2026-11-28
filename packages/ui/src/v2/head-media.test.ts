@@ -13,7 +13,7 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Preview } = await import("./marks");
 const { Tiles } = await import("./layout");
-const { Nav } = await import("./components");
+const { Nav, NavQuota } = await import("./components");
 const { Input, Setting } = await import("./controls");
 const { checkSettingMessages } = await import("./setting-messages");
 const { LocaleProvider } = await import("../intl/locale");
@@ -94,7 +94,7 @@ test("a quota is a meter with its words, amber from 75 % and red from 90 %", () 
       title: "Dateien",
       icon: "folders",
       groups: [],
-      quota: { label: "Werkstatt", value, of: 100, text: `${value} von 100 GB` },
+      quota: createComponent(NavQuota, { label: "Werkstatt", value, of: 100, text: `${value} von 100 GB` }),
     });
   expect(nav(38)).toContain('role="meter"');
   expect(nav(38)).toContain('aria-valuetext="38 von 100 GB"');

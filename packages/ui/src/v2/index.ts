@@ -27,6 +27,8 @@ export {
   type NavGroup,
   type NavItem,
   type NavProps,
+  NavQuota,
+  type NavQuotaProps,
   type NavSearch,
   Notice,
   type NoticeProps,

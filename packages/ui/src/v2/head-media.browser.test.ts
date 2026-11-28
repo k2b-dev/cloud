@@ -55,7 +55,7 @@ const withPage = async (which: Case, run: (page: Page) => Promise<void>, width =
   await page.route("http://head-media.test/**", (route) =>
     route.fulfill({
       contentType: "text/html",
-      body: `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style><script>window.__k2Case = ${JSON.stringify(which)};</script></head><body class="k2-ui"><div id="root"></div></body></html>`,
+      body: `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style><script>window.__k2HeadMediaCase = ${JSON.stringify(which)};</script></head><body class="k2-ui"><div id="root"></div></body></html>`,
     }),
   );
   try {
