@@ -7,8 +7,10 @@ import { MaintenanceOnInputSchema, type MaintenanceStatus, MaintenanceUntilInput
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
-import { Dynamic, renderToString } from "solid-js/web";
+import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
+import { adminNavFixture } from "../admin-v2.fixture";
+import { adminShellRuntime } from "../admin-v2.shell-fixture";
 import { defaultEnd } from "./time";
 
 const PATH = "/admin/settings/maintenance";
@@ -81,7 +83,7 @@ export async function maintenanceBrowserFixture() {
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
   registerSsrTestPlugin({ dev: true, rootDir: root });
   const { AdminLayout } = await import("@k2b/cloud/ssr");
-  const { default: Maintenance } = await import("./Maintenance.island.tsx");
+  const { default: Maintenance } = await import("./Maintenance");
   const { maintenanceAdminMessages } = await import("./messages");
   const ui = resolve(import.meta.dir, "../../../../../ui");
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", `${ui}/`));
@@ -188,12 +190,13 @@ export async function maintenanceBrowserFixture() {
     const locale = c.req.query("locale") === "en" ? "en" : "de";
     const theme = c.req.query("theme") === "dark" ? "dark" : "light";
     c.req.raw.headers.set("x-cloud-locale", locale);
-    c.set("runtime", { apps: [{ id: "core", name: "Core", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
+    c.set("runtime", adminShellRuntime());
     c.set("user", user);
     c.set("settings", { app: { name: "Musterverein Cloud", locale } });
     const title = maintenanceAdminMessages.resolve([locale]).t.title;
     c.set("page", { title, theme });
     const props = {
+      nav: adminNavFixture("/admin/settings/maintenance"),
       initial: state,
       appNames,
       dateConfig: { timeZone: "Europe/Berlin", locale, firstDayOfWeek: 1 as const },
@@ -204,16 +207,10 @@ export async function maintenanceBrowserFixture() {
     const body = renderToString(() =>
       createComponent(AdminLayout, {
         c,
+        ui: "v2",
         title,
         get children() {
-          return createComponent(Dynamic, {
-            component: "div",
-            class: "app-rows",
-            id: "maintenance-fixture",
-            get children() {
-              return createComponent(Maintenance, props);
-            },
-          });
+          return createComponent(Maintenance, props);
         },
       }),
     );

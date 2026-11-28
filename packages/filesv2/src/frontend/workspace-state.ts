@@ -33,8 +33,6 @@ export type WorkspaceSnapshot = {
   marks?: MarkedEntry[];
   /** At most six authorized favorites for the overview, so the first frame already holds them and nothing moves. */
   favoritesPreview?: { items: MarkedEntry[]; more: boolean } | null;
-  /** One-time hints the server decided to show to this person. */
-  hints?: { recentMoved?: boolean; selectionPill?: boolean };
   /** Instant this snapshot was built; history dates count "today" and ranges from it on server and client alike. */
   now?: string;
   /** Authorized first Activity page for these filters; without it the view loads its own. */

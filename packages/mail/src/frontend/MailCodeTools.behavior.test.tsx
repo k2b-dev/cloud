@@ -82,7 +82,7 @@ else {
   };
   beforeEach(() => {
     dom = createDomTestHarness();
-    dom.window.history.replaceState(null, "", "/app/mail/Mb4kd2/code/catch-up");
+    dom.window.history.replaceState(null, "", "/app/mail/Mb4kd2/code?catchUp=1");
     Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: dom.window.sessionStorage });
     delegateEvents(["click"]);
     requests = [];
@@ -151,6 +151,8 @@ else {
     });
     expect(text()).toContain("1 message from Nov 1 to Nov 13 in all incoming folders");
     expect(location.search).toContain(`preview=${VERSION_4}`);
+    // the step stays a state of the mailbox's Code page
+    expect(`${location.pathname}${location.search}`).toMatch(/^\/app\/mail\/Mb4kd2\/code\?catchUp=1&/);
     // Nothing is sent to the automation before "Apply".
     expect(starts()).toHaveLength(0);
     await click("Other selection");

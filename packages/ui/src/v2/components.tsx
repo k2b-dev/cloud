@@ -23,9 +23,9 @@ import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { Input, MarkCheck } from "./controls";
 import { linkOr } from "./link";
-import { Avatar, Chip, custom, Dot, Icon } from "./marks";
+import { Avatar, Chip, custom, Dot, Icon, Mark } from "./marks";
 import { Menu, type MenuEntry, type MenuItem, MenuTab } from "./menu";
-import { type NavTree, NavTreeView } from "./nav-tree";
+import type { NavTreeGroup } from "./nav-tree";
 import { useOverlayMessages } from "./overlay-messages";
 import { useStatusToolbar } from "./status-toolbar";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
@@ -60,6 +60,11 @@ export type NavItem = NavEntryBase &
     | {
         /** A Tabler icon before the words. */
         icon: string;
+        /**
+         * The data colour of the place, such as a base, a storage or a mailbox: the symbol then stands on a tint of it,
+         * as the place's mark (`Mark`), so the same thing looks the same in the sidebar, a list and a tile.
+         */
+        color?: string;
         /** The page the entry leads to. */
         href?: string;
         /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
@@ -77,6 +82,7 @@ export type NavItem = NavEntryBase &
         /** The entries it folds away; they stand one level further in. */
         items: readonly NavItem[];
         icon?: undefined;
+        color?: undefined;
         href?: undefined;
         onNavigate?: undefined;
         onClick?: undefined;
@@ -99,8 +105,11 @@ export type NavGroup = {
       tree?: undefined;
     }
   | {
-      /** Places in levels, such as the folders of Files or the pages of a notebook, in the place of `items`. */
-      tree: NavTree;
+      /**
+       * Places in levels, such as the folders of Files or the pages of a notebook, in the place of `items`: made with
+       * `navTree`, which brings the tree's code along, so a `Nav` without a tree loads none of it.
+       */
+      tree: NavTreeGroup;
       items?: undefined;
     }
 );
@@ -216,7 +225,9 @@ const NavLink = (props: { item: NavItem; level: number }) => (
     aria-current={props.item.current ? "page" : undefined}
     data-level={props.level > 1 ? String(props.level) : undefined}
   >
-    <Icon name={props.item.icon ?? "point"} />
+    <Show when={props.item.color} fallback={<Icon name={props.item.icon ?? "point"} />}>
+      {(color) => <Mark icon={props.item.icon ?? "point"} color={color()} />}
+    </Show>
     <NavEnd item={props.item} />
   </Dynamic>
 );
@@ -294,22 +305,25 @@ export const Nav = (props: NavProps) => {
           </div>
         )}
       </Show>
-      <Index each={props.groups}>
-        {(group) => (
-          <>
-            <Show when={group().label}>
-              <div class="k2-nav-label">
-                {group().label}
-                <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
-                <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
-              </div>
-            </Show>
-            <Show when={group().tree} fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}>
-              {(tree) => <NavTreeView {...tree()} />}
-            </Show>
-          </>
-        )}
-      </Index>
+      {/* the groups scroll between the head and the foot, so many places never push the foot out of the sidebar */}
+      <div class="k2-nav-groups">
+        <Index each={props.groups}>
+          {(group) => (
+            <>
+              <Show when={group().label}>
+                <div class="k2-nav-label">
+                  {group().label}
+                  <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
+                  <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
+                </div>
+              </Show>
+              <Show when={group().tree} fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}>
+                {(tree) => <Dynamic component={tree().view} {...tree()} />}
+              </Show>
+            </>
+          )}
+        </Index>
+      </div>
       <Show when={list()}>
         <div class="k2-nav-list" data-phone={props.phone}>
           {list()}
@@ -398,6 +412,7 @@ const countWith = (count: Tab["count"], hidden: number): Tab["count"] => {
  * tab is a link or a button the Tab key reaches; a tab with `menu` is the button of a menu of further views and
  * stands at the end. A tab is never cut: one that has no room hides whole and is an entry of that menu (without a
  * menu tab a tab "More" opens them), opened from there as its tab opens it, and the menu tab itself always stays whole.
+ * A tab that holds the focus and hides hands it to the menu tab; a "More" that goes hands it to the last tab.
  * Known: while tabs hide, a gap of less than one tab may stand before the menu tab (closing it would move the menu tab
  * after the page loads).
  */
@@ -410,6 +425,18 @@ export const Tabs = (props: TabsProps) => {
   // Measured in the browser; the server sends every tab, and the stylesheet already hides what wraps.
   const [fit, setFit] = createSignal(Number.POSITIVE_INFINITY);
   let row: HTMLDivElement | undefined;
+  let nav: HTMLElement | undefined;
+  // A tab that holds the focus and hides for lack of room hands it to the menu tab ("Mehr" or the views' own), so it
+  // never falls to the page; a "Mehr" that holds it and goes, as every tab has room again, hands it to the last tab.
+  const place = (next: number) => {
+    const held = document.activeElement;
+    const fromMore = held !== null && nav?.querySelector(":scope > .k2-tab[data-k2-more]")?.contains(held) === true;
+    setFit(next);
+    if (!row || !nav || !held) return;
+    if (row.contains(held) && held.closest(".k2-tab")?.hasAttribute("data-overflow"))
+      [...nav.querySelectorAll<HTMLElement>(":scope > .k2-tab[data-menu]")].at(-1)?.focus();
+    else if (fromMore && !held.isConnected) [...row.querySelectorAll<HTMLElement>(":scope > .k2-tab:not([data-overflow])")].at(-1)?.focus();
+  };
   onMount(() => {
     if (!row) return;
     const measure = () => {
@@ -424,11 +451,11 @@ export const Tabs = (props: TabsProps) => {
         const navGap = Number.parseFloat(getComputedStyle(row.parentElement!).columnGap) || 0;
         const need = tabs.reduce((sum, tab) => sum + tab.getBoundingClientRect().width, 0) + gap * (tabs.length - 1);
         if (need <= row.getBoundingClientRect().width + navGap + more.getBoundingClientRect().width) {
-          setFit(Number.POSITIVE_INFINITY);
+          place(Number.POSITIVE_INFINITY);
           return;
         }
       }
-      setFit(index < 0 ? Number.POSITIVE_INFINITY : index);
+      place(index < 0 ? Number.POSITIVE_INFINITY : index);
     };
     // What the measurement changes (the count of the menu tab, "+8" to "+12") can change the room of the tabs again.
     // So it runs in the next frame, once per frame, never inside the observer's own turn (WebKit reports that as a
@@ -462,7 +489,7 @@ export const Tabs = (props: TabsProps) => {
   const hidden = () => plain().slice(fit());
   const more = () => hidden().map((tab) => asEntry(tab, locale()));
   return (
-    <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
+    <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label} ref={nav}>
       <div class="k2-tabs" ref={row}>
         <Index each={plain()}>
           {(tab, index) => (
@@ -719,9 +746,10 @@ export type StatusRowProps = {
   /** A box at the start that selects all entries. */
   select?: { label: string; checked?: boolean | "mixed"; onChange?: (checked: boolean) => void };
   /**
-   * Filters or a segment at the end; they leave on the phone. They keep their words while the lead gives way; in a row
-   * narrower than 600 px a button with a symbol keeps only the symbol, and its words stay its name. Give each one a
-   * symbol, so it can fold; a toggle is a `Button pressed` with an `icon`, which folds, not a switch.
+   * Filters or a segment at the end; on the phone they stay in the row: what has no room folds into one "+n" menu.
+   * They keep their words while the lead gives way; in a row narrower than 600 px a button with a symbol keeps only
+   * the symbol, and its words stay its name. Give each one a symbol, so it can fold; a toggle is a `Button pressed`
+   * with an `icon`, which folds, not a switch.
    */
   filters?: JSX.Element;
   /**
@@ -745,13 +773,26 @@ export const StatusRow = (props: StatusRowProps) => {
   const t = useUiMessages();
   const filters = resolveChildren(() => props.filters);
   const marks = resolveChildren(() => props.marks);
-  // While entries are selected, the bar's fold watches the row: the actions without room fold into "…" from the end,
-  // and the way out never. None on the server's page.
+  // The bar's fold watches the row while entries are selected (the actions without room fold into "…" from the end,
+  // the way out never), and on the phone (the end that has no room beside the shortened lead folds into one "+n",
+  // the last first, which opens what it holds as a menu: a pressed chip is an entry with a check). Wider and without
+  // a selection, nothing folds. None on the server's page.
   let bar: HTMLDivElement | undefined;
   const [folded, setFolded] = createSignal<readonly MenuItem[]>([]);
+  const [phone, setPhone] = createSignal(false);
+  onMount(() => {
+    const query = matchMedia("not all and (min-width: 768px)");
+    const follow = () => setPhone(query.matches);
+    follow();
+    query.addEventListener("change", follow);
+    onCleanup(() => query.removeEventListener("change", follow));
+  });
   const selecting = createMemo(() => props.selection !== undefined);
   createEffect(() => {
-    if (!bar || !selecting()) return;
+    // both are read, so the fold starts again on the row's other end when a selection begins or ends
+    const watch = selecting();
+    const narrow = phone();
+    if (!bar || !(watch || narrow)) return;
     const fold = watchFold(bar, (entries) => setFolded(entries));
     onCleanup(() => {
       fold.stop();
@@ -802,7 +843,17 @@ export const StatusRow = (props: StatusRowProps) => {
               </Show>
             </div>
             <Show when={holdsContent(filters)}>
-              <div class="k2-bar-end">{filters()}</div>
+              <div class="k2-bar-end">
+                {filters()}
+                <Show when={folded().length > 0}>
+                  <span class="k2-bar-fold">
+                    <Menu items={folded()}>
+                      <span aria-hidden="true">+{folded().length}</span>
+                      <span class="k2-hidden-text">{t().moreFilters({ count: folded().length })}</span>
+                    </Menu>
+                  </span>
+                </Show>
+              </div>
             </Show>
           </>
         }
@@ -921,16 +972,45 @@ export type DigestEntry = {
   href?: string;
 };
 
+/** One thing a person (or a form, a workflow) did: who, a sentence, where and when. */
+export type ActivityEntry = {
+  /** Who did it: a person, or a form or workflow shown as one (`{ name: "Webformular" }`). */
+  person: Person;
+  /**
+   * What they did, as one sentence: `<Text weight="strong">` for names, and the thing itself as
+   * `<Mark icon color />` followed by its name, so it looks the same as in its list.
+   */
+  text: JSX.Element;
+  /** When, such as "09:42" or "gestern, 16:40". */
+  time: string;
+  /** Where, quiet before the time, such as the base "Werkstatt". */
+  place?: string;
+  /** The page of the thing that changed: the sentence becomes the link … */
+  href?: string;
+  /** … which opens in place on a plain click, while it still opens in a new tab (see `OnNavigate`). */
+  onNavigate?: OnNavigate;
+};
+
 export type DigestProps =
   | {
       /** The dated entries, newest first. */
       items: readonly DigestEntry[];
+      activity?: never;
       children?: never;
       /** The name of the list, for assistive technology. */
       label?: string;
     }
   | {
       items?: never;
+      /** What people did, newest first: an avatar, a sentence that may wrap, then place and time. */
+      activity: readonly ActivityEntry[];
+      children?: never;
+      /** The name of the list, for assistive technology. */
+      label?: string;
+    }
+  | {
+      items?: never;
+      activity?: never;
       /** Plain `Row`s whose second line is a sentence, instead of dated entries. */
       children: JSX.Element;
       /** The name of the list, for assistive technology. */
@@ -944,9 +1024,36 @@ export type DigestProps =
 export const Digest = (props: DigestProps) => {
   // the entries hold JSX (their sentence): made once, here
   const items = createMemo(() => props.items);
+  const activity = createMemo(() => props.activity);
   return (
     <div class="k2-list k2-digest" data-k2-part="Digest" role="list" aria-label={props.label}>
-      <Show when={items()} fallback={props.children}>
+      <Show when={activity()}>
+        {(list) => (
+          <For each={list()}>
+            {(entry) => (
+              <div
+                class="k2-row"
+                data-k2-part="Digest.Entry"
+                data-activity=""
+                data-lines="2"
+                data-open={entry.href !== undefined ? "" : undefined}
+                role="listitem"
+              >
+                <span class="k2-row-lead">
+                  <Avatar {...entry.person} />
+                </span>
+                <span class="k2-row-l1">
+                  <RowOpen href={entry.href} onNavigate={entry.onNavigate}>
+                    {entry.text}
+                  </RowOpen>
+                </span>
+                <span class="k2-row-l2">{entry.place ? `${entry.place} · ${entry.time}` : entry.time}</span>
+              </div>
+            )}
+          </For>
+        )}
+      </Show>
+      <Show when={items()} fallback={activity() ? undefined : props.children}>
         {(list) => (
           <For each={list()}>
             {(entry) => (

@@ -74,7 +74,6 @@ export const buildAdminGroups = (
         { href: "/admin/storage", icon: "ti-database", label: t.storage },
         { href: "/admin/signin", icon: "ti-shield-lock", label: t.signinSecurity },
         { href: "/admin/outgoing-mail", icon: "ti-mail", label: t.outgoingMail },
-        { href: "/admin/settings?tab=email-templates", icon: "ti-template", label: t.emailTemplates },
         { href: "/admin/announcements", icon: "ti-speakerphone", label: t.announcements },
         { href: "/admin/ai", icon: "ti-sparkles", label: t.ai },
       ],
@@ -83,7 +82,6 @@ export const buildAdminGroups = (
       label: t.adminOperations,
       links: [
         { href: "/admin/apps", icon: "ti-apps", label: t.apps },
-        { href: "/admin/rail", icon: "ti-layout-sidebar", label: t.rail },
         {
           href: "/admin/code",
           icon: "ti-code",

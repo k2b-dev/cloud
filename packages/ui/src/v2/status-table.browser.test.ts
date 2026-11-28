@@ -419,7 +419,8 @@ for (const [width, column] of [
         const found = await page.evaluate(statusMarks);
         expectMarksHeld(found);
         const seen = found.chips.map((chip) => chip.seen);
-        if (column === 1440 || width < 768) expect(seen).toEqual([true, true]);
+        // a wide row keeps both; on the phone the end stays too (folded into "+n"), so the chips give way, whole
+        if (column === 1440) expect(seen).toEqual([true, true]);
         if (column === 320) expect(seen.includes(false)).toBe(true);
         // the outline names the chips a person sees, not one that gave way
         const outline = await describeV2Page(page);
