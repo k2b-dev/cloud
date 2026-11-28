@@ -425,7 +425,7 @@ describe("Cloud layouts SSR", () => {
   });
 
   test("a page let past the maintenance wall tells the shell that only this person sees the Cloud", async () => {
-    const props = (html: string) => [...html.matchAll(/data-props="([^"]*)"/g)].map((match) => match[1]).join(" ");
+    const props = (html: string) => [...html.matchAll(/<!--ssr-props:([^>]*)-->/g)].map((match) => match[1]).join(" ");
     const bypassed = await (await server.request("/layout", { headers: { "X-Cloud-Maintenance-Bypass": "1" } })).text();
     expect(props(bypassed)).toContain("bypass");
     // Not an administrator: nothing offers to end the maintenance.

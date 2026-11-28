@@ -17,11 +17,12 @@ test("resource service-account venue lists fail closed without a valid binding",
     createdAt: "2026-01-01T00:00:00.000Z",
   });
   try {
-    expect(await venueService.venues.list({ subject, serviceAccountScopes: ["read"] })).toEqual([]);
+    const page = { limit: 100 };
+    expect(await venueService.venues.list({ subject, serviceAccountScopes: ["read"] }, page)).toEqual([]);
     expect(await venueService.venues.discover({ subject, serviceAccountScopes: ["read"] })).toEqual([]);
-    expect(await venueService.venues.list({ subject, serviceAccountResourceId: "not-a-venue", serviceAccountScopes: ["read"] })).toEqual(
-      [],
-    );
+    expect(
+      await venueService.venues.list({ subject, serviceAccountResourceId: "not-a-venue", serviceAccountScopes: ["read"] }, page),
+    ).toEqual([]);
   } finally {
     lookup.mockRestore();
   }

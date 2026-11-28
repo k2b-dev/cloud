@@ -163,6 +163,14 @@ Human-adoption checks use the same committed pruning coverage as snapshots.
 After a covered reconnect, the next edit can be saved without replaying the
 removed prefix. Reconnecting alone does not create a content revision.
 
+Background coverage (the hourly reconciliation and saves that change nothing)
+advances an idle draft's cursor without a new revision. A revision-checked
+update (`PUT`, `cld mail draft update`, `mail.draft.update`) at the revision a
+read showed therefore still succeeds after Mail pruned the prefix behind that
+revision. A refused update keeps the submitted content as a recovery copy and
+answers 409 with the draft's current `revision`, so a client can read again
+and retry.
+
 Document reads distinguish unavailable history (`DRAFT_DOCUMENT_HISTORY_UNAVAILABLE`)
 from malformed history (`DRAFT_DOCUMENT_INVALID_HISTORY`), both with status 409.
 Keep device text and ask a mailbox administrator to follow the recovery steps

@@ -616,13 +616,24 @@ const respondSenderIdentities = <T>(c: Context<MailApiContext>, result: Result<T
   respondPublic(c, result, "senderIdentities");
 const respondDrafts = async <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) => {
   const resolved = await result;
-  if (!resolved.ok && resolved.error.code === "DRAFT_REPLY_BOX_OCCUPIED" && "draftId" in resolved.error)
-    return respond(
-      c,
-      { ok: false, error: localizeMailError(resolved.error, getLocale(c)).message, status: 409, code: resolved.error.code },
-      { errorDetails: { draftId: String(resolved.error.draftId) } },
-    );
-  return respondPublic(c, resolved, "drafts");
+  if (resolved.ok || resolved.error.status !== 409) return respondPublic(c, resolved, "drafts");
+  // A refused write names the draft's current revision (and an occupied reply box its draft and intent)
+  // so a client can reread, update or switch the mode without guessing.
+  const error = resolved.error;
+  const details = {
+    ...(error.code === "DRAFT_REPLY_BOX_OCCUPIED" && "draftId" in error ? { draftId: String(error.draftId) } : {}),
+    ...("revision" in error && typeof error.revision === "number" ? { revision: error.revision } : {}),
+    ...(error.code === "DRAFT_REPLY_BOX_OCCUPIED" && "intent" in error && typeof error.intent === "string" ? { intent: error.intent } : {}),
+    ...(error.code === "DRAFT_REPLY_BOX_OCCUPIED" && "nextStep" in error && typeof error.nextStep === "string"
+      ? { nextStep: error.nextStep }
+      : {}),
+  };
+  if (Object.keys(details).length === 0) return respondPublic(c, resolved, "drafts");
+  return respond(
+    c,
+    { ok: false, error: localizeMailError(error, getLocale(c)).message, status: 409, code: error.code },
+    { errorDetails: details },
+  );
 };
 const respondDeliveries = <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) => respondPublic(c, result, "deliveries");
 const projectAttachmentLinks = async <T extends AttachmentLink | { link: AttachmentLink } | AttachmentLinkPage>(

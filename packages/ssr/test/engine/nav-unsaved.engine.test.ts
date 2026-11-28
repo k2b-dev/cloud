@@ -17,7 +17,7 @@ let origin: string;
 let shellId: string;
 let columnId: string;
 const wrapper = (id: string, label: string) =>
-  `<solid-island data-id="${id}" data-props='${JSON.stringify(toJSON({ label }))}'></solid-island>`;
+  `<solid-island data-id="${id}"><!--ssr-props:${JSON.stringify(toJSON({ label }))}--></solid-island>`;
 const html = (label: string) => `<!doctype html><html><head><title>${label}</title></head><body>
   <div data-nav-shell="unsaved" data-nav-scope="/app">${wrapper(shellId, "shell")}
   <main data-nav-root><h1>${label}</h1>${wrapper(columnId, label)}</main></div>

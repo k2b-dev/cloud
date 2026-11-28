@@ -22,7 +22,7 @@ const build = async () => {
   const id = islandIdFromFile(file, root);
   return { id, load: () => import(join(root, "_ssr", `${id}.js`)) };
 };
-const attribute = (props: object) => JSON.stringify(toJSON(props)).replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+const propsComment = (data: string) => `<!--ssr-props:${data.replaceAll("<", "\\u003c").replaceAll(">", "\\u003e")}-->`;
 
 test("rich props mount as JSON data with eval and Function disabled", async () => {
   const bundle = await build();
@@ -35,7 +35,7 @@ test("rich props mount as JSON data with eval and Function disabled", async () =
     missing: undefined,
     text: '</script>"&',
   };
-  document.body.innerHTML = `<solid-island data-id="${bundle.id}" data-props="${attribute(props)}">SSR</solid-island>`;
+  document.body.innerHTML = `<solid-island data-id="${bundle.id}">${propsComment(JSON.stringify(toJSON(props)))}SSR</solid-island>`;
   let errors = 0;
   document.querySelector("solid-island")!.addEventListener("ssr:island-error", (event) => {
     errors++;
@@ -71,16 +71,38 @@ test.each(["globalThis.pwned=1", '({label:"old"})', undefined])(
   "invalid or missing props are contained without executing (%s)",
   async (value) => {
     const bundle = await build();
-    document.body.innerHTML = `<solid-island data-id="${bundle.id}"${value === undefined ? "" : ` data-props="${value.replaceAll('"', "&quot;")}"`}>SSR</solid-island>`;
+    document.body.innerHTML = `<solid-island data-id="${bundle.id}">${value === undefined ? "" : propsComment(value)}SSR</solid-island>`;
     const element = document.querySelector("solid-island")!;
     let errors = 0;
+    let message = "";
     element.addEventListener("ssr:island-error", (event) => {
       errors++;
+      if (event instanceof CustomEvent && event.detail.error instanceof Error) message = event.detail.error.message;
       event.preventDefault();
     });
     await bundle.load();
     expect(element.querySelector("[role=alert][data-ssr-error]")).not.toBeNull();
     expect(errors).toBe(1);
     expect(Reflect.get(globalThis, "pwned")).toBeUndefined();
+    // A missing comment names its likely cause; malformed text fails in JSON.parse or Seroval.
+    if (value === undefined) expect(message).toContain("props comment missing");
+    else expect(message).not.toContain("props comment missing");
   },
 );
+
+test("the props comment is found behind whitespace and another comment, but not behind an element", async () => {
+  const bundle = await build();
+  const props = JSON.stringify(toJSON({ label: "found" }));
+  document.body.innerHTML =
+    `<solid-island data-id="${bundle.id}">\n  <!-- formatted -->\n  ${propsComment(props)}<i>SSR</i></solid-island>` +
+    `<solid-island data-id="${bundle.id}"><i>SSR</i>${propsComment(props)}</solid-island>`;
+  const [found, late] = document.querySelectorAll("solid-island");
+  late!.addEventListener("ssr:island-error", (event) => event.preventDefault());
+  const received: unknown[] = [];
+  Reflect.set(globalThis, "receiveProps", (value: unknown) => received.push(value));
+  await bundle.load();
+  expect(received).toEqual([{ label: "found" }]);
+  expect(found!.textContent).toBe("Mounted");
+  // A comment after the server markup is the island's own content, not its props.
+  expect(late!.querySelector("[role=alert][data-ssr-error]")).not.toBeNull();
+});
