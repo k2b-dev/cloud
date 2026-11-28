@@ -33,11 +33,20 @@ export type AvatarProps = {
   style?: JSX.CSSProperties | string;
 };
 
+/** Letters of a script that joins its letters (Arabic and others). */
+const JOINING = /[\p{Script=Arabic}\p{Script=Syriac}\p{Script=Nko}\p{Script=Mongolian}\p{Script=Adlam}\p{Script=Mandaic}]/u;
+
 const initialsFor = (name: string): string => {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
+  // a word without a letter or digit ("·", "—", "&", an emoji) is no part of a name
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter((word) => /[\p{L}\p{N}]/u.test(word));
   if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0]?.slice(0, 2).toUpperCase() ?? "?";
-  return `${parts[0]?.[0] ?? ""}${parts.at(-1)?.[0] ?? ""}`.toUpperCase();
+  const initial = (word: string | undefined) => word?.match(/[\p{L}\p{N}]/u)?.[0] ?? "";
+  const signs = parts.length === 1 ? Array.from(parts[0] ?? "").slice(0, 2) : [initial(parts[0]), initial(parts.at(-1))];
+  // a zero-width non-joiner keeps two joining letters (Arabic and others) from joining: each shows its isolated form
+  return signs.join(signs.some((sign) => JOINING.test(sign)) ? "\u200C" : "").toUpperCase();
 };
 
 export function Avatar(props: AvatarProps): JSX.Element {

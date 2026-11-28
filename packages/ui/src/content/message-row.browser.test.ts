@@ -271,6 +271,8 @@ const open = async (
     readOnly?: boolean;
     /** Holds every image response until the returned page's `releaseMedia()` runs. */
     holdMedia?: boolean;
+    /** Leaves `k2-emoji` to load when a row first draws an emoji, as in the product. */
+    lateEmoji?: boolean;
   } = {},
 ): Promise<Page & { releaseMedia: () => void }> => {
   const width = options.width ?? 720;
@@ -307,7 +309,14 @@ const open = async (
   await page.route(`${assets}page`, (route) => route.fulfill({ contentType: "text/html; charset=utf-8", body: html }));
   await page.goto(`${assets}page`);
   // Fonts first: a font that arrives late changes every text's height, which is not the row's doing.
-  await page.evaluate(async () => {
+  await page.evaluate(async (lateEmoji) => {
+    // `k2-emoji` is the system's colour emoji in the font stack, limited to the pictographic blocks: a reaction's emoji
+    // uses it. Its sources are local, so a system without a colour emoji font fails it at once, and then it never loads.
+    await Promise.all(
+      Array.from(document.fonts)
+        .filter((face) => face.family === "k2-emoji" && !lateEmoji)
+        .map((face) => face.load().catch(() => face)),
+    );
     // Tabler 3.50 splits glyphs across unicode ranges; loading a space only warms the first face.
     await Promise.all(
       Array.from(document.fonts)
@@ -328,7 +337,7 @@ const open = async (
     (window as unknown as { preloaded: Set<FontFace> }).preloaded = new Set(
       Array.from(document.fonts).filter((face) => face.status === "loaded"),
     );
-  });
+  }, options.lateEmoji ?? false);
   await page.evaluate(
     ([locale, messages, rich, readOnly]) => {
       (window as unknown as { fixtureOptions: object }).fixtureOptions = { locale, messages, rich, readOnly };
@@ -353,13 +362,14 @@ const open = async (
   await page.addScriptTag({ content: script });
   await page.locator(`[data-key="${options.messages?.at(-1)?.id ?? (options.rich ? "m16" : "m10")}"] .k2b-message-row`).waitFor();
   // Layout requests every face the rows use, so one missing from the list above shows here, not as a late shift.
+  // With `lateEmoji` the emoji face may come later on purpose; the test that sets it measures what that moves.
   expect(
-    await page.evaluate(() => {
+    await page.evaluate((lateEmoji) => {
       const { preloaded } = window as unknown as { preloaded: Set<FontFace> };
       return Array.from(document.fonts)
-        .filter((face) => face.status !== "unloaded" && !preloaded.has(face))
+        .filter((face) => face.status !== "unloaded" && !preloaded.has(face) && !(lateEmoji && face.family === "k2-emoji"))
         .map((face) => `${face.style} ${face.weight} ${face.family}`);
-    }),
+    }, options.lateEmoji ?? false),
   ).toEqual([]);
   if (!options.touch) await page.mouse.move(width - 1, 1399);
   return Object.assign(page, { releaseMedia });
@@ -905,6 +915,43 @@ describe(`MessageRow in ${browserName}`, () => {
       expect(await rows()).toEqual(before);
       const heights = await page.evaluate(() => Object.fromEntries((window as unknown as { heights: Map<string, number[]> }).heights));
       for (const [key, sizes] of Object.entries(heights)) expect(new Set(sizes).size, `${key}: ${sizes.join(", ")}`).toBe(1);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  // In the product nothing preloads `k2-emoji`: it loads when the first row draws an emoji, after the rows stand. Rows
+  // without an emoji stand first; then a one-line message gets one. Its row is measured in the same task, before the
+  // face can arrive, and again once it has: the face arriving must change no row.
+  test("the emoji face arriving after the rows stand moves no row", async () => {
+    const page = await open({ width: 390, lateEmoji: true });
+    try {
+      const emoji = () =>
+        page.evaluate(() => Array.from(document.fonts, (face) => face).find((face) => face.family === "k2-emoji")?.status);
+      const rows = () =>
+        page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>(".k2b-virtual-feed__item"), (row) => {
+            const box = row.getBoundingClientRect();
+            return `${row.dataset.key} ${box.top.toFixed(2)} ${box.height.toFixed(2)}`;
+          }),
+        );
+      expect(await emoji()).toBe("unloaded");
+      const drawn = await page.evaluate(() => {
+        fixture.setTexts({ m7: "Looks good to me 👍" });
+        return {
+          status: Array.from(document.fonts).find((face) => face.family === "k2-emoji")?.status,
+          rows: Array.from(document.querySelectorAll<HTMLElement>(".k2b-virtual-feed__item"), (row) => {
+            const box = row.getBoundingClientRect();
+            return `${row.dataset.key} ${box.top.toFixed(2)} ${box.height.toFixed(2)}`;
+          }),
+        };
+      });
+      await page.waitForFunction(() => Array.from(document.fonts).some((face) => face.family === "k2-emoji" && face.status === "loaded"));
+      await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+      // the emoji asked for the face (it was not there yet when the row was laid out), and the face arrived
+      expect(drawn.status).not.toBe("loaded");
+      expect(await emoji()).toBe("loaded");
+      expect(await rows()).toEqual(drawn.rows);
     } finally {
       await page.close();
     }

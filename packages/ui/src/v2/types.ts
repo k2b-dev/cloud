@@ -52,11 +52,17 @@ export type Person = {
 };
 
 /** The initials of a name: the first letters of its first two words. */
-export const initialsOf = (person: Person): string =>
-  person.initials ??
-  person.name
+/** Letters of a script that joins its letters (Arabic and others): two initials of it stand apart, each isolated. */
+const JOINING = /[\p{Script=Arabic}\p{Script=Syriac}\p{Script=Nko}\p{Script=Mongolian}\p{Script=Adlam}\p{Script=Mandaic}]/u;
+
+export const initialsOf = (person: Person): string => {
+  if (person.initials !== undefined) return person.initials;
+  const initials = person.name
     .split(/\s+/)
-    .filter(Boolean)
+    // a word without a letter or digit ("·", "—", "&", an emoji) is no part of a name
+    .flatMap((word) => word.match(/[\p{L}\p{N}]/u) ?? [])
     .slice(0, 2)
-    .map((word) => word[0]!.toUpperCase())
-    .join("");
+    .map((sign) => sign.toUpperCase());
+  // a zero-width non-joiner keeps two joining letters from joining, so each shows its isolated form
+  return initials.join(initials.some((sign) => JOINING.test(sign)) ? "\u200C" : "");
+};

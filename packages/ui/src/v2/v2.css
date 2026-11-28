@@ -10,6 +10,15 @@
    small island. A form that cannot do that (`:nth-*`, `:*-of-type`, `:empty`) fails the build; only placeholders
    (`.k2-skel`) may use `:nth-*`. */
 
+/* The system's colour emoji under one name, only for the pictographic blocks (with their joiners, the emoji variation
+   selector and the tags of flags): placed right after the text font, it draws an emoji in colour, while a text
+   symbol the text font lacks (a check mark, a star, an arrow, a digit) keeps its text glyph from the fonts after it. */
+@font-face {
+  font-family: "k2-emoji";
+  src: local("Apple Color Emoji"), local("Segoe UI Emoji"), local("Noto Color Emoji");
+  unicode-range: U+1F000-1FAFF, U+200D, U+FE0F, U+E0020-E007F;
+}
+
 .k2-ui {
   /* neutral scale */
   --k2-n50: #fafafa;
@@ -120,8 +129,9 @@
   --k2-ink-mix: #000000;
 
   /* the four type roles and three weights */
-  --k2-font: "IBM Plex Sans", system-ui, sans-serif;
-  --k2-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* the colour emoji (`k2-emoji`, above) right after the text font: a later system font would draw an emoji plain */
+  --k2-font: "IBM Plex Sans", "k2-emoji", system-ui, sans-serif;
+  --k2-font-mono: "k2-emoji", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --k2-t-meta: 400 12px/16px var(--k2-font);
   --k2-t-row: 400 13px/20px var(--k2-font);
   --k2-t-body: 400 14px/20px var(--k2-font);
