@@ -361,7 +361,7 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
                           }
                           end={
                             already() ? undefined : (
-                              <Button variant="ghost" title={`${t().add}: ${entry.label}`} onClick={() => add(entry)}>
+                              <Button variant="ghost" label={`${t().add}: ${entry.label}`} onClick={() => add(entry)}>
                                 {t().add}
                               </Button>
                             )

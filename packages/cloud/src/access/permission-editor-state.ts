@@ -137,12 +137,17 @@ export function createPermissionEditorState(props: PermissionEditorProps, locale
   // The row whose change is saving: it shows the chosen level with a spinner, the other rows wait.
   const [updating, setUpdating] = createSignal<LevelChange | null>(null);
   const [revoking, setRevoking] = createSignal<string | null>(null);
+  // The call that runs, also before its row saves: a check that throws first (`beforeChange`, the confirmation)
+  // belongs to that row, so its failure speaks there with "Try again" as every other.
+  let updateCall: LevelChange | undefined;
+  let revokeCall: AccessEntry | undefined;
   const updatingRow = (accessId: string) => {
     const change = updating();
     return change?.accessId === accessId ? change : undefined;
   };
   const updateMut = mutation.create<LevelChange | null, LevelChange>({
     mutation: async (data) => {
+      updateCall = data;
       const entry = entries.find((entry) => entry.id === data.accessId);
       if (!entry || disposed || !canEdit()) return null;
       if (props.beforeChange && !(await props.beforeChange(entry, data.permission))) return null;
@@ -159,7 +164,7 @@ export function createPermissionEditorState(props: PermissionEditorProps, locale
       }
     },
     onError: (err) => {
-      const change = updating();
+      const change = updating() ?? updateCall;
       if (change) failure(change.accessId, err, () => startUpdate(change));
       else view.error(err.message);
     },
@@ -170,6 +175,7 @@ export function createPermissionEditorState(props: PermissionEditorProps, locale
 
   const revokeMut = mutation.create<string | null, AccessEntry>({
     mutation: async (entry) => {
+      revokeCall = entry;
       if (disposed || !canEdit()) return null;
       const displayName = labelOf(entry);
       const confirmed = props.beforeChange
@@ -188,7 +194,7 @@ export function createPermissionEditorState(props: PermissionEditorProps, locale
       view.focusAfterRemoval(index);
     },
     onError: (err) => {
-      const entry = entries.find((entry) => entry.id === revoking());
+      const entry = entries.find((entry) => entry.id === (revoking() ?? revokeCall?.id));
       if (entry) failure(entry.id, err, () => startRevoke(entry));
       else view.error(err.message);
     },

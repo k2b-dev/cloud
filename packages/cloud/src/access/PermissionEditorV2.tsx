@@ -1,6 +1,6 @@
 import { useLocale } from "@k2b/ui";
 import { Button, confirm, Empty, Failed, List, Loading, Menu, Notice, Popover, Row, Text } from "@k2b/ui/v2";
-import { For, type JSX, mergeProps, onCleanup, Show } from "solid-js";
+import { createSignal, For, type JSX, mergeProps, onCleanup, Show } from "solid-js";
 import type { AccessEntry } from "../contracts/shared";
 import { accessDialogMessages } from "./access-dialog-messages";
 import { createGroupCoverage, type GroupCoverage } from "./group-coverage";
@@ -101,11 +101,13 @@ export function PermissionEditorV2(props: PermissionEditorProps) {
   const locale = useLocale();
   // k2b-ui gap: Row keeps no focus when its own action leaves; after a removal the focus goes to the next row's Remove.
   const anchors = new Set<HTMLElement>();
+  const [loose, setLoose] = createSignal<string>();
   // v2 has one look: saves and failures always speak in their own row (the v1 `expanded` behaviour).
   const state = createPermissionEditorState(mergeProps(props, { expanded: true }), locale, {
     confirm: (question) => confirm({ title: question.title, description: question.body, confirm: state.t().removeAccess }),
-    // v2 is `expanded`: every failure speaks in its own row, with its message and "Try again"; the state never calls this
-    error: () => {},
+    // v2 is `expanded`: a failure speaks in its own row, with its message and "Try again"; one without a row left (the
+    // entry went meanwhile) says so above the list
+    error: setLoose,
     focusAdd: () => {},
     focusAfterRemoval: (index) =>
       queueMicrotask(() => {
@@ -244,6 +246,7 @@ export function PermissionEditorV2(props: PermissionEditorProps) {
 
   return (
     <>
+      <Show when={loose()}>{(message) => <Notice tone="bad">{message()}</Notice>}</Show>
       <Show when={state.feedback.add}>
         {(failure) => (
           <Notice tone="bad" actions={failure().retry ? [{ label: t().retry, onClick: () => failure().retry?.() }] : undefined}>
