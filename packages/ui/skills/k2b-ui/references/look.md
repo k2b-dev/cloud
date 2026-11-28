@@ -120,8 +120,9 @@ From the one app colour come four tones:
 Rows of another app on your page carry that app's colour, not yours.
 
 A page about one thing with a colour of its own (a place's visitor page)
-speaks in that colour: `Workspace accent` takes it from data, and the same
-tones follow from it, readable by computation (see `primitives.md`).
+speaks in that colour: `Workspace accent={pageAccent(color)}` takes it from
+data, and the same tones follow from it, readable by computation (see
+`primitives.md`).
 
 ### 3. Every list shows the shape of its data
 

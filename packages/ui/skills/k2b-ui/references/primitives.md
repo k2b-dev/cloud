@@ -30,8 +30,10 @@ The working surface of an app: one per screen.
   end, so the head lets it go on the phone (one primary per page).
 - children: a `Pane` or a `Pane.Split`, written as JSX inside the Workspace
   (a pane made before it, kept in a variable, is not counted).
-- `accent`: the page's own colour from data (`#rrggbb` or `#rgb`), such as
-  the colour a place chose for its visitor page. It replaces the app's
+- `accent={pageAccent(color)}`: the page's own colour from data (`#rrggbb`
+  or `#rgb`), such as the colour a place chose for its visitor page;
+  `pageAccent` is a part of its own, so a page without an accent loads none
+  of its contrast work. It replaces the app's
   colour inside: the primary action, the open row's tint, `Text` and `Band`
   `tone="app"`, and `RangeBar`s without `stops` (quiet tone, the open row's
   bar in the ink). The tones are computed where the colour arrives, on the

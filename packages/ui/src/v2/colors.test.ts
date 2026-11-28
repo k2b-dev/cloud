@@ -5,7 +5,8 @@ import { resolve } from "node:path";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
-import { accentStyle, appTint, colorStyle, contrast, safeColor, selectedTint } from "./colors";
+import { accentStyle, pageAccent } from "./accent";
+import { appTint, colorStyle, contrast, safeColor, selectedTint } from "./colors";
 
 // Data colours reach a style only when they are colours, and their foregrounds stay readable whatever the colour is.
 const root = mkdtempSync(resolve(tmpdir(), "k2-v2-colors-"));
@@ -258,7 +259,8 @@ describe("a page's accent", () => {
   });
 
   test("the server sends the workspace with its accent, so the first paint is final; a value that is no colour sends none", () => {
-    const page = (accent: string) => html(Workspace, { accent, children: createComponent(Pane, { label: "Seite", children: "" }) });
+    const page = (accent: string) =>
+      html(Workspace, { accent: pageAccent(accent), children: createComponent(Pane, { label: "Seite", children: "" }) });
     const markup = page("#c2410c");
     expect(markup).toContain("data-k2-accent");
     expect(markup).toContain("--k2-app:#c2410c");

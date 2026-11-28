@@ -12,6 +12,7 @@
 
 // The page's language, as in the rest of @k2b/ui, without the v1 entry: a v2 island imports it from here.
 export { useLocale } from "../intl/locale";
+export { type PageAccent, pageAccent } from "./accent";
 // The bare address of a display form such as `"Berg, Anna" <anna@example.org>`, as an address field reads it.
 export { addressOf } from "./addresses";
 // News for assistive technology that the page shows nowhere as it happens (a run that changed its state).
