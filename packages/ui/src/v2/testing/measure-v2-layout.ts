@@ -468,6 +468,8 @@ function measureInPage(options: InPage): DomResult {
       const style = getComputedStyle(element);
       const color = style.backgroundColor;
       if (clear(color) || color === fillBelow(element) || control(element) || Number.parseFloat(style.borderTopLeftRadius) > 0) continue;
+      // a tinted row in a section's own column (B, or at the reading measure) ends with that column
+      if (besideHead(element)) continue;
       let box = element.getBoundingClientRect();
       // A table row is tinted cell by cell (a sticky cell must be opaque), so a tinted row is measured as the band of
       // all its cells, once; a single tinted cell (an error, the cell under edit) is a state of that cell, no band.
