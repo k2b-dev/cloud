@@ -14,6 +14,7 @@ import {
   assertPublicAttachmentDownloadAccess,
   claimPublicAttachmentDownload,
   createPublicAttachmentLink,
+  getPublicAttachmentLinkPresentation,
   hashAttachmentLinkToken,
   inspectPublicAttachmentDownload,
   listPublicAttachmentLinks,
@@ -403,16 +404,18 @@ suite("public attachment links", () => {
       INSERT INTO mail.attachments (short_id, message_id, part_id, filename, content_type, disposition, size_bytes, blob_id)
       VALUES (${newShortId()}, ${message!.id}::uuid, ${part!.id}::uuid, 'plan.txt', 'text/plain', 'attachment', ${bytes.byteLength}, ${own.id}::uuid)
       RETURNING id`;
-    const link = () =>
+    const link = (input: { password?: string } = {}) =>
       createPublicAttachmentLink({
         context: adminContext,
         mailboxId,
         sourceKind: "message",
         sourceId: message!.id,
         attachmentId: attachment!.id,
-        input: {},
+        input,
       });
     const created = await link();
+    const guarded = await link({ password: "open sesame" });
+    if (!guarded.ok) throw new Error(guarded.error.message);
     if (!created.ok) throw new Error(created.error.message);
     const publicToken = created.data.url.split("/").at(-1)!;
     const grant = await unlockPublicAttachmentLink(publicToken);
@@ -436,6 +439,41 @@ suite("public attachment links", () => {
       // between the first and the last chunk only the link is checked; before the last one the rule refuses it
       await assertPublicAttachmentDownloadAccess(open.data.linkId, grant.data.grantToken, false);
       await expect(assertPublicAttachmentDownloadAccess(open.data.linkId, grant.data.grantToken, true)).rejects.toThrow();
+      // every public step answers exactly as for a link that does not exist: 404, the same body, no cookie, no grant
+      const gone = await publicAttachmentRoutes.request(`/attachments/${"x".repeat(publicToken.length)}`, {
+        headers: { "X-Forwarded-For": uniqueCallerAddress() },
+      });
+      const goneBody = await gone.text();
+      expect(gone.status).toBe(404);
+      const guardedPath = `/attachments/${guarded.data.url.split("/").at(-1)!}`;
+      const answers = [
+        await publicAttachmentRoutes.request(`/attachments/${publicToken}`, { headers: { "X-Forwarded-For": uniqueCallerAddress() } }),
+        await publicAttachmentRoutes.request(`/attachments/${publicToken}`, {
+          headers: { Range: "bytes=999999-", "X-Forwarded-For": uniqueCallerAddress() },
+        }),
+        await publicAttachmentRoutes.request(guardedPath, { headers: { "X-Forwarded-For": uniqueCallerAddress() } }),
+        await publicAttachmentRoutes.request(guardedPath, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Forwarded-For": uniqueCallerAddress() },
+          body: new URLSearchParams({ password: "open sesame" }),
+        }),
+      ];
+      for (const answer of answers) {
+        expect({ status: answer.status, cookie: answer.headers.get("set-cookie"), range: answer.headers.get("content-range") }).toEqual({
+          status: 404,
+          cookie: null,
+          range: null,
+        });
+        expect(await answer.text()).toBe(goneBody);
+      }
+      expect(await getPublicAttachmentLinkPresentation(guarded.data.url.split("/").at(-1)!)).toMatchObject({
+        ok: false,
+        error: { status: 404 },
+      });
+      expect(await unlockPublicAttachmentLink(guarded.data.url.split("/").at(-1)!, "open sesame")).toMatchObject({ ok: false });
+      const [grants] = await sql<{ count: number }[]>`
+        SELECT COUNT(*)::int AS count FROM mail.attachment_link_grants WHERE link_id = ${guarded.data.link.id}::uuid`;
+      expect(grants?.count).toBe(0);
     } finally {
       await deletePolicy(adminContext, policy.data.id);
     }

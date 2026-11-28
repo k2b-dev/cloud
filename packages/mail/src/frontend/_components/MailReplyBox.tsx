@@ -37,6 +37,7 @@ import {
 } from "./mail-reply-box";
 import { mailReplyBoxMessages } from "./mail-reply-box-messages";
 import type { MailReplyFrame } from "./mail-reply-frame";
+import { forwardLeavesAttachmentsOut } from "./mail-security-finding";
 
 type ComposerModule = typeof import("./MailComposer");
 type ComposerParts = { Composer: ComposerModule["default"]; signatures: MailComposerSignatures };
@@ -242,6 +243,7 @@ export default function MailReplyBox(props: {
   ): Promise<MailDraftSeed> => {
     const senderIdentityId = verifiedIdentity(message);
     if (!senderIdentityId) throw new NoVerifiedSender();
+    const leavesAttachmentsOut = forwardLeavesAttachmentsOut(intent, message);
     const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post({
       param: { mailboxId: props.mailboxId },
       json: {
@@ -261,7 +263,7 @@ export default function MailReplyBox(props: {
             // with a quoted selection carries that instead.
             quoteSource: intent === "forward" || quoted ? null : { locale: locale(), timeZone: props.dateConfig.timeZone ?? "UTC" },
             sourceMessageId: message.id,
-            includeSourceAttachments: intent === "forward" && message.attachments.length > 0,
+            includeSourceAttachments: intent === "forward" && message.attachments.length > 0 && !leavesAttachmentsOut,
           },
         },
       },
@@ -789,8 +791,16 @@ export default function MailReplyBox(props: {
     </Dropdown.Root>
   );
 
+  // A forward of a message whose links a policy turns off goes without its attachments: one line in the box says so.
+  const attachmentsLeftOut = () => forwardLeavesAttachmentsOut(mailMode(), sourceMessage());
   const Banner = () => (
     <>
+      <Show when={attachmentsLeftOut()}>
+        <div class="mail-reply-box-line" role="status" data-mail-reply-attachments-left-out>
+          <i class="ti ti-paperclip" aria-hidden="true" />
+          <span class="min-w-0 flex-1">{t().attachmentsLeftOut}</span>
+        </div>
+      </Show>
       <Show when={consolidated() > 0}>
         <div class="mail-reply-box-line" role="status" data-mail-reply-consolidated>
           <i class="ti ti-info-circle" aria-hidden="true" />

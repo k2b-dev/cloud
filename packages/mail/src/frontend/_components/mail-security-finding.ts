@@ -16,3 +16,12 @@ export const mailSecurityFindingPresentation = (finding: MailSecurityFinding, t:
   }
   return finding;
 };
+
+/**
+ * Whether a forward of this message goes without its attachments: a policy turns off the message's links, and the
+ * server leaves its attachments out of every copy, so the reply box says so once.
+ */
+export const forwardLeavesAttachmentsOut = (
+  mode: string,
+  message: { attachments: readonly unknown[]; security?: { linksDisabled: boolean } | null } | null | undefined,
+): boolean => mode === "forward" && (message?.attachments.length ?? 0) > 0 && Boolean(message?.security?.linksDisabled);

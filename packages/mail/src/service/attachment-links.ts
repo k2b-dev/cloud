@@ -498,7 +498,11 @@ const publicLinkByToken = async (publicToken: string): Promise<DbAttachmentLink 
       AND (link.max_downloads IS NULL OR link.download_count < link.max_downloads)
       AND ${linkSourceAlive()}
   `;
-  return row ?? null;
+  if (!row) return null;
+  // A link whose message a policy has closed is a link that is gone, for every public step: the page, the unlock, the
+  // password form and a range request answer as for a deleted link, with no cookie and no grant.
+  const blocked = await linkSourceBlocked({ kind: row.source_kind, id: row.source_id, mailboxId: row.mailbox_id });
+  return blocked.ok && !blocked.data ? row : null;
 };
 
 export const getPublicAttachmentLinkPresentation = async (
