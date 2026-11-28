@@ -300,6 +300,22 @@ const box = async (page: Page, selector: string): Promise<Box> => {
   if (!found) throw new Error(`${selector} is not on screen`);
   return { x: Math.round(found.x), y: Math.round(found.y), width: Math.round(found.width), height: Math.round(found.height) };
 };
+/**
+ * The filter bar's lines: one row, or, where the bar is narrower than its statements' 240 px and its end (the count
+ * and the display), the statements in one row and the end on a line of its own under them (the bar's contract since
+ * #4223); never the end under the statements while the bar has room for both in one row.
+ */
+const filterBarLines = (page: Page) =>
+  page.evaluate(() => {
+    const bar = document.querySelector('[data-k2-part="FilterBar"]')!.getBoundingClientRect();
+    const flow = document.querySelector('[data-k2-part="FilterBar"] .k2-fbar-flow')!.getBoundingClientRect();
+    const tail = document.querySelector('[data-k2-part="FilterBar"] .k2-fbar-tail')?.getBoundingClientRect();
+    const endBelow = tail !== undefined && tail.height > 0 && tail.top >= flow.bottom;
+    return {
+      oneRowOrEndBelow: bar.height <= 56 || (endBelow && flow.height <= 36),
+      endBesideWhenRoom: !endBelow || bar.width < 240 + tail!.width + 16,
+    };
+  });
 const day = (key: string) => `[data-calendar-day-key="${key}"]`;
 /** A point in the empty lower part of a day cell, below its bars. */
 const emptyPoint = async (page: Page, key: string) => {
@@ -645,7 +661,7 @@ describe(`Spaces month view in ${browserName}`, () => {
     }
   }, 60_000);
 
-  test("desktop: at every width the filter bar keeps one row inside the calendar's header, and neither overflows", async () => {
+  test("desktop: at every width the filter bar keeps one row, or its end on a line of its own where it is narrow, inside the calendar's header, and neither overflows", async () => {
     const page = await open(desktop);
     try {
       for (const width of [1200, 960, 800]) {
@@ -655,11 +671,11 @@ describe(`Spaces month view in ${browserName}`, () => {
         const header = await box(page, ".k2b-calendar-header");
         expect({
           width,
-          oneRow: bar.height <= 56,
+          ...(await filterBarLines(page)),
           inside: bar.y >= header.y && bar.y + bar.height <= header.y + header.height,
           overflow: await overflowing(page),
           sideways: await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth),
-        }).toEqual({ width, oneRow: true, inside: true, overflow: [], sideways: 0 });
+        }).toEqual({ width, oneRowOrEndBelow: true, endBesideWhenRoom: true, inside: true, overflow: [], sideways: 0 });
       }
     } finally {
       await page.context().close();
@@ -1318,10 +1334,10 @@ describe(`Spaces month view in ${browserName}`, () => {
         const header = await box(page, ".k2b-calendar-header");
         expect({
           name,
-          oneRow: bar.height <= 56,
+          ...(await filterBarLines(page)),
           inside: bar.y >= header.y && bar.y + bar.height <= header.y + header.height,
           sideways: await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth),
-        }).toEqual({ name, oneRow: true, inside: true, sideways: 0 });
+        }).toEqual({ name, oneRowOrEndBelow: true, endBesideWhenRoom: true, inside: true, sideways: 0 });
         await shoot(page, name);
         if (!href.includes("cv=month")) continue;
         // The torn end of the setup bar, where it leaves its first week row.

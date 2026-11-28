@@ -1667,7 +1667,17 @@ describePart("head", "Spaces Kanban board in a browser", () => {
       const page = await open(phone, { locale: "en", canWrite });
       try {
         await page.getByRole("button", { name: "Space menu" }).tap();
-        await page.getByRole("menuitem", { name: /Keyboard shortcuts/ }).tap();
+        // On the phone the menu slides up as a sheet; it takes a tap once it stands, as the filter sheet does.
+        const shortcuts = page.getByRole("menuitem", { name: /Keyboard shortcuts/ });
+        await shortcuts.waitFor();
+        let top = Number.NaN;
+        for (;;) {
+          const now = (await shortcuts.boundingBox())?.y ?? Number.NaN;
+          if (now === top) break;
+          top = now;
+          await page.waitForTimeout(100);
+        }
+        await shortcuts.tap();
         const dialog = page.getByRole("dialog", { name: "Keyboard shortcuts" });
         await dialog.waitFor();
         expect(await dialog.textContent()).toContain("Open the card");

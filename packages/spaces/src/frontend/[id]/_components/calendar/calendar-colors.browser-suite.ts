@@ -496,8 +496,8 @@ describe(`Spaces calendar colors in ${browserName}`, () => {
         ["Year", "false", "year"],
       ]);
       expect(await page.locator('[data-space-item-id="Item03"]').count()).toBe(1);
-      // The page's live region for announcements is always there and says nothing; no other alert shows.
-      expect(await page.locator("[role='alert']:not([data-ui-sdk-announcer])").allTextContents()).toEqual([]);
+      // The page's live regions for announcements (the SDK's and v2's own) are always there and say nothing; no other alert shows.
+      expect(await page.locator("[role='alert']:not([data-ui-sdk-announcer], [data-k2-news])").allTextContents()).toEqual([]);
       expect(viewRequests).toEqual([]);
     } finally {
       await page.context().close();
