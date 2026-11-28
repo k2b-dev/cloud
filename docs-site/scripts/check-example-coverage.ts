@@ -24,7 +24,7 @@ export const recipeFixtures: RecipeFixture[] = [
   },
   {
     page: "identity/authorization.md",
-    fixtures: ["identity-access.ts"],
+    fixtures: ["identity-access.ts", "identity-principal-picker-v2.tsx"],
   },
   {
     page: "identity/resource-api-keys.md",

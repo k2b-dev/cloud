@@ -45,6 +45,22 @@ export type ListQueryOption<V extends string = string> = {
   readonly label: string;
 };
 
+/**
+ * The face of a lookup value, as data: a person (shown as `Avatar`) or the mark of a thing (shown as `Mark`), with the
+ * fields of `Person` and `MarkProps`. Written out here, because server routes load this module without Solid or a DOM.
+ */
+export type LookupFace =
+  | { readonly avatar: { readonly name: string; readonly initials?: string; readonly color?: string; readonly image?: string } }
+  | {
+      readonly mark: {
+        readonly icon: string;
+        readonly color?: string;
+        readonly image?: string;
+        readonly kind?: string;
+        readonly label?: string;
+      };
+    };
+
 /** One value a lookup loaded or resolved. */
 export type LookupItem = {
   /** Stable ID; it appears in the URL. Never contains a comma. */
@@ -53,6 +69,10 @@ export type LookupItem = {
   readonly label: string;
   /** Optional second line, such as an email address or a number. */
   readonly meta?: string;
+  /** Its face before the name, such as a person in a lookup of people: an avatar or a mark (`Avatar`, `Mark`). */
+  readonly face?: LookupFace;
+  /** It cannot be chosen, and this says why, such as "hat schon Bearbeiten": it stays in the list, dimmed. */
+  readonly unavailable?: string;
 };
 
 /** What `load` of a lookup returns for one search. */

@@ -68,7 +68,7 @@ The sort and the grouping in words, in `StatusRow filters`.
 
 ### Lookup
 
-Values that load while the person types, in a filter (the bar opens it) or in a form.
+Values that load while the person types, in a filter (the bar opens it) or in a form. An item may show its face (a person's avatar or a thing's mark) before its name, and an item that cannot be chosen stays in the list, dimmed, with the reason as its line (`unavailable`).
 
 <Props of="Lookup" />
 

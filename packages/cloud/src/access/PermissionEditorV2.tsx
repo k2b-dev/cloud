@@ -1,11 +1,12 @@
 import { useLocale } from "@k2b/ui";
-import { Button, confirm, Empty, Failed, List, Loading, Menu, Notice, Popover, Row, Text } from "@k2b/ui/v2";
+import { Button, confirm, Empty, Failed, Inline, List, Loading, Menu, Notice, Popover, Row, Select, Text } from "@k2b/ui/v2";
 import { createSignal, For, type JSX, mergeProps, onCleanup, Show } from "solid-js";
 import type { AccessEntry } from "../contracts/shared";
 import { accessDialogMessages } from "./access-dialog-messages";
 import { createGroupCoverage, type GroupCoverage } from "./group-coverage";
 import { accessMessages } from "./messages";
 import type { PermissionEditorProps } from "./PermissionEditor";
+import { PrincipalPickerV2 } from "./PrincipalPickerV2";
 import { createPermissionEditorState } from "./permission-editor-state";
 import { levelKey, type ResolvedLevel } from "./permission-levels";
 import { principalFace } from "./principal-face";
@@ -95,20 +96,24 @@ const createPermissionWords = (locale: string) => accessMessages.resolve([locale
 /**
  * The permission editor on v2: who has access, each a row with its face, kind, level menu and Remove; changes apply at
  * once, a failure says so in its row with "Try again", and the last manager keeps Manage. The same state and rules as
- * the v1 `PermissionEditor` (`createPermissionEditorState`). Adding someone comes with the single-choice `Lookup`.
+ * the v1 `PermissionEditor` (`createPermissionEditorState`). Adding: pick one principal (`PrincipalPicker` of v2), its
+ * level, "Hinzufügen"; the grant applies at once, as a change does.
  */
 export function PermissionEditorV2(props: PermissionEditorProps) {
   const locale = useLocale();
   // k2b-ui gap: Row keeps no focus when its own action leaves; after a removal the focus goes to the next row's Remove.
   const anchors = new Set<HTMLElement>();
   const [loose, setLoose] = createSignal<string>();
+  // k2b-ui gap: a Popover gives no handle on its button; after an add the focus goes to the picker's button through
+  // a mark in the add bar, so the next one is added from where the last one was.
+  let addMark: HTMLElement | undefined;
   // v2 has one look: saves and failures always speak in their own row (the v1 `expanded` behaviour).
   const state = createPermissionEditorState(mergeProps(props, { expanded: true }), locale, {
     confirm: (question) => confirm({ title: question.title, description: question.body, confirm: state.t().removeAccess }),
     // v2 is `expanded`: a failure speaks in its own row, with its message and "Try again"; one without a row left (the
     // entry went meanwhile) says so above the list
     error: setLoose,
-    focusAdd: () => {},
+    focusAdd: () => queueMicrotask(() => addMark?.parentElement?.querySelector<HTMLElement>("button:not(:disabled)")?.focus()),
     focusAfterRemoval: (index) =>
       queueMicrotask(() => {
         // The removed row took its own anchor along: find the list through a row that is still there.
@@ -244,8 +249,73 @@ export function PermissionEditorV2(props: PermissionEditorProps) {
     );
   };
 
+  // The one principal being added, with its level, until "Hinzufügen" grants it.
+  const draftLevels = () => {
+    const draft = state.draft();
+    return draft ? state.allowed(draft.principal, draft.display.serviceAccountKind) : [];
+  };
+  const addBar = () => (
+    <Inline>
+      <span
+        hidden
+        ref={(element) => {
+          addMark = element;
+        }}
+      />
+      <PrincipalPickerV2
+        single
+        label={props.placeholder ?? t().addBasic}
+        value={state.draft() ? [state.draft()!] : []}
+        onChange={(picked) => {
+          if (!state.canStart()) return;
+          const next = picked[0];
+          state.setDraft(next);
+          if (next) state.setDraftLevel(state.allowed(next.principal, next.display.serviceAccountKind)[0]?.key ?? "read");
+        }}
+        target={props.target}
+        existing={state.entries.map((entry) => entry.principal)}
+        allowPublic={state.allowPublic()}
+        allowAuthenticated={state.allowAuthenticated()}
+        allowServiceAccounts={props.allowServiceAccounts}
+        serviceAccountKinds={props.serviceAccountKinds}
+        serviceAccountStatus={props.serviceAccountStatus ?? "active"}
+        signedIn={props.signedIn}
+        disabled={state.saving()}
+      />
+      <Show when={state.draft()}>
+        {(draft) => (
+          <>
+            <Select
+              label={t().newPermission}
+              value={state.draftLevel()}
+              disabled={state.saving()}
+              options={draftLevels().map((option) => ({ value: option.key, label: option.label }))}
+              onChange={(value) => {
+                if (state.canStart()) state.setDraftLevel(value);
+              }}
+            />
+            <Button
+              variant="primary"
+              busy={state.grantPending()}
+              disabled={state.saving()}
+              onClick={() =>
+                void state.grant(
+                  draft().principal,
+                  draft().display,
+                  draftLevels().find((option) => option.key === state.draftLevel()),
+                )
+              }
+            >
+              {t().add}
+            </Button>
+          </>
+        )}
+      </Show>
+    </Inline>
+  );
   return (
     <>
+      <Show when={state.canEdit()}>{addBar()}</Show>
       <Show when={loose()}>{(message) => <Notice tone="bad">{message()}</Notice>}</Show>
       <Show when={state.feedback.add}>
         {(failure) => (

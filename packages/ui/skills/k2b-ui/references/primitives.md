@@ -721,7 +721,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   words, for `StatusRow filters`.
 - `Lookup`: `label`, `value`, `onChange`, `load`, `resolve?`, `known?`,
   `limit?`, `minChars?`; values that load while the person types, in a
-  filter (the bar opens it) or in a form.
+  filter (the bar opens it) or in a form. An item may carry its `face`
+  (`{ avatar }` or `{ mark }`), then it is a row of two lines; with
+  `unavailable` it stays in the list, dimmed, with the reason as its line.
 - `RecordHead`: `name`, `avatar`, `kinds`, `ids: { label?, value, icon?,
   copy? }[]`. Put it in the head `Bar start`. When the head has no room, the
   ids give way first (always on the phone), then the name is cut with "…";
@@ -782,7 +784,8 @@ name wraps in a small table and ends with "…" in one with column widths.
   `title`, `content` (primitives such as `Check`, `Facts`, `Text`). Escape
   and a press outside close it. Like the menu's "…", a button without words
   stays in a head on the phone; there the panel is a sheet from the bottom,
-  which a swipe down also closes. With `tip` instead, a short hint on its one
+  which a swipe down also closes. `open` and `onOpenChange` let the caller
+  close it itself, such as after a pick. With `tip` instead, a short hint on its one
   child (a `Button`) after a moment on hover or focus.
 - `useToast()`: call it in the component, then
   `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.

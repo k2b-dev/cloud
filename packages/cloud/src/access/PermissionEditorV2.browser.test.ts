@@ -132,6 +132,114 @@ describe("the permission editor on v2", () => {
       }
     });
 
+  test("adding: pick one in the search, choose its level, Add grants it", async () => {
+    const { context, tab, errors } = await open(views[0]!);
+    try {
+      const editor = tab.getByRole("region", { name: "Who has access" });
+      await editor.getByRole("button", { name: /Add user or group/ }).click();
+      const panel = tab.getByRole("dialog", { name: /Add user or group/ });
+      await panel.getByRole("searchbox").fill("noah");
+      // each match with its face: a person's avatar
+      const noah = panel.getByRole("option", { name: /Noah Becker/ });
+      await noah.waitFor();
+      expect(await noah.locator('[data-k2-part="Avatar"]').count()).toBe(1);
+      await noah.click();
+      // a single pick closes the search; the field shows it, removable by its name
+      await panel.waitFor({ state: "hidden" });
+      await editor.getByRole("button", { name: "Remove Noah Becker" }).waitFor();
+      await editor.getByRole("button", { name: "Add", exact: true }).click();
+      await tab.waitForFunction(() => (window as unknown as { calls: { grant?: unknown }[] }).calls.some((call) => call.grant));
+      expect(((await calls(tab)) as { grant?: unknown; permission?: string }[]).find((call) => call.grant)).toEqual({
+        grant: { type: "user", userId: "10000000-0000-4000-8000-000000000021" },
+        permission: "read",
+      });
+      await row(tab, "Noah Becker").waitFor();
+      // the focus goes back to where the next one is added, never to the page (review of #4415)
+      await tab.waitForFunction(
+        () => document.activeElement?.tagName === "BUTTON" && document.activeElement.textContent?.includes("Add user or group") === true,
+        undefined,
+        { timeout: 1500 },
+      );
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("a failed add says so above the list and tries again", async () => {
+    const { context, tab } = await open(views[0]!, "?failgrant");
+    try {
+      const editor = tab.getByRole("region", { name: "Who has access" });
+      await editor.getByRole("button", { name: /Add user or group/ }).click();
+      const panel = tab.getByRole("dialog", { name: /Add user or group/ });
+      await panel.getByRole("searchbox").fill("noah");
+      await panel.getByRole("option", { name: /Noah Becker/ }).click();
+      await panel.waitFor({ state: "hidden" });
+      await editor.getByRole("button", { name: "Add", exact: true }).click();
+      await editor.getByText("The access could not be granted.").waitFor();
+      expect(await calls(tab)).toEqual([]);
+      await editor.getByRole("button", { name: "Try again" }).click();
+      await row(tab, "Noah Becker").waitFor();
+      expect(await calls(tab)).toEqual([{ grant: { type: "user", userId: "10000000-0000-4000-8000-000000000021" }, permission: "read" }]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  // review of #4415: a value the caller set after mount (a restored draft) was lost on the next pick
+  test("a picker keeps a value set after it mounted when the next one is picked", async () => {
+    const { context, tab } = await open(views[0]!, "?late");
+    try {
+      const chat = tab.getByRole("region", { name: "New chat" });
+      await chat.getByRole("button", { name: "Remove Ada Draft" }).waitFor();
+      await chat.getByRole("button", { name: /Add/ }).click();
+      const panel = tab.getByRole("dialog", { name: "People" });
+      await panel.getByRole("searchbox").fill("noah");
+      await panel.getByRole("option", { name: /Noah Becker/ }).click();
+      await tab.waitForFunction(() => (window as unknown as { picked: string[] }).picked.length === 2, undefined, { timeout: 1500 });
+      expect(await tab.evaluate(() => (window as unknown as { picked: string[] }).picked)).toEqual(["Ada Draft", "Noah Becker"]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  for (const view of [views[0]!, views[2]!])
+    test(`${view.name} px: a picker of several holds chips, offers service accounts, and works from the keyboard`, async () => {
+      const { context, tab, errors } = await open(view);
+      try {
+        const chat = tab.getByRole("region", { name: "New chat" });
+        const add = chat.getByRole("button", { name: /Add/ });
+        await add.focus();
+        await tab.keyboard.press("Enter");
+        const panel = tab.getByRole("dialog", { name: "People" });
+        await panel.waitFor();
+        // on the phone the search is a sheet from the bottom
+        expect(await panel.getAttribute("data-presentation")).toBe(view.width < 768 ? "sheet" : "popover");
+        const search = panel.getByRole("searchbox");
+        await search.fill("ne");
+        // service accounts by default, with their face
+        await panel.getByRole("option", { name: /Inventurbot/ }).waitFor();
+        // the keyboard: down into the list, Space picks, the next one too
+        await search.press("ArrowDown");
+        await tab.keyboard.press("Space");
+        await tab.keyboard.press("ArrowDown");
+        await tab.keyboard.press("Space");
+        await tab.waitForFunction(() => (window as unknown as { picked: string[] }).picked.length === 2);
+        await tab.keyboard.press("Escape");
+        await panel.waitFor({ state: "hidden" });
+        const picked = await tab.evaluate(() => (window as unknown as { picked: string[] }).picked);
+        // a chip per pick, each removable by its name
+        for (const name of picked) await chat.getByRole("button", { name: `Remove ${name}` }).waitFor();
+        await chat.getByRole("button", { name: `Remove ${picked[0]}` }).click();
+        await tab.waitForFunction(() => (window as unknown as { picked: string[] }).picked.length === 1);
+        await clean(tab);
+        if (shots) await tab.screenshot({ path: join(shots, `09-principal-picker-${view.name}.png`) });
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
+
   test("a level change applies at once and says it saved", async () => {
     const { context, tab } = await open(views[0]!);
     try {

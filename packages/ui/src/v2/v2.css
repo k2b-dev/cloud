@@ -7111,6 +7111,24 @@
   color: var(--k2-warn-ink);
   display: inline-flex;
 }
+/* an option with a face (a person, a group) is a row of two lines: the face, the name, a quiet line under it */
+.k2-ui .k2-opt[data-face] {
+  min-height: 44px;
+  padding-block: 4px;
+}
+.k2-ui .k2-opt[data-face] > .k2-opt-label {
+  display: flex;
+  flex-direction: column;
+}
+.k2-ui .k2-opt[data-face] > .k2-opt-label > .k2-opt-meta {
+  margin-left: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* an option that cannot be chosen stays in the list, dimmed, with the reason as its quiet line */
+.k2-ui .k2-opt:is([data-disabled], [aria-disabled="true"]) {
+  opacity: 0.6;
+}
 
 /* Lookup: a search over a list that loads. Loading, empty and failed keep the height of three rows (104 px), and the
    placeholders show only after 150 ms, so a fast answer never flashes and nothing jumps. */

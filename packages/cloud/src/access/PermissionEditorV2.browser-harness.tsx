@@ -1,14 +1,17 @@
 import { LocaleProvider } from "@k2b/ui";
 import { Bar, Pane, Section, Text, Workspace } from "@k2b/ui/v2";
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import type { AccessEntry } from "../contracts/shared";
-import { PermissionEditor } from "./v2";
+import { PermissionEditor, type PickedPrincipal, PrincipalPicker } from "./v2";
 
 /**
  * The v2 permission editor in a v2 settings pane, with invented people, a group and an agent. Changes are recorded
  * on `window.calls`; `?fail` lets the first level change fail, `?failrevoke` the first removal, `?guard` the first
  * check before a change (`beforeChange` throws before the row saves), `?readonly` shows it without the right to change,
- * `?worst` lists the worst case (long, unbreakable and non-Latin names, many rows).
+ * `?worst` lists the worst case (long, unbreakable and non-Latin names, many rows). Below it, a picker of several
+ * principals (`PrincipalPicker` of v2), as a new chat asks for its people: what it holds is on `window.picked`;
+ * `?late` gives it a value after it mounted (a draft restored), `?failgrant` lets the first grant fail.
  */
 const params = new URLSearchParams(location.search);
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -75,6 +78,22 @@ globalThis.fetch = Object.assign(
           kind: "user",
           user: { id: "10000000-0000-4000-8000-000000000022", displayName: "Lea Schmitt", uid: "lschmitt", mail: "lea@beispiel.de" },
         },
+        ...(url.searchParams.get("kinds")?.includes("service_account")
+          ? [
+              {
+                kind: "service_account",
+                serviceAccount: {
+                  id: "20000000-0000-4000-8000-000000000023",
+                  name: "Inventurbot",
+                  kind: "agent",
+                  appId: null,
+                  resourceType: null,
+                  resourceId: null,
+                  status: "active",
+                },
+              },
+            ]
+          : []),
       ],
       pagination: { page: 1, per_page: 20, total: 2, total_pages: 1, has_next: false },
     });
@@ -82,8 +101,17 @@ globalThis.fetch = Object.assign(
   { preconnect: originalFetch.preconnect },
 );
 
-const page = window as unknown as { calls: unknown[] };
+const page = window as unknown as { calls: unknown[]; picked: string[] };
 page.calls = [];
+page.picked = [];
+const [picked, setPicked] = createSignal<PickedPrincipal[]>([]);
+// a draft restored after the page is live: a principal no search of this page has found
+if (params.has("late"))
+  setTimeout(() => {
+    setPicked([{ principal: { type: "user", userId: "10000000-0000-4000-8000-000000000031" }, display: { displayName: "Ada Draft" } }]);
+    page.picked = ["Ada Draft"];
+  }, 50);
+let grantFailures = params.has("failgrant") ? 1 : 0;
 let failures = params.has("fail") ? 1 : 0;
 let revokeFailures = params.has("failrevoke") ? 1 : 0;
 let guardFailures = params.has("guard") ? 1 : 0;
@@ -98,7 +126,14 @@ render(
             <PermissionEditor
               initialEntries={entries}
               canEdit={!params.has("readonly")}
-              grantAccess={async (principal, permission) => ({ id: id(99), principal, permission, createdAt: "2026-11-26T00:00:00.000Z" })}
+              grantAccess={async (principal, permission) => {
+                if (grantFailures > 0) {
+                  grantFailures -= 1;
+                  throw new Error("The access could not be granted.");
+                }
+                page.calls.push({ grant: principal, permission });
+                return { id: id(99), principal, permission, createdAt: "2026-11-26T00:00:00.000Z" };
+              }}
               updateAccess={async (accessId, permission) => {
                 if (failures > 0) {
                   failures -= 1;
@@ -124,6 +159,17 @@ render(
                     }
                   : undefined
               }
+            />
+          </Section>
+          <Section icon="messages" title="New chat">
+            <PrincipalPicker
+              label="People"
+              value={picked()}
+              onChange={(next) => {
+                setPicked(next);
+                page.picked = next.map((entry) => entry.display.displayName);
+              }}
+              allowAuthenticated={false}
             />
           </Section>
         </Pane>

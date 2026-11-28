@@ -8,6 +8,11 @@ export { AccessSummaryV2 as AccessSummary } from "./AccessSummaryV2";
 export type { AccessSummaryProps } from "./access-summary";
 export type { PermissionEditorProps } from "./PermissionEditor";
 export { PermissionEditorV2 as PermissionEditor } from "./PermissionEditorV2";
+export {
+  type PickedPrincipal,
+  PrincipalPickerV2 as PrincipalPicker,
+  type PrincipalPickerV2Props as PrincipalPickerProps,
+} from "./PrincipalPickerV2";
 export type { ResourceApiKey, ResourceApiKeyPermissionOption, ResourceApiKeysProps } from "./ResourceApiKeys";
 export { ResourceApiKeysV2 as ResourceApiKeys } from "./ResourceApiKeysV2";
 
