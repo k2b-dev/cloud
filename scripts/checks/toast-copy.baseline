@@ -109,9 +109,6 @@ packages/contacts/src/frontend/_components/ContactNotesSection.tsx | untitled | 
 packages/contacts/src/frontend/_components/ContactsBulkActions.tsx | untitled | error instanceof Error ? error.message : t().couldNotPrepareBulkAction
 packages/contacts/src/frontend/_components/ContactsBulkActions.tsx | untitled | error.message
 packages/contacts/src/frontend/_components/ContactsLiveEvents.island.tsx | untitled | t().liveUpdatesStopped
-packages/core/src/pages/admin/ai/AiBudgetToggle.island.tsx | untitled | failure instanceof Error ? failure.message : t().saveFailed
-packages/core/src/pages/admin/settings/_components/AiAppSkillIssueActions.island.tsx | untitled | action === "adopt" ? t().appSkillAdopted : t().appSkillInstalled
-packages/core/src/pages/admin/settings/_components/AiSkillAdminActions.island.tsx | untitled | t().skillResetDone
 packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | untitled | error instanceof Error ? error.message : t().enrichmentFailed
 packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | untitled | summary ? t().enrichmentSummary(summary) : t().enrichmentDone
 packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | untitled | t().freeIpaReachable

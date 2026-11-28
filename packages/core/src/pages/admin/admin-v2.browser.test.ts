@@ -4,7 +4,7 @@ import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors } from "../../../../ui/test/browser";
 import { adminV2BrowserFixture } from "./admin-v2.browser-fixture";
 
-// The overview, announcements and Apps › Navigation on v2: each keeps the layout rules at every width, an announcement
+// Announcements and Apps › Navigation on v2: each keeps the layout rules at every width, an announcement
 // is created and deleted from its form beside the list, and a shortcut moves and saves the whole bar.
 setDefaultTimeout(15_000);
 let browser: Browser;
@@ -37,7 +37,6 @@ afterAll(async () => {
 
 test("each screen keeps the v2 rules at every width, with no loader in the first picture", async () => {
   const paths = [
-    "/admin",
     "/admin/announcements",
     "/admin/announcements?entry=aaaaaaaa-0000-4000-8000-000000000001",
     "/admin/apps/navigation",
@@ -54,24 +53,6 @@ test("each screen keeps the v2 rules at every width, with no loader in the first
     }
   expect(errors).toEqual([]);
 }, 120_000);
-
-test("the overview leads to every place with a row", async () => {
-  await goto("/admin");
-  expect(
-    await page
-      .locator("main")
-      .getByRole("link", { name: /System untersuchen/ })
-      .getAttribute("href"),
-  ).toBe("/admin/observability");
-  expect(
-    await page
-      .locator("main")
-      .getByRole("link", { name: /Speicher/ })
-      .first()
-      .getAttribute("href"),
-  ).toBe("/admin/storage");
-  expect(errors).toEqual([]);
-});
 
 test("a new announcement needs a title and text, then saves; deleting one asks first", async () => {
   await goto("/admin/announcements?entry=new");

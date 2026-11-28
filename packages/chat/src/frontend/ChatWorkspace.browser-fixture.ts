@@ -418,6 +418,13 @@ export const startChatHarness = async (
         }),
       ),
   });
+  /** As the server: a place's General stream brings its four most recent discussions, its cards, not the directory. */
+  const generalCards = (chat: Chat, view: string) => {
+    const list = threadList(chat);
+    if (chat.conversation.kind !== "system" || view !== "general") return list;
+    const recent = [...list.items].sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || a.id.localeCompare(b.id));
+    return { ...list, items: recent.slice(0, 4), nextCursor: recent.length > 4 ? recent[3]!.id : null };
+  };
   const project = (chat: Chat) => {
     const unread = [null, ...chat.threads.map((thread) => thread.id)].reduce((sum, thread) => sum + unreadIn(chat, thread), 0);
     chat.conversation = {
@@ -785,7 +792,7 @@ export const startChatHarness = async (
     return {
       cursor: `c.${cursor}`,
       conversation: chat.conversation,
-      threads: threadList(chat),
+      threads: generalCards(chat, view),
       page: {
         items,
         seqHead: chat.messages.length,

@@ -1,147 +1,168 @@
 import { coreClient } from "@k2b/cloud/clients/core";
 import type { AiQuotaConfig } from "@k2b/cloud/shared";
-import { Button, ButtonLink, NoticeCard, NumberInput, Placeholder, Switch, TextInput, useLocale } from "@k2b/ui";
+import { Check, Facts, Field, Input, Notice, Section, Text, useLocale } from "@k2b/ui/v2";
 import { createSignal, onMount, Show } from "solid-js";
+import { aiAreaMessages } from "../../ai/messages";
 
+export type BackgroundCostState = { used: number; reserved: number; unknown: number; stoppedAt: string | null };
+type State = BackgroundCostState;
+
+const numberText = (value: number | null | undefined) => (value === null || value === undefined ? "" : String(value));
+
+/**
+ * The background cost brake as settings: the accounting unit, the brake with its warning and stop thresholds, and the
+ * spending of the last 24 hours. A brake that stopped background AI is released here, once nothing unsaved waits.
+ * The server reads the spending with the page (`initial`), so the first picture shows it; only when that read failed
+ * does the browser ask again, and "Aktualisieren" reads it anew.
+ */
 export default function AiBackgroundBudget(props: {
   config: AiQuotaConfig;
   change: (config: AiQuotaConfig) => void;
   disabled: boolean;
   canRelease: boolean;
+  /** The spending of the last 24 hours as the server read it; null when that read failed. */
+  initial?: State | null;
 }) {
   const locale = useLocale();
-  const de = () => locale().startsWith("de");
+  const t = () => aiAreaMessages.resolve([locale()]).t;
   const api = coreClient.admin.core["ai-quotas"];
   const budget = () => props.config.background ?? { enabled: false, warnAt: null, stopAt: 10 };
+  const unit = () => props.config.unit ?? "EUR";
   const update = (patch: Partial<NonNullable<AiQuotaConfig["background"]>>) =>
     props.change({ ...props.config, background: { ...budget(), ...patch } });
-  const [state, setState] = createSignal<{ used: number; reserved: number; unknown: number; stoppedAt: string | null }>();
+  const [state, setState] = createSignal<State | undefined>(props.initial ?? undefined);
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
-  async function refresh() {
+  const [loading, setLoading] = createSignal(!props.initial);
+  const refresh = async () => {
+    setLoading(true);
     try {
       const response = await api.background.$get();
-      if (!response.ok) throw new Error(de() ? "Status konnte nicht geladen werden." : "Could not load status.");
+      if (!response.ok) throw new Error(t().brakeStateFailed);
       setState(await response.json());
       setError("");
-    } catch (error) {
-      setError(String(error));
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : t().brakeStateFailed);
+    } finally {
+      setLoading(false);
     }
-  }
-  onMount(() => void refresh());
+  };
+  const release = async () => {
+    setBusy(true);
+    try {
+      const response = await api.background.release.$post();
+      if (!response.ok)
+        throw new Error(response.status === 409 ? t().releaseBlocked : response.status === 403 ? t().releaseForbidden : t().releaseFailed);
+      // Release changes the configuration revision. Reload before editing again.
+      window.location.reload();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : t().releaseFailed);
+      setBusy(false);
+    }
+  };
+  onMount(() => {
+    if (!props.initial) void refresh();
+  });
+  const amount = (value: number) => `${value.toLocaleString(locale(), { maximumSignificantDigits: 6 })} ${unit()}`;
+  const warned = () => {
+    const current = state();
+    return Boolean(current && !current.stoppedAt && budget().enabled && budget().warnAt !== null && current.used >= budget().warnAt!);
+  };
+
   return (
-    <section class="flex flex-col gap-4">
-      <TextInput
-        label={de() ? "Recheneinheit" : "Accounting unit"}
-        value={props.config.unit ?? "EUR"}
-        disabled={props.disabled}
-        onValueChange={(unit) => props.change({ ...props.config, unit })}
-      />
-      <p class="text-xs text-dimmed">
-        {de()
-          ? "EUR empfohlen. Nach der ersten bepreisten Nutzung ist die Einheit festgelegt."
-          : "EUR recommended. The unit is fixed after the first priced call."}
-      </p>
-      <Switch
-        label={de() ? "Notbremse für Hintergrund-AI" : "Background AI emergency stop"}
-        description={
-          de()
-            ? "Gemeinsame Referenzkosten der letzten 24 Stunden. Workflows und interne Aufgaben; unbepreiste Modelle sind ausgenommen."
-            : "Combined reference costs over the last 24 hours. Workflows and internal tasks; unpriced models are excluded."
-        }
-        value={budget().enabled}
-        onValueChange={(enabled) => update({ enabled })}
-        disabled={props.disabled}
-      />
-      <Show when={budget().enabled}>
-        <div class="grid gap-4 sm:grid-cols-2">
-          <NumberInput
-            label={de() ? "Warnung ab (optional)" : "Warn at (optional)"}
-            value={budget().warnAt}
-            step={0.000001}
-            clearable
-            min={0}
-            showSteppers={false}
-            disabled={props.disabled}
-            onValueChange={(warnAt) => update({ warnAt })}
-          />
-          <NumberInput
-            label={de() ? "Stopp ab" : "Stop at"}
-            value={budget().stopAt}
-            step={0.000001}
-            min={0.000001}
-            showSteppers={false}
-            disabled={props.disabled}
-            onValueChange={(stopAt) => {
-              if (stopAt !== null) update({ stopAt });
-            }}
-          />
-        </div>
-        <p class="text-xs text-muted">
-          {de()
-            ? "Laufende Aufrufe werden noch gebucht. Nach Auslösung bleibt die Bremse bis zur bewussten Freigabe aktiv."
-            : "Calls already running are still recorded. Once triggered, the stop stays active until explicitly released."}
-        </p>
-      </Show>
-      <Show when={state()}>
-        {(current) => (
-          <div class="flex flex-wrap items-center gap-3 text-sm">
-            <span>
-              {current().used.toLocaleString(locale(), { maximumSignificantDigits: 6 })} {props.config.unit ?? "EUR"} / 24h
-            </span>
-            <Show when={current().unknown}>
-              <span>{de() ? "Unvollständige Messung" : "Incomplete measurement"}</span>
-            </Show>
-            <Show when={!current().stoppedAt && budget().enabled && budget().warnAt !== null && current().used >= budget().warnAt!}>
-              <span class="text-warning">{de() ? "Warnschwelle erreicht" : "Warning threshold reached"}</span>
-            </Show>
-            <Show when={current().stoppedAt}>
-              <NoticeCard tone="warning" title={de() ? "Hintergrund-AI angehalten" : "Background AI stopped"} />
-              <Button
-                disabled={busy() || props.disabled || !props.canRelease}
-                onClick={async () => {
-                  setBusy(true);
-                  try {
-                    const response = await api.background.release.$post();
-                    if (!response.ok)
-                      throw new Error(
-                        response.status === 409
-                          ? de()
-                            ? "Freigabe nicht möglich: Der Verbrauch ist noch zu hoch oder Kosten sind noch ungeklärt."
-                            : "Cannot release: usage or unknown costs still prevent admission."
-                          : response.status === 403
-                            ? de()
-                              ? "Keine Berechtigung zur Freigabe."
-                              : "You do not have permission to release the stop."
-                            : de()
-                              ? "Freigabe fehlgeschlagen. Bitte erneut versuchen."
-                              : "Could not release the stop. Please try again.",
-                      );
-                    await refresh();
-                    // Release changes the configuration revision. Reload before editing again.
-                    window.location.reload();
-                  } catch (error) {
-                    setError(String(error));
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
-                {de() ? "Bremse freigeben" : "Release stop"}
-              </Button>
-            </Show>
-          </div>
-        )}
+    <>
+      <Show when={state()?.stoppedAt}>
+        <Notice
+          tone="bad"
+          icon="hand-stop"
+          title={t().brakeStopped}
+          primary={{
+            label: t().releaseBrake,
+            icon: "player-play",
+            disabled: busy() || props.disabled || !props.canRelease,
+            onClick: () => void release(),
+          }}
+        >
+          {props.canRelease ? t().brakeStoppedSub : t().brakeSaveFirst}
+        </Notice>
       </Show>
       <Show when={error()}>
-        <Placeholder state="error" description={error()} />
+        <Notice tone="bad" title={t().loadFailed}>
+          {error()}
+        </Notice>
       </Show>
-      <ButtonLink variant="text" href="/admin/ai?sec=usage&view=runs&kind=background&range=24h&sort=cost">
-        {de() ? "Hintergrundkosten untersuchen" : "Inspect background costs"}
-      </ButtonLink>
-      <Button size="sm" variant="ghost" onClick={() => void refresh()}>
-        {de() ? "Status aktualisieren" : "Refresh status"}
-      </Button>
-    </section>
+      <Section
+        icon="activity"
+        title={t().brakeLast24h}
+        actions={[
+          { label: t().refreshState, icon: "refresh", disabled: loading(), onClick: () => void refresh() },
+          { label: t().inspectBackgroundCosts, href: "/admin/ai?sec=usage&view=runs&kind=background&range=24h&sort=cost", forward: true },
+        ]}
+      >
+        <Facts
+          loading={loading()}
+          items={[
+            { label: t().brakeUsed, value: state() ? amount(state()!.used) : "" },
+            { label: t().brakeReserved, value: state() ? amount(state()!.reserved) : "" },
+            {
+              label: t().colState,
+              value: state()
+                ? state()!.stoppedAt
+                  ? t().brakeStopped
+                  : warned()
+                    ? t().warnReached
+                    : state()!.unknown
+                      ? t().measureIncomplete
+                      : budget().enabled
+                        ? t().brakeWatching
+                        : t().brakeOff
+                : "",
+            },
+          ]}
+        />
+      </Section>
+      <Section icon="hand-stop" title={t().brake}>
+        {/* slot for #4208/#4223 (DP): the fields of the brake become Setting rows (name left, value at a fixed width) */}
+        <Field label={t().accountingUnit} hint={t().unitHint}>
+          <Input value={unit()} disabled={props.disabled} onInput={(value) => props.change({ ...props.config, unit: value })} />
+        </Field>
+        <Field label={t().brakeSwitch} hint={t().brakeSwitchHint}>
+          <Check
+            switch
+            label={budget().enabled ? t().on : t().off}
+            checked={budget().enabled}
+            disabled={props.disabled}
+            onChange={(enabled) => update({ enabled })}
+          />
+        </Field>
+        <Show when={budget().enabled}>
+          <Field label={t().budgetWarning} hint={t().optional}>
+            <Input
+              type="number"
+              min={0}
+              value={numberText(budget().warnAt)}
+              disabled={props.disabled}
+              end={<Text type="meta">{unit()}</Text>}
+              onInput={(value) => update({ warnAt: value.trim() === "" ? null : Number(value) })}
+            />
+          </Field>
+          <Field label={t().budgetStop} hint={t().brakeStopHint}>
+            <Input
+              type="number"
+              min={0}
+              value={numberText(budget().stopAt)}
+              disabled={props.disabled}
+              end={<Text type="meta">{unit()}</Text>}
+              onInput={(value) => {
+                if (value.trim() !== "") update({ stopAt: Number(value) });
+              }}
+            />
+          </Field>
+        </Show>
+      </Section>
+      <Text type="meta" muted>
+        {t().brakeRunningNote}
+      </Text>
+    </>
   );
 }

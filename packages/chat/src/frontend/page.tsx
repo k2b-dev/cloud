@@ -54,6 +54,16 @@ export default ssr<AuthContext>(async (c) => {
     archived,
     unread,
   });
+  // A place opens on its "General" stream with its discussions as cards in it (v2; Valentin, v8: no column of its
+  // own). Its old addresses, all threads and the directory, lead there; the list and Chat's own links already do.
+  if (
+    !embedded &&
+    view.open?.conversation.kind === "system" &&
+    chatId &&
+    !c.req.param("message") &&
+    (thread === "all" || /\/threads\/?$/.test(c.req.path))
+  )
+    return c.redirect(`/app/chat/c/${encodeURIComponent(chatId)}/t/general${c.req.query("panel") === "info" ? "?panel=info" : ""}`, 302);
   // `filter` belongs to the system thread directory. Direct v12 URLs without personal state keep the ordinary list.
   if (view.open?.conversation.kind === "system" && !c.req.query("listFilter") && unread) {
     unread = false;
