@@ -1,7 +1,8 @@
 import { createComputed, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { useUiMessages } from "../intl/messages";
 import { type TreeParts, useTree } from "./behavior/lists";
 import { announceText } from "./behavior/treegrid";
-import { Icon, StateDot } from "./marks";
+import { Dot, Icon, stateWord } from "./marks";
 import { Menu, type MenuEntry, PointerMenu } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 import { useTreeMessages } from "./tree-messages";
@@ -105,6 +106,11 @@ const TreeMenu = (props: { label: string; items: readonly MenuEntry[] }) => {
 export const NavTreeView = (props: NavTree) => {
   const t = useTreeMessages();
   const overlay = useOverlayMessages();
+  const ui = useUiMessages();
+  // a dot's word, hidden to the eye, inside the text that names the tree item ("Eingang Problem")
+  const stateText = (node: NavTreeNode) => (
+    <Show when={node.dot}>{(status) => <span class="k2-hidden-text"> {stateWord(status(), ui())}</span>}</Show>
+  );
   const nodes = createMemo(() => {
     const all = new Map<string, NavTreeNode>();
     const walk = (list: readonly NavTreeNode[]) => {
@@ -301,15 +307,25 @@ export const NavTreeView = (props: NavTree) => {
               </parts.Indicator>
             </Show>
             <Show when={entry.node.icon}>{(icon) => <Icon name={icon()} />}</Show>
-            <Show when={entry.node.href} fallback={<parts.Label class="k2-ni-name">{entry.node.label}</parts.Label>}>
+            <Show
+              when={entry.node.href}
+              fallback={
+                <parts.Label class="k2-ni-name">
+                  {entry.node.label}
+                  {stateText(entry.node)}
+                </parts.Label>
+              }
+            >
               {(href) => (
                 // the tree item is what assistive technology meets (named by this text); Enter on it follows the link
                 <parts.Link href={href()} onNavigate={entry.node.onNavigate} class="k2-ni-name" role="none">
                   {entry.node.label}
+                  {stateText(entry.node)}
                 </parts.Link>
               )}
             </Show>
-            <Show when={entry.node.dot}>{(status) => <StateDot status={status()} />}</Show>
+            {/* the dot only shows the state; its word stands in the name above, which names the tree item */}
+            <Show when={entry.node.dot}>{(status) => <Dot status={status()} />}</Show>
             <Show when={entry.node.count !== undefined}>
               <span class="k2-ni-count">{entry.node.count}</span>
             </Show>

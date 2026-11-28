@@ -221,8 +221,8 @@ test("a tab sends the dot of its state with its word, and a tab without a state 
 });
 
 // A nav entry's dot said nothing to assistive technology; it carries the same word as a tab's now, in a list of entries
-// and in a tree of places.
-test("a nav entry and a place of a tree send their dot with its word", () => {
+// and in a tree of places, where the word joins the label that names the tree item.
+test("a nav entry and a place of a tree carry their dot's word in their name", () => {
   const markup = renderToString(() =>
     createComponent(Nav, {
       title: "Betrieb",
@@ -234,6 +234,7 @@ test("a nav entry and a place of a tree send their dot with its word", () => {
     }),
   );
   expect(markup).toMatch(/data-status="warn"[^>]*aria-label="Warning"/);
-  expect(markup).toMatch(/data-status="bad"[^>]*aria-label="Problem"/);
-  expect(markup).not.toMatch(/class="k2-dot"[^>]*aria-hidden/);
+  // a tree item is named by its label, so the word stands there, hidden to the eye, and the dot beside it is silent
+  expect(markup).toMatch(/class="k2-ni-name[^"]*"[^>]*>Eingang[\s\S]{0,80}class="k2-hidden-text"[^>]*>[\s\S]{0,40}Problem/);
+  expect(markup).toMatch(/data-status="bad"[^>]*aria-hidden="true"/);
 });

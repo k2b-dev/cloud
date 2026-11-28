@@ -92,6 +92,15 @@ test("nav tree: one Tab stop on the open folder; arrows, Right and Left fold, En
   });
 });
 
+test("nav tree: a place's dot says its state in the place's name, once", async () => {
+  await withPage(async (page) => {
+    // the word stands in the text that names the tree item; the dot beside it only shows the state
+    const messe = place(page, "Messe 2027 Problem");
+    expect(await messe.isVisible()).toBe(true);
+    expect(await messe.locator(".k2-nt-row .k2-dot").first().getAttribute("aria-hidden")).toBe("true");
+  });
+});
+
 test("nav tree: core's tree pattern check passes", async () => {
   await withPage(async (page) => {
     // The check presses Right on the first branch, then Left on its first child and expects the focus on the parent:

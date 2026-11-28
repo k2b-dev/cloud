@@ -7,6 +7,7 @@ import { Nav, type NavTreeNode, Pane, Table, Workspace } from "../src/v2";
 // - "Fernablage" fails to load once, then loads;
 // - "Fotos" has 10 000 children, 50 at a time, behind "Weitere … laden";
 // - "Tief" is twelve levels deep with long names;
+// - "Messe 2027" has a problem (a red dot);
 // - a folder's "…" lands its deed in `window.__treeDeeds`;
 // - `window.__holdMore` makes "Weitere laden" wait for `window.__releaseMore()`, `window.__failMore` makes it fail once,
 //   `window.__loadAll()` loads all 10 000 pictures at once;
@@ -136,6 +137,7 @@ export function Demo() {
     icon: folder.children !== undefined || folder.branch ? "folder" : "file",
     href: `#${folder.key}`,
     branch: folder.branch,
+    dot: folder.key === "messe" ? "bad" : undefined,
     // the sidebar shows folders; "Fotos" shows its pictures too, so its level of 10 000 pages
     children: folder.children?.filter((child) => folder.key === "fotos" || child.children !== undefined || child.branch).map(node),
     more: folder.key === "fotos" && photosLeft() > 0 ? photosLeft() : folder.key === "archiv" && folder.children ? true : undefined,
