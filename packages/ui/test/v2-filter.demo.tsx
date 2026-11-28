@@ -1,6 +1,6 @@
 import { createMemo, createSignal } from "solid-js";
 import { isServer } from "solid-js/web";
-import { Bar, Button, Chip, FilterBar, Input, ListOrder, Pane, StatusRow, Table, Tabs, Workspace } from "../src/v2";
+import { Bar, Button, Chip, FilterBar, HeadSearch, ListOrder, Pane, StatusRow, Table, Tabs, Workspace } from "../src/v2";
 import { defineListQuery, field, type ListQueryStateOf, type LookupItem, type SavedListView, type ViewStore } from "../src/v2/list-query";
 
 // The Artikel list of the approved filter concept on invented data: fixed values, a range, a lookup that loads, a
@@ -319,7 +319,7 @@ export function Demo(props: { search?: string; stores?: boolean }) {
           }
           end={
             <>
-              <Input type="search" icon="search" label="Nummer oder Titel" placeholder="Nummer oder Titel" />
+              <HeadSearch label="Nummer oder Titel" placeholder="Nummer oder Titel" />
               <Button variant="primary" icon="plus">
                 Artikel
               </Button>

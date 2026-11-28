@@ -12,7 +12,6 @@ const groups = (current: string, sections: NavProps["groups"][number]["items"] =
     ];
   };
   return [
-    { items: item("Übersicht", "dashboard", "/admin") },
     {
       label: "Einrichten",
       items: [

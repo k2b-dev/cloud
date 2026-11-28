@@ -5,7 +5,6 @@ import type { AppRegistryEntry } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, getDateConfig, getLocale } from "@k2b/cloud/server";
 import {
   AppAccessManagementError,
-  accounts,
   appAdminFacts,
   appDetails,
   canReadAppAdministration,
@@ -25,6 +24,7 @@ import { listAppListing } from "../../../known-apps";
 import { settingsDocumentationHref } from "../settings/documentation";
 import AppsScreen from "./AppsScreen.island";
 import { appsNav } from "./area";
+import { keyCreatorNames } from "./key-creators";
 import type { KeyEntry } from "./keys-dialogs";
 import { type AppInput, type AppStatusWindow, deriveApp, type ProviderNumbers, parseAppsQuery, sortApps } from "./model";
 import { appsPageMessages } from "./page-messages";
@@ -312,12 +312,10 @@ export default ssr<AuthContext>(async (c) => {
             filter: { serviceAccountKind: "resource_bound", resourceType: "cloud.app", appId: entry.id, resourceId: entry.id },
           })
           .catch(() => null);
-        const creators = [...new Set((keyList ?? []).map((key) => key.createdBy).filter((id): id is string => Boolean(id)))];
-        const people = Object.fromEntries(
-          (await Promise.all(creators.map((id) => accounts.users.get({ id }).catch(() => null))))
-            .filter((person) => person !== null)
-            .map((person) => [person.id, person.displayName || person.uid]),
-        );
+        const people = await keyCreatorNames(keyList ?? []).catch((error: unknown) => {
+          log.error("Could not read the names of the key creators", { appId: entry.id, error });
+          return {};
+        });
         return {
           view: "keys",
           keys: {

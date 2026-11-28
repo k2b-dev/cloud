@@ -141,8 +141,8 @@ published UI build.
 | Grids custom apps | packages/grids/src/service/custom-app-insights.test.ts: date-typed chart categories use the request locale without reinterpreting text or timestamps | Covered |
 | Venue | packages/venue/src/frontend/_components/venue-workspace/feedback-chart-tooltips.test.ts: ratings per day name the day and count the ratings as a whole number | Covered |
 | Tools | packages/tools/src/frontend/tools/speed-test-format.test.ts: a sparkline sample names its metric and shows the reading with its unit | Covered |
-| Core AI usage | packages/core/src/pages/admin/settings/_components/AiUsageCharts.tsx: AiUsageCharts | Covered |
-| Core AI quota | packages/core/src/pages/admin/settings/_components/AiQuotaCharts.tsx: AiQuotaCharts | Covered |
+| Core AI usage | packages/core/src/pages/admin/ai/insight-chart.tsx: TimeChart | Covered |
+| Core AI quota | packages/core/src/pages/admin/ai/insight-chart.tsx: BarChart | Covered |
 | Fibel chart demos | docs-site/src/ui/demo-sections/charts.tsx: ChartDemo | Covered |
 | Explorer: reference series legend style | packages/ui/src/content/ChartExplorer.render.test.ts: a legend wraps below the chart inside the fixed viewport and leaves with the table | Covered |
 | Fibel explorer demos | docs-site/src/ui/ChartExplorerShowcases.tsx: ChartExplorerShowcases | Covered |

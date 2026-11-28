@@ -1,22 +1,8 @@
 import { type AiModel, type AiModelSlot, type AiModelVariant, type AiProvider, AiVariantSchema } from "@k2b/cloud/shared";
-import {
-  Button,
-  Disclosure,
-  dialogCore,
-  NoticeCard,
-  NumberInput,
-  PanelDialog,
-  panelDialogOptions,
-  Select,
-  Switch,
-  TextInput,
-  toast,
-  useLocale,
-} from "@k2b/ui";
+import { Button, Check, Dialog, Disclosure, Facts, Field, Input, Notice, Select, Text, useLocale, useToast } from "@k2b/ui/v2";
 import { createResource, createSignal, Show } from "solid-js";
 import { type AiAdminConflict, aiAdminApi, aiSlug, asAiConflict, readAiAdmin, reloadAiArea } from "./client";
 import { ConflictNotice } from "./conflict";
-import { openAiDelete } from "./delete";
 import { aiAreaMessages } from "./messages";
 import { type AiAreaMessages, aiProviderTypeInfo, aiSlotLabel } from "./presentation";
 
@@ -63,28 +49,35 @@ const toDraft = (variant?: AiModelVariant): Draft => ({
   extraBody: variant?.extraBody ? JSON.stringify(variant.extraBody, null, 2) : "",
 });
 
-/** B3: a variant inherits everything from its model except the thinking level and what it overrides. */
-function VariantDialog(props: {
+const numberText = (value: number | null) => (value === null ? "" : String(value));
+const numberOf = (value: string) => (value.trim() === "" ? null : Number(value));
+
+/**
+ * B3: a variant inherits everything from its model except the thinking level and what it overrides. The dialog is
+ * the screen's; `onDelete` hands a stored variant over to the delete dialog.
+ */
+export function VariantDialog(props: {
+  open: boolean;
+  onClose: () => void;
   model: AiModel & { variants: AiModelVariant[] };
   provider: AiProvider;
   variant?: AiModelVariant;
-  close: () => void;
-  setDismissHandler: (handler: () => void) => void;
+  onDelete: (variant: AiModelVariant) => void;
 }) {
   const locale = useLocale();
   const t = () => aiAreaMessages.resolve([locale()]).t;
+  const toast = useToast();
   const [base, setBase] = createSignal(props.variant);
   const [draft, setDraft] = createSignal(toDraft(props.variant));
   const [custom, setCustom] = createSignal(
-    Boolean(props.variant?.reasoningEffort && !EFFORTS.some((e) => e === props.variant?.reasoningEffort)),
+    Boolean(props.variant?.reasoningEffort && !EFFORTS.some((effort) => effort === props.variant?.reasoningEffort)),
   );
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal("");
-  const requestClose = () => {
-    if (!saving()) props.close();
-  };
-  props.setDismissHandler(requestClose);
   const [conflict, setConflict] = createSignal<AiAdminConflict<AiModelVariant> | null>(null);
+  const close = (open: boolean) => {
+    if (!open && !saving()) props.onClose();
+  };
   const [slots] = createResource(
     () => props.variant?.id,
     async (id) =>
@@ -108,11 +101,7 @@ function VariantDialog(props: {
       hint: value.hint.trim(),
       pricing:
         value.ownPrice && value.inputPerMillion !== null && value.outputPerMillion !== null
-          ? {
-              ...base()?.pricing,
-              inputPerMillion: value.inputPerMillion,
-              outputPerMillion: value.outputPerMillion,
-            }
+          ? { ...base()?.pricing, inputPerMillion: value.inputPerMillion, outputPerMillion: value.outputPerMillion }
           : null,
       maxOutputTokens: value.ownOut ? value.maxOutputTokens : null,
       showInPicker: value.showInPicker,
@@ -145,14 +134,12 @@ function VariantDialog(props: {
           }),
           t().saveFailed,
         );
-      toast.success(t().saved);
-      props.close();
+      toast(t().saved, { status: "ok" });
       reloadAiArea();
     } catch (failure) {
-      const conflict = asAiConflict(failure, AiVariantSchema);
-      if (conflict) setConflict(conflict);
+      const found = asAiConflict(failure, AiVariantSchema);
+      if (found) setConflict(found);
       else setError(failure instanceof Error ? failure.message : t().saveFailed);
-    } finally {
       setSaving(false);
     }
   };
@@ -163,212 +150,189 @@ function VariantDialog(props: {
     props.model.pricing ? `${props.model.pricing.inputPerMillion} / ${props.model.pricing.outputPerMillion}` : t().noPrices;
 
   return (
-    <form
-      class="contents"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (draft().label.trim() && !saving()) void save();
-      }}
-    >
-      <PanelDialog>
-        <PanelDialog.Header
-          title={props.variant ? t().editVariant : t().newVariant}
-          subtitle={props.model.label}
-          icon="ti ti-versions"
-          close={requestClose}
-          closeDisabled={saving()}
-        />
-        <PanelDialog.Body scrollPreserveKey="ai-variant">
-          <Show when={conflict()}>
-            {(current) => (
-              <ConflictNotice<Draft>
-                conflict={current()}
-                fields={[
-                  { key: "label", label: t().variantName },
-                  { key: "reasoningEffort", label: t().thinkingLevel, format: (value) => effortLabel(t(), String(value ?? "")) },
-                  { key: "hint", label: t().hint },
-                  { key: "ownPrice", label: t().ownPrices },
-                  { key: "ownOut", label: t().ownOut },
-                  { key: "inputPerMillion", label: t().inPrice },
-                  { key: "outputPerMillion", label: t().outPrice },
-                  { key: "maxOutputTokens", label: t().maxOut },
-                  { key: "showInPicker", label: t().showInPicker },
-                  { key: "extraBody", label: t().extraParams },
-                ]}
-                base={toDraft(base())}
-                mine={draft()}
-                theirs={toDraft(current().current)}
-                busy={saving()}
-                onMerge={(merged) => {
-                  const theirs = current().current;
-                  setConflict(null);
-                  setBase(theirs);
-                  setDraft(merged);
-                  void save(merged, theirs.revision);
-                }}
-                onDiscard={() => {
-                  const theirs = current().current;
-                  setConflict(null);
-                  setBase(theirs);
-                  setDraft(toDraft(theirs));
-                }}
-              />
-            )}
-          </Show>
-          <Show when={(slots() ?? []).length > 0}>
-            <NoticeCard tone="info" title={t().variantInUse({ p: (slots() ?? []).map((slot) => aiSlotLabel(t(), slot)).join(", ") })} />
-          </Show>
-          <fieldset class="grid gap-4 sm:grid-cols-2" disabled={saving()}>
-            <TextInput
-              label={t().variantName}
-              value={() => draft().label}
-              onValueChange={(label) => update({ label })}
-              placeholder={t().variantNamePh}
-              required
-            />
-            <div class="grid gap-2">
-              <Select
-                label={t().thinkingLevel}
-                value={effortValue}
-                onValueChange={(value) => {
-                  if (value === CUSTOM) setCustom(true);
-                  else {
-                    setCustom(false);
-                    update({ reasoningEffort: value ?? "" });
-                  }
-                }}
-                options={[
-                  ...EFFORTS.map((effort) => ({ value: effort, label: effortLabel(t(), effort) })),
-                  { value: CUSTOM, label: t().effCustom },
-                ]}
-                description={t().effField({ p: aiProviderTypeInfo(props.provider.type).effortField })}
-              />
-              <Show when={custom()}>
-                <TextInput
-                  aria-label={t().effCustom}
-                  monospace
-                  value={() => draft().reasoningEffort}
-                  onValueChange={(reasoningEffort) => update({ reasoningEffort })}
-                />
-              </Show>
-            </div>
-            <TextInput
-              class="sm:col-span-2"
-              label={`${t().hint} · ${t().optional}`}
-              value={() => draft().hint}
-              onValueChange={(hint) => update({ hint })}
-              placeholder={t().hintPh}
-            />
-            <div class="grid content-start gap-2">
-              <Switch label={t().ownPrices} value={() => draft().ownPrice} onValueChange={(ownPrice) => update({ ownPrice })} />
-              <Show when={draft().ownPrice} fallback={<p class="text-xs text-(--k2b-text-muted)">{t().fromModel({ p: modelPrice() })}</p>}>
-                <div class="grid grid-cols-2 gap-2">
-                  <NumberInput
-                    aria-label={t().inPrice}
-                    value={() => draft().inputPerMillion}
-                    onValueChange={(inputPerMillion) => update({ inputPerMillion })}
-                    min={0}
-                    step={0.01}
-                  />
-                  <NumberInput
-                    aria-label={t().outPrice}
-                    value={() => draft().outputPerMillion}
-                    onValueChange={(outputPerMillion) => update({ outputPerMillion })}
-                    min={0}
-                    step={0.01}
-                  />
-                </div>
-              </Show>
-            </div>
-            <div class="grid content-start gap-2">
-              <Switch label={t().ownOut} value={() => draft().ownOut} onValueChange={(ownOut) => update({ ownOut })} />
-              <p class="text-xs text-(--k2b-text-muted)">{t().maxOutHelp}</p>
-              <Show
-                when={draft().ownOut}
-                fallback={
-                  <p class="text-xs text-(--k2b-text-muted)">
-                    {t().fromModel({
-                      p: props.model.maxOutputTokens
-                        ? `${props.model.maxOutputTokens.toLocaleString(locale())} ${t().tokens}`
-                        : t().providerDefault,
-                    })}
-                  </p>
-                }
-              >
-                <NumberInput
-                  aria-label={t().maxOut}
-                  value={() => draft().maxOutputTokens}
-                  onValueChange={(maxOutputTokens) => update({ maxOutputTokens })}
-                  min={1}
-                  suffix={t().tokens}
-                />
-              </Show>
-            </div>
-            <Switch
-              class="sm:col-span-2"
-              label={t().showInPicker}
-              description={t().showInPickerHelp}
-              value={() => draft().showInPicker}
-              onValueChange={(showInPicker) => update({ showInPicker })}
-            />
-          </fieldset>
-          <Disclosure summary={t().advanced} surface="plain">
-            <div class="grid gap-4">
-              <TextInput
-                label={t().extraParams}
-                multiline
-                monospace
-                lines={3}
-                value={() => draft().extraBody}
-                onValueChange={(extraBody) => update({ extraBody })}
-                placeholder='{ "chat_template_kwargs": { "enable_thinking": false } }'
-                description={t().mergeHelp}
-              />
-              <div class="grid gap-1">
-                <span class="text-sm font-medium">{t().variantId}</span>
-                <code class="text-sm">{variantId()}</code>
-                <p class="text-xs text-(--k2b-text-muted)">{t().modelIdHelp}</p>
-              </div>
-            </div>
-          </Disclosure>
-          <Show when={error()}>
-            <NoticeCard tone="danger" title={t().saveFailed} detail={error()} role="alert" />
-          </Show>
-        </PanelDialog.Body>
-        <PanelDialog.Footer>
+    <Dialog
+      title={props.variant ? t().editVariant : t().newVariant}
+      open={props.open}
+      onOpenChange={close}
+      dismissible={!saving()}
+      foot={
+        <>
           <Show when={props.variant && !isStandard()}>
+            {/* k2b-ui gap: a destructive deed in a dialog's foot is no red text button yet; the delete dialog asks first */}
             <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              class="me-auto text-(--k2b-danger-text)"
+              variant="text"
+              icon="trash"
               disabled={saving()}
               onClick={() => {
                 const variant = props.variant;
-                if (!variant || saving()) return;
-                requestClose();
-                openAiDelete({ kind: "variant", variant, model: props.model, provider: props.provider });
+                if (variant && !saving()) props.onDelete(variant);
               }}
             >
-              <i class="ti ti-trash" aria-hidden="true" />
               {t().deleteVariant}
             </Button>
           </Show>
-          <Button type="button" variant="secondary" size="sm" onClick={requestClose} disabled={saving()}>
+          <Button disabled={saving()} onClick={() => close(false)}>
             {t().cancel}
           </Button>
-          <Button type="submit" size="sm" disabled={!draft().label.trim()} loading={saving()} loadingLabel={t().saving}>
-            <i class="ti ti-check" aria-hidden="true" />
+          <Button variant="primary" icon="check" busy={saving()} disabled={!draft().label.trim()} onClick={() => void save()}>
             {t().save}
           </Button>
-        </PanelDialog.Footer>
-      </PanelDialog>
-    </form>
+        </>
+      }
+    >
+      <Text muted>{props.model.label}</Text>
+      <Show when={conflict()}>
+        {(current) => (
+          <ConflictNotice<Draft>
+            conflict={current()}
+            fields={[
+              { key: "label", label: t().variantName },
+              { key: "reasoningEffort", label: t().thinkingLevel, format: (value) => effortLabel(t(), String(value ?? "")) },
+              { key: "hint", label: t().hint },
+              { key: "ownPrice", label: t().ownPrices },
+              { key: "ownOut", label: t().ownOut },
+              { key: "inputPerMillion", label: t().inPrice },
+              { key: "outputPerMillion", label: t().outPrice },
+              { key: "maxOutputTokens", label: t().maxOut },
+              { key: "showInPicker", label: t().showInPicker },
+              { key: "extraBody", label: t().extraParams },
+            ]}
+            base={toDraft(base())}
+            mine={draft()}
+            theirs={toDraft(current().current)}
+            busy={saving()}
+            onMerge={(merged) => {
+              const theirs = current().current;
+              setConflict(null);
+              setBase(theirs);
+              setDraft(merged);
+              void save(merged, theirs.revision);
+            }}
+            onDiscard={() => {
+              const theirs = current().current;
+              setConflict(null);
+              setBase(theirs);
+              setDraft(toDraft(theirs));
+            }}
+          />
+        )}
+      </Show>
+      <Show when={(slots() ?? []).length > 0}>
+        <Notice tone="note">{t().variantInUse({ p: (slots() ?? []).map((slot) => aiSlotLabel(t(), slot)).join(", ") })}</Notice>
+      </Show>
+      <Field label={t().variantName} required>
+        <Input value={draft().label} placeholder={t().variantNamePh} disabled={saving()} onInput={(label) => update({ label })} />
+      </Field>
+      <Field label={t().thinkingLevel} hint={t().effField({ p: aiProviderTypeInfo(props.provider.type).effortField })}>
+        <Select
+          value={effortValue()}
+          disabled={saving()}
+          options={[
+            ...EFFORTS.map((effort) => ({ value: effort, label: effortLabel(t(), effort) })),
+            { value: CUSTOM, label: t().effCustom },
+          ]}
+          onChange={(value) => {
+            if (value === CUSTOM) setCustom(true);
+            else {
+              setCustom(false);
+              update({ reasoningEffort: value });
+            }
+          }}
+        />
+      </Field>
+      <Show when={custom()}>
+        <Field label={t().effCustom}>
+          <Input
+            value={draft().reasoningEffort}
+            spellcheck={false}
+            disabled={saving()}
+            onInput={(reasoningEffort) => update({ reasoningEffort })}
+          />
+        </Field>
+      </Show>
+      <Field label={t().hint} optional={t().optional}>
+        <Input value={draft().hint} placeholder={t().hintPh} disabled={saving()} onInput={(hint) => update({ hint })} />
+      </Field>
+      <Check switch label={t().ownPrices} checked={draft().ownPrice} disabled={saving()} onChange={(ownPrice) => update({ ownPrice })} />
+      <Show
+        when={draft().ownPrice}
+        fallback={
+          <Text type="meta" muted>
+            {t().fromModel({ p: modelPrice() })}
+          </Text>
+        }
+      >
+        <Field.Row>
+          <Field label={t().inPrice}>
+            <Input
+              type="number"
+              min={0}
+              value={numberText(draft().inputPerMillion)}
+              disabled={saving()}
+              onInput={(value) => update({ inputPerMillion: numberOf(value) })}
+            />
+          </Field>
+          <Field label={t().outPrice}>
+            <Input
+              type="number"
+              min={0}
+              value={numberText(draft().outputPerMillion)}
+              disabled={saving()}
+              onInput={(value) => update({ outputPerMillion: numberOf(value) })}
+            />
+          </Field>
+        </Field.Row>
+      </Show>
+      <Check switch label={t().ownOut} checked={draft().ownOut} disabled={saving()} onChange={(ownOut) => update({ ownOut })} />
+      <Show
+        when={draft().ownOut}
+        fallback={
+          <Text type="meta" muted>
+            {t().fromModel({
+              p: props.model.maxOutputTokens
+                ? `${props.model.maxOutputTokens.toLocaleString(locale())} ${t().tokens}`
+                : t().providerDefault,
+            })}
+          </Text>
+        }
+      >
+        <Field label={t().maxOut} hint={t().maxOutHelp} optional={t().tokens}>
+          <Input
+            type="number"
+            min={1}
+            value={numberText(draft().maxOutputTokens)}
+            disabled={saving()}
+            onInput={(value) => update({ maxOutputTokens: numberOf(value) })}
+          />
+        </Field>
+      </Show>
+      <Field label={t().showInPicker} hint={t().showInPickerHelp}>
+        <Check
+          switch
+          label={draft().showInPicker ? t().on : t().off}
+          checked={draft().showInPicker}
+          disabled={saving()}
+          onChange={(showInPicker) => update({ showInPicker })}
+        />
+      </Field>
+      <Disclosure title={t().advanced}>
+        <Field label={t().extraParams} hint={t().mergeHelp}>
+          <Input
+            multiline
+            value={draft().extraBody}
+            spellcheck={false}
+            placeholder='{ "chat_template_kwargs": { "enable_thinking": false } }'
+            disabled={saving()}
+            onInput={(extraBody) => update({ extraBody })}
+          />
+        </Field>
+        <Facts items={[{ label: t().variantId, value: variantId(), mono: true, copy: variantId(), hint: t().modelIdHelp }]} />
+      </Disclosure>
+      <Show when={error()}>
+        <Notice tone="bad" title={t().saveFailed}>
+          {error()}
+        </Notice>
+      </Show>
+    </Dialog>
   );
 }
-
-export const openAiVariant = (input: { model: AiModel & { variants: AiModelVariant[] }; provider: AiProvider; variant?: AiModelVariant }) =>
-  void dialogCore.open<void>(
-    (close, context) => <VariantDialog {...input} close={() => close()} setDismissHandler={context.setDismissHandler} />,
-    panelDialogOptions,
-  );

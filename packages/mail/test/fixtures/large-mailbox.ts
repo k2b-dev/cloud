@@ -19,6 +19,7 @@
 import { createHash } from "node:crypto";
 import type { SQL } from "bun";
 import { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "../../src/service/attachment-extraction-contract";
+import { indexStoredAttachments } from "../../src/service/attachment-file-index";
 
 export const anchor = "2026-10-01T00:00:00Z";
 export type Parameters = { seed: number; anchor: string; messages: number; conversations: number; folders: number };
@@ -297,6 +298,7 @@ export function digestPlan(plan: LargeMailboxPlan) {
 }
 
 export const fixtureTables = [
+  "attachment_files",
   "provider_connections",
   "remote_resources",
   "provider_bindings",
@@ -426,6 +428,11 @@ export async function seedLargeMailbox(db: SQL, plan: LargeMailboxPlan, options:
       SELECT p.short_id, p.message_id, part.id, p.filename, p.content_type, 'attachment', b.content_hash, b.byte_length, b.id
       FROM perf_parts p JOIN mail.message_parts part ON part.message_id = p.message_id AND part.part_path = p.path
       JOIN mail.message_part_blobs b ON b.id = part.blob_id WHERE p.attachment`;
+    // The file source's index, by the statement the backfill uses for stored mail.
+    await indexStoredAttachments(
+      tx,
+      tx`SELECT a.id FROM mail.attachments a JOIN mail.message_contents m ON m.id = a.message_id WHERE m.mailbox_id = ${mailboxId}::uuid`,
+    );
     // anydoc does not support .txt. Persist its real terminal state so the
     // recovery scheduler cannot turn fixture attachments into background jobs.
     await tx`INSERT INTO mail.attachment_extractions (blob_id, extractor_version, status, error_code, attempt_count, updated_at, completed_at)

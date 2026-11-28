@@ -111,6 +111,12 @@
   margin-right: 0.25em;
 }
 
+/* On a v2 page the card keeps its one look and stands in a Canvas of its place (`<Band><Canvas><ApprovalFrame />`),
+   since v2 has no primitive for it yet; like the chat stream, the page gives it its text edge on both sides. */
+.k2-ui [data-k2-canvas] > .k2b-notice-card-container:has(> .cloud-approval-frame) {
+  padding-inline: var(--k2-edge);
+}
+
 /* The shared detail dialog is flat: blocks and decisions share the dialog surface. */
 .k2b-ui .cloud-approval-details { display: flex; flex-direction: column; gap: .75rem; }
 .k2b-ui .cloud-approval-details > p { margin: 0; }

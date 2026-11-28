@@ -53,7 +53,9 @@ One per screen: the sidebar, the head, the main action, and the columns; it turn
 
 ### Pane
 
-A column that scrolls, with no padding: a head, a status that stays, a `width` inside a split, and `detail`, `back` and `side`.
+A column that scrolls, with no padding: a head, a status that stays, a `width` inside a split, and `detail`, `back` (on a wide screen too with `wideBack`) and `side`.
+
+A pane's `head` and its toolbar (a `StatusRow` or `FilterBar` as its `status`) are one block: the head's `Bar` stands the toolbar between its start and its end, with no line between them, one line under the block, and the two rows close together. Where the pane is 1200 px or wider, they stand in one row: the path, then the filters and how the list shows, then the head's actions; the Tab key follows that order. A head of actions only (a `Bar` without `start`) always shares the toolbar's row. Any other status, such as the state of an open entry, keeps its own row under the head. So give the head of a list's pane to the pane (`Pane head`), not to the workspace, when the pane has a `status`. The head's search is `HeadSearch` in the head's `end`, with a `label`: it stands as its symbol, named by its label, and opens over its neighbours when pressed or with "/". Its words keep it open in the row, and Escape leaves it with its words. Its code comes with it, so a page whose heads have no search loads none of it. A row keeps its height when it carries a deed: on one line the time stands at the end and the deed after it; on the phone the deed takes the row under the text.
 
 <Props of="Pane" />
 

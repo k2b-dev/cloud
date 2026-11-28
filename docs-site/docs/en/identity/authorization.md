@@ -735,7 +735,10 @@ keeps the same draft, rules, questions, and saving order, and opens a v2
 entry, so pages that are still v1 do not load v2. Pass v2 content as
 `extraSections`, such as `ResourceApiKeys` from the same entry: the same props
 as the v1 component, one row per key, a v2 dialog to create one (name, level,
-expiry), and its token shown once to copy.
+expiry), and its token shown once to copy. `AccessSummary` from the same entry
+shows the members as one stack of faces with "+n" and the same line as v1. In
+the v2 dialog and summary, people and agents show their avatar; groups, Code's
+accounts, API keys and the audiences show a mark in their kind's colour.
 
 The last entry that manages the resource keeps Manage: its lower levels and its
 removal are disabled, counted on the result after saving (`effectiveEntries`
