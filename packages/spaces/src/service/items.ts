@@ -43,6 +43,7 @@ import { insertMany as insertItemResourceReferences } from "./item-resource-refe
 import { publishSpaceChange, spacesLive } from "./live";
 import { projectItems } from "./public-resources";
 import { rank } from "./rank";
+import { listReachableSpaceIds, type ReachableSpaceIds, reachableIdsForSql } from "./reach";
 import { getReactionsByItemIds, type ReactionViewer } from "./reactions";
 import {
   CalendarReadLimitError,
@@ -941,6 +942,8 @@ export const dashboardSnapshot = async (params: {
   dateConfig?: DateContext;
   /** Omit for the dashboard widget; overview routes load only their selected list. */
   view?: "today" | "upcoming" | "counts";
+  /** The Spaces the user reaches, when the request resolved them already; omitted, they are resolved here. */
+  spaceIds?: ReachableSpaceIds;
 }): Promise<{
   openTodoCount: number;
   assignedToMeCount: number;
@@ -950,11 +953,13 @@ export const dashboardSnapshot = async (params: {
   events: DashboardItem[];
   todos: DashboardItem[];
 }> => {
-  const principalMatch = buildSpacePrincipalCondition({ type: "user", userId: params.userId });
+  const reachable = toPgUuidArray(
+    reachableIdsForSql(params.spaceIds ?? (await listReachableSpaceIds({ type: "user", userId: params.userId }))),
+  );
   const { todayStart, tomorrowStart } = deadlineWindow(params.dateConfig);
   const spaceFilter = params.spaceId ? sql`AND i.space_id = ${params.spaceId}::uuid` : sql``;
 
-  // Counts and lists retain the same access checks when limited to one Space.
+  // Counts and lists keep to the reachable Spaces, also when limited to one Space.
   const [agg] = await sql<
     {
       open_count: number;
@@ -984,13 +989,7 @@ export const dashboardSnapshot = async (params: {
     FROM spaces.items i
     JOIN spaces.columns c ON c.id = i.column_id
     JOIN spaces.spaces s ON s.id = i.space_id
-    WHERE EXISTS (
-      SELECT 1 FROM spaces.space_access sa
-      JOIN auth.access a ON a.id = sa.access_id
-      WHERE sa.space_id = i.space_id
-        AND a.permission <> 'none'
-        AND ${principalMatch}
-    )
+    WHERE i.space_id = ANY(${reachable}::uuid[])
     ${spaceFilter}
   `;
 
@@ -1026,13 +1025,7 @@ export const dashboardSnapshot = async (params: {
         (i.starts_at IS NOT NULL AND i.starts_at >= ${todayStart}::timestamptz AND i.starts_at < ${tomorrowStart}::timestamptz)
         OR (${deadlineDaySql(deadlineTimeZone(params.dateConfig))} = ${deadlineWindow(params.dateConfig).todayKey}::date)
       )
-      AND EXISTS (
-        SELECT 1 FROM spaces.space_access sa
-        JOIN auth.access a ON a.id = sa.access_id
-        WHERE sa.space_id = i.space_id
-          AND a.permission <> 'none'
-          AND ${principalMatch}
-      )
+      AND i.space_id = ANY(${reachable}::uuid[])
     ORDER BY COALESCE(i.starts_at, ${deadlineSortSql(deadlineTimeZone(params.dateConfig))}) ASC
     LIMIT 5
   `;
@@ -1052,13 +1045,7 @@ export const dashboardSnapshot = async (params: {
       ${spaceFilter}
       AND c.is_done = false
       AND (i.starts_at IS NULL OR i.starts_at < ${todayStart}::timestamptz OR i.starts_at >= ${tomorrowStart}::timestamptz)
-      AND EXISTS (
-        SELECT 1 FROM spaces.space_access sa
-        JOIN auth.access a ON a.id = sa.access_id
-        WHERE sa.space_id = i.space_id
-          AND a.permission <> 'none'
-          AND ${principalMatch}
-      )
+      AND i.space_id = ANY(${reachable}::uuid[])
     ORDER BY ${deadlineSortSql(deadlineTimeZone(params.dateConfig))} ASC NULLS LAST, i.created_at ASC
     LIMIT ${params.todoLimit}
   `;
@@ -3157,9 +3144,11 @@ export const listMyTasks = async (params: {
   minPriority?: Priority;
   limit?: number;
   dateConfig?: DateContext;
+  /** The Spaces the user reaches, when the request resolved them already; omitted, they are resolved here. */
+  spaceIds?: ReachableSpaceIds;
 }): Promise<TaskItem[]> => {
   const { userId, minPriority, limit = 20 } = params;
-  const principalMatch = buildSpacePrincipalCondition({ type: "user", userId });
+  const reachable = toPgUuidArray(reachableIdsForSql(params.spaceIds ?? (await listReachableSpaceIds({ type: "user", userId }))));
 
   // Build priority filter
   let priorityCondition = sql``;
@@ -3172,7 +3161,6 @@ export const listMyTasks = async (params: {
     priorityCondition = sql`AND i.priority = ANY(${toPgTextArray(allowedPriorities)}::text[])`;
   }
 
-  // Use subquery to get accessible space IDs first, then query items
   const rows = await sql<
     {
       id: string;
@@ -3187,19 +3175,11 @@ export const listMyTasks = async (params: {
       priority: string | null;
     }[]
   >`
-    WITH accessible_spaces AS (
-      SELECT DISTINCT s.id
-      FROM spaces.spaces s
-      JOIN spaces.space_access sa ON s.id = sa.space_id
-      JOIN auth.access a ON sa.access_id = a.id
-      WHERE a.permission <> 'none'
-        AND ${principalMatch}
-    )
     SELECT i.id, i.short_id, i.space_id, s.short_id AS space_short_id, s.name as space_name, s.color as space_color,
            i.title, i.deadline, i.deadline_date::text AS deadline_date, i.priority
     FROM spaces.items i
     JOIN spaces.spaces s ON i.space_id = s.id
-    WHERE i.space_id IN (SELECT id FROM accessible_spaces)
+    WHERE i.space_id = ANY(${reachable}::uuid[])
       AND i.completed_at IS NULL
       AND (i.starts_at IS NULL OR i.ends_at IS NULL)
       AND EXISTS (

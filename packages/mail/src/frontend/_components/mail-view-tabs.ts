@@ -27,9 +27,16 @@ export const mailboxCurrentTab = (state: {
   return state.activeView ?? "all";
 };
 
+/** The width every view count keeps: three digits in the page's own figures. */
+const COUNT_RESERVE = "999";
+
 export const mailboxViewTabs = (input: {
   mailboxId: string;
-  viewCounts: ConversationViewCounts;
+  /**
+   * The counts, or what is known instead: "pending" keeps the numbers' place empty (no zero, nothing moves when they
+   * come), "unavailable" shows "–".
+   */
+  viewCounts: ConversationViewCounts | "pending" | "unavailable";
   savedViews: readonly SavedConversationView[];
   /** A person who sees only assigned conversations has no Unassigned view and no Events tab: the feed spans the mailbox. */
   assignedOnly: boolean;
@@ -43,7 +50,9 @@ export const mailboxViewTabs = (input: {
     id: view,
     label: input.labels[view],
     href: `/app/mail/${input.mailboxId}?view=${view}`,
-    count: input.formatCount(input.viewCounts[view]),
+    count: input.viewCounts === "pending" ? "" : input.viewCounts === "unavailable" ? "–" : input.formatCount(input.viewCounts[view]),
+    // a count keeps the width of three digits, so a number that comes later moves no tab
+    countReserve: COUNT_RESERVE,
   })),
   ...input.savedViews.map((view) => ({
     id: `saved:${view.id}`,

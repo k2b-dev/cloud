@@ -9,6 +9,7 @@ import { mailReaderMessages } from "./_components/mail-reader-messages";
 import { mailPresetDescriptionMessages, mailRemainingMessages } from "./_components/mail-remaining-messages";
 import { mailSettingsMessages } from "./_components/mail-settings-messages";
 import { mailSidebarMessages } from "./_components/mail-sidebar-messages";
+import { mailCodeHistoryMessages } from "./mail-code-history-messages";
 import { mailOverviewMessages } from "./mail-overview-messages";
 import { mailWorkspaceMessages } from "./mail-workspace-messages";
 
@@ -26,6 +27,7 @@ const catalogs = [
   mailRemainingMessages,
   mailPresetDescriptionMessages,
   mailMailboxViewMessages,
+  mailCodeHistoryMessages,
 ];
 
 describe("Mail browser message catalogs", () => {

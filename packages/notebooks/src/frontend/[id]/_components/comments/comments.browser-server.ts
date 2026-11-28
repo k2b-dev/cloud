@@ -480,13 +480,13 @@ export const startCommentsServer = async () => {
       const preview = renderToString(() =>
         createComponent(NotePreview, { text, mode, historyIncomplete: false, annotations: initial, me: ME.id }),
       );
-      const serialized = Bun.escapeHTML(JSON.stringify(toJSON(props)));
+      const serialized = JSON.stringify(toJSON(props)).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e");
       return new Response(
         `<!doctype html><html lang="de"${url.searchParams.has("dark") ? ' class="dark"' : ""}><head>
         <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style>
         <style>solid-client,solid-island{display:contents}#layout{display:flex;height:100dvh}#navigation{width:264px;flex:none;padding:16px;font:14px sans-serif;color:#555}#main{display:flex;flex:1;min-width:0;min-height:0;flex-direction:column}#panel{width:360px;flex:none;padding:16px;font:14px sans-serif}@media(max-width:700px){#navigation{display:none}}</style>
         </head><body class="k2b-ui" style="margin:0"><div id="layout"><nav id="navigation">Ruderverein Seewind</nav><main id="main">
-        <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col" data-comments=""${fullWidth ? " data-full-width" : ""}${panel ? " data-detail-open" : ""}><solid-client data-id="note-editor" data-props="${serialized}"></solid-client>${preview}</div>
+        <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col" data-comments=""${fullWidth ? " data-full-width" : ""}${panel ? " data-detail-open" : ""}><solid-client data-id="note-editor"><!--ssr-props:${serialized}--></solid-client>${preview}</div>
         </main>${panel ? '<aside id="panel">Details</aside>' : ""}</div><script type="module" src="/editor.js"></script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );

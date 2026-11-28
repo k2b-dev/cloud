@@ -109,7 +109,8 @@ page.openShare = () => {
   page.result = undefined;
   void openAccessDialog({
     resourceName: params.has("notebook") ? "Protokolle Vorstand" : "Lager Nord",
-    subtitle: params.has("notebook") ? "Notizbücher" : "Spaces",
+    // a subtitle only where it adds something: the app is named by the page behind
+    subtitle: params.has("notebook") ? undefined : "Gemeinsamer Bereich der Logistik",
     findServiceAccount: params.has("notebook")
       ? async (handle: string) =>
           handle === "code-7k2q9m4xwt"

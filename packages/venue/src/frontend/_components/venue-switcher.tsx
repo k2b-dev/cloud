@@ -10,7 +10,7 @@ import {
 } from "@k2b/ui";
 import { type Accessor, createSignal } from "solid-js";
 import { apiClient } from "../../api/client";
-import type { Venue } from "../../contracts";
+import { VENUE_PAGE_MAX, type Venue } from "../../contracts";
 import { venueMessages } from "../../messages";
 
 /** The venue's sidebar switcher for the sidebar and the phone menu; the other venues load when it is first reached. */
@@ -47,18 +47,27 @@ export function createVenueSwitcher(
     requested = true;
     setFailed(false);
     try {
-      const response = await apiClient.venues.$get();
-      if (!response.ok) throw new Error();
-      const payload = await response.json();
-      if (!("venues" in payload)) throw new Error();
+      // Every venue, page by page, until a page is short or brings no venue already seen; listed by name.
+      const venues = new Map<string, Pick<Venue, "id" | "name" | "icon" | "accentColor">>();
+      for (let offset = 0; ; offset += VENUE_PAGE_MAX) {
+        const response = await apiClient.venues.$get({ query: { limit: String(VENUE_PAGE_MAX), offset: String(offset) } });
+        if (!response.ok) throw new Error();
+        const payload = await response.json();
+        if (!("venues" in payload)) throw new Error();
+        const before = venues.size;
+        for (const item of payload.venues) if (!venues.has(item.id)) venues.set(item.id, item);
+        if (payload.venues.length !== VENUE_PAGE_MAX || venues.size === before) break;
+      }
       setOptions(
-        payload.venues.map((item) => ({
-          id: item.id,
-          label: item.name,
-          icon: item.icon,
-          color: item.accentColor,
-          href: `/app/venue/${item.id}`,
-        })),
+        [...venues.values()]
+          .sort((left, right) => left.name.localeCompare(right.name))
+          .map((item) => ({
+            id: item.id,
+            label: item.name,
+            icon: item.icon,
+            color: item.accentColor,
+            href: `/app/venue/${item.id}`,
+          })),
       );
     } catch {
       requested = false;

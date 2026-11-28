@@ -410,7 +410,11 @@ const runLocationCreate = async (input: z.infer<typeof LocationCreateInputSchema
       const userId = requireUserId(context);
       if (!userId.ok) return userId;
       const result = await weatherService.location.saved.create({ userId: userId.data, data: input });
-      if (!result.ok) return fail({ ...result.error, message: t.addLocationFailed });
+      if (!result.ok)
+        return fail({
+          ...result.error,
+          message: result.error.code === "CONFLICT" ? t.tooManyLocations({ max: weatherService.location.saved.max }) : t.addLocationFailed,
+        });
       const data = mapLocation(result.data);
       return ok({
         data,

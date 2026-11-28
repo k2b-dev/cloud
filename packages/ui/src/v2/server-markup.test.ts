@@ -131,6 +131,45 @@ test("a text field sends autocomplete, length, keyboard, spelling and capitals i
   );
 });
 
+// A page to read, not to arrange (a visitor page, a wall screen): a fixed width keeps the column, without a grip.
+test("a fixed width keeps a column and a table column without a grip", async () => {
+  const { Table } = await import("./content");
+  const fixed = { fixed: 360 };
+  const panes = renderToString(() =>
+    createComponent(Pane.Split, {
+      get children() {
+        return [
+          createComponent(Pane, { label: "Liste", children: "Liste" }),
+          createComponent(Pane, { side: true, label: "Seite", width: fixed, children: "Seite" }),
+        ];
+      },
+    }),
+  );
+  expect(panes).toContain('class="k2-seam"');
+  expect(panes).not.toContain("data-k2-grip");
+  const table = (width: { fixed: number } | { min: number; default: number }) =>
+    renderToString(() =>
+      createComponent(Table<{ name: string }>, {
+        label: "Programm",
+        rows: [{ name: "Lesung" }],
+        columns: [
+          { title: "Name", width, cell: (row: { name: string }) => row.name },
+          { title: "Ort", cell: () => "Saal 2" },
+        ],
+      }),
+    );
+  expect(table(fixed)).not.toContain("k2-cgrip");
+  expect(table({ min: 280, default: 360 })).toContain("k2-cgrip");
+  expect(table(fixed)).toContain("width:360px");
+});
+
+// A meter near or at its limit says so in colour too, as the chip beside it says it in words.
+test("a meter carries its state only when it has one", async () => {
+  const { Progress } = await import("./marks");
+  expect(renderToString(() => createComponent(Progress, { value: 120, of: 120, status: "bad" }))).toContain('data-status="bad"');
+  expect(renderToString(() => createComponent(Progress, { value: 9, of: 12 }))).not.toContain("data-status");
+});
+
 test("an empty state that went wrong carries its tone on its sign; a plain one stays neutral", () => {
   const sign = (markup: string) => markup.match(/<span class="k2-sign"[^>]*>/)?.[0] ?? "";
   const failed = renderToString(() =>
@@ -297,6 +336,59 @@ test("a Cover is sent by the server with its picture and its words, and without 
   // no picture, no band: nothing stands in its place
   expect(renderToString(() => createComponent(Cover, { alt: "" }))).not.toContain("<");
   expect(renderToString(() => createComponent(Cover, { src: "", alt: "Hof" }))).not.toContain("<");
+});
+
+test("a RangeBar with several ranges draws each on the one track, in its own colours, under one label", async () => {
+  const { RangeBar } = await import("./marks");
+  const markup = renderToString(() =>
+    createComponent(RangeBar, {
+      // a day with a break, on a scale from 6 to 24: 8 to 12 and 14 to 18, given in any order and either direction
+      ranges: [
+        { from: 18, to: 14 },
+        { from: 8, to: 12 },
+      ],
+      domain: [6, 24],
+      stops: [
+        { at: 6, color: "#0369a1" },
+        { at: 24, color: "#15803d" },
+      ],
+      label: "Mo.: 08:00 bis 12:00 und 14:00 bis 18:00",
+    }),
+  );
+  // one image with one name: the words list every range, the bars say nothing on their own
+  expect(markup.match(/role="img"/g)).toEqual(['role="img"']);
+  expect(markup).toContain('aria-label="Mo.: 08:00 bis 12:00 und 14:00 bis 18:00"');
+  expect(markup.match(/<i /g)?.length).toBe(2);
+  // in the given order: 14…18 lies 8/18 in from the start and 6/18 short of the end, 8…12 2/18 in and 12/18 short
+  expect(markup).toContain("--k2-range-start:44.4%;--k2-range-end:33.3%");
+  expect(markup).toContain("--k2-range-start:11.1%;--k2-range-end:66.7%");
+  // each bar shows the colours of its own part of the scale: the 6…24 stops seen from 14…18 and from 8…12
+  expect(markup).toContain("linear-gradient(var(--k2-range-way, to right), #0369a1 -200%, #15803d 250%)");
+  expect(markup).toContain("linear-gradient(var(--k2-range-way, to right), #0369a1 -50%, #15803d 400%)");
+});
+
+test("a RangeBar without ranges, or with ranges that are no numbers, keeps its track and draws nothing on it", async () => {
+  const { RangeBar } = await import("./marks");
+  const closed = renderToString(() => createComponent(RangeBar, { ranges: [], domain: [6, 24], label: "So.: geschlossen" }));
+  expect(closed).toContain('data-k2-part="RangeBar"');
+  expect(closed).toContain('aria-label="So.: geschlossen"');
+  expect(closed).not.toContain("<i");
+  // a range that is no number is left out, the others stay
+  const partly = renderToString(() =>
+    createComponent(RangeBar, {
+      ranges: [
+        { from: Number.NaN, to: 12 },
+        { from: 14, to: 18 },
+      ],
+      domain: [6, 24],
+      label: "Di.: 14:00 bis 18:00",
+    }),
+  );
+  expect(partly.match(/<i /g)?.length).toBe(1);
+  // one range in `ranges` draws exactly what `from` and `to` draw
+  const one = (props: { from: number; to: number } | { ranges: { from: number; to: number }[] }) =>
+    renderToString(() => createComponent(RangeBar, { ...props, domain: [0, 10], label: "Bereich" }));
+  expect(one({ ranges: [{ from: 2, to: 8 }] })).toBe(one({ from: 2, to: 8 }));
 });
 
 test("a decorative RangeBar says nothing to assistive technology", async () => {
