@@ -168,16 +168,19 @@ for (const width of [1440, 390])
         expect(await opacity()).toBe("0");
         await other.locator(".k2-row-open").focus();
         await page.keyboard.press("Tab");
+        await settled(page);
         const more = other.locator('.k2-row-end button[aria-haspopup="menu"]');
         expect(await more.evaluate((element) => element === document.activeElement)).toBe(true);
         expect(await opacity()).toBe("1");
         await page.keyboard.press("Enter");
         await page.getByRole("menu").last().waitFor();
+        await settled(page);
         expect(await more.getAttribute("aria-expanded")).toBe("true");
         expect(await opacity()).toBe("1");
         await page.keyboard.press("Escape");
         await page.waitForFunction(() => document.activeElement?.getAttribute("aria-expanded") === "false");
         await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        await settled(page);
         expect(await opacity()).toBe("0");
       } else {
         expect(await end.isVisible()).toBe(false);
