@@ -62,6 +62,10 @@ type PageInput = { page?: number; perPage?: number };
 type PageResult<T> = { items: T[]; page: number; perPage: number; total: number; hasNext: boolean };
 type DeliveryFilter = {
   search?: string;
+  /** Only deliveries created at or after this moment. */
+  since?: Date;
+  /** One delivery by its id (a UUID), as its record reads it. */
+  id?: string;
   statuses?: readonly NotificationDeliveryStatus[];
   channels?: readonly string[];
   appIds?: readonly string[];
@@ -128,6 +132,8 @@ const deliveryWhere = (filter: DeliveryFilter): SQL.Query<unknown> => {
   const appIds = normalizeValues(filter.appIds);
   const search = filter.search?.trim().slice(0, 200);
 
+  if (filter.since) conditions.push(sql`d.created_at >= ${filter.since}`);
+  if (filter.id) conditions.push(sql`d.id = ${filter.id}::uuid`);
   if (statuses.length > 0) conditions.push(sql`d.status = ANY(${toPgTextArray(statuses)}::text[])`);
   if (channels.length > 0) conditions.push(sql`d.channel = ANY(${toPgTextArray(channels)}::text[])`);
   if (appIds.length > 0) conditions.push(sql`n.app_id = ANY(${toPgTextArray(appIds)}::text[])`);

@@ -1,9 +1,14 @@
 import type { StatusTone } from "@k2b/ui";
-import { gatewayOpsMessages } from "../messages";
+import { defineListQuery, field, type ListQueryStateOf } from "@k2b/ui/v2/list-query";
+import { type GatewayOpsMessages, gatewayOpsMessages } from "../messages";
+import { DEFAULT_TELEMETRY_RANGE, TELEMETRY_RANGES, type TelemetryRange } from "./telemetry/contracts";
+
+/** From this share of errors a failing route stands in red: one request in fifty fails. */
+export const BAD_ROUTE_SHARE = 0.02;
 
 export type OverviewSignalSeverity = "critical" | "warning" | "unavailable";
 
-type OverviewSignal = {
+export type OverviewSignal = {
   id: string;
   severity: OverviewSignalSeverity;
   icon: string;
@@ -12,7 +17,7 @@ type OverviewSignal = {
   href: string;
 };
 
-type OverviewVerdict = {
+export type OverviewVerdict = {
   tone: StatusTone;
   label: string;
   description: string;
@@ -59,7 +64,7 @@ export const buildOverviewSignals = (input: OverviewSignalInput, locale = "en"):
       icon: "ti ti-alert-circle",
       title: t.serverErrorCount({ count: input.serverErrors }),
       detail: t.http5xxInRange({ range: input.range }),
-      href: `/admin/observability/telemetry?range=${input.range}&errors=1`,
+      href: `/admin/observability/telemetry?range=${input.range}&only=errors`,
     });
   }
   if (input.stuckRuns > 0) {
@@ -69,14 +74,14 @@ export const buildOverviewSignals = (input: OverviewSignalInput, locale = "en"):
       icon: "ti ti-clock-exclamation",
       title: t.stuckRunsTitle({ count: input.stuckRuns }),
       detail: t.stuckRunsDetail,
-      href: `/admin/observability/jobs?window=${input.jobsWindow}&health=stuck`,
+      href: `/admin/observability/runs?kind=job&status=running&time=last-${input.jobsWindow}`,
     });
   }
 
   const unavailableSignals = [
     ["apps", t.appHealthUnavailable, "/admin/apps"],
     ["telemetry", t.trafficSignalsUnavailable, `/admin/observability/telemetry?range=${input.range}`],
-    ["runs", t.runSignalsUnavailable, `/admin/observability/jobs?window=${input.jobsWindow}`],
+    ["runs", t.runSignalsUnavailable, `/admin/observability/runs?kind=job&time=last-${input.jobsWindow}`],
     ["logs", t.logSignalsUnavailable, "/admin/observability/logs"],
   ] as const;
   for (const [source, title, href] of unavailableSignals) {
@@ -99,7 +104,7 @@ export const buildOverviewSignals = (input: OverviewSignalInput, locale = "en"):
       icon: "ti ti-x",
       title: t.failedRunsTitle({ count: input.failedRuns }),
       detail: t.failedRunsDetail({ window: input.jobsWindow }),
-      href: `/admin/observability/jobs?window=${input.jobsWindow}&health=failed`,
+      href: `/admin/observability/runs?kind=job&status=failed&time=last-${input.jobsWindow}`,
     });
   }
   if (input.rateLimited > 0) {
@@ -158,4 +163,43 @@ export const overviewVerdict = (signals: OverviewSignal[], locale = "en"): Overv
     label: t.noActiveIncidents,
     description: t.noActiveIncidentsDescription,
   };
+};
+
+export const OVERVIEW_PATH = "/admin/observability";
+
+const rangeLabel = (t: GatewayOpsMessages, range: TelemetryRange): string =>
+  ({
+    "1h": t.lastHour,
+    "6h": t.lastHours({ count: 6 }),
+    "24h": t.lastHours({ count: 24 }),
+    "7d": t.lastDays({ count: 7 }),
+    "30d": t.lastDays({ count: 30 }),
+  })[range];
+
+/** The overview's one declaration: the window its figures, signals and charts cover, as Telemetry names it (`range`). */
+export const overviewQuery = (locale: string) => {
+  const { t } = gatewayOpsMessages.resolve([locale]);
+  return defineListQuery({
+    key: "gateway-ops.overview",
+    fields: {
+      range: field.timeRange({
+        label: t.timeRange,
+        common: true,
+        custom: false,
+        presets: (Object.keys(TELEMETRY_RANGES) as TelemetryRange[]).map((value) => ({ value, label: rangeLabel(t, value) })),
+        required: { kind: "preset", preset: DEFAULT_TELEMETRY_RANGE },
+      }),
+    },
+    // the overview lists nothing the person orders; its signals come by weight
+    sort: { fixed: { field: "weight", direction: "desc", label: t.signals } },
+  });
+};
+
+export type OverviewQuery = ReturnType<typeof overviewQuery>;
+export type OverviewState = ListQueryStateOf<OverviewQuery>;
+
+/** The address of a window: the default window is the bare overview. */
+export const overviewHref = (query: OverviewQuery, state: OverviewState) => {
+  const text = query.serialize(state).toString();
+  return text ? `${OVERVIEW_PATH}?${text}` : OVERVIEW_PATH;
 };

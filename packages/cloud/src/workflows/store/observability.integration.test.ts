@@ -51,9 +51,9 @@ const PLAN: WorkflowBoundPlan = {
 };
 const testData = createWorkflowIntegrationFixture();
 
-const listening = async (appId: string, eventType: string) => {
+const listening = async (appId: string, eventType: string, definition = { key: "wf", name: "Nightly digest" }) => {
   const scopeId = testData.scope(appId);
-  const workflow = await createWorkflow({ appId, scopeId, key: "wf", name: "Nightly digest", author: { kind: "system" } });
+  const workflow = await createWorkflow({ appId, scopeId, ...definition, author: { kind: "system" } });
   await publishWorkflowVersion({
     workflowId: workflow.id,
     source: "on: probe\nsteps: []",
@@ -304,5 +304,61 @@ suiteFor("database")("workflow observability", () => {
 
     await sql`UPDATE workflows.run SET event_id = NULL WHERE id = ${runId}::uuid`;
     expect(await getWorkflowRun(runId)).toMatchObject({ eventId: null, eventData: null, eventPayloadExpired: false });
+  });
+
+  test("a set of states and a name search filter before the page, in one statement each", async () => {
+    expect(await ready()).toBe(true);
+    const appId = `states-${crypto.randomUUID().slice(0, 8)}`;
+    const { scopeId, workflowId } = await listening(appId, "probe.states");
+    const runIds: string[] = [];
+    for (const key of ["failed", "attention", "queued", "waiting", "done"]) {
+      const emission = await emitWorkflowEvent({ appId, scopeId, type: "probe.states", dedupeKey: key }, { dispatch: "now" });
+      runIds.push(emission.runIds[0]!);
+    }
+    const [failedRun, attentionRun, queuedRun, waitingRun, doneRun] = runIds;
+    await sql`
+      UPDATE workflows.run
+      SET state = CASE id
+        WHEN ${failedRun!}::uuid THEN 'failed'
+        WHEN ${attentionRun!}::uuid THEN 'needs_attention'
+        WHEN ${queuedRun!}::uuid THEN 'queued'
+        WHEN ${waitingRun!}::uuid THEN 'waiting'
+        ELSE 'succeeded'
+      END
+      WHERE workflow_id = ${workflowId}::uuid
+    `;
+    expect(doneRun).toBeDefined();
+
+    // Two pages of one: both states that need someone arrive, none is lost to a page of other states.
+    const needSomeone = [
+      ...(await listWorkflowRuns({ appId, states: ["failed", "needs_attention"], limit: 1, offset: 0 })),
+      ...(await listWorkflowRuns({ appId, states: ["failed", "needs_attention"], limit: 1, offset: 1 })),
+    ];
+    expect(needSomeone.map((run) => run.id).sort()).toEqual([failedRun!, attentionRun!].sort());
+    // an empty set names no state, so no run matches it
+    expect(await listWorkflowRuns({ appId, states: [] })).toEqual([]);
+    expect((await listWorkflowRuns({ appId, states: ["queued", "waiting"] })).map((run) => run.id).sort()).toEqual(
+      [queuedRun!, waitingRun!].sort(),
+    );
+
+    // A name the search asks for is found even when other definitions fill the limit first.
+    for (const index of [1, 2, 3]) {
+      const other = await listening(appId, `probe.other${index}`, { key: `other-${index}`, name: `Other digest ${index}` });
+      await emitWorkflowEvent({ appId, scopeId: other.scopeId, type: `probe.other${index}` }, { dispatch: "now" });
+    }
+    // the others need someone, so they sort first and fill a limit of one without the search
+    await sql`UPDATE workflows.run SET state = 'needs_attention' WHERE app_id = ${appId} AND workflow_id <> ${workflowId}::uuid`;
+    expect((await listWorkflowFamilies({ appId, limit: 1 })).map((family) => family.workflowId)).not.toEqual([workflowId]);
+    const searched = await listWorkflowFamilies({ appId, search: "NIGHTLY", limit: 1 });
+    expect(searched.map((family) => family.workflowId)).toEqual([workflowId]);
+    expect(await listWorkflowFamilies({ appId, search: "100%_", limit: 5 })).toEqual([]);
+
+    const meter = await meterSql();
+    try {
+      expect(await meter.during(() => listWorkflowRuns({ appId, states: ["failed", "needs_attention"], limit: 20 }))).toHaveLength(1);
+      expect(await meter.during(() => listWorkflowFamilies({ appId, search: "digest", limit: 20 }))).toHaveLength(1);
+    } finally {
+      await meter.close();
+    }
   });
 });

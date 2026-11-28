@@ -1,39 +1,24 @@
-/**
- * Observability overview — the entry point the console did not have.
- *
- * The incident help document describes a diagnosis path (apps → routes →
- * telemetry → logs → storage → notifications), but the navigation offered
- * eight flat links and no starting point, so an operator had to guess which
- * page held the answer. This page answers one question — "is anything wrong
- * right now" — and links straight to the page that explains each signal.
- *
- * The page stays deliberately synthetic: source pages own detailed tables and
- * charts, while this entry point turns their aggregates into an operator queue.
- */
-
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { logging, type TraceWindow, trace } from "@k2b/cloud/services";
-import { Placeholder, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
-import OperationalCharts from "../frontend/OperationalCharts.island";
-import { alignCountSeries, prepareOperationalCharts } from "../frontend/operational-charts";
-import RangeTabs from "../frontend/RangeTabs";
-import { buildGatewayHealth } from "../health";
 import { gatewayOpsMessages } from "../messages";
-import { areaText, ObservabilityArea, ObservabilityPane, readAttention } from "./_components/ObservabilityArea";
-import { buildOverviewSignals, type OverviewSignalSeverity, overviewVerdict } from "./overview";
-import { DEFAULT_TELEMETRY_RANGE, isTelemetryRange, TELEMETRY_RANGES, type TelemetryRange } from "./telemetry/contracts";
+import { observabilityAdminNav } from "./_components/admin-nav";
+import { INFRA_HREF } from "./_components/InfrastructureTabs";
+import type { KeyCell } from "./_components/KeyCells";
+import { readAttention, readHealth } from "./_components/ObservabilityArea";
+import type { FailingRoute, OverviewApp } from "./_components/OverviewScreen";
+import OverviewScreen from "./_components/OverviewScreen.island";
+import { opsCharts } from "./_components/ops-chart";
+import { readInfraStates } from "./infrastructure/sections";
+import { BAD_ROUTE_SHARE, buildOverviewSignals, overviewQuery, overviewVerdict } from "./overview";
+import { TELEMETRY_RANGES } from "./telemetry/contracts";
 import { getTelemetryOverview, getTelemetryTimeseries, listTelemetryRoutes } from "./telemetry/service";
 
-const RANGE_KEYS = Object.keys(TELEMETRY_RANGES) as TelemetryRange[];
+/** Routes the overview lists; Telemetry lists them all. */
+const FAILING_ROUTES = 5;
 
-const signalIconClass = (severity: OverviewSignalSeverity): string => {
-  if (severity === "critical") return "bg-red-500/10 text-red-700 dark:text-red-300";
-  if (severity === "warning") return "bg-amber-500/10 text-amber-700 dark:text-amber-300";
-  return "bg-zinc-500/10 text-dimmed";
-};
-
-/** Reports a section that could not be read instead of rendering it as zero. */
+/** Reports a source that could not be read instead of rendering it as zero. */
 const settled = async <T,>(load: () => Promise<T>, fallback: T): Promise<{ value: T; error: string | null }> => {
   try {
     return { value: await load(), error: null };
@@ -42,27 +27,38 @@ const settled = async <T,>(load: () => Promise<T>, fallback: T): Promise<{ value
   }
 };
 
+const iconOf = (icon: string | undefined) => icon?.replace(/^ti\s+(ti-)?/, "") || "apps";
+
+/**
+ * Operations at a glance on v2: the window's statement, the server errors with their history as the hero, the signals
+ * that need someone, the failing routes and the log severity; beside them the services and the apps with their state.
+ */
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const { t } = gatewayOpsMessages.resolve([locale]);
-  const fmt = (value: number) => value.toLocaleString(locale);
-  const url = new URL(c.req.url);
-  const rangeParam = url.searchParams.get("range");
-  const range = isTelemetryRange(rangeParam) ? rangeParam : DEFAULT_TELEMETRY_RANGE;
+  const number = (value: number) => value.toLocaleString(locale);
+  const query = overviewQuery(locale);
+  const { state } = query.parse(new URL(c.req.url).searchParams);
+  const range = state.filters.range.kind === "preset" ? state.filters.range.preset : "24h";
+  // jobs keep no six-hour window: the next longer one
   const jobsWindow: TraceWindow = range === "6h" ? "12h" : range;
 
-  const [health, telemetry, telemetryTimeseries, failingRoutes, logSummary, logTimeseries, jobStats] = await Promise.all([
-    settled(() => buildGatewayHealth(), null),
+  const [health, telemetry, telemetryTimeseries, failingRoutes, logSummary, logTimeseries, jobStats, attention, infra] = await Promise.all([
+    // the health the area shares for 30 s (its sidebar dots read the same), not a second build per load
+    settled(() => readHealth(), null),
     settled(() => getTelemetryOverview({ range }), null),
     settled(() => getTelemetryTimeseries({ range }), []),
     settled(() => listTelemetryRoutes({ range }, "errorRate", { errorsOnly: true, slowOnly: false }), []),
     settled(() => logging.summary(), null),
     settled(() => logging.timeseries({ sinceHours: TELEMETRY_RANGES[range].hours }), []),
     settled(() => trace.stats({ filter: { window: jobsWindow } }), null),
+    readAttention(),
+    // The three services' states: a probe of Postgres, Valkey and NATS, each bounded by the first picture's budget and
+    // shared by the area's pages for 30 s, so a call probes them at most once per 30 s per process.
+    readInfraStates(),
   ]);
 
   const offlineApps = health.value?.apps.filter((app) => app.status !== "ok") ?? [];
-  const worstRoutes = failingRoutes.value.slice(0, 5);
   const signals = buildOverviewSignals(
     {
       range,
@@ -83,178 +79,126 @@ export default ssr<AuthContext>(async (c) => {
     locale,
   );
   const verdict = overviewVerdict(signals, locale);
-  const comparisonInterval =
+  const telemetryHref = `/admin/observability/telemetry?range=${range}`;
+  const share = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 2 });
+
+  // The hero: the server errors of the window with their real history per interval. A figure that could not be read
+  // says so instead of showing zero.
+  const errorSeries = telemetryTimeseries.value.map((point) => point.serverErrors);
+  const errorTotal = errorSeries.reduce((sum, value) => sum + value, 0);
+  const hero: KeyCell = {
+    icon: "alert-circle",
+    label: t.serverErrors,
+    value: telemetry.value ? number(telemetry.value.serverErrors) : "—",
+    meta: telemetry.value
+      ? t.shareOfRequests({
+          rate: share.format(telemetry.value.requests > 0 ? telemetry.value.serverErrors / telemetry.value.requests : 0),
+          requests: number(telemetry.value.requests),
+        })
+      : t.unavailable,
+    tone: (telemetry.value?.serverErrors ?? 0) > 0 ? "bad" : undefined,
+    href: `${telemetryHref}&only=errors`,
+    trend:
+      errorSeries.length > 1
+        ? { values: errorSeries, label: t.serverErrorsTrend({ total: number(errorTotal), peak: number(Math.max(...errorSeries)) }) }
+        : undefined,
+  };
+  // three cells beside the context column: the hero and the two volumes a person reads it against
+  const cells: KeyCell[] = [
+    hero,
+    {
+      icon: "apps",
+      label: t.appsOnline,
+      value: health.value ? `${health.value.apps.length - offlineApps.length}/${health.value.apps.length}` : "—",
+      meta: health.error ? t.unavailable : t.registeredAppsLabel,
+    },
+    {
+      icon: "player-play",
+      label: t.runs,
+      value: jobStats.value ? number(jobStats.value.runs) : "—",
+      meta: jobStats.value ? jobsWindow : t.unavailable,
+    },
+  ];
+
+  const interval =
     logTimeseries.value.length > 1
       ? logTimeseries.value[1]!.at.getTime() - logTimeseries.value[0]!.at.getTime()
       : TELEMETRY_RANGES[range].bucketSeconds * 1000;
-  const serverErrorSeries = [
-    {
-      label: t.errors,
-      data: alignCountSeries(
-        telemetryTimeseries.value.map((point) => ({ x: new Date(point.at).getTime(), y: point.serverErrors })),
-        comparisonInterval,
-      ),
-    },
-  ];
-  const logSeveritySeries = [
-    {
-      label: t.warnings,
-      data: logTimeseries.value.map((point) => ({ x: point.at.getTime(), y: point.warn })),
-    },
-    {
-      label: t.errors,
-      data: logTimeseries.value.map((point) => ({ x: point.at.getTime(), y: point.error })),
-    },
-  ];
-  const rangeUrl = (option: TelemetryRange) =>
-    option === DEFAULT_TELEMETRY_RANGE ? "/admin/observability" : `/admin/observability?range=${option}`;
+  const [logChart] = opsCharts(
+    [
+      {
+        kind: "line",
+        title: t.logSeverityOverTime,
+        description: t.logSeverityDescription,
+        maxGap: interval,
+        error: logTimeseries.error,
+        series: [
+          { label: t.warnings, data: logTimeseries.value.map((point) => ({ x: point.at.getTime(), y: point.warn })) },
+          { label: t.errors, data: logTimeseries.value.map((point) => ({ x: point.at.getTime(), y: point.error })) },
+        ],
+      },
+    ],
+    locale,
+  );
 
-  const attention = await readAttention();
+  // names, signs and colours of the apps come from the health snapshot the page already read
+  const appOf = (id: string) => {
+    const app = health.value?.apps.find((candidate) => candidate.id === id);
+    return { label: app?.name || id, icon: iconOf(app?.icon), color: app?.accent };
+  };
+  const rate = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 });
+  const routes = {
+    error: failingRoutes.error,
+    href: `${telemetryHref}&only=errors`,
+    rows: failingRoutes.value.slice(0, FAILING_ROUTES).map(
+      (row): FailingRoute => ({
+        key: `${row.appId}:${row.route}`,
+        route: row.route,
+        app: appOf(row.appId),
+        errors: number(row.errors),
+        requests: number(row.requests),
+        rate: rate.format(row.requests > 0 ? row.errors / row.requests : 0),
+        bad: row.requests > 0 && row.errors / row.requests >= BAD_ROUTE_SHARE,
+        href: `${telemetryHref}&app=${encodeURIComponent(row.appId)}&route=${encodeURIComponent(row.route)}`,
+      }),
+    ),
+  };
+  // every registered app with its state; health already reads them all, so this costs no read of its own
+  const appRows: OverviewApp[] | null = health.value
+    ? health.value.apps.map((app) => ({
+        id: app.id,
+        label: app.name,
+        icon: iconOf(app.icon),
+        color: app.accent,
+        status: app.status === "ok" ? "ok" : app.online ? "warn" : "bad",
+      }))
+    : null;
+
   return () => (
-    <ObservabilityArea c={c} locale={locale} section="home" attention={attention}>
-      <ObservabilityPane label={areaText(locale).home} description={t.observabilityDescription}>
-        <RangeTabs
-          caption={t.trafficWindow}
-          label={t.trafficWindow}
-          current={range}
-          items={RANGE_KEYS.map((option) => ({ id: option, href: rangeUrl(option) }))}
-        />
-
-        <section class="paper p-3">
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div class="min-w-0">
-              <StatusBadge tone={verdict.tone} label={t.currentState} variant="dot" />
-              <h2 class="mt-1 text-base font-semibold text-primary">{verdict.label}</h2>
-              <p class="mt-1 text-xs text-dimmed">{verdict.description}</p>
-            </div>
-            <span class="rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-2 py-1 text-[10px] tabular-nums text-dimmed">
-              {signals.length === 0 ? t.allSignalsQuiet : t.openSignals({ count: signals.length })}
-            </span>
-          </div>
-
-          {signals.length > 0 ? (
-            <ul class="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-              {signals.map((signal) => (
-                <li>
-                  <a
-                    href={signal.href}
-                    class="group flex h-full items-start gap-2 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-3 transition-colors hover:bg-[var(--ui-hover)] focus-visible:outline-none focus-visible:[box-shadow:var(--ui-focus)]"
-                  >
-                    <span
-                      class={`grid size-7 shrink-0 place-items-center rounded-[var(--ui-radius-control)] ${signalIconClass(signal.severity)}`}
-                    >
-                      <i class={signal.icon} aria-hidden="true" />
-                    </span>
-                    <span class="min-w-0 flex-1">
-                      <span class="flex items-center justify-between gap-2 text-xs font-medium text-primary">
-                        <span>{signal.title}</span>
-                        <i class="ti ti-arrow-up-right shrink-0 text-dimmed group-hover:text-primary" aria-hidden="true" />
-                      </span>
-                      <span class="mt-1 block text-[10px] text-dimmed">{signal.detail}</span>
-                    </span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p class="mt-3 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-3 text-xs text-secondary">
-              {t.noSignalsHint}
-            </p>
-          )}
-        </section>
-
-        <StatGrid columns={5}>
-          <StatCell
-            label={t.appsOnline}
-            value={health.value ? `${health.value.apps.length - offlineApps.length}/${health.value.apps.length}` : "—"}
-            sub={health.error ? t.unavailable : t.registeredAppsLabel}
-            href="/admin/apps"
-            accent={offlineApps.length > 0 ? { tone: "red", icon: "ti ti-plug-connected-x" } : { tone: "emerald", icon: "ti ti-check" }}
-          />
-          <StatCell
-            label={t.requests}
-            value={telemetry.value ? fmt(telemetry.value.requests) : "—"}
-            sub={telemetry.error ? t.unavailable : range}
-            href={`/admin/observability/telemetry?range=${range}`}
-          />
-          <StatCell
-            label={t.slowRequests}
-            value={telemetry.value ? fmt(telemetry.value.slowRequests) : "—"}
-            sub={telemetry.error ? t.unavailable : range}
-            href={`/admin/observability/telemetry?range=${range}`}
-          />
-          <StatCell
-            label={t.failedRuns}
-            value={jobStats.value ? fmt(jobStats.value.failed) : "—"}
-            sub={jobStats.error ? t.unavailable : jobsWindow}
-            valueClass={(jobStats.value?.failed ?? 0) > 0 ? "text-amber-600 dark:text-amber-400" : "text-primary"}
-            href={`/admin/observability/jobs?window=${jobsWindow}&health=failed`}
-            accent={(jobStats.value?.failed ?? 0) > 0 ? { tone: "amber", icon: "ti ti-x" } : undefined}
-          />
-          <StatCell
-            label={t.logWarnings}
-            value={logSummary.value ? fmt(logSummary.value.warnings24h) : "—"}
-            sub={logSummary.error ? t.unavailable : t.last24h}
-            valueClass={(logSummary.value?.warnings24h ?? 0) > 0 ? "text-amber-600 dark:text-amber-400" : "text-primary"}
-            href="/admin/observability/logs?level=warn"
-          />
-        </StatGrid>
-
-        <OperationalCharts
-          columns={2}
-          charts={prepareOperationalCharts(
-            [
-              {
-                kind: "line",
-                title: t.serverErrors,
-                description: t.serverErrorsDescription,
-                series: serverErrorSeries,
-                maxGap: comparisonInterval,
-                error: telemetryTimeseries.error,
-                href: `/admin/observability/telemetry?range=${range}`,
-                linkLabel: t.openTraffic,
-              },
-              {
-                kind: "line",
-                title: t.logSeverityOverTime,
-                description: t.logSeverityDescription,
-                series: logSeveritySeries,
-                maxGap: comparisonInterval,
-                error: logTimeseries.error,
-                href: `/admin/observability/logs?window=${range}`,
-                linkLabel: t.openLogs,
-              },
-            ],
-            locale,
-          )}
-        />
-
-        <section class="paper p-3">
-          <h2 class="text-xs font-semibold text-primary">{t.failingRoutes}</h2>
-          <p class="text-[10px] text-dimmed">{t.failingRoutesDescription}</p>
-          {failingRoutes.error ? (
-            <Placeholder state="error" variant="compact" description={failingRoutes.error} />
-          ) : worstRoutes.length === 0 ? (
-            <Placeholder variant="compact" description={t.noFailingRoutes} />
-          ) : (
-            <ul class="mt-2 flex flex-col gap-1">
-              {worstRoutes.map((row) => (
-                <li>
-                  <a
-                    href={`/admin/observability/telemetry?range=${range}&app=${encodeURIComponent(row.appId)}&route=${encodeURIComponent(row.route)}`}
-                    class="flex items-baseline justify-between gap-3 hover:text-primary"
-                  >
-                    <code class="truncate text-[11px] text-primary">{row.route}</code>
-                    <span class="shrink-0 text-[10px] tabular-nums text-red-500">
-                      {fmt(row.errors)}/{fmt(row.requests)}
-                    </span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </ObservabilityPane>
-    </ObservabilityArea>
+    <AdminLayout c={c} ui="v2" title={t.observability}>
+      <OverviewScreen
+        nav={observabilityAdminNav(c, locale, attention, "home")}
+        state={state}
+        verdict={{ label: verdict.label, description: verdict.description }}
+        cells={cells}
+        // the hero already says how many server errors there are and leads to them
+        signals={signals.filter((signal) => signal.id !== "server-errors")}
+        logs={
+          logChart && {
+            chart: logChart,
+            empty: t.noLogEntries,
+            href: `/admin/observability/logs?time=last-${range}`,
+            linkLabel: t.openLogs,
+          }
+        }
+        routes={routes}
+        services={[
+          { key: "postgres", label: "Postgres", icon: "database", href: INFRA_HREF.postgres, status: infra.postgres },
+          { key: "valkey", label: "Valkey", icon: "database", href: INFRA_HREF.valkey, status: infra.valkey },
+          { key: "nats", label: "NATS", icon: "topology-star-3", href: INFRA_HREF.nats, status: infra.nats },
+        ]}
+        apps={appRows}
+      />
+    </AdminLayout>
   );
 });

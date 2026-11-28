@@ -35,13 +35,18 @@ const detail = latest ? await getWorkflowRun(latest.id) : null;
 ```
 
 The list filter accepts app, scope, workflow, parent, state, mode, start time,
-limit, and offset. Run detail adds inputs, result, source, steps, effect usage,
+limit, and offset. `states` takes a set of states, such as
+`["failed", "needs_attention"]`, and applies before `limit`, so a page never
+misses a run of another state in the set. An empty set matches no run; leave
+`states` out for every state. Run detail adds inputs, result, source, steps, effect usage,
 event data, and child-state counts. Once event retention expires the payload,
 `eventData` is `null` and `eventPayloadExpired` is `true`. The operations UI
 shows it as expired. Runs keep their own inputs and context. See
 [Size and retention](/en/docs/automation/emit-events-and-start-runs#size-and-retention).
 
-Use run families and timelines for grouped operations views. Use stranded
+Use run families and timelines for grouped operations views. The family filter
+also takes `search`: definitions whose name contains the text, ignoring case,
+found before `limit`. Use stranded
 effects, undispatched events, and application health for recovery queues.
 
 The shared operations UI is at `/admin/observability/workflows`.
