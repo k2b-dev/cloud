@@ -4,7 +4,9 @@ import {
   type OpeningRule,
   PUBLIC_EXCEPTION_DAYS,
   type PublicException,
+  type PublicNow,
   type PublicOpening,
+  type PublicWindow,
   type ShiftAssignment,
   type ShiftTemplate,
   type Venue,
@@ -35,6 +37,7 @@ export type PublicAvailability = {
   activeWindowLabel: string | null;
   upcomingOpenings: PublicOpening[];
   upcomingExceptions: PublicException[];
+  now: PublicNow;
 };
 
 const dateKeyAt = (instant: Date, timezone: string): string => dates.formatDateKey(instant, { timeZone: timezone });
@@ -87,7 +90,19 @@ export const upcomingPublicExceptions = (overrides: DateOverride[], today: strin
     }));
 };
 
-const isActiveAt = (opening: PublicOpening, now: Date): boolean => new Date(opening.startsAt) <= now && now < new Date(opening.endsAt);
+const isActiveAt = (opening: PublicWindow, now: Date): boolean => new Date(opening.startsAt) <= now && now < new Date(opening.endsAt);
+
+/** Windows that touch or overlap read as one, from the first start to the last end, in time order. */
+const mergeWindows = (windows: readonly PublicWindow[]): PublicWindow[] => {
+  const merged: PublicWindow[] = [];
+  for (const window of [...windows].sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))) {
+    const last = merged.at(-1);
+    if (last && Date.parse(window.startsAt) <= Date.parse(last.endsAt)) {
+      if (Date.parse(window.endsAt) > Date.parse(last.endsAt)) merged[merged.length - 1] = { ...last, endsAt: window.endsAt };
+    } else merged.push({ startsAt: window.startsAt, endsAt: window.endsAt });
+  }
+  return merged;
+};
 
 /**
  * When the venue opens on `date` whatever its shifts: a special opening, which replaces the day's regular hours
@@ -178,6 +193,32 @@ export const buildPublicAvailability = (input: PublicAvailabilityInput): PublicA
   const todayWindows = regularOpenings.filter((opening) => dateKeyAt(new Date(opening.startsAt), timezone) === today);
   const nextOpening = openings.find((opening) => new Date(opening.startsAt) > input.now);
 
+  // The facts of the page's hero: the windows as visitors live them, whatever opens them.
+  const windows = mergeWindows(openings);
+  const windowsOn = (date: string) => windows.filter((window) => dateKeyAt(new Date(window.startsAt), timezone) === date);
+  const todayLeft = windowsOn(today).filter((window) => new Date(window.endsAt) > input.now);
+  const running = open ? windows.find((window) => isActiveAt(window, input.now)) : undefined;
+  const exceptionToday = upcomingPublicExceptions(input.overrides, today, timezone).find((exception) => exception.date === today) ?? null;
+  const now: PublicNow = {
+    date: today,
+    state: open ? "open" : todayLeft.some((window) => new Date(window.startsAt) > input.now) ? "later" : "closed",
+    until: running?.endsAt ?? null,
+    today: todayLeft,
+    tomorrow: windowsOn(dateKeyAfterDays(today, 1, timezone)),
+    next: windows.find((window) => dateKeyAt(new Date(window.startsAt), timezone) > today) ?? null,
+    exception: exceptionToday,
+    regular:
+      input.venue.openMode === "staffed"
+        ? []
+        : input.openingRules
+            .filter((rule) => rule.weekday === weekdayFor(today))
+            .map((rule) => ({
+              startsAt: instantFor(today, rule.startTime, timezone).toISOString(),
+              endsAt: instantFor(today, rule.endTime, timezone).toISOString(),
+            }))
+            .sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
+  };
+
   return {
     open,
     spontaneousOpen: open && !activeRegular && Boolean(activeDynamic),
@@ -189,5 +230,6 @@ export const buildPublicAvailability = (input: PublicAvailabilityInput): PublicA
     activeWindowLabel: open && activeOpening ? formatTimeRange(activeOpening, timezone, locale) : null,
     upcomingOpenings: upcomingDynamicOpenings.filter((opening) => new Date(opening.startsAt) > input.now).slice(0, 8),
     upcomingExceptions: upcomingPublicExceptions(input.overrides, today, timezone),
+    now,
   };
 };

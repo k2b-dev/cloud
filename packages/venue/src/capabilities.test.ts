@@ -743,6 +743,7 @@ test("a Code account may read a public Venue but no non-public Venue without its
     activeWindowLabel: null,
     upcomingOpenings: [],
     upcomingExceptions: [],
+    now: { date: "2026-08-11", state: "closed", until: null, today: [], tomorrow: [], next: null, exception: null, regular: [] },
     openingRules: [],
     sections: [],
   });

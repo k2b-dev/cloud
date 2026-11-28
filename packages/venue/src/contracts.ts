@@ -406,6 +406,33 @@ export const PublicExceptionSchema = z.object({
 });
 export type PublicException = z.infer<typeof PublicExceptionSchema>;
 
+/** A stretch the venue is open, between two instants. */
+const PublicWindowSchema = z.object({ startsAt: z.string(), endsAt: z.string() });
+export type PublicWindow = z.infer<typeof PublicWindowSchema>;
+
+/**
+ * What the public page says about now, as facts its words are made of: open until a time, opening later today, or
+ * closed for the rest of the day; what comes next; and today's exception. Windows that touch or overlap read as one.
+ */
+export const PublicNowSchema = z.object({
+  /** Today in the Venue's time zone. */
+  date: DateKeySchema,
+  state: z.enum(["open", "later", "closed"]),
+  /** While open: when the venue closes. */
+  until: z.string().nullable(),
+  /** Today's windows that have not ended yet, whatever opens them: regular hours, a special opening, or staffed shifts. */
+  today: z.array(PublicWindowSchema),
+  /** Tomorrow's windows. */
+  tomorrow: z.array(PublicWindowSchema),
+  /** The first window on a later day than today, within the days the status looks ahead. */
+  next: PublicWindowSchema.nullable(),
+  /** Today's closed day or special opening. */
+  exception: PublicExceptionSchema.nullable(),
+  /** Today's regular hours as the week has them, also on a day an exception replaces them. */
+  regular: z.array(PublicWindowSchema),
+});
+export type PublicNow = z.infer<typeof PublicNowSchema>;
+
 export const PublicStatusSchema = z.object({
   venue: VenueSchema,
   open: z.boolean(),
@@ -417,6 +444,7 @@ export const PublicStatusSchema = z.object({
   upcomingOpenings: z.array(PublicOpeningSchema),
   /** Closed days and special openings of the next {@link PUBLIC_EXCEPTION_DAYS} days, today included, by date. */
   upcomingExceptions: z.array(PublicExceptionSchema),
+  now: PublicNowSchema,
   openingRules: z.array(OpeningRuleSchema),
   sections: z.array(PublicSectionSchema),
 });

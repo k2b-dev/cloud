@@ -118,8 +118,8 @@ suite("Venue public page shows changed hours in advance and follows the theme", 
   test("the page names them under Changed hours before the day", async () => {
     const html = await expectStatus(await send("GET", `/app/venue/public/${venue.id}`, ""), 200, "public page");
     expect(html).toContain("Changed hours");
-    expect(html).toContain("Closed · Public holiday");
-    expect(html).toContain("Special opening 18:00–23:00 · Long night");
+    expect(html).toMatch(/Public holiday[\s\S]{0,800}?Closed/);
+    expect(html).toMatch(/Long night[\s\S]{0,800}?18:00–23:00/);
     expect(html).not.toContain("Too far ahead");
   });
 
@@ -151,7 +151,7 @@ suite("Venue public page shows changed hours in advance and follows the theme", 
       WHERE short_id = ${created.id}
     `;
     const legacy = await expectStatus(await send("GET", `/app/venue/public/${venue.id}`, ""), 200, "legacy link");
-    expect(legacy.match(/class="k2b-link-card__title"/g)?.length).toBe(1);
+    expect(legacy).not.toContain("Order form");
     expect(legacy).toContain('href="https://union.example.org/"');
     expect(legacy).not.toContain('href="www.kiosk.example.org"');
     await expectStatus(await send("PATCH", `${sections}/${created.id}`, admin.cookie, { enabled: false }), 400, "legacy toggle");

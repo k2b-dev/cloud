@@ -283,7 +283,7 @@ suite("Venue setup from the interface", () => {
       expect({
         label,
         link: html.includes('href="/app/venue"'),
-        text: html.includes("Open in Venues"),
+        text: html.includes("Open Venues"),
         name: html.includes("Hidden Cafe"),
       }).toEqual({
         label,

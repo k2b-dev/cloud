@@ -382,23 +382,20 @@ describe("Venue clarity behavior", () => {
       return Response.json({ venueId: "Cafe01", rating: 3, comment: null, createdAt: new Date(fixtureNow).toISOString() }, { status: 201 });
     }) as typeof fetch;
 
-    const { default: PublicFeedbackForm } = await import("../src/frontend/_components/PublicFeedbackForm.island");
-    const dispose = render(() => <PublicFeedbackForm venueId="Cafe01" accentColor="#facc15" variant="page" />, dom.root);
+    const { default: GuestFeedback } = await import("../src/frontend/public/[slug]/feedback/GuestFeedback.island");
+    const dispose = render(() => <GuestFeedback venueId="Cafe01" venueName="Corner Cafe" backUrl="/app/venue/public/Cafe01" />, dom.root);
     try {
       const radios = [...dom.root.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
-      const send = buttonNamed(dom.root, "Submit feedback");
+      const send = buttonNamed(dom.root, "Send feedback");
       expect(radios.map((radio) => radio.checked)).toEqual([false, false, false, false, false]);
       expect(send.disabled).toBe(true);
-      expect(dom.root.textContent).toContain("Choose 1 to 5 stars to send your feedback.");
-      // A light accent gets dark text instead of white.
-      expect(send.getAttribute("style")).toContain("color: var(--venue-on-accent)");
-      expect(send.closest<HTMLElement>("[style*='--venue-on-accent:']")?.style.getPropertyValue("--venue-on-accent")).toBe("#000000");
+      expect(dom.root.textContent).toContain("Choose 1 to 5 stars.");
 
       radios[2]!.click();
       await flush();
       expect(send.disabled).toBe(false);
-      expect(dom.root.textContent).toContain("3 of 5 stars");
-      expect(dom.root.textContent).not.toContain("Choose 1 to 5 stars to send your feedback.");
+      expect(dom.root.textContent).toContain("3 of 5 · Okay");
+      expect(dom.root.textContent).not.toContain("Choose 1 to 5 stars.");
 
       send.click();
       await flush();
