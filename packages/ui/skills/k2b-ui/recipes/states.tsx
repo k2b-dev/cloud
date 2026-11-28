@@ -43,7 +43,7 @@ export default function IncomingGoods(props: Props) {
             />
           }
           end={
-            <Button variant="primary" icon="plus" href="#neu">
+            <Button variant="primary" floats icon="plus" href="#neu">
               Einlieferung erfassen
             </Button>
           }

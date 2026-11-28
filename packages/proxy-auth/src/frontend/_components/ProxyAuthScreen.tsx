@@ -210,7 +210,7 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
               <Button icon="pencil" keep onClick={() => start(client)}>
                 {t().edit}
               </Button>
-              <Button variant="ghost" icon="x" label={t().close} href={listHref()} />
+              <Button variant="ghost" icon="x" label={t().close} href={listHref()} closes />
             </>
           }
         />
@@ -442,7 +442,8 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
                   if (event.key === "Escape" && input.value) location.assign(LIST);
                 }}
               />
-              <Button variant="primary" icon="plus" onClick={() => start("new")}>
+              {/* `Workspace primary` repeats it as the floating button, so on the phone the head lets it go */}
+              <Button variant="primary" icon="plus" floats onClick={() => start("new")}>
                 {t().newClient}
               </Button>
             </Show>

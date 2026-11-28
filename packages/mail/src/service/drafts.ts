@@ -335,6 +335,8 @@ const actorFromColumns = (kind: DraftActor["kind"], id: string | null): DraftAct
         : { kind: "system" };
 
 const conflict = (message: string): Result<never> => fail({ code: "CONFLICT", message, status: 409 });
+/** A refused revision write names the draft's current revision, so a client can reread and retry. */
+const revisionConflict = (message: string, revision: number): Result<never> => fail({ code: "CONFLICT", message, status: 409, revision });
 
 const mapDraft = (row: DbDraft): MailDraft => ({
   id: row.id,
@@ -861,7 +863,7 @@ const insertComposeDraftInTransaction = async (params: {
     if (existing) {
       const access = await requireDraftAccess(params.context, params.mailboxId, existing.id, "write", params.db);
       if (!access.ok) return access;
-      if (params.rejectOccupiedContent) return fail(replyDraftOccupied(existing.short_id));
+      if (params.rejectOccupiedContent) return fail(replyDraftOccupied(existing, params.prepared.intent));
       if (params.rejectDifferentContent) {
         const storedDraft = mapDraft(existing);
         const stored = internalDraftEditableContentSchema.strip().parse(storedDraft);
@@ -890,7 +892,7 @@ const insertComposeDraftInTransaction = async (params: {
           (await sha256Json(quoteHashContent({ ...stored, ...storedSignature.data }))) !==
           (await sha256Json(quoteHashContent({ ...incoming, ...incomingSignature.data })))
         )
-          return fail(replyDraftOccupied(existing.short_id));
+          return fail(replyDraftOccupied(existing, params.prepared.intent));
       }
       const adopted = await refreshDraftAdoption({ db: params.db, draftId: existing.id });
       const suggestionRequest = params.actor.kind === "service_account" && !humanDraftEditor(params.context) && !params.adopted;
@@ -1920,7 +1922,10 @@ export const updateDraft = async (params: {
       if (!writable.ok) return writable;
       if (current.state !== "draft") {
         await storeRecoveryCopy({ db: tx, draftId, baseRevision: params.expectedRevision, content: parsed.data, actor });
-        return conflict("Draft can no longer be edited; the submitted content was saved as a recovery copy");
+        return revisionConflict(
+          "Draft can no longer be edited; the submitted content was saved as a recovery copy",
+          Number(current.revision),
+        );
       }
       if (current.edit_mode === "shared") {
         // Normalize legacy PUTs before compiling their document update, just as
@@ -1936,7 +1941,10 @@ export const updateDraft = async (params: {
         if (!signature.ok) {
           if (Number(current.revision) === params.expectedRevision) return signature;
           await storeRecoveryCopy({ db: tx, draftId, baseRevision: params.expectedRevision, content: parsed.data, actor });
-          return conflict("Draft update requires recovery; the submitted content was saved as a recovery copy");
+          return revisionConflict(
+            "Draft update requires recovery; the submitted content was saved as a recovery copy",
+            Number(current.revision),
+          );
         }
         const content = await publicDraftContent(tx, params.mailboxId, {
           ...parsed.data,
@@ -1948,7 +1956,10 @@ export const updateDraft = async (params: {
           : content;
         if (!locked.ok) {
           await storeRecoveryCopy({ db: tx, draftId, baseRevision: params.expectedRevision, content: parsed.data, actor });
-          return conflict("Draft update requires recovery; the submitted content was saved as a recovery copy");
+          return revisionConflict(
+            "Draft update requires recovery; the submitted content was saved as a recovery copy",
+            Number(current.revision),
+          );
         }
         if (!content.ok) return content;
         const merged = await locked.data
@@ -1964,7 +1975,10 @@ export const updateDraft = async (params: {
         if (!merged.ok && (merged.error.code === "DRAFT_DOCUMENT_STREAM_FULL" || merged.error.code === "DRAFT_ADOPTED")) return merged;
         if (!merged.ok || merged.data.status === "recoveryRequired") {
           await storeRecoveryCopy({ db: tx, draftId, baseRevision: params.expectedRevision, content: parsed.data, actor });
-          return conflict("Draft update requires recovery; the submitted content was saved as a recovery copy");
+          return revisionConflict(
+            "Draft update requires recovery; the submitted content was saved as a recovery copy",
+            Number(current.revision),
+          );
         }
         if (merged.data.status === "pendingPersistence") return pending();
         const [saved] = await tx<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${draftId}::uuid`;
@@ -1972,12 +1986,15 @@ export const updateDraft = async (params: {
       }
       const staleRecovery = async () => {
         await storeRecoveryCopy({ db: tx, draftId, baseRevision: params.expectedRevision, content: parsed.data, actor });
-        return conflict("Draft changed; the submitted content was saved as a recovery copy");
+        return revisionConflict("Draft changed; the submitted content was saved as a recovery copy", Number(current.revision));
       };
       const identity = await validateIdentity({ mailboxId: params.mailboxId, senderIdentityId: parsed.data.senderIdentityId, db: tx });
       if (!identity.ok) {
         await storeRecoveryCopy({ db: tx, draftId, baseRevision: params.expectedRevision, content: parsed.data, actor });
-        return conflict("Sender identity is no longer available; the submitted content was saved as a recovery copy");
+        return revisionConflict(
+          "Sender identity is no longer available; the submitted content was saved as a recovery copy",
+          Number(current.revision),
+        );
       }
       const signature = await resolveDraftSignature({
         db: tx,

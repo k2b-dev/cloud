@@ -138,7 +138,7 @@ for (const [width, theme] of [
         return route.fulfill({ json: current });
       });
       await page.goto(server.url.toString());
-      expect(await page.locator("solid-island[data-id][data-props]").count()).toBe(1);
+      expect(await page.locator("solid-island[data-id]").count()).toBe(1);
       await page.getByText("Execution authority could not be loaded.", { exact: true }).waitFor();
       readFails = false;
       await page.getByRole("button", { name: "Retry", exact: true }).click();

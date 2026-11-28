@@ -83,7 +83,7 @@ export default function FilesTree() {
         <Bar
           start={<Path label="Ort" items={[{ label: "Projekte", href: "/files/projekte" }, { label: "Website" }]} />}
           end={
-            <Button variant="primary" icon="upload">
+            <Button variant="primary" icon="upload" floats>
               Hochladen
             </Button>
           }
