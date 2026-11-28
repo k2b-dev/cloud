@@ -80,7 +80,10 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   it. `side={{ from: 1400 }}` asks for more room, in px of the split, for a
   main column that needs it (a table: beside only on a large screen). In
   any other split (a list, its reader and an info column) it stands beside
-  as every column does.
+  as every column does. Put `side` on the inner column only: an outer
+  `Pane detail` with `side` becomes the list's context column and moves
+  under the list. A split with no measuring place above it (in a dialog, a
+  sidebar, outside a `Workspace`) never gives way.
 - A detail that grows on a large screen is the same part: under the
   detail's one `head` (and what spans both, such as a hero band), a
   `Pane.Split` of what it is (a `Pane`) and who and what happened (a `Pane
