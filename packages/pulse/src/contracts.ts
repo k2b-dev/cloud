@@ -17,8 +17,8 @@ export type PulseBaseNav = {
   /** `failed`: its store needs attention. */
   state: "ok" | "failed";
 };
-/** The sidebar's bases: the first NAV_BASES (and the open one), and whether there are more. */
-export type PulseNav = { bases: PulseBaseNav[]; more: boolean };
+/** The sidebar's bases: the first NAV_BASES, and the open one even beyond them. */
+export type PulseNav = { bases: PulseBaseNav[] };
 
 export type PulseBase = {
   memberCount: number;

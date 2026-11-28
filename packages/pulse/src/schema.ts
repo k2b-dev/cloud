@@ -364,8 +364,13 @@ export const installAgentSourceOwnership = async (sql: TransactionSQL): Promise<
   await sql`ALTER TABLE pulse.sources ADD COLUMN created_by_subject TEXT`.simple();
 };
 
-/** A source's history reads its own entries of the activity log, newest first, without walking the whole base's log. */
-export const installSourceHistoryIndex = async (sql: TransactionSQL): Promise<void> => {
+/**
+ * The indexes of the bounded lists: a base's sources page in their stable order (newest first), and a source's history
+ * reads its own entries of the activity log, newest first, without walking the whole base's log.
+ */
+export const installListIndexes = async (sql: TransactionSQL): Promise<void> => {
+  await sql`CREATE INDEX IF NOT EXISTS idx_pulse_sources_base_created ON pulse.sources(base_id, created_at DESC, id)
+    WHERE NOT deleted`.simple();
   await sql`CREATE INDEX IF NOT EXISTS idx_pulse_base_activity_source ON pulse.base_activity(base_id, (data->>'sourceId'), at DESC, id DESC)
     WHERE kind IN ('source.created', 'source.updated', 'source_freshness')`.simple();
 };

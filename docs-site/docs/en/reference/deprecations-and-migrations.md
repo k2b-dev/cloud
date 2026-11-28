@@ -34,7 +34,8 @@ request, newest first. Before, it returned every source of the base.
 - To read further, page with `limit` (1 to 500, default 500) and `offset`. A
   page shorter than `limit` is the last one.
 - The order is stable while sources change state, so paging misses none and
-  repeats none.
+  repeats none. A source added or removed between two pages shifts the next
+  page by one; dedupe by `id`.
 - To find sources by name, pass `q`.
 - A `limit` above 500 answers `400`.
 

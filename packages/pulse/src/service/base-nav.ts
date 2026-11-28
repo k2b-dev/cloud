@@ -20,7 +20,7 @@ const entry = (row: Row): PulseBaseNav => ({
  */
 export const baseNav = async (scope: AccessScope, params: { currentId?: string | null } = {}): Promise<PulseNav> => {
   const visibility = readableScopeFilter(scope);
-  if (!visibility) return { bases: [], more: false };
+  if (!visibility) return { bases: [] };
   const principalMatch = buildAccessPrincipalCondition({
     subject: visibility.subject,
     columns: {
@@ -50,10 +50,8 @@ export const baseNav = async (scope: AccessScope, params: { currentId?: string |
       WHERE b.deletion_started_at IS NULL
     )
     SELECT * FROM ranked
-    WHERE rank <= ${NAV_BASES + 1} OR current
+    WHERE rank <= ${NAV_BASES} OR current
     ORDER BY rank
   `;
-  // the first NAV_BASES and the current one show; one more row beyond them says there are more
-  const shown = rows.filter((row) => row.rank <= NAV_BASES || row.current);
-  return { bases: shown.map(entry), more: rows.length > shown.length };
+  return { bases: rows.map(entry) };
 };

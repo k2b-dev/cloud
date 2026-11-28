@@ -457,7 +457,6 @@ export const fixtureNav = (bases: readonly PulseBase[] = fixtureBases): PulseNav
     color: base.color,
     state: base.store.state === "failed" ? "failed" : "ok",
   })),
-  more: bases.length > NAV_BASES,
 });
 
 export const sourcesProps = (

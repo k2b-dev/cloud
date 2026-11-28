@@ -112,7 +112,10 @@ const routes = new Hono<AuthContext>()
     describeRoute({
       tags: ["Pulse"],
       summary: "List Pulse sources for a base, one page at a time",
-      responses: { 200: jsonResponse(z.array(SourceSchema), "Pulse sources") },
+      responses: {
+        200: jsonResponse(z.array(SourceSchema), "Pulse sources"),
+        400: jsonResponse(z.object({ code: z.string(), message: z.string() }), "A limit above the page size or an invalid offset"),
+      },
     }),
     v("query", SourcePageQuerySchema),
     async (c) => {

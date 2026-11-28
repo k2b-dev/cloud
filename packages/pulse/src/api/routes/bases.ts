@@ -55,7 +55,10 @@ const routes = new Hono<AuthContext>()
       summary: "List accessible Pulse bases",
       description:
         "One page of the bases the caller can read, newest change first: `limit` (100 at most and by default) and `offset` page through them, `q` searches names and descriptions. A page shorter than `limit` is the last.",
-      responses: { 200: jsonResponse(z.array(BaseSchema).max(BASE_PAGE_MAX), "One page of Pulse bases") },
+      responses: {
+        200: jsonResponse(z.array(BaseSchema).max(BASE_PAGE_MAX), "One page of Pulse bases"),
+        400: jsonResponse(z.object({ code: z.string(), message: z.string() }), "A limit above 100 or an invalid offset"),
+      },
     }),
     v("query", BasePageQuerySchema),
     async (c) => {

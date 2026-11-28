@@ -98,7 +98,6 @@ export default function OverviewScreen(props: OverviewScreenProps) {
         color: base.color,
         state: base.store.state === "failed" ? "failed" : "ok",
       })),
-      more: props.bases.length > NAV_BASES,
     },
     () => "",
     // the overview's own "Neue Basis" dialog serves the sidebar's deed too
