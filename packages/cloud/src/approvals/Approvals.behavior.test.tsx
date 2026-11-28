@@ -509,7 +509,7 @@ describe("Approvals", () => {
       await waitFor(() => view.dom.root.textContent?.includes("You're all set.") === true, "the empty state");
       expect(view.requests[0]?.url).toBe("/api/approvals?app=assistant");
       expect(view.dom.root.textContent).toContain("More approvals in other apps (2)");
-      expect(view.dom.root.querySelector('a[href="/me/approvals"]')).not.toBeNull();
+      expect(view.dom.root.querySelector('a[href="/me/activity"]')).not.toBeNull();
     } finally {
       view.cleanup();
     }

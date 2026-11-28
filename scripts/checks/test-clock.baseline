@@ -10,10 +10,7 @@ packages/cloud/src/browser/save-files.behavior.test.tsx | 1
 packages/cloud/src/browser/save-files.browser.test.ts | 1
 packages/cloud/src/ssr/app-badges.behavior.test.tsx | 1
 packages/contacts/src/frontend/_components/ContactsList.browser.test.ts | 1
-packages/core/src/pages/me/AppDevices.behavior.test.tsx | 22
-packages/core/src/pages/me/QuietTimeSettings.behavior.test.tsx | 2
 packages/core/src/pages/me/account-pages.browser.test.ts | 1
-packages/core/src/pages/me/app.browser.test.ts | 4
 packages/core/test/app-approval.behavior.test.tsx | 5
 packages/gateway-ops/src/observability/telemetry/browser/page.render.test.tsx | 1
 packages/grids/src/frontend/_components/documents/DocumentDetailsDialog.behavior.test.tsx | 6

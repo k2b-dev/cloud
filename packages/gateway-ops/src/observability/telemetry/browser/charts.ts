@@ -1,5 +1,6 @@
 import type { WebVitalName, WebVitalsOverview } from "@k2b/cloud/services";
 import { type ChartExplorerData, prepareChartSnapshot } from "@k2b/ui";
+import type { OpsChart } from "../../_components/ops-chart";
 import { TELEMETRY_RANGES, type TelemetryRange } from "../contracts";
 import { browserMessages } from "./messages";
 export type VitalRow = { key: string; bucket: number; p75: number; count: number };
@@ -55,4 +56,26 @@ export function buildVitalCharts(overview: WebVitalsOverview, locale: string, ra
     );
     return { name, data: { chart, rows } };
   });
+}
+
+/** The vital charts as v2 parts: the drawing and its values as worded table rows (times in UTC, as on the axes). */
+export function vitalOpsCharts(charts: VitalChart[], locale: string): OpsChart[] {
+  const { t } = browserMessages.resolve([locale]);
+  const time = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" });
+  return charts.map((chart) => ({
+    title: `${chart.name} · p75`,
+    description: `${t.details} · UTC`,
+    snapshot: chart.data.chart,
+    table: {
+      columns: [
+        { title: `${t.interval} · UTC` },
+        { title: chart.name === "CLS" ? `p75 (${t.unitless})` : "p75 (ms)", end: true },
+        { title: t.samples, end: true },
+      ],
+      rows: chart.data.rows.map((row) => ({
+        key: row.key,
+        cells: [time.format(row.bucket), vitalValue(chart.name, row.p75, locale), row.count.toLocaleString(locale)],
+      })),
+    },
+  }));
 }

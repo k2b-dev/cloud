@@ -3,7 +3,7 @@ id: core-profile
 title: Profil und Konto
 icon: ti ti-user-circle
 description: Konto, Gruppen und Aktivitäten prüfen, FreeIPA-Zugang beantragen und API Keys und Passkeys nutzen.
-updated: 2026-11-11
+updated: 2026-11-26
 order: 110
 ---
 
@@ -12,21 +12,21 @@ Der Kontobereich bündelt lokale Cloud-Daten, optionale FreeIPA-Daten und die Ak
 ## Konto prüfen {icon="paperclip"}
 
 :::reference
-- **Profil:** Zeigt Anzeigename, Benutzername, Profilbild, Kontodienst, Profiltyp, zusätzliche Rollen, E-Mail-Adresse, Telefonnummer und Adresse. **Kontodaten** zeigt außerdem die verfügbaren Ablaufdaten.
-- **Gruppen → Gruppenmitgliedschaften:** Zeigt zuerst deine direkten Gruppenmitgliedschaften. **Geerbte anzeigen** ergänzt die Mitgliedschaften aus der Gruppenhierarchie.
-- **Gruppen → FreeIPA-Konto:** Ein lokales Konto kann FreeIPA-Zugang beantragen, wenn Kontoanfragen, die FreeIPA-Verbindung und FreeIPA-Konten erlaubt sind. Einen offenen Antrag kannst du auch dann zurückziehen, wenn neue Anfragen ausgeschaltet sind.
-- **Freigaben:** Zeigt deine wartenden Aktionsanfragen aus allen Apps. Du kannst sie hier freigeben oder ablehnen. Jede Anfrage verlinkt den Chat, der auf sie wartet.
-- **Anmeldung → Kontoaktivitäten:** Zeigt sicherheitsrelevante Kontoaktivitäten der letzten 7, 30 oder 90 Tage.
+- **Profil:** Die erste Zeile zeigt, wie lange dein Konto gilt, deine Passkeys, Gruppen und API Keys. **Profil und Kontaktdaten** zeigt E-Mail-Adresse, Telefonnummer und Adresse; **Kontodaten** zeigt Kontotyp, zusätzliche Rollen, SSH-Schlüssel und das Ablaufdatum des Passworts, wenn es eines gibt.
+- **Profil → Gruppen:** Zeigt deine ersten sechs Gruppen, zuerst die, die du verwaltest. **Alle meine Gruppen** zeigt alle, auch die Mitgliedschaften aus der Gruppenhierarchie.
+- **Profil → FreeIPA-Konto:** Ein lokales Konto kann FreeIPA-Zugang beantragen, wenn Kontoanfragen, die FreeIPA-Verbindung und FreeIPA-Konten erlaubt sind. Einen offenen Antrag kannst du auch dann zurückziehen, wenn neue Anfragen ausgeschaltet sind.
+- **Aktivität → Offene Freigaben:** Zeigt deine wartenden Aktionsanfragen aus allen Apps. Du kannst sie hier freigeben oder ablehnen. Jede Anfrage verlinkt den Chat, der auf sie wartet.
+- **Aktivität → Anmeldungen und Änderungen:** Zeigt sicherheitsrelevante Kontoaktivitäten der letzten 7, 30 oder 90 Tage. **Aktivität → Zustellungen** zeigt, wohin deine Benachrichtigungen gingen.
 :::
 
 ## Anmeldung und Automatisierung schützen {icon="shield-lock"}
 
 :::reference
-- **Entwicklung → API Keys:** Persönliche Schlüssel für Automatisierung. Ein Schlüssel mit **Vollzugriff** hat denselben Zugriff wie dein Konto. Wenn deine Administration die OpenAI-kompatible API anbietet, kannst du stattdessen **Nur KI-Modelle** wählen: So ein Schlüssel kann nur die KI-Modelle aufrufen, die du im Assistenten nutzen darfst, zum Beispiel aus einer Diktier-App. Cloud zeigt den vollständigen Schlüssel nur einmal, direkt nach dem Erstellen.
-- **Anmeldung → Passkeys:** WebAuthn-Passkeys für die Anmeldung an deinem Konto. Nachdem du einen Passkey entfernt hast, kann sich niemand mehr damit anmelden.
+- **Sicherheit & Geräte → API Keys:** Persönliche Schlüssel für Automatisierung. Ein Schlüssel mit **Vollzugriff** hat denselben Zugriff wie dein Konto. Wenn deine Administration die OpenAI-kompatible API anbietet, kannst du stattdessen **Nur KI-Modelle** wählen: So ein Schlüssel kann nur die KI-Modelle aufrufen, die du im Assistenten nutzen darfst, zum Beispiel aus einer Diktier-App. Cloud zeigt den vollständigen Schlüssel nur einmal, direkt nach dem Erstellen.
+- **Sicherheit & Geräte → Passkeys:** WebAuthn-Passkeys für die Anmeldung an deinem Konto. Nachdem du einen Passkey entfernt hast, kann sich niemand mehr damit anmelden.
 :::
 
-Lege API Keys unter **Entwicklung** und Passkeys unter **Anmeldung** im
+Lege API Keys und Passkeys unter **Sicherheit & Geräte** im
 Browser an. Deine Browser-Anmeldung muss aus den letzten zehn Minuten stammen.
 Bittet Cloud dich, deine Identität zu bestätigen, melde dich mit demselben Konto
 erneut an. Der Dialog öffnet sich danach wieder. Die mobile App, eine Anmeldung über die
@@ -50,7 +50,7 @@ Er sperrt nichts. Er verdeckt den ganzen Bildschirm, auch die App-Leiste.
 - **Sofort:** Wähle im Profilmenü **Sichtschutz** oder drücke **Strg+.**
   (**⌘+.** am Mac). Das Kürzel wirkt auch, wenn ein Dialog offen ist.
 - **Automatisch:** Wenn du Cloud zwei Minuten nicht benutzt, verdeckt Cloud
-  deine Inhalte. Wähle in den Profileinstellungen unter **Am Bildschirm** bei
+  deine Inhalte. Wähle unter **Profil → Am Bildschirm** bei
   **Automatisch verdecken** eine andere Zeit oder **Aus**. Die Einstellung gilt
   auf allen Computern, an denen du dich anmeldest.
 - **Vorwarnung:** Zehn Sekunden vorher erscheint über deinem Profil ein Symbol

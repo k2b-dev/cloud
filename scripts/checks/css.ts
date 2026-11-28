@@ -6,7 +6,12 @@ import { isTestFile, listFiles, parseSource } from "./files";
 import type { Finding, Rule } from "./rule";
 
 const forbiddenSharedStylesheets = new Set(["theme-modern.css", "utilities-detail.css"]);
+/** Stylesheets that are their own entry, never imported by global.css: Core's v2.css for v2 pages without the shell. */
+const separateSharedEntries = new Set(["v2-page.css"]);
 const canonicalSharedStylesheetImports: readonly string[] = [
+  // Shared with the v2-only entry (v2-page.css), so a v2 page looks the same under both sheets.
+  "v2-app-ink.css",
+  "minimal-layout.css",
   "tokens.css",
   "utilities-buttons.css",
   "utilities-layout.css",
@@ -192,7 +197,7 @@ export const rule: Rule = {
     for (const file of sharedStylesheets) {
       if (file === globalStylesheet) continue;
       const name = relative(sharedStylesRoot, file);
-      if (!forbiddenSharedStylesheets.has(name) && !canonicalSharedStylesheetImports.includes(name)) {
+      if (!forbiddenSharedStylesheets.has(name) && !separateSharedEntries.has(name) && !canonicalSharedStylesheetImports.includes(name)) {
         report(file, "shared stylesheet must be added to the canonical import order");
       }
     }

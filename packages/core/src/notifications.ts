@@ -463,11 +463,11 @@ export const NOTIFICATIONS = {
     render: async (data, { locale }) => ({
       title: text(locale).phonePairedTitle,
       body: await phonePairedBody(data, locale, text(locale).phonePairedInApp),
-      targetHref: "/me/app",
+      targetHref: "/me/security",
     }),
     email: async (data, { locale }) => ({
       subject: text(locale).phonePairedTitle,
-      content: await phonePairedBody(data, locale, text(locale).phonePairedAt({ url: await absoluteUrl("/me/app") })),
+      content: await phonePairedBody(data, locale, text(locale).phonePairedAt({ url: await absoluteUrl("/me/security") })),
     }),
   }),
   magicLink: notification({

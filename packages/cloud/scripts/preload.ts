@@ -66,6 +66,12 @@ const buildGlobalCss = async () => {
   });
 };
 
+// Core's v2-only sheet for v2 pages without the shell, built like the production extras (no Tailwind, no v1).
+const v2CssEntry = resolve(frameworkDir, "src/styles/v2-page.css");
+const buildV2Css = async () => {
+  await Bun.build({ entrypoints: [v2CssEntry], outdir: publicDir, naming: "v2.css" });
+};
+
 const appCssPath = resolve(appDir, "src/styles/app.css");
 
 const buildAppCss = async () => {
@@ -125,6 +131,7 @@ const watchDevCss = (label: string, paths: string[], build: () => Promise<void>)
 // workspace entrypoint is absent there and this block simply does not run.
 if (appId === "core" && existsSync(globalCssEntry)) {
   await buildGlobalCss();
+  await buildV2Css();
 
   // Default branding asset: copy the tracked logo.svg into the runtime
   // public dir so serveBranding can fall back to it when no admin-uploaded
@@ -162,6 +169,7 @@ await buildBrowserPerformance(publicDir, appId);
 
 if (appId === "core" && existsSync(globalCssEntry)) {
   watchDevCss("global.css", [globalCssEntry, resolve(frameworkDir, "src/styles")], buildGlobalCss);
+  watchDevCss("v2.css", [resolve(frameworkDir, "src/styles"), resolve(frameworkDir, "../ui/dist/v2.css")], buildV2Css);
 }
 
 // Optional app-owned dev assets. Production builds already have

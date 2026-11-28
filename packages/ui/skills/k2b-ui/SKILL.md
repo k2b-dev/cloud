@@ -111,6 +111,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
 | several short values (domains, addresses), an image, a one-time code | `TagsInput`, `ImageInput`, `CodeInput` in a `Field` | `settings.tsx` |
 | a number on a range, a colour | `Slider`, `ColorInput` in a `Field` | `settings.tsx` |
+| stars to rate something (a visit); a given rating shown | `Rating` in a `Field` (`required`, hint, error); `Rating readOnly` | – |
 | a field that goes back to its default | `Field action` ("Auf Standard zurücksetzen") | `settings.tsx` |
 | an answer that opens in place (a question in a FAQ) | `Disclosure` | `settings.tsx` |
 | reading text, an email body, a page of Markdown | `Prose` | `content.tsx`, `mail.tsx` |
@@ -191,7 +192,7 @@ a `Notice` that names the deed.
   `Chip`, `Progress`, `Spark`, `Ticks`, `RangeBar`, `Heat`, `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
   `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`, `ImageInput`,
-  `CodeInput`, `Slider`, `ColorInput`.
+  `CodeInput`, `Slider`, `ColorInput`, `Rating`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,

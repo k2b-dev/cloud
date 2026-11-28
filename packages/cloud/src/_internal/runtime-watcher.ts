@@ -26,6 +26,7 @@ let mobileBuilds: Record<string, string> = {};
 export const registeredPwaBuilds = (): Record<string, string> => mobileBuilds;
 
 let coreRelease: string | undefined;
+let coreRoutes: readonly string[] = [];
 let initPromise: Promise<void> | undefined;
 let watcherTask: Promise<void> | undefined;
 let abort: AbortController | undefined;
@@ -35,11 +36,16 @@ const refresh = async () => {
   const capabilities = await listCapabilities(apps);
   current = buildRuntimeFromRegistry(apps, capabilities);
   mobileBuilds = pwaBuilds(apps);
-  coreRelease = apps.find((app) => app.id === "core")?.runtime?.release;
+  const core = apps.find((app) => app.id === "core");
+  coreRelease = core?.runtime?.release;
+  coreRoutes = core?.routes ?? [];
 };
 
 /** Core's release from the live registry, absent before initialization and after shutdown. */
 export const registeredCoreRelease = (): string | undefined => coreRelease;
+
+/** The URL prefixes the registered Core declares, such as its shared stylesheets; empty before initialization. */
+export const registeredCoreRoutes = (): readonly string[] => coreRoutes;
 
 export const ensureRuntimeWatcher = (): Promise<void> => {
   // Concurrent callers (start() + first request) wait on the same init —
@@ -110,6 +116,7 @@ export const stopRuntimeWatcher = async (): Promise<void> => {
   initPromise = undefined;
   current = undefined;
   coreRelease = undefined;
+  coreRoutes = [];
   mobileBuilds = {};
 };
 

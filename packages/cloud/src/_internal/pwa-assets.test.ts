@@ -21,6 +21,7 @@ test("the catalog hashes final SSR chunks and versioned CSS, excluding data and 
     await writeFile(join(root, "_ssr/de/123456789012.js"), "German build");
     await writeFile(join(root, "_ssr/chunk-opaque.js"), "export const x = 1;");
     await writeFile(join(root, "public/global.css"), "body{color:blue}");
+    await writeFile(join(root, "public/v2.css"), ".k2-ui{color:blue}");
     await writeFile(join(root, "public/core/app.css"), "body{color:red}");
     await writeFile(join(root, "public/tabler-icons.woff2"), "stable font");
     const font = "versioned font";
@@ -37,6 +38,7 @@ test("the catalog hashes final SSR chunks and versioned CSS, excluding data and 
       expect.stringMatching(/^\/public\/core\/app.css\?v=[a-f0-9]{16}$/),
       "/public/global.css?v=release-1",
       `/public/plex-${fontHash}.woff2`,
+      "/public/v2.css?v=release-1",
     ]);
     expect(assets[0]!.sha256).toBe(createHash("sha256").update("final rewritten JavaScript").digest("hex"));
     expect(assets.every(isPwaStaticAsset)).toBe(true);

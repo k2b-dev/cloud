@@ -473,7 +473,7 @@ Cover the part at its own seams, as described in
   iOS decides the status bar color and the zoom behavior.
 
 To try a part on a device, run Cloud over HTTPS at the address set in the
-installation's URL setting, open `/me/app` on a computer, and pair the device.
+installation's URL setting, open `/me/security` on a computer, and pair the device.
 
 ## Speed budget
 

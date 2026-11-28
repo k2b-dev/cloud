@@ -1,9 +1,9 @@
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
-import Devices from "./Devices.island";
-import Pairing from "./Pairing.island";
+import DevicesSection from "./DevicesSection";
+import Pairing from "./Pairing";
 
-/** Renders the real device list or a resumed pairing for a browser test, which answers the app approval API with invented data. */
+/** Renders the real device section or a resumed pairing on v2 for a browser test, which answers the app approval API with invented data. */
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing harness root");
 const userId = "00000000-0000-4000-8000-000000000042";
@@ -24,11 +24,12 @@ render(
           actorId={userId}
           name="Jonas Beispiel"
           appOrigin="https://login.example.test"
-          returnTo="/me/security"
+          returnTo="/me/security/pair?userId=00000000-0000-4000-8000-000000000042"
           install={false}
+          onClose={() => undefined}
         />
       ) : (
-        <Devices
+        <DevicesSection
           availability="configured"
           pairing={{ userId, name: "Jonas Beispiel", appOrigin: "https://login.example.test" }}
           initial={{
