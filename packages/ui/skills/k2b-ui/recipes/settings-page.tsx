@@ -103,7 +103,7 @@ export default function SigninSettings(props: Props) {
                 Anleitung
               </Button>
               <Button disabled={props.saved}>Verwerfen</Button>
-              <Button variant="primary" disabled={props.saved}>
+              <Button variant="primary" floats disabled={props.saved}>
                 Speichern
               </Button>
             </>

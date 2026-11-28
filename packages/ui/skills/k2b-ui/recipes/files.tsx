@@ -284,6 +284,7 @@ export default function Folder(props: Props) {
               <Button icon="search" label="In diesem Ordner suchen" />
               <Menu
                 variant="primary"
+                floats
                 icon="plus"
                 label="Neu"
                 items={[
