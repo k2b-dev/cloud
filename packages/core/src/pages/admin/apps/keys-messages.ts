@@ -86,6 +86,7 @@ export const keysMessages = i18n.define({
       revokeUnclearText: "The answer was lost. The list is read again; revoke again if the key is still active.",
       // Tokens
       tokens: ({ count }: { count: number }) => `Tokens for host operation (${count})`,
+      tokensTitle: "Tokens for host operation",
       tokensText: "Older way: a token as CLOUD_APP_CREDENTIAL for an app that runs outside Compose. New installations use keys.",
       tokenExpires: ({ date }: { date: string }) => `expires ${date}`,
       tokenNoExpiry: "no expiry",
@@ -180,6 +181,7 @@ export const keysMessages = i18n.define({
       revokeFailedText: "Der Schlüssel ist weiter aktiv.",
       revokeUnclearText: "Die Antwort ging verloren. Die Liste wird neu gelesen; widerrufe erneut, falls der Schlüssel noch aktiv ist.",
       tokens: ({ count }: { count: number }) => `Tokens für Host-Betrieb (${count})`,
+      tokensTitle: "Tokens für Host-Betrieb",
       tokensText:
         "Älterer Weg: ein Token als CLOUD_APP_CREDENTIAL für eine App, die außerhalb von Compose läuft. Neue Installationen nutzen Schlüssel.",
       tokenExpires: ({ date }: { date: string }) => `läuft ab ${date}`,
