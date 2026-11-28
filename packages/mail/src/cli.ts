@@ -831,7 +831,7 @@ const createDraftFromContent = async (
         draftId: z.string(),
         message: z.string(),
         revision: z.number().int().optional(),
-        intent: z.string().optional(),
+        nextStep: z.enum(["update", "intent"]).optional(),
       })
       .safeParse(
         await response
@@ -840,20 +840,21 @@ const createDraftFromContent = async (
           .catch(() => null),
       );
     if (failure.success) {
-      const intent = content.intent ?? "reply";
-      const revision = failure.data.revision ?? "<current-revision>";
-      // The same mode takes the content as an update; another mode is switched first.
+      const { draftId, revision, nextStep } = failure.data;
+      // Mail names the one step that can succeed; a scheduled or sending draft has none.
       const advice =
-        failure.data.intent === intent
-          ? localizeCloudCliText(ctx.options.locale, {
-              en: `Write your content into it with cld mail draft update ${failure.data.draftId} --revision ${revision}.`,
-              de: `Inhalt eintragen: cld mail draft update ${failure.data.draftId} --revision ${revision}.`,
-            })
-          : localizeCloudCliText(ctx.options.locale, {
-              en: `Switch its mode with cld mail draft intent ${failure.data.draftId} --intent ${intent} --revision ${revision}.`,
-              de: `Modus wechseln: cld mail draft intent ${failure.data.draftId} --intent ${intent} --revision ${revision}.`,
-            });
-      throw new Error(`${response.status} ${failure.data.message} ${advice}`);
+        revision === undefined || nextStep === undefined
+          ? ""
+          : nextStep === "update"
+            ? localizeCloudCliText(ctx.options.locale, {
+                en: ` Write your content into it with cld mail draft update ${draftId} --revision ${revision}.`,
+                de: ` Inhalt eintragen: cld mail draft update ${draftId} --revision ${revision}.`,
+              })
+            : localizeCloudCliText(ctx.options.locale, {
+                en: ` Switch its mode with cld mail draft intent ${draftId} --intent ${content.intent ?? "reply"} --revision ${revision}.`,
+                de: ` Modus wechseln: cld mail draft intent ${draftId} --intent ${content.intent ?? "reply"} --revision ${revision}.`,
+              });
+      throw new Error(`${response.status} ${failure.data.message}${advice}`);
     }
   }
   const draft = await ctx.readJson<MailDraft | null>(response);

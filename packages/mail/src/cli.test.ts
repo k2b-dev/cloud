@@ -5859,6 +5859,9 @@ test("reply without content opens the existing draft and supplied content fails 
             code: "DRAFT_REPLY_BOX_OCCUPIED",
             message: `Reply draft ${DRAFT_ID} already exists. Open it and apply your content explicitly; no supplied content was saved.`,
             draftId: DRAFT_ID,
+            revision: 2,
+            intent: "reply",
+            nextStep: body.intent === "reply" ? "update" : "intent",
           },
           { status: 409 },
         );
@@ -5877,15 +5880,15 @@ test("reply without content opens the existing draft and supplied content fails 
   expect(occupied.stderr).toContain(DRAFT_ID);
   expect(occupied.stderr).toContain("409");
   expect(occupied.stderr).toContain("no supplied content was saved");
-  expect(occupied.stderr).toContain(`cld mail draft intent ${DRAFT_ID} --intent reply --revision`);
-  expect(occupied.stderr).not.toContain("--intent forward");
+  expect(occupied.stderr).toContain(`cld mail draft update ${DRAFT_ID} --revision 2`);
+  expect(occupied.stderr).not.toContain("draft intent");
   const replyAll = await runCli(origin, ["mail", "reply", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--all", "--body", "Keep my text"]);
   expect(replyAll.exitCode).not.toBe(0);
-  expect(replyAll.stderr).toContain(`cld mail draft intent ${DRAFT_ID} --intent reply_all --revision`);
+  expect(replyAll.stderr).toContain(`cld mail draft intent ${DRAFT_ID} --intent reply_all --revision 2`);
   const forward = await runCli(origin, ["mail", "forward", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--to", "forward@example.test"]);
   expect(forward.exitCode).not.toBe(0);
   expect(forward.stderr).toContain(DRAFT_ID);
-  expect(forward.stderr).toContain(`cld mail draft intent ${DRAFT_ID} --intent forward --revision`);
+  expect(forward.stderr).toContain(`cld mail draft intent ${DRAFT_ID} --intent forward --revision 2`);
 });
 
 test("an occupied reply box names the update at its current revision, and a refused update names it too", async () => {
@@ -5894,7 +5897,10 @@ test("an occupied reply box names the update at its current revision, and a refu
     if (path.endsWith("/messages")) return api({ items: [sourceMessageFixture], nextCursor: null });
     if (path.endsWith(`/messages/${MESSAGE_ID}`)) return api(sourceMessageFixture);
     if (path.endsWith("/sender-identities")) return api([{ id: IDENTITY_ID, isDefault: true, status: "verified" }]);
-    if (path.endsWith("/drafts") && request.method === "POST")
+    if (path.endsWith("/drafts") && request.method === "POST") {
+      const body = await request.json();
+      // A scheduled occupant takes neither an update nor a mode switch, so Mail names no step.
+      const scheduled = body.body === "For the scheduled reply";
       return api(
         {
           code: "DRAFT_REPLY_BOX_OCCUPIED",
@@ -5902,9 +5908,11 @@ test("an occupied reply box names the update at its current revision, and a refu
           draftId: DRAFT_ID,
           revision: 3,
           intent: "reply",
+          ...(scheduled ? {} : { nextStep: body.intent === "reply" ? "update" : "intent" }),
         },
         { status: 409 },
       );
+    }
     if (path.endsWith(`/drafts/${DRAFT_ID}`) && request.method === "PUT")
       return api(
         { code: "CONFLICT", message: "Draft changed; the submitted content was saved as a recovery copy", revision: 4 },
@@ -5921,6 +5929,11 @@ test("an occupied reply box names the update at its current revision, and a refu
   const replyAll = await runCli(origin, ["mail", "reply", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--all", "--body", "Keep my text"]);
   expect(replyAll.exitCode).not.toBe(0);
   expect(replyAll.stderr).toContain(`cld mail draft intent ${DRAFT_ID} --intent reply_all --revision 3`);
+  const scheduled = await runCli(origin, ["mail", "reply", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--body", "For the scheduled reply"]);
+  expect(scheduled.exitCode).not.toBe(0);
+  expect(scheduled.stderr).toContain(DRAFT_ID);
+  expect(scheduled.stderr).not.toContain("draft update");
+  expect(scheduled.stderr).not.toContain("draft intent");
   const update = await runCli(origin, [
     "mail",
     "draft",

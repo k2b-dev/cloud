@@ -624,6 +624,9 @@ const respondDrafts = async <T>(c: Context<MailApiContext>, result: Result<T> | 
     ...(error.code === "DRAFT_REPLY_BOX_OCCUPIED" && "draftId" in error ? { draftId: String(error.draftId) } : {}),
     ...("revision" in error && typeof error.revision === "number" ? { revision: error.revision } : {}),
     ...(error.code === "DRAFT_REPLY_BOX_OCCUPIED" && "intent" in error && typeof error.intent === "string" ? { intent: error.intent } : {}),
+    ...(error.code === "DRAFT_REPLY_BOX_OCCUPIED" && "nextStep" in error && typeof error.nextStep === "string"
+      ? { nextStep: error.nextStep }
+      : {}),
   };
   if (Object.keys(details).length === 0) return respondPublic(c, resolved, "drafts");
   return respond(

@@ -14,13 +14,21 @@ export const lockConversationReplyDraft = async (db: typeof sql, conversationId:
   return existing ?? null;
 };
 
-/** Names the occupying draft with its current revision and intent, so a client can update it or switch its mode. */
-export const replyDraftOccupied = (draft: { short_id: string; revision: number | string; intent: string }) => ({
+/**
+ * Names the occupying draft with its current revision and intent. `nextStep` is the one step that can succeed:
+ * an open draft of the requested intent takes the content as an update, another intent switches mode first.
+ * A scheduled or sending draft takes neither, so it gets no step.
+ */
+export const replyDraftOccupied = (
+  draft: { short_id: string; revision: number | string; intent: string; state: string },
+  requestedIntent: string,
+) => ({
   code: "DRAFT_REPLY_BOX_OCCUPIED",
   status: 409 as const,
   draftId: draft.short_id,
   revision: Number(draft.revision),
   intent: draft.intent,
+  ...(draft.state === "draft" ? { nextStep: draft.intent === requestedIntent ? ("update" as const) : ("intent" as const) } : {}),
   message: draftAdoptionMessages.resolve(["en"]).t.replyOccupied({ draftId: draft.short_id }),
 });
 

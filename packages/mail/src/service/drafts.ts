@@ -863,7 +863,7 @@ const insertComposeDraftInTransaction = async (params: {
     if (existing) {
       const access = await requireDraftAccess(params.context, params.mailboxId, existing.id, "write", params.db);
       if (!access.ok) return access;
-      if (params.rejectOccupiedContent) return fail(replyDraftOccupied(existing));
+      if (params.rejectOccupiedContent) return fail(replyDraftOccupied(existing, params.prepared.intent));
       if (params.rejectDifferentContent) {
         const storedDraft = mapDraft(existing);
         const stored = internalDraftEditableContentSchema.strip().parse(storedDraft);
@@ -892,7 +892,7 @@ const insertComposeDraftInTransaction = async (params: {
           (await sha256Json(quoteHashContent({ ...stored, ...storedSignature.data }))) !==
           (await sha256Json(quoteHashContent({ ...incoming, ...incomingSignature.data })))
         )
-          return fail(replyDraftOccupied(existing));
+          return fail(replyDraftOccupied(existing, params.prepared.intent));
       }
       const adopted = await refreshDraftAdoption({ db: params.db, draftId: existing.id });
       const suggestionRequest = params.actor.kind === "service_account" && !humanDraftEditor(params.context) && !params.adopted;
