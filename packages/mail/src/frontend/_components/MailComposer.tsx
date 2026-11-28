@@ -200,8 +200,6 @@ export type MailComposerHost = {
   initialSelection?: DraftTextSelection;
   /** The order of the large composer's conversation, as the reader shows it (F4). */
   replyPosition?: () => MailReplyPosition;
-  /** The one-time hint in the large composer that its panes can be arranged; the host stores that it was seen. */
-  arrangeHint?: { open: () => boolean; dismiss: () => void };
   /** The composer hands the host its safe close, so Esc and the host's own controls take the same path. */
   register: (controls: MailInlineDraftControls) => void;
   /**
@@ -3910,7 +3908,6 @@ export default function MailComposer(props: {
             previewError={previewError}
             previewPending={() => previewQuery.loading() || previewQuery.refreshing()}
             onRetryPreview={retryPreview}
-            arrangeHint={host.arrangeHint ? { open: host.arrangeHint.open(), onDismiss: host.arrangeHint.dismiss } : undefined}
           />
         </Show>
       </section>

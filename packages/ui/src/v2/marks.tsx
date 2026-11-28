@@ -452,3 +452,79 @@ export const Progress = (props: ProgressProps) => {
     </span>
   );
 };
+
+export type RangeBarProps = {
+  /** Where the range starts and ends, such as a day's low and high; the order does not matter. */
+  from: number;
+  to: number;
+  /** The one scale the bars of a list share, such as the week's lowest low and highest high. */
+  domain: readonly [number, number];
+  /**
+   * Colours along the scale by meaning, such as cold to warm: each holds at its value and runs over into the next. A
+   * colour is a hex colour, an `oklch()`, a custom property of the page or `light-dark()` of two of them, which the
+   * owner keeps at 3:1 on the surface in both themes; a stop that is no colour is dropped. Without stops the bar is
+   * neutral.
+   */
+  stops?: readonly { at: number; color: string }[];
+} & (
+  | {
+      /** The range in words, such as "2,9° bis 9,1°": what assistive technology reads instead of the bar. */
+      label: string;
+      decorative?: false;
+    }
+  | {
+      /** The range's words stand beside the bar (its low and high as text): the bar is then decoration. */
+      decorative: true;
+      label?: string;
+    }
+);
+
+/**
+ * A range on a shared scale: a bar from `from` to `to` on a quiet track, so the rows of a list read at a glance (the
+ * week's days by their low and high). It reads in the writing direction, as `Ticks` do: the scale's start stands at the
+ * line's start. With `stops` the bar shows the colours of its part of the scale. A range outside the scale stops at
+ * its ends; a range that is no number leaves the track empty.
+ */
+export const RangeBar = (props: RangeBarProps) => {
+  const finite = () => [props.from, props.to, props.domain[0], props.domain[1]].every(Number.isFinite) && props.domain[1] > props.domain[0];
+  const clamp = (value: number) => Math.max(props.domain[0], Math.min(props.domain[1], value));
+  // the visible part of the range: its ends held to the scale, so the colours match what is drawn
+  const low = () => clamp(Math.min(props.from, props.to));
+  const high = () => clamp(Math.max(props.from, props.to));
+  const share = (value: number) => (value - props.domain[0]) / (props.domain[1] - props.domain[0]);
+  const percent = (value: number) => `${Math.round(value * 1000) / 10}%`;
+  // the stops in the order of the scale, at their place on the bar itself: a stop outside it still sets the colour at
+  // its ends; a stop that is no colour is dropped
+  const fill = () => {
+    const stops = (props.stops ?? [])
+      .flatMap((stop) => {
+        const color = safeColor(stop.color);
+        return color === undefined || !Number.isFinite(stop.at) ? [] : [{ at: stop.at, color }];
+      })
+      .sort((first, second) => first.at - second.at);
+    if (stops.length === 0) return undefined;
+    if (stops.length === 1) return stops[0]!.color;
+    const width = Math.max(Number.EPSILON, high() - low());
+    const colors = stops.map((stop) => `${stop.color} ${percent((stop.at - low()) / width)}`).join(", ");
+    return `linear-gradient(var(--k2-range-way, to right), ${colors})`;
+  };
+  return (
+    <span
+      class="k2-range"
+      data-k2-part="RangeBar"
+      role="img"
+      aria-label={props.decorative ? undefined : props.label}
+      aria-hidden={props.decorative ? "true" : undefined}
+    >
+      <Show when={finite()}>
+        <i
+          style={custom({
+            "--k2-range-start": percent(share(low())),
+            "--k2-range-end": percent(1 - share(high())),
+            "--k2-range-fill": fill(),
+          })}
+        />
+      </Show>
+    </span>
+  );
+};
