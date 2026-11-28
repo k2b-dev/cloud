@@ -132,7 +132,6 @@ describe("loadGridsWorkspaceState — document templates use Base access", () =>
     );
     spyOn(gridsService.document, "summarizeTemplate").mockImplementation(() => templateSummary as never);
     spyOn(gridsService.view, "getByShortIdForTable").mockImplementation(async () => null);
-    spyOn(gridsService.workflow, "listForBase").mockImplementation(async () => []);
     spyOn(gridsService.workflow.launcher, "listForBase").mockImplementation(async () => []);
   });
 
@@ -142,7 +141,6 @@ describe("loadGridsWorkspaceState — document templates use Base access", () =>
     const browse = spyOn(gridsService.document, "browseDocumentsForBase").mockResolvedValue({ path: [], folders: [], items: [] });
     const facets = { workflows: [], templates: [], tables: [], mediaTypes: ["application/zip"] };
     spyOn(gridsService.document, "catalogFacets").mockResolvedValue(facets);
-    spyOn(gridsService.customApp, "listSummariesByBase").mockResolvedValue([]);
     for (const level of ["read", "write", "admin"] as const) {
       baseLevel = level;
       const state = await loadWorkspaceState({

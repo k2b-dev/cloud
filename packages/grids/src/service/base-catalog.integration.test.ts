@@ -158,9 +158,13 @@ describe("base catalog integration", () => {
         (${testUuid()}::uuid, ${testShortId()}, ${otherTable}::uuid, 'Fremd', 'from table "Fremd"', '{}'::jsonb, 0, NULL)`;
       await sql`INSERT INTO grids.forms (id, short_id, table_id, name, config, is_active, public_token, position) VALUES
         (${ids.form}::uuid, ${testShortId()}, ${orders}::uuid, 'Auftrag melden', '{}'::jsonb, TRUE, 'secret-token', 0),
-        (${ids.idleForm}::uuid, ${testShortId()}, ${parts}::uuid, 'Teil anfragen', '{}'::jsonb, FALSE, NULL, 0)`;
+        (${ids.idleForm}::uuid, ${testShortId()}, ${parts}::uuid, 'Teil anfragen', '{}'::jsonb, FALSE, NULL, 0),
+        (${testUuid()}::uuid, ${testShortId()}, ${gone}::uuid, 'Alt', '{}'::jsonb, TRUE, NULL, 0),
+        (${testUuid()}::uuid, ${testShortId()}, ${otherTable}::uuid, 'Fremd', '{}'::jsonb, TRUE, NULL, 0)`;
       await sql`INSERT INTO grids.document_templates (id, short_id, table_id, name, source, html, renderer_kind, number_template, filename_template, enabled) VALUES
-        (${ids.template}::uuid, ${testShortId()}, ${orders}::uuid, 'Auftragsblatt', 'from table "Aufträge"', '<p>Auftrag</p>', 'html', '{{ series.value }}', '{{ document.number }}.pdf', TRUE)`;
+        (${ids.template}::uuid, ${testShortId()}, ${orders}::uuid, 'Auftragsblatt', 'from table "Aufträge"', '<p>Auftrag</p>', 'html', '{{ series.value }}', '{{ document.number }}.pdf', TRUE),
+        (${testUuid()}::uuid, ${testShortId()}, ${gone}::uuid, 'Alt', 'from table "Alt"', '<p>Alt</p>', 'html', '{{ series.value }}', '{{ document.number }}.pdf', TRUE),
+        (${testUuid()}::uuid, ${testShortId()}, ${otherTable}::uuid, 'Fremd', 'from table "Fremd"', '<p>Fremd</p>', 'html', '{{ series.value }}', '{{ document.number }}.pdf', TRUE)`;
       const workflow = await createWorkflow(
         baseId,
         { name: "Erinnern", source: "steps:\n  - succeed:\n      message: done", enabled: true },
@@ -204,6 +208,10 @@ describe("base catalog integration", () => {
       expect(managed.formsByTable[orders]?.[0]).toMatchObject({ id: ids.form, publicToken: "secret-token" });
       expect(managed.sidebarForms.map(({ form }) => form.id)).toEqual([ids.form]);
       expect(managed.sidebarDocumentTemplates.map(({ template }) => template.id)).toEqual([ids.template]);
+      // forms and document templates of the deleted table and of the other base stay out
+      expect(Object.keys(managed.formsByTable).sort()).toEqual([orders, parts].sort());
+      expect(Object.keys(managed.documentTemplatesByTable)).toEqual([orders]);
+      expect(managed.documentTemplateLevels).toEqual({ [ids.template]: "admin" });
       // the same values as a plain read of each kind, dates and JSON columns included
       expect(managed.workflows).toEqual(await listWorkflows(baseId));
       expect(managed.workflows.map((each) => each.id)).toEqual([workflow.data.id]);
@@ -230,6 +238,23 @@ describe("base catalog integration", () => {
         [],
         [],
         [],
+      ]);
+
+      // a deleted base lists nothing, also for who still holds a grant on it
+      await sql`UPDATE grids.bases SET deleted_at = now() WHERE id = ${baseId}::uuid`;
+      const deleted = await listForBase({ baseId, userId: admin, userGroups: [], customApps: true });
+      expect([deleted.tables, deleted.workflows, deleted.customApps, deleted.sidebarForms, deleted.sidebarDocumentTemplates]).toEqual([
+        [],
+        [],
+        [],
+        [],
+        [],
+      ]);
+      expect([deleted.fieldsByTable, deleted.viewsByTable, deleted.formsByTable, deleted.documentTemplatesByTable]).toEqual([
+        {},
+        {},
+        {},
+        {},
       ]);
     } finally {
       await deleteTestWorkflowScope(baseId);

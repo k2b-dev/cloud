@@ -47,6 +47,8 @@ type CatalogRow = Record<"tables" | "fields" | "views" | "forms" | "document_tem
 /** The timestamps a row carries as JSON text, back to the dates the mappers read from a plain row. */
 const fromJson = (row: DbRow): DbRow => {
   const out = { ...row };
+  // every timestamp column the seven mappers read as a date; a mapper that reads another one as a date needs it here
+  // (the equality with `listWorkflows`/`listSummariesByBase` in base-catalog.integration.test.ts fails otherwise)
   for (const key of ["created_at", "updated_at", "deleted_at", "published_at"]) {
     const value = out[key];
     if (typeof value === "string") out[key] = new Date(value);
