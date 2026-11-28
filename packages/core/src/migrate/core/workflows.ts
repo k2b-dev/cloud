@@ -21,8 +21,27 @@
  */
 
 import { sql } from "@k2b/cloud";
-import { addMissingColumns, createIndexIfMissing } from "@k2b/cloud/services/concurrent-index";
+import { logger } from "@k2b/cloud/services";
+import {
+  addMissingColumns,
+  buildConcurrentIndexesInBackground,
+  type ConcurrentIndex,
+  createIndexIfMissing,
+} from "@k2b/cloud/services/concurrent-index";
 import type { SQL } from "bun";
+
+/**
+ * The newest top-level runs across all workflows, of everything or of one app: the run list and the timeline of
+ * Betrieb read them without a workflow or scope filter. Built next to live run writes after the migration.
+ */
+const RUN_LIST_INDEXES: ConcurrentIndex[] = [
+  { name: "idx_workflows_run_recent", table: "workflows.run", definition: "(created_at DESC, id DESC) WHERE parent_run_id IS NULL" },
+  {
+    name: "idx_workflows_run_app_recent",
+    table: "workflows.run",
+    definition: "(app_id, created_at DESC, id DESC) WHERE parent_run_id IS NULL",
+  },
+];
 
 /**
  * The state vocabularies below are inlined as literal SQL rather than shared
@@ -456,4 +475,6 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     )
   `.simple();
   console.log("  ✓ workflows.step_outcome table");
+  // queries run without them until they are valid; startup never waits for the build
+  void buildConcurrentIndexesInBackground(RUN_LIST_INDEXES, { db, log: logger("core:workflows"), purpose: "run list" });
 };
