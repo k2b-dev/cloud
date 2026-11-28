@@ -249,7 +249,7 @@ An approval applies only to that saved version of the draft. If you edit the dra
 
 ## Reuse a message safely {icon="copy"}
 
-Open the actions menu of a message and choose **Use as new message**. Mail creates an independent draft from its recipients, subject, and content. You can choose the sending identity and whether Mail copies the attachments.
+Open the actions menu of a message and choose **Use as new message**. Mail creates an independent draft from its recipients, subject, and content. You can choose the sending identity and whether Mail copies the attachments. The draft opens as a window over the mailbox, like a new message.
 
 Mail never changes the original message and conversation, and nothing is sent immediately. Review the identity, recipients, content, and attachments, then send through the normal delivery flow. If the same create request is repeated, Mail returns the same draft and creates no duplicate.
 

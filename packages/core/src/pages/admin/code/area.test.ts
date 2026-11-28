@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { decodeCodeAdminCursor, encodeCodeAdminCursor } from "../../../code/admin";
-import { codeAreaHref, codeAreaLevel, parseCodeAreaQuery } from "./area";
+import { codeAreaHref, codeAreaSection, parseCodeAreaQuery } from "./area";
 
 test("the URL keeps only valid selections, so reload and back return to the same place", () => {
   const id = "a0000000-0000-4000-8000-000000000003";
@@ -28,9 +28,8 @@ test("the URL keeps only valid selections, so reload and back return to the same
   expect(parseCodeAreaQuery({ sec: "history", after: "x" })).toEqual({ sec: "history" });
   expect(codeAreaHref({ sec: "code", status: "paused", id: undefined })).toBe("/admin/code?sec=code&status=paused");
   expect(codeAreaHref({})).toBe("/admin/code");
-  expect(codeAreaLevel({ sec: "groups", id })).toBe("detail");
-  expect(codeAreaLevel({ sec: "groups" })).toBe("section");
-  expect(codeAreaLevel({})).toBe("area");
+  expect(codeAreaSection({ sec: "groups", id })).toBe("groups");
+  expect(codeAreaSection({})).toBe("approvals");
 });
 
 test("page cursors survive the URL, also for the longest Unicode titles", () => {

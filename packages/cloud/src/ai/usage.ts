@@ -197,74 +197,92 @@ const runColumns = () => sql`e.id, e.kind, e.task, e.status, e.created_at::text 
   e.request_started_at::text AS "requestStartedAt",e.generation_ms AS "generationMs",e.headers_ms AS "headersMs",e.first_byte_ms AS "firstByteMs",
   e.first_block_ms AS "firstBlockMs",e.cancelled`;
 
-export const aiUsage = {
-  report: async (range = "30d", options: AiUsageReportOptions = {}): Promise<AiUsageReport> => {
-    const { query: q, since, until } = period({ ...options, range: AiUsageQuerySchema.shape.range.parse(range) });
-    const source = events(since, until);
-    const filtered = sql`SELECT e.* FROM (${source}) e WHERE ${globalFilter(q)}`;
-    const inference = filtered;
-    const summary = async (kind?: string) => {
-      const [row] = await sql<AiUsageStats[]>`SELECT ${stats()} FROM (${filtered}) e WHERE ${kind ? sql`kind=${kind}` : sql`TRUE`}`;
-      return row!;
-    };
-    const groups = (dimension: "users" | "models" | "tasks" | "apps" | "workflows") => {
-      const key =
-        dimension === "workflows"
-          ? sql`e.workflow_id::text`
-          : dimension === "users"
-            ? sql`e.user_id::text`
-            : dimension === "models"
-              ? sql`e.model_profile_id`
-              : dimension === "tasks"
-                ? sql`e.task`
-                : sql`e.app_id`;
-      const label =
-        dimension === "workflows"
-          ? sql`(array_agg(e.workflow_name ORDER BY e.created_at DESC,e.id DESC))[1]`
-          : dimension === "users"
-            ? sql`COALESCE(NULLIF(u.display_name,''),u.uid,sa.name)`
-            : key;
-      const provider = dimension === "models" ? sql`e.provider_model` : sql`NULL::text`;
-      return pageOf<AiUsageGroup>(
-        sql`SELECT ${key} AS id,${label} AS label,${provider} AS "providerModel",${dimension === "workflows" ? sql`min(e.app_id)` : sql`NULL::text`} AS "appId",${stats()}
-        FROM (${inference}) e LEFT JOIN auth.users u ON u.id=e.user_id LEFT JOIN auth.service_accounts sa ON sa.id=e.user_id
-        WHERE ${dimension === "workflows" ? sql`e.workflow_id IS NOT NULL` : sql`TRUE`}
-        GROUP BY ${key},${dimension === "workflows" ? key : label},${provider}
-        ORDER BY ${comparisonOrder(q)},id NULLS LAST,"providerModel" NULLS LAST`,
-        q,
-      );
-    };
-    const runRows = sql`SELECT ${runColumns()} FROM (${filtered}) e LEFT JOIN auth.users u ON u.id=e.user_id LEFT JOIN auth.service_accounts sa ON sa.id=e.user_id
-      WHERE ${runFilter(q)} ORDER BY e.created_at DESC,e.kind,e.id`;
-    // The response period is authoritative for both summary and feedback. Editing a rating never moves its response into a different period.
-    const feedbackRows = sql`SELECT m.id::text AS id,c.id::text AS "conversationId",c.title AS "conversationTitle",
-      e.user_id::text AS "userId",COALESCE(NULLIF(u.display_name,''),u.uid,sa.name) AS "userLabel",
-      e.model_profile_id AS "modelId",e.provider_model AS "providerModel",
-      CASE WHEN m.feedback_rating=1 THEN 'up' ELSE 'down' END AS rating,
-      m.feedback_reasons AS reasons,m.feedback_comment AS comment,m.created_at::text AS "createdAt",m.feedback_updated_at::text AS "updatedAt"
-      FROM (${filtered}) e JOIN ai.messages m ON m.loop_id=e.turn_id::text AND m.conversation_id=e.conversation_id
-      JOIN ai.conversations c ON c.id=e.conversation_id LEFT JOIN auth.users u ON u.id=e.user_id LEFT JOIN auth.service_accounts sa ON sa.id=e.user_id
-      WHERE e.kind='chat' AND e.first_in_turn AND m.kind='message' AND m.role='assistant' AND m.feedback_rating IN (1,-1)
-      AND (${q.rating ?? null}::text IS NULL OR m.feedback_rating=${q.rating === "up" ? 1 : -1})
-      AND (${q.reason ?? null}::text IS NULL OR ${q.reason ?? null}=ANY(m.feedback_reasons))
-      ORDER BY m.created_at DESC,m.id`;
-    const [overview, chat, background, users, models, tasks, apps, feedback, runs, timeline, unassigned, launches] = await Promise.all([
-      summary(),
-      summary("chat"),
-      summary("background"),
-      groups("users"),
-      groups("models"),
-      groups("tasks"),
-      groups("apps"),
-      pageOf<AiUsageFeedback>(feedbackRows, q),
-      pageOf<AiUsageRun>(runRows, q),
-      sql<
+/**
+ * The parts of one report for one period and set of filters, each read only when asked for: `aiUsage.report` reads
+ * every part, a page reads the parts its open view shows.
+ */
+const reportParts = (range = "30d", options: AiUsageReportOptions = {}) => {
+  const { query: q, since, until } = period({ ...options, range: AiUsageQuerySchema.shape.range.parse(range) });
+  const source = events(since, until);
+  const filtered = sql`SELECT e.* FROM (${source}) e WHERE ${globalFilter(q)}`;
+  const inference = filtered;
+  const summary = async (kind?: "chat" | "background") => {
+    const [row] = await sql<AiUsageStats[]>`SELECT ${stats()} FROM (${filtered}) e WHERE ${kind ? sql`kind=${kind}` : sql`TRUE`}`;
+    return row!;
+  };
+  const groups = (dimension: "users" | "models" | "tasks" | "apps" | "workflows") => {
+    const key =
+      dimension === "workflows"
+        ? sql`e.workflow_id::text`
+        : dimension === "users"
+          ? sql`e.user_id::text`
+          : dimension === "models"
+            ? sql`e.model_profile_id`
+            : dimension === "tasks"
+              ? sql`e.task`
+              : sql`e.app_id`;
+    const label =
+      dimension === "workflows"
+        ? sql`(array_agg(e.workflow_name ORDER BY e.created_at DESC,e.id DESC))[1]`
+        : dimension === "users"
+          ? sql`COALESCE(NULLIF(u.display_name,''),u.uid,sa.name)`
+          : key;
+    const provider = dimension === "models" ? sql`e.provider_model` : sql`NULL::text`;
+    return pageOf<AiUsageGroup>(
+      sql`SELECT ${key} AS id,${label} AS label,${provider} AS "providerModel",${dimension === "workflows" ? sql`min(e.app_id)` : sql`NULL::text`} AS "appId",${stats()}
+      FROM (${inference}) e LEFT JOIN auth.users u ON u.id=e.user_id LEFT JOIN auth.service_accounts sa ON sa.id=e.user_id
+      WHERE ${dimension === "workflows" ? sql`e.workflow_id IS NOT NULL` : sql`TRUE`}
+      GROUP BY ${key},${dimension === "workflows" ? key : label},${provider}
+      ORDER BY ${comparisonOrder(q)},id NULLS LAST,"providerModel" NULLS LAST`,
+      q,
+    );
+  };
+  const runRows = sql`SELECT ${runColumns()} FROM (${filtered}) e LEFT JOIN auth.users u ON u.id=e.user_id LEFT JOIN auth.service_accounts sa ON sa.id=e.user_id
+    WHERE ${runFilter(q)} ORDER BY e.created_at DESC,e.kind,e.id`;
+  // The response period is authoritative for both summary and feedback. Editing a rating never moves its response into a different period.
+  const feedbackRows = sql`SELECT m.id::text AS id,c.id::text AS "conversationId",c.title AS "conversationTitle",
+    e.user_id::text AS "userId",COALESCE(NULLIF(u.display_name,''),u.uid,sa.name) AS "userLabel",
+    e.model_profile_id AS "modelId",e.provider_model AS "providerModel",
+    CASE WHEN m.feedback_rating=1 THEN 'up' ELSE 'down' END AS rating,
+    m.feedback_reasons AS reasons,m.feedback_comment AS comment,m.created_at::text AS "createdAt",m.feedback_updated_at::text AS "updatedAt"
+    FROM (${filtered}) e JOIN ai.messages m ON m.loop_id=e.turn_id::text AND m.conversation_id=e.conversation_id
+    JOIN ai.conversations c ON c.id=e.conversation_id LEFT JOIN auth.users u ON u.id=e.user_id LEFT JOIN auth.service_accounts sa ON sa.id=e.user_id
+    WHERE e.kind='chat' AND e.first_in_turn AND m.kind='message' AND m.role='assistant' AND m.feedback_rating IN (1,-1)
+    AND (${q.rating ?? null}::text IS NULL OR m.feedback_rating=${q.rating === "up" ? 1 : -1})
+    AND (${q.reason ?? null}::text IS NULL OR ${q.reason ?? null}=ANY(m.feedback_reasons))
+    ORDER BY m.created_at DESC,m.id`;
+  return {
+    query: q,
+    since: since.toISOString(),
+    until: until.toISOString(),
+    summary,
+    groups,
+    feedback: () => pageOf<AiUsageFeedback>(feedbackRows, q),
+    runs: () => pageOf<AiUsageRun>(runRows, q),
+    /** One point per hour (24 hours) or day of the period, empty steps as zero. */
+    timeline: async (): Promise<AiUsagePoint[]> => {
+      const timeline = await sql<
         AiUsagePoint[]
       >`SELECT date_trunc(${q.range === "24h" ? "hour" : "day"},created_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS bucket,
         count(*) FILTER (WHERE kind<>'live-transcription')::int AS turns,sum(tokens)::double precision AS tokens,count(*) FILTER (WHERE status='failed')::int AS failed,sum(cost)::double precision AS cost
-        FROM (${inference}) e GROUP BY 1 ORDER BY 1`,
-      sql<{ count: number }[]>`SELECT count(*)::int AS count FROM (${source}) e WHERE e.kind='background' AND e.user_id IS NULL
-        AND ${globalFilter({ ...q, userId: undefined })}`,
+        FROM (${inference}) e GROUP BY 1 ORDER BY 1`;
+      const step = q.range === "24h" ? 3600000 : 86400000;
+      const points = new Map(timeline.map((p) => [new Date(p.bucket).toISOString(), p]));
+      const filled: AiUsagePoint[] = [];
+      for (let time = Math.floor(since.getTime() / step) * step; time <= until.getTime(); time += step) {
+        const bucket = new Date(time).toISOString();
+        filled.push({ ...(points.get(bucket) ?? { turns: 0, tokens: 0, failed: 0, cost: 0 }), bucket });
+      }
+      return filled;
+    },
+    unassignedBackgroundRuns: async () => {
+      const [row] = await sql<
+        { count: number }[]
+      >`SELECT count(*)::int AS count FROM (${source}) e WHERE e.kind='background' AND e.user_id IS NULL
+        AND ${globalFilter({ ...q, userId: undefined })}`;
+      return row?.count ?? 0;
+    },
+    launches: () =>
       pageOf<AiUsageLaunch>(
         sql`SELECT c.launched_by_app_id AS "appId",count(*)::int AS chats,count(DISTINCT c.created_by_user_id)::int AS users
         FROM ai.conversations c WHERE c.created_at >= ${since} AND c.created_at <= ${until} AND c.launched_by_app_id IS NOT NULL
@@ -275,34 +293,58 @@ export const aiUsage = {
         )) GROUP BY c.launched_by_app_id ORDER BY chats DESC,c.launched_by_app_id`,
         q,
       ),
-    ]);
-    const step = q.range === "24h" ? 3600000 : 86400000;
-    const points = new Map(timeline.map((p) => [new Date(p.bucket).toISOString(), p]));
-    const filled: AiUsagePoint[] = [];
-    for (let time = Math.floor(since.getTime() / step) * step; time <= until.getTime(); time += step) {
-      const bucket = new Date(time).toISOString();
-      filled.push({ ...(points.get(bucket) ?? { turns: 0, tokens: 0, failed: 0, cost: 0 }), bucket });
-    }
+    unit: async () => (await aiQuotas.config()).unit ?? "EUR",
+    /** The name of the person or service account the `userId` filter names, as the report's rows name them; null without one. */
+    userLabel: async (): Promise<string | null> => {
+      if (!q.userId || q.userId === "unassigned") return null;
+      const [row] = await sql<{ label: string | null }[]>`SELECT COALESCE(NULLIF(u.display_name,''),u.uid,sa.name) AS label
+        FROM (SELECT ${q.userId}::uuid AS id) x LEFT JOIN auth.users u ON u.id=x.id LEFT JOIN auth.service_accounts sa ON sa.id=x.id`;
+      return row?.label ?? null;
+    },
+  };
+};
+export type AiUsageReportParts = ReturnType<typeof reportParts>;
+
+export const aiUsage = {
+  report: async (range = "30d", options: AiUsageReportOptions = {}): Promise<AiUsageReport> => {
+    const parts = reportParts(range, options);
+    const [overview, chat, background, users, models, tasks, apps, feedback, runs, timeline, unassignedBackgroundRuns, launches] =
+      await Promise.all([
+        parts.summary(),
+        parts.summary("chat"),
+        parts.summary("background"),
+        parts.groups("users"),
+        parts.groups("models"),
+        parts.groups("tasks"),
+        parts.groups("apps"),
+        parts.feedback(),
+        parts.runs(),
+        parts.timeline(),
+        parts.unassignedBackgroundRuns(),
+        parts.launches(),
+      ]);
     return {
-      query: q,
-      since: since.toISOString(),
-      until: until.toISOString(),
+      query: parts.query,
+      since: parts.since,
+      until: parts.until,
       overview,
       chat,
       background,
-      unassignedBackgroundRuns: unassigned[0]?.count ?? 0,
-      timeline: filled,
+      unassignedBackgroundRuns,
+      timeline,
       users,
       models,
       tasks,
-      workflows: await groups("workflows"),
-      unit: (await aiQuotas.config()).unit ?? "EUR",
+      workflows: await parts.groups("workflows"),
+      unit: await parts.unit(),
       apps,
       feedback,
       runs,
       launches,
     };
   },
+  /** The report's parts, each read on its own, for a reader that shows only some of them. */
+  parts: reportParts,
   /** Resolve one metadata record only; this never opens another user's chat content. */
   detail: async (kind: AiUsageRun["kind"], id: string): Promise<AiUsageRun | null> => {
     const [row] = await sql<AiUsageRun[]>`SELECT ${runColumns()} FROM (${events(new Date(0), new Date())}) e

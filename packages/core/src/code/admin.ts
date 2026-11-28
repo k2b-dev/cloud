@@ -1,4 +1,4 @@
-import { sql } from "@k2b/cloud";
+import { getApp, sql } from "@k2b/cloud";
 import { runAiStructured } from "@k2b/cloud/ai";
 import { getCapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
 import type { CodeVersionReadModel } from "@k2b/cloud/contracts";
@@ -16,7 +16,7 @@ import { type CodeDatabaseUsage, readCodeDatabaseUsage } from "./database";
 import { listCodeCleanupJobs } from "./lifecycle";
 import type { CodeCleanupJob } from "./lifecycle-contracts";
 import { codeAdminPermissionChanges } from "./permission-changes";
-import { readCodePolicyGroups, readCodePolicySnapshot, requireCodePolicyAdmin } from "./policy";
+import { readCodePolicyGroups, readCodePolicyGroupsOf, readCodePolicySnapshot, requireCodePolicyAdmin } from "./policy";
 import {
   CODE_POLICY_ROWS,
   type CodePolicy,
@@ -26,7 +26,7 @@ import {
   type CodePolicyValue,
   CodePolicyValueSchema,
 } from "./policy-contracts";
-import { effective } from "./policy-effective";
+import { type CodePolicyGroups, effective } from "./policy-effective";
 import { storeCodeVersionExplanation } from "./read-model/explanation";
 import { codeReadModelMessages } from "./read-model/messages";
 import { readModelNames } from "./read-model/names";
@@ -231,16 +231,42 @@ const parseEvidence = (value: unknown): CodeVersionEvidence | null => {
 
 const roleContext = (context: CodeContext) => ({ kind: "request" as const, authority: context.authority });
 
+/** Whose groups decide a version's rows: a personal owner's, otherwise the author's. */
+const policySubject = (owner: CodeOwner, authorId: string | null) => (owner.kind === "person" ? owner.userId : authorId);
+
+/** The rows of a version that need a Cloud admin under the policy, with the groups of the deciding rule by ID. */
+const adminRows = (owner: CodeOwner, rows: readonly CodePolicyRow[], policy: CodePolicy, groups: CodePolicyGroups) =>
+  rows.flatMap((row) => {
+    const result = effective(row, owner, policy.definition, groups);
+    return result.value === "admin" ? [{ row, source: result.source, groupIds: result.groupIds }] : [];
+  });
+
 /** The rows of a version that need a Cloud admin under the current policy, with the rule that decided. */
 async function whyRows(owner: CodeOwner, authorId: string | null, rows: readonly CodePolicyRow[]): Promise<CodeAdminWhyRow[]> {
   const policy = await readCodePolicySnapshot();
-  const groups = await readCodePolicyGroups(owner.kind === "person" ? owner.userId : authorId);
+  const groups = await readCodePolicyGroups(policySubject(owner, authorId));
   const names = await groupNames(groups.groups.map((group) => group.id));
-  return rows.flatMap((row) => {
-    const result = effective(row, owner, policy.definition, groups);
-    return result.value === "admin" ? [{ row, source: result.source, groups: result.groupIds.map((id) => names.get(id) ?? id) }] : [];
-  });
+  return adminRows(owner, rows, policy, groups).map(({ groupIds, ...row }) => ({
+    ...row,
+    groups: groupIds.map((id) => names.get(id) ?? id),
+  }));
 }
+
+/**
+ * The owner's name for a list row without a statement per row: a person's name from the list's own query, an app's
+ * name from the registry (what its owner reader answers), a place's title from its app's reader once per place.
+ */
+const listOwnerName = (context: CodeContext) => {
+  const places = new Map<string, Promise<string | null>>();
+  return async (owner: CodeOwner, personName: string | null): Promise<string | null> => {
+    if (owner.kind === "person") return personName;
+    if (owner.kind === "app") return (await getApp(owner.appId))?.name ?? null;
+    const key = `${owner.ref.type}\u0000${owner.ref.id}`;
+    const name = places.get(key) ?? reviewOwnerName(owner, context);
+    places.set(key, name);
+    return name;
+  };
+};
 
 async function groupNames(ids: readonly string[]): Promise<Map<string, string>> {
   if (!ids.length) return new Map();
@@ -252,6 +278,14 @@ async function userName(id: string | null): Promise<string | null> {
   if (!id) return null;
   const [row] = await sql<{ name: string }[]>`SELECT COALESCE(NULLIF(display_name,''),uid) AS name FROM auth.users WHERE id=${id}::uuid`;
   return row?.name ?? null;
+}
+
+async function userNames(ids: readonly string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(ids)].filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+  if (!unique.length) return new Map();
+  const rows = await sql<{ id: string; name: string }[]>`SELECT id,COALESCE(NULLIF(display_name,''),uid) AS name
+    FROM auth.users WHERE id=ANY(${sql.array(unique, "uuid")})`;
+  return new Map(rows.map((row) => [row.id, row.name]));
 }
 
 /** Counts for the area column. */
@@ -288,6 +322,7 @@ export async function listCodeAdminApprovals(
       author_id: string | null;
       author_name: string | null;
       author_avatar: string | null;
+      owner_name: string | null;
       created_at: Date;
       cursor_time: string;
       source_files: CodeSourceFiles;
@@ -296,25 +331,31 @@ export async function listCodeAdminApprovals(
     }[]
   >`SELECT to_char(r.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time,s.approval_id,s.code_id,s.version_id,v.number,c.title,c.owner_kind,c.owner_user_id,c.owner_type,c.owner_id,c.owner_app_id,
       v.created_by AS author_id,COALESCE(NULLIF(u.display_name,''),u.uid) AS author_name,u.avatar_hash AS author_avatar,r.created_at,v.source_files,v.manifest,
-      cmp.source_files AS comparison_files
+      COALESCE(NULLIF(o.display_name,''),o.uid) AS owner_name,cmp.source_files AS comparison_files
     FROM code.version_submissions s JOIN approvals.requests r ON r.id=s.approval_id
       JOIN code.versions v ON v.id=s.version_id JOIN code.codes c ON c.id=s.code_id
-      LEFT JOIN auth.users u ON u.id=v.created_by
+      LEFT JOIN auth.users u ON u.id=v.created_by LEFT JOIN auth.users o ON o.id=c.owner_user_id
       LEFT JOIN code.versions cmp ON cmp.id=(s.binding->>'comparisonVersionId')::uuid
     WHERE r.status='pending' AND r.expires_at>now()
       AND (${after?.at ?? null}::timestamptz IS NULL OR (r.created_at,r.id) < (${after?.at ?? null}::timestamptz,${after?.id ?? null}::uuid))
     ORDER BY r.created_at DESC,r.id DESC LIMIT ${PAGE + 1}`;
   const deadline = performance.now() + SUMMARY_BUDGET_MS;
+  const shown = rows.slice(0, PAGE).map((row) => ({ row, owner: ownerOf(row), manifest: parseManifest(row.manifest) }));
+  // One policy read and one membership read for the whole page, never one per row.
+  const judged = shown.filter((entry) => entry.manifest);
+  const policy = judged.length ? await readCodePolicySnapshot() : null;
+  const memberships = await readCodePolicyGroupsOf(judged.flatMap(({ owner, row }) => policySubject(owner, row.author_id) ?? []));
+  const ownerName = listOwnerName(context);
+  const texts = codeVersionMessages.resolve(context.locale ? [context.locale] : []).t;
+  const none: CodePolicyGroups = { groups: [], ancestors: [] };
   const items: CodeAdminApproval[] = [];
-  for (const row of rows.slice(0, PAGE)) {
-    const owner = ownerOf(row);
-    const manifest = parseManifest(row.manifest);
-    const why = manifest ? await whyRows(owner, row.author_id, manifest.policyRows) : [];
+  for (const { row, owner, manifest } of shown) {
+    const subject = policySubject(owner, row.author_id);
+    const why = manifest && policy ? adminRows(owner, manifest.policyRows, policy, (subject && memberships.get(subject)) || none) : [];
     const strictest = [...why].sort((a, b) => CODE_POLICY_ROWS.indexOf(b.row) - CODE_POLICY_ROWS.indexOf(a.row))[0];
-    const texts = codeVersionMessages.resolve(context.locale ? [context.locale] : []).t;
     items.push({
       owner,
-      ownerName: owner.kind === "person" ? await userName(owner.userId) : await reviewOwnerName(owner, context),
+      ownerName: await ownerName(owner, row.owner_name),
       mainChange: strictest ? texts.reviewReason({ row: strictest.row }) : texts.reviewRequired,
       reason: strictest ? { row: strictest.row, label: texts.reviewRequired } : null,
       approvalId: row.approval_id,
@@ -350,14 +391,17 @@ export async function listCodeAdminDecided(context: CodeContext): Promise<CodeAd
       author_id: string | null;
       author_name: string | null;
       author_avatar: string | null;
+      owner_name: string | null;
     })[]
   >`SELECT v.code_id,d.version_id,v.number,c.title,d.approved,d.outcome,d.sole_admin,d.decided_by AS decided_by_id,
       COALESCE(NULLIF(u.display_name,''),u.uid) AS decided_by,d.decided_at,
-      c.owner_kind,c.owner_user_id,c.owner_type,c.owner_id,c.owner_app_id,
+      c.owner_kind,c.owner_user_id,c.owner_type,c.owner_id,c.owner_app_id,COALESCE(NULLIF(o.display_name,''),o.uid) AS owner_name,
       v.created_by AS author_id,COALESCE(NULLIF(a.display_name,''),a.uid) AS author_name,a.avatar_hash AS author_avatar
     FROM code.version_decisions d JOIN code.versions v ON v.id=d.version_id JOIN code.codes c ON c.id=v.code_id
       LEFT JOIN auth.users u ON u.id=d.decided_by LEFT JOIN auth.users a ON a.id=v.created_by
+      LEFT JOIN auth.users o ON o.id=c.owner_user_id
     ORDER BY d.decided_at DESC,d.version_id DESC LIMIT ${PAGE}`;
+  const ownerName = listOwnerName(context);
   return Promise.all(
     rows.map(async (row) => {
       const owner = ownerOf(row);
@@ -371,7 +415,7 @@ export async function listCodeAdminDecided(context: CodeContext): Promise<CodeAd
         mine: row.decided_by_id === admin.id,
         author: { id: row.author_id, name: row.author_name, avatarHash: row.author_avatar },
         owner,
-        ownerName: owner.kind === "person" ? await userName(owner.userId) : await reviewOwnerName(owner, context),
+        ownerName: await ownerName(owner, row.owner_name),
         soleAdmin: row.sole_admin,
         decidedBy: row.decided_by,
         decidedAt: iso(row.decided_at),
@@ -446,13 +490,19 @@ export async function readCodeAdminApproval(versionId: string, context: CodeCont
       withdrawn: boolean;
       origin: CodeSubmissionOrigin;
       author_avatar: string | null;
+      author_name: string | null;
+      owner_name: string | null;
       sole_admin: boolean | null;
       decided_by: string | null;
+      decided_by_name: string | null;
       decided_at: Date | null;
     })[]
   >`SELECT c.id AS code_id,c.title,c.state,c.owner_kind,c.owner_user_id,c.owner_type,c.owner_id,c.owner_app_id,
       v.number,v.created_by,v.created_at,v.manifest,s.binding,s.evidence,s.approval_id,s.origin,
       (SELECT avatar_hash FROM auth.users WHERE id=v.created_by) AS author_avatar,
+      (SELECT COALESCE(NULLIF(display_name,''),uid) FROM auth.users WHERE id=v.created_by) AS author_name,
+      (SELECT COALESCE(NULLIF(display_name,''),uid) FROM auth.users WHERE id=c.owner_user_id) AS owner_name,
+      (SELECT COALESCE(NULLIF(display_name,''),uid) FROM auth.users WHERE id=d.decided_by) AS decided_by_name,
       EXISTS(SELECT 1 FROM code.version_withdrawals w WHERE w.version_id=v.id) AS withdrawn,r.status AS request_status,
       (SELECT e.text FROM code.version_explanations e WHERE e.version_id=v.id AND e.locale=${locale}) AS explanation,(r.expires_at>now()) AS unexpired,
       d.approved,d.outcome,d.comment,d.sole_admin,d.decided_by,d.decided_at
@@ -517,11 +567,9 @@ export async function readCodeAdminApproval(versionId: string, context: CodeCont
     context.locale ?? "en",
   );
   const comparedOperations = (comparisonEvidence?.trial?.calls ?? []).map((call) => ({ operation: call.operation, target: null }));
-  const [authorName, ownerName, decidedByName] = await Promise.all([
-    userName(row.created_by),
-    owner.kind === "person" ? userName(owner.userId) : reviewOwnerName(owner, context),
-    userName(row.decided_by),
-  ]);
+  const authorName = row.author_name;
+  const decidedByName = row.decided_by_name;
+  const ownerName = owner.kind === "person" ? row.owner_name : await reviewOwnerName(owner, context);
   const [previous] = await sql<{ version_id: string; number: number; comment: string }[]>`SELECT d.version_id,v.number,d.comment
     FROM code.version_decisions d JOIN code.versions v ON v.id=d.version_id
     WHERE v.code_id=${row.code_id} AND v.number=(SELECT max(number) FROM code.versions WHERE code_id=${row.code_id} AND number<${row.number}) AND d.outcome='changes_requested' AND d.decided_by=${admin.id}::uuid
@@ -967,9 +1015,7 @@ export async function readCodeAdminPolicyHistoryPage(
     Object.keys(metadata.success ? (metadata.data.changes ?? {}) : {}).filter((key) => key !== "default"),
   );
   const names = await groupNames([...new Set(groupIds)].filter((id) => /^[0-9a-f-]{36}$/i.test(id)));
-  const people = new Map<string, string | null>();
-  for (const { event } of parsed)
-    if (event.actor.userId && !people.has(event.actor.userId)) people.set(event.actor.userId, await userName(event.actor.userId));
+  const people = await userNames(parsed.flatMap(({ event }) => event.actor.userId ?? []));
   const items = parsed.map(({ event, metadata }) => {
     const data = metadata.success ? metadata.data : {};
     return {

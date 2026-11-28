@@ -24,10 +24,9 @@ props may change in any release; check the types of the installed version.
 ## The look is part of done
 
 Every screen starts as a mockup and then follows the look: the Fibel page
-**The look** (`/en/ui/look`) holds the thirteen rules as do and don't, the
-workflow and the tokens for custom parts; [look](references/look.md) adds a
-screen brief before
-code, one hero with its real trend, the app's colour where it means
+**The look** (`/en/ui/look`) holds the thirteen rules, the workflow and the
+tokens for custom parts; [look](references/look.md) adds a screen brief
+before code, one hero with its real trend, the app's colour where it means
 something, one data picture per row, a tinted head for the open object, a
 large screen that uses its room; dense, not busy: each thing has its mark
 (`Mark`, a person's `Avatar`), a state is a dot and its word, colour only
@@ -128,7 +127,8 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `states.tsx`, `table.tsx` |
 | data still loading | `Loading` where the list will stand; a table, `Facts` and `Cells.Cell` take `loading` | `states.tsx` |
 | data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only | `states.tsx` |
-| a search in a head or status row | `Input type="search"` with `icon`, `onKeyDown`, `ref`, `end` | – |
+| a search in a head | `HeadSearch` with `label`, `value`, `onInput` (its symbol, "/" and its words come with it); with `end` for a filter | – |
+| a search in a status row | `Input type="search"` with `icon`, `onKeyDown`, `ref`, `end` | – |
 | a link that opens in place | `href` plus `onNavigate` on rows, tabs, nav entries, actions, buttons, chips | – |
 | more deeds behind "…", or a choice of deeds behind a button | `Menu` with `items` (submenus, ticks, `danger`) | `actions.tsx` |
 | the same deeds on a right-click or a long press on a row | `Menu.Context` around the `Row`, plus a `Menu` in its `end` | `actions.tsx` |
@@ -160,10 +160,11 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
    in a group) wraps its cells instead; keep its texts short.
 8. **Round is what you press; square is what structures.** Buttons, chips,
    inputs and tiles are round; panes, bands, sections, groups are square.
-9. **Lines in two weights.** The clear line separates groups (sections,
-   a head block, a table head); the hair, barely there, stands between
-   rows. No line under a section head, none inside a `Group`, none under
-   the last row or section.
+9. **Lines in two weights.** The clear line separates groups (sections, a
+   head block, a table head); the hair, barely there, stands between rows.
+   No line under a section head, none inside a `Group`, none under the last
+   row or section. A list's head and its status row are one block: give the
+   head to the list's `Pane` with its `status`; the block draws one line.
 
 One primary action per page: the filled `Button variant="primary"` in the
 head, mirrored as `Workspace primary` so the phone shows it. A form page

@@ -121,7 +121,7 @@ test("without onSearch the form loads the page also where JavaScript runs", asyn
   });
 });
 
-test("the form stands where a plain search stands: at the end of the head, 36 px high; on the phone it folds to its symbol", async () => {
+test("the form stands where a plain search stands: at the end of the head, 36 px high; on the phone its words keep it open", async () => {
   await withPage("?level=error", async (tab) => {
     const place = await field(tab).evaluate((input) => {
       const form = input.parentElement!;
@@ -136,8 +136,16 @@ test("the form stands where a plain search stands: at the end of the head, 36 px
   await withPage(
     "?level=error",
     async (tab) => {
-      // folded: the symbol of 36 px; a tap opens it over the head, Escape folds it back and keeps the words
+      // the words of the address keep it open over the head, already on the server's page (look rule 31); emptied, it
+      // folds to its symbol of 36 px; a tap opens it, and Escape leaves it open with its words
       const width = () => field(tab).evaluate((input) => input.parentElement!.getBoundingClientRect().width);
+      expect(await width()).toBeGreaterThan(36);
+      expect(await field(tab).inputValue()).toBe("Lager");
+      await field(tab).tap();
+      await field(tab).fill("");
+      await tab.keyboard.press("Escape");
+      await tab.waitForFunction(() => document.activeElement?.tagName !== "INPUT");
+      await settled(tab);
       expect(await width()).toBe(36);
       await field(tab).tap();
       await tab.waitForFunction(() => (document.activeElement?.parentElement?.getBoundingClientRect().width ?? 0) > 36);
@@ -145,7 +153,7 @@ test("the form stands where a plain search stands: at the end of the head, 36 px
       await tab.keyboard.press("Escape");
       await tab.waitForFunction(() => document.activeElement?.tagName !== "INPUT");
       await settled(tab);
-      expect(await width()).toBe(36);
+      expect(await width()).toBeGreaterThan(36);
       expect(await field(tab).inputValue()).toBe("Vase");
     },
     { width: 390 },

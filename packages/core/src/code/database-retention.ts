@@ -7,7 +7,12 @@ import type { CoreNotificationSender } from "../notifications";
 import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
 import { CodeIdSchema } from "./contracts";
 import { lockNamespaceChange, readCodeDatabaseConfig } from "./database";
-import { DATABASE_EXPIRY_NOTICE_MS, lockDatabaseRetentionPolicy, refreshDatabaseDeadline } from "./database-deadline";
+import {
+  DATABASE_EXPIRY_NOTICE_MS,
+  lockDatabaseRetentionPolicy,
+  refreshDatabaseDeadline,
+  refreshDatabaseDeadlines,
+} from "./database-deadline";
 
 export { databaseDeletionDate, readUnusedDatabaseDays } from "./database-deadline";
 
@@ -218,7 +223,12 @@ export async function listUnusedCodeDatabases(context: CodeContext, cursor?: str
     const policy = await lockDatabaseRetentionPolicy(tx);
     const selected = await tx<{ code_id: string }[]>`SELECT code_id FROM code.databases
       WHERE unused_since IS NOT NULL AND (${after}::text IS NULL OR code_id>${after}) ORDER BY code_id LIMIT 21`;
-    for (const row of selected) await refreshDatabaseDeadline(tx, row.code_id, new Date(), policy);
+    await refreshDatabaseDeadlines(
+      tx,
+      selected.map((row) => row.code_id),
+      new Date(),
+      policy,
+    );
     return tx<
       {
         code_id: string;

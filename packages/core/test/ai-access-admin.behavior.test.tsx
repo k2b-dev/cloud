@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { AccessEntry } from "@k2b/cloud/contracts";
-import * as navigation from "@k2b/ssr/nav";
-import { delegateEvents, isServer, render } from "solid-js/web";
+import { delegateEvents, isServer } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../ui/test/dom";
 
 /** Opens a row's level menu and picks a level, as a person would. */
@@ -159,48 +158,40 @@ describe("AI administration access", () => {
     dom.document.documentElement.lang = "en";
     installPopoverApi(dom);
     delegateEvents(["click", "input"], dom.document);
-    const refreshed = spyOn(navigation, "refreshCurrentPath").mockImplementation(() => {});
     const { prompts } = await import("@k2b/ui");
-    const error = spyOn(prompts, "error").mockResolvedValue(undefined);
+    // The v1 access dialog asks before it drops unsaved changes; the person agrees.
     const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
-    const disposeRender =
+    const { openProjectAccess, openSkillAccess } = await import("../src/pages/admin/ai/content-access");
+    // The screen's deed: its "Permissions" button opens the dialog and reads the page again when this resolves true.
+    const leave = new AbortController();
+    let failure: unknown = null;
+    const saved = (
       kind === "skill"
-        ? await import("../src/pages/admin/settings/_components/AiSkillAdminActions.island").then(({ default: Actions }) =>
-            render(() => <Actions skillId="skill-1" skillName="Triage" revision={1} source={null} />, dom.root),
-          )
-        : await import("../src/pages/admin/settings/_components/AiProjectAdminActions.island").then(({ default: Actions }) =>
-            render(() => <Actions projectId="project-1" projectName="Support desk" />, dom.root),
-          );
-    dom.root.querySelector<HTMLButtonElement>("button[aria-label^='Actions for']")!.click();
-    Array.from(dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
-      .find((node) => node.textContent?.includes("Permissions"))!
-      .click();
+        ? openSkillAccess({ shortId: "skill-1", name: "Triage" }, "en", leave.signal)
+        : openProjectAccess({ shortId: "project-1", name: "Support desk" }, "en", leave.signal)
+    ).catch((error: unknown) => {
+      failure = error;
+      return false;
+    });
     const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]:not(.k2b-avatar-stack__popover)');
     /** By accessible name: a button with a short label on phones keeps its full name. */
     const button = (text: string) =>
       Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find(
         (item) => item.getAttribute("aria-label") === text || item.textContent?.trim() === text,
       );
-    let disposed = false;
-    const dispose = () => {
-      if (disposed) return;
-      disposed = true;
-      disposeRender();
-    };
     cleanup = async () => {
       if (dialog()) {
         button("Cancel")?.click();
         await until(() => !dialog());
       }
-      dispose();
-      refreshed.mockRestore();
-      error.mockRestore();
+      leave.abort();
+      await saved;
       confirm.mockRestore();
       dom.cleanup();
     };
     if (options.waitForDialog !== false) await until(() => dialog()?.textContent?.includes("Lea Schmitt") === true);
     const row = (name: string) => Array.from(dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
-    return { dom, dialog, button, row, refreshed, error, dispose };
+    return { dom, dialog, button, row, saved, failure: () => failure, leave: () => leave.abort() };
   };
 
   for (const kind of ["skill", "project"] as const) {
@@ -233,10 +224,10 @@ describe("AI administration access", () => {
       expect(calls).toEqual([`lookup core.ai.${kind} ${kind}-1 ${handle}`]);
       ui.button("Save")!.click();
       await until(() => !ui.dialog());
+      expect(await ui.saved).toBe(true);
       expect(calls.at(-1)).toBe(
         `${kind} POST ${JSON.stringify({ principal: { type: "service_account", serviceAccountId: codeAccountId }, permission: "write" })}`,
       );
-      expect(ui.refreshed).toHaveBeenCalledTimes(1);
     });
   }
 
@@ -251,7 +242,7 @@ describe("AI administration access", () => {
     ui.button("Save")!.click();
     await until(() => !ui.dialog());
     expect(calls).toEqual(["skill PATCH 2 write"]);
-    expect(ui.refreshed).toHaveBeenCalledTimes(1);
+    expect(await ui.saved).toBe(true);
   });
 
   test("a Skill opens before its projects answer, and failed projects can be loaded again", async () => {
@@ -282,26 +273,26 @@ describe("AI administration access", () => {
     expect(calls).toEqual(["skill PATCH 2 write", "skill DELETE 3"]);
     ui.button("Cancel")!.click();
     await until(() => !ui.dialog());
-    expect(ui.refreshed).toHaveBeenCalledTimes(1);
+    expect(await ui.saved).toBe(true);
   });
 
   test("a page that changes while the list loads gets no dialog and no error", async () => {
     state.accessHeld = Promise.withResolvers<void>();
     const held = state.accessHeld;
     const ui = await setup("project", { waitForDialog: false });
-    ui.dispose();
+    ui.leave();
     held.resolve();
+    expect(await ui.saved).toBe(false);
     await Bun.sleep(30);
     expect(ui.dialog()).toBeNull();
-    expect(ui.error).not.toHaveBeenCalled();
+    expect(ui.failure()).toBeNull();
   });
 
   test("a Project's dialog refreshes nothing when it closes unchanged", async () => {
     const ui = await setup("project");
     ui.button("Cancel")!.click();
     await until(() => !ui.dialog());
-    await Bun.sleep(20);
+    expect(await ui.saved).toBe(false);
     expect(calls).toEqual([]);
-    expect(ui.refreshed).not.toHaveBeenCalled();
   });
 });
