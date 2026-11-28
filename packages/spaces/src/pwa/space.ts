@@ -7,6 +7,7 @@ import { getActorsSpacePermissions } from "@/service/access";
 import { spacesService } from "@/service/index";
 import { loadSpacesSidebar } from "@/service/overview";
 import { resolvePublicId, resolveSpacePublicIds, spacesPublicResources } from "@/service/public-resources";
+import type { ReachableSpaces } from "@/service/reach";
 import { isTaskOverdue } from "@/task-overdue";
 import { PWA_MAX_STATUS_PAGES, PWA_STATUS_PAGE_SIZE } from "./limits";
 import type { SpaceListFilter } from "./paths";
@@ -262,7 +263,7 @@ export async function loadPwaSpaceEntries(params: {
   cookieHeader?: string;
   myWorkCount: number;
   /** The Spaces the reader reaches, when the request read them already. */
-  spaces?: Promise<Space[]>;
+  spaces?: Promise<ReachableSpaces<Space>>;
 }): Promise<PwaSpaceEntry[]> {
   const [sidebar, writable] = await Promise.all([
     loadSpacesSidebar({ userId: params.userId, cookieHeader: params.cookieHeader, myWorkCount: params.myWorkCount, spaces: params.spaces }),

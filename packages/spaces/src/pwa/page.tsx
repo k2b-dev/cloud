@@ -46,7 +46,7 @@ const render = async <E extends AuthContext>(c: Context<E>, options: { task?: Pw
   // "My tasks" is read on every page: the title's switcher counts it, and the list is there at once after switching.
   // The reachable Spaces are read once for both the work and the switcher's Space list.
   const spaces = loadReachableSpaces(user.id);
-  const spaceIds = (await spaces).map((space) => space.id);
+  const spaceIds = (await spaces).ids;
   const work = await loadOverviewWork({ userId: user.id, view: list.kind === "mine" ? list.view : "mine", dateConfig, spaceIds });
   const [entries, space] = await Promise.all([
     loadPwaSpaceEntries({ userId: user.id, cookieHeader: c.req.header("Cookie"), myWorkCount: work.counts.mine, spaces }),

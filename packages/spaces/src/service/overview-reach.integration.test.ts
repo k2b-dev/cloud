@@ -85,7 +85,7 @@ suite("overview reads across the reachable Spaces", () => {
       // The overview page: one resolution shared by work, sidebar and activity.
       const page = async () => {
         const spaces = loadReachableSpaces(userId);
-        const spaceIds = (await spaces).map((space) => space.id);
+        const spaceIds = (await spaces).ids;
         const work = await loadOverviewWork({ userId, view: "mine", dateConfig, spaceIds });
         await Promise.all([
           loadSpacesSidebar({ userId, dateConfig, spaces, myWorkCount: work.counts.mine }),
@@ -100,7 +100,7 @@ suite("overview reads across the reachable Spaces", () => {
 
   test("keep to direct and nested group grants, skip private and `none` Spaces, and empty on revocation", async () => {
     const subject = { type: "user" as const, userId: reader };
-    expect((await loadReachableSpaces(reader)).map((space) => space.name)).toEqual(["Direct", "Group"]);
+    expect((await loadReachableSpaces(reader)).spaces.map((space) => space.name)).toEqual(["Direct", "Group"]);
     expect(await loadOverviewCounts({ userId: reader, dateConfig })).toEqual({ mine: 4, today: 2, upcoming: 4 });
     const lists = { mine: 4, today: 2, upcoming: 4 };
     for (const view of views) {
@@ -120,7 +120,7 @@ suite("overview reads across the reachable Spaces", () => {
 
     await sql`DELETE FROM auth.access WHERE id = ${direct.accessId}::uuid`;
     await sql`DELETE FROM auth.user_groups_v2 WHERE user_id = ${reader}::uuid`;
-    expect(await loadReachableSpaces(reader)).toEqual([]);
+    expect((await loadReachableSpaces(reader)).spaces).toEqual([]);
     expect(await loadOverviewCounts({ userId: reader, dateConfig })).toEqual({ mine: 0, today: 0, upcoming: 0 });
     for (const view of views) expect((await loadOverviewWork({ userId: reader, view, dateConfig })).items).toEqual([]);
     expect(await loadSpacesSidebar({ userId: reader, dateConfig })).toMatchObject({ spaces: [], myWorkCount: 0 });
@@ -139,7 +139,9 @@ suite("overview reads across the reachable Spaces", () => {
     const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
       VALUES ('Reach bound account', 'resource_bound', 'spaces', 'space', ${direct.id}) RETURNING id`;
     const subject = { type: "service_account" as const, serviceAccountId: account!.id };
-    const [other] = await sql<{ id: string }[]>`INSERT INTO spaces.spaces (short_id, name) VALUES (${newShortId()}, 'Bound other') RETURNING id`;
+    const [other] = await sql<
+      { id: string }[]
+    >`INSERT INTO spaces.spaces (short_id, name) VALUES (${newShortId()}, 'Bound other') RETURNING id`;
     await sql`INSERT INTO spaces.activity_events (space_id, actor_kind, actor_id, action, created_at, last_occurred_at)
       VALUES (${other!.id}::uuid, 'user', ${reader}::uuid, 'space.updated', '2026-11-27T10:00:00Z', '2026-11-27T10:00:00Z')`;
     for (const spaceId of [direct.id, other!.id]) {

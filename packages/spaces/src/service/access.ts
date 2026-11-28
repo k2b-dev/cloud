@@ -136,23 +136,6 @@ export const buildSpacePrincipalCondition = (subject: AccessSubject) =>
   });
 
 /**
- * The ids of every Space the subject reaches through a grant above `none`, in
- * one statement. Cross-Space reads filter by these ids rather than checking
- * the grants per row: the planner cannot estimate the group-recursive
- * principal predicate per row and scans every item, while
- * `space_id = ANY(ids)` keeps it on the space_id indexes.
- */
-export const listReachableSpaceIds = async (subject: AccessSubject): Promise<string[]> => {
-  const rows = await sql<{ space_id: string }[]>`
-    SELECT DISTINCT sa.space_id
-    FROM spaces.space_access sa
-    JOIN auth.access a ON a.id = sa.access_id
-    WHERE a.permission <> 'none' AND ${buildSpacePrincipalCondition(subject)}
-  `;
-  return rows.map((row) => row.space_id);
-};
-
-/**
  * Reads across Spaces. Users are limited only by their grants. A
  * resource-bound service account must pass its bound Space; a standalone or
  * agent account is limited only by its own grants. The kind is read from the

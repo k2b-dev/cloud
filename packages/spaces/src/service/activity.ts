@@ -1,7 +1,8 @@
 import { sql } from "@k2b/cloud";
 import type { AccessSubject } from "@k2b/cloud/server";
 import { toPgUuidArray } from "@k2b/cloud/services";
-import { buildSpacePrincipalCondition, listReachableSpaceIds, mayReadAcrossSpaces } from "./access";
+import { buildSpacePrincipalCondition, mayReadAcrossSpaces } from "./access";
+import { listReachableSpaceIds, type ReachableSpaceIds, reachableIdsForSql } from "./reach";
 
 type SqlExecutor = typeof sql;
 
@@ -141,7 +142,7 @@ export const list = async (params: {
   before?: string;
   after?: string;
   /** The Spaces the subject reaches, when the request resolved them already. */
-  spaceIds?: string[];
+  spaceIds?: ReachableSpaceIds;
 }): Promise<SpaceActivityPage> => {
   // A read across Spaces checks the subject's reach itself, as every other cross-Space read does: a Space-bound
   // account reads only with its binding, whatever path calls this.
@@ -155,7 +156,7 @@ export const list = async (params: {
   const narrowed = Boolean(params.spaceId || params.itemId || params.boundSpaceId);
   const spaceIds = params.spaceIds ?? (narrowed ? null : await listReachableSpaceIds(params.subject));
   const reachable = spaceIds
-    ? sql`activity.space_id = ANY(${toPgUuidArray(spaceIds)}::uuid[])`
+    ? sql`activity.space_id = ANY(${toPgUuidArray(reachableIdsForSql(spaceIds))}::uuid[])`
     : sql`EXISTS (
       SELECT 1 FROM spaces.space_access sa JOIN auth.access a ON a.id = sa.access_id
       WHERE sa.space_id = activity.space_id AND a.permission <> 'none' AND ${buildSpacePrincipalCondition(params.subject)}

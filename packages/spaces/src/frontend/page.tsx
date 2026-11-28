@@ -28,7 +28,7 @@ export default ssr<AuthContext>(async (c) => {
   const subject = { type: "user" as const, userId: user.id };
   // The reachable Spaces are read once; the sidebar lists them, and work and activity filter by their ids.
   const spaces = loadReachableSpaces(user.id);
-  const spaceIds = spaces.then((reachable) => reachable.map((space) => space.id));
+  const spaceIds = spaces.then((reachable) => reachable.ids);
   const work = spaceIds.then((ids) => loadOverviewWork({ userId: user.id, view, dateConfig: getDateConfig(c), spaceIds: ids }));
   const [sidebar, initialWork, activityResult] = await Promise.all([
     loadSpacesSidebar({

@@ -5,17 +5,17 @@ import type { Space } from "../contracts";
 import { parsePinnedSpaceIds } from "../frontend/[id]/_components/settings/SpaceSettingsStore";
 import type { SpacesSidebarData } from "../frontend/[id]/_components/sidebar/spaces-navigation";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
-import { listReachableSpaceIds } from "./access";
 import { spacesService } from "./index";
 import { dashboardSnapshot, listMyTasks } from "./items";
 import { spacesPublicResources } from "./public-resources";
+import { listReachableSpaceIds, type ReachableSpaceIds, type ReachableSpaces, reachableSpaces } from "./reach";
 
 /**
  * Every Space the person reaches, read once per request: the sidebar lists them,
  * and the overview's counts, lists and activity filter by their ids.
  */
-export async function loadReachableSpaces(userId: string): Promise<Space[]> {
-  return (await spacesService.space.list({ subject: { type: "user", userId } })).items;
+export async function loadReachableSpaces(userId: string): Promise<ReachableSpaces<Space>> {
+  return reachableSpaces((await spacesService.space.list({ subject: { type: "user", userId } })).items);
 }
 
 /** Both SSR and view navigation use the same permission-filtered reads and limits. */
@@ -24,7 +24,7 @@ export async function loadOverviewWork(params: {
   view: OverviewView;
   dateConfig: DateContext;
   /** The ids of the Spaces the person reaches, when the request resolved them already. */
-  spaceIds?: string[];
+  spaceIds?: ReachableSpaceIds;
 }): Promise<OverviewWork> {
   const spaceIds = params.spaceIds ?? (await listReachableSpaceIds({ type: "user", userId: params.userId }));
   const [dashboard, mine, writable] = await Promise.all([
@@ -89,13 +89,13 @@ export async function loadSpacesSidebar(params: {
   dateConfig?: DateContext;
   myWorkCount?: number | Promise<number>;
   /** The Spaces the person reaches, when the request read them already (loadReachableSpaces). */
-  spaces?: Promise<Space[]>;
+  spaces?: Promise<ReachableSpaces<Space>>;
 }): Promise<SpacesSidebarData> {
-  const [spaces, givenWorkCount] = await Promise.all([params.spaces ?? loadReachableSpaces(params.userId), params.myWorkCount]);
-  const spaceIds = spaces.map((space) => space.id);
+  const [reach, givenWorkCount] = await Promise.all([params.spaces ?? loadReachableSpaces(params.userId), params.myWorkCount]);
+  const { spaces, ids: spaceIds } = reach;
   const [projected, stats, myWorkCount] = await Promise.all([
     spacesPublicResources.projectSpaces(spaces),
-    loadSpaceOverviewStats({ spaceIds }),
+    loadSpaceOverviewStats({ spaceIds: [...spaceIds] }),
     givenWorkCount ??
       dashboardSnapshot({ userId: params.userId, dateConfig: params.dateConfig, view: "counts", todoLimit: 0, spaceIds }).then(
         (snapshot) => snapshot.assignedToMeCount,

@@ -34,14 +34,7 @@ import { itemEventState, publishItemEvent, publishItemUpdated } from "../app-eve
 import { newShortId, withShortId, withShortIdRetry } from "../lib/short-id";
 import { descriptionPreview } from "../presentation/description-preview";
 import { CompletionInputSchema, type TaskWork } from "../work-contracts";
-import {
-  buildSpacePrincipalCondition,
-  getActorsSpacePermissions,
-  listReachableSpaceIds,
-  mayReadAcrossSpaces,
-  SPACE_RESOURCE_TYPE,
-  SPACES_APP_ID,
-} from "./access";
+import { buildSpacePrincipalCondition, getActorsSpacePermissions, mayReadAcrossSpaces, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
 import * as activity from "./activity";
 import { assigneeChangeMetadata, itemChangeMetadata } from "./activity-metadata";
@@ -50,6 +43,7 @@ import { insertMany as insertItemResourceReferences } from "./item-resource-refe
 import { publishSpaceChange, spacesLive } from "./live";
 import { projectItems } from "./public-resources";
 import { rank } from "./rank";
+import { listReachableSpaceIds, type ReachableSpaceIds, reachableIdsForSql } from "./reach";
 import { getReactionsByItemIds, type ReactionViewer } from "./reactions";
 import {
   CalendarReadLimitError,
@@ -949,7 +943,7 @@ export const dashboardSnapshot = async (params: {
   /** Omit for the dashboard widget; overview routes load only their selected list. */
   view?: "today" | "upcoming" | "counts";
   /** The Spaces the user reaches, when the request resolved them already; omitted, they are resolved here. */
-  spaceIds?: string[];
+  spaceIds?: ReachableSpaceIds;
 }): Promise<{
   openTodoCount: number;
   assignedToMeCount: number;
@@ -959,7 +953,9 @@ export const dashboardSnapshot = async (params: {
   events: DashboardItem[];
   todos: DashboardItem[];
 }> => {
-  const reachable = toPgUuidArray(params.spaceIds ?? (await listReachableSpaceIds({ type: "user", userId: params.userId })));
+  const reachable = toPgUuidArray(
+    reachableIdsForSql(params.spaceIds ?? (await listReachableSpaceIds({ type: "user", userId: params.userId }))),
+  );
   const { todayStart, tomorrowStart } = deadlineWindow(params.dateConfig);
   const spaceFilter = params.spaceId ? sql`AND i.space_id = ${params.spaceId}::uuid` : sql``;
 
@@ -3149,10 +3145,10 @@ export const listMyTasks = async (params: {
   limit?: number;
   dateConfig?: DateContext;
   /** The Spaces the user reaches, when the request resolved them already; omitted, they are resolved here. */
-  spaceIds?: string[];
+  spaceIds?: ReachableSpaceIds;
 }): Promise<TaskItem[]> => {
   const { userId, minPriority, limit = 20 } = params;
-  const reachable = toPgUuidArray(params.spaceIds ?? (await listReachableSpaceIds({ type: "user", userId })));
+  const reachable = toPgUuidArray(reachableIdsForSql(params.spaceIds ?? (await listReachableSpaceIds({ type: "user", userId }))));
 
   // Build priority filter
   let priorityCondition = sql``;
