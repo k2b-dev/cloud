@@ -37,7 +37,7 @@ export type FailingRoute = {
 };
 
 /** An app of the registry with its state in the window: online, needs a look, or offline. */
-export type OverviewApp = { id: string; label: string; icon: string; color?: string; status: "ok" | "warn" | "bad"; detail?: string };
+export type OverviewApp = { id: string; label: string; icon: string; color?: string; status: "ok" | "warn" | "bad" };
 
 export type OverviewScreenProps = {
   nav: NavProps;
@@ -67,11 +67,11 @@ export default function OverviewScreen(props: OverviewScreenProps) {
   const t = () => gatewayOpsMessages.resolve([locale()]).t;
   const query = createMemo(() => overviewQuery(locale()));
   // a state in a word: neutral when good, colour only where something needs a look
-  const stateOf = (status: "ok" | "warn" | "bad" | undefined, ok: string, detail?: string) =>
+  const stateOf = (status: "ok" | "warn" | "bad" | undefined, ok: string) =>
     status === "bad" ? (
-      <Chip status="bad">{detail ?? t().needsAttentionLabel}</Chip>
+      <Chip status="bad">{t().needsAttentionLabel}</Chip>
     ) : status === "warn" ? (
-      <Chip status="warn">{detail ?? t().needsReview}</Chip>
+      <Chip status="warn">{t().needsReview}</Chip>
     ) : status === "ok" ? (
       <Text type="meta" muted>
         {ok}
@@ -220,7 +220,7 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                       <Row
                         mark={{ icon: app.icon, color: app.color }}
                         lines={[app.label]}
-                        end={stateOf(app.status, t().online, app.detail)}
+                        end={stateOf(app.status, t().online)}
                         href={`/admin/apps?app=${encodeURIComponent(app.id)}`}
                       />
                     )}

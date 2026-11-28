@@ -3,6 +3,9 @@ import { defineListQuery, field, type ListQueryStateOf } from "@k2b/ui/v2/list-q
 import { type GatewayOpsMessages, gatewayOpsMessages } from "../messages";
 import { DEFAULT_TELEMETRY_RANGE, TELEMETRY_RANGES, type TelemetryRange } from "./telemetry/contracts";
 
+/** From this share of errors a failing route stands in red: one request in fifty fails. */
+export const BAD_ROUTE_SHARE = 0.02;
+
 export type OverviewSignalSeverity = "critical" | "warning" | "unavailable";
 
 export type OverviewSignal = {

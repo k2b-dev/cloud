@@ -1,6 +1,6 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { NavProps } from "@k2b/ui/v2";
-import { buildOverviewSignals, overviewQuery, overviewVerdict } from "../overview";
+import { BAD_ROUTE_SHARE, buildOverviewSignals, overviewQuery, overviewVerdict } from "../overview";
 import type { FailingRoute, OverviewApp } from "./OverviewScreen";
 import OverviewScreen from "./OverviewScreen.island";
 import { opsCharts } from "./ops-chart";
@@ -55,7 +55,7 @@ const ROUTES: FailingRoute[] = (
   errors: errors.toLocaleString("de"),
   requests: requests.toLocaleString("de"),
   rate: new Intl.NumberFormat("de", { style: "percent", maximumFractionDigits: 1 }).format(errors / requests),
-  bad: errors / requests >= 0.02,
+  bad: errors / requests >= BAD_ROUTE_SHARE,
   href: `/admin/observability/telemetry?range=24h&app=${id}&route=${encodeURIComponent(route)}`,
 }));
 

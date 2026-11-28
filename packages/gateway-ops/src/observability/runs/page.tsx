@@ -19,6 +19,7 @@ export default ssr<AuthContext>(async (c) => {
   const { t } = runsMessages.resolve([locale]);
   const url = new URL(c.req.url);
   const credentials = syncOpsCredentials(c.req.raw);
+  // first: the address names an app filter that is read against the registered apps
   const registered = await listApps().catch(() => []);
   // v2 names Tabler icons without the "ti ti-" classes the registry carries
   const apps = registered.map((app) => ({

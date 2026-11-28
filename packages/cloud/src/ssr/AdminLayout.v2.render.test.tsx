@@ -106,7 +106,9 @@ describe("an admin page on v2", () => {
     expect(nav).toContain('aria-label="Administration"');
     for (const label of ["Einrichten", "Betrieb", "Einstellungen je App"]) expect(nav).toContain(label);
     const items = entries(nav);
-    expect(items.map((item) => item.name)).toEqual(expect.arrayContaining(["Übersicht", "Speicher", "Ankündigungen", "Code", "Beispiel"]));
+    expect(items.map((item) => item.name)).toEqual(expect.arrayContaining(["Speicher", "Ankündigungen", "Code", "Beispiel"]));
+    // `/admin` has no page of its own, so the bar has no entry for it
+    expect(items.map((item) => item.name)).not.toContain("Übersicht");
     expect(items.filter((item) => item.current).map((item) => item.name)).toEqual(["Ankündigungen"]);
     // the waiting Code approvals stay a count on the entry
     expect(nav).toMatch(/Code<\/span><span class="k2-ni-count">2<\/span>/);

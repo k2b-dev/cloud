@@ -253,6 +253,35 @@ suiteFor("database")("workflow observability", () => {
     expect(health?.oldestQueuedMs).toBeGreaterThan(500_000);
   });
 
+  test("the newest top-level runs, of all apps or of one, read through an index of their own, in two statements", async () => {
+    expect(await ready()).toBe(true);
+    // the plan the run list and the timeline take without a workflow or scope filter, as the custom plan sees it
+    const planOf = async (appId: string | null) =>
+      sql.begin(async (tx) => {
+        // a test database is small, so only an index the query can use counts, not the planner's taste for scans
+        await tx`SET LOCAL enable_seqscan = off`;
+        const rows = await tx.unsafe(`
+          EXPLAIN (FORMAT JSON)
+          SELECT r.id FROM workflows.run AS r
+          WHERE ${appId === null ? "TRUE" : "r.app_id = 'probe'"}
+            AND r.parent_run_id IS NULL AND r.created_at >= now() - INTERVAL '24 hours'
+          ORDER BY r.created_at DESC, r.id DESC
+          LIMIT 500
+        `);
+        return JSON.stringify(rows);
+      });
+    expect(await planOf(null)).toContain("idx_workflows_run_recent");
+    expect(await planOf("probe")).toContain("idx_workflows_run_app_recent");
+
+    const meter = await meterSql();
+    try {
+      // the sample and the count of the window, nothing per run
+      expect(await meter.during(() => listWorkflowRunTimeline({}, { limit: 500 }))).toHaveLength(2);
+    } finally {
+      await meter.close();
+    }
+  });
+
   test("run details distinguish expired event data from a missing event", async () => {
     expect(await ready()).toBe(true);
     const appId = `expired-detail-${crypto.randomUUID()}`;
