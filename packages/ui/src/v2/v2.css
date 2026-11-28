@@ -6197,6 +6197,26 @@
 .k2-ui .k2-state-text {
   overflow-wrap: anywhere;
 }
+/* Empty (taste rule 12): in the middle of the place it stands for, its sentence a title, the second sentence quiet */
+.k2-ui .k2-state[data-k2-part="Empty"] {
+  align-items: center;
+  align-self: center;
+  margin-inline: auto;
+  text-align: center;
+  padding-block: 48px;
+}
+.k2-ui .k2-state[data-k2-part="Empty"] > .k2-sign {
+  margin-bottom: 4px;
+}
+.k2-ui .k2-state[data-k2-part="Empty"] > .k2-state-text {
+  font: var(--k2-t-title);
+}
+.k2-ui .k2-state-hint {
+  margin-top: -4px;
+  max-width: 44ch;
+  color: var(--k2-n600);
+  overflow-wrap: anywhere;
+}
 .k2-ui .k2-state > .k2-btn {
   height: var(--k2-h-control-small);
 }
