@@ -10,7 +10,9 @@ export type Column = { readonly need: number; readonly detail: boolean; readonly
  * The columns of a workspace register here: the panes at its top, alone or side by side in a `Pane.Split`. The split
  * at the top also learns what stands in the place of a declared detail while none is open.
  */
-export type Columns = { register: (column: Column) => void; empty: () => { icon: string; text: string } | undefined };
+/** What stands in a declared detail's place while none is open. */
+export type DetailEmpty = { icon: string; text: string; hero?: JSX.Element };
+export type Columns = { register: (column: Column) => void; empty: () => DetailEmpty | undefined };
 export const ColumnsContext = createContext<Columns | undefined>();
 
 /**

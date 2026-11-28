@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import { Bar, Button, Check, Input, Menu, Pane, Popover, Text, Workspace } from "../src/v2";
+import { Bar, Button, Check, Input, Menu, menuPanel, Pane, Popover, Text, Workspace } from "../src/v2";
 
 // A menu entry with a panel beside it (as Mail's "Datum und Uhrzeit …" holds a calendar): the panel has a text field
 // with its own key handler (delegated by Solid, as every `onKeyDown` of an app is), a popover of its own and a button
@@ -61,8 +61,8 @@ export function Demo() {
               items={[
                 { label: "Morgen, 8:00", onClick: () => did("tomorrow") },
                 "separator",
-                { label: "Notiz und Zeit …", panel: (close) => <Panel close={close} /> },
-                { label: "Gesperrt …", disabled: true, panel: (close) => <Panel close={close} /> },
+                { label: "Notiz und Zeit …", panel: menuPanel((close) => <Panel close={close} />) },
+                { label: "Gesperrt …", disabled: true, panel: menuPanel((close) => <Panel close={close} />) },
                 {
                   label: "Wann",
                   current: whenLabels[when()],
@@ -80,6 +80,9 @@ export function Demo() {
                         did(`when:${value}`);
                       },
                     },
+                    // a panel in a submenu that opened to the left: it takes the submenu's place, growing to the left
+                    "separator",
+                    { label: "Andere Zeit …", panel: menuPanel((close) => <Panel close={close} />) },
                   ],
                 },
               ]}
@@ -88,9 +91,12 @@ export function Demo() {
         />
       }
     >
-      <Pane>
-        <Text>Auftrag</Text>
-      </Pane>
+      {/* a panel from a context menu, which has no button: it takes the menu's place at the pointer */}
+      <Menu.Context items={[{ label: "Notiz zur Zeile …", panel: menuPanel((close) => <Panel close={close} />) }]}>
+        <Pane>
+          <Text>Auftrag</Text>
+        </Pane>
+      </Menu.Context>
     </Workspace>
   );
 }

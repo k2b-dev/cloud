@@ -353,6 +353,12 @@ type NavigationRecord = {
 };
 
 const explainedPages = new WeakSet<Page>();
+/**
+ * Per page, since it opened: its documents and scripts whose request failed or was answered with 400 and above, the
+ * last 20 of each. A page whose client never boots loses this evidence once its navigation has succeeded; waitInPage()
+ * names it (#4402). Fonts, images and data reads stay out: fixtures answer many of them with 404 on purpose.
+ */
+const bootEvidence = new WeakMap<Page, { failed: string[]; refused: string[] }>();
 /** Per page, the URL it showed when each of its running goto, reload, goBack, and goForward calls started. */
 const testNavigations = new WeakMap<Page, Set<{ from: string }>>();
 
@@ -406,6 +412,20 @@ const serverView = (line: string, since: number): string | undefined => {
 const explainNavigations = (page: Page): Page => {
   if (explainedPages.has(page)) return page;
   explainedPages.add(page);
+  const evidence = { failed: [] as string[], refused: [] as string[] };
+  bootEvidence.set(page, evidence);
+  const keep = (list: string[], line: string) => {
+    list.push(line);
+    if (list.length > 20) list.shift();
+  };
+  const code = (request: Request) => request.resourceType() === "script" || request.resourceType() === "document";
+  page.on("requestfailed", (request) => {
+    if (code(request)) keep(evidence.failed, `${request.method()} ${request.url()}: ${request.failure()?.errorText ?? "no error text"}`);
+  });
+  page.on("response", (response) => {
+    if (response.status() >= 400 && code(response.request()))
+      keep(evidence.refused, `${response.status()} ${response.request().method()} ${response.url()}`);
+  });
   const records = new Set<NavigationRecord>();
   const navigations = new Set<{ from: string }>();
   testNavigations.set(page, navigations);
@@ -723,15 +743,23 @@ export { settled };
 /**
  * Waits until `condition` holds in the page. A miss fails with `what`, Playwright's own reason (a timeout, a closed
  * page, a destroyed context; also kept as `cause`) and what the page reported by then, so a red run names its cause
- * (#4121: a hydration wait failed after 362 ms with only empty page errors in its message).
+ * (#4121: a hydration wait failed after 362 ms with only empty page errors in its message). A page opened through
+ * launchBrowser() also names its scripts and documents that failed to load or were answered with 400 and above since
+ * it opened: a client module that never loaded is the usual reason a page never boots (#4402, #4393).
  */
 export const waitInPage = async (page: Page, what: string, condition: () => unknown, reported: () => readonly string[] = () => []) => {
   try {
     await page.waitForFunction(condition);
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
+    const evidence = bootEvidence.get(page);
+    const lines = [
+      ...(evidence?.failed.length ? [`scripts and documents that failed to load: ${evidence.failed.join(" | ")}`] : []),
+      ...(evidence?.refused.length ? [`scripts and documents answered with 400 and above: ${evidence.refused.join(" | ")}`] : []),
+    ];
     const said = reported();
-    throw new Error(`${what}: ${reason}${said.length > 0 ? `\nthe page reported: ${said.join(" | ")}` : ""}`, { cause });
+    if (said.length > 0) lines.push(`the page reported: ${said.join(" | ")}`);
+    throw new Error([`${what}: ${reason}`, ...lines].join("\n"), { cause });
   }
 };
 

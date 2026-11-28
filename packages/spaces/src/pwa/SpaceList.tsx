@@ -18,6 +18,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { hexColor } from "@/frontend/lib/color";
 import { SpaceLiveEventSchema } from "@/live-events";
 import { createRetryToasts } from "../frontend/lib/feedback";
 import { saveCompletion } from "./completion";
@@ -496,7 +497,7 @@ export default function SpaceList(props: Props) {
             aria-expanded={!folded(status())}
             onClick={() => toggle(status())}
           >
-            <span class="spaces-pwa-space__group-dot" style={{ "background-color": status().color }} aria-hidden="true" />
+            <span class="spaces-pwa-space__group-dot" style={{ "background-color": hexColor(status().color) }} aria-hidden="true" />
             <span class="spaces-pwa-space__group-name">{status().name}</span>
             <span class="spaces-pwa-space__group-count">{group().total.toLocaleString(locale())}</span>
             <i class={folded(status()) ? "ti ti-chevron-right" : "ti ti-chevron-down"} aria-hidden="true" />

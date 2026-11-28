@@ -9,7 +9,7 @@ import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-hydration.client";
 import type {} from "../../test/v2-hydration-twice";
 import { measureV2Layout } from "./testing";
-import { hairline, heights, textEdge } from "./tokens";
+import { heights, textEdge } from "./tokens";
 
 // The primitives rendered on the server and hydrated in the browser, as a page with islands that hydrate would: the
 // development build of Solid throws on a node the server did not send, so a mismatch fails here. The fixture
@@ -45,7 +45,13 @@ afterAll(async () => {
   rmSync(temp, { recursive: true, force: true });
 });
 
-const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
+/**
+ * `fallback`: the browser sizes no text field to its words (`field-sizing` off, as in browsers without it), so the
+ * page's own sizing runs. `beforeClient` reads the page as the server sent it, before the client starts.
+ */
+type PageOptions = { fallback?: boolean; beforeClient?: (page: Page) => Promise<void> };
+
+const withPage = async (run: (page: Page) => Promise<void>, width = 1440, options: PageOptions = {}) => {
   const page = await browser.newPage({ viewport: { width, height: 900 }, timezoneId: "Europe/Berlin" });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
@@ -55,8 +61,21 @@ const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
   });
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8">${server.script}<style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root">${server.html}</div></body></html>`,
+      `<!doctype html><html lang="de"><head><meta charset="utf-8">${server.script}<style>${css}</style><style>${testCss}</style>${options.fallback ? "<style>.k2-ui textarea { field-sizing: fixed !important; }</style>" : ""}</head><body class="k2-ui"><div id="root">${server.html}</div></body></html>`,
     );
+    await options.beforeClient?.(page);
+    // without field-sizing, the page asks the browser and hears no (an init script does not reach a page set by
+    // `setContent`, so the answer is set here, before the client starts)
+    if (options.fallback)
+      await page.evaluate(() => {
+        const supports = CSS.supports.bind(CSS);
+        CSS.supports = ((...query: [string, string?]) =>
+          query[0] === "field-sizing"
+            ? false
+            : query.length === 2
+              ? supports(query[0], query[1]!)
+              : supports(query[0])) as typeof CSS.supports;
+      });
     // what the server sent, kept to compare with the page once it is live
     await page.evaluate(() => {
       window.__k2Sent = document.getElementById("root")!.cloneNode(true);
@@ -252,6 +271,35 @@ test("a multi-line field shows its value in what the server sent, and keeps what
   });
 });
 
+// A browser without `field-sizing` shows a field of several lines as high as its lines from the server's page on, so
+// it does not grow when the page comes alive (8 lines: 160 px of text, not 3 lines and then 8).
+for (const fallback of [false, true])
+  test(`a multi-line field with a long value has its height from the server's page on${fallback ? ", without field-sizing" : ""}`, async () => {
+    const height = (page: Page) =>
+      page.getByRole("textbox", { name: "Lange Antwort" }).evaluate((area) => Math.round(area.getBoundingClientRect().height));
+    let sent = 0;
+    await withPage(
+      async (page) => {
+        expect(await height(page)).toBe(sent);
+        expect(sent).toBe(8 * 20);
+        // emptied, it shrinks to its 3 rows, although its `value` stays the long one (nothing writes it back)
+        await page.getByRole("textbox", { name: "Lange Antwort" }).fill("");
+        await settled(page);
+        expect(await height(page)).toBe(3 * 20);
+        await page.getByRole("textbox", { name: "Lange Antwort" }).fill("Eins\nZwei\nDrei\nVier\nFünf");
+        await settled(page);
+        expect(await height(page)).toBe(5 * 20);
+      },
+      1440,
+      {
+        fallback,
+        beforeClient: async (page) => {
+          sent = await height(page);
+        },
+      },
+    );
+  });
+
 test("controls without a handler keep their own state, and the shape shows it", async () => {
   await withPage(async (page) => {
     const select = page.locator('[data-k2-part="Select"]');
@@ -355,10 +403,10 @@ for (const width of [1440, 390]) {
       expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
       const row = page.locator('.k2-row:has-text("Zwei Zeilen")');
       const rowBox = (await row.boundingBox())!;
-      // 52 and its line, as the mockup draws a row of two lines: the marks open no third line. (On the phone the panes
-      // stand one under the other and the last row of a pane gives its line to the seam below it.)
+      // 52, as the mockup draws a row of two lines: the marks open no third line. It is the last row of its list, and a
+      // list ends without a line (look rule 4), at every width.
       const line = await row.evaluate((element) => Number.parseFloat(getComputedStyle(element).borderBottomWidth));
-      expect(line).toBe(width < textEdge.phoneBelow ? 0 : hairline.width);
+      expect(line).toBe(0);
       expect(rowBox.height).toBe(heights.row2 + line);
       // a row of three lines without marks: its third line runs to the end of the row and ends there in "…"
       const third = await page.locator('.k2-row:has-text("Spedition Falk")').evaluate((element) => {

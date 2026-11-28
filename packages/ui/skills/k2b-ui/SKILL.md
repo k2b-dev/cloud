@@ -25,10 +25,11 @@ props may change in any release; check the types of the installed version.
 
 Every screen follows [the look](references/look.md): a screen brief before
 code, one hero with its real trend, the app's colour where it means
-something, one data picture per row, a tinted head for the open object, and
-a large screen that uses its room. Run its wireframe check on your pictures
-before you call a screen ready: a screen that fails it is not done, however
-clean it is.
+something, one data picture per row, a tinted head for the open object, a
+large screen that uses its room; dense, not busy: each thing has its mark
+(`Mark`, a person's `Avatar`), a state is a dot and its word, colour only
+for problems, people stand beside what they did. Run its wireframe check on
+your pictures: a screen that fails it is not done, however clean it is.
 
 ## Start here
 
@@ -80,13 +81,16 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | --- | --- | --- |
 | an app's frame: sidebar, head, columns | `Workspace` with `sidebar`, `head`, `primary` | all |
 | the app's sections in the sidebar | `Nav` | `list-detail.tsx` |
-| folders or pages in levels in the sidebar | a `Nav` group with `tree` (`load`, `loadMore` for what opens) | `tree.tsx` |
-| rows in levels (a folder's content as a tree) | `Table` with `rowKey` and `tree` | `tree.tsx` |
+| folders or pages in levels: in the sidebar; as rows (a folder's content) | a `Nav` group with `tree` (`load`, `loadMore` for what opens); `Table` with `rowKey` and `tree` | `tree.tsx` |
+| the app's own rows in the sidebar (conversations), the phone's page | `Nav` `list` with `phone: "page"`, `search` and `primary` | `conversations.tsx` |
 | views of the page, or areas of a record | `Tabs` (in the head `Bar`, or as `Pane` head) | `mail.tsx`, `record.tsx` |
 | where a sub-page stands | `Path` in the head `Bar start` | – |
 | the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |
 | an exception in the statement ("1 ohne Zugriff") | `StatusRow marks` with a `Chip status` | – |
 | many like things, one per line | `List` of `Row` | `mail.tsx` |
+| a thing with a face (a base, a file, a table); an overview of such things with figures, people and a history | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`); `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
+| who did what; several people at once (a team, who has access) | `Digest activity`; `Avatar.Stack` | `overview.tsx`, `home.tsx` |
+| a short history beside a number | `Spark`; in a cell `Cells.Cell trend` | `home.tsx` |
 | many like things with columns | `Table` | `table.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
 | rows the person sorts by a column | a column's `sort` (`href` to the sorted page) and the table's `sort` (the column sorted now) | – |
@@ -94,7 +98,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | filter values that load (people, customers) | a `lookup` field: `FilterBar` opens `Lookup`; in a form, `Lookup` itself | `filtered-table.tsx` |
 | saved views of a list | `FilterBar views` with the app's `ViewStore`s (cookie, own table, none); leave it out and nothing is saved | – |
 | a list beside the open entry | `Pane.Split` with a `Pane detail` | `list-detail.tsx` |
-| a record (customer, contact) | `RecordHead` in the head, `Tabs`, `Pane side` | `record.tsx` |
+| a record (customer, contact) | `RecordHead` in the head, `Tabs`, `Pane side`; what its `kinds` say also stands in `Facts` (on the phone kinds give way to the name) | `record.tsx` |
 | 2–4 key numbers side by side | `Cells` with `Cells.Cell` | `record.tsx` |
 | a titled part of a page | `Section` (title, count, ≤ 2 actions, `more`) | `record.tsx` |
 | what belongs together (a delivery, a thread) | `Group`; `folded` when done | `record-groups.tsx` |
@@ -178,19 +182,18 @@ a `Notice` that names the deed.
 
 - **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
   `width`, `detail`, `side`), `Pane.Split`, `Bar` (start, end), `Band`
-  (`tone`), `Cells`, `Tiles`, `Canvas`.
-- **Structure:** `Section`, `Group`, `Disclosure`.
+  (`tone`), `Cells`, `Tiles`, `Canvas`. **Structure:** `Section`, `Group`,
+  `Disclosure`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
-  body, lead), `Prose`, `Inline`, `Icon`, `Avatar`, `Chip`, `Progress`,
-  `Ticks`, `Steps`.
+  body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
+  `Chip`, `Progress`, `Spark`, `Ticks`, `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
   `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`, `ImageInput`,
   `CodeInput`, `Slider`, `ColorInput`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,
-  `Popover` (panel or `tip`), `useToast`.
-- **States:** `Empty`, `Loading`, `Failed`.
+  `Popover` (panel or `tip`), `useToast`. **States:** `Empty`, `Loading`, `Failed`.
 - **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`),
   and `@k2b/ui/v2/testing` for Playwright tests.
 
@@ -201,14 +204,9 @@ follows v2), a code block with highlighting, an image or video viewer, and an as
 message or answer card.
 
 Filters, sorts and groups have exactly one way: declare them once with
-`defineListQuery`, show them with `FilterBar` and `ListOrder`. The state
-lives in the address through that declaration; the server reads it with
-`parse`, and the app filters itself, on its server, with its own access
-checks (`@k2b/ui` filters nothing and stores nothing). In the island,
-keep one signal that mirrors that state: start it with what the server parsed
-and set it in `onChange`, as the recipe does. Never parse search parameters
-yourself, keep filter state the address does not hold, or build filter chips
-by hand. Read [list queries](references/list-queries.md).
+`defineListQuery`, show them with `FilterBar` and `ListOrder`; the app
+filters on its server. The rules (one signal, no own parsing, no filter chips
+by hand): [list queries](references/list-queries.md).
 
 ## See what you built
 
