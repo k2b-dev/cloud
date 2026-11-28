@@ -32,13 +32,18 @@ const selected = async (tab: Page, id: string, title: string) => {
 };
 /** The title of an item of the usual Space, as its detail names it. */
 const titleOf = (id: string) => spaceScreenProps("/app/spaces/Space1").state.itemsResult.items.find((item) => item.id === id)?.title ?? "";
-/** Presses a key and says whether a step asked to open another item. */
+/** Presses a key and says whether it asked to open another item than the open one. */
 const stepped = async (tab: Page, key: "j" | "k") => {
   await tab.evaluate(() => {
     document.documentElement.removeAttribute("data-test-step");
-    window.addEventListener("spaces-detail-navigation", () => document.documentElement.setAttribute("data-test-step", ""), {
-      once: true,
-    });
+    const open = new URL(location.href).searchParams.get("item");
+    // A view that commits its own address (the calendar's week) names the open item again; that is no step.
+    const listener = (event: Event) => {
+      if ((event as CustomEvent<{ itemId: string | null }>).detail?.itemId === open) return;
+      document.documentElement.setAttribute("data-test-step", "");
+      window.removeEventListener("spaces-detail-navigation", listener);
+    };
+    window.addEventListener("spaces-detail-navigation", listener);
   });
   await tab.keyboard.press(key);
   await settled(tab);
