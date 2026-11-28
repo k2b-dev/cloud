@@ -9,6 +9,7 @@ import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { browserName, launchBrowser, pageErrors, storedCookie } from "../../../../ui/test/browser";
+import { plexPreloads } from "../../../../ui/test/plex-preloads";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 
 // Whether the sign-in card is a frame or flat is decided by the cascade
@@ -106,13 +107,16 @@ const open = async (view: View, query: string, options: Options = {}) => {
     const session = await tab.context().newCDPSession(tab);
     await session.send("Page.setFontSizes", { fontSizes: { standard: options.defaultFontSize } });
   }
-  await tab.route(`${origin}/public/**`, (route) => route.fulfill({ path: join(root, new URL(route.request().url()).pathname) }));
+  const plex = plexPreloads(`${origin}/public/fonts/`);
+  await tab.route(`${origin}/public/**`, (route) => plex.fulfill(route, join(root, new URL(route.request().url()).pathname)));
   await tab.route(`${origin}/branding/logo`, (route) =>
     route.fulfill({ path: resolve(import.meta.dir, "../../../../cloud/public/logo.svg") }),
   );
-  await tab.setContent(
+  await plex.show(
+    tab,
+    `${origin}/`,
     `<!doctype html><html lang="en" class="${options.dark ? "dark" : "light"}"><head><base href="${origin}/"><meta name="viewport" content="width=device-width, initial-scale=1">` +
-      `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
+      `${plex.links}<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
       `<body class="k2b-ui">${await body(query, options.locale ?? "en", options.cookie)}</body></html>`,
   );
   await tab.evaluate(() => document.fonts.ready);

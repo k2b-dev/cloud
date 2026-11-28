@@ -19,6 +19,7 @@ import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { launchBrowser } from "../../../../ui/test/browser";
+import { plexPreloads } from "../../../../ui/test/plex-preloads";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 
 // Whether the account pages draw one frame or nested ones, and whether switching tabs moves
@@ -307,10 +308,13 @@ const open = async (view: View, path: Path, locale: "en" | "de", dark = false) =
     isMobile: view.touch,
     hasTouch: view.touch,
   });
-  await tab.route(`${origin}/public/**`, (route) => route.fulfill({ path: join(root, new URL(route.request().url()).pathname) }));
-  await tab.setContent(
+  const plex = plexPreloads(`${origin}/public/fonts/`);
+  await tab.route(`${origin}/public/**`, (route) => plex.fulfill(route, join(root, new URL(route.request().url()).pathname)));
+  await plex.show(
+    tab,
+    `${origin}/`,
     `<!doctype html><html lang="${locale}" class="${dark ? "dark" : "light"}"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
-      `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
+      `${plex.links}<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
       `<body class="k2b-ui"><div class="cloud-app-canvas relative flex min-h-dvh w-full" style="${CORE_CANVAS}" data-app-id="core">` +
       `<div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col"><main class="layout-content-main min-h-0 min-w-0 flex-1">` +
       `${await content(path, locale)}</main></div></div></body></html>`,

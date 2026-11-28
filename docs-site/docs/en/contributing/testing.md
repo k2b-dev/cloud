@@ -812,6 +812,15 @@ branch:
   `pdf-document` instead, because pdf.js needs a real browser.
 - Fonts differ between machines and engines. A test that expects text to wrap
   or fit uses text that is clearly too long or clearly short enough.
+- Core's `fonts.css` serves every face with `font-display: optional`: a face
+  that misses the first frame never replaces the fallback on that page. A
+  fixture that builds it (`buildFontAssets`) and measures Plex text uses
+  `plexPreloads(fonts)` from `packages/ui/test/plex-preloads.ts`, with `fonts`
+  the address it serves the font files at. It puts `links` in its head before
+  the stylesheet, as Cloud's page head does, answers its routes with `fulfill`,
+  which holds `fonts.css` until the preloaded faces are served, and brings the
+  page with `show`, by navigation. After `setContent`, some runs set the page
+  in the fallback font.
 - Playwright's WebKit on Linux can stop a video for good when `play()` arrives
   during a seek or right as it ends. The video reports `playing`, often then
   `waiting` and `stalled`, and its time no longer advances, although the whole

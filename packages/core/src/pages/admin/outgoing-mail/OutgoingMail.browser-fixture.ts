@@ -7,6 +7,7 @@ import tailwind from "bun-plugin-tailwind";
 import { type Context, Hono } from "hono";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { plexPreloads } from "../../../../../ui/test/plex-preloads";
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 import { adminShellAsset, adminShellRuntime } from "../admin-v2.shell-fixture";
 
@@ -235,7 +236,7 @@ export async function outgoingMailBrowserFixture() {
       }),
     );
     return c.html(
-      `<!doctype html><html lang="${localeOf(c)}" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><style>${css}</style></head><body class="k2b-ui">${body}<script type="application/json" id="screen-props" data-screen="${screen}">${JSON.stringify(props).replaceAll("<", "\\u003c")}</script><script src="/fixture.js"></script></body></html>`,
+      `<!doctype html><html lang="${localeOf(c)}" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${plexPreloads("/public/fonts/").links}<link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><style>${css}</style></head><body class="k2b-ui">${body}<script type="application/json" id="screen-props" data-screen="${screen}">${JSON.stringify(props).replaceAll("<", "\\u003c")}</script><script src="/fixture.js"></script></body></html>`,
     );
   };
   const localeOf = (c: Context<{ Variables: Variables }>) => (new URL(c.req.url).searchParams.get("locale") === "en" ? "en" : "de");

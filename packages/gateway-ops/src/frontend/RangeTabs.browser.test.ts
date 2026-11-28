@@ -9,6 +9,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { buildFontAssets } from "../../../core/scripts/font-assets";
 import { launchBrowser, settled } from "../../../ui/test/browser";
+import { plexPreloads } from "../../../ui/test/plex-preloads";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(join(tmpdir(), "gateway-range-tabs-browser-"));
@@ -50,9 +51,12 @@ const open = async (current: string) => {
     deviceScaleFactor: 1,
     reducedMotion: "reduce",
   });
-  await page.route(`${origin}/public/**`, (route) => route.fulfill({ path: join(root, new URL(route.request().url()).pathname) }));
-  await page.setContent(
-    `<!doctype html><html lang="en" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/public/fonts.css"><style>${css}</style></head><body class="k2b-ui"><div class="cloud-app-canvas" style="--app-accent:#57534e;${appColorStyle("#57534e")}"><div id="range-host">${content(current)}</div></div></body></html>`,
+  const plex = plexPreloads(`${origin}/public/fonts/`);
+  await page.route(`${origin}/public/**`, (route) => plex.fulfill(route, join(root, new URL(route.request().url()).pathname)));
+  await plex.show(
+    page,
+    `${origin}/`,
+    `<!doctype html><html lang="en" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${plex.links}<link rel="stylesheet" href="${origin}/public/fonts.css"><style>${css}</style></head><body class="k2b-ui"><div class="cloud-app-canvas" style="--app-accent:#57534e;${appColorStyle("#57534e")}"><div id="range-host">${content(current)}</div></div></body></html>`,
   );
   await settled(page);
   return page;
