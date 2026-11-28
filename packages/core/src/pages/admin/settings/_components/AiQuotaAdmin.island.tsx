@@ -35,7 +35,7 @@ import AiQuotaIdentity from "./AiQuotaIdentity";
 import AiQuotaRules from "./AiQuotaRules";
 import { quotaMessages } from "./ai-quota-messages";
 
-const api = coreClient.admin.core["ai-quotas"];
+const _api = coreClient.admin.core["ai-quotas"];
 export default function AiQuotaAdmin(props: {
   config: AiQuotaConfig;
   models: {

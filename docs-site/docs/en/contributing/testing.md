@@ -104,7 +104,7 @@ To run one file directly:
 ```bash
 bun --no-env-file test --isolate --conditions=browser \
   --preload ./packages/ui/test/solid-dom-preload.ts \
-  ./packages/core/src/pages/admin/CacheNotice.behavior.test.ts
+  ./packages/core/test/consent.behavior.test.tsx
 ```
 
 Guard browser-only tests with `isServer` from `solid-js/web`, so a plain
@@ -210,7 +210,13 @@ scroll-restore test does, because a check after a real-time wait that the delay
 has not fired yet fails on a slow runner. Wait for the state you assert, not
 for a step before it: the continuous month test waits until the grid rests at
 the week and the header names the month, because the view names the month in
-an animation frame after the scroll event.
+an animation frame after the scroll event. A wait after an action names
+something only the action changes: a condition that already held before it
+returns at once, and the next step races the action. When an action loads the
+same address again, mark the old document first and wait for a new document
+without the mark, as the Storage and outgoing mail admin tests do. The
+`test-waits` check cannot see this: whether a condition already holds depends
+on the page's state before the action, not on the test's text.
 
 A live region that a component fills after a timer is read with a bounded
 wait, such as `waitForFunction` on its text, never once after `settled()`.
@@ -1326,6 +1332,11 @@ try {
   await meter.close();
 }
 ```
+
+A test file can open and close any number of meters, also overlapping ones.
+The proxy stays for the whole process, and the last `close()` binds the
+handle to the database directly again. A pool that a module creates while a
+meter is open keeps the proxy and still works after `close()`.
 
 Warm the caches with one event before the measured window. Keep the window to
 the events under test, because timers that fire inside it count too. Pin the

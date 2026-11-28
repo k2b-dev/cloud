@@ -13,11 +13,6 @@ export type MailWorkspacePreferences = {
   draftFullscreen: boolean;
   /** This browser's choice for the reply box; the server renders it, so the first frame never moves. */
   replyPosition: MailReplyPosition;
-  /**
-   * The person had arranged their own conversation toolbar before Mail v5 replaced it with fixed actions; the reader
-   * tells them once where their actions are now.
-   */
-  toolbarCustomized: boolean;
   listMode: MailListMode;
   lastMailboxId: string | null;
   /**
@@ -35,26 +30,10 @@ const MAX_MAILBOX_IDS = 100;
 const normalizeMailboxIds = (value: unknown): string[] =>
   Array.isArray(value) ? [...new Set(value.filter(isMailResourceId))].slice(0, MAX_MAILBOX_IDS) : [];
 
-// The toolbar Mail stored for everyone before v5, in its two versions; any other stored choice was the person's own.
-const DEFAULT_TOOLBARS = [
-  ["reply", "reply_all", "forward", "done", "spam", "trash"],
-  ["reply", "reply_all", "forward", "archive", "spam", "trash"],
-];
-const customizedToolbar = (value: unknown): boolean => {
-  if (!value || typeof value !== "object") return false;
-  if ((value as { toolbarCustomized?: unknown }).toolbarCustomized === true) return true;
-  const actions = (value as { toolbarActions?: unknown }).toolbarActions;
-  return (
-    Array.isArray(actions) &&
-    !DEFAULT_TOOLBARS.some((preset) => preset.length === actions.length && preset.every((actionId, index) => actions[index] === actionId))
-  );
-};
-
 const normalizeMailWorkspacePreferences = (value: unknown): MailWorkspacePreferences => ({
   eventsDiscovered: Boolean(value && typeof value === "object" && (value as { eventsDiscovered?: unknown }).eventsDiscovered === true),
   draftFullscreen: Boolean(value && typeof value === "object" && (value as { draftFullscreen?: unknown }).draftFullscreen === true),
   replyPosition: value && typeof value === "object" && (value as { replyPosition?: unknown }).replyPosition === "bottom" ? "bottom" : "top",
-  toolbarCustomized: customizedToolbar(value),
   listMode: value && typeof value === "object" && (value as { listMode?: unknown }).listMode === "messages" ? "messages" : "conversations",
   lastMailboxId:
     value && typeof value === "object" && isMailResourceId((value as { lastMailboxId?: unknown }).lastMailboxId)
