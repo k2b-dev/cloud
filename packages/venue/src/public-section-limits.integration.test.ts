@@ -4,6 +4,7 @@ import type { CloudRuntime } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { settings } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
+import { dates } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
@@ -14,6 +15,7 @@ import {
   MAX_PUBLIC_MENU_ITEMS,
   MAX_PUBLIC_SECTIONS,
   MENU_ITEM_LIMIT,
+  PUBLIC_EXCEPTION_DAYS,
   PUBLIC_PAGE_HTML_BUDGET_BYTES,
   PUBLIC_SECTION_LIMIT,
   type PublicStatus,
@@ -92,6 +94,49 @@ const linksSection = (index: number) => ({
   },
 });
 
+/**
+ * Everything the page shows besides its sections, at a stated worst case the 40 kB reserve of the page budget must
+ * hold: two opening windows with a note on every weekday, a changed-hours entry with a note on every one of the
+ * {@link PUBLIC_EXCEPTION_DAYS} days the page lists (one per date is the most the contract stores), and the eight
+ * upcoming openings the public status lists at most. Opening rules have no count limit, so their worst case is a
+ * busy café's week rather than a maximum.
+ */
+const seedEverythingButSections = async (cafe: string, caller: Caller, timeZone: string) => {
+  for (let weekday = 0; weekday < 7; weekday++) {
+    for (const rule of [
+      { startTime: "08:00", endTime: "11:30", note: "Breakfast with fresh pastries from the bakery next door" },
+      { startTime: "12:00", endTime: "18:00", note: "The kitchen closes thirty minutes earlier" },
+    ]) {
+      await expectStatus(await send("POST", `/api/venue/venues/${cafe}/opening-rules`, caller, { weekday, ...rule }), 201, "opening rule");
+    }
+  }
+  for (let offset = 0; offset < PUBLIC_EXCEPTION_DAYS; offset++) {
+    const date = dates.formatDateKey(new Date(Date.now() + offset * 86_400_000), { timeZone });
+    await expectStatus(
+      await send("POST", `/api/venue/venues/${cafe}/overrides`, caller, {
+        date,
+        kind: "open",
+        startTime: "18:00",
+        endTime: "23:00",
+        note: "Long night of the sciences with live music and longer kitchen hours",
+      }),
+      201,
+      `changed hours ${date}`,
+    );
+  }
+  for (let day = 1; day <= 8; day++) {
+    const startsAt = new Date(Date.now() + day * 86_400_000);
+    await expectStatus(
+      await send("POST", `/api/venue/venues/${cafe}/free-signup`, caller, {
+        startsAt: startsAt.toISOString(),
+        endsAt: new Date(startsAt.getTime() + 2 * 3_600_000).toISOString(),
+      }),
+      201,
+      `opening ${day}`,
+    );
+  }
+};
+
 suite("Venue public page limits", () => {
   beforeAll(async () => {
     await settings.set("security.rate_limit_per_second", 1000);
@@ -109,9 +154,10 @@ suite("Venue public page limits", () => {
         slug: `harbor-cafe-${adminId.slice(0, 8)}`,
         publicEnabled: true,
       });
-      const cafe = (JSON.parse(await expectStatus(created, 201, "create venue")) as { id: string }).id;
+      const { id: cafe, timezone } = JSON.parse(await expectStatus(created, 201, "create venue")) as { id: string; timezone: string };
       const [venueRow] = await sql<{ id: string }[]>`SELECT id FROM venue.venues WHERE short_id = ${cafe}`;
       const venueId = venueRow!.id;
+      await seedEverythingButSections(cafe, admin, timezone);
       const stored = async () => {
         const [row] = await sql<{ sections: number; items: number }[]>`
           SELECT count(*)::int AS sections,
@@ -135,7 +181,17 @@ suite("Venue public page limits", () => {
       for (let index = 2; index < MAX_PUBLIC_SECTIONS; index++) linkIds.push(await createOk(linksSection(index), `links ${index}`));
       expect(await stored()).toEqual({ sections: MAX_PUBLIC_SECTIONS, items: MAX_PUBLIC_MENU_ITEMS });
 
-      // The guest page at both limits stays within its HTML budget.
+      // The guest page at both limits, with the worst case of everything else, stays within its HTML budget.
+      const shown = JSON.parse(
+        await expectStatus(await send("GET", `/api/venue/public/${cafe}/status`, {}), 200, "public status"),
+      ) as PublicStatus;
+      // A run that crosses midnight in the Venue's time zone lists one changed day less.
+      expect({
+        rules: shown.openingRules.length,
+        changedDays: shown.upcomingExceptions.length >= PUBLIC_EXCEPTION_DAYS - 1,
+        openings: shown.upcomingOpenings.length,
+        sections: shown.sections.length,
+      }).toEqual({ rules: 14, changedDays: true, openings: 8, sections: MAX_PUBLIC_SECTIONS });
       const html = await expectStatus(await send("GET", `/app/venue/public/${cafe}`, {}), 200, "public page");
       const pageBytes = Buffer.byteLength(html);
       expect({ pageBytes, withinBudget: pageBytes <= PUBLIC_PAGE_HTML_BUDGET_BYTES }).toEqual({ pageBytes, withinBudget: true });
@@ -172,10 +228,42 @@ suite("Venue public page limits", () => {
       );
       await createOk({ kind: "notice", title: "Closed on Friday", content: { text: "Team day" } }, "notice fits");
 
-      // Two saves at the same time never pass the limit together: of two sections for the last place, one is stored.
+      // A save counts only once it holds the Venue lock: while another transaction holds it, a create waits; that
+      // transaction takes the last place, and the waiting create then counts it and is refused. Without the lock the
+      // create would count the committed sections only and store one past the limit.
       await expectStatus(await send("DELETE", `/api/venue/venues/${cafe}/sections/${linkIds[1]}`, admin), 200, "delete links");
-      const racing = await Promise.all([1, 2].map((index) => create({ kind: "notice", title: `Race ${index}`, content: { text: "Hi" } })));
-      expect(racing.map((response) => response.status).sort()).toEqual([201, 422]);
+      const createWaitsForLock = async () => {
+        const [row] = await sql<{ waiting: boolean }[]>`
+          SELECT EXISTS (
+            SELECT 1 FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock'
+              AND query LIKE '%FROM venue.venues WHERE id = %FOR NO KEY UPDATE%'
+          ) AS waiting
+        `;
+        return row!.waiting;
+      };
+      let waiting: Promise<Response> | undefined;
+      let answered = false;
+      await sql.begin(async (tx) => {
+        await tx`SELECT 1 FROM venue.venues WHERE id = ${venueId}::uuid FOR NO KEY UPDATE`;
+        const pending = Promise.resolve(create({ kind: "notice", title: "Waits for the lock", content: { text: "Hi" } }));
+        waiting = pending;
+        const markAnswered = () => {
+          answered = true;
+        };
+        pending.then(markAnswered, markAnswered);
+        // Bounded by the test's timeout. A create that answers without waiting fails the assertions below.
+        while (!answered && !(await createWaitsForLock())) await Bun.sleep(10);
+        await tx`
+          INSERT INTO venue.public_sections (short_id, venue_id, kind, title, content, enabled, position)
+          VALUES (${testShortId()}, ${venueId}::uuid, 'notice', 'Last place', ${JSON.stringify({ text: "Hi" })}::text::jsonb, true, 99)
+        `;
+      });
+      const late = await waiting!;
+      expect({ status: late.status, code: ((await late.json()) as { code?: string }).code }).toEqual({
+        status: 422,
+        code: PUBLIC_SECTION_LIMIT,
+      });
       expect(await stored()).toEqual({ sections: MAX_PUBLIC_SECTIONS, items: MAX_PUBLIC_MENU_ITEMS });
     } finally {
       await cleanUp(adminId);

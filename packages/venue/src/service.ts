@@ -1617,7 +1617,7 @@ const listSections = async (venueId: string, onlyEnabled = false): Promise<Publi
     SELECT * FROM venue.public_sections
     WHERE venue_id = ${venueId}::uuid
       AND (${!onlyEnabled} OR enabled = true)
-    ORDER BY position, created_at
+    ORDER BY position, created_at, id
     LIMIT ${onlyEnabled ? MAX_PUBLIC_SECTIONS : null}
   `;
   return rows.map(mapSection);

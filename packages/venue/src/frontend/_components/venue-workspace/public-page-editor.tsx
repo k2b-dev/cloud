@@ -170,13 +170,21 @@ export function PublicPageEditor(props: {
     const byId = new Map(props.dashboard.sections.map((section) => [section.id, section]));
     return [...ids.flatMap((id) => byId.get(id) ?? []), ...props.dashboard.sections.filter((section) => !ids.includes(section.id))];
   };
-  // Saving refuses more sections or menu items than the page holds; the list stops at the same limits. A page
-  // saved before them shows every section here, and a notice says what visitors miss.
+  // Saving refuses more sections or menu items than the page holds, drafts included; the list stops at the same
+  // limits. A page saved before them shows every section here, and a notice says what visitors miss of the visible ones.
+  const itemsIn = (sections: PublicSection[]) => sections.reduce((sum, section) => sum + publicMenuItemCount(section), 0);
   const sectionTotal = () => props.dashboard.sections.length;
-  const menuItemTotal = () => props.dashboard.sections.reduce((sum, section) => sum + publicMenuItemCount(section), 0);
+  const menuItemTotal = () => itemsIn(props.dashboard.sections);
   const atSectionLimit = () => sectionTotal() >= MAX_PUBLIC_SECTIONS;
-  const overLimits = () => sectionTotal() > MAX_PUBLIC_SECTIONS || menuItemTotal() > MAX_PUBLIC_MENU_ITEMS;
-  const copyFits = (section: PublicSection) => !atSectionLimit() && menuItemTotal() + publicMenuItemCount(section) <= MAX_PUBLIC_MENU_ITEMS;
+  const visibleSections = () => props.dashboard.sections.filter((section) => section.enabled);
+  const overLimits = () => visibleSections().length > MAX_PUBLIC_SECTIONS || itemsIn(visibleSections()) > MAX_PUBLIC_MENU_ITEMS;
+  /** Why saving would refuse a copy of `section`, as the server decides it; `null` when the copy fits. */
+  const copyRefusal = (section: PublicSection): string | null => {
+    if (atSectionLimit()) return t().sectionLimitHint({ count: sectionTotal(), max: MAX_PUBLIC_SECTIONS });
+    const items = publicMenuItemCount(section);
+    const total = menuItemTotal() + items;
+    return items > 0 && total > MAX_PUBLIC_MENU_ITEMS ? t().copyMenuItemsTooMany({ count: total, max: MAX_PUBLIC_MENU_ITEMS }) : null;
+  };
 
   /** Adding, copying, deleting, and reordering change the set of sections, so they wait for each other. */
   const SET_KEY = "sections:set";
@@ -447,7 +455,9 @@ export function PublicPageEditor(props: {
             {
               label: t().duplicateSection,
               icon: "ti ti-copy",
-              disabled: actions.pending(SET_KEY) || !copyFits(row.section),
+              // A copy the server would refuse names the reason in the menu, where the entry is.
+              description: copyRefusal(row.section) ?? undefined,
+              disabled: actions.pending(SET_KEY) || copyRefusal(row.section) !== null,
               action: () => duplicate(row.section),
             },
             {
@@ -508,8 +518,8 @@ export function PublicPageEditor(props: {
           <Show when={overLimits()}>
             <InlineGuidance tone="warning" icon="ti ti-alert-triangle" class="mb-3" data-page-over-limits="">
               {t().pageOverLimits({
-                sections: sectionTotal(),
-                items: menuItemTotal(),
+                sections: visibleSections().length,
+                items: itemsIn(visibleSections()),
                 maxSections: MAX_PUBLIC_SECTIONS,
                 maxItems: MAX_PUBLIC_MENU_ITEMS,
               })}
@@ -518,7 +528,7 @@ export function PublicPageEditor(props: {
           <SettingsCollection
             title={t().sections}
             description={
-              <span data-section-limit="">
+              <span id="venue-section-limit" data-section-limit="">
                 {t().sectionsDescription}{" "}
                 {atSectionLimit()
                   ? t().sectionLimitHint({ count: sectionTotal(), max: MAX_PUBLIC_SECTIONS })
@@ -533,6 +543,7 @@ export function PublicPageEditor(props: {
                 type="button"
                 size="sm"
                 disabled={actions.pending(SET_KEY) || prompting() || atSectionLimit()}
+                aria-describedby={atSectionLimit() ? "venue-section-limit" : undefined}
                 onClick={() => void openAdd()}
               >
                 <i class="ti ti-plus" aria-hidden="true" /> {t().addSection}

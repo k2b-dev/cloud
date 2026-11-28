@@ -278,13 +278,14 @@ export const PUBLIC_PAGE_HTML_BUDGET_BYTES = 200_000;
 /**
  * Sections one Venue stores, drafts included. Derived from {@link PUBLIC_PAGE_HTML_BUDGET_BYTES} with sizes
  * measured on the guest page (markup plus the island's serialized props, which repeat every section):
- * - page without sections: 7.8 kB; 40 kB stay reserved for it with hours, changed hours, and openings;
+ * - page without sections, with a worst case of hours, changed hours, and openings: 51.5 kB; 60 kB stay reserved;
  * - one section: 1.4 kB (notice) to 3.3 kB (links section with three links, the largest kind);
  * - one menu item with a long name, description, allergens, price, and image address: 1.54 kB.
- * 20 sections × 3.3 kB = 66 kB, which leaves (200 − 40 − 66) kB ÷ 1.54 kB ≈ 61 menu items: 60.
- * A page at both limits measured 162 kB; `public-section-limits.integration.test.ts` keeps it within the budget.
+ * 12 sections × 3.3 kB ≈ 40 kB, which leaves (200 − 60 − 40) kB ÷ 1.54 kB ≈ 65 menu items: 60.
+ * `public-section-limits.integration.test.ts` fills a page to both limits and that worst case and keeps it within
+ * the budget.
  */
-export const MAX_PUBLIC_SECTIONS = 20;
+export const MAX_PUBLIC_SECTIONS = 12;
 
 /** Menu items one Venue stores in all its menus together, drafts included; see {@link MAX_PUBLIC_SECTIONS}. */
 export const MAX_PUBLIC_MENU_ITEMS = 60;

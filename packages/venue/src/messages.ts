@@ -133,7 +133,8 @@ export const venueMessages = i18n.define({
         maxSections: number;
         maxItems: number;
       }) =>
-        `This page was saved before its limits: ${sections} sections and ${items} menu items, of at most ${maxSections} and ${maxItems}. Visitors and the preview see the first ${maxSections} sections and the first ${maxItems} menu items. Delete sections or remove menu items to bring the page within its limits.`,
+        `This page was saved before its limits: its visible sections are ${sections} with ${items} menu items, of at most ${maxSections} and ${maxItems}. Visitors and the preview see the first ${maxSections} sections and the first ${maxItems} menu items. Delete sections or remove menu items to bring the page within its limits.`,
+      copyMenuItemsTooMany: ({ count, max }: { count: number; max: number }) => `A copy would make ${count} of ${max} menu items.`,
       editPublicSection: "Edit public section",
       deletePublicSection: "Delete public section",
       deletePublicSectionQuestion: ({ title }: { title: string }) => `Delete “${title}”?`,
@@ -714,7 +715,8 @@ export const venueMessages = i18n.define({
       menuItemLimitHint: ({ count, max }) =>
         `${count} von ${max} Speisekarteneinträgen auf dieser Seite: Entferne einen, um einen weiteren hinzuzufügen.`,
       pageOverLimits: ({ sections, items, maxSections, maxItems }) =>
-        `Diese Seite wurde vor ihren Grenzen gespeichert: ${sections} Abschnitte und ${items} Speisekarteneinträge, bei höchstens ${maxSections} und ${maxItems}. Besucher und die Vorschau sehen die ersten ${maxSections} Abschnitte und die ersten ${maxItems} Einträge. Lösche Abschnitte oder entferne Einträge, bis die Seite in ihren Grenzen liegt.`,
+        `Diese Seite wurde vor ihren Grenzen gespeichert: Sichtbar sind ${sections} Abschnitte mit ${items} Speisekarteneinträgen, bei höchstens ${maxSections} und ${maxItems}. Besucher und die Vorschau sehen die ersten ${maxSections} Abschnitte und die ersten ${maxItems} Einträge. Lösche Abschnitte oder entferne Einträge, bis die Seite in ihren Grenzen liegt.`,
+      copyMenuItemsTooMany: ({ count, max }) => `Eine Kopie ergäbe ${count} von ${max} Speisekarteneinträgen.`,
       editPublicSection: "Öffentlichen Abschnitt bearbeiten",
       deletePublicSection: "Öffentlichen Abschnitt löschen",
       deletePublicSectionQuestion: ({ title }) => `„${title}“ löschen?`,
