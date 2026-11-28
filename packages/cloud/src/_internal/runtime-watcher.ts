@@ -44,8 +44,18 @@ const refresh = async () => {
 /** Core's release from the live registry, absent before initialization and after shutdown. */
 export const registeredCoreRelease = (): string | undefined => coreRelease;
 
+/** A test's stand-in for the registered Core's routes, set only through `withCoreStylesheet` (`@k2b/cloud/ssr/testing`). */
+let testCoreRoutes: readonly string[] | undefined;
+
 /** The URL prefixes the registered Core declares, such as its shared stylesheets; empty before initialization. */
-export const registeredCoreRoutes = (): readonly string[] => coreRoutes;
+export const registeredCoreRoutes = (): readonly string[] => testCoreRoutes ?? coreRoutes;
+
+/** Test seam: replaces the registered Core's routes, `undefined` reads the registry again; returns the stand-in it replaced. */
+export const replaceRegisteredCoreRoutesForTest = (routes: readonly string[] | undefined): readonly string[] | undefined => {
+  const previous = testCoreRoutes;
+  testCoreRoutes = routes;
+  return previous;
+};
 
 export const ensureRuntimeWatcher = (): Promise<void> => {
   // Concurrent callers (start() + first request) wait on the same init —

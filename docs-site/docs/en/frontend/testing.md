@@ -27,6 +27,8 @@ Cover:
 
 Verify denied records do not appear in HTML.
 
+A test process has no registered Core, so `MinimalLayout ui="v2"` renders the frame for an older Core. To render a v2 public page as a current Core serves it, with `v2.css` linked, render it inside `await withCoreStylesheet(() => ...)` from `@k2b/cloud/ssr/testing`. The previous state returns when the callback finishes or throws.
+
 ## Test islands
 
 Test pure state and mapping functions without a browser when possible.
