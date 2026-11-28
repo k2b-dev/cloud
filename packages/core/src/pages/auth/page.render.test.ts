@@ -44,11 +44,11 @@ const page = async (query = "", cookie = "") => {
   const raw = await response.text();
   const decode = (text: string) => text.replaceAll("&quot;", '"').replaceAll("&amp;", "&");
   const html = decode(raw);
-  const form = /data-props="([^"]*)" data-file="(\w*LoginForm)\.island\.tsx"/.exec(raw);
-  const props: unknown = form ? fromJSON(JSON.parse(decode(form[1]!))) : undefined;
+  const form = /data-file="(\w*LoginForm)\.island\.tsx"><!--ssr-props:([^>]*)-->/.exec(raw);
+  const props: unknown = form ? fromJSON(JSON.parse(form[2]!)) : undefined;
   return {
     html,
-    form: form?.[2],
+    form: form?.[1],
     category: props && typeof props === "object" && "category" in props ? props.category : undefined,
     forget: props && typeof props === "object" && "forget" in props ? props.forget : undefined,
     /** The plain link to the other credential: [target, label]. */

@@ -55,7 +55,7 @@ export default function CustomerOverview(props: Props) {
             />
           }
           end={
-            <Button variant="primary" icon="plus" menu>
+            <Button variant="primary" floats icon="plus" menu>
               Neu
             </Button>
           }

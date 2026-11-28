@@ -418,9 +418,9 @@ export type PaneProps = {
    * The way back to the list on the phone, where the detail is a page of its own, such as "Posteingang". Give it an
    * `href`: the address of the list without the open entry. While it is there, the head of the workspace gives way on
    * the phone, so the way back is the one bar above the detail; it is the part `Back`, which a shell may show in its
-   * own bar instead. With `back`, the close × of the detail's head needs no `keep`: like every head action without
-   * it, the × gives way on the phone, so the detail has one way back there. A pane without a `head` (an editor, whose
-   * name stood in the workspace's head) names itself after the way back by its `label`: "‹ Werkstatt  Notizen.md".
+   * own bar instead. Mark the close × of the detail's head `Button closes`: with `back` it gives way on the phone, so
+   * the detail has one way back there. A pane without a `head` (an editor, whose name stood in the workspace's head)
+   * names itself after the way back by its `label`: "‹ Werkstatt  Notizen.md".
    */
   back?: Action;
   /**

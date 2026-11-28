@@ -346,6 +346,7 @@ export default function MailReaderV2(props: {
                 label={props.text.close}
                 href={listHref()}
                 onNavigate={(nav) => c().closeConversation(nav)}
+                closes
               />
             </>
           }

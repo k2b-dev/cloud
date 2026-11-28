@@ -57,7 +57,7 @@ export default function KeysScreen() {
         <Bar
           start={<RecordHead name="Wochenbericht" avatar={{ name: "Wochenbericht", image: robot }} kinds={["Agent", "Pausiert"]} />}
           end={
-            <Button variant="primary" icon="plus">
+            <Button variant="primary" floats icon="plus">
               Schlüssel erstellen
             </Button>
           }

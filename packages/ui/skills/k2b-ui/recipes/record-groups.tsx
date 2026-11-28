@@ -46,7 +46,7 @@ export default function CustomerDeliveries(props: Props) {
             />
           }
           end={
-            <Button variant="primary" icon="plus">
+            <Button variant="primary" floats icon="plus">
               Einlieferung
             </Button>
           }

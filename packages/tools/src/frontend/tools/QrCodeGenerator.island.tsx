@@ -294,7 +294,7 @@ export default function QrCodeGenerator() {
           <Button icon="photo-down" disabled={!qrSvg()} onClick={downloadPng}>
             PNG
           </Button>
-          <Button variant="primary" icon="download" disabled={!qrSvg()} onClick={downloadSvg}>
+          <Button variant="primary" icon="download" floats disabled={!qrSvg()} onClick={downloadSvg}>
             {t().downloadSvg}
           </Button>
         </>

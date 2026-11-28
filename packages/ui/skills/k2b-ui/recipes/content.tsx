@@ -26,7 +26,7 @@ export default function IntakeGuide(props: Props) {
           end={
             <>
               <Button variant="ghost" icon="share" label="Teilen" />
-              <Button variant="primary" icon="pencil">
+              <Button variant="primary" floats icon="pencil">
                 Bearbeiten
               </Button>
             </>

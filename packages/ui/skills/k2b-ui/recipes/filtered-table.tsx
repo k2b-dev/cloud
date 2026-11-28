@@ -79,7 +79,7 @@ export default function FilteredOrders(props: Props) {
           end={
             <>
               <Input type="search" icon="search" label="Auftrag oder Kunde" placeholder="Auftrag oder Kunde" />
-              <Button variant="primary" icon="plus">
+              <Button variant="primary" floats icon="plus">
                 Auftrag
               </Button>
             </>

@@ -88,7 +88,7 @@ export default function MailtoGenerator() {
       tool="mailto"
       primary={{ label: t().openInMailClient, icon: "external-link", href: mailto() || undefined, disabled: !mailto() }}
       end={
-        <Button variant="primary" icon="external-link" href={mailto() || undefined} disabled={!mailto()}>
+        <Button variant="primary" icon="external-link" floats href={mailto() || undefined} disabled={!mailto()}>
           {t().openInMailClient}
         </Button>
       }
