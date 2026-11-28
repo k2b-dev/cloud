@@ -1,5 +1,5 @@
 import { dates } from "@k2b/stdlib";
-import { Button, ButtonLink, DatePicker, Format, Placeholder, Section, StatusBadge, type StatusTone, useLocale } from "@k2b/ui";
+import { ButtonLink, DatePicker, Format, Placeholder, Section, StatusBadge, type StatusTone, useLocale } from "@k2b/ui";
 import { createSignal, For, type JSX, Show } from "solid-js";
 import type { AutomationLogItem } from "../contracts";
 import { mailCodeHistoryMessages } from "./mail-code-history-messages";
@@ -191,20 +191,19 @@ export default function MailCodeHistory(props: { data: MailCodeHistoryData }): J
         <p class="mail-code-catchup__lead">{t().lead}</p>
       </header>
       <div class="mail-code-catchup__stack">
-        <form method="get" action={props.data.codeHref} class="mail-code-history__day">
-          <input type="hidden" name="history" value="1" />
-          <input type="hidden" name="day" value={day() ?? ""} />
+        {/* a picked day opens at once: the step is an address, so reload and back return to it */}
+        <div class="mail-code-history__day">
           <DatePicker
             label={t().day}
             value={day}
             onValueChange={setDay}
+            onValueCommit={(value) => {
+              if (value && value !== props.data.day) window.location.assign(href({ day: value }));
+            }}
             max={props.data.today}
             error={props.data.dayInvalid && !day() ? t().dayInvalid : undefined}
           />
-          <Button type="submit" variant="secondary" disabled={!day()}>
-            {t().show}
-          </Button>
-        </form>
+        </div>
         <Section title={t().log({ day: heading() })} size="md">
           <Show when={props.data.items.length} fallback={<p class="mail-code-catchup__quiet">{t().empty}</p>}>
             <ul class="mail-code-history__rows">

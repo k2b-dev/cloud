@@ -219,6 +219,9 @@ describe("The retired rules' history on the Code page", () => {
             .locator('.mail-code-history__line[data-kind="run"] .mail-code-history__time')
             .evaluateAll((times) => times.map((time) => time.getClientRects().length && time.getBoundingClientRect().height));
           expect({ history, wrapped: runTimes.filter((height) => height > 24) }).toEqual({ history, wrapped: [] });
+          // the step scrolls inside the page: bring the opened run or the runs' error into the picture
+          const runPart = page.locator(".mail-code-history__steps, .mail-code-history .k2b-placeholder").last();
+          if (shots && (await runPart.count())) await runPart.scrollIntoViewIfNeeded();
           await shoot(page, `history-${history}-${width}`);
         } finally {
           await page.context().close();

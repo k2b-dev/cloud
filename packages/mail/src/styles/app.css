@@ -2915,9 +2915,7 @@
 }
 /* The retired rules' history: the day, then one line per entry (time, rule, subject, outcome) and its effects below. */
 .k2b-ui .mail-code-history__day {
-  display: flex;
-  align-items: flex-end;
-  gap: 0.625rem;
+  max-width: 18rem;
 }
 .k2b-ui .mail-code-history__rows {
   display: grid;
@@ -2993,6 +2991,10 @@
 .k2b-ui .mail-code-history__line[data-kind="run"] {
   grid-template-columns: max-content minmax(0, 1fr) auto;
   grid-template-areas: "time subject outcome";
+}
+/* An opened run starts at the line's edge: its date column is wider than an entry's time. */
+.k2b-ui .mail-code-history__line[data-kind="run"] + .mail-code-history__detail {
+  margin-left: 0;
 }
 /* An opened run: one line per step with its state, its error text below it. */
 .k2b-ui .mail-code-history__steps {
