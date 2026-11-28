@@ -1,6 +1,6 @@
 # Whole screens
 
-Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`: open it, switch the width and the state, copy the code. Only screens close to the reference look stand here; the other recipes showed a bare look and were removed. For every other kind of screen, build to the v2 taste study and its 13 rules in the skill `k2b-ui`, `references/look.md`.
+Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`: open it, switch the width and the state, copy the code. For every other kind of screen, build to the rules R1–R13 in `references/look.md` of the skill `k2b-ui`.
 
 ## An overview of things
 

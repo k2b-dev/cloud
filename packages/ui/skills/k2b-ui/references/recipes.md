@@ -19,21 +19,12 @@ in order, to open it.
 
 ## The recipes and the look
 
-Only recipes that come close to [the look](look.md) stay here: their
-rows lead with a mark, one column shows the shape of the data, people
-stand beside what they did. The other screens of earlier versions showed
-a bare look (content stretched over the canvas, actions as bare text,
-rows of text and text, default controls, no object head, half the
-screen empty), agents copied it, and they were removed.
-
-For every other kind of screen there is no recipe yet. The reference is
-the v2 taste study (three screens before and after, the diagnosis, the 13
-rules) and its parts gallery (table, filter, settings, detail and info
-parts), maintainer artifacts `cloud-dev/v2-taste-study` and
-`cloud-dev/v2-taste-parts`. Build to its 13 rules in [the look](look.md),
-with their numbers. Never copy a bare screen from an app, an older
-picture or the test screens in `test/v2-screens` of the package
-repository.
+A recipe stands here only when it meets [the look](look.md): its rows
+lead with a mark, one column shows the shape of the data, people stand
+beside what they did. For every other kind of screen there is no recipe
+yet: build to the rules R1–R13 in [the look](look.md), with their
+numbers. Never copy a bare screen from an app, an older picture or the
+test screens in `test/v2-screens` of the package repository.
 
 ## overview.tsx: an overview of things with a face
 

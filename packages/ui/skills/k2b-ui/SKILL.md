@@ -31,10 +31,9 @@ large screen that uses its room; dense, not busy: each thing has its mark
 for problems, people stand beside what they did. Run its wireframe check on
 your pictures: a screen that fails it is not done, however clean it is.
 
-**Reference:** the v2 taste study and its parts gallery (maintainer
-artifacts `cloud-dev/v2-taste-study`, `cloud-dev/v2-taste-parts`); their 13
-rules, with numbers, open [the look](references/look.md). Never copy a bare
-screen from an app, an older picture or a test file (`test/v2-screens`).
+**Reference:** the rules R1–R13 of [the look](references/look.md), with
+their numbers. Never copy a bare screen from an app, an older picture or a
+test screen (`test/v2-screens`).
 
 ## Start here
 
@@ -42,7 +41,7 @@ screen from an app, an older picture or a test file (`test/v2-screens`).
    it in `recipes/` (code) and `images/` (picture at 1440 and 390 px), and
    read [recipes](references/recipes.md). Recipes also stand live on the
    topic pages of the UI section in Fibel (`/en/ui/v2/<topic>`). A `–`
-   means no recipe meets the look yet: build to the 13 rules.
+   means no recipe meets the look yet: build to R1–R13.
 2. Copy the recipe, keep its structure, replace the data. Change the
    arrangement only where the task really differs.
 3. Check it, cheapest first (see "See what you built"). Fix every finding
@@ -153,7 +152,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 5. **Wrong fails at once.** Types reject a missing label; the rule and
    `describeV2` name the fix.
 6. **Whole screens from a recipe or the reference.** Copy a recipe where
-   one exists; else build to the 13 rules, never from bare parts.
+   one exists; else build to R1–R13, never from bare parts.
 7. **Rows and columns stay dense.** In a table with column `width`s, long
    text is cut with "…" and the row keeps its height; columns that matter
    less `drop` on the phone, and a table wider than a phone gets

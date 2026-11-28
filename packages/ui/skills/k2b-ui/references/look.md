@@ -6,74 +6,13 @@ app, nothing that shows the shape of its data. People reject such screens
 as "wireframes". This page says what a screen must have instead, with
 exact values, and how to check your own screen before you call it ready.
 
-The values come from the approved design reference for v2 (direction
-"self-assured": quiet lines, one clear hero, the app's colour where it
-means something). The primitives draw most of it; your job is to choose the
-right primitive, feed it real data and leave nothing out.
-
-## The 13 rules of the reference
-
-The reference look is the v2 taste study and its parts gallery
-(maintainer artifacts `cloud-dev/v2-taste-study` and
-`cloud-dev/v2-taste-parts`). Its 13 rules are measurable. Where an older
-rule further down names another value, these win. Where `@k2b/ui` does not
-draw a rule yet, write a `k2b-ui gap` at that place; never fake it with
-app CSS.
-
-1. **Measure, not canvas.** Settings and detail content at most 1040 px
-   wide, from a 32 px edge (head B: 232 px label + 48 px gap + at most
-   760 px content). Lists and tables use the full width. An action stands
-   at the end of the content it acts on, never at the window edge.
-2. **A head says what it is.** Settings and details open with the tinted
-   object head: ground in the app tone at 6 %, mark 40 px, name 18/600 on
-   one line, one meta line 12 px, up to 3 facts on the right (label 12 px,
-   value 13/500), tabs at its lower edge, one line under it. The top left
-   is never empty.
-3. **Five type steps, hard contrast.** 12 meta · 13 row, text, control ·
-   15 section · 18 object · 30 figure (once per screen). Weights 400, 500,
-   600 only. A count is always 12 px meta. Never two sizes less than 2 px
-   apart in one block.
-4. **Section head A or B.** No icon. Title 15/600 + count 13 px n500,
-   description 13 px n600, at most 2 lines. B from a container of 960 px:
-   a 232 px label column, the button under the description. A below that:
-   the button right of the title. The title never wraps.
-5. **Actions are buttons.** Section and row actions 30 px high (in a row
-   26 px), 1 px border #dadade, radius 8 px, icon 15 px + verb. Never a
-   bare text link, never an icon without a word except ⋯ and ×. Exactly
-   one filled main action per screen.
-6. **Row anatomy.** Mark 28 · name 13/500 · meta 12 px n500 in the same
-   line (phone: second line) · one data column · control or state · ⋯.
-   Desktop 46 px on one line, phone at least 52 px on two lines. What a
-   person can change is a control in the row.
-7. **Every thing has its mark.** People: an avatar with a stable hue from
-   the ID. Groups: a tinted mark + member stack (3 + "+n"). Objects: a type
-   mark of 20/28/40 px in the type colour, 13–16 % tone. Never a grey
-   square with a grey icon.
-8. **Lines in two weights.** Hairline #f0f0f2 between rows, column lines
-   quieter at #f5f5f6. Divider #e4e4e7 between sections, under the head
-   block and under a table head. No line under the last, never two lines at
-   one edge.
-9. **One data figure per list.** Exactly one column shows the shape of the
-   data (bars, ticks, stack, spark), in the app tone at 38–45 %. Amber for
-   "too little", red only for errors. Real data only.
-10. **Surfaces only with meaning.** Page ground in the app tone (10 %,
-    neutral at 38 %), the window white. Tint only for the object head,
-    selection, active filters, choice cards and notices. Cards (1 px) only
-    for choices, tiles and islands. No shadow on controls.
-11. **Filters are sentences.** Active filters as statements in the app tone
-    (field · operator · value · ×) with "und" between them; saved views as
-    head tabs with a count; the result count and the sort in words in the
-    status row; "Zurücksetzen" as soon as anything differs. Phone: one line
-    and a sheet with "N zeigen".
-12. **States fully designed.** Loading: placeholder rows in the real row
-    height and column width. Empty: mark 40 px + sentence 15/600 + one
-    sentence + one action, centred in the area it replaces. Failed: its
-    sentence and "Erneut versuchen" where the data would stand. Unsaved:
-    a floating bar at the bottom centre.
-13. **White space only under finished content.** White under the content
-    only when the first screen shows at least 60 % real content, or the
-    page is a complete short setting. Else a topic is missing
-    (inheritance, link, history), not spacing. This is a review rule.
+The rules R1–R13 below are the reference look of v2: quiet lines, one
+clear hero, the app's colour where it means something. The primitives draw
+most of it; your job is to choose the right primitive, feed it real data
+and leave nothing out. A value marked "drawn by the primitive" is never
+set by a screen. Where your version of `@k2b/ui` does not draw a rule yet,
+write a `k2b-ui gap` at that place (see "When a part is missing"); never
+fake it with app CSS.
 
 ## Before you write code
 
@@ -99,12 +38,12 @@ Eye path:    hero → <second> → <third>
 Identity:    owner colour <where>; data picture per row <which>
 ```
 
-### 2. Start from a recipe or the reference, not from parts
+### 2. Start from a recipe or from the rules, not from parts
 
 Where a recipe fits your screen (see [recipes](recipes.md)), copy it, keep
-its composition and replace the data. Where none fits, build to the 13
-rules above and the screens of the taste study. A screen assembled from
-single parts reads as a random first draft even when every part is right.
+its composition and replace the data. Where none fits, build to R1–R13. A
+screen assembled from single parts reads as a random first draft even
+when every part is right.
 
 ### 3. Feed it the worst case
 
@@ -134,165 +73,197 @@ It is a wireframe, and not done, if any of these is true:
 - half the screen is empty while there is content to show;
 - a count is the biggest text on the screen, or a heading;
 - every row carries a chip, or OK states are coloured;
+- an action is bare text, or an icon without a word other than ⋯ and ×;
 - the title repeats the open entry of the sidebar, or a fact appears twice;
 - a 1920 px window shows the 1440 px layout stretched.
 
 Check the list against the picture at each of the four widths, and name in
-your report which rule each fix answers.
+your report which rule (R1–R13) each fix answers.
 
 ## The rules
 
-### 1. One hero per screen
+### R1. Measure, not canvas
 
-Right under the head stands the one figure or statement that matters
-today, with its real trend beside it, and below them a line of
-exceptions. It is the only figure of its size on the screen.
+- Text starts at the text edge (`--k2-edge`: 20 px, 16 px on the phone),
+  drawn by the primitive.
+- Settings and detail sections stand at most 1040 px wide from that edge
+  (section head B: 232 px head column + 48 px gap + at most 760 px
+  content).
+- Lists, tables and sections with a large table, `Tiles`, `Group`s or a
+  `Canvas` use the full width.
+- An action stands at the end of the content it acts on, never at the
+  window edge.
+- From about 1680 px a list keeps its ideal width (about 640 px) and the
+  open detail grows into two columns under its one head: left what it is
+  (its chart, access, technical facts), right who and what happened
+  (people, alarms, history). Build it as a `Pane.Split` of a `Pane` and a
+  `Pane side` inside the detail. A table without a detail gets a context
+  column (`Pane side`) on a large screen. Never a wider list, never an
+  empty half.
+- On the phone an open object is the page, with its way back.
 
-- Figure: 600 30px/34px, letter spacing −0.015em, in the app's ink colour.
-- Under the figure: what it counts (500 14px/20px) and one meta line
-  (12px/16px), such as "97 Personen · 23 neu in 7 Tagen".
-- Beside it: its trend, 56 px high, as bars (3 px gap, radius 1.5 px) or an
-  area. Today in the full app colour, earlier days in its soft tone, days
-  without data in n200. Under the chart a caption line: start date, what
-  it shows, "heute".
-- Below, after a quiet line: the exceptions, each as "● number word ·
-  who" (a state dot, the number bold, the word, the meta). Only real
-  exceptions; never their own rows or cards.
-- Band: 18 px above, 14 px below, 20 px edge; 14 px between its rows and
-  32 px between figure and chart. On the phone figure, chart and
-  exceptions stand one under the other.
+### R2. A head says what it is
 
-Pick the figure from the brief: the count or amount a person acts on, not
-the size of the table.
+Settings and details open with the tinted object head:
 
-### 2. The app's colour says whose thing it is
-
-The shell's tint (page background, rail) says where you are. The app's
-own colour, the owner colour, marks what belongs to it: the hero figure
-and its chart, the open row, the current tab's underline, the current
-sidebar entry and the head of the open object. It is never decoration.
-
-From the one app colour come four tones:
-
-| Tone | Mix | Used for |
-| --- | --- | --- |
-| tint | 7 % on white | object head, open row, current sidebar entry |
-| tint 2 | 12 % on white | a stronger ground, such as a pressed control |
-| soft | 32 % on white | earlier bars, OK ticks |
-| ink | 82 % with black | hero figure, current entry, open row's name |
-
-Rows of another app on your page carry that app's colour, not yours.
-
-### 3. Every list shows the shape of its data
-
-Exactly one column of a row carries data over time, where the data
-exists: ticks, a spark or a stack of people. Never two pictures in one row,
-never a picture as decoration.
-
-- Ticks: bars 3 px wide, 12 px high, 1 px apart; a good beat in the app's
-  soft tone, a failure 16 px high in red, no data 4 px high in n200.
-- Spark: bars or a line in the soft tone, the last value in the full
-  colour.
-- People: `Avatar.Stack` of 20 px avatars overlapping by 5 px, "+n" as
-  meta.
-
-Red only for failure. A column of numbers stands right-aligned in tabular
-figures.
-
-### 4. Rows keep one height
-
-On the desktop a row is one line: a table row is 46 px, its name cell
-leads with the thing's 28 px mark and the name in weight 500. On the
-phone every row is two lines: the name, then its meta joined by "·", 60
-px high. Descriptions belong in the detail, not in the row.
-
-### 5. The open object has a tinted head
-
-The object a person opened gets a head in the owner tint:
-
-- 14 px above, 16 px below, 20 px edge on the left, 12 px on the right;
-- its sign as a 40 px mark (radius 10 px), the name in 600 18px/24px and
-  one meta line under it (12px/16px, muted);
-- three key facts as label over value: the label 12px/16px meta, the value
-  600 15px/20px, 28 px between the facts, 14 px under the name;
+- ground in the app tint (`--k2-app-tint`, drawn by the primitive); 14 px above, 16 px below, the text edge on
+  the left, 12 px on the right;
+- its mark 40 px (radius 10 px), the name 18/600 on one line, one meta
+  line 12 px under it;
+- up to 3 facts on the right, label over value: label 12 px meta, value
+  13/500, 28 px between the facts;
 - a problem stands right there in red: its icon, one line in weight 500
-  and a 12px/16px reason under it ("Liefert seit 10:40 keine Werte ·
+  and a 12 px reason under it ("Liefert seit 10:40 keine Werte ·
   Zeitüberschreitung nach 15 s");
-- its deeds at the right of the name: one small button, a quiet "…", the
-  close ×.
+- its deeds at the right of the name: one small button, a quiet ⋯, the
+  close ×;
+- tabs at its lower edge, one line under it.
 
-### 6. Two line weights
+The top left of a pane is never empty. On the phone the head keeps its
+tint, and its facts wrap with 20 px between them.
 
-The primitives draw two lines. Do not add your own.
-
-- The clear line (`--k2-hairline`, n200) separates what must be told
-  apart: a head from its content, a column head from the rows, a list from
-  its detail, one section from the next, a frame.
-- The quiet line (`--k2-hairline-subtle`, n100, where your version of
-  `@k2b/ui` has it) separates rows of a list or table.
-- No lines between the columns of a table, and never two lines at one
-  edge.
-
-### 7. Colour only for problems
-
-An OK state is a small dot and the plain word in normal ink, without a
-ground ("● Liefert"). A warning is an amber dot with its word in amber,
-weight 500; a failure a red dot with its word in red; a paused or empty
-state a grey dot with a muted word. No green chips, no tinted pills for
-OK, no chip in every row.
-
-### 8. Five type steps
+### R3. Five type steps, hard contrast
 
 | Step | Value | For |
 | --- | --- | --- |
-| meta | 400 12px/16px | labels, counts, times, captions |
-| row | 400 13px/20px | rows and most text |
-| body | 400 14px/20px | reading text, section heads (600) |
-| lead | 600 18px/24px | the open object's name, a phone title |
-| figure | 600 30px/34px | the hero figure, once per screen |
+| meta | 400 12/16 | labels, counts, times, captions |
+| row | 400 13/20 | rows, text, controls |
+| title | 600 15/22 | section titles |
+| lead | 600 18/24 | the open object's name, a phone title |
+| figure | 600 30/34 | the hero figure, once per screen |
 
-Numbers use tabular figures. A count is meta text, never a heading.
+- Weights 400, 500 and 600 only. No size outside these steps. The one
+  exception is long reading text (`Prose`, a mail body): 400 14/20, drawn
+  by the primitive.
+- Neighbouring steps in one block also differ in weight or colour: a name
+  13/500 beside its meta 12/400 in n500; a fact value 13/500 under its
+  label 12/400.
+- A count is meta (12 px), and 13/400 in n500 only right after a section
+  title (R4). It is never a heading and never the biggest text on the screen.
+- Numbers use tabular figures.
 
-### 9. Dense, not busy
+### R4. Section head A or B
 
-- Head 56 px; a toolbar under it 44 px; a table's column head 34 px on
-  n50 with clear lines above and below.
-- Detail sections: 4 px above, 14 px below, their head 40 px; facts as a
-  grid with a 116 px label column (100 px on the phone), 8 px between
-  rows, 16 px between label and value; feed entries 7 px above and below.
-- Text edge 20 px, 16 px on the phone.
-- More information per screen than a classic admin page, but each fact
-  once.
+- No icon. The title 15/600 on one line, never wrapped, its count after it
+  (R3); a description 13 px in n600, at most 2 lines. The same in A and B.
+- B, by default in a pane of 960 px and more: a 232 px head column with
+  the title and description, the section's buttons under the description,
+  the content 48 px beside it (R1).
+- A, below 960 px and for full-width sections (R1): the button right of
+  the title, the content under the head; on the phone two buttons stand
+  under the description.
+- Facts inside a section stand as a grid: a 116 px label column (100 px
+  on the phone), 8 px between rows, 16 px between label and value.
 
-### 10. Settings are rows, not a form letter
+### R5. Actions are buttons
 
-A setting is its label and a one-line hint on the left and its value at a
-fixed width on the right (`Setting`), with its current state visible at a
-glance. Sections are split by a clear line. Never full-width fields
-stacked one under the other.
+- Section and row actions are buttons, drawn by the primitive: a section's
+  button 30 px high, 13/500, a 15 px icon in n600 + a verb, its words
+  kept on the phone; a button in a row 28 px. Both have a 1 px border in
+  the control line (`--k2-line-control`) and radius 8 px.
+- Never a bare text link, never an icon without a word except ⋯ and ×.
+- Exactly one filled main action per screen. On the phone it floats at the
+  bottom right (48 px high), and the end of every scrolling column keeps
+  72 px free, so the last row stands above it.
 
-### 11. The phone is dense too
+### R6. Row anatomy
 
-- The page's views sit in a 44 px head; there is one search place.
-- The main action floats at the bottom right (48 px high); the end of
-  every scrolling column keeps 72 px free, so the last row stands above it.
-- Tables become two-line rows of 60 px with their mark.
-- The hero stands as figure, chart, exceptions; the object head keeps its
-  tint, its facts wrap with 20 px between them.
-- An open object is the page, with its way back.
+- A row: mark 28 · name 13/500 · meta 12 px n500 in the same line (on the
+  phone: a second line) · one data column (R9) · a control or state · ⋯.
+- Desktop: one line, 46 px (a table cell 44 px). Phone: a row with meta
+  becomes two lines, at least 52 px; a table becomes such rows. Descriptions belong in the detail, not in the row.
+- What a person can change is a control in the row. In settings, a
+  setting is a row: its label and a one-line hint on the left, its value
+  at a fixed width on the right (`Setting`). Never full-width fields
+  stacked one under the other.
+- Heights around rows: the head 56 px (44 px on the phone, with the
+  page's views and one search place), a toolbar under it 44 px, a table's
+  column head 34 px on n50.
 
-### 12. Large screens use the room
+### R7. Every thing has its mark
 
-From about 1680 px the list keeps its ideal width (about 640 px) and the
-open detail grows into two columns under its one head:
+- People: an avatar with a stable hue from their ID.
+- Groups: a tinted mark + a member stack (3 avatars + "+n").
+- Objects: a type mark of 20, 28 or 40 px in the type colour on a light
+  tone.
+- Never a grey square with a grey icon.
 
-- left, what it is: its chart, access, technical facts;
-- right, who and what happened: people, alarms, history.
+### R8. Lines in two weights
 
-Build it as a `Pane.Split` of a `Pane` and a `Pane side` inside the
-detail, after anything that spans both columns. A table without a detail
-gets a context column (`Pane side`) beside it on a large screen. Never a
-wider list, never an empty half.
+All lines are 1 px and drawn by the primitive; never add your own.
+
+- The quiet line (`--k2-hairline-subtle`) separates rows of a list, a
+  table or a section. The columns of a table are parted by a still quieter
+  inset line (`--k2-line-column`).
+- The clear line (`--k2-hairline`) separates sections, a head block from
+  its content, a table head from its rows, a list from its detail.
+- The last row or section of a pane draws no visible line; never two
+  lines at one edge.
+
+### R9. One data figure per list
+
+- Exactly one column shows the shape of the data, where the data exists:
+  bars, ticks, a stack of people or a spark. Never two pictures in one
+  row, never a picture as decoration. Real data only.
+- Its colour is the app's soft tone, drawn by the primitive; amber for
+  "too little", red only for errors.
+- Ticks: bars 3 px wide, 12 px high, 1 px apart; a failure 16 px high in
+  red, no data 4 px high in n200. Spark: the last value in the full app
+  colour. People: `Avatar.Stack` of 20 px avatars overlapping by 5 px,
+  "+n" as meta.
+- The screen's hero is its one big figure: right under the head the
+  figure (30/34, letter spacing −0.015em, in the app's ink), what it
+  counts (13/500) and one meta line; beside it its trend, 56 px high, as
+  bars (3 px gap) or an area, today in the full app colour, earlier days
+  in the soft tone; below, after a quiet line, the real exceptions, each
+  as "● number word · who". On the phone figure, trend and exceptions
+  stand one under the other. Pick the figure a person acts on, not the
+  size of the table.
+
+### R10. Surfaces and colour only with meaning
+
+- The page ground is in the app tone, the window white. Drawn by the
+  shell.
+- From the one app colour the primitives derive its tones; a screen
+  never mixes its own:
+
+  | Tone | Token | Used for |
+  | --- | --- | --- |
+  | tint | `--k2-app-tint` | object head, open row, current sidebar entry |
+  | soft | drawn by the primitive | data figures (R9) |
+  | ink | `--k2-app-text` | hero figure, current entry, open row's name |
+
+- Tint only for the object head, selection, active filters, choice cards
+  and notices. Cards (1 px) only for choices, tiles and islands. No shadow
+  on controls. Rows of another app carry that app's colour.
+- Colour only for problems: an OK state is a small dot and the plain word
+  ("● Liefert"); a warning an amber dot and its word in amber, 500; a
+  failure a red dot and its word in red; a paused or empty state a grey
+  dot and a muted word. No green chips, no chip in every row.
+
+### R11. Filters are sentences
+
+Active filters stand as statements in the app tone (field · operator ·
+value · ×) with "und" between them; saved views are head tabs with a
+count; the result count and the sort in words stand in the status row;
+"Zurücksetzen" appears as soon as anything differs. On the phone: one line
+and a sheet with "N zeigen". See [list queries](list-queries.md).
+
+### R12. States fully designed
+
+- Loading: placeholder rows in the real row height and column width.
+- Empty: a mark of 40 px + a sentence 15/600 + one sentence + one action,
+  centred in the area it replaces.
+- Failed: its sentence and "Erneut versuchen" where the data would stand.
+- Unsaved: a floating bar at the bottom centre.
+
+### R13. White space only under finished content
+
+White under the content only when the first screen shows at least 60 %
+real content, or the page is a complete short setting. Otherwise a topic
+is missing (inheritance, link, history), not spacing. More information
+per screen than a classic admin page, but each fact once. This is a
+review rule.
 
 ## Two reference screens, in words
 
@@ -322,14 +293,14 @@ monospace.
 
 ## When a part is missing
 
-The hero band and the tinted object head come from `@k2b/ui` parts. Where
-your version does not have them yet, build everything else of the page,
-put the hero's figure and trend in a `Cells` cell with `trend`, and write
-the gap at its place, so it is found and replaced:
+The hero and the tinted object head come from `@k2b/ui` parts. Where your
+version does not have them yet, build everything else of the page, put the
+hero's figure and trend in a `Cells` cell with `trend`, and write the gap
+at its place with the rule it misses, so it is found and replaced:
 
 ```tsx
-// k2b-ui gap: hero band (look.md rule 1)
-// k2b-ui gap: tinted object head (look.md rule 5)
+// k2b-ui gap: hero (look.md R9)
+// k2b-ui gap: tinted object head (look.md R2)
 ```
 
 A gap is named in the report; it is never a reason to ship the screen

@@ -30,7 +30,7 @@ Each topic file belongs to whoever writes it. Change only your own topic files a
 
 ## Add a recipe
 
-A recipe is what agents copy, so it must meet the 13 rules of the reference look in the skill's `references/look.md` (measure, object head, five type steps, buttons as actions, marks, one data figure per list). A screen that only proves a primitive works is a test screen in `packages/ui/test/v2-screens/`: the browser tests render it, but no page shows it and the package does not ship it.
+A recipe is what agents copy, so it must meet the rules R1–R13 in the skill's `references/look.md` (measure, object head, five type steps, buttons as actions, marks, one data figure per list). A screen that only proves a primitive works is a test screen in `packages/ui/test/v2-screens/`: the browser tests render it, but no page shows it and the package does not ship it.
 
 1. Write the screen as `packages/ui/skills/k2b-ui/recipes/<name>.tsx`. Its first line is `// Recipe: <what it shows>.` Its default export renders without props.
 2. Add one import line to the `recipes` object in `docs-site/src/ui/topics/recipes.ts`. The test fails while a recipe file is missing there.
@@ -71,7 +71,7 @@ Give `thumbnail` a recipe name for the live picture in the overview. While the p
 The sections are fixed, in this order. The test `topics.test.ts` checks them:
 
 1. `# Title`, then one or two sentences: when to use this.
-2. One or two example sections (`## A table to compare`): a short text and an `Example`. While no recipe of the topic meets the reference look, a section `## Reference look` points to it instead.
+2. One or two example sections (`## A table to compare`): a short text and an `Example`. While no recipe of the topic meets the reference look, a section `## Reference look` points to the rules instead.
 3. At most one choice, `## List or table?`, with a `###` list for each side.
 4. `## Parts`: one `### Name` per part, one line that says what it is, and its `Props`.
 5. `## Not in v2 yet`: what is missing, and that the place gets a `// k2b-ui gap: …` comment.
