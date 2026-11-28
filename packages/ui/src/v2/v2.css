@@ -1594,6 +1594,39 @@
 .k2-ui .k2-row[data-avatar] {
   column-gap: 12px;
 }
+/* a small symbol on the lead's bottom right (Row badge), such as a pin on a pinned chat's face: on the surface, with
+   a ring of it, so it stands clear of the face under it */
+.k2-ui .k2-row-lead:has(> .k2-row-badge) {
+  position: relative;
+}
+.k2-ui .k2-row-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--k2-surface);
+  box-shadow: 0 0 0 1px var(--k2-line);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-row-badge > .k2-icon {
+  font-size: 11px;
+}
+/* an end that shows on hover (Row endOnHover): it keeps its place unseen until the pointer is over the row, the focus
+   is in it or its menu is open; a touch screen does not draw it (the row's deeds are a long press away) */
+@media (hover: hover) {
+  .k2-ui .k2-row[data-end-hover]:not(:hover, :focus-within, :has(> .k2-row-end [aria-expanded="true"])) > .k2-row-end {
+    opacity: 0;
+  }
+}
+@media (hover: none) {
+  .k2-ui .k2-row[data-end-hover] > .k2-row-end {
+    display: none;
+  }
+}
 .k2-ui .k2-row[data-avatar] > .k2-row-lead {
   width: 32px;
 }
@@ -3990,6 +4023,36 @@
   margin: 0 -12px;
   /* no bar of its own, as a pane's column: Cloud's 0.5rem one (WebKit) would cut the rows' lines short of the edge */
   scrollbar-width: none;
+}
+/* the rows of a nav's list part with a subtle line from their text on, not across the column (Valentin, v8): the line
+   is the row's last grid cell after its lead, reaching the row's end and bottom; the last row draws none */
+.k2-ui .k2-nav-list .k2-row:has(> .k2-row-lead > *) {
+  border-bottom: 0;
+}
+.k2-ui .k2-nav-list .k2-row:has(> .k2-row-lead > *)::after {
+  content: "";
+  grid-column: 2 / -1;
+  grid-row: 3;
+  align-self: end;
+  margin: 0 calc(-1 * var(--k2-edge)) -8px 0;
+  border-bottom: var(--k2-hairline-subtle);
+}
+.k2-ui .k2-nav-list .k2-row:last-child::after {
+  display: none;
+}
+/* a nav's list is narrow: its rows keep their shape with any name, the title on one line and the second line on at
+   most two, each cut with "…" (the whole text stays the row's name and its open entry's) */
+.k2-ui .k2-nav-list .k2-row > .k2-row-l1 > .k2-row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2-ui .k2-nav-list .k2-row[data-lines="2"] > .k2-row-l2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
 .k2-ui .k2-nav-list::-webkit-scrollbar {
   display: none;

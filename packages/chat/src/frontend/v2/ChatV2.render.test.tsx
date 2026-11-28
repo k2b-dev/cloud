@@ -93,7 +93,9 @@ describe("Chat v2 server render", () => {
       // One list without headings: the pinned chat first, marked with its pin, then the chats and channels.
       const order = ["Werkstatt Nord", "Nora Weber", "Lieferung KW 49", "Ankündigungen"].map((title) => html.indexOf(title));
       expect(order.every((at, index) => at > 0 && (index === 0 || at > order[index - 1]!))).toBe(true);
-      expect(html).toContain(`aria-label="${t.pinnedChats}"`);
+      // the pin is a badge on the pinned chat's face (Valentin, v8), not a mark beside its name
+      expect(html).toMatch(new RegExp(`class="k2-row-badge"[^>]*><i[^>]*aria-label="${t.pinnedChats}"`));
+      expect(html.match(new RegExp(`aria-label="${t.pinnedChats}"`, "g"))?.length).toBe(1);
       expect(html.match(/data-k2-part="List"/g)?.length).toBe(1);
       expect(html).not.toContain('data-k2-part="Section"');
       // The first render has its data: no loading placeholder and no busy region.

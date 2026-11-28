@@ -248,6 +248,8 @@ content, a list and its detail, one section and the next. A `Row`:
 - lead: `mark` (the thing's `Mark`: a base, a file with its thumbnail, a
   table; 24 px on one line, 32 px on two or three), or `avatar`, or a
   quiet `icon` for a plain place or deed, or a dot when `unread`.
+  `badge: { icon, label }` sets a small symbol on the lead's bottom right,
+  such as a pin on a pinned chat's face, in place of a mark by the name.
 - `meta` (quiet note after the title, a count), `time` (top right). Title
   and `meta` share the first line in equal parts, and each takes only what
   it needs: a count or a number stays whole, a long note is cut with "…",
@@ -260,6 +262,10 @@ content, a list and its detail, one section and the next. A `Row`:
   rows with the same deed are told apart: name nothing yourself; on the
   phone a finger hits 44 px of it, its look unchanged),
   `end` (a few icon buttons, or the state chip of a one- or two-line row).
+  `endOnHover`: the end shows only under the pointer or with the focus in
+  the row, its place kept; a touch screen does not draw it, so give the
+  row the same deeds through `Menu.Context` (a long press). Use it for a
+  long list whose every row has a "…".
 - states: `unread`, `strong`, `current` (the open one, app tint),
   `yours` (you are next).
 - `select: { selected, onChange }`: the row stands in a selection (pair it
@@ -555,7 +561,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   phone. `list` holds the app's own rows after the groups (a `List` of
   `Row`s, such as conversations): made once, like the other parts of a
   frame, they reach the column's edges and scroll on their own above the
-  foot; virtualize a long list. With `phone: "page"` the list with the
+  foot; virtualize a long list. Its rows part with a line from their text
+  on (not under the lead), and a row keeps its title on one line and its
+  second line on at most two, cut with "…". With `phone: "page"` the list with the
   search is the phone's page while no pane is open beside it; the title,
   the groups and the foot are then in the platform's menu, and any pane
   that opens (a detail or a page of its own) is the page in its place.

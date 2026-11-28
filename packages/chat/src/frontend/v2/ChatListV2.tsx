@@ -96,13 +96,11 @@ export function ChatRowV2(props: { row: Conversation; context: ChatRowsContext }
       <Row
         mark={sign(row()).mark}
         avatar={sign(row()).avatar}
+        // a pinned chat wears a pin on its face's corner (Valentin, v8), nothing beside its name
+        badge={row().pinnedRank !== null ? { icon: "pin", label: t().pinnedChats } : undefined}
         lines={[row().title, line()]}
         meta={
           <>
-            {/* k2b-ui gap: avatar badge (pin at the avatar's bottom right). Until then the pin stands by the name. */}
-            <Show when={row().pinnedRank !== null}>
-              <Icon name="pin" label={t().pinnedChats} />
-            </Show>
             <Show when={marks().muted}>
               <Icon name="bell-off" label={t().notificationsOffMark} />
             </Show>
@@ -114,7 +112,10 @@ export function ChatRowV2(props: { row: Conversation; context: ChatRowsContext }
         time={listTime(row().lastActivityAt, props.context.now(), { ...props.context.dateConfig, locale: locale() })}
         href={props.context.href(row())}
         onNavigate={props.context.onNavigate(row())}
+        // the "…" shows on hover and focus only, so the list carries none on each row; on the phone a long press on
+        // the row (Menu.Context, also with VoiceOver) opens the same menu
         end={<Menu label={t().chatActions({ title: row().title })} items={menu()} />}
+        endOnHover
       />
     </Menu.Context>
   );

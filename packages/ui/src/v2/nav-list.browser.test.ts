@@ -128,6 +128,56 @@ for (const width of [1440, 1024])
     });
   }, 30_000);
 
+// Valentin, v8: a pinned chat wears a pin on its face's corner; the lines between the chats start right of the face;
+// the "…" of a row shows on hover, not on each row; a long name keeps the row's shape.
+for (const width of [1440, 390])
+  test(`at ${width} px a row wears its badge on its face, parts from the next from its text on, keeps its "…" for the pointer and cuts long text`, async () => {
+    await withPage(width, async (page) => {
+      const rows = page.locator(".k2-ws-side .k2-nav-list .k2-row");
+      // the pin on the first face's bottom right corner, named for assistive technology
+      const badge = rows.first().locator(".k2-row-lead > .k2-row-badge");
+      expect(await badge.locator('[role="img"]').getAttribute("aria-label")).toBe("Angeheftet");
+      const [face, pin] = [
+        await box(page, ".k2-ws-side .k2-nav-list .k2-row .k2-av"),
+        await box(page, ".k2-ws-side .k2-nav-list .k2-row-badge"),
+      ];
+      expect(pin.right).toBeGreaterThan(face.right - 4);
+      expect(pin.bottom).toBeGreaterThan(face.bottom - 4);
+      // the line between rows is drawn from the text column on, to the row's end; the last row draws none
+      const line = await rows.nth(1).evaluate((row) => {
+        const after = getComputedStyle(row, "::after");
+        return { own: getComputedStyle(row).borderBottomWidth, width: after.borderBottomWidth, column: after.gridColumnStart };
+      });
+      expect(line).toEqual({ own: "0px", width: "1px", column: "2" });
+      expect(await rows.last().evaluate((row) => getComputedStyle(row, "::after").display)).toBe("none");
+      // the "…": unseen in its place until the pointer is over the row (a pointer screen), not drawn on a touch screen
+      const end = rows.nth(1).locator(".k2-row-end");
+      if (width >= 768) {
+        expect(await end.evaluate((element) => getComputedStyle(element).opacity)).toBe("0");
+        await rows.nth(1).hover();
+        await page.waitForFunction(() => getComputedStyle(document.querySelectorAll(".k2-nav-list .k2-row-end")[1]!).opacity === "1");
+      } else expect(await end.isVisible()).toBe(false);
+      // a long name stays on one line, its last message on at most two
+      const long = rows.nth(5);
+      const title = await long
+        .locator(".k2-row-title")
+        .evaluate((element) => ({
+          height: element.getBoundingClientRect().height,
+          line: parseFloat(getComputedStyle(element).lineHeight),
+        }));
+      expect(title.height).toBeLessThanOrEqual(title.line + 1);
+      const second = await long
+        .locator(".k2-row-l2")
+        .evaluate((element) => ({
+          height: element.getBoundingClientRect().height,
+          line: parseFloat(getComputedStyle(element).lineHeight),
+        }));
+      expect(second.height).toBeLessThanOrEqual(2 * second.line + 1);
+      const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+      expect({ width, problems: layout.problems }).toEqual({ width, problems: [] });
+    });
+  }, 30_000);
+
 test("groups built again, a new count and a group put before the others, keep the list, its rows and its scroll; the search writes back", async () => {
   await withPage(1440, async (page) => {
     const list = page.locator(".k2-ws-side .k2-nav-list");
