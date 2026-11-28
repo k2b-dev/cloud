@@ -444,8 +444,6 @@ export default function MailConversationReader(props: {
   const messageDerive = createMailMessageDerive({
     mailboxId: () => props.mailboxId,
     identities: () => props.identities,
-    currentUserId: () => props.currentUserId ?? null,
-    returnHref: () => props.requestUrl,
     selection: () => props.selectionKey,
     shows: (messageId) => props.messages.some((message) => message.id === messageId),
     explainSenderUnavailable: () => explainSenderUnavailable(),

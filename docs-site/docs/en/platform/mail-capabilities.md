@@ -3,9 +3,9 @@ title: Mail capability targets
 navTitle: Mail capabilities
 section: Platform services
 order: 554
-description: Address Mail Actions at one mailbox and keep their contained resources in that mailbox.
+description: Address Mail Actions at one mailbox, keep their contained resources in that mailbox, and offer attachments in the file chooser.
 tags: [mail, capabilities, agents]
-updated: 2026-11-02
+updated: 2026-11-27
 ---
 
 # Mail capability targets
@@ -109,3 +109,86 @@ personal automation mandate rules continue to apply.
 
 For incoming-message handlers, keyword limits, catch-up and previews, see
 [Mail automations with Code](/en/docs/platform/mail-code-automations).
+
+## Offer attachments in the file chooser
+
+Mail is a read-only source named **Mail** in every file chooser, beside
+**This device** and Files. Someone can attach a file they once received by
+mail without downloading and uploading it again. Mail declares
+`fileProvider: { list: "attachment.files.list", read: "attachment.content.read" }`
+and has no `save`. See [File providers](/en/docs/platform/file-providers).
+
+The source has these folders:
+
+1. One folder for each mailbox the person can read and has not hidden. The
+   folder name is the mailbox's address, or the mailbox name if it has no
+   connection.
+2. Years, then months, newest first. Month names use the person's language.
+3. One folder for each sender in that month, named `Name (address)` or by
+   address only. Mail without a sender is under **Unknown sender**.
+4. The attachments from that sender in that month, newest first.
+
+Mail indexes every attachment it stores and decides when it lists one. These
+attachments are not in the source:
+
+- An image that the message body shows through a `cid:` link to its
+  Content-ID, such as a signature logo, whatever its `Content-Disposition`.
+  The Mail reader shows these images in the message and leaves them out of
+  its attachment list. A message with more than 32 such images, or more than
+  25 MiB of them, shows the rest in the reader's attachment list; the source
+  still leaves them out. A part with a Content-ID that the body does not show
+  stays in the source. Apple Mail and iOS Mail send photos and PDFs this way.
+- A JPEG, PNG, GIF or WebP image smaller than 4 KiB. These are the formats
+  that the Mail list previews, and it leaves out the same small images as
+  logos. Other small files, such as an SVG, stay in the source.
+- A file larger than 100 MiB, which `attachment.content.read` does not open.
+- An attachment of a message that is no longer in any folder.
+- An attachment of a message whose links and attachments the Mail reader
+  does not open, because an enabled deny rule of the administrator matches
+  its sender address, sender domain or a link domain in its body. Mail that
+  Cloud sent itself stays in the source.
+
+Months are in UTC, because capabilities do not know the person's time zone.
+
+Access follows the Mail list. A person with access to the whole mailbox sees
+all its attachments. A person with assigned access sees only the attachments
+of their assigned conversations, and their years, months and senders. A
+person who reads one mailbox never sees the folders of another mailbox.
+Credential scopes and resource-bound service accounts limit the source the
+same way as other Mail reads. `attachment.content.read` checks access again
+for each file. It streams the stored attachment with a limit of 100 MiB.
+
+Each folder is one query with keyset pagination of up to 100 entries. For a
+person with access to the whole mailbox, years and months take one index
+step each, a month's senders read that month, and a sender's files read an
+index range. For a person with assigned access, each folder reads only the
+attachments of their assigned conversations, however large the mailbox is.
+A mailbox folder costs six statements, whatever the page size: one to find
+the mailbox, four for access, and one for the folder.
+
+### Upgrade
+
+The upgrade adds the table `mail.attachment_files` and its indexes. It
+changes no existing data. It also adds the trigger
+`message_contents_attachment_file_dates` on `mail.message_contents`, which
+moves a message's rows when its date changes. If you drop
+`mail.attachment_files`, drop this trigger too, because otherwise every sync
+that changes a message's date fails.
+
+Mail fills the table when it stores a message. After start, Mail adds the
+attachments that were stored before the upgrade in a background job, 100
+attachments per transaction. The job saves its position in
+`mail.attachment_files_backfill`. A restart or a second replica continues
+from that position. The job does not wait for a message that Mail is storing
+or syncing at that moment. It leaves that message for a later run and pauses
+for 50 ms between transactions. It reads each message body with the same
+rules that Mail uses when it stores a message. Until the job is done, the
+source shows only part of the older attachments.
+
+A replica that still runs an older image does not add attachments to the
+table. It also removes rows when it loads a message again, because loading
+replaces the message's attachments, and it does not add the new rows.
+Upgrade all Mail replicas together. If an older replica ran during or after
+the job, delete the single row of `mail.attachment_files_backfill`. Mail
+then runs the job again on its next start. A new run adds only the missing
+attachments.

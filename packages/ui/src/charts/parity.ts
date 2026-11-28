@@ -900,13 +900,13 @@ export const chartParity: readonly ChartParityRow[] = [
   {
     id: "core-usage",
     feature: "Core AI usage",
-    proof: { file: "packages/core/src/pages/admin/settings/_components/AiUsageCharts.tsx", test: "AiUsageCharts", kind: "demo" },
+    proof: { file: "packages/core/src/pages/admin/ai/insight-chart.tsx", test: "TimeChart", kind: "demo" },
     spec: line,
   },
   {
     id: "core-quota",
     feature: "Core AI quota",
-    proof: { file: "packages/core/src/pages/admin/settings/_components/AiQuotaCharts.tsx", test: "AiQuotaCharts", kind: "demo" },
+    proof: { file: "packages/core/src/pages/admin/ai/insight-chart.tsx", test: "BarChart", kind: "demo" },
     spec: bar,
   },
   {
