@@ -3849,6 +3849,9 @@
 .k2-ui .k2-path {
   /* the least of the whole path, set from its words by `Path` (its own inline value wins) */
   --k2-path-least: initial;
+  /* its whole width, every place unfolded, measured by `Path` in the browser (its inline value wins); a head block's
+     start asks for it */
+  --k2-path-whole: initial;
   position: relative;
   display: flex;
   align-items: center;

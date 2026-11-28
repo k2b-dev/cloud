@@ -980,14 +980,17 @@ test("390 px in a host's bar with a path: the search opens over the status row a
   );
 });
 
-test("1440 px: Escape in the search of the head is the browser's and the app's, the field is not folded", async () => {
+// review r2 of #4537: Escape leaves the head's search on every width and keeps its words, which keep its field in the row
+test("1440 px: Escape leaves the search of the head and keeps its words, its field stays in the row", async () => {
   await withPage(async (page) => {
     const search = page.getByRole("searchbox", { name: "Durchsuchen" });
     await search.focus();
     await page.keyboard.type("mail");
     await page.keyboard.press("Escape");
     await settled(page);
-    expect(await search.evaluate((input) => document.activeElement === input)).toBe(true);
+    expect(await search.evaluate((input) => document.activeElement === input)).toBe(false);
+    expect(await search.inputValue()).toBe("mail");
+    expect(await search.evaluate((input) => Math.round(input.parentElement!.getBoundingClientRect().width))).toBe(184);
   });
 });
 
