@@ -35,12 +35,16 @@ export const codeNav = (
   ]);
   return {
     ...nav,
-    groups: nav.groups.map((group) => ({
-      ...group,
-      items: group.items.map((item) => {
-        const count = item.nested && item.href ? counts.get(item.href) : undefined;
-        return count ? { ...item, count } : item;
-      }),
-    })),
+    groups: nav.groups.map((group) =>
+      group.tree
+        ? group
+        : {
+            ...group,
+            items: group.items.map((item) => {
+              const count = item.nested && item.href ? counts.get(item.href) : undefined;
+              return count ? { ...item, count } : item;
+            }),
+          },
+    ),
   };
 };

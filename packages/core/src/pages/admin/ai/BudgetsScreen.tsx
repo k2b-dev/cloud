@@ -224,8 +224,7 @@ export default function BudgetsScreen(props: { nav: NavProps; data: AiBudgetsDat
           </Section>
           <Section icon="clock-bolt" title={t().jobs}>
             <Row
-              icon="user-cog"
-              color={AI_COLOR}
+              mark={{ icon: "user-cog", color: AI_COLOR }}
               lines={[
                 t().persBudget,
                 props.data.personalizationTokens
