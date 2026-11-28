@@ -1,228 +1,127 @@
-import { aiAppSkills, aiConversations, aiProjects, aiSkills } from "@k2b/cloud/ai";
-import {
-  AI_BACKGROUND_TASK_PROMPTS,
-  type AiAdminOverview,
-  aiModelCatalog,
-  aiModelUsage,
-  aiUsage,
-  quotaAdminConfig,
-  quotaReport,
-  readAiAdminOverview,
-} from "@k2b/cloud/ai/admin";
-import { type AuthContext, getLocale } from "@k2b/cloud/server";
-import { coreSettings } from "@k2b/cloud/services";
-import { type AiModel, type AiModelVariant, AiUsageQuerySchema, isAdminUser } from "@k2b/cloud/shared";
-import { AdminLayout, getLocalizedRuntimeContext, getRuntimeContext, hasDedicatedRuntimeRoute, requestPath } from "@k2b/cloud/ssr";
-import { Placeholder } from "@k2b/ui";
-import type { JSX } from "solid-js";
+import { aiModelCatalog, readAiAdminCatalog } from "@k2b/cloud/ai/admin";
+import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { isAdminUser } from "@k2b/cloud/shared";
+import { AdminLayout, getLocalizedRuntimeContext, getRuntimeContext, hasDedicatedRuntimeRoute } from "@k2b/cloud/ssr";
 import { ssr } from "../../../config";
-import AiProjectsAdminPanel from "../settings/_components/AiProjectsAdminPanel";
-import AiQuotaAdmin from "../settings/_components/AiQuotaAdmin.island";
-import AiSkillsAdminPanel from "../settings/_components/AiSkillsAdminPanel";
-import AiUsageAdminPanel from "../settings/_components/AiUsageAdminPanel";
-import CoreSettingsForm from "../settings/_components/CoreSettingsForm.island";
-import { buildEntries } from "../settings/entries";
-import { isWideSection, parseAiAreaQuery } from "./area";
-import { aiAreaMessages } from "./messages";
-import type { AiCatalogIndex } from "./presentation";
-import { AiAreaView } from "./view";
+import AiStateScreen from "./AiStateScreen.island";
+import { parseAiAreaQuery } from "./area";
+import BudgetsScreen from "./BudgetsScreen.island";
+import ClassesScreen from "./ClassesScreen.island";
+import { type AiCatalog, loadAiBudgets, loadAiClasses, loadAiProviders } from "./catalog-data";
+import { loadAiProjects, loadAiSkills } from "./content-data";
+import { loadAiPeople, loadAiUsage } from "./insight-data";
+import { aiNav, aiSectionLabel } from "./nav";
+import PeopleScreen from "./PeopleScreen.island";
+import ProjectsScreen from "./ProjectsScreen.island";
+import ProvidersScreen from "./ProvidersScreen.island";
+import type { AiPageInput } from "./page-input";
+import SettingsScreen from "./SettingsScreen.island";
+import SkillsScreen from "./SkillsScreen.island";
+import { loadAiSettings } from "./settings-data";
+import UsageScreen from "./UsageScreen.island";
 
-type Overview = AiAdminOverview;
-
-const sectionIcon = { general: "ti ti-adjustments", jobs: "ti ti-activity", tools: "ti ti-plug" } as const;
-
+/**
+ * The AI area on v2: one section per address (`sec`, Model classes without one), each a screen of its own under the
+ * area's entry in the admin bar. The catalog sections read the overview; every section reads it for the bar's dots.
+ */
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
-  const t = aiAreaMessages.resolve([locale]).t;
   const query = parseAiAreaQuery(c.req.query());
+  const section = query.sec ?? "classes";
+  const user = c.get("user");
   const runtime = getLocalizedRuntimeContext(c);
+  const input: AiPageInput = {
+    locale,
+    query: c.req.query(),
+    url: c.req.url,
+    user,
+    appNames: Object.fromEntries(runtime.apps.map((app) => [app.id, app.name])),
+    showAiJobsLink: hasDedicatedRuntimeRoute(getRuntimeContext(c).apps, "/admin/observability/jobs", "core"),
+    dates: getDateConfig(c),
+  };
 
-  let overview: Overview | null = null;
-  let index: AiCatalogIndex | null = null;
-  let loadFailed = false;
+  // The overview, providers and models are read once here and passed on; the variants only where a section shows them.
+  const variantsShown = section === "classes" || section === "providers";
+  let catalog: AiCatalog | null = null;
   try {
-    const [loaded, models, variants] = await Promise.all([readAiAdminOverview(), aiModelCatalog.models(), aiModelCatalog.variants()]);
-    overview = loaded;
-    index = { models, variants, assignments: loaded.assignments };
+    const [read, variants] = await Promise.all([readAiAdminCatalog(), variantsShown ? aiModelCatalog.variants() : []]);
+    catalog = { ...read, index: { models: read.models, variants, assignments: read.overview.assignments } };
   } catch (error) {
     console.error("[admin/ai] overview failed", error);
-    loadFailed = true;
   }
-
-  const provider = query.p ? overview?.providers.find((candidate) => candidate.id === query.p) : undefined;
-  let detailLoadFailed = false;
-  const detailFailure = (error: unknown) => {
-    if (!(error instanceof Error && "code" in error && error.code === "model_not_found")) {
-      console.error("[admin/ai] detail failed", error);
-      detailLoadFailed = true;
-    }
-    return null;
-  };
-  const providerDetail = provider ? await aiModelCatalog.providerDetail(provider.id).catch(detailFailure) : null;
-  const model: (AiModel & { variants: AiModelVariant[] }) | null =
-    query.m && provider ? await aiModelCatalog.modelDetail(query.m).catch(detailFailure) : null;
-  const [usage, quotaConfig] = model
-    ? await Promise.all([
-        aiModelUsage(
-          model.variants.map((variant) => variant.id),
-          [model.id],
-        ).catch(() => null),
-        quotaAdminConfig().catch(() => null),
-      ])
-    : [null, null];
-  const assignmentDetails = query.sec === "classes" && query.slot ? await aiModelCatalog.assignmentsForAdmin().catch(() => null) : null;
-
-  // Wide sections keep their content and loaders from the former settings tabs.
-  const section = query.sec;
-  const settingsEntries = section === "general" || section === "jobs" || section === "tools" ? await buildEntries("ai", locale) : [];
-  const enrichment = section === "jobs" ? await aiConversations.getEnrichmentOverview() : null;
-  const showAiJobsLink = hasDedicatedRuntimeRoute(getRuntimeContext(c).apps, "/admin/observability/jobs", "core");
-  const documentationBase = await coreSettings.get<string>("app.documentation_url");
-  const search = (c.req.query("search") ?? "").trim();
-  const requestedPage = Number.parseInt(c.req.query("page") ?? "1", 10);
-  const page = Number.isFinite(requestedPage) ? requestedPage : 1;
-  const skillsData =
-    section === "skills"
-      ? await Promise.all([
-          aiSkills.admin.list({ search: search || undefined, page, perPage: 100 }),
-          aiSkills.admin.summary({ search: search || undefined }),
-          aiAppSkills.appSkillIssues(),
-        ])
-      : null;
-  const projectsData =
-    section === "projects"
-      ? await Promise.all([
-          aiProjects.admin.list({ search: search || undefined, page, perPage: 100 }),
-          aiProjects.admin.summary({ search: search || undefined }),
-        ])
-      : null;
-  const usageQuery = section === "usage" ? AiUsageQuerySchema.safeParse(c.req.query()) : null;
-  if (usageQuery && !usageQuery.success) return c.text("Invalid AI usage filters", 400);
-  const usageReport = usageQuery?.success ? await aiUsage.report(usageQuery.data.range, usageQuery.data) : null;
-  // Budgets: the rule configuration always; the per-person report only when that row is open.
-  const budgetConfig = section === "budgets" ? await quotaAdminConfig() : null;
-  const quotaModels = (index?.models ?? []).map((m) => ({
-    id: m.id,
-    label: m.label,
-    pricing: m.pricing ?? undefined,
-    enabled: m.enabled,
-    capabilities: m.kind === "transcription" ? ["transcription"] : [...m.capabilities],
-  }));
-  const peopleReport = section === "budgets" && query.rule === "people" ? await quotaReport({ ...c.req.query(), view: "users" }) : null;
-  const personalizationTokens =
-    section === "budgets" ? await coreSettings.get<number>("ai.memory_learning_monthly_token_budget").catch(() => null) : null;
-  const budgets =
-    budgetConfig && index
-      ? {
-          config: budgetConfig,
-          personalizationTokens,
-          models: index.models
-            .filter((m) => (m.kind === "chat" || m.kind === "decision") && m.enabled)
-            .map((m) => ({
-              id: m.id,
-              label: m.label,
-              priced: Boolean(m.pricing && (m.pricing.inputPerMillion > 0 || m.pricing.outputPerMillion > 0)),
-            })),
-          people: peopleReport ? <AiQuotaAdmin config={budgetConfig} models={quotaModels} report={peopleReport} /> : undefined,
-        }
-      : undefined;
-
-  const sectionTitle = section
-    ? {
-        classes: t.recs,
-        providers: provider?.label ?? t.g_models,
-        general: t.general,
-        budgets: t.budgets,
-        jobs: t.jobs,
-        tools: t.tools,
-        skills: t.skills,
-        projects: t.projects,
-        usage: t.usage,
-      }[section]
-    : t.aiArea;
-
-  const failure = (
-    <Placeholder
-      state="error"
-      icon="ti ti-alert-triangle"
-      title={t.loadFailTitle}
-      description={t.loadFailSub}
-      action={
-        <a class="k2b-button" data-variant="secondary" href={requestPath(c)}>
-          <i class="ti ti-refresh" aria-hidden="true" />
-          {t.retry}
-        </a>
-      }
-    />
+  const nav = aiNav(c, locale, section, catalog?.overview);
+  const title = aiSectionLabel(locale, section);
+  const state = (kind: "noPermission" | "failed") => () => (
+    <AdminLayout c={c} ui="v2" title={title}>
+      <AiStateScreen nav={nav} section={section} kind={kind} />
+    </AdminLayout>
   );
+  if (!isAdminUser(user)) return state("noPermission");
 
-  const wideContent = (): JSX.Element => {
-    if (section === "general" || section === "jobs" || section === "tools")
-      return (
-        <CoreSettingsForm
-          documentationBase={documentationBase}
-          documentationTopic={`ai-${section}`}
-          title={sectionTitle}
-          subtitle=""
-          icon={sectionIcon[section]}
-          entries={settingsEntries}
-          aiEnrichmentOverview={enrichment}
-          backgroundTaskPrompts={section === "jobs" ? AI_BACKGROUND_TASK_PROMPTS : undefined}
-          aiSection={section}
-          showAiJobsLink={showAiJobsLink}
-          embedded
-        />
+  if (section === "classes" || section === "providers" || (section === "budgets" && query.rule !== "people")) {
+    if (!catalog) return state("failed");
+    const { overview, index } = catalog;
+    if (section === "classes") {
+      const data = await loadAiClasses(index, overview, query);
+      return () => (
+        <AdminLayout c={c} ui="v2" title={title}>
+          <ClassesScreen nav={nav} data={data} appNames={input.appNames} />
+        </AdminLayout>
       );
-    if (section === "skills" && skillsData)
-      return (
-        <AiSkillsAdminPanel
-          skills={skillsData[0].items}
-          summary={skillsData[1]}
-          appSkillIssues={skillsData[2]}
-          appNames={Object.fromEntries(runtime.apps.map((app) => [app.id, app.name]))}
-          total={skillsData[0].total}
-          page={skillsData[0].page}
-          perPage={skillsData[0].perPage}
-          search={search}
-        />
+    }
+    if (section === "providers") {
+      const data = await loadAiProviders(catalog, query);
+      return () => (
+        <AdminLayout c={c} ui="v2" title={title}>
+          <ProvidersScreen nav={nav} data={data} />
+        </AdminLayout>
       );
-    if (section === "projects" && projectsData)
-      return (
-        <AiProjectsAdminPanel
-          projects={projectsData[0].items}
-          summary={projectsData[1]}
-          total={projectsData[0].total}
-          page={projectsData[0].page}
-          perPage={projectsData[0].perPage}
-          search={search}
-        />
-      );
-    if (section === "usage" && usageReport) return <AiUsageAdminPanel report={usageReport} />;
-    return failure;
-  };
-
+    }
+    const data = await loadAiBudgets(index, { brake: query.rule === "brake" });
+    return () => (
+      <AdminLayout c={c} ui="v2" title={title}>
+        <BudgetsScreen nav={nav} data={data} rule={query.rule ?? null} />
+      </AdminLayout>
+    );
+  }
+  if (section === "budgets") {
+    if (!catalog) return state("failed");
+    const data = await loadAiPeople(input, catalog.models);
+    return () => (
+      <AdminLayout c={c} ui="v2" title={title}>
+        <PeopleScreen nav={nav} data={data} />
+      </AdminLayout>
+    );
+  }
+  if (section === "general" || section === "jobs" || section === "tools") {
+    const data = await loadAiSettings(input, section);
+    return () => (
+      <AdminLayout c={c} ui="v2" title={title}>
+        <SettingsScreen nav={nav} data={data} />
+      </AdminLayout>
+    );
+  }
+  if (section === "skills") {
+    const data = await loadAiSkills(input);
+    return () => (
+      <AdminLayout c={c} ui="v2" title={title}>
+        <SkillsScreen nav={nav} data={data} />
+      </AdminLayout>
+    );
+  }
+  if (section === "projects") {
+    const data = await loadAiProjects(input);
+    return () => (
+      <AdminLayout c={c} ui="v2" title={title}>
+        <ProjectsScreen nav={nav} data={data} />
+      </AdminLayout>
+    );
+  }
+  const data = await loadAiUsage(input);
+  if (!data) return c.text("Invalid AI usage filters", 400);
   return () => (
-    <AdminLayout c={c} title={t.aiArea} ownMain>
-      <AiAreaView
-        noPermission={!isAdminUser(c.get("user"))}
-        t={t}
-        locale={locale}
-        query={query}
-        overview={overview}
-        index={index}
-        loadFailed={loadFailed}
-        detailLoadFailed={detailLoadFailed}
-        provider={provider}
-        providerDetail={providerDetail}
-        model={model}
-        usage={usage}
-        accountingUnit={quotaConfig?.unit ?? null}
-        assignmentDetails={assignmentDetails}
-        appNames={Object.fromEntries(runtime.apps.map((app) => [app.id, app.name]))}
-        retryHref={requestPath(c)}
-        wide={isWideSection(section) ? wideContent() : undefined}
-        budgets={budgets}
-      />
+    <AdminLayout c={c} ui="v2" title={title}>
+      <UsageScreen nav={nav} data={data} />
     </AdminLayout>
   );
 });

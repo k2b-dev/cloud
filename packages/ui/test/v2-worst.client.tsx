@@ -101,6 +101,14 @@ else if (scenario === "deeds")
             />
             <Row
               icon="world"
+              lines={["kasse.example.test", "Hauptdomain", "certificate has expired for kasse.example.test since last week"]}
+              time="09:41"
+              marks={<Chip status="bad">Zertifikat</Chip>}
+              action={{ label: "Prüfen", icon: "refresh", onClick: () => undefined }}
+              end={<Menu label="Aktionen für kasse.example.test" items={[{ label: "Entfernen", onClick: () => undefined }]} />}
+            />
+            <Row
+              icon="world"
               lines={[
                 "archiv.example.test",
                 "Weiterleitung auf lager.example.test",

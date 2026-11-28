@@ -248,7 +248,7 @@ Eine Zustimmung gilt nur für diese gespeicherte Fassung des Entwurfs. Bearbeite
 
 ## Eine Nachricht sicher wiederverwenden {icon="copy"}
 
-Öffne das Aktionsmenü einer Nachricht und wähle **Als neue Nachricht verwenden**. Mail erstellt aus Empfängern, Betreff und Inhalt einen unabhängigen Entwurf. Du wählst die Absenderidentität und ob Mail die Anhänge kopiert.
+Öffne das Aktionsmenü einer Nachricht und wähle **Als neue Nachricht verwenden**. Mail erstellt aus Empfängern, Betreff und Inhalt einen unabhängigen Entwurf. Du wählst die Absenderidentität und ob Mail die Anhänge kopiert. Der Entwurf öffnet sich als Fenster über dem Postfach, wie eine neue Nachricht.
 
 Mail ändert die ursprüngliche Nachricht und Unterhaltung nie, und es wird nichts sofort gesendet. Prüfe Absenderidentität, Empfänger, Inhalt und Anhänge und sende dann über den normalen Versand. Wird dieselbe Anfrage zum Erstellen wiederholt, liefert Mail denselben Entwurf und legt kein Duplikat an.
 

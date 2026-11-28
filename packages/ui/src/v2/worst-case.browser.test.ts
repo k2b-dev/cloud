@@ -253,8 +253,14 @@ for (const width of [1024, 390])
             };
           }),
         );
-        // a row of three lines without marks gives line 3 the whole width, as line 2 (review of c19981f9f2)
-        expect(parts).toEqual([{ marksShow: true, underMarks: false }, { marksShow: true, underMarks: false }, { l3AsWideAsL2: true }]);
+        // a row of three lines without marks gives line 3 the whole width, as line 2 (review of c19981f9f2); a row with a
+        // time as well keeps line 3 and its marks apart (#4537 brought that grid)
+        expect(parts).toEqual([
+          { marksShow: true, underMarks: false },
+          { marksShow: true, underMarks: false },
+          { marksShow: true, underMarks: false },
+          { l3AsWideAsL2: true },
+        ]);
         expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
       },
       "deeds",

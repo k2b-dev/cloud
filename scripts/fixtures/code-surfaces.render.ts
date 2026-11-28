@@ -13,8 +13,8 @@ const [
   { LocaleProvider },
   { default: CodePage },
   { codePageFixture, CODE_PAGE_FIXTURE_STATES },
-  { CodeAreaView },
-  { codeAdminMessages },
+  { default: CodeScreen },
+  { adminNavFixture },
   { parseCodeAreaQuery },
   admin,
   { AiTurnBlockView },
@@ -25,8 +25,8 @@ const [
   import("../../packages/ui/src/index"),
   import("../../packages/cloud/src/ssr/code-page/CodePage"),
   import("../../packages/cloud/src/ssr/code-page/code-page.fixture"),
-  import("../../packages/core/src/pages/admin/code/view"),
-  import("../../packages/core/src/pages/admin/code/messages"),
+  import("../../packages/core/src/pages/admin/code/screen"),
+  import("../../packages/core/src/pages/admin/admin-v2.fixture"),
   import("../../packages/core/src/pages/admin/code/area"),
   import("../../packages/core/src/pages/admin/code/CodeArea.fixture-data"),
   import("../../packages/cloud/src/ai/ui"),
@@ -47,6 +47,8 @@ function collect(file: string, name: string, locale: string, render: Parameters<
   // Only explicitly marked source fields are exempt. A whole review or tab container never is.
   const ordinary = new HTMLRewriter()
     .on('[data-code-source-region="admin-approval"], [data-code-source-region="code-tab"]', { element: (element) => element.remove() })
+    // Layout rules and serialized island data are no visible text (the v2 workspace writes its own style element).
+    .on("style, script", { element: (element) => element.remove() })
     .transform(html);
   fixtures.push({ file, name: `${locale}/${name}`, text: renderedText(withoutRunLogLifecycle(ordinary), "\n") });
 }
@@ -126,16 +128,16 @@ for (const locale of ["de", "en"] as const) {
   ];
   for (const state of admin.CODE_FIXTURE_STATES)
     for (const query of queries)
-      collect("packages/core/src/pages/admin/code/view.tsx", `admin/${state}/${JSON.stringify(query)}`, locale, () =>
-        createComponent(CodeAreaView, {
-          t: codeAdminMessages.resolve([locale]).t,
+      collect("packages/core/src/pages/admin/code/screen.tsx", `admin/${state}/${JSON.stringify(query)}`, locale, () =>
+        createComponent(CodeScreen, {
+          nav: adminNavFixture("/admin/code"),
           locale,
           dateConfig: { locale, timeZone: "Europe/Berlin" },
           query: parseCodeAreaQuery(query),
+          viewerId: admin.FIXTURE_PEOPLE.ben,
           data: state === "noperm" ? null : admin.codeFixtureData(state, query, locale),
           noPermission: state === "noperm",
-          retryHref: "/admin/code",
-          appNames: { mail: "Mail", spaces: "Spaces", werkstatt: "Werkstattbuch" },
+          apps: { mail: { name: "Mail" }, spaces: { name: "Spaces" }, werkstatt: { name: "Werkstattbuch" } },
         }),
       );
   for (const [name, result] of [
