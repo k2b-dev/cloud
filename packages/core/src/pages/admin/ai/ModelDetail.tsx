@@ -164,7 +164,7 @@ const slotName = (t: AiAreaMessages, slot: AiModelSlot) =>
  * revision it was read at; someone else's save becomes a choice per field.
  */
 export default function ModelDetail(props: {
-  provider: AiProvider & { models: AiModel[] };
+  provider: AiProvider;
   model: AiModelDetailData;
   usage: AiModelUsage | null;
   slots: AiModelSlot[];

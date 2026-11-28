@@ -69,7 +69,7 @@ for (const locale of ["de", "en"]) {
           locale,
           get children() {
             return createComponent(ModelDetail, {
-              provider: { ...provider, models: [model] },
+              provider,
               model,
               usage: null,
               slots: [],

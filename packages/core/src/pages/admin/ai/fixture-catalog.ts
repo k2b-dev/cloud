@@ -4,6 +4,7 @@ import { type AiFixtureCatalog, aiFixtureCatalog, aiFixtureOverview, aiFixtureUs
 import { parseAiAreaQuery } from "./area";
 import type { AiBudgetsData, AiClassesData, AiProvidersData } from "./catalog-data";
 import type { AiFixtureApi, AiFixtureInput } from "./fixture-types";
+import { aiProvidersView } from "./provider-view";
 
 /** States the captures and tests switch with `?state=`. */
 export type AiCatalogFixtureState =
@@ -144,8 +145,7 @@ export const providersFixture = (input: AiFixtureInput): AiProvidersData => {
   const catalog = catalogFor(input.state);
   const { overview, index } = indexOf(catalog);
   const query = parseAiAreaQuery(Object.fromEntries(input.params));
-  const row = catalog.providers.find((entry) => entry.id === query.p);
-  const provider = row ? { ...row, models: catalog.models.filter((entry) => entry.providerId === row.id) } : null;
+  const provider = catalog.providers.find((entry) => entry.id === query.p) ?? null;
   const modelRow = query.m ? catalog.models.find((entry) => entry.id === query.m) : undefined;
   const model = modelRow
     ? {
@@ -172,8 +172,7 @@ export const providersFixture = (input: AiFixtureInput): AiProvidersData => {
   const failed = input.state === "detailfail";
   return {
     overview,
-    models: index.models,
-    variants: index.variants,
+    ...aiProvidersView(index, query),
     open: { p: query.p ?? null, m: query.m ?? null, connection: query.pane === "conn", dialog: query.o ?? null, mq: query.mq ?? "" },
     provider: failed ? null : provider,
     model: failed || input.state === "detailempty" ? null : model,

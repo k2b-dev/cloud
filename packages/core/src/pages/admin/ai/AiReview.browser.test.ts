@@ -115,7 +115,9 @@ test("a provider with 1,000 models is ready at once with its first 100, a search
     const started = performance.now();
     await page.goto(`${fixture.url}?locale=en&${query}`);
     await page.locator('main.k2-ui[data-ready="true"]').waitFor();
-    return performance.now() - started;
+    const took = performance.now() - started;
+    console.info(JSON.stringify({ ready: query, ms: Math.round(took) }));
+    return took;
   };
   expect(await timed("sec=providers&p=cortecs&state=worst")).toBeLessThan(1500);
   expect(await rows().count()).toBeLessThanOrEqual(100);

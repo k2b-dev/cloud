@@ -1,4 +1,4 @@
-import type { AiModel, AiProvider } from "@k2b/cloud/shared";
+import type { AiProvider } from "@k2b/cloud/shared";
 import { Bar, Button, Facts, Field, Input, Menu, Notice, Pane, Section, Text, useLocale, useToast } from "@k2b/ui/v2";
 import { createSignal, onMount, Show } from "solid-js";
 import { type AiAdminConflict, aiAdminApi, asAiConflict, readAiAdmin, reloadAiArea } from "./client";
@@ -21,11 +21,7 @@ const draftOf = (provider: AiProvider): Draft => ({
  * A4: the provider's connection, which every model of the provider uses: name, address, key, data boundary and extra
  * headers, saved with "Speichern" in the head; testing, switching off and deleting wait behind "…".
  */
-export default function ConnectionDetail(props: {
-  provider: AiProvider & { models: AiModel[] };
-  back: { label: string; href: string };
-  onDelete: () => void;
-}) {
+export default function ConnectionDetail(props: { provider: AiProvider; back: { label: string; href: string }; onDelete: () => void }) {
   const locale = useLocale();
   const t = () => aiAreaMessages.resolve([locale()]).t;
   const toast = useToast();

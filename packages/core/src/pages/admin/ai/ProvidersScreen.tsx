@@ -22,7 +22,7 @@ import {
   useLocale,
 } from "@k2b/ui/v2";
 import { createSignal, onMount, Show } from "solid-js";
-import { CappedNote, capped, ROW_CAP } from "../_area/capped";
+import { CappedNote, ROW_CAP } from "../_area/capped";
 import StateWord from "../_area/StateWord";
 import { AI_AREA_PATH, aiAreaHref } from "./area";
 import ConnectionDetail from "./ConnectionDetail";
@@ -43,6 +43,7 @@ import {
 } from "./presentation";
 import { AddModelsDialog, AddProviderDialog } from "./provider-dialogs";
 import { AiProviderNotice } from "./provider-notice";
+import type { AiProviderFacts } from "./provider-view";
 import { VariantDialog } from "./variants";
 
 type ProviderRow = AiProvidersData["overview"]["providers"][number];
@@ -86,14 +87,14 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
     window.history.replaceState(window.history.state, "", `${window.location.pathname}?${params.toString()}`);
   });
 
-  const modelsOf = (id: string) => data().models.filter((model) => model.providerId === id);
+  /** A provider's model counts and the classes and tools its models fill, counted on the server. */
+  const factsOf = (id: string): AiProviderFacts => data().catalog.providers[id] ?? { models: 0, enabled: 0, slots: [] };
   const slotsOf = (model: AiModel) => aiModelSlots(index(), model.id);
-  /** The search in the open provider's models (`mq`); the whole catalog is in the island, so it filters here. */
+  /** The search in the open provider's models (`mq`); the server answers it with the rows and how many match. */
   const modelQuery = () => data().open.mq;
-  const matchingModels = (id: string) => {
-    const needle = modelQuery().toLowerCase();
-    const models = modelsOf(id);
-    return needle ? models.filter((model) => `${model.label} ${model.providerModel} ${model.id}`.toLowerCase().includes(needle)) : models;
+  const rows = () => {
+    const shown = new Set(data().list.rows);
+    return data().models.filter((model) => shown.has(model.id));
   };
   const providersHref = aiAreaHref({ sec: "providers" });
   /** The open provider keeps its model search; another provider opens with all of its models. */
@@ -132,7 +133,9 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
           ? t().kindDecision
           : t().kindChat;
   const providerUse = (id: string) =>
-    [...new Set(modelsOf(id).flatMap((model) => slotsOf(model)))].map((slot) => aiSlotLabel(t(), slot)).join(", ");
+    factsOf(id)
+      .slots.map((slot) => aiSlotLabel(t(), slot))
+      .join(", ");
   const classes = (model: AiModel) =>
     slotsOf(model)
       .map((slot) => aiSlotLabel(t(), slot))
@@ -203,7 +206,7 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
    * The search in a provider's models, where its list is longer than one capped table or a search is set. Enter sends
    * `mq` also without JavaScript (a GET form, with the open model kept); Escape in a filled field shows all again.
    */
-  const searchable = (entry: ProviderRow) => modelsOf(entry.id).length > ROW_CAP || Boolean(modelQuery());
+  const searchable = (entry: ProviderRow) => factsOf(entry.id).models > ROW_CAP || Boolean(modelQuery());
   const searchParams = (entry: ProviderRow) => {
     const params: [string, string][] = [
       ["sec", "providers"],
@@ -242,8 +245,8 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
   // k2b-ui gap: virtual Table (MW, #4211); until it lands the table shows the first ROW_CAP matches and a line says how to reach the rest
   const modelTable = (entry: ProviderRow, narrow: boolean) => (
     <Table
-      label={t().nModels({ p: modelsOf(entry.id).length })}
-      rows={capped(matchingModels(entry.id))}
+      label={t().nModels({ p: factsOf(entry.id).models })}
+      rows={rows()}
       rowKey={(model) => model.id}
       current={data().open.m ?? undefined}
       open={(model) => ({ href: aiAreaHref({ sec: "providers", p: entry.id, m: model.id, mq: modelQuery() }) })}
@@ -285,9 +288,9 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
     />
   );
 
-  const ProviderDetail = (detail: { entry: ProviderRow; full: AiProvider & { models: AiModel[] } }) => {
+  const ProviderDetail = (detail: { entry: ProviderRow; full: AiProvider }) => {
     const state = () => aiProviderState(detail.entry);
-    const active = () => modelsOf(detail.entry.id).filter((model) => model.enabled).length;
+    const active = () => factsOf(detail.entry.id).enabled;
     return (
       <Pane
         detail
@@ -344,12 +347,12 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
         <Section
           icon="cube"
           title={t().variantsModels}
-          count={modelsOf(detail.entry.id).length}
+          count={factsOf(detail.entry.id).models}
           actions={[{ label: t().addModels, icon: "plus", onClick: () => setAdding("models") }]}
         >
           {modelSearch(detail.entry)}
           {modelTable(detail.entry, false)}
-          <CappedNote total={matchingModels(detail.entry.id).length} />
+          <CappedNote total={data().list.matching} />
         </Section>
         <Section icon="plug-connected" title={t().connection}>
           <Facts
@@ -452,7 +455,7 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
                     lead={t().providersLead({ ok: connected(), total: providers().length })}
                     // the exceptions name who: "1 gestört · Cortecs" (identity B, rule 1)
                     facts={[
-                      { value: data().models.length, after: t().modelsWord },
+                      { value: data().catalog.total, after: t().modelsWord },
                       ...problems().map((problem) => ({
                         value: problem.names.length,
                         after: `${aiProviderStateLabel(t(), problem.state)} · ${problem.names.join(", ")}`,
@@ -468,15 +471,15 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
         >
           {(entry) => (
             <Pane
-              label={t().nModels({ p: modelsOf(entry().id).length })}
+              label={t().nModels({ p: factsOf(entry().id).models })}
               width={{ min: 300, default: 380 }}
               scrollKey="admin-ai-provider-models"
               status={
-                <StatusRow lead={`${entry().label} · ${t().nModels({ p: modelsOf(entry().id).length })}`} filters={modelSearch(entry())} />
+                <StatusRow lead={`${entry().label} · ${t().nModels({ p: factsOf(entry().id).models })}`} filters={modelSearch(entry())} />
               }
             >
               {modelTable(entry(), true)}
-              <CappedNote total={matchingModels(entry().id).length} />
+              <CappedNote total={data().list.matching} />
             </Pane>
           )}
         </Show>
@@ -492,7 +495,7 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
             providerType={entry().type}
             chatOnly={entry().dataBoundary === "restricted"}
             providerLabel={entry().label}
-            existing={modelsOf(entry().id).map((model) => model.providerModel)}
+            existing={data().list.existing}
           />
         )}
       </Show>

@@ -14,6 +14,7 @@ import type { AiModel, AiModelSlot, AiModelUsage, AiModelVariant, AiProvider, Ai
 import type { BackgroundCostState } from "../settings/_components/AiBackgroundBudget";
 import type { AiAreaQuery } from "./area";
 import type { AiCatalogIndex } from "./presentation";
+import { aiProvidersView } from "./provider-view";
 
 /** A detail the page could not read for a reason other than "it no longer exists". */
 const failed = Symbol("failed");
@@ -49,15 +50,13 @@ type ModelDetail = AiModel & { variants: AiModelVariant[]; access?: AiModelAcces
 export type AiCatalog = Awaited<ReturnType<typeof readAiAdminCatalog>> & { index: AiCatalogIndex };
 
 /**
- * Providers: the overview's providers with the catalog; an open provider with its connection and models, an open
- * model with its variants, use and access, or the provider's connection form. The provider, its models and the
- * model's variants come from the catalog the page read; only the model's access is read here.
+ * Providers: the overview's providers with what the view shows of the catalog (`aiProvidersView`); an open provider
+ * with its connection and models, an open model with its variants, use and access, or the provider's connection form.
+ * The provider, its models and the model's variants come from the catalog the page read; only the model's access is
+ * read here.
  */
 export const loadAiProviders = async ({ overview, providers, index }: AiCatalog, query: AiAreaQuery) => {
-  const found = query.p ? providers.find((candidate) => candidate.id === query.p) : undefined;
-  const provider: (AiProvider & { models: AiModel[] }) | null = found
-    ? { ...found, models: index.models.filter((model) => model.providerId === found.id) }
-    : null;
+  const provider: AiProvider | null = (query.p ? providers.find((candidate) => candidate.id === query.p) : undefined) ?? null;
   const opened = query.m && provider ? index.models.find((model) => model.id === query.m) : undefined;
   const variants = opened ? index.variants.filter((variant) => variant.modelId === opened.id) : [];
   const [access, usage, quota] = opened
@@ -73,8 +72,7 @@ export const loadAiProviders = async ({ overview, providers, index }: AiCatalog,
   const model: ModelDetail | null = opened && access !== failed ? { ...opened, variants, access: access?.[opened.id] } : null;
   return {
     overview,
-    models: index.models,
-    variants: index.variants,
+    ...aiProvidersView(index, query),
     open: { p: query.p ?? null, m: query.m ?? null, connection: query.pane === "conn", dialog: query.o ?? null, mq: query.mq ?? "" },
     provider,
     model,
