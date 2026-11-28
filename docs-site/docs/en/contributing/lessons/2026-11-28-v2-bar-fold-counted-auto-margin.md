@@ -1,0 +1,6 @@
+### A selection bar folded and unfolded without end
+
+- **What happened:** After #4537, the selection bar of a v2 `StatusRow` with six deeds folded its last deeds into "…", unfolded them on the next frame and folded them again, about 240 changes a second, at some widths (1024 px with a side pane, a column of 900 px). Its "…" was never still long enough to be pressed.
+- **Root cause:** `bar-fold.ts` began to add each control's margins to its width, so that a head search open over its neighbours counts only its 36 px place. The way out of a selection ("Auswahl aufheben") stands at the bar's end with `margin-left: auto`, and `getComputedStyle` reads an `auto` margin back as the free room it takes. Counted as used room it made the bar too wide; folding freed room, the margin grew, and the next measure unfolded again.
+- **Error class:** A measure that reads a used value which itself depends on the result of the measure (an `auto` margin, a flexible width) feeds back into its own decision.
+- **Guard:** The fold counts only negative margins, the one case it meant (a part pulled over its neighbours); positive and `auto` margins stay out, as before. `head-media.browser.test.ts` ("a selection with six deeds … at 1024 px", "a selection in a column of 900 px …") was red with the loop and is green.
