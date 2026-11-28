@@ -294,10 +294,11 @@ test("a tree group keeps its loaded places: a place with children folds them beh
   const dom = createDomTestHarness();
   const { default: V2WorkspaceNavigation } = await import("./V2WorkspaceNavigation");
   const { readWorkspaceNavigation } = await import("./workspace-navigation");
+  const { navTree } = await import("@k2b/ui/v2");
   const groups: NavGroup[] = [
     {
       label: "Ordner",
-      tree: {
+      tree: navTree({
         label: "Ordner",
         current: "texte",
         items: [
@@ -311,7 +312,7 @@ test("a tree group keeps its loaded places: a place with children folds them beh
           // children not loaded yet: a plain link, the folder opens as a page
           { key: "archiv", label: "Archiv", icon: "archive", href: "/files/archiv", branch: true },
         ],
-      },
+      }),
     },
   ];
   const page = render(() => <V2WorkspaceNavigation label="Dateien" groups={groups} />, dom.root);

@@ -339,6 +339,10 @@ test("colour: a swatch press sets it, a typed CSS colour becomes its code, the h
     await code.press("Enter");
     await page.waitForFunction(() => (window.__deeds ?? []).includes("accent:#0f766e"));
     expect(await accent.getByRole("option", { name: "Farbe #0f766e" }).getAttribute("aria-selected")).toBe("true");
+    // the swatch is named for its deed and described by the code beside it, so it says which colour it holds
+    const described = await accent.getByRole("button", { name: "Farbe wählen" }).getAttribute("aria-describedby");
+    expect(described).toBeTruthy();
+    expect(await code.getAttribute("id")).toBe(described);
     // area and hue stand on a panel behind the swatch, so a settings row stays one line
     await accent.getByRole("button", { name: "Farbe wählen" }).click();
     const hue = page.getByRole("slider", { name: "Farbton" });
@@ -744,9 +748,23 @@ test("a disclosure head is a plain line: no frame, no fill, no padding of a nati
     const head = page.locator(".k2-disc-head").first();
     const look = await head.evaluate((element) => {
       const style = getComputedStyle(element);
-      return { border: style.borderTopWidth, background: style.backgroundColor, appearance: style.appearance };
+      const edge = getComputedStyle(element).getPropertyValue("--k2-edge").trim();
+      return {
+        border: style.borderTopWidth,
+        background: style.backgroundColor,
+        appearance: style.appearance,
+        // its own padding, the line's 10 px and the edge of its surface, never the native button's
+        padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
+        expected: ["10px", edge, "10px", edge],
+      };
     });
-    expect(look).toEqual({ border: "0px", background: "rgba(0, 0, 0, 0)", appearance: "none" });
+    expect(look).toEqual({
+      border: "0px",
+      background: "rgba(0, 0, 0, 0)",
+      appearance: "none",
+      padding: look.expected,
+      expected: look.expected,
+    });
   });
 });
 

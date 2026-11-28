@@ -16,8 +16,8 @@ import {
   NOTEBOOKS_APP_ID,
 } from "./access";
 import * as activity from "./activity";
-import helloMd from "./hello.md" with { type: "text" };
 import * as notes from "./notes";
+import { welcomeMarkdown } from "./welcome";
 import { invalidated, notebookUpdated, workspaceTransaction } from "./workspace-events";
 
 // ==========================
@@ -474,6 +474,8 @@ export const create = async (params: {
   data: CreateNotebook;
   creatorId: string;
   seedWelcome?: boolean;
+  /** The language of the welcome page, as the person's request; English where it has none of its own. */
+  locale?: string;
 }): Promise<MutationResult<Notebook>> => {
   const { data, creatorId } = params;
   const seedWelcome = params.seedWelcome ?? true;
@@ -506,7 +508,12 @@ export const create = async (params: {
       await activity.record({ notebookId: row.id, actor: { kind: "user", id: creatorId }, action: "notebook.created" }, tx);
       await publishNotebooksEvent(tx, "notebook.created", row.short_id, row.short_id);
       if (seedWelcome) {
-        const created = await notes.create({ data: { notebookId: row.id, contentMd: helloMd }, creatorId, exactContent: true, tx });
+        const created = await notes.create({
+          data: { notebookId: row.id, contentMd: welcomeMarkdown(params.locale) },
+          creatorId,
+          exactContent: true,
+          tx,
+        });
         if (!created.ok) throw new NotebookCreateRefusal(created);
       }
       await invalidated({ notebookId: row.id, reason: "permissions", scopes: ["permissions"] }, tx);
