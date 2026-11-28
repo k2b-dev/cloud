@@ -1860,7 +1860,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.k2-ui .k2-table :is(td + td, th + th) {
+.k2-ui .k2-table td + td,
+.k2-ui .k2-table th + th {
   box-shadow: inset 1px 0 0 var(--k2-line-column);
 }
 .k2-ui .k2-table td {
