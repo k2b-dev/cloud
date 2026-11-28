@@ -76,7 +76,8 @@ export default function LogEntryPane(props: Props) {
             fallback={
               <Empty
                 icon="file-off"
-                text={`${t().logEntryGone}. ${t().logEntryGoneDetail}`}
+                text={t().logEntryGone}
+                hint={t().logEntryGoneDetail}
                 action={{ label: t().backToLogs, href: props.closeHref }}
               />
             }

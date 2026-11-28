@@ -1582,6 +1582,9 @@ const ChoiceGroup = (props: ChoiceProps) => {
       <For each={options()}>
         {(option, index) => {
           const on = () => chosen().includes(option.value);
+          // an option with a hint takes its name from its words alone; the hint describes it, as a `Check`'s line does
+          const words = createUniqueId();
+          const hint = `${words}-hint`;
           return (
             <label class="k2-choice" data-disabled={props.disabled ? "" : undefined} data-on={cards() && on() ? "" : undefined}>
               <span class="k2-mark">
@@ -1603,6 +1606,8 @@ const ChoiceGroup = (props: ChoiceProps) => {
                       );
                   }}
                   disabled={props.disabled}
+                  aria-labelledby={option.hint ? words : undefined}
+                  aria-describedby={option.hint ? hint : undefined}
                   onChange={(event) => choose(option.value, event.currentTarget.checked)}
                 />
                 <Show when={props.multiple} fallback={<span class="k2-radio" data-checked={on() ? "" : undefined} data-k2-mark="" />}>
@@ -1616,13 +1621,16 @@ const ChoiceGroup = (props: ChoiceProps) => {
               <Show when={option.person}>{(person) => <Avatar {...person()} decorative />}</Show>
               <Show when={cards() && option.icon}>{(name) => <Icon name={name()} />}</Show>
               <span class="k2-choice-text">
-                {option.label}
-                <Show when={cards() && option.hint}>
-                  <span class="k2-choice-description">{option.hint}</span>
+                <span id={words}>{option.label}</span>
+                <Show when={option.hint}>
+                  <span class="k2-choice-description" id={hint}>
+                    {option.hint}
+                  </span>
                 </Show>
               </span>
-              <Show when={cards() && on()}>
-                <span class="k2-choice-tick" aria-hidden="true">
+              {/* the tick keeps its room on every card, so choosing one never rewraps the words */}
+              <Show when={cards()}>
+                <span class="k2-choice-tick" data-on={on() ? "" : undefined} aria-hidden="true">
                   <Icon name="check" />
                 </span>
               </Show>

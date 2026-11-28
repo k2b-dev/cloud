@@ -28,6 +28,16 @@ render(
             ]}
           />
           <Choice name="plain" label="Übergabe" value="Abholung" options={["Abholung", "Lieferung"]} />
+          <Choice
+            name="locked"
+            label="Gesperrt"
+            value="a"
+            disabled
+            options={[
+              { value: "a", label: "Nur Eingeladene", hint: "Personen und Gruppen oben" },
+              { value: "b", label: "Alle", hint: "Nach Anmeldung" },
+            ]}
+          />
         </Section>
         <Section title="Aufträge">
           <Table

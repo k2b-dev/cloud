@@ -948,7 +948,7 @@
   color: var(--k2-n500);
   min-width: 0;
 }
-/* a key figure in the object's step, 18/600 in tabular numbers (taste parts 5, Kennzahlen-Streifen); its label and its
+/* a key figure in the object's step, 18/600 in tabular numbers; its label and its
    note stay 12, so the figure leads */
 .k2-ui .k2-cell-value {
   grid-column: 2 / -1;
@@ -2545,7 +2545,7 @@
   color: var(--k2-text);
   font-weight: 400;
 }
-/* In a table cell a state is always its dot and its word (taste parts 1, "Zustand als Punkt + Wort"): no tinted
+/* In a table cell a state is always its dot and its word: no tinted
    round in a column of states. A good state reads in the ink of the text; only a waiting or a wrong one keeps its
    colour in its word, 500, so the exceptions stand out of the column. */
 .k2-ui .k2-table td .k2-chip[data-status] {
@@ -3375,7 +3375,7 @@
 .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-sec-body, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > :is(.k2-choice, .k2-choices) {
   padding-inline: var(--k2-edge);
 }
-/* Choice cards (taste parts 3, "Zugriff per Link"): options that say what they mean stand as one connected row of
+/* Choice cards: options that say what they mean stand as one connected row of
    cards with one edge, 1 px apart; the chosen card is framed 2 px inside in the primary colour on its tint, with a tick
    at its end. The point itself leaves the picture; the input stays for the keyboard and assistive technology, and its
    focus rings the card. On the phone the cards stand one under the other. */
@@ -3384,6 +3384,11 @@
   border: 1px solid var(--k2-line-control);
   border-radius: var(--k2-r-control);
   padding-inline: 0;
+}
+/* the place decides, not the window: a field or a section that holds cards is their container, so a narrow dialog
+   stacks them as the phone does */
+.k2-ui :is(.k2-field, .k2-sec, .k2-sec-body, .k2-dialog-body, .k2-band):has(> .k2-choices[data-cards]) {
+  container: k2-choice / inline-size;
 }
 .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-sec-body, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-choices[data-cards] {
   margin-inline: var(--k2-edge);
@@ -3432,10 +3437,13 @@
   font-size: 16px;
   line-height: 20px;
 }
+.k2-ui .k2-choice-tick:not([data-on]) {
+  visibility: hidden;
+}
 .k2-ui .k2-choices[data-cards] > .k2-choice:has(> .k2-mark > .k2-mark-input:focus-visible) {
   box-shadow: inset 0 0 0 2px var(--k2-blue), 0 0 0 3px var(--k2-blue-ring);
 }
-@media not all and (min-width: 768px) {
+@container k2-choice (max-width: 559px) {
   .k2-ui .k2-choices[data-cards] {
     flex-direction: column;
   }
@@ -4651,7 +4659,7 @@
    it the lead comes first and the figures take only what the lead leaves (#4149). A lead longer than that room is cut
    with "…", so it never runs under a control; the controls keep their words until the row is too narrow (#4166). */
 /* The lead is a statement in the row's words, 13/600: a count or a statement never shouts above the list it sums up
-   (taste rule 3: counters stay small; 18 belongs to the open object's name). */
+   (counters stay small; 18 belongs to the open object's name). */
 .k2-ui .k2-status-lead {
   font: var(--k2-t-row);
   font-weight: 600;
@@ -6233,7 +6241,9 @@
 .k2-ui .k2-state-text {
   overflow-wrap: anywhere;
 }
-/* Empty (taste rule 12): in the middle of the place it stands for, its sentence a title, the second sentence quiet */
+/* Empty: in the middle of the place it stands for, its sentence a title, the second sentence quiet. Under a detail's
+   hero (a heat map) the sentence stays small and quiet on purpose (above). `Failed` stays on the text edge: it is a
+   message with its retry, read like a notice, not a place to start from. */
 .k2-ui .k2-state[data-k2-part="Empty"] {
   align-items: center;
   align-self: center;
@@ -6246,6 +6256,13 @@
 }
 .k2-ui .k2-state[data-k2-part="Empty"] > .k2-state-text {
   font: var(--k2-t-title);
+}
+/* under a detail's hero the empty sentence keeps its small, quiet words and the hero's room */
+.k2-ui .k2-detail-hero + .k2-state[data-k2-part="Empty"] {
+  padding-block: 32px;
+}
+.k2-ui .k2-detail-hero + .k2-state[data-k2-part="Empty"] > .k2-state-text {
+  font: inherit;
 }
 .k2-ui .k2-state-hint {
   margin-top: -4px;
@@ -6847,7 +6864,7 @@
   color: var(--k2-subtle);
   white-space: nowrap;
 }
-/* sort, group and "+ Filter" read as words with their symbol (taste parts 2, "Sortierung in Worten"): no frame, the
+/* sort, group and "+ Filter" read as words with their symbol: no frame, the
    quiet grey of a control under the pointer; the words keep their 28 px target */
 .k2-ui :is(.k2-order, .k2-fbar-add) .k2-btn {
   height: var(--k2-h-control-small);

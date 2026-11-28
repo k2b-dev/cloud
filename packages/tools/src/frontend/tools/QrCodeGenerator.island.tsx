@@ -451,11 +451,8 @@ export default function QrCodeGenerator() {
                   fallback={
                     <Empty
                       icon={payload() ? "alert-circle" : "qrcode-off"}
-                      text={
-                        payload()
-                          ? `${t().previewUnavailable}. ${t().previewUnavailableHint}`
-                          : `${t().previewEmpty}. ${t().previewEmptyHint}`
-                      }
+                      text={payload() ? t().previewUnavailable : t().previewEmpty}
+                      hint={payload() ? t().previewUnavailableHint : t().previewEmptyHint}
                     />
                   }
                 >
