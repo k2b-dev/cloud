@@ -225,6 +225,7 @@ export const SIDEBAR = {
     { id: "Werks1", name: "Warehouse", color: "#10b981", openItemCount: 2 },
   ],
   pinnedSpaceIds: [],
+  recentSpaceIds: [],
   myWorkCount: 5,
 };
 
@@ -240,6 +241,7 @@ export const WORST_SIDEBAR = {
     { id: "Werks1", name: "🎉 Sommerfest", color: "#10b981", openItemCount: 2 },
   ],
   pinnedSpaceIds: ["TeamLg"],
+  recentSpaceIds: [],
   myWorkCount: 1_284,
 };
 export const WORST_SOURCES: CalendarSourceView[] = SOURCES.map((source) =>

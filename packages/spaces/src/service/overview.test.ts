@@ -12,7 +12,7 @@ test("sidebar snapshot uses the permission-aware listing, reuses an existing cou
     });
     expect(list).toHaveBeenCalledTimes(1);
     expect(list).toHaveBeenCalledWith({ subject: { type: "user", userId: "user-fixture" } });
-    expect(sidebar).toEqual({ spaces: [], pinnedSpaceIds: ["Space2", "Space1"], myWorkCount: 0 });
+    expect(sidebar).toEqual({ spaces: [], pinnedSpaceIds: ["Space2", "Space1"], recentSpaceIds: [], myWorkCount: 0 });
     expect(JSON.parse(JSON.stringify(sidebar))).toEqual(sidebar);
   } finally {
     list.mockRestore();

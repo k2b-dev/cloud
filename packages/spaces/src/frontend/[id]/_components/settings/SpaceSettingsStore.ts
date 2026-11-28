@@ -21,8 +21,13 @@ const WIDGET_SETTINGS_COOKIE = "settings-widgets";
 export type AllSpacesSettings = {
   lastSpaceId: string | null;
   pinnedSpaceIds: string[];
+  /** The Spaces opened last, newest first: they lead the sidebar's unpinned Spaces. */
+  recentSpaceIds: string[];
   spaces: Record<string, SpaceUserSettings>;
 };
+
+/** As many recent Spaces as the sidebar shows before a search; more would never show. */
+export const MAX_RECENT_SPACES = 20;
 
 /** Default settings for a single space */
 export const DEFAULT_SPACE_SETTINGS: SpaceUserSettings = {
@@ -37,13 +42,16 @@ export const isValidView = (view: string | undefined): view is ViewType =>
 const DEFAULT_ALL: AllSpacesSettings = {
   lastSpaceId: null,
   pinnedSpaceIds: [],
+  recentSpaceIds: [],
   spaces: {},
 };
 
-const normalizePinnedSpaceIds = (value: unknown): string[] =>
+/** Keeps only well-formed short IDs, each once; the cookie is user-controlled input. */
+const normalizeSpaceIds = (value: unknown, limit: number): string[] =>
   Array.isArray(value)
-    ? [...new Set(value.filter((id): id is string => typeof id === "string" && /^[0-9A-Za-z]{6}$/.test(id)))].slice(0, 200)
+    ? [...new Set(value.filter((id): id is string => typeof id === "string" && /^[0-9A-Za-z]{6}$/.test(id)))].slice(0, limit)
     : [];
+const normalizePinnedSpaceIds = (value: unknown) => normalizeSpaceIds(value, 200);
 
 /** Keeps only well-formed board column keys; the cookie is user-controlled input. */
 const normalizeFoldedColumns = (value: unknown): string[] =>
@@ -67,12 +75,18 @@ const migrateSettings = (raw: unknown): AllSpacesSettings => {
   // New format has "spaces" key
   if ("spaces" in obj) {
     const parsed = obj as Partial<AllSpacesSettings>;
-    return { ...DEFAULT_ALL, ...parsed, pinnedSpaceIds: normalizePinnedSpaceIds(parsed.pinnedSpaceIds) };
+    return {
+      ...DEFAULT_ALL,
+      ...parsed,
+      pinnedSpaceIds: normalizePinnedSpaceIds(parsed.pinnedSpaceIds),
+      recentSpaceIds: normalizeSpaceIds(parsed.recentSpaceIds, MAX_RECENT_SPACES),
+    };
   }
   // Old format: flat Record<string, SpaceUserSettings> — migrate
   return {
     lastSpaceId: null,
     pinnedSpaceIds: [],
+    recentSpaceIds: [],
     spaces: obj as Record<string, SpaceUserSettings>,
   };
 };
@@ -114,11 +128,11 @@ export const writeSpaceSettings = (spaceId: string, settings: Partial<SpaceUserS
   writeAllSettings({ ...all, spaces: { ...others, [spaceId]: withDefaults({ ...previous, ...settings }) } });
 };
 
-/** Set the last opened space id (client-side) */
+/** Set the last opened space id (client-side); it also leads the recent Spaces. */
 export const setLastSpaceId = (id: string) => {
   const all = readAllSettings();
-  all.lastSpaceId = id;
-  writeAllSettings(all);
+  const recentSpaceIds = normalizeSpaceIds([id, ...all.recentSpaceIds], MAX_RECENT_SPACES);
+  writeAllSettings({ ...all, lastSpaceId: id, recentSpaceIds });
 };
 
 export const setPinnedSpaceIds = (ids: string[]) => {
@@ -148,6 +162,8 @@ export const parseSpaceSettings = (cookieHeader: string | undefined, spaceId: st
 export const parseLastSpaceId = (cookieHeader: string | undefined): string | null => parseCookie(cookieHeader).lastSpaceId;
 
 export const parsePinnedSpaceIds = (cookieHeader: string | undefined): string[] => parseCookie(cookieHeader).pinnedSpaceIds;
+
+export const parseRecentSpaceIds = (cookieHeader: string | undefined): string[] => parseCookie(cookieHeader).recentSpaceIds;
 
 // =============================================================================
 // Global Widget Settings (applies across all spaces)

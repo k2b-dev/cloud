@@ -1,7 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import type { DateContext } from "@k2b/stdlib";
-import { parsePinnedSpaceIds } from "../frontend/[id]/_components/settings/SpaceSettingsStore";
+import { parsePinnedSpaceIds, parseRecentSpaceIds } from "../frontend/[id]/_components/settings/SpaceSettingsStore";
 import type { SpacesSidebarData } from "../frontend/[id]/_components/sidebar/spaces-navigation";
 import type { OverviewView, OverviewWork, SpacePulse } from "../overview-contracts";
 import { spacesService } from "./index";
@@ -121,6 +121,7 @@ export async function loadSpacesSidebar(params: {
       openItemCount: byId.get(page.items[index]!.id) ?? 0,
     })),
     pinnedSpaceIds: parsePinnedSpaceIds(params.cookieHeader),
+    recentSpaceIds: parseRecentSpaceIds(params.cookieHeader),
     myWorkCount,
   };
 }

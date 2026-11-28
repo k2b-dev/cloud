@@ -43,6 +43,7 @@ export default function KanbanFixture(props: Props) {
         sidebar={{
           spaces: [{ id: props.spaceId, name: space.name, color: space.color, openItemCount: 0 }],
           pinnedSpaceIds: [],
+          recentSpaceIds: [],
           myWorkCount: 0,
         }}
         people={[]}

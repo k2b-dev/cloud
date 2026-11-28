@@ -59,6 +59,7 @@ export default ssr<AuthContext>(async (c) => {
         spaces={sidebar.spaces}
         initialView={view}
         initialPinnedSpaceIds={sidebar.pinnedSpaceIds}
+        recentSpaceIds={sidebar.recentSpaceIds}
         initialWork={initialWork}
         initialActivity={{
           items: activityResult.page.items.map((item) => ({

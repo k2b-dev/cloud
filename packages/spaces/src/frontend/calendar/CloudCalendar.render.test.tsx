@@ -17,6 +17,7 @@ const { default: CloudCalendarFixture } = await import("./cloud-calendar.browser
 const sidebar = {
   spaces: [{ id: "TeamLg", name: "Planning", color: "#6366f1", openItemCount: 9 }],
   pinnedSpaceIds: [],
+  recentSpaceIds: [],
   myWorkCount: 5,
 };
 const render = (href: string, options: { locale?: "en" | "de"; catalog?: boolean; pending?: string[] } = {}) => {

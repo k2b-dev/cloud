@@ -55,6 +55,8 @@ type Props = {
   canCreate?: boolean;
   initialView: OverviewView;
   initialPinnedSpaceIds: string[];
+  /** The Spaces opened last, newest first, from the settings cookie. */
+  recentSpaceIds: string[];
   initialWork: OverviewWork;
   initialActivity: { items: ActivityItem[]; nextCursor: string | null };
   initialActivityError: string | null;
@@ -97,6 +99,7 @@ export default function SpacesOverview(props: Props) {
   const nav = useSpacesNav({
     spaces: props.spaces,
     pinnedSpaceIds: props.initialPinnedSpaceIds,
+    recentSpaceIds: props.recentSpaceIds,
     get myWorkCount() {
       return counts().mine;
     },
