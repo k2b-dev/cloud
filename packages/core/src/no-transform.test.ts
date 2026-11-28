@@ -9,6 +9,9 @@ const pages = new Hono<AuthContext>().use("*", middleware.runtime()).use("*", mi
 
 describe("Core compression boundaries", () => {
   for (const path of [
+    // the account activity holds what the two old addresses below held; they redirect to it
+    "/me/activity",
+    "/me/activity/__new_route__",
     "/me/notifications/history",
     "/me/notifications/history/__new_route__",
     "/me/approvals",

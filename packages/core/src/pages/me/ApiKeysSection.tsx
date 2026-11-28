@@ -106,6 +106,12 @@ export const useApiKeys = (props: {
     setOpen(true);
   };
 
+  // The token is shown once: closing the dialog forgets it, so it does not stay in the page's memory.
+  const close = () => {
+    setOpen(false);
+    setCreated(null);
+  };
+
   const create = async () => {
     setTried(true);
     const trimmed = name().trim();
@@ -220,7 +226,11 @@ export const useApiKeys = (props: {
         open={open()}
         // While the token shows, a stray press outside would lose the one copy: only Done, × and Escape close.
         dismissible={created() === null}
-        onOpenChange={(next) => !busy() && setOpen(next)}
+        onOpenChange={(next) => {
+          if (busy()) return;
+          if (next) setOpen(true);
+          else close();
+        }}
         foot={
           <Show
             when={created()}
@@ -235,7 +245,7 @@ export const useApiKeys = (props: {
               </>
             }
           >
-            <Button variant="primary" onClick={() => setOpen(false)}>
+            <Button variant="primary" onClick={close}>
               {t().done}
             </Button>
           </Show>

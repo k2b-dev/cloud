@@ -57,6 +57,7 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     .use("/admin/outgoing-mail/*", middleware.noTransform())
     // The account activity serializes notification titles and approvals next to each other, as the pages before it.
     .use("/me/activity", middleware.noTransform())
+    .use("/me/activity/*", middleware.noTransform())
     .use("/me/approvals", middleware.noTransform())
     .use("/me/approvals/*", middleware.noTransform())
     // Several settings tabs serialize text users write (feedback, conversation titles) next to other users' records.
