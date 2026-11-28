@@ -407,3 +407,35 @@ test("a heat sends every day of its 53 weeks, today marked, in the server's mark
   // one day with a count is the strongest tone
   expect(markup).toMatch(/data-tone="4" aria-label="Fri, Nov 27 · 3 Mails" aria-current="date"/);
 });
+
+// A record head leads with a person's round avatar or a place's square mark, drawn whole by the server: the mark's
+// symbol on its colour, its picture over it, and no name of its own beside the heading that names it.
+test("a record head sends a place's mark or a person's avatar before its heading in the server's markup", async () => {
+  const { RecordHead } = await import("./components");
+  const place = renderToString(() =>
+    createComponent(RecordHead, {
+      name: "Stadtteilcafé Lindenhof",
+      mark: { icon: "coffee", color: "#9a3412", image: "https://example.org/lindenhof.png" },
+    }),
+  );
+  const mark = place.match(/<span class="k2-mk"[^>]*>/)?.[0] ?? "";
+  for (const part of ['data-k2-part="Mark"', 'aria-hidden="true"', "--k2-c:#9a3412"]) expect(mark).toContain(part);
+  expect(mark).not.toContain("aria-label");
+  expect(place).toContain('class="ti ti-coffee k2-icon"');
+  expect(place).toContain('src="https://example.org/lindenhof.png"');
+  expect(place.indexOf('class="k2-mk"')).toBeLessThan(place.indexOf('class="k2-record-name"'));
+  expect(place).toMatch(/<h1 class="k2-record-name"[^>]*>Stadtteilcafé Lindenhof<\/h1>/);
+  expect(place).not.toContain("k2-av");
+  const person = renderToString(() => createComponent(RecordHead, { name: "Ada Renz", avatar: { name: "Ada Renz" } }));
+  expect(person.match(/<span class="k2-av"[^>]*>/)?.[0]).toContain('aria-hidden="true"');
+  expect(person.indexOf('class="k2-av"')).toBeLessThan(person.indexOf('class="k2-record-name"'));
+  expect(person).not.toContain("k2-mk");
+  // a name that may take a second line on the phone says so in the server's markup; one line is the default
+  expect(person).not.toContain("data-wrap");
+  const wrapped = renderToString(() => createComponent(RecordHead, { name: "Stadtteilcafé Lindenhof", wrap: true }));
+  expect(wrapped.match(/<h1 class="k2-record-name"[^>]*>/)?.[0]).toContain('data-wrap=""');
+  // the head writes the places its stylesheet needs itself (no `:has()`): the strut of a two-line name, the mark's place
+  expect(wrapped).toContain('<span class="k2-record-strut" aria-hidden="true"');
+  expect(person).not.toContain("k2-record-strut");
+  expect(mark).toContain('data-record=""');
+});

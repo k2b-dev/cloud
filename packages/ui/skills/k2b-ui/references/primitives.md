@@ -696,10 +696,18 @@ name wraps in a small table and ends with "…" in one with column widths.
 - `Lookup`: `label`, `value`, `onChange`, `load`, `resolve?`, `known?`,
   `limit?`, `minChars?`; values that load while the person types, in a
   filter (the bar opens it) or in a form.
-- `RecordHead`: `name`, `avatar`, `kinds`, `ids: { label?, value, icon?,
-  copy? }[]`. Put it in the head `Bar start`. When the head has no room, the
-  ids give way first (always on the phone), then the name is cut with "…";
-  the head's actions keep their place.
+- `RecordHead`: `name`, `avatar` or `mark`, `kinds`, `ids: { label?, value,
+  icon?, copy? }[]`, `wrap`. Put it in the head `Bar start`. A person leads
+  with `avatar` (round); a place or thing with `mark` (a `Mark` without
+  `label`: its symbol on its colour, or its picture such as a logo, square
+  with rounded corners), never both. When the head has no room, the ids give
+  way first (always on the phone), then the name is cut with "…"; the
+  head's actions keep their place. On the phone the head is one row of
+  57 px, and kinds without room beside the name leave it. With `wrap` (a
+  page whose name is its whole identity, such as a place's visitor page) a
+  name too long for one line takes a second line on the phone before it is
+  cut; the head grows from 57 to 73 px, so a rename from one line to two
+  moves the content below by 16 px.
 
 ## Overlays: Dialog, Menu, Popover, Toast
 

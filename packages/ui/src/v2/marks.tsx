@@ -177,12 +177,21 @@ export type MarkProps = {
  * size: 20 px in the sidebar and in a sentence, 24 px leading a row of one line, 32 px leading a row of two or three
  * lines, 36 px on a tile.
  */
-export const Mark = (props: MarkProps) => {
+export const Mark = (props: MarkProps) => <MarkFace {...props} />;
+
+/**
+ * The mark that leads a record's head (`RecordHead mark`): it says its place in its own markup, so the stylesheet
+ * sizes it without looking at what follows it.
+ */
+export const RecordMark = (props: Omit<MarkProps, "label">) => <MarkFace {...props} record />;
+
+const MarkFace = (props: MarkProps & { record?: boolean }) => {
   const picture = createPicture(() => props.image);
   return (
     <span
       class="k2-mk"
       data-k2-part="Mark"
+      data-record={props.record ? "" : undefined}
       data-image={props.image ? (picture.state() ?? "") : undefined}
       role="img"
       aria-label={props.label}

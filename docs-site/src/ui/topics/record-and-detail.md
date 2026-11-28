@@ -38,7 +38,7 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 ### RecordHead
 
-The identity of the record in the head `Bar start`: picture, name, kinds and identifiers that give way when room is short. On the phone, picture, name and the head's actions stay in one row and the name is cut with "…". Kinds sum up; whatever a kind says also stands in the facts, because on the phone kinds give way to the name: a kind that finds no room beside the name leaves the head.
+The identity of the record in the head `Bar start`: picture, name, kinds and identifiers that give way when room is short. A person leads with a round `avatar`; a place or thing, such as a venue, with a square `mark`: its symbol on its colour, or its logo. On the phone, picture, name and the head's actions stay in one row and the name is cut with "…". With `wrap`, for a page whose name is its whole identity such as a place's visitor page, a name too long for one line takes a second line on the phone, then it is cut with "…". Loading never moves the head, but with `wrap` renaming a record from a name of one line to one of two moves the content below by 16 px. Kinds sum up; whatever a kind says also stands in the facts, because on the phone kinds give way to the name: a kind that finds no room beside the name leaves the head.
 
 <Props of="RecordHead RecordId" />
 
