@@ -90,14 +90,14 @@ export default function AccountOperations(props: { freeIpaEnabled: boolean }) {
 
   return (
     <>
-      <Section icon="list-details" title={m().activity} summary={m().activityDescription}>
+      <Section title={m().activity} summary={m().activityDescription}>
         <Row lines={[m().allAccountLogs]} icon="file-text" href={ACCOUNT_LOGS_HREF} />
         {props.freeIpaEnabled ? (
           <Row lines={[m().syncLogs]} icon="refresh" href="/admin/observability/logs?source=auth:ipa:sync&window=7d" />
         ) : null}
         <Row lines={[m().openScheduledJobs]} icon="clock" href={SCHEDULED_JOBS_HREF} />
       </Section>
-      <Section icon="user-exclamation" title={m().expiryMaintenance}>
+      <Section title={m().expiryMaintenance}>
         <Notice tone="warn">{m().expiryWarning}</Notice>
         <For each={operations()}>
           {(operation) => (

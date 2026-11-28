@@ -49,13 +49,13 @@ export default function IntakeGuide(props: Props) {
               {/* k2b-ui gap: writing Markdown in place (the editor of @k2b/editor) has no v2 form yet; "Bearbeiten" opens it. */}
               <Prose markdown={text()} />
             </Band>
-            <Section icon="key" title="Zugang für die Waage">
+            <Section title="Zugang für die Waage">
               {/* k2b-ui gap: no code block with highlighting in v2; a value to copy is a Facts item with mono and copy. */}
               <Facts
                 items={[{ label: "Geräte-Schlüssel", value: "wf_scale_7Q2K-94RT-XM3D", mono: true, copy: "wf_scale_7Q2K-94RT-XM3D" }]}
               />
             </Section>
-            <Section icon="paperclip" title="Anhänge" count={3}>
+            <Section title="Anhänge" count={3}>
               {/* k2b-ui gap: no image or video viewer in v2; media are tiles that open the file. */}
               <Tiles
                 label="Anhänge"
@@ -66,7 +66,7 @@ export default function IntakeGuide(props: Props) {
                 ]}
               />
             </Section>
-            <Section icon="map" title="Hof-Plan" summary="Möbel kommen über Tor 2 in Halle B.">
+            <Section title="Hof-Plan" summary="Möbel kommen über Tor 2 in Halle B.">
               {/* A drawing of its own (a plan, a map, a chart of @k2b/ui) stands in a Canvas; inside it, CSS is free. */}
               <Canvas label="Plan des Hofs mit Tor 2 und Halle B" height={160}>
                 <svg viewBox="0 0 400 160" width="100%" height="100%" style={{ display: "block" }} role="img" aria-label="Plan des Hofs">

@@ -103,7 +103,7 @@ export default function MailtoGenerator() {
             <Notice tone="warn" title="mailto:">
               {`mailto: ${t().noticeReplyTo}`}
             </Notice>
-            <Section icon="cursor-text" title={w().input} measure>
+            <Section title={w().input} measure>
               <Field label={t().toLabel} hint={t().toDescription}>
                 <Input type="email" icon="mail" placeholder={t().toPlaceholder} value={to()} onInput={setTo} />
               </Field>
@@ -124,7 +124,7 @@ export default function MailtoGenerator() {
         }
         result={
           <>
-            <Section icon="link" title={w().result} summary={mailto() ? undefined : w().nothingYet} measure>
+            <Section title={w().result} summary={mailto() ? undefined : w().nothingYet} measure>
               <Facts
                 items={[
                   { label: t().mailtoLink, value: mailto() || "–", mono: true, copy: mailto() || undefined },

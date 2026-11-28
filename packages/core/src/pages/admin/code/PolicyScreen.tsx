@@ -300,7 +300,7 @@ export default function PolicyScreen(props: PolicyScreenProps) {
             return (
               <>
                 <Lead>{t().effectiveLead}</Lead>
-                <Section icon="users-group" title={t().memberOf}>
+                <Section title={t().memberOf}>
                   <Facts
                     items={[
                       {
@@ -380,7 +380,7 @@ export default function PolicyScreen(props: PolicyScreenProps) {
         <Show when={ok(loaded) ? loaded : null} fallback={<LoadFailed text={t().historyFailedSub} />}>
           {(page) => (
             <Show when={page().items.length} fallback={<Empty icon="history-off" text={t().historyEmptySub} />}>
-              <Section icon="history" title={t().historyChanges} count={page().items.length}>
+              <Section title={t().historyChanges} count={page().items.length}>
                 {/* slot for #4208/#4223 (DP): Digest activity, one entry per change (who, the sentence, when) */}
                 <Digest label={t().historyChangesLabel}>
                   <For each={page().items}>

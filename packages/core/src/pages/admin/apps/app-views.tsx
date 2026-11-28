@@ -73,7 +73,7 @@ const Hint = (props: Ctx & { app: AppPageData; hint: AppHint; onRemove: () => vo
 type Fact = { label: string; value: string; view?: AppView | null; href?: string; mono?: boolean };
 const FactRows = (props: Ctx & { app: string; title: string; icon: string; facts: readonly (Fact | false | null | undefined)[] }) => (
   // facts label-left (identity B, rule 7); a value with a view of its own leads there
-  <Section icon={props.icon} title={props.title}>
+  <Section title={props.title}>
     <Facts
       items={props.facts
         .filter((fact): fact is Fact => Boolean(fact))
@@ -242,7 +242,6 @@ export function AppOverview(props: Ctx & { app: AppPageData }) {
         ]}
       />
       <Section
-        icon="dots"
         title={t.groupMore}
         actions={
           entry.removable && !neverStarted
@@ -279,7 +278,7 @@ export function EventsView(props: Ctx & { app: AppPageData; redeliver: (id: stri
   const time = (value: string | null) => (value ? props.f.dateTime(value) : "");
   return (
     <>
-      <Section icon="ear" title={d.hears} count={details().totals.hears} summary={d.hearsHint}>
+      <Section title={d.hears} count={details().totals.hears} summary={d.hearsHint}>
         <For each={details().hears} fallback={<Text muted>{t.none}</Text>}>
           {(hearing) => (
             <>
@@ -332,7 +331,7 @@ export function EventsView(props: Ctx & { app: AppPageData; redeliver: (id: stri
           </Text>
         </Show>
       </Section>
-      <Section icon="send" title={d.sends} count={details().totals.sends} summary={d.sendsHint}>
+      <Section title={d.sends} count={details().totals.sends} summary={d.sendsHint}>
         <For each={details().sends} fallback={<Text muted>{t.none}</Text>}>
           {(event) => (
             <Row
@@ -347,7 +346,7 @@ export function EventsView(props: Ctx & { app: AppPageData; redeliver: (id: stri
           )}
         </For>
       </Section>
-      <Section icon="bell" title={t.notifications} count={details().totals.notifications} summary={d.notificationsHint}>
+      <Section title={t.notifications} count={details().totals.notifications} summary={d.notificationsHint}>
         <For each={details().notifications} fallback={<Text muted>{t.none}</Text>}>
           {(notification) => (
             <Row
@@ -418,7 +417,7 @@ export function RoutesView(props: Ctx & { detail: Extract<DetailData, { view: "r
       </For>
       <For each={props.detail.tables}>
         {(table) => (
-          <Section icon="route" title={t.numbersFrom({ providers: table.provider ?? "–" })}>
+          <Section title={t.numbersFrom({ providers: table.provider ?? "–" })}>
             <Table
               label={t.routes}
               rows={table.rows}
@@ -497,7 +496,7 @@ export function RuntimeView(props: Ctx & { detail: Extract<DetailData, { view: "
   return (
     <>
       <For each={d.issues}>{(issue) => <Notice tone={issue.severity === "error" ? "bad" : "warn"}>{issue.message}</Notice>}</For>
-      <Section icon="activity" title={t.titleRuntime}>
+      <Section title={t.titleRuntime}>
         <Facts
           items={[
             { label: t.state, value: statusLabel(t, entry.status) },
@@ -510,7 +509,7 @@ export function RuntimeView(props: Ctx & { detail: Extract<DetailData, { view: "
           ]}
         />
       </Section>
-      <Section icon="server" title={t.instancesTitle} count={d.instances.length}>
+      <Section title={t.instancesTitle} count={d.instances.length}>
         <For each={d.instances} fallback={<Text muted>{t.none}</Text>}>
           {(instance) => (
             <Row
@@ -531,7 +530,7 @@ export function RuntimeView(props: Ctx & { detail: Extract<DetailData, { view: "
           )}
         </For>
       </Section>
-      <Section icon="puzzle" title={t.integration}>
+      <Section title={t.integration}>
         <Row lines={[d.inRail ? t.inRail : t.noneShort, t.navigation]} icon={d.inRail ? "check" : "minus"} />
         <Row
           lines={[d.adminHref ? t.adminOf({ name: entry.name }) : t.noneShort, t.administration]}
@@ -575,7 +574,7 @@ export function ErrorsView(props: Ctx & { detail: Extract<DetailData, { view: "e
         {(group) => {
           const total = group.total ?? group.failedRequests.length;
           return (
-            <Section icon="alert-triangle" title={t.failedRequests} count={total} summary={t.errorsSource({ providers: group.provider })}>
+            <Section title={t.failedRequests} count={total} summary={t.errorsSource({ providers: group.provider })}>
               <For each={group.failedRequests} fallback={<Text muted>{t.noFailedRequests}</Text>}>
                 {(request) => (
                   <Row

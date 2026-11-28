@@ -469,11 +469,7 @@ export default function ModelDetail(props: {
         </Notice>
       </Show>
 
-      <Section
-        icon="stairs-up"
-        title={t().usedAs}
-        actions={[{ label: t().editInRecs, href: aiAreaHref({ sec: "classes" }), forward: true }]}
-      >
+      <Section title={t().usedAs} actions={[{ label: t().editInRecs, href: aiAreaHref({ sec: "classes" }), forward: true }]}>
         <Text muted={props.slots.length === 0}>
           {props.slots.length ? props.slots.map((slot) => slotName(t(), slot)).join(" · ") : t().usedAsNone}
         </Text>
@@ -481,7 +477,6 @@ export default function ModelDetail(props: {
 
       <Show when={chat()}>
         <Section
-          icon="versions"
           title={t().variants}
           count={base().variants.length}
           summary={t().variantsSub}
@@ -522,7 +517,7 @@ export default function ModelDetail(props: {
         </Section>
       </Show>
 
-      <Section icon="user" title={t().forPeople}>
+      <Section title={t().forPeople}>
         {/* slot for #4208/#4223 (DP): the fields of this section and of the prices become Setting rows (name left, value at a fixed width) */}
         <Field label={t().active} hint={t().activeHint}>
           <Check
@@ -598,7 +593,7 @@ export default function ModelDetail(props: {
         </Field>
       </Section>
 
-      <Section icon="coin" title={t().prices} summary={audio() ? t().audioNoPrice : t().pricesSub}>
+      <Section title={t().prices} summary={audio() ? t().audioNoPrice : t().pricesSub}>
         <Show when={!audio()}>
           <Field label={t().setPrices}>
             <Check
@@ -641,11 +636,7 @@ export default function ModelDetail(props: {
       </Section>
 
       <Show when={!audio()}>
-        <Section
-          icon="gauge"
-          title={t().budget}
-          actions={[{ label: t().openBudgets, href: aiAreaHref({ sec: "budgets" }), forward: true }]}
-        >
+        <Section title={t().budget} actions={[{ label: t().openBudgets, href: aiAreaHref({ sec: "budgets" }), forward: true }]}>
           <Text>
             {t().budgetRules({ p: props.usage?.budgetRules.length ?? 0 })}{" "}
             {(props.usage?.budgetRules ?? []).map((rule) => rule.label).join(" · ")}
@@ -658,7 +649,7 @@ export default function ModelDetail(props: {
         </Section>
       </Show>
 
-      <Section icon="lock-access" title={t().access} summary={t().accessSub}>
+      <Section title={t().access} summary={t().accessSub}>
         <Show
           when={props.provider.dataBoundary !== "restricted"}
           fallback={
@@ -714,7 +705,7 @@ export default function ModelDetail(props: {
         </Show>
       </Section>
 
-      <Section icon="cpu" title={t().modelSec}>
+      <Section title={t().modelSec}>
         {/* slot for #4208/#4223 (DP): the fields of this section and its advanced part become Setting rows (name left, value at a fixed width) */}
         <Field label={t().providerModelId}>
           <Input

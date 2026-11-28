@@ -6,14 +6,15 @@ import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
 import type { Action, TwoActions } from "./types";
 
-const HeadActions = (props: { actions?: TwoActions }) => (
+/** The buttons of a head: quiet text buttons in a group's tinted head, small framed buttons in a section's. */
+const HeadActions = (props: { actions?: TwoActions; variant: "text" | "secondary" }) => (
   <For each={props.actions}>
     {(action) => (
       <Button
-        variant="text"
+        variant={props.variant}
         icon={action.icon}
-        // on the phone the head keeps only the symbol: the words stay the button's name and hint
-        title={action.icon ? action.label : undefined}
+        // a group's head keeps only the symbol on the phone: its words stay the button's name and hint there
+        title={props.variant === "text" && action.icon ? action.label : undefined}
         forward={action.forward}
         href={action.href}
         onNavigate={action.onNavigate}
@@ -27,27 +28,24 @@ const HeadActions = (props: { actions?: TwoActions }) => (
 );
 
 export type SectionProps = {
-  /** The symbol of the section. With `color` it stands on a tinted tile, otherwise plain. */
-  icon?: string;
-  /** The data colour of the section's area, such as the colour of deliveries. */
-  color?: string;
   /** The title of the section. */
   title: string;
   /** A quiet count after the title. */
   count?: number | string;
-  /** At most two text buttons in the head; on the phone they keep only their symbol. */
+  /** At most two buttons in the head: framed, with their symbol and their verb, also on the phone. */
   actions?: TwoActions;
-  /** One sentence under the head that sums the section up. */
+  /** One sentence that says what the section is for: the quiet line right under the title. */
   summary?: JSX.Element;
   /**
-   * Its head, its sentence and its rows stay at the reading measure of `Prose` (720 px of text), so in a wide pane a
-   * short list stays together instead of its words standing at the left edge and its deeds at the right. The section's
-   * line still reaches the edges of its column. Below the measure it changes nothing.
+   * In a pane narrower than 960 px, its head, its sentence and its rows stay at the reading measure of `Prose` (720 px
+   * of text), so a short list stays together instead of its words standing at the left edge and its deeds at the right;
+   * the section's line still reaches the edges of its column. In a pane of 960 px and more every section keeps the
+   * measure of 1040 px with its head in a column, so this changes nothing there; below the measure it changes nothing.
    */
   measure?: boolean;
   /**
-   * The way to all of it ("All deliveries ›"): under the rows, its words on their text edge (after the symbol where the
-   * section has one), never at the right. In a side column it is a row of its own.
+   * The way to all of it ("All deliveries ›"): under the rows, its words on their text edge, never at the right. In a
+   * side column it is a row of its own.
    */
   more?: Action;
   /** `Row`s, a `Digest`, `Facts` or `Group`s. */
@@ -63,9 +61,11 @@ export type SectionProps = {
 };
 
 /**
- * A section: a head with symbol, title, count and at most two text buttons. Rule 9: no line under the head, none
- * between the entries, one line at the end. A section that can fold keeps the same head, rhythm and lines; the
- * server and the first render show it as `open` says.
+ * A section: a calm head (title, a quiet count, the summary under it, at most two framed buttons at the end) and its
+ * content. In a pane of 960 px and more its head takes a column of its own and the section keeps the measure of
+ * 1040 px; a section of a large table, tiles, groups or a drawing keeps its full width. Rule 9: no line under the head, a hair
+ * between the entries, one line at the end and none under the last section. A section that can fold keeps the same
+ * head, rhythm and lines; the server and the first render show it as `open` says.
  */
 export const Section = (props: SectionProps) => {
   const summary = resolveChildren(() => props.summary);
@@ -79,32 +79,25 @@ export const Section = (props: SectionProps) => {
     : undefined;
   const body = () => (
     <>
-      <Show when={summary() !== undefined}>
-        <p class="k2-sec-summary">{summary()}</p>
-      </Show>
       {props.children}
       <SectionMore more={props.more} />
     </>
   );
   return (
     <section class="k2-sec" data-k2-part="Section" aria-label={props.title} data-measure={props.measure ? "" : undefined}>
-      <div class="k2-sh">
-        <Show when={props.icon}>
-          {(name) => (
-            <Show when={props.color} fallback={<Icon name={name()} />}>
-              <span class="k2-stile" style={custom({ "--k2-c": props.color })}>
-                <Icon name={name()} />
-              </span>
-            </Show>
-          )}
-        </Show>
-        <h3>{props.title}</h3>
-        <Show when={props.count !== undefined}>
-          <span class="k2-sh-count">{props.count}</span>
+      <div class="k2-sh" data-actions={props.actions?.length || undefined}>
+        <div class="k2-sh-title">
+          <h3>{props.title}</h3>
+          <Show when={props.count !== undefined}>
+            <span class="k2-sh-count">{props.count}</span>
+          </Show>
+        </div>
+        <Show when={summary() !== undefined}>
+          <p class="k2-sec-summary">{summary()}</p>
         </Show>
         <Show when={props.actions?.length || fold}>
           <span class="k2-sh-end">
-            <HeadActions actions={props.actions} />
+            <HeadActions actions={props.actions} variant="secondary" />
             {fold && (
               <fold.Trigger
                 class="k2-btn"
@@ -228,7 +221,7 @@ export const Group = (props: GroupProps) => {
                 />
               )}
             </Show>
-            <HeadActions actions={props.actions} />
+            <HeadActions actions={props.actions} variant="text" />
             <Show when={props.folded}>
               <fold.Trigger
                 class="k2-btn"

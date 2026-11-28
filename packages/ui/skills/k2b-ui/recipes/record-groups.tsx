@@ -76,8 +76,6 @@ export default function CustomerDeliveries(props: Props) {
           </Band>
         )}
         <Section
-          icon="package"
-          color="#c2410c"
           title="Einlieferungen"
           count={ready ? 3 : undefined}
           actions={[{ label: "Herausgabe", icon: "package-export" }]}

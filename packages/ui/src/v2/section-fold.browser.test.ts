@@ -104,6 +104,24 @@ test("the server and the first render show the same sections: folded, open and n
   });
 });
 
+test("at 1440 px (B) the fold's chevron stays on the title's line, not under the summary", async () => {
+  await withPage(1440, async (page) => {
+    const found = await page.evaluate(() => {
+      const section = document.querySelector<HTMLElement>('[data-k2-part="Section"]:has(.k2-sh [data-fold])')!;
+      const middle = (element: Element) => {
+        const box = element.getBoundingClientRect();
+        return box.top + box.height / 2;
+      };
+      return {
+        float: getComputedStyle(section.querySelector(".k2-sh")!).float,
+        offset: Math.abs(middle(section.querySelector(".k2-sh [data-fold]")!) - middle(section.querySelector(".k2-sh-title")!)),
+      };
+    });
+    expect(found.float).toBe("left");
+    expect(found.offset).toBeLessThanOrEqual(2);
+  });
+});
+
 for (const width of [1440, 390])
   test(`at ${width} px a section that can fold keeps the head, rhythm and line of any section`, async () => {
     await withPage(width, async (page) => {

@@ -297,7 +297,7 @@ export function LinuxContent(props: { linux: Linux }) {
           {linux.stopped() ? t().progress(linux.progress()) : t().confirm}
         </Notice>
       </Show>
-      <Section icon="terminal-2" title={t().setup} summary={t().enableDescription}>
+      <Section title={t().setup} summary={t().enableDescription}>
         <Show when={linux.config().unreadable}>
           <Notice tone="warn" icon="eye-off" title={t().unreadableTitle}>
             {t().unreadableDetail}
@@ -339,7 +339,7 @@ export function LinuxContent(props: { linux: Linux }) {
         </Show>
       </Section>
       <Show when={linux.editing() && linux.draft().enabled}>
-        <Section icon="home" title={t().defaults} summary={t().defaultsDescription}>
+        <Section title={t().defaults} summary={t().defaultsDescription}>
           <Field name="homeTemplate" label={t().home} hint={t().homeHint}>
             <Input value={linux.draft().homeTemplate} disabled={linux.busy()} onInput={(value) => linux.change("homeTemplate", value)} />
           </Field>
@@ -347,7 +347,7 @@ export function LinuxContent(props: { linux: Linux }) {
             <Input value={linux.draft().loginShell} disabled={linux.busy()} onInput={(value) => linux.change("loginShell", value)} />
           </Field>
         </Section>
-        <Section icon="numbers" title={t().advanced} summary={t().rangeHint}>
+        <Section title={t().advanced} summary={t().rangeHint}>
           <Field.Row>
             <Field name="rangeStart" label={t().start}>
               <Input
@@ -383,7 +383,7 @@ export function LinuxContent(props: { linux: Linux }) {
         </Section>
       </Show>
       <Show when={linux.config().enabled}>
-        <Section icon="users" title={t().inventory} summary={t().inventoryHint}>
+        <Section title={t().inventory} summary={t().inventoryHint}>
           <Table
             label={t().inventory}
             rows={rows()}

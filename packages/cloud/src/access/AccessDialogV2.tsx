@@ -377,7 +377,7 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
         </Show>
       </Show>
 
-      <Section icon="users" title={t().people} count={state.loading() ? undefined : state.peopleRows().filter((row) => row.next).length}>
+      <Section title={t().people} count={state.loading() ? undefined : state.peopleRows().filter((row) => row.next).length}>
         <Show
           when={state.loadState() === "ready"}
           fallback={
@@ -396,7 +396,7 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
       </Section>
 
       <Show when={state.loadState() !== "failed" && state.showGeneral()}>
-        <Section icon="world" title={t().general}>
+        <Section title={t().general}>
           <Show when={props.allowAuthenticated !== false || state.generalRow("authenticated")}>{generalRow("authenticated")}</Show>
           <Show when={props.allowPublic === true || state.generalRow("public")}>
             {generalRow("public")}
@@ -412,7 +412,6 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
 
       <Show when={!state.loading() && state.showObjectAccounts()}>
         <Section
-          icon="code"
           title={t().serviceAccounts}
           count={state.objectAccountRows().filter((row) => row.next).length || undefined}
           summary={state.objectAccountRows().length > 0 ? t().serviceAccountNote({ name: props.resourceName }) : undefined}
@@ -502,7 +501,7 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
       </Show>
 
       <Show when={!state.loading() && state.apiKeyRows().length > 0}>
-        <Section icon="key" title={t().apiKeys} count={state.apiKeyRows().filter((row) => row.next).length}>
+        <Section title={t().apiKeys} count={state.apiKeyRows().filter((row) => row.next).length}>
           <For each={state.apiKeyRows().map((row) => row.key)}>
             {(key) => <Show when={state.rows().find((row) => row.key === key)}>{(row) => <AccessRowV2 row={row()} />}</Show>}
           </For>
@@ -514,7 +513,6 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
 
       <Show when={state.changes().length > 0}>
         <Section
-          icon="list-check"
           title={t().whatChanges}
           count={state.changes().length}
           actions={[{ label: summaryOpen() ? t().hideChanges : t().showChanges, onClick: () => setSummaryOpen((value) => !value) }]}

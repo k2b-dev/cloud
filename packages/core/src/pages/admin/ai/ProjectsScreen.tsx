@@ -197,7 +197,7 @@ export default function ProjectsScreen(props: { nav: NavProps; data: AiProjectsD
       <Show when={project.description}>
         <Text>{project.description}</Text>
       </Show>
-      <Section icon="info-circle" title={t().details}>
+      <Section title={t().details}>
         <Facts
           items={[
             { label: s().access, value: t().entries({ count: project.accessCount }) },

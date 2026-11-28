@@ -284,13 +284,13 @@ export default function VenueProgramme(props: Props) {
           </Show>
         </Pane>
         <Pane side label="Ihr Besuch" width={{ fixed: 360 }}>
-          <Section icon="armchair" color={brand.color} title="Plätze heute">
+          <Section title="Plätze heute">
             <Row
               lines={[`${free()} von ${seats()} frei`, "über alle Veranstaltungen"]}
               end={<Progress value={seats() - free()} of={seats() || 1} />}
             />
           </Section>
-          <Section icon="door-enter" color="#15803d" title="Ihr Weg hinein">
+          <Section title="Ihr Weg hinein">
             <Facts
               items={[
                 { label: "Einlass", value: "30 Min. vor Beginn" },
@@ -299,7 +299,7 @@ export default function VenueProgramme(props: Props) {
               ]}
             />
           </Section>
-          <Section icon="wheelchair" color="#15803d" title="Barrierefrei">
+          <Section title="Barrierefrei">
             <Text>Alle Säle sind stufenlos über den Hof erreichbar. Eine Höranlage gibt es im Großen Saal.</Text>
           </Section>
         </Pane>

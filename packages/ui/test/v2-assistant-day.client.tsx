@@ -82,7 +82,7 @@ render(
           />
         }
       >
-        <Section icon="timeline" title="Tageslinie">
+        <Section title="Tageslinie">
           <Canvas label="Läufe heute" height={Math.max(160, 96 + rows.length * 24)}>
             <Chart
               kind="stateTimeline"

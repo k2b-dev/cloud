@@ -35,7 +35,7 @@ render(
       <Pane label="Telemetrie">
         <For each={charts}>
           {(chart) => (
-            <Section icon="chart-line" title={`Anfragen je Stunde (${chart.name}, ${chart.height} px)`}>
+            <Section title={`Anfragen je Stunde (${chart.name}, ${chart.height} px)`}>
               <Canvas label={`Anfragen je Stunde, ${chart.name}`} height={chart.height}>
                 {chart.name === "time" ? (
                   <Chart

@@ -181,7 +181,7 @@ export default function ProfileForm(props: { profile?: AdminMailProfile; onSaved
           </Notice>
         )}
       </Show>
-      <Section icon="mail" title={t().senderSection} summary={t().senderSectionDescription}>
+      <Section title={t().senderSection} summary={t().senderSectionDescription}>
         <Show when={!initial}>
           <Field name="key" label={t().key} hint={t().keyHint} error={key() && !keyValid() ? t().keyHint : undefined} required>
             <Input value={key()} disabled={saving()} onInput={(value) => setKey(value.trim().toLowerCase())} />
@@ -197,7 +197,7 @@ export default function ProfileForm(props: { profile?: AdminMailProfile; onSaved
           <Input value={fromName()} disabled={saving()} onInput={setFromName} />
         </Field>
       </Section>
-      <Section icon="server" title={t().smtpSection} summary={t().smtpSectionDescription}>
+      <Section title={t().smtpSection} summary={t().smtpSectionDescription}>
         <Field.Row>
           <Field name="smtpHost" label={t().host} required>
             <Input value={smtpHost()} placeholder="smtp.example.org" disabled={saving()} onInput={setSmtpHost} />
@@ -231,7 +231,7 @@ export default function ProfileForm(props: { profile?: AdminMailProfile; onSaved
           setClear: setClearPassword,
         })}
       </Section>
-      <Section icon="mail-exclamation" title={t().bounceSection} summary={t().bounceSectionDescription}>
+      <Section title={t().bounceSection} summary={t().bounceSectionDescription}>
         <Field.Row>
           <Field name="imapHost" label={t().host} hint={t().imapHostHint} optional={t().optional}>
             <Input value={imapHost()} placeholder="imap.example.org" disabled={saving()} onInput={setImapHost} />
@@ -269,7 +269,7 @@ export default function ProfileForm(props: { profile?: AdminMailProfile; onSaved
           <Input value={imapFolder()} disabled={saving() || !imapOn()} onInput={setImapFolder} />
         </Field>
       </Section>
-      <Section icon="gauge" title={t().limitsSection} summary={t().limitsSectionDescription}>
+      <Section title={t().limitsSection} summary={t().limitsSectionDescription}>
         <Field.Row>
           <Field name="pace" label={t().pace} hint={t().paceHint} required>
             <Input type="number" min={1} max={6000} value={text(pace())} disabled={saving()} onInput={(value) => setPace(number(value))} />

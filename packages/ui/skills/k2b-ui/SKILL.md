@@ -23,8 +23,10 @@ props may change in any release; check the types of the installed version.
 
 ## The look is part of done
 
-Every screen follows [the look](references/look.md): a screen brief before
-code, one hero with its real trend, the app's colour where it means
+Every screen starts as a mockup and then follows the look: the Fibel page
+**The look** (`/en/ui/look`) holds the thirteen rules, the workflow and the
+tokens for custom parts; [look](references/look.md) adds a screen brief
+before code, one hero with its real trend, the app's colour where it means
 something, one data picture per row, a tinted head for the open object, a
 large screen that uses its room; dense, not busy: each thing has its mark
 (`Mark`, a person's `Avatar`), a state is a dot and its word, colour only
@@ -158,10 +160,11 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
    in a group) wraps its cells instead; keep its texts short.
 8. **Round is what you press; square is what structures.** Buttons, chips,
    inputs and tiles are round; panes, bands, sections, groups are square.
-9. **Lines separate groups, not entries or the parts of one thing.** No
-   line under a section head, none between its entries, none inside a
-   `Group`. A list's head and its status row are one block: give the head
-   to the list's `Pane` with its `status`, and the block draws one line.
+9. **Lines in two weights.** The clear line separates groups (sections, a
+   head block, a table head); the hair, barely there, stands between rows.
+   No line under a section head, none inside a `Group`, none under the last
+   row or section. A list's head and its status row are one block: give the
+   head to the list's `Pane` with its `status`; the block draws one line.
 
 One primary action per page: the filled `Button variant="primary"` in the
 head, mirrored as `Workspace primary` so the phone shows it. A form page

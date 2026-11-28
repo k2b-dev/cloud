@@ -94,7 +94,7 @@ render(
     <LocaleProvider locale="en">
       <Workspace head={<Bar start={<Text>Lager Nord</Text>} />}>
         <Pane label="Settings">
-          <Section icon="lock" title="Who has access">
+          <Section title="Who has access">
             <PermissionEditor
               initialEntries={entries}
               canEdit={!params.has("readonly")}

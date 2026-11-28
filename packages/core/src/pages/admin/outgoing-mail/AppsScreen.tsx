@@ -49,7 +49,7 @@ const SendAccess = (props: { app: AdminMailApp; profiles: readonly AdminMailProf
     }
   };
   return (
-    <Section icon="mail-share" title={t().senderAccess} summary={hint()}>
+    <Section title={t().senderAccess} summary={hint()}>
       <Show when={!props.app.declared}>
         <Notice tone="warn">{t().notDeclaredNotice}</Notice>
       </Show>
@@ -134,7 +134,7 @@ const LogAccess = (props: { app: AdminMailApp; apps: readonly AdminMailApp[] }) 
     }
   };
   return (
-    <Section icon="list-search" title={t().logAccessTitle} summary={t().logAccessHint}>
+    <Section title={t().logAccessTitle} summary={t().logAccessHint}>
       <Show when={!props.app.readDeclared}>
         <Notice tone="warn">{t().logAccessNotDeclared}</Notice>
       </Show>

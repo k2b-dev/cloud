@@ -180,7 +180,7 @@ export default function WorkshopOrders(props: Props) {
               />
             }
           >
-            <Section icon="file-description" title="Auftrag">
+            <Section title="Auftrag">
               <Facts
                 items={[
                   { label: "Nummer", value: open.number, copy: open.number },
@@ -189,7 +189,7 @@ export default function WorkshopOrders(props: Props) {
                 ]}
               />
             </Section>
-            <Section icon="history" title="Verlauf" count={2} more={{ label: "Ganzer Verlauf", forward: true }}>
+            <Section title="Verlauf" count={2} more={{ label: "Ganzer Verlauf", forward: true }}>
               <Row icon="package" lines={["Ersatzteil bestellt", "Lieferung am 27. Nov."]} time="gestern" />
               <Row icon="message" lines={["Kunde informiert", "per Telefon"]} time="Mo." />
             </Section>

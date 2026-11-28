@@ -43,8 +43,10 @@ const withPage = async (width: number, run: (page: Page) => Promise<void>) => {
   }
 };
 
-for (const width of [1440, 1024, 390])
-  test(`a section with measure keeps its content to the reading measure, its line to the edges, at ${width} px`, async () => {
+// 1440 and 1024: the pane is 960 px and more, so every section is B with its measure of 1040 px; 900: A, and `measure`
+// keeps the reading measure of 720 px of text; 390: A, and the measure is the pane
+for (const width of [1440, 1024, 900, 390])
+  test(`a section keeps its measure at ${width} px: B in a wide pane, the reading measure below 960 px`, async () => {
     await withPage(width, async (page) => {
       const found = await page.evaluate(() => {
         const [held, free] = Array.from(document.querySelectorAll<HTMLElement>(".k2-sec"));
@@ -61,14 +63,26 @@ for (const width of [1440, 1024, 390])
         };
       });
       const edge = width < textEdge.phoneBelow ? textEdge.phone : textEdge.wide;
-      // the reading measure: 720 px of text between the two text edges, as Prose
-      const measure = Math.min(found.pane, 720 + 2 * edge);
-      expect(found.line).toBe(true);
-      for (const row of found.rows) expect(row - found.left).toBe(measure);
-      expect(found.head - found.left).toBe(measure);
-      // the same right end as a reading text; a section without measure keeps the whole width
-      expect(found.prose - found.left).toBe(measure);
-      expect(found.freeRow - found.left).toBe(found.pane);
+      if (found.pane >= 960) {
+        // B, every section's measure in a wide pane: the head a column of 232 px, the rows beside it up to 1040 px from
+        // the text edge (or the pane's end), with or without `measure`; both sections end on one line
+        const section = Math.min(1040, found.pane - edge);
+        expect(found.line).toBe(true);
+        for (const row of found.rows) expect(row - found.left).toBe(section);
+        expect(found.head - found.left).toBe(232);
+        expect(found.freeRow - found.left).toBe(section);
+        // a reading text beside them keeps its own measure from the pane's edge
+        expect(found.prose - found.left).toBe(720 + edge);
+      } else {
+        // the reading measure in a narrower pane: 720 px of text between the two text edges, as Prose
+        const measure = Math.min(found.pane, 720 + 2 * edge);
+        expect(found.line).toBe(true);
+        for (const row of found.rows) expect(row - found.left).toBe(measure);
+        expect(found.head - found.left).toBe(measure);
+        // the same right end as a reading text; a section without measure keeps the whole width
+        expect(found.prose - found.left).toBe(measure);
+        expect(found.freeRow - found.left).toBe(found.pane);
+      }
       expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
     });
   });

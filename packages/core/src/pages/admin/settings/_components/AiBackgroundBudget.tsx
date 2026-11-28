@@ -92,7 +92,6 @@ export default function AiBackgroundBudget(props: {
         </Notice>
       </Show>
       <Section
-        icon="activity"
         title={t().brakeLast24h}
         actions={[
           { label: t().refreshState, icon: "refresh", disabled: loading(), onClick: () => void refresh() },
@@ -121,7 +120,7 @@ export default function AiBackgroundBudget(props: {
           ]}
         />
       </Section>
-      <Section icon="hand-stop" title={t().brake}>
+      <Section title={t().brake}>
         {/* slot for #4208/#4223 (DP): the fields of the brake become Setting rows (name left, value at a fixed width) */}
         <Field label={t().accountingUnit} hint={t().unitHint}>
           <Input value={unit()} disabled={props.disabled} onInput={(value) => props.change({ ...props.config, unit: value })} />

@@ -12,6 +12,8 @@ export const typeRoles = {
   row: { size: 13, lineHeight: 20, weight: 400 },
   /** Titles in a head, reading text. */
   body: { size: 14, lineHeight: 20, weight: 400 },
+  /** The title of a section: calm and a step larger than the text, never small and bold. */
+  title: { size: 15, lineHeight: 22, weight: 600 },
   /** The one main statement or name. */
   lead: { size: 18, lineHeight: 24, weight: 600 },
 } as const;
@@ -43,8 +45,11 @@ export const heights = {
   status: 52,
   tabs: 44,
   bar: 40,
-  columns: 36,
-  row: 40,
+  columns: 34,
+  /** A row of one line (taste study rule 6): its sign of 28 px, the name and its quiet note on one line. */
+  row: 46,
+  /** A cell of a table: one line per record. */
+  cell: 44,
   row2: 52,
   row3: 72,
   dense: 32,

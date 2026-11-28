@@ -219,6 +219,120 @@ describe("measureV2Layout", () => {
       TEST_TIMEOUT,
     );
 
+  // A section's own column: B (a pane of 960 px and more) measures what stands beside its head against its content
+  // column, and A with `measure` measures its rows against the reading measure. A line or a band that stops short of
+  // that column is still found; one that fills it is clean.
+  const section = (content: string, { width, measure = false, style = "" }: { width: number; measure?: boolean; style?: string }) =>
+    `<div class="k2-pane" data-k2-column style="width:${width}px;height:400px"><div class="k2-scroll"><section class="k2-sec"${measure ? " data-measure" : ""} style="${style}">` +
+    `<div class="k2-sh"><div class="k2-sh-title"><h3>Abschnitt</h3></div></div>${content}</section></div></div>`;
+  for (const [what, options] of [
+    ["B, a pane of 1200 px", { width: 1200 }],
+    ["A with measure, a pane of 900 px", { width: 900, measure: true }],
+  ] as const) {
+    test(
+      `green: ${what}: a row and a band that fill the section's own column are clean`,
+      async () => {
+        const page = await open(
+          section(
+            '<div class="row" data-k2-part="Row">Row</div><div class="tint" data-k2-part="Band"></div><div class="row" data-k2-part="Row">Row</div>',
+            options,
+          ),
+        );
+        try {
+          const result = await measureV2Layout(page);
+          expect(result.edge).toEqual([]);
+          expect(result.measured.bands).toBe(1);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+    test(
+      `red: ${what}: a short line and a short band in the section's own column are found`,
+      async () => {
+        const page = await open(
+          section(
+            '<div class="row" data-k2-part="Row" style="width:200px">Row</div><div class="tint" data-k2-part="Band" style="width:180px"></div>',
+            options,
+          ),
+        );
+        try {
+          const { edge } = await measureV2Layout(page);
+          expect(edge).toHaveLength(2);
+          expect(edge[0]).toMatch(/^line div\.row border-bottom at y \d+ stops 0 px short of the left and \d+ px short of the right edge/);
+          expect(edge[1]).toMatch(/^band div\.tint at y \d+ stops 0 px short of the left and \d+ px short of the right edge/);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+  }
+
+  test(
+    "red: a B section narrower than its measure is found by its own line and its rows, against the pane's column",
+    async () => {
+      // two sections, so the first draws its line; it and its rows end 440 px before the measure of the pane's column
+      const narrow = section('<div class="row" data-k2-part="Row">Row</div><div class="row" data-k2-part="Row">Row</div>', {
+        width: 1200,
+        style: "max-width:600px",
+      });
+      const page = await open(
+        narrow.replace(
+          "</section></div></div>",
+          '</section><section class="k2-sec"><div class="k2-sh"><div class="k2-sh-title"><h3>Zweiter</h3></div></div><div class="row" data-k2-part="Row">Row</div></section></div></div>',
+        ),
+      );
+      try {
+        const { edge } = await measureV2Layout(page);
+        expect(edge.length).toBeGreaterThanOrEqual(2);
+        for (const finding of edge) expect(finding).toMatch(/stops 0 px short of the left and \d+ px short of the right edge/);
+        expect(edge.some((finding) => finding.startsWith("line section.k2-sec"))).toBe(true);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "green: rows deep in a measure section (in a list, in a wrapper) are measured against the reading measure",
+    async () => {
+      const page = await open(
+        section(
+          '<div class="k2-list"><div><div class="row" data-k2-part="Row">Row</div></div><div><div class="row" data-k2-part="Row">Row</div></div></div>',
+          {
+            width: 900,
+            measure: true,
+          },
+        ),
+      );
+      try {
+        expect((await measureV2Layout(page)).edge).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: a line that runs past its section's column says how far, not an endless gap",
+    async () => {
+      const page = await open(
+        section('<div class="row" data-k2-part="Row" style="width:1100px;max-width:none">Row</div>', { width: 900, measure: true }),
+      );
+      try {
+        const { edge } = await measureV2Layout(page);
+        expect(edge.some((finding) => / px past the right edge/.test(finding) && !finding.includes("Infinity"))).toBe(true);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   test(
     "red: a line in a padded wrapper stops short of its column edge (the flat build's 8 px)",
     async () => {
@@ -228,8 +342,8 @@ describe("measureV2Layout", () => {
       try {
         const { edge } = await measureV2Layout(page);
         expect(edge).toHaveLength(2);
-        expect(edge[0]).toMatch(/^line div\.row border-bottom at y 39 stops 8 px short of the left and 8 px short of the right edge/);
-        expect(edge[1]).toMatch(/^band div\.tint at y 40 stops 8 px short of the left and 8 px short of the right edge/);
+        expect(edge[0]).toMatch(/^line div\.row border-bottom at y 45 stops 8 px short of the left and 8 px short of the right edge/);
+        expect(edge[1]).toMatch(/^band div\.tint at y 46 stops 8 px short of the left and 8 px short of the right edge/);
       } finally {
         await page.close();
       }

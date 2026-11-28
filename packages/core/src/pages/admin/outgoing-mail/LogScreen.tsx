@@ -326,16 +326,16 @@ export default function LogScreen(props: LogScreenProps) {
               />
             }
           >
-            <Section icon="list-details" title={t().detailsSection}>
+            <Section title={t().detailsSection}>
               <Facts items={facts(record()!)} />
             </Section>
             <Show when={record()!.failures.length}>
-              <Section icon="alert-triangle" title={t().failuresSection} count={record()!.failures.length}>
+              <Section title={t().failuresSection} count={record()!.failures.length}>
                 <For each={record()!.failures}>{(failure) => <Row lines={[failure.recipient, failure.reason]} icon="user-x" />}</For>
               </Section>
             </Show>
             <Show when={record()!.attachments.length}>
-              <Section icon="paperclip" title={t().attachmentsSection} summary={t().attachmentsHint}>
+              <Section title={t().attachmentsSection} summary={t().attachmentsHint}>
                 <For each={record()!.attachments}>
                   {(attachment) => (
                     <Row
@@ -351,7 +351,6 @@ export default function LogScreen(props: LogScreenProps) {
               </Section>
             </Show>
             <Section
-              icon="eye"
               title={t().contentSection}
               summary={t().contentHint}
               actions={

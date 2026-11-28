@@ -81,7 +81,7 @@ render(
           />
         }
       >
-        <Section icon="timeline" title="Zeitstrahl">
+        <Section title="Zeitstrahl">
           <Canvas label="Zeitstrahl der Jobs" height={Math.max(160, 96 + rows.length * 24)}>
             {window.__k2Twin ? (
               <div data-twin="" style={{ display: "none" }}>

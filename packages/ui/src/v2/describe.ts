@@ -371,7 +371,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         const title = head?.querySelector(name === "Section" ? "h3" : ".k2-gh-title")?.childNodes[0]?.textContent;
         const count = head?.querySelector(".k2-sh-count, .k2-gh-count")?.textContent;
         const meta = head?.querySelector(".k2-gh-meta")?.textContent;
-        const summary = kid(element, ".k2-sec-summary")?.textContent;
+        const summary = head?.querySelector(":scope > .k2-sec-summary")?.textContent;
         const more = mainText(kid(element, ".k2-sec-link"));
         const headWords = head ? words(head) : [];
         return `${name} ${quote(title)}${count ? ` (${count})` : ""}${element.hasAttribute("data-folded") ? " folded" : ""}${meta ? ` · ${clip(meta, 40)}` : ""}${headWords.length ? ` ${headWords.join(" ")}` : ""}${summary ? ` — ${quote(summary)}` : ""}${more ? ` → ${quote(more, 40)}` : ""}`;

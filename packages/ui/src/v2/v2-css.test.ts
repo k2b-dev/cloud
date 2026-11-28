@@ -60,6 +60,7 @@ test("there is one hairline of 1 px, and the radii and heights are the tokens", 
     bar: "bar",
     columns: "columns",
     row: "row",
+    cell: "cell",
     row2: "row2",
     row3: "row3",
     dense: "dense",
@@ -135,6 +136,47 @@ test("the namespace guard catches a tag beside a primitive and a tag after a pse
   expect(namespaceProblems(".k2-ui :where(.k2-table td, .k2-prose ul)")).toEqual([]);
   expect(namespaceProblems(".k2-ui .k2-table + p")).toEqual(["p in .k2-ui .k2-table + p"]);
   expect(namespaceProblems(".k2-ui :not(.k2-x) p")).toEqual(["p in .k2-ui :not(.k2-x) p"]);
+});
+
+// WebKit marks every element as affected by sibling changes when the subject of a selector is an `:is()` or `:where()`
+// with a `+` or `~` inside: each row a long feed inserts then restyles its siblings, and the chat's read-state tests
+// timed out in WebKit on `.k2-table :is(td + td, th + th)` alone. Spell such a rule as a list of plain selectors.
+const siblingInSubjectIs = (selectorText: string): string[] => {
+  const problems: string[] = [];
+  selectorParser((selectors) => {
+    selectors.each((selector) => {
+      const nodes = selector.nodes;
+      let last = -1;
+      nodes.forEach((node, index) => {
+        if (node.type === "combinator") last = index;
+      });
+      const sibling = nodes
+        .slice(last + 1)
+        .some(
+          (node) =>
+            node.type === "pseudo" &&
+            (node.value === ":is" || node.value === ":where") &&
+            node.nodes.some((argument) =>
+              argument.nodes.some((part) => part.type === "combinator" && (part.value === "+" || part.value === "~")),
+            ),
+        );
+      if (sibling) problems.push(selector.toString().trim());
+    });
+  }).processSync(selectorText);
+  return problems;
+};
+
+test("no subject of a v2.css selector is an :is() or :where() with a sibling combinator inside", () => {
+  expect(siblingInSubjectIs(".k2-ui .k2-table :is(td + td, th + th)")).toEqual([".k2-ui .k2-table :is(td + td, th + th)"]);
+  expect(siblingInSubjectIs(".k2-ui .k2-table td + td")).toEqual([]);
+  expect(siblingInSubjectIs(".k2-ui .k2-path > :is(.k2-fold, .k2-icon:has(+ .k2-fold))")).toEqual([]);
+  expect(siblingInSubjectIs(".k2-ui :is(.k2-a + .k2-b) .k2-c")).toEqual([]);
+  const problems: string[] = [];
+  root.walkRules((rule: Rule) => {
+    if (rule.parent?.type === "atrule" && /keyframes$/.test((rule.parent as postcss.AtRule).name)) return;
+    problems.push(...siblingInSubjectIs(rule.selector));
+  });
+  expect(problems).toEqual([]);
 });
 
 // The positioning of the behaviour layer writes these on an open popup (and `--keyboard-inset`, the height of an open

@@ -84,7 +84,7 @@ export default function SpaceMembers() {
       }
     >
       <Pane label="Mitglieder">
-        <Section icon="users" title="Mitglieder" count={list().length}>
+        <Section title="Mitglieder" count={list().length}>
           <List label="Mitglieder">
             <For each={list()}>
               {(member) => (
@@ -97,7 +97,7 @@ export default function SpaceMembers() {
             </For>
           </List>
         </Section>
-        <Section icon="mail" title="Offene Einladungen" count={invitations.length}>
+        <Section title="Offene Einladungen" count={invitations.length}>
           <List label="Offene Einladungen">
             <For each={invitations}>
               {(invitation) => (

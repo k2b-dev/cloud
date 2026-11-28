@@ -90,7 +90,7 @@ export default function EncodingTool() {
         scrollKey="tools-encoding"
         label={w().result}
         input={
-          <Section icon="cursor-text" title={w().input} measure>
+          <Section title={w().input} measure>
             <Field.Row>
               <Field label={w().direction}>
                 <Choice
@@ -131,7 +131,7 @@ export default function EncodingTool() {
           </Section>
         }
         result={
-          <Section icon="transform" title={w().result} summary={result().output ? undefined : w().nothingYet} measure>
+          <Section title={w().result} summary={result().output ? undefined : w().nothingYet} measure>
             <Facts items={[{ label: outputLabel(), value: result().output || "–", mono: true, copy: result().output || undefined }]} />
           </Section>
         }

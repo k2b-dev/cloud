@@ -242,7 +242,7 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
       </Show>
       <Pane.Split>
         <Pane label={t().hourlyForecast}>
-          <Section icon="calendar" title={t().sevenDayForecast}>
+          <Section title={t().sevenDayForecast}>
             <Show when={w().daily.length > 0} fallback={<Empty icon="calendar" text={t().noForecast} />}>
               <Table
                 label={t().sevenDayForecast}
@@ -258,7 +258,7 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
               />
             </Show>
           </Section>
-          <Section icon="clock" title={t().nextHours}>
+          <Section title={t().nextHours}>
             <Show when={w().hourly.length > 0} fallback={<Empty icon="clock" text={t().noForecast} />}>
               <Table
                 label={t().hourlyForecast}
@@ -275,7 +275,7 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
           </Section>
         </Pane>
         <Pane side width={{ min: 300, default: 360 }} label={t().currentConditions}>
-          <Section icon="gauge" title={t().measuredNow}>
+          <Section title={t().measuredNow}>
             <Facts
               items={[
                 ...(props.open.state ? [{ label: t().stateLabel, value: props.open.state }] : []),
@@ -291,7 +291,7 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
               ]}
             />
           </Section>
-          <Section icon="radar" title={t().rainRadar}>
+          <Section title={t().rainRadar}>
             <Canvas label={t().radarAlt}>
               {/* the radar keeps the text edge, so its dark picture never meets the column's line */}
               <div style={{ padding: "0 20px" }}>
@@ -300,7 +300,7 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
             </Canvas>
           </Section>
           <Show when={props.open.geoapify}>
-            <Section icon="map-pin" title={t().location}>
+            <Section title={t().location}>
               <Text type="meta" href="https://www.geoapify.com/">
                 {t().locationSource}
               </Text>

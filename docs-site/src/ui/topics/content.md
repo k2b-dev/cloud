@@ -17,7 +17,7 @@ A guide of Warenfluss: the title and the one deed "Bearbeiten" in the head, the 
 A chart is the `Chart` of `@k2b/ui` (data types in `@k2b/ui/charts`, every kind in [Charts](/en/ui/charts)) in a `Canvas` with a height, directly in its `Section`. The chart fills the `Canvas`; with no data, `Empty` stands in place of the `Canvas`.
 
 ```tsx
-<Section icon="chart-line" title="Einlieferungen je Monat">
+<Section title="Einlieferungen je Monat">
   <Canvas label="Einlieferungen je Monat, Juni bis November" height={240}>
     <Chart kind="line" style={{ height: "100%" }} series={series} xAxis={{ format: (x) => months[x] ?? "" }} />
   </Canvas>

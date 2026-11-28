@@ -67,12 +67,12 @@ export default function UuidGenerator() {
         label={w().result}
         result={
           // technical values in monospace, each with its copy; the count is a quiet number at the head
-          <Section icon="fingerprint" title={w().result} count={uuids().length || undefined} measure>
+          <Section title={w().result} count={uuids().length || undefined} measure>
             <Facts items={uuids().map((uuid, index) => ({ label: String(index + 1), value: uuid, mono: true, copy: uuid }))} />
           </Section>
         }
         input={
-          <Section icon="adjustments-horizontal" title={w().settings} measure>
+          <Section title={w().settings} measure>
             <Field label={t().count} hint={t().countDescription} optional="1–100">
               <Slider min={1} max={100} value={count()} onChange={setCount} />
             </Field>

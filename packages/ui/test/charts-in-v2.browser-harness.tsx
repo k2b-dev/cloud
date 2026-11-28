@@ -52,7 +52,7 @@ render(
           />
           <Cells.Cell icon="arrow-back-up" label="Retouren" value="10" meta="14 %" />
         </Cells>
-        <Section icon="chart-line" title="Einlieferungen je Monat">
+        <Section title="Einlieferungen je Monat">
           {place(240, "Einlieferungen je Monat", () => (
             <Chart
               kind="line"
@@ -72,7 +72,7 @@ render(
             />
           ))}
         </Section>
-        <Section icon="chart-bar" title="Nach Lagerort">
+        <Section title="Nach Lagerort">
           {place(220, "Einlieferungen nach Lagerort", () => (
             <Chart
               kind="bar"
@@ -91,7 +91,7 @@ render(
             />
           ))}
         </Section>
-        <Section icon="chart-donut" title="Nach Art">
+        <Section title="Nach Art">
           {place(200, "Einlieferungen nach Art", () => (
             <Chart
               kind="donut"
@@ -110,7 +110,7 @@ render(
             />
           ))}
         </Section>
-        <Section icon="filter" title="Vom Angebot zur Abrechnung">
+        <Section title="Vom Angebot zur Abrechnung">
           {place(200, "Vom Angebot zur Abrechnung", () => (
             <Chart
               kind="funnel"
@@ -130,7 +130,7 @@ render(
             />
           ))}
         </Section>
-        <Section icon="stairs" title="Vom Bestand zum Bestand">
+        <Section title="Vom Bestand zum Bestand">
           {place(220, "Bestand von Juni bis November", () => (
             <Chart
               kind="waterfall"
@@ -147,7 +147,7 @@ render(
             />
           ))}
         </Section>
-        <Section icon="calendar" title="Einlieferungen je Tag">
+        <Section title="Einlieferungen je Tag">
           {place(200, "Einlieferungen je Tag", () => (
             <Chart.Calendar class="charts-v2-calendar" style={{ height: "100%" }} locale="de" scale="sequential" data={calendarDays} />
           ))}
