@@ -1292,15 +1292,23 @@
    pane is A; the pane decides, not the window. The head floats, so the content keeps its own children as they are. */
 @container k2-pane (min-width: 960px) {
   .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) {
+    /* the section's own padding is the head column and its gap: every child, a primitive or an app's own part, stands
+       in the content column without a rule of its own, and its text edge is that column's start */
     display: flow-root;
+    box-sizing: border-box;
     max-width: 1040px;
-    margin-inline: var(--k2-edge) 0;
-    padding-block: 28px 26px;
+    margin-inline: 20px 0;
+    padding: 28px 0 26px calc(232px + 48px);
+    --k2-edge: 0px;
+    --k2-edge-icon: 24px;
+    /* B is the measure itself: a section's own `measure` reaches the end of the content column */
+    --k2-measure: 760px;
   }
   .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) > .k2-sh {
     float: left;
     box-sizing: border-box;
     width: 232px;
+    margin-left: calc(-232px - 48px);
     min-height: 0;
     padding: 0;
     grid-template-columns: minmax(0, 1fr);
@@ -1321,17 +1329,6 @@
     justify-self: end;
     height: 22px;
     margin-top: 0;
-  }
-  /* the content is a column of its own 48 px after the head column, up to the section's end: its rows, fields and
-     notices start and end on it, so their hair and their tint stay inside the measure (every part is named by its
-     data-k2-part, so the :has() above never restyles the whole document) */
-  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) > :is([data-k2-part], .k2-sec-link):not(.k2-sh, .k2-sec-body),
-  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) > .k2-sec-body > :is([data-k2-part], .k2-sec-link) {
-    --k2-edge: 0px;
-    --k2-edge-icon: 24px;
-    margin-left: calc(232px + 48px);
-    /* B is the measure itself: a section's own `measure` (720 px of text) applies only in a narrower pane */
-    max-width: none;
   }
 }
 .k2-ui .k2-stile {

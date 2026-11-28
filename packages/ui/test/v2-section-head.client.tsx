@@ -10,7 +10,7 @@ import { List, Pane, Row, Section, Table, Text, Workspace } from "../src/v2";
 declare global {
   interface Window {
     __k2Mounted?: boolean;
-    __k2Case?: "form" | "narrow" | "detail";
+    __k2Case?: "form" | "narrow" | "detail" | "custom";
   }
 }
 
@@ -60,7 +60,22 @@ const which = window.__k2Case ?? "form";
 render(
   () => (
     <Workspace>
-      {which === "form" ? (
+      {which === "custom" ? (
+        // an app's own part, a plain element with no primitive behind it, straight in a section and in a folding one
+        <Pane label="Eigenes">
+          <Section title="Eigene Teile" summary="Ein Teil der App ohne Primitive.">
+            <div data-probe="custom" style={{ height: "24px", "border-bottom": "1px solid #e4e4e7" }}>
+              Eigenes
+            </div>
+            <Row lines={["Montag", "08:00–16:00"]} />
+          </Section>
+          <Section title="Gefaltet" onOpenChange={() => undefined}>
+            <div data-probe="custom-folded" style={{ height: "24px", "border-bottom": "1px solid #e4e4e7" }}>
+              Eigenes im Körper
+            </div>
+          </Section>
+        </Pane>
+      ) : which === "form" ? (
         <Pane label="Zeiten und Schichten">
           {hours()}
           {shifts()}
