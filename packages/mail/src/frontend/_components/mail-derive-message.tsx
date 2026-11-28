@@ -1,8 +1,8 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, CheckboxCard, prompts, Select, useLocale } from "@k2b/ui";
+import { Button, CheckboxCard, prompts, Select, type ToastHandle, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, on, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
-import type { DeriveDraftFromMessageInput, DraftDerivationKind, MailDraft, SenderIdentity } from "../../contracts";
+import type { DeriveDraftFromMessageInput, DraftDerivationKind, MailDraft, MailDraftSeed, SenderIdentity } from "../../contracts";
 import type { MailWorkspaceMessage } from "../../service/workspace";
 import { readApiError } from "./api-response";
 import { openDraftWindow } from "./mail-compose-windows";
@@ -32,46 +32,60 @@ export function createMailMessageDerive(props: {
   onCleanup(() => {
     disposed = true;
   });
+  // A seed whose draft has no answer yet: a second try of the same choice materializes it again, so a lost answer
+  // makes no second draft (as Compose's pending seed). The key is the mailbox, the message and the choice.
+  let pendingSeed: { key: string; seed: MailDraftSeed } | null = null;
   const request = createMemo(
     on(props.mailboxId, (mailboxId) => {
       let active = true;
       const current = mutations.create<
         MailDraft,
-        { message: MailWorkspaceMessage; input: DeriveChoice },
-        { message: MailWorkspaceMessage }
+        { message: MailWorkspaceMessage; input: DeriveChoice; trigger: HTMLElement | null },
+        { trigger: HTMLElement | null; progress: ToastHandle }
       >({
-        onBefore: ({ message }) => ({ message }),
+        // the same quiet progress as a new message, until the window opens
+        onBefore: ({ trigger }) => ({
+          trigger,
+          progress: toast(t().preparingMessage, { progress: "indeterminate", duration: 0, iconClass: "ti ti-pencil" }),
+        }),
         mutation: async ({ message, input }, { abortSignal }) => {
           if (!active) throw new DOMException("Mailbox changed", "AbortError");
-          const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
-            {
-              param: { mailboxId },
-              json: {
-                origin: {
-                  kind: "derive",
-                  messageId: message.id,
-                  input: { kind: input.kind, senderIdentityId: input.senderIdentityId, includeAttachments: input.includeAttachments },
-                },
-              },
-            },
-            { init: { signal: abortSignal } },
-          );
-          if (!response.ok) throw new Error(await readApiError(response, t().createFromMessageFailed));
-          const seed = await response.json();
-          // the seed becomes the draft at once (its ID keeps a repeated answer to one draft), as a new message does
+          const key = JSON.stringify([mailboxId, message.id, input.kind, input.senderIdentityId, input.includeAttachments]);
+          const seed = pendingSeed?.key === key ? pendingSeed.seed : await createSeed(mailboxId, message, input, abortSignal);
+          pendingSeed = { key, seed };
+          // the seed becomes the draft at once; its ID keeps a repeated answer to one draft
           const materialized = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].materialize.$post(
             { param: { mailboxId }, json: { idempotencyKey: seed.id, origin: seed.origin, draft: seed.content } },
             { init: { signal: abortSignal } },
           );
           if (!materialized.ok) throw new Error(await readApiError(materialized, t().createFromMessageFailed));
-          return materialized.json();
+          const draft: MailDraft = await materialized.json();
+          pendingSeed = null;
+          return draft;
         },
-        onSuccess: (draft) => {
+        onSuccess: (draft, context) => {
+          context?.progress.dismiss();
+          if (disposed) return;
+          // another mailbox took the workspace meanwhile: a fresh draft goes again instead of waiting unseen
+          if (!active) {
+            if (draft.creationOutcome === "created")
+              void apiClient.mailboxes[":mailboxId"].drafts[":draftId"].discard
+                .$post({ param: { mailboxId, draftId: draft.id }, json: { expectedRevision: draft.revision } })
+                .catch(() => undefined);
+            return;
+          }
           // the window belongs to the mailbox, not to the conversation: it opens even when another one is shown now
-          if (active && !disposed)
-            openDraftWindow(draft.id, { mailboxId, initialDraft: draft, fresh: draft.creationOutcome === "created" });
+          openDraftWindow(draft.id, {
+            mailboxId,
+            initialDraft: draft,
+            fresh: draft.creationOutcome === "created",
+            returnFocus: context?.trigger ?? null,
+          });
         },
-        onError: (error) => prompts.error(error.message),
+        onError: (error, context) => {
+          context?.progress.dismiss();
+          prompts.error(error.message);
+        },
       });
       onCleanup(() => {
         active = false;
@@ -80,10 +94,31 @@ export function createMailMessageDerive(props: {
       return current;
     }),
   );
+  const createSeed = async (mailboxId: string, message: MailWorkspaceMessage, input: DeriveChoice, abortSignal: AbortSignal) => {
+    const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
+      {
+        param: { mailboxId },
+        json: {
+          origin: {
+            kind: "derive",
+            messageId: message.id,
+            input: { kind: input.kind, senderIdentityId: input.senderIdentityId, includeAttachments: input.includeAttachments },
+          },
+        },
+      },
+      { init: { signal: abortSignal } },
+    );
+    if (!response.ok) throw new Error(await readApiError(response, t().createFromMessageFailed));
+    const created: MailDraftSeed = await response.json();
+    return created;
+  };
   const busy = () => request().loading();
   const derive = async (kind: DraftDerivationKind, message: MailWorkspaceMessage) => {
     const instance = request();
     if (instance.loading()) return;
+    // the window gives the focus back to what started it, as a new message does
+    const trigger =
+      document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
     const selection = props.selection();
     const identities = props.identities().filter((identity) => identity.status === "verified");
     const defaultIdentity = identities.find((identity) => identity.isDefault) ?? identities[0];
@@ -127,7 +162,7 @@ export function createMailMessageDerive(props: {
     );
     // Another mailbox, conversation or message opened while the dialog was open: the choice was for that one.
     if (!choice || disposed || instance !== request() || selection !== props.selection() || !props.shows(message.id)) return;
-    instance.mutate({ message, input: choice });
+    instance.mutate({ message, input: choice, trigger });
   };
   return { derive, busy, abort: () => request().abort() };
 }

@@ -37,16 +37,26 @@ describe.skipIf(isServer)("Use as new", () => {
   let dom: DomTestHarness;
   let dispose = () => {};
   let calls: string[];
+  let keys: string[];
+  let materializeFails: number;
 
   beforeEach(() => {
     dom = createDomTestHarness();
     document.documentElement.lang = "en";
     calls = [];
+    keys = [];
+    materializeFails = 0;
     globalThis.fetch = Object.assign(
-      async (input: RequestInfo | URL) => {
+      async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
         calls.push(url.pathname);
-        if (url.pathname.endsWith("/draft-seeds/materialize")) return Response.json(draft);
+        if (url.pathname.endsWith("/draft-seeds/materialize")) {
+          const body = input instanceof Request ? await input.clone().text() : String(init?.body ?? "{}");
+          keys.push(JSON.parse(body).idempotencyKey);
+          // the draft may be committed while the answer is lost
+          if (materializeFails-- > 0) throw new TypeError("Network unavailable");
+          return Response.json(draft);
+        }
         if (url.pathname.endsWith("/draft-seeds")) return Response.json(seed);
         return Response.json({});
       },
@@ -58,6 +68,41 @@ describe.skipIf(isServer)("Use as new", () => {
     m.ui.dialogCore.close();
     globalThis.fetch = originalFetch;
     dom.cleanup();
+  });
+
+  const start = () =>
+    createRoot((done) => {
+      dispose = done;
+      return m.derive.createMailMessageDerive({
+        mailboxId: () => "Box001",
+        identities: () => [identity],
+        selection: () => "Conv01",
+        shows: (messageId) => messageId === "Msg001",
+        explainSenderUnavailable: () => undefined,
+      });
+    });
+  const choose = async () => {
+    await waitFor(() => [...document.querySelectorAll("button")].some((button) => button.textContent?.includes("Continue")));
+    [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Continue"))!.click();
+  };
+
+  test("a second try after a lost answer reuses the seed, so it stays one draft", async () => {
+    const opened = spyOn(m.windows, "openDraftWindow").mockImplementation(() => undefined);
+    try {
+      materializeFails = 1;
+      const derive = start();
+      void derive.derive("edit_as_new", message);
+      await choose();
+      await waitFor(() => keys.length === 1 && !derive.busy());
+      expect(opened).not.toHaveBeenCalled();
+      void derive.derive("edit_as_new", message);
+      await choose();
+      await waitFor(() => opened.mock.calls.length > 0);
+      expect(calls.filter((path) => path.endsWith("/draft-seeds"))).toHaveLength(1);
+      expect(keys).toEqual(["Seed01", "Seed01"]);
+    } finally {
+      opened.mockRestore();
+    }
   });
 
   test("creates the draft from the message and opens it as a window, without leaving the page", async () => {

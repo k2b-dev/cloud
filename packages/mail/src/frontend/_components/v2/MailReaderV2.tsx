@@ -448,7 +448,7 @@ export default function MailReaderV2(props: {
               text={props.text}
               onReply={c().canWrite() ? () => setReplyRequest((count) => count + 1) : undefined}
               onRespond={reply()?.shown() ? (intent, message) => reply()?.respond(intent, message) : undefined}
-              onDerive={c().canWrite() ? derive.derive : undefined}
+              onDerive={c().canWrite() && !c().assignedOnly() ? derive.derive : undefined}
             />
           ) : (
             <Notice
