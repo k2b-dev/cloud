@@ -1,7 +1,7 @@
 import { cloudAvatarSource } from "@k2b/cloud/account/ui";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { announce } from "@k2b/ui";
+import { announce, MarkdownEditor } from "@k2b/ui";
 import { Bar, Button, confirm, Dialog, Failed, Field, Input, Loading, Menu, Prose, Row, Section, useToast } from "@k2b/ui/v2";
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
@@ -165,10 +165,22 @@ export default function CommentsSection(props: Props) {
         </For>
       </Show>
       <Show when={props.canWrite}>
-        {/* k2b-ui gap: the chat composer of @k2b/editor is not in v2 yet; a comment is written in a plain multiline field. */}
-        <Field label={t.addComment} name="comment" error={createCommentMutation.error()?.message}>
-          <Input multiline value={draft()} placeholder={t.commentPlaceholder} onInput={setDraft} />
-        </Field>
+        {/* main's composer: the Markdown editor of @k2b/ui, as v1's Discussion.Composer embedded it. Ctrl or Cmd with Enter
+            sends, Enter starts a new line or the next list entry, and the formatting keys format.
+            k2b-ui gap: v2 has no message composer of its own yet, so the rich editor is embedded as it is. */}
+        <MarkdownEditor
+          aria-label={t.addComment}
+          value={draft}
+          onValueChange={setDraft}
+          placeholder={t.commentPlaceholder}
+          lines={4}
+          noToolbar
+          showStats={false}
+          font="sans"
+          disabled={createCommentMutation.loading()}
+          error={createCommentMutation.error()?.message}
+          onSubmit={() => void post()}
+        />
         <Bar
           end={
             <Button busy={createCommentMutation.loading()} disabled={!draft().trim()} onClick={() => void post()}>
