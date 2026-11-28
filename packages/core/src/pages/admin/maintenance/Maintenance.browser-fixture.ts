@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import { MaintenanceOnInputSchema, type MaintenanceStatus, MaintenanceUntilInputSchema } from "@k2b/cloud/contracts/maintenance";
-import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { fixtureAsset, fixtureAssetResponse, pageCss, pageScript } from "../../../../../../scripts/fixtures/page-assets";
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 import { adminNavFixture } from "../admin-v2.fixture";
 import { adminShellRuntime } from "../admin-v2.shell-fixture";
@@ -89,40 +89,35 @@ export async function maintenanceBrowserFixture() {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", `${ui}/`));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", `${ui}/`))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", `${ui}/`))).default;
-  const bundle = await Bun.build({
-    entrypoints: [resolve(import.meta.dir, "Maintenance.browser-harness.tsx")],
-    target: "browser",
-    conditions: ["browser"],
-    format: "iife",
-    plugins: [
-      {
-        name: "solid-maintenance-fixture",
-        setup(builder) {
-          builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
-            const transformed = await transformAsync(await Bun.file(path).text(), {
-              filename: path,
-              babelrc: false,
-              configFile: false,
-              presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
+  const script = fixtureAsset(
+    await pageScript({
+      entrypoints: [resolve(import.meta.dir, "Maintenance.browser-harness.tsx")],
+      target: "browser",
+      conditions: ["browser"],
+      format: "iife",
+      plugins: [
+        {
+          name: "solid-maintenance-fixture",
+          setup(builder) {
+            builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
+              const transformed = await transformAsync(await Bun.file(path).text(), {
+                filename: path,
+                babelrc: false,
+                configFile: false,
+                presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
+              });
+              return { contents: transformed.code, loader: "js" };
             });
-            return { contents: transformed.code, loader: "js" };
-          });
+          },
         },
-      },
-    ],
-  });
-  if (!bundle.success) throw new AggregateError(bundle.logs, "Could not compile the maintenance page");
-  const script = await bundle.outputs[0]!.text();
-  const styles = await Promise.all(
-    [resolve(import.meta.dir, "../../../styles/app.css"), resolve(import.meta.dir, "../../../../../../styles.css")].map((entry) =>
-      Bun.build({ entrypoints: [entry], plugins: [tailwind] }),
-    ),
+      ],
+    }),
+    "js",
   );
-  for (const build of styles) if (!build.success) throw new AggregateError(build.logs, "Could not compile page styles");
-  const css = [
-    "@layer properties, theme, base, components, utilities;",
-    ...(await Promise.all(styles.map((build) => build.outputs[0]!.text()))),
-  ].join("\n");
+  const css = fixtureAsset(
+    await pageCss([resolve(import.meta.dir, "../../../styles/app.css"), resolve(import.meta.dir, "../../../../../../styles.css")]),
+    "css",
+  );
   const publicDir = join(root, "public");
   await (await import("../../../../scripts/font-assets")).buildFontAssets(publicDir);
   await (await import("../../../../scripts/tabler-assets")).buildTablerIconAssets(publicDir);
@@ -215,7 +210,7 @@ export async function maintenanceBrowserFixture() {
       }),
     );
     return c.html(
-      `<!doctype html><html lang="${locale}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><style>${css}</style></head><body class="k2b-ui${theme === "dark" ? " k2b-dark" : ""}">${body}<script type="application/json" id="maintenance-fixture-data">${JSON.stringify(props).replace(/</g, "\\u003c")}</script><script src="/fixture.js"></script></body></html>`,
+      `<!doctype html><html lang="${locale}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><link rel="stylesheet" href="${css}"></head><body class="k2b-ui${theme === "dark" ? " k2b-dark" : ""}">${body}<script type="application/json" id="maintenance-fixture-data">${JSON.stringify(props).replace(/</g, "\\u003c")}</script><script src="${script}"></script></body></html>`,
     );
   });
   const server = Bun.serve({
@@ -225,7 +220,8 @@ export async function maintenanceBrowserFixture() {
       const url = new URL(request.url);
       if (url.pathname === "/branding/logo")
         return new Response(Bun.file(resolve(import.meta.dir, "../../../../../cloud/public/logo.svg")));
-      if (url.pathname === "/fixture.js") return new Response(script, { headers: { "Content-Type": "text/javascript" } });
+      const asset = fixtureAssetResponse(url.pathname);
+      if (asset) return asset;
       if (url.pathname.startsWith("/public/")) {
         const path = resolve(root, `.${url.pathname}`);
         return path.startsWith(`${publicDir}/`) ? new Response(Bun.file(path)) : new Response(null, { status: 404 });
