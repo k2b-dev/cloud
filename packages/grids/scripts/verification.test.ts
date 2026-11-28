@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { assertVerificationReport, localVerificationUrl, selectPhases } from "./verification";
+import { assertVerificationReport, localVerificationUrl, selectPhases, verificationSource } from "./verification";
 
 test("verification rejects empty, skipped and failed reports", () => {
   for (const xml of [
@@ -44,4 +44,41 @@ test("verification selects phases by name and by shard", () => {
 test("verification checks load no other module, because tests, crash workers and diagnostics import them", () => {
   const source = readFileSync(resolve(import.meta.dir, "verification.ts"), "utf8");
   expect(new Bun.Transpiler({ loader: "ts" }).scanImports(source)).toEqual([]);
+});
+
+// A checkout names its source by git; a copy without `.git` (the test machine) by CLOUD_SOURCE_COMMIT/_DIRTY.
+const COMMIT = "4f1c2a9e0b7d3c5a8e6f1b2d4c7a9e0f3b5d8c1a";
+const git =
+  (head: string | null, status = "") =>
+  (command: string[]) =>
+    command.includes("rev-parse") ? { exitCode: head ? 0 : 128, stdout: `${head ?? ""}\n` } : { exitCode: 0, stdout: status };
+
+test("verification names its source by the checkout's commit and changes", () => {
+  expect(verificationSource("/repo", {}, git(COMMIT))).toEqual({ commit: COMMIT, dirty: false });
+  expect(verificationSource("/repo", {}, git(COMMIT, " M packages/grids/src/index.ts\n"))).toEqual({ commit: COMMIT, dirty: true });
+  // a checkout wins over what the environment says
+  expect(verificationSource("/repo", { CLOUD_SOURCE_COMMIT: "other", CLOUD_SOURCE_DIRTY: "1" }, git(COMMIT))).toEqual({
+    commit: COMMIT,
+    dirty: false,
+  });
+});
+
+test("a copy without git names its source by the environment, and changed unless it says clean", () => {
+  const copy = git(null);
+  expect(verificationSource("/copy", { CLOUD_SOURCE_COMMIT: COMMIT, CLOUD_SOURCE_DIRTY: "0" }, copy)).toEqual({
+    commit: COMMIT,
+    dirty: false,
+  });
+  expect(verificationSource("/copy", { CLOUD_SOURCE_COMMIT: COMMIT, CLOUD_SOURCE_DIRTY: "false" }, copy)).toEqual({
+    commit: COMMIT,
+    dirty: false,
+  });
+  expect(verificationSource("/copy", { CLOUD_SOURCE_COMMIT: COMMIT, CLOUD_SOURCE_DIRTY: "1" }, copy)).toEqual({
+    commit: COMMIT,
+    dirty: true,
+  });
+  expect(verificationSource("/copy", { CLOUD_SOURCE_COMMIT: COMMIT }, copy)).toEqual({ commit: COMMIT, dirty: true });
+  // neither git nor the environment: the run refuses, as a report must name its source
+  expect(() => verificationSource("/copy", {}, copy)).toThrow("Cannot record verification commit");
+  expect(() => verificationSource("/copy", { CLOUD_SOURCE_COMMIT: "  " }, copy)).toThrow("Cannot record verification commit");
 });
