@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { WidgetResponse, WidgetStreamLine } from "@k2b/cloud/contracts";
 import type { Browser, Page } from "playwright";
+import { fixtureAsset, fixtureAssetResponse, pageCss } from "../../../../scripts/fixtures/page-assets";
 import { browserName, launchBrowser } from "../../../ui/test/browser";
 import type { DashboardBoardEntry, DashboardCatalogWidget, DashboardSettings } from "../shared";
 import { builtInWidgets } from "./built-in-widgets.browser-fixture";
@@ -196,16 +197,8 @@ beforeAll(async () => {
   );
   settingsChunkPath = [...assets].find(([path, text]) => path.endsWith(".js") && text.includes("dashboard-widget-settings__reset"))![0];
   const entryPath = new URL(build.outputs.find((output) => output.kind === "entry-point")!.path, "http://harness.test/").pathname;
-  const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", resolve(import.meta.dir, "../../../cloud")))).default;
   // as a Cloud page links them: the app's own sheet first, the shared one after it (#4411)
   const stylesheets = [resolve(import.meta.dir, "../styles/app.css"), resolve(import.meta.dir, "../../../../styles.css")];
-  const outputs = await Promise.all(
-    stylesheets.map(async (path) => {
-      const output = await Bun.build({ entrypoints: [path], plugins: [tailwind] });
-      if (!output.success) throw new AggregateError(output.logs, `Could not compile ${path}.`);
-      return output.outputs[0]!.text();
-    }),
-  );
   // The fonts Core serves: text wraps and icons take their height as on a real page.
   const uiDist = resolve(ui, "dist");
   const icons = await Bun.file(resolve(uiDist, "tabler.css")).text();
@@ -214,12 +207,14 @@ beforeAll(async () => {
     (await Bun.file(resolve(uiDist, "plex.css")).text()).replaceAll("./fonts/", "/fonts/"),
     icons.replace(/\.\/tabler-icons-[\w-]+\.woff2/, `/${iconFont}`),
   ];
-  const css = ["@layer properties, theme, base, components, utilities;", ...fonts, ...outputs].join("\n");
+  const css = fixtureAsset([...fonts, await pageCss(stylesheets)].join("\n"), "css");
   server = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
     fetch: async (request) => {
       const url = new URL(request.url);
+      const page = fixtureAssetResponse(url.pathname);
+      if (page) return page;
       const script = assets.get(url.pathname);
       if (script !== undefined) {
         scripts.push(url.pathname);
@@ -231,7 +226,7 @@ beforeAll(async () => {
         const lang = url.searchParams.get("lang") ?? "en";
         return new Response(
           `<!doctype html><html lang="${lang}" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
-            `<style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="root"></div>` +
+            `<link rel="stylesheet" href="${css}"></head><body class="k2b-ui" style="margin:0"><div id="root"></div>` +
             `<script>window.dashboardProps = ${JSON.stringify(props)}</script><script type="module" src="${entryPath}"></script></body></html>`,
           { headers: { "content-type": "text/html; charset=utf-8" } },
         );
