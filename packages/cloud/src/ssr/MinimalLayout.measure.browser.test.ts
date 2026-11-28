@@ -81,6 +81,22 @@ describe("MinimalLayout ui v2 measure", () => {
             const boxes = await tab.evaluate(() => {
               const card = document.querySelector("[data-k2-workspace]")!;
               const box = (element: Element) => element.getBoundingClientRect().toJSON() as DOMRect;
+              // the theme's canvas and surface, as computed colours (a probe outside the flow)
+              const probe = document.createElement("i");
+              probe.style.cssText = "position:fixed;width:0;height:0;background:var(--k2-canvas);color:var(--k2-surface)";
+              document.body.append(probe);
+              const tokens = { canvas: getComputedStyle(probe).backgroundColor, surface: getComputedStyle(probe).color };
+              probe.remove();
+              // a line inside the card that lies on the card's bottom edge doubles it
+              const inner = card.getBoundingClientRect().bottom - Number.parseFloat(getComputedStyle(card).borderBottomWidth);
+              const onEdge = [...card.querySelectorAll("*")].filter((element) => {
+                const style = getComputedStyle(element);
+                return (
+                  style.borderBottomStyle !== "none" &&
+                  Number.parseFloat(style.borderBottomWidth) > 0 &&
+                  Math.abs(element.getBoundingClientRect().bottom - inner) < 1.5
+                );
+              });
               return {
                 card: box(card),
                 main: box(document.querySelector("main")!),
@@ -88,6 +104,13 @@ describe("MinimalLayout ui v2 measure", () => {
                 pageBackground: getComputedStyle(document.querySelector(".minimal-layout")!).backgroundColor,
                 cardBackground: getComputedStyle(card).backgroundColor,
                 cardEdge: getComputedStyle(card).borderTopWidth,
+                // the body's background paints the window's canvas, also where an overscroll pulls past the page
+                windowBackground: {
+                  html: getComputedStyle(document.documentElement).backgroundColor,
+                  body: getComputedStyle(document.body).backgroundColor,
+                },
+                tokens,
+                linesOnEdge: onEdge.map((element) => element.className),
                 scrollWidth: document.documentElement.scrollWidth,
               };
             });
@@ -101,11 +124,20 @@ describe("MinimalLayout ui v2 measure", () => {
               expect(boxes.card.top).toBe(0);
               expect(boxes.cardEdge).toBe("0px");
               expect(boxes.pageBackground).toBe(boxes.cardBackground);
+              // the window stays on the surface, as the page
+              expect(boxes.windowBackground).toEqual({ html: "rgba(0, 0, 0, 0)", body: boxes.tokens.surface });
             } else {
               // one card with its thin edge on the canvas, 48 px below the window's top
               expect(boxes.card.top).toBe(48);
               expect(boxes.cardEdge).toBe("1px");
+              expect(boxes.pageBackground).toBe(boxes.tokens.canvas);
+              expect(boxes.cardBackground).toBe(boxes.tokens.surface);
               expect(boxes.pageBackground).not.toBe(boxes.cardBackground);
+              // the window's background is the canvas too (html has none of its own, so the body's paints it), so an
+              // overscroll shows no strip of the surface
+              expect(boxes.windowBackground).toEqual({ html: "rgba(0, 0, 0, 0)", body: boxes.tokens.canvas });
+              // no line inside the card lies on its edge: the last line of each column gives way to it
+              expect(boxes.linesOnEdge).toEqual([]);
               // the card ends with its content: a short task leaves the canvas between the card and the footer
               if (measure === "task") expect(boxes.card.bottom).toBeLessThan(boxes.main.bottom - 24);
             }

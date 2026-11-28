@@ -2,6 +2,7 @@ import { Bar, Button, Facts, List, Pane, RecordHead, Row, Section, Text, Workspa
 
 // An invented visitor page for `MinimalLayout measure` (MinimalLayout.measure.browser.test.ts): `page`, a place's
 // programme with a side column; `task`, its one task (a short message to the place).
+// Not the k2b-ui `public-page` recipe: it cuts its seat chips in the 976 px card a 1024 px window gives (#4570).
 
 const place = { name: "Nachbarschaftshaus Am Wehr", initials: "NW", color: "#0f766e" };
 

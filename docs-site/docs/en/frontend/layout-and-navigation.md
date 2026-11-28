@@ -573,6 +573,9 @@ most 1200 px wide, and `measure="task"` for one task such as a feedback form,
 at most 560 px wide. From 768 px the card stands on the page's canvas, 48 px
 below the top of the window, and ends with its content; the `Workspace` is the
 card, with its thin edge and rounded corners, so no second box surrounds it.
+The card's edge closes its content, so the last line in each column gives way.
+The window's own background is the canvas too, so pulling past the end of
+the page shows no strip of another color.
 Below 768 px the content keeps the full width and the normal text edge, as
 without a measure. The measure is a rule of Core's `v2.css` on the server's
 markup, so nothing moves while the page loads. Beside a Core from before
