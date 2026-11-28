@@ -121,8 +121,13 @@ export const createScreenBrowser = (entry: string) => {
       if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
       if (url.pathname.startsWith("/api/") && options.api) {
         const answer = await options.api(url, route);
+        // A Response keeps its status, headers and bytes: JSON from `Response.json`, or media with its ranges.
         if (answer instanceof Response) {
-          return route.fulfill({ status: answer.status, contentType: "application/json", body: await answer.text() });
+          return route.fulfill({
+            status: answer.status,
+            headers: Object.fromEntries(answer.headers),
+            body: Buffer.from(await answer.arrayBuffer()),
+          });
         }
         if (answer !== undefined) return route.fulfill({ json: answer });
       }
