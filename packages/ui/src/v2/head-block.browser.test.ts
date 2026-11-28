@@ -127,52 +127,128 @@ describe("a line of state under a head is no toolbar", () => {
 });
 
 describe("the head's bar stays one box with the toolbar in it", () => {
-  for (const width of [1440, 1920])
-    test(`with room, nothing folds into "…" at ${width}px`, async () => {
+  for (const width of [1024, 1440, 1920])
+    test(`with room, nothing folds into "…" at ${width}px, neither the head's end nor its path`, async () => {
       await withPage(width, "path", true, async (page) => {
         for (const name of ["Teilen", "Laden"])
           expect(await page.locator('.k2-pane > [data-slot="head"] .k2-bar-end').getByRole("button", { name }).isVisible()).toBe(true);
         expect(await page.locator('.k2-pane > [data-slot="head"] .k2-bar-fold').count()).toBe(0);
+        // the start takes its room in the block's grid: the path shows its places, not "…"
+        expect(await page.locator(path).getAttribute("data-fold")).toBe("0");
+        expect(await page.locator(path).getByRole("link", { name: "Alle Ablagen" }).isVisible()).toBe(true);
       });
     });
 
-  test("the Tab key goes as the eye does: path, toolbar, then the head's actions", async () => {
-    await withPage(1920, "path", true, async (page) => {
-      await page.locator('.k2-pane > [data-slot="head"] [data-k2-part="Path"] a').first().focus();
-      const lefts: number[] = [];
-      for (let step = 0; step < 6; step++) {
-        lefts.push(await page.evaluate(() => Math.round(document.activeElement!.getBoundingClientRect().left)));
-        await page.keyboard.press("Tab");
-      }
-      expect(lefts).toEqual([...lefts].sort((a, b) => a - b));
-      expect(new Set(lefts).size).toBe(lefts.length);
+  // In two rows the toolbar stands under the head's end but between start and end in the page: `reading-flow` lets
+  // Chromium follow the rows (WebKit and Firefox do not know it yet and go start, toolbar, end).
+  for (const [width, order] of [
+    [1024, "path, the head's actions, then the toolbar"],
+    [1920, "path, toolbar, then the head's actions"],
+  ] as const)
+    test(`the Tab key goes as the eye does at ${width}px: ${order}`, async () => {
+      await withPage(width, "path", true, async (page) => {
+        await page.locator('.k2-pane > [data-slot="head"] [data-k2-part="Path"] a').first().focus();
+        // where each control ends on the screen (an open search grows to the left over its place, its end stays)
+        const places: { x: number; y: number; name: string }[] = [];
+        for (let step = 0; step < 7; step++) {
+          places.push(
+            await page.evaluate(() => {
+              const active = document.activeElement!;
+              const box = (active.closest(".k2-input") ?? active).getBoundingClientRect();
+              return {
+                x: Math.round(box.right),
+                y: Math.round(box.top + box.height / 2),
+                name: active.textContent || active.getAttribute("aria-label") || "",
+              };
+            }),
+          );
+          await page.keyboard.press("Tab");
+        }
+        // each next control stands to the right in the same row, or in a row further down
+        const back = places.slice(1).filter((place, at) => {
+          const before = places[at]!;
+          return !(place.y > before.y + 12 || (Math.abs(place.y - before.y) <= 12 && place.x > before.x));
+        });
+        expect(back).toEqual([]);
+      });
     });
-  });
 });
 
+/**
+ * What the eye sees of the open search: every point across its field, every 8 px at its middle, shows the field itself,
+ * nothing cut or lying over it; and every control of the head beside it is in sight where it stands.
+ */
+const sightOf = (page: Page) =>
+  page.evaluate((search) => {
+    const box = document.querySelector(search)!;
+    const field = box.getBoundingClientRect();
+    const hidden: string[] = [];
+    for (let x = Math.ceil(field.left) + 1; x < field.right - 1; x += 8) {
+      const hit = document.elementFromPoint(x, field.top + field.height / 2);
+      if (!hit || !box.contains(hit)) hidden.push(`${Math.round(x)}: ${hit?.className || hit?.tagName || "nothing"}`);
+    }
+    const covered = [...document.querySelectorAll<HTMLElement>('.k2-pane > [data-slot="head"] .k2-btn')]
+      .filter((button) => button.checkVisibility({ visibilityProperty: true }))
+      .filter((button) => {
+        const place = button.getBoundingClientRect();
+        const hit = document.elementFromPoint(place.left + place.width / 2, place.top + place.height / 2);
+        return !(hit && button.contains(hit));
+      })
+      .map((button) => button.textContent || button.getAttribute("aria-label"));
+    return { width: Math.round(field.width), hidden, covered };
+  }, search);
+
 describe("the head's search is its symbol on every width", () => {
-  test("it opens over its place when pressed, keeps its words, and folds back when empty", async () => {
+  for (const width of [1024, 1440])
+    test(`at ${width}px it opens over its place when pressed, keeps its words in the row, and folds back when empty`, async () => {
+      await withPage(width, "path", true, async (page) => {
+        const field = page.locator(`${search} > input`);
+        expect((await boxOf(page, search))?.width).toBe(36);
+        expect(await field.getAttribute("title")).toBe("Suchen");
+        // pressed: a short overlay that grows to the left over its place, whole in sight; nothing beside it moves or folds
+        const neighbours = () =>
+          Promise.all([
+            boxOf(page, '.k2-pane > [data-slot="head"] .k2-bar-end > .k2-btn:nth-of-type(1)'),
+            boxOf(page, '.k2-pane > [data-slot="head"] .k2-bar-end > .k2-btn:nth-of-type(3)'),
+            boxOf(page, filter),
+          ]);
+        const before = await neighbours();
+        await field.click();
+        await settled(page);
+        expect((await sightOf(page)).width).toBe(184);
+        expect((await sightOf(page)).hidden).toEqual([]);
+        expect(await neighbours()).toEqual(before);
+        await field.fill("Angebot");
+        await settled(page);
+        expect(await neighbours()).toEqual(before);
+        // left with its words: it takes its width in the row, whole in sight, and every control beside it too
+        await page.keyboard.press("Tab");
+        await settled(page);
+        expect(await sightOf(page)).toEqual({ width: 184, hidden: [], covered: [] });
+        // emptied, it folds back to its symbol
+        await field.fill("");
+        await page.keyboard.press("Tab");
+        await settled(page);
+        expect((await boxOf(page, search))?.width).toBe(36);
+      });
+    });
+
+  test("Escape leaves it on the desktop and keeps its words, unless the app takes Escape", async () => {
     await withPage(1440, "path", true, async (page) => {
       const field = page.locator(`${search} > input`);
-      expect((await boxOf(page, search))?.width).toBe(36);
-      expect(await field.getAttribute("title")).toBe("Suchen");
-      // nothing beside it moves or folds while it opens: it grows to the left over its place
-      const neighbours = () =>
-        Promise.all([
-          boxOf(page, '.k2-pane > [data-slot="head"] .k2-bar-end > .k2-btn:nth-of-type(1)'),
-          boxOf(page, '.k2-pane > [data-slot="head"] .k2-bar-end > .k2-btn:nth-of-type(3)'),
-          boxOf(page, filter),
-        ]);
-      const before = await neighbours();
       await field.click();
-      expect((await boxOf(page, search))?.width).toBeGreaterThan(100);
-      expect(await neighbours()).toEqual(before);
       await field.fill("Angebot");
-      await page.keyboard.press("Tab");
-      // its words keep it open
-      expect((await boxOf(page, search))?.width).toBeGreaterThan(100);
+      await page.keyboard.press("Escape");
+      await settled(page);
+      expect(await field.evaluate((input) => document.activeElement === input)).toBe(false);
+      expect(await field.inputValue()).toBe("Angebot");
+      expect(await sightOf(page)).toEqual({ width: 184, hidden: [], covered: [] });
+      // empty, Escape folds it back to its symbol
+      await field.click();
       await field.fill("");
-      await page.keyboard.press("Tab");
+      await page.keyboard.press("Escape");
+      await settled(page);
+      expect(await field.evaluate((input) => document.activeElement === input)).toBe(false);
       expect((await boxOf(page, search))?.width).toBe(36);
     });
   });
@@ -182,14 +258,45 @@ describe("the head's search is its symbol on every width", () => {
       await page.locator("body").click({ position: { x: 600, y: 500 } });
       await page.keyboard.press("/");
       expect(await page.evaluate(() => document.activeElement?.closest(".k2-input[data-search]") !== null)).toBe(true);
-      expect((await boxOf(page, search))?.width).toBeGreaterThan(100);
+      expect((await sightOf(page)).width).toBe(184);
+    });
+  });
+
+  test('"/" counts with AltGr, not while a key composes or a menu stands open', async () => {
+    await withPage(1440, "path", true, async (page) => {
+      const slash = (init: KeyboardEventInit & { keyCode?: number; modifierAltGraph?: boolean }, from?: string) =>
+        page.evaluate(
+          ({ init, from }) => {
+            (document.activeElement as HTMLElement | null)?.blur();
+            const target = from ? document.querySelector<HTMLElement>(from)! : document.body;
+            if (from) {
+              target.setAttribute("aria-expanded", "true");
+              target.focus();
+            }
+            const event = new KeyboardEvent("keydown", { key: "/", bubbles: true, cancelable: true, ...init });
+            if (init.keyCode !== undefined) Object.defineProperty(event, "keyCode", { value: init.keyCode });
+            target.dispatchEvent(event);
+            const opened = document.activeElement?.closest(".k2-input[data-search]") !== null;
+            if (from) target.removeAttribute("aria-expanded");
+            return opened;
+          },
+          { init, from },
+        );
+      // AltGr is Ctrl+Alt on Windows (German: AltGr+7 is "{", but other layouts type "/" with it)
+      expect(await slash({ ctrlKey: true, altKey: true, modifierAltGraph: true })).toBe(true);
+      expect(await slash({ ctrlKey: true, altKey: true })).toBe(false);
+      // an IME composes
+      expect(await slash({ keyCode: 229 })).toBe(false);
+      // a control whose menu stands open keeps its keys
+      expect(await slash({}, '.k2-pane > [data-slot="head"] .k2-bar-end > .k2-btn:nth-of-type(1)')).toBe(false);
+      expect(await slash({})).toBe(true);
     });
   });
 
   for (const live of [false, true])
     test(`words from the address keep it open on the server's page alone and after it (${live ? "hydrated" : "server"})`, async () => {
       await withPage(1440, "filled", live, async (page) => {
-        expect((await boxOf(page, search))?.width).toBeGreaterThan(100);
+        expect(await sightOf(page)).toEqual({ width: 184, hidden: [], covered: [] });
         expect(await page.locator(`${search} > input`).inputValue()).toBe("Angebot");
         if (!live) return;
         // a caller that empties the field itself: it folds once the focus leaves

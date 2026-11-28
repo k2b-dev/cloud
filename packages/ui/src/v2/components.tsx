@@ -552,6 +552,12 @@ export const Path = (props: PathProps) => {
       const step = chevron + 2 * (Number.parseFloat(getComputedStyle(nav).columnGap) || 0);
       const room = nav.clientWidth + 0.5;
       const sum = (widths: number[]) => widths.reduce((total, each) => total + each, 0);
+      // the whole path, every place unfolded: where its room comes from its own width (a pane's head block, whose
+      // grid gives the start the width of what it holds), it asks for this, so a path that folded unfolds again
+      nav.style.setProperty(
+        "--k2-path-whole",
+        `${Math.ceil(sum(places.map((place) => place.scrollWidth)) + current.scrollWidth + places.length * step)}px`,
+      );
       const next: PathFold =
         sum(least) + page + places.length * step <= room
           ? 0

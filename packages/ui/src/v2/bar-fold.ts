@@ -100,7 +100,18 @@ const measure = (entry: Watched): Found => {
     (Number.parseFloat(endStyle.paddingRight) || 0) +
     (Number.parseFloat(endStyle.marginRight) || 0);
   const controls = laidOut(end).filter((control) => control.getClientRects().length > 0);
-  const widths = controls.map((control) => control.getBoundingClientRect().width);
+  // the room a part takes in the row: a head's search open over its neighbours takes its 36 px place, not its field
+  const widths = controls.map((control) => {
+    const own = getComputedStyle(control);
+    return control.getBoundingClientRect().width + (Number.parseFloat(own.marginLeft) || 0) + (Number.parseFloat(own.marginRight) || 0);
+  });
+  // A pane's toolbar that the head's bar holds in its own row (`Pane`'s head block, wide or beside a head of actions
+  // only) shares the room with the end: it counts whole, as the start does (v2.css measures it at its whole width), so
+  // the end's buttons fold before the toolbar gives way. Below the head's row it takes none of it.
+  const toolbar = bar.querySelector<HTMLElement>(':scope > [data-slot="status"] > :is(.k2-fbar, .k2-bar)');
+  const toolbarBox = toolbar?.getBoundingClientRect();
+  const endBox = end.getBoundingClientRect();
+  const beside = toolbarBox && toolbarBox.top < endBox.bottom && toolbarBox.bottom > endBox.top ? toolbarBox.width + gap : 0;
   // the end's last "…" menu, after which stand only parts that never fold (a closing ×, the primary, a menu of its
   // own), takes the folded buttons: nothing new stands beside it, and nothing after the ×
   const last = [...controls].reverse().find((control) => entry.hosts.has(control) || !control.matches(neverFolds));
@@ -112,6 +123,7 @@ const measure = (entry: Watched): Found => {
     : (more?.getBoundingClientRect().width ?? Math.max(0, ...controls.map((control) => control.getBoundingClientRect().height)));
   let used =
     rings +
+    beside +
     (start ? start.getBoundingClientRect().width + gap : 0) +
     widths.reduce((sum, width) => sum + width, 0) +
     endGap * Math.max(0, controls.length - 1);
@@ -198,8 +210,8 @@ const watchFonts = () => {
   });
 };
 
-/** The states of a button that its menu entry shows. */
-const states = ["disabled", "aria-disabled", "aria-pressed", "aria-label", "aria-busy", "href"];
+/** The states of a button that its menu entry shows; and a head search's words and overlay, which set its room in the row. */
+const states = ["disabled", "aria-disabled", "aria-pressed", "aria-label", "aria-busy", "href", "data-filled", "data-overlay"];
 
 export type Fold = {
   /** Stops watching and gives every folded button back. */

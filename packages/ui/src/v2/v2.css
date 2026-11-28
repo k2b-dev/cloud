@@ -753,6 +753,10 @@
      parts at its end, a closing × among them, the same before and after the page is alive */
   justify-content: flex-end;
 }
+/* a head's search open as an overlay stands over its neighbours, beyond the cut (set by the field, see `Input`) */
+.k2-ui .k2-bar[data-k2-part="Bar"] > .k2-bar-end[data-k2-open-search] {
+  overflow: visible;
+}
 .k2-ui .k2-bar:not([data-k2-measuring]) > .k2-bar-end > [data-k2-folded] {
   display: none;
 }
@@ -798,9 +802,26 @@
   grid-template-areas: "start end" "status status";
   row-gap: 0;
   height: auto;
+  /* in two rows the toolbar comes after the head's end on the screen, but between start and end in the page: the Tab
+     key follows the rows where the browser knows this (Chromium 137); WebKit and Firefox still go start, toolbar, end */
+  reading-flow: grid-rows;
 }
 .k2-ui [data-slot="head"][data-block] > .k2-bar > .k2-bar-start {
   grid-area: start;
+}
+/* The start's least (`width` beside `flex-basis: content`, above) is for a row of flex; in the block's grid it would
+   be the start's only width, and a path in it would fold into "…" with room to spare. Here the start takes its column.
+   Where that column is as wide as what it holds (one row), a path asks for its whole width (`--k2-path-whole`, set by
+   `Path`), not for what is left of it once folded: so it unfolds again when the room comes back. Where the row is
+   short, the toolbar's column gives way first, then the start, and the path folds there as anywhere; the bar's fold
+   measures it as before. */
+.k2-ui [data-slot="head"][data-block] > .k2-bar:not([data-k2-measuring]) > .k2-bar-start {
+  width: auto;
+  min-width: 0;
+}
+.k2-ui [data-slot="head"][data-block] > .k2-bar:not([data-k2-measuring]) > .k2-bar-start > .k2-path {
+  flex: 1 1 auto;
+  width: var(--k2-path-whole, auto);
 }
 .k2-ui [data-slot="head"][data-block] > .k2-bar > .k2-bar-end {
   grid-area: end;
@@ -827,6 +848,11 @@
   margin-inline-end: 0;
   padding-top: 6px;
 }
+/* In one row the toolbar shares the room with the head's end: the fold measures it whole, as it does the start, so the
+   end's buttons fold before the toolbar gives way (`bar-fold.ts`). */
+.k2-ui [data-slot="head"][data-block="row"] > .k2-bar[data-k2-measuring] > [data-slot="status"] > :is(.k2-fbar, .k2-bar) {
+  width: max-content;
+}
 @container k2-pane (min-width: 1200px) {
   .k2-ui [data-slot="head"][data-block=""] > .k2-bar {
     grid-template-columns: auto minmax(0, 1fr) auto;
@@ -839,6 +865,9 @@
     padding-inline: 12px;
     padding-block: 6px;
     height: auto;
+  }
+  .k2-ui [data-slot="head"][data-block=""] > .k2-bar[data-k2-measuring] > [data-slot="status"] > :is(.k2-fbar, .k2-bar) {
+    width: max-content;
   }
 }
 .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar {
@@ -5042,9 +5071,10 @@
 /* ── Phone: below 768 px. Columns become pages; rows ≥ 60; the main action floats ───────────────────────────── */
 /* The search of a head is its symbol on every width (look rule 31, Valentin 27.11.: "die Suchleiste könnte auch
    einfach nur ein Icon sein"): 36 px like an icon button, the same part as on the phone. A press, a tap or "/" goes
-   into the field. From 768 px the open field grows to the left over its 36 px place, so nothing beside it moves or
-   folds; it folds back when it is empty and the focus leaves. Its words keep it open, also on the server's page, and
-   so does an open menu at its end (`data-held`). A search with more at its end (a filter) keeps its field. */
+   into the field. From 768 px the field pressed while empty opens as a short overlay that grows to the left over its
+   36 px place, so nothing beside it moves or folds while the person types; once the focus leaves, its words keep it
+   open at its width in the row (also on the server's page), and empty it folds back. An open menu at its end
+   (`data-held`) keeps it open too. A search with more at its end (a filter) keeps its field. */
 .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not([data-filled], [data-held], [data-with-end], :focus-within) {
   position: relative;
   width: var(--k2-h-control);
@@ -5068,7 +5098,13 @@
 .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not([data-filled], [data-held], [data-with-end], :focus-within) > .k2-input-end {
   display: none;
 }
-.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:is([data-filled], [data-held], :focus-within):not([data-with-end]) {
+/* with words and no overlay (also on the server's page) the field takes its width in the flow, and the fold counts it */
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:is([data-filled], [data-held], :focus-within):not([data-with-end], [data-overlay]) {
+  width: 184px;
+}
+/* pressed while empty (`data-overlay`, set by the field until the focus leaves it): a short overlay over its neighbours,
+   from its 36 px place to the left; its place lifts its cut for that while (`data-k2-open-search`) */
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search][data-overlay]:not([data-with-end]) {
   position: relative;
   z-index: 2;
   width: 184px;
