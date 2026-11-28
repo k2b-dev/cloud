@@ -1330,9 +1330,10 @@
     margin-top: 0;
   }
   /* the content is a column of its own 48 px after the head column, up to the section's end: its rows, fields and
-     notices start and end on it, so their hair and their tint stay inside the measure */
-  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) > :not(.k2-sh, .k2-sec-body),
-  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) > .k2-sec-body > * {
+     notices start and end on it, so their hair and their tint stay inside the measure (every part is named by its
+     data-k2-part, so the :has() above never restyles the whole document) */
+  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) > :is([data-k2-part], .k2-sec-link):not(.k2-sh, .k2-sec-body),
+  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) > .k2-sec-body > :is([data-k2-part], .k2-sec-link) {
     --k2-edge: 0px;
     --k2-edge-icon: 24px;
     margin-left: calc(232px + 48px);
