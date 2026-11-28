@@ -42,13 +42,21 @@ const withPage = async (options: { width: number; split?: boolean }, run: (page:
   }
 };
 
-/** Scrolls every scrolling box to its end, then reads the last row's bottom and the floating action's top. */
+/**
+ * Scrolls to the end as a person does, with the wheel over the page, then reads the last row's bottom and the floating
+ * action's top. A script could also scroll a box that clips (`overflow: hidden`) and that no finger moves; the wheel
+ * reaches only what really scrolls. It turns the wheel until the last row stops moving: WebKit spreads a turn over
+ * several frames.
+ */
 const atEnd = async (page: Page) => {
-  await page.evaluate(() => {
-    for (const element of document.querySelectorAll<HTMLElement>("*"))
-      if (element.scrollHeight > element.clientHeight + 1) element.scrollTop = element.scrollHeight;
-  });
-  await settled(page);
+  await page.mouse.move(195, 400);
+  const lastRow = () => page.locator('[data-k2-part="Row"]').last().evaluate((row) => row.getBoundingClientRect().bottom);
+  let before = Number.NaN;
+  for (let now = await lastRow(); now !== before; now = await lastRow()) {
+    before = now;
+    await page.mouse.wheel(0, 2000);
+    await settled(page);
+  }
   return page.evaluate(() => {
     const rows = [...document.querySelectorAll<HTMLElement>('[data-k2-part="Row"]')];
     const fab = document.querySelector<HTMLElement>(".k2-fab")!;

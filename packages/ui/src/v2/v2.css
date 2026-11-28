@@ -4874,6 +4874,16 @@
     flex-direction: column;
     overflow: visible;
   }
+  /* While its panes stand one under the other, the split of the main column is the page's scroll: the frame around it
+     clips and never scrolls, so a finger, the wheel or a jump moves this split (fab-room.browser.test). */
+  .k2-ui .k2-ws-main > .k2-split {
+    overflow: hidden auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+  }
+  .k2-ui .k2-ws-main > .k2-split::-webkit-scrollbar {
+    display: none;
+  }
   .k2-ui .k2-split > .k2-seam {
     width: auto;
     height: 1px;
