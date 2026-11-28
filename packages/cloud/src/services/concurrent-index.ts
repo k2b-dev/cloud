@@ -16,12 +16,13 @@ export type ConcurrentIndex = {
   table: string;
   /**
    * Everything after `ON <table>`: method, columns, order and, without `where`, an optional partial predicate. A
-   * constant of the code, never request input; it reaches SQL as written, so a `;` is refused.
+   * constant of the code, never request input; it reaches SQL as written, so `;` and comments are refused.
    */
   definition: string;
   /**
-   * The predicate of a partial index, without `WHERE`, under the same rule as `definition`. Required for a partial
-   * index on a TimescaleDB hypertable, whose build options stand between the columns and the predicate.
+   * The predicate of a partial index, without `WHERE`, under the same rule as `definition`; `definition` then has no
+   * `WHERE` of its own. Required for a partial index on a TimescaleDB hypertable, whose build options stand between the
+   * columns and the predicate.
    */
   where?: string;
 };
@@ -51,8 +52,14 @@ const qualifiedTable = (table: string) => {
   const parts = table.split(".");
   return parts.length === 2 && parts.every((part) => IDENTIFIER.test(part));
 };
+/** One clause as written: no second statement and no comment that could hide the rest of it. */
+const oneClause = (text: string) => !/;|--|\/\*/.test(text);
+const INLINE_WHERE = /\bwhere\b/i;
 const validIndex = (index: ConcurrentIndex) =>
-  IDENTIFIER.test(index.name) && qualifiedTable(index.table) && !index.definition.includes(";") && !index.where?.includes(";");
+  IDENTIFIER.test(index.name) &&
+  qualifiedTable(index.table) &&
+  oneClause(index.definition) &&
+  (index.where === undefined || (oneClause(index.where) && !INLINE_WHERE.test(index.definition)));
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -111,64 +118,73 @@ const createStatement = (index: ConcurrentIndex, hypertable: boolean) => {
 };
 
 /**
- * Runs the build on the reserved connection. On a hypertable it waits at most `HYPERTABLE_LOCK_TIMEOUT` for each lock
+ * Runs one statement on the reserved connection. On a hypertable, where a build and a drop lock each chunk against
+ * reads or writes and queue every later query while they wait, it waits at most `HYPERTABLE_LOCK_TIMEOUT` for each lock
  * and resets the setting before the connection goes back to the pool, so no later query inherits it.
  */
-const runBuild = async (db: SQL, index: ConcurrentIndex, hypertable: boolean) => {
-  if (!hypertable) return db.unsafe(createStatement(index, false)).simple();
+const underLockTimeout = async (db: SQL, statement: string, hypertable: boolean) => {
+  if (!hypertable) return db.unsafe(statement).simple();
   await db.unsafe(`SET lock_timeout = '${HYPERTABLE_LOCK_TIMEOUT}'`).simple();
   try {
-    return await db.unsafe(createStatement(index, true)).simple();
+    return await db.unsafe(statement).simple();
   } finally {
     await db.unsafe("RESET lock_timeout").simple();
   }
 };
 
-const dropIndex = (db: SQL, index: ConcurrentIndex) =>
-  db.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS ${index.table.split(".")[0]}.${index.name}`).simple();
+/**
+ * Drops a leftover, an invalid or half-built index. On a hypertable `DROP INDEX CONCURRENTLY` takes `ACCESS EXCLUSIVE`
+ * on each chunk, so it waits no longer than a build. `busy` when it met a lock or a deadlock: the next attempt drops it.
+ */
+const dropLeftover = async (
+  db: SQL,
+  index: ConcurrentIndex,
+  hypertable: boolean,
+  options: ConcurrentIndexOptions,
+): Promise<"dropped" | "busy"> => {
+  try {
+    await underLockTimeout(db, `DROP INDEX CONCURRENTLY IF EXISTS ${index.table.split(".")[0]}.${index.name}`, hypertable);
+    return "dropped";
+  } catch (error) {
+    const state = sqlState(error);
+    if (state !== DEADLOCK_DETECTED && state !== LOCK_NOT_AVAILABLE) throw error;
+    options.log.info(`The ${options.purpose} index's leftover waits for a lock; the next attempt drops it`, { index: index.name });
+    return "busy";
+  }
+};
 
 const buildIndex = async (db: SQL, index: ConcurrentIndex, options: ConcurrentIndexOptions): Promise<ConcurrentIndexOutcome> => {
   const before = await readIndex(db, index);
   if (before.valid) return "ready";
   if (before.building) return "busy";
   const hypertable = before.timescale && (await isHypertable(db, index.table));
-  if (hypertable && !index.where && /\bwhere\b/i.test(index.definition)) {
+  if (hypertable && !index.where && INLINE_WHERE.test(index.definition)) {
     options.log.warn(`The ${options.purpose} index needs its predicate in \`where\` on a hypertable; it was not built`, {
       index: index.name,
     });
     return "failed";
   }
-  // IF NOT EXISTS would keep an invalid index, such as one whose build was interrupted. A lock it could not take now
-  // (a deadlock with autovacuum on a chunk, a lock timeout) passes: the next attempt drops it.
-  if (before.present) {
-    try {
-      await dropIndex(db, index);
-    } catch (error) {
-      const state = sqlState(error);
-      if (state !== DEADLOCK_DETECTED && state !== LOCK_NOT_AVAILABLE) throw error;
-      options.log.info(`The ${options.purpose} index's leftover waits for a lock; the next attempt drops it`, { index: index.name });
-      return "busy";
-    }
-  }
+  // IF NOT EXISTS would keep an invalid index, such as one whose build was interrupted.
+  if (before.present && (await dropLeftover(db, index, hypertable, options)) === "busy") return "busy";
   const startedAt = performance.now();
   try {
-    await runBuild(db, index, hypertable);
+    await underLockTimeout(db, createStatement(index, hypertable), hypertable);
   } catch (error) {
     const after = await readIndex(db, index);
     if (after.valid) return "ready";
     if (after.building) return "busy";
     // a write the build would have queued behind: give way, and leave no half-built index for the planner to skip
-    if (hypertable && sqlState(error) === LOCK_NOT_AVAILABLE) {
+    const gaveWay = hypertable && sqlState(error) === LOCK_NOT_AVAILABLE;
+    if (gaveWay) {
       options.log.info(`The ${options.purpose} index waits for a moment without writes; the next attempt continues`, { index: index.name });
-      if (after.present) await dropIndex(db, index);
-      return "busy";
+    } else {
+      options.log.warn(`The ${options.purpose} index was not built; queries run without it until the next attempt`, {
+        index: index.name,
+        error: message(error),
+      });
     }
-    options.log.warn(`The ${options.purpose} index was not built; queries run without it until the next attempt`, {
-      index: index.name,
-      error: message(error),
-    });
-    if (after.present) await dropIndex(db, index);
-    return "failed";
+    if (after.present && (await dropLeftover(db, index, hypertable, options)) === "busy") return "busy";
+    return gaveWay ? "busy" : "failed";
   }
   // IF NOT EXISTS skips the build when another one created the index meanwhile; it counts only once valid.
   if (!(await readIndex(db, index)).valid) return "busy";
@@ -372,8 +388,6 @@ export const createIndexIfMissing = async (db: SQL, index: ConcurrentIndex & { u
   >`SELECT to_regclass(${`${index.table.split(".")[0]}.${index.name}`}) IS NOT NULL AS present`;
   if (state?.present) return;
   await db
-    .unsafe(
-      `CREATE ${index.unique ? "UNIQUE " : ""}INDEX IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition}${index.where ? ` WHERE ${index.where}` : ""}`,
-    )
+    .unsafe(`CREATE ${index.unique ? "UNIQUE " : ""}INDEX IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition}`)
     .simple();
 };

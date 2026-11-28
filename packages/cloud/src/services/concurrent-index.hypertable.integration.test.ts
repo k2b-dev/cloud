@@ -6,13 +6,14 @@ import { type ConcurrentIndex, ensureConcurrentIndexes } from "./concurrent-inde
 import { logger } from "./logging";
 
 // TimescaleDB is optional for an installation and absent from CI's Postgres: these tests run where the database
-// offers the extension and are skipped elsewhere, saying why.
+// offers the extension and are skipped elsewhere, saying why. `concurrent-index.hypertable.test.ts` pins the same
+// statements without a database.
 const database = testInfra.database ? await useFreshDatabase("hypertable_index") : null;
 const [offered] = database
   ? await sql<{ yes: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'timescaledb') AS yes`
   : [];
 const suite = offered?.yes ? databaseSuite() : describe.skip;
-if (!offered?.yes) console.log("hypertable index tests skipped: the test database offers no timescaledb extension");
+if (database && !offered?.yes) console.log("hypertable index tests skipped: the test database offers no timescaledb extension");
 afterAll(async () => {
   await database?.drop();
 }, 60_000);
@@ -104,6 +105,35 @@ suite("index builds on a TimescaleDB hypertable", () => {
       await writer.close();
     }
     expect(await ensureConcurrentIndexes([VISIBLE], options)).toBe("built");
+  }, 60_000);
+
+  test("a leftover drop that waits behind an open write gives way within its timeout; reads and writes go on", async () => {
+    // a valid index marked invalid, as an interrupted build leaves it: the next attempt drops it before it builds
+    await sql`UPDATE pg_index SET indisvalid = false WHERE indexrelid = 'hyper.hyper_events_visible'::regclass`.simple();
+    const info = spyOn(log, "info").mockImplementation(() => {});
+    const holder = session();
+    const reader = session();
+    try {
+      await holder`BEGIN`.simple();
+      await holder`INSERT INTO hyper.events (metadata) VALUES ('{}'::jsonb)`.simple();
+      const started = performance.now();
+      const dropping = ensureConcurrentIndexes([VISIBLE], options);
+      await Bun.sleep(100);
+      // the drop locks each chunk against reads too while it waits; a read that arrives meanwhile still completes
+      const read = reader`SELECT count(*)::int AS n FROM hyper.events`;
+      expect(await dropping).toBe("busy");
+      await read;
+      // one lock timeout of a second, and the catalog reads around it
+      expect(performance.now() - started).toBeLessThan(3_000);
+      expect((await indexState()).present).toBe(true);
+      await holder`COMMIT`.simple();
+    } finally {
+      info.mockRestore();
+      await holder.close();
+      await reader.close();
+    }
+    expect(await ensureConcurrentIndexes([VISIBLE], options)).toBe("built");
+    expect((await indexState()).valid).toBe(true);
   }, 60_000);
 
   test("the lock timeout of a hypertable build stays with that build: the connection goes back without it", async () => {
