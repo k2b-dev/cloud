@@ -194,14 +194,11 @@ type InputBase = {
   /** A quiet example while the field is empty. */
   placeholder?: string;
   /**
-   * The kind of text, which picks the phone's keyboard; `text` when not set. A `search` in the head of a workspace
-   * or pane stands as its symbol (36 px, like an icon button) while it is empty, on every width. From 768 px a press
-   * or "/" opens the field as a short overlay over its neighbours, growing to the left from its place, until the focus
-   * leaves; its words then keep the field open at its width in the row (also on the server's page), and the bar folds
-   * around it. Empty, it folds back to its symbol. A search with an `end` (such as a filter) keeps its field there. On
-   * the phone, where the other head actions hide, a tap goes into the field, which opens over the head; its words keep
-   * it there. Escape leaves the field on every width and keeps its words (unless `onKeyDown` takes Escape itself with
-   * `preventDefault`). Where a host offers the
+   * The kind of text, which picks the phone's keyboard; `text` when not set. The search of a head is `HeadSearch`,
+   * which brings its symbol, "/" and its words along. A plain `search` in a head keeps its field from 768 px; on the
+   * phone, where the other head actions hide, it stands as its symbol, and a tap goes into the field, which opens over
+   * the head while it has the focus and folds back, its words kept, when the focus leaves or on Escape (unless
+   * `onKeyDown` takes Escape itself with `preventDefault`). Where a host offers the
    * page's search in a bar of its own (`data-k2-host-search` on the v2 scope, as the Cloud shell's phone bar does),
    * the folded search leaves the head and the order of the Tab key on the phone, and the host focuses it; a head with
    * a path then opens it over the content's first row.
@@ -328,17 +325,16 @@ const forwardRef = (ref: InputProps["ref"], element: HTMLInputElement | HTMLText
   if (typeof ref === "function") ref(element);
 };
 
-/** The place of a head's search: the end of a pane's or a workspace's head bar. */
-const headEnd = '[data-slot="head"] > .k2-bar > .k2-bar-end';
-
 /**
- * Escape in the search of a head, on every width: it leaves the field and keeps its words (the browser would clear
- * them and leave the focus in the field). An empty field folds back to its symbol then, one with words keeps them in
- * sight. A caller that takes Escape itself (`onKeyDown` calls `preventDefault`) decides alone.
+ * Escape in the search of a head on the phone, where the field opens over the head only while it has the focus: it
+ * folds the field back and keeps its words (the browser would clear them and leave the field open). A caller that
+ * takes Escape itself (`onKeyDown` calls `preventDefault`) decides alone.
  */
-const leaveHeadSearch = (event: KeyboardEvent & { currentTarget: HTMLInputElement }) => {
+const foldHeadSearch = (event: KeyboardEvent & { currentTarget: HTMLInputElement }) => {
   if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
-  if (!event.currentTarget.parentElement?.parentElement?.matches(headEnd)) return;
+  const place = event.currentTarget.parentElement?.parentElement;
+  if (!place?.matches('[data-slot="head"] > .k2-bar > .k2-bar-end')) return;
+  if (!matchMedia(`not all and (min-width: ${textEdge.phoneBelow}px)`).matches) return;
   event.preventDefault();
   event.currentTarget.blur();
 };
@@ -362,64 +358,13 @@ const useHostedHeadSearch = (input: () => HTMLInputElement | undefined, search: 
   return hosted;
 };
 
-/** Typing goes on here: a field, a text that can be edited, or a widget that takes keys itself. */
-const typingIn = (target: EventTarget | null) =>
-  target instanceof HTMLElement &&
-  (target.isContentEditable || target.closest("input, textarea, select, [role='textbox'], [role='combobox']") !== null);
-
 /**
- * "/" opens the search of a head, as in most apps (after Z2's #4290): where the person is not typing, and not in a
- * dialog, a menu or a list (nor while a modal dialog, an open menu or another popup is open, whose own keys may take
- * "/"), the first head search in sight takes the focus. "/" with Shift counts (German: Shift+7), and so does "/" with
- * AltGr (Ctrl+Alt on Windows); a key that composes (an IME) and a handler that took the key first win. One listener
- * serves every head search of the page. Known in the browser only.
+ * What `HeadSearch` adds to the `Input` it places (`head-search.tsx`): the marks, handlers and `ref` of the field's
+ * box, for the head's search as its symbol, its overlay, "/", its words and its held menu. It comes through this
+ * context, so an `Input` elsewhere carries none of its code.
  */
-const openHeadSearch = (event: KeyboardEvent) => {
-  if (event.key !== "/" || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
-  if (event.getModifierState("AltGraph") ? event.metaKey : event.ctrlKey || event.metaKey || event.altKey) return;
-  if (typingIn(event.target)) return;
-  if (
-    event.target instanceof Element &&
-    event.target.closest("dialog, [role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox']")
-  )
-    return;
-  if (document.activeElement?.matches('[aria-expanded="true"]')) return;
-  // the toasts' region stays an open popup while it shows one, and takes no keys
-  if (document.querySelector("dialog[open]:modal, [aria-modal='true'], [popover]:popover-open:not([data-k2-part='Toast'])")) return;
-  const field = [...document.querySelectorAll<HTMLInputElement>(`${headEnd} > .k2-input[data-search] > input`)].find(
-    (input) => input.getClientRects().length > 0,
-  );
-  if (!field) return;
-  event.preventDefault();
-  field.focus();
-};
-let slashSearches = 0;
-const useSlashToHeadSearch = (input: () => HTMLInputElement | undefined, search: () => boolean) => {
-  onMount(() => {
-    if (!search() || !input()?.parentElement?.parentElement?.matches(headEnd)) return;
-    if (slashSearches++ === 0) document.addEventListener("keydown", openHeadSearch);
-    onCleanup(() => {
-      if (--slashSearches === 0) document.removeEventListener("keydown", openHeadSearch);
-    });
-  });
-};
-
-/**
- * A head search stays open while a menu at its end is open (a filter): the focus is in that menu then, not in the
- * field. The field marks itself (`data-held`), so the head's rules need no `:has()` (after Z2's #4290). Known in the
- * browser only.
- */
-const useHeldOpen = (box: () => HTMLElement | undefined, search: () => boolean) => {
-  onMount(() => {
-    const element = box();
-    const end = element?.querySelector(":scope > .k2-input-end");
-    if (!search() || !element || !end) return;
-    const update = () => element.toggleAttribute("data-held", end.querySelector('[aria-expanded="true"]') !== null);
-    const watch = new MutationObserver(update);
-    watch.observe(end, { subtree: true, attributes: true, attributeFilter: ["aria-expanded"] });
-    onCleanup(() => watch.disconnect());
-  });
-};
+export type HeadSearchKit = (props: InputProps, end: () => unknown) => JSX.HTMLAttributes<HTMLElement>;
+export const HeadSearchContext = createContext<HeadSearchKit>();
 
 /** A round text field: 36 px, 1 px edge, a blue ring on focus. In a field it takes its name and error. */
 export const Input = (props: InputProps) => {
@@ -431,46 +376,11 @@ export const Input = (props: InputProps) => {
   );
   // the end is made once, here (reading the prop twice would make its JSX twice)
   const end = resolveChildren(() => props.end);
-  // Whether a search holds words (`data-filled`): a head's search folds to its symbol only while it is empty and has
-  // no focus (look rule 31), an attribute its owner sets, so no `:has()` restyles the page. Its value comes from the
-  // server's first page; the field itself is read again on mount (a value the browser restored, or one typed before the
-  // script ran), on typing and when the focus leaves (a caller that set `input.value` itself).
-  const [filled, setFilled] = createSignal(Boolean(props.value));
-  createRenderEffect(() => setFilled(Boolean(props.value)));
-  const readFilled = () => {
-    if (input) setFilled(input.value !== "");
-  };
-  onMount(readFilled);
-  // A head's search pressed while empty opens as a short overlay over its neighbours (`data-overlay`), so nothing
-  // beside it moves or folds while the person types; leaving it ends the overlay, and words then keep the field in the
-  // flow. Its place lifts its cut for that while only (`data-k2-open-search`, set by the field, so no `:has()`
-  // restyles). Known in the browser only: the server's page has no focus.
-  const [place, setPlace] = createSignal<HTMLElement>();
-  onMount(() => {
-    const parent = box?.parentElement;
-    if (props.type === "search" && parent?.matches(headEnd)) setPlace(parent);
-  });
-  const [overlay, setOverlay] = createSignal(false);
-  createEffect(() => {
-    const end = place();
-    if (!end) return;
-    end.toggleAttribute("data-k2-open-search", overlay());
-    onCleanup(() => end.removeAttribute("data-k2-open-search"));
-  });
-  useSlashToHeadSearch(
-    () => input,
-    () => props.type === "search",
-  );
-  let box: HTMLElement | undefined;
-  useHeldOpen(
-    () => box,
-    () => props.type === "search",
-  );
+  const head = props.type === "search" ? useContext(HeadSearchContext)?.(props, end) : undefined;
   const shared = () => ({
     id: field?.control,
     name: props.name ?? field?.name,
-    // a search without an example says its name, as its symbol's hint does
-    placeholder: props.placeholder ?? (props.type === "search" ? props.label : undefined),
+    placeholder: props.placeholder,
     value: props.value ?? "",
     "aria-label": field ? undefined : props.label,
     "aria-invalid": field?.invalid ? ("true" as const) : undefined,
@@ -492,9 +402,7 @@ export const Input = (props: InputProps) => {
   };
   return (
     <Dynamic
-      ref={(element: HTMLElement) => {
-        box = element;
-      }}
+      {...head}
       component={send() ? "form" : "span"}
       method={send() ? "get" : undefined}
       action={send()?.action}
@@ -513,19 +421,6 @@ export const Input = (props: InputProps) => {
       data-disabled={props.disabled ? "" : undefined}
       data-multiline={props.multiline ? "" : undefined}
       data-search={props.type === "search" ? "" : undefined}
-      data-filled={props.type === "search" && filled() ? "" : undefined}
-      data-overlay={overlay() ? "" : undefined}
-      onFocusIn={props.type === "search" ? () => setOverlay((now) => now || (place() !== undefined && !filled())) : undefined}
-      onFocusOut={
-        props.type === "search"
-          ? (event: FocusEvent & { currentTarget: HTMLElement }) => {
-              readFilled();
-              if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setOverlay(false);
-            }
-          : undefined
-      }
-      // a search that carries more at its end (a filter) is more than a search: it keeps its field in a head
-      data-with-end={end() !== undefined ? "" : undefined}
       style={props.multiline && props.rows !== undefined ? custom({ "--k2-rows": String(props.rows) }) : undefined}
     >
       <Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>
@@ -543,15 +438,10 @@ export const Input = (props: InputProps) => {
             type={props.type ?? "text"}
             min={props.min}
             max={props.max}
-            // a folded search names itself under the pointer
-            title={props.type === "search" ? props.label : undefined}
-            onInput={(event) => {
-              setFilled(event.currentTarget.value !== "");
-              props.onInput?.(event.currentTarget.value);
-            }}
+            onInput={(event) => props.onInput?.(event.currentTarget.value)}
             onKeyDown={(event) => {
               props.onKeyDown?.(event);
-              if (props.type === "search") leaveHeadSearch(event);
+              if (props.type === "search") foldHeadSearch(event);
             }}
           />
         }

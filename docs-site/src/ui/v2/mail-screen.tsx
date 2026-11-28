@@ -5,9 +5,9 @@ import {
   Button,
   Canvas,
   Chip,
+  HeadSearch,
   Icon,
   Inline,
-  Input,
   List,
   Nav,
   Notice,
@@ -246,7 +246,7 @@ export const MailScreen = (props: { open?: boolean; selecting?: boolean }) => {
           }
           end={
             <>
-              <Input type="search" icon="search" placeholder="Suchen" label="Suchen" />
+              <HeadSearch placeholder="Suchen" label="Suchen" />
               <Button variant="ghost" icon="dots" label="Weitere Aktionen" />
               <Button variant="primary" icon="pencil">
                 Neue Nachricht

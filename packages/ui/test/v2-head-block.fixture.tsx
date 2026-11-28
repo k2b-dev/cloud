@@ -1,5 +1,5 @@
 import { LocaleProvider } from "../src/intl/locale";
-import { Bar, Button, Input, List, Pane, Path, Row, StatusRow, Text, Workspace } from "../src/v2";
+import { Bar, Button, HeadSearch, List, Pane, Path, Row, StatusRow, Text, Workspace } from "../src/v2";
 
 // A pane's head and its toolbar as one block, the head's search as its symbol, and a row's time beside its deed, as the
 // test sets them up:
@@ -29,9 +29,7 @@ const Status = () => (
 const files = ["Angebote", "Aufmaß", "Fotos", "Budget 2027.xlsx", "Lieferplan.pdf", "Notizen.md"];
 
 const Search = (props: { kind: Kind }) => (
-  <Input
-    type="search"
-    icon="search"
+  <HeadSearch
     label="Suchen"
     value={props.kind === "filled" ? "Angebot" : undefined}
     end={props.kind === "withEnd" ? <Button variant="ghost" icon="filter" label="Filter der Suche" /> : undefined}

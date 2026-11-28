@@ -210,7 +210,8 @@ describe("the head's search is its symbol on every width", () => {
       await withPage(width, "path", true, async (page) => {
         const field = page.locator(`${search} > input`);
         expect((await boxOf(page, search))?.width).toBe(36);
-        expect(await field.getAttribute("title")).toBe("Suchen");
+        // the folded symbol names itself under the pointer (its box, which the field covers)
+        expect(await page.locator(search).getAttribute("title")).toBe("Suchen");
         // pressed: a short overlay that grows to the left over its place, whole in sight; nothing beside it moves or folds
         const neighbours = () =>
           Promise.all([

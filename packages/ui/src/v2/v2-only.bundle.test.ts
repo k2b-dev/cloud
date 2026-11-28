@@ -98,16 +98,25 @@ test("an island of v2 alone (every export, and useLocale) bundles no v1 module",
 const lean = `import { Menu, Nav, Workspace } from ${v2Index};\nconsole.log(Menu, Nav, Workspace);\n`;
 // Measured 27.11.2026 (Bun 1.4.4, minified): 64 453 bytes of this package's own code, plus a tenth for growing. It holds
 // `Input` (5.5 KB) for the nav's search (#4443), which nearly every page loads anyway; a tree or a panel never.
-// Measured 28.11.2026 (Bun 1.4.4): the head search and the head block (#4537) add 2 545 bytes (main 68 728, with them
-// 71 273): `Input` 2 192 for "/", the overlay, the words and the held menu, `Pane` 342 for the block.
-const leanBudget = Math.ceil((64_453 + 2_545) * 1.1);
+const leanBudget = Math.ceil(64_453 * 1.1);
 
 test("an island with a Workspace, a Nav and a Menu loads no tree and no menu panel, and stays under its measure", async () => {
   const modules = await islandModules(lean);
   const total = Object.values(modules).reduce((sum, bytes) => sum + bytes, 0);
   console.info(`Workspace, Nav and Menu: ${total} bytes of packages/ui/src (budget ${leanBudget})`);
-  expect(Object.keys(modules).filter((module) => module === "v2/nav-tree.tsx" || module === "v2/menu-panel.tsx")).toEqual([]);
+  expect(Object.keys(modules).filter((module) => ["v2/nav-tree.tsx", "v2/menu-panel.tsx", "v2/head-search.tsx"].includes(module))).toEqual(
+    [],
+  );
   expect(total).toBeLessThanOrEqual(leanBudget);
+}, 60_000);
+
+// A head's search (`HeadSearch`: its symbol, its overlay, "/", its words and its held menu) comes with the part that
+// places it, as the tree and the panel do: an island whose head has no search loads none of it.
+test("HeadSearch brings the head search along", async () => {
+  const modules = await islandModules(
+    `import { HeadSearch, Menu, Nav, Workspace } from ${v2Index};\nconsole.log(HeadSearch, Menu, Nav, Workspace);\n`,
+  );
+  expect(modules["v2/head-search.tsx"]).toBeGreaterThan(0);
 }, 60_000);
 
 test("navTree and menuPanel bring the tree and the panel along", async () => {

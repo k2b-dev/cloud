@@ -98,7 +98,7 @@ Until they are fixed, use the nearest part and write `// k2b-ui gap: …` at tha
 - Declare `detail` and `detailEmpty` on the workspace when a detail opens beside the list. While nothing is open, `detailEmpty` may carry a `hero`: a picture of the place as a whole, such as a [`Heat`](/en/ui/v2/content) of the mails received per day with a line that sums it up.
 - Give a long list a `scrollKey`, so back and forward return to where it was.
 - Give the head of a list's pane to the pane (`Pane head`), not to the workspace, when the pane has a `status`: then they stand as one block.
-- Put the search of a head in the head's `end` as `Input type="search"` with a `label`: it stands as its symbol, named by its label, and opens over its neighbours when pressed or with "/". Its words keep it open in the row, and Escape leaves it with its words.
+- Put the search of a head in the head's `end` as `HeadSearch` with a `label`: it stands as its symbol, named by its label, and opens over its neighbours when pressed or with "/". Its words keep it open in the row, and Escape leaves it with its words. Its code comes with it, so a page whose heads have no search loads none of it.
 
 ### Don't
 

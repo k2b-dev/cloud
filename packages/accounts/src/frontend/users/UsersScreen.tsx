@@ -7,8 +7,8 @@ import {
   Chip,
   Failed,
   FilterBar,
+  HeadSearch,
   Inline,
-  Input,
   ListOrder,
   Menu,
   Notice,
@@ -246,9 +246,7 @@ export default function UsersScreen(props: UsersScreenProps) {
           }
           end={
             <>
-              <Input
-                type="search"
-                icon="search"
+              <HeadSearch
                 name="q"
                 label={t().searchUsers}
                 placeholder={t().searchUsers}
