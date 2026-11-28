@@ -1,49 +1,22 @@
 import { LocaleProvider } from "@k2b/ui";
 import { fromJSON } from "seroval";
-import type { Component } from "solid-js";
-import { createComponent, render } from "solid-js/web";
-import Access from "./Access.island.tsx";
-import AddApp from "./AddApp.island.tsx";
-import AppsTable from "./AppsTable.island.tsx";
-import Domains from "./Domains.island.tsx";
-import DomainsAdd from "./DomainsAdd.island.tsx";
-import Keys from "./Keys.island.tsx";
-import KeysCreate from "./KeysCreate.island.tsx";
-import MovedNotice from "./MovedNotice.island.tsx";
-import ProviderRetry from "./ProviderRetry.island.tsx";
-import ProviderValue from "./ProviderValue.island.tsx";
-import Redeliver from "./Redeliver.island.tsx";
-import RemoveApp from "./RemoveApp.island.tsx";
+import { createComponent } from "solid-js";
+import { render } from "solid-js/web";
+import AppsScreen from "./AppsScreen";
 
-/** Mounts every Apps page island the way @k2b/ssr does: the server-rendered wrapper carries its props. */
-const islands: Record<string, Component<never>> = {
-  "Access.island.tsx": Access as Component<never>,
-  "AddApp.island.tsx": AddApp as Component<never>,
-  "AppsTable.island.tsx": AppsTable as Component<never>,
-  "Domains.island.tsx": Domains as Component<never>,
-  "DomainsAdd.island.tsx": DomainsAdd as Component<never>,
-  "Keys.island.tsx": Keys as Component<never>,
-  "KeysCreate.island.tsx": KeysCreate as Component<never>,
-  "MovedNotice.island.tsx": MovedNotice as Component<never>,
-  "ProviderRetry.island.tsx": ProviderRetry as Component<never>,
-  "ProviderValue.island.tsx": ProviderValue as Component<never>,
-  "Redeliver.island.tsx": Redeliver as Component<never>,
-  "RemoveApp.island.tsx": RemoveApp as Component<never>,
-};
-for (const element of document.querySelectorAll<HTMLElement>("solid-island")) {
-  const island = islands[element.dataset.file ?? ""];
-  if (!island) continue;
-  const props = fromJSON(JSON.parse(element.dataset.props ?? "{}")) as never;
-  element.replaceChildren();
-  render(
-    () =>
-      createComponent(LocaleProvider, {
-        locale: document.documentElement.lang,
-        get children() {
-          return createComponent(island, props);
-        },
-      }),
-    element,
-  );
-}
+// Apps on v2: the screen mounts fresh in the page's main area with the props the server rendered (seroval keeps the Map).
+const data = document.getElementById("screen-props")!;
+const props: Parameters<typeof AppsScreen>[0] = fromJSON(JSON.parse(data.textContent ?? "{}"));
+const main = document.querySelector<HTMLElement>("main.k2-ui")!;
+main.replaceChildren();
+render(
+  () =>
+    createComponent(LocaleProvider, {
+      locale: document.documentElement.lang,
+      get children() {
+        return createComponent(AppsScreen, props);
+      },
+    }),
+  main,
+);
 document.body.dataset.ready = "true";

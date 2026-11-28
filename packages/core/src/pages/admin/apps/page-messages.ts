@@ -10,7 +10,12 @@ export const appsPageMessages = i18n.define({
   messages: {
     en: {
       apps: "Apps",
+      overview: "Overview",
+      allApps: "All",
+      problemsTab: "Problems",
+      noneOpen: "No app open",
       addApp: "Add app",
+      requests24h: ({ requests, rate }: { requests: string; rate: string }) => `${requests} requests in 24 h · ${rate} errors`,
       summary: ({ total, ok, warn, error, idle }: { total: number; ok: number; warn: number; error: number; idle: number }) =>
         [
           i18n.plural(total, "en", { one: "1 app", other: `${total} apps` }),
@@ -78,7 +83,7 @@ export const appsPageMessages = i18n.define({
         [requests, `${rate} errors`, ms].filter(Boolean).join(" · "),
       noMeasurements: "No measurements",
       unavailable: "Not available",
-      errorsValue: ({ count }: N) => (count === 0 ? "None in 24 h" : `${count} in 24 h`),
+      errorsValue: ({ count, shown }: N & { shown: string }) => (count === 0 ? "None in 24 h" : `${shown} in 24 h`),
       accessValue: ({ people, groups }: { people: number; groups: number }) =>
         [
           i18n.plural(people, "en", { one: "1 person", other: `${people} people` }),
@@ -267,7 +272,12 @@ export const appsPageMessages = i18n.define({
     },
     de: {
       apps: "Apps",
+      overview: "Übersicht",
+      allApps: "Alle",
+      problemsTab: "Probleme",
+      noneOpen: "Keine App geöffnet",
       addApp: "App hinzufügen",
+      requests24h: ({ requests, rate }: { requests: string; rate: string }) => `${requests} Anfragen in 24 Std. · ${rate} Fehler`,
       summary: ({ total, ok, warn, error, idle }: { total: number; ok: number; warn: number; error: number; idle: number }) =>
         [
           total === 1 ? "1 App" : `${total} Apps`,
@@ -334,7 +344,7 @@ export const appsPageMessages = i18n.define({
         [requests, `${rate} Fehler`, ms].filter(Boolean).join(" · "),
       noMeasurements: "Keine Messdaten",
       unavailable: "Nicht verfügbar",
-      errorsValue: ({ count }: N) => (count === 0 ? "Keine in 24 h" : `${count} in 24 h`),
+      errorsValue: ({ count, shown }: N & { shown: string }) => (count === 0 ? "Keine in 24 h" : `${shown} in 24 h`),
       accessValue: ({ people, groups }: { people: number; groups: number }) =>
         [people === 1 ? "1 Person" : `${people} Personen`, groups ? (groups === 1 ? "1 Gruppe" : `${groups} Gruppen`) : ""]
           .filter(Boolean)

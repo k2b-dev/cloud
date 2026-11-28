@@ -229,3 +229,8 @@ test("every custom property v2.css reads is one it defines", () => {
   });
   expect(missing).toEqual([]);
 });
+
+test("an empty state's sign has a tone for wrong and for waiting, in the tints of those states", () => {
+  expect(css).toMatch(/\.k2-sign\[data-tone="bad"\]\s*\{[^}]*--k2-bad-tint[^}]*--k2-bad\b/);
+  expect(css).toMatch(/\.k2-sign\[data-tone="warn"\]\s*\{[^}]*--k2-warn-tint[^}]*--k2-warn-ink/);
+});

@@ -1,7 +1,6 @@
 import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
-import { markHintSeen } from "@k2b/cloud/browser/hints";
 import type { DateContext } from "@k2b/stdlib";
-import { Dropdown, type DropdownItem, MovedHint, toast, watchAppHostWidth } from "@k2b/ui";
+import { Dropdown, type DropdownItem, toast, watchAppHostWidth } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
 import type { SpaceAssignableUser } from "@/contracts";
 import { assigneeIcon } from "@/presentation/assignees";
@@ -21,7 +20,6 @@ type Props = {
   currentView: "list" | "table" | "kanban" | "calendar";
   canWrite: boolean;
   people: SpaceAssignableUser[];
-  hintOpen?: boolean;
 };
 
 export default function SpaceHeadActions(props: Props) {
@@ -31,20 +29,12 @@ export default function SpaceHeadActions(props: Props) {
   const shortcuts = createKanbanShortcuts(props);
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [includePeople, setIncludePeople] = createSignal(false);
-  const [hintOpen, setHintOpen] = createSignal(props.hintOpen ?? false);
   let trigger: HTMLButtonElement | undefined;
   let stopWidthWatch: (() => void) | undefined;
-  const dismissHint = () => {
-    markHintSeen("spaces.space-menu");
-    setHintOpen(false);
-  };
   const openMenu = (open: boolean) => {
     stopWidthWatch?.();
     stopWidthWatch = undefined;
-    if (open) {
-      dismissHint();
-      if (trigger) stopWidthWatch = watchAppHostWidth(trigger, 80, (wide) => setIncludePeople(!wide));
-    }
+    if (open && trigger) stopWidthWatch = watchAppHostWidth(trigger, 80, (wide) => setIncludePeople(!wide));
     setMenuOpen(open);
   };
   onCleanup(() => stopWidthWatch?.());
@@ -95,14 +85,6 @@ export default function SpaceHeadActions(props: Props) {
           <i class="ti ti-dots" aria-hidden="true" />
         </Dropdown.Trigger>
       </Dropdown.Root>
-      <MovedHint
-        open={hintOpen()}
-        target={() => trigger}
-        onDismiss={dismissHint}
-        action={{ label: t.headOpenMenu, onClick: () => openMenu(true) }}
-      >
-        {t.headMenuHint({ ical: Boolean(props.icalToken), shortcuts: props.currentView === "kanban" })}
-      </MovedHint>
       <span class="sr-only" role="status">
         {calendar.copied() ? t.copiedIcalUrl : ""}
       </span>

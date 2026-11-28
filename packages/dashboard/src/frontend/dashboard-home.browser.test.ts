@@ -346,12 +346,19 @@ describe("the dashboard board in a browser", () => {
       try {
         const loading = await layout(page);
         expect(Object.values(loading.states)).toEqual(Array(5).fill("loading"));
+        // A widget that still loads is calm: its frame and title, no spinner, no placeholder, no words on screen.
+        expect(
+          await page.locator('.dashboard-tile[data-state="loading"] :is(.k2b-placeholder, [class*="spinner"], .ti-loader-2)').count(),
+        ).toBe(0);
+        expect(await page.locator(".dashboard-tile .dashboard-widget-slow[data-shown]").count()).toBe(0);
         // Each widget is asked in the size the board shows it in.
         expect(await requests.next(count)).toEqual(board.map(({ id, key, size }) => ({ id, key, size })));
 
         first.open();
         await waitForState(page, "notebooks/recent", "error");
         await waitForState(page, "spaces/today", "ok");
+        // one request asks every widget of the board; each answers on its own line as soon as it is done
+        expect(requests.count).toBe(count + 1);
         expect(await tile(page, "notebooks/recent").textContent()).toContain("Notebooks could not load this widget.");
         // After three seconds the slow app says so inside its own frame.
         await page.locator('.dashboard-tile[data-id="quotes/quote"] .dashboard-widget-slow[data-shown]').waitFor({ timeout: 4_000 });
@@ -372,6 +379,22 @@ describe("the dashboard board in a browser", () => {
         const done = await layout(page);
         expect(done.boxes).toEqual(loading.boxes);
         expect(done.overflow).toBeLessThanOrEqual(0);
+        // Nothing in the board shifted while the widgets arrived: the summed layout shift of the whole visit whose
+        // sources lie in the board, where the engine measures it (Chromium; the boxes above hold in every engine).
+        // The page head is not this test's: its buttons narrow once when the web font replaces the fallback.
+        const shift = await page.evaluate(() => {
+          if (!PerformanceObserver.supportedEntryTypes.includes("layout-shift")) return 0;
+          const observer = new PerformanceObserver(() => {});
+          observer.observe({ type: "layout-shift", buffered: true });
+          type Shift = PerformanceEntry & { value: number; hadRecentInput: boolean; sources: { node?: Node | null }[] };
+          const entries = observer.takeRecords() as Shift[];
+          observer.disconnect();
+          const board = document.querySelector(".dashboard-board");
+          return entries
+            .filter((entry) => !entry.hadRecentInput && entry.sources.some((source) => !source.node || board?.contains(source.node)))
+            .reduce((sum, entry) => sum + entry.value, 0);
+        });
+        expect({ width: view.width, shift }).toEqual({ width: view.width, shift: 0 });
         const scrolls = await tile(page, "notebooks/recent")
           .locator(".k2b-widget-list")
           .evaluate((element) => element.scrollHeight > element.clientHeight);

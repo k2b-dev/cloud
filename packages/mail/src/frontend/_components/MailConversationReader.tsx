@@ -33,7 +33,7 @@ import MailConversationNote from "./MailConversationNote";
 import MailConversationSummaryCard, { type MailSummaryGenerateMode, showsConversationSummary } from "./MailConversationSummaryCard";
 import { AttachmentLightbox, attachmentLightboxItem, loadAttachmentLightbox } from "./MailMessageAttachments";
 import MailMessageCard from "./MailMessageCard";
-import MailReaderHead, { type MailReaderHint } from "./MailReaderHead";
+import MailReaderHead from "./MailReaderHead";
 import MailReplyBox, { type MailReplyBoxApi } from "./MailReplyBox";
 import type { MailActionId } from "./mail-actions";
 import { useMailCloudId } from "./mail-cloud-id";
@@ -110,11 +110,6 @@ export default function MailConversationReader(props: {
   detailErrors: MailDetailErrors;
   /** Who else has the conversation open. */
   presence: readonly ConversationPresenceParticipant[];
-  /** Whether the person has seen a one-time hint in this mailbox. */
-  hintSeen: (hint: MailReaderHint) => boolean;
-  /** The person had arranged their own toolbar before Mail v5 replaced it with fixed actions. */
-  toolbarCustomized: boolean;
-  onHintSeen: (hint: MailReaderHint) => void;
   actionPending: boolean;
   structurePending: boolean;
   onAction: (actionId: MailActionId, options?: { silent?: boolean }) => void | Promise<void>;
@@ -954,11 +949,6 @@ export default function MailConversationReader(props: {
         ? { replyPosition: { value: props.replyPosition, run: changeReplyPosition } }
         : {}),
     });
-  const readerHint = (): MailReaderHint | null => {
-    if (!props.selectedConversationId) return null;
-    if (props.toolbarCustomized && !props.hintSeen("toolbar-moved")) return "toolbar-moved";
-    return props.hintSeen("reader-head-moved") ? null : "reader-head-moved";
-  };
   /** The person outside the team in this conversation, named in the internal note's "… never sees it". */
   const customerName = (): string | null => {
     const own = new Set(props.identities.map((identity) => identity.fromAddress.trim().toLowerCase()));
@@ -1123,8 +1113,6 @@ export default function MailConversationReader(props: {
             laterItems={laterItems}
             menuItems={overflowActions}
             menuLabel={t().moreConversationActions}
-            hint={readerHint()}
-            onHintSeen={props.onHintSeen}
           />
 
           <div class="relative min-h-0 flex-1 overflow-hidden">
