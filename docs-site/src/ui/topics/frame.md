@@ -29,7 +29,7 @@ The workspace decides from its own width, on the server's page too, so nothing j
 
 - Views of the same thing: "Offen", "Diese Woche", "Erledigt", or the areas of a record.
 - They stand in the head `Bar start` beside the actions, or as the `head` of a `Pane`.
-- A tab without room hides whole and joins the menu tab ("Weitere").
+- A tab without room hides whole and joins the menu tab ("Weitere"); its focus moves to the menu tab, never to the page.
 
 ### Path
 

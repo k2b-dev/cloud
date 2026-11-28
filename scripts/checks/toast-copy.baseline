@@ -109,25 +109,13 @@ packages/contacts/src/frontend/_components/ContactNotesSection.tsx | untitled | 
 packages/contacts/src/frontend/_components/ContactsBulkActions.tsx | untitled | error instanceof Error ? error.message : t().couldNotPrepareBulkAction
 packages/contacts/src/frontend/_components/ContactsBulkActions.tsx | untitled | error.message
 packages/contacts/src/frontend/_components/ContactsLiveEvents.island.tsx | untitled | t().liveUpdatesStopped
-packages/core/src/pages/admin/CacheNotice.tsx | untitled | t().cleared
 packages/core/src/pages/admin/ai/AiBudgetToggle.island.tsx | untitled | failure instanceof Error ? failure.message : t().saveFailed
-packages/core/src/pages/admin/apps/remove-dialog.tsx | untitled | t.removed({ name: app.name })
-packages/core/src/pages/admin/outgoing-mail/OutgoingMail.island.tsx | untitled | t().testSent({ recipient: recipient().trim() })
-packages/core/src/pages/admin/outgoing-mail/SendLog.tsx | untitled | cancelled === 0 ? t().cancelBatchEmpty : t().cancelBatchDone({ count: cancelled })
-packages/core/src/pages/admin/outgoing-mail/SendLog.tsx | untitled | error instanceof Error ? error.message : t().logFailed
-packages/core/src/pages/admin/rail/RailAdmin.island.tsx | untitled | t().cacheCleared
-packages/core/src/pages/admin/settings/_components/AccountOperations.island.tsx | untitled | operation.successText
 packages/core/src/pages/admin/settings/_components/AiAppSkillIssueActions.island.tsx | untitled | action === "adopt" ? t().appSkillAdopted : t().appSkillInstalled
 packages/core/src/pages/admin/settings/_components/AiSkillAdminActions.island.tsx | untitled | t().skillResetDone
 packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | untitled | error instanceof Error ? error.message : t().enrichmentFailed
 packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | untitled | summary ? t().enrichmentSummary(summary) : t().enrichmentDone
 packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | untitled | t().freeIpaReachable
 packages/core/src/pages/admin/settings/_components/LegacySettingsSection.tsx | untitled | t().legacyDeleted({ count: result.deleted.length })
-packages/core/src/pages/admin/settings/_components/LinuxIdentityPanel.island.tsx | untitled | t().preparedSuccess({ count: progress().done })
-packages/core/src/pages/admin/settings/_components/LinuxIdentityPanel.island.tsx | untitled | t().saved
-packages/core/src/pages/admin/signin/TestFreeIpaButton.island.tsx | untitled | t().freeIpaReachable
-packages/core/src/pages/admin/storage/StorageBucketDetail.island.tsx | untitled | created ? t().createdOk({ name }) : t().saved
-packages/core/src/pages/admin/storage/StorageBucketDetail.island.tsx | untitled | t().createdFailed({ name })
 packages/dashboard/src/frontend/dashboard-home.tsx | untitled | t().boardFull({ max: DASHBOARD_MAX_ITEMS })
 packages/dashboard/src/frontend/dashboard-home.tsx | untitled | t().saveFailed
 packages/dashboard/src/frontend/dashboard-home.tsx | untitled | t().shortcutsFull({ max: DASHBOARD_MAX_SHORTCUTS })

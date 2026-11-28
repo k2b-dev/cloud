@@ -11,9 +11,10 @@ import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 const root = mkdtempSync(resolve(tmpdir(), "k2-v2-server-markup-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { Pane, Workspace } = await import("./layout");
+const { Pane, Tiles, Workspace } = await import("./layout");
 const { Input } = await import("./controls");
 const { List, Row, Text } = await import("./content");
+const { Empty } = await import("./states");
 const { Heat } = await import("./heat");
 
 const split = (more: JSX.Element) =>
@@ -59,6 +60,24 @@ test("a workspace draws the empty detail's place only while no detail is open, a
 });
 
 // HTML drops one newline at the start of a textarea's text: the server sends one more, so leading blank lines stay.
+// A first start in the middle of the page (W2/W4): the server's markup already places it, so nothing moves when the
+// page hydrates. Both are CSS alone, set by the attributes and the one inline value the server sends.
+test("a centred pane and tiles that share a row are placed by the server's markup alone", () => {
+  const pane = renderToString(() => createComponent(Pane, { label: "Notizbücher", center: true, children: "Start" }));
+  expect(pane).toMatch(/<section[^>]*class="k2-pane"[^>]*data-center=""/);
+  expect(renderToString(() => createComponent(Pane, { label: "Notizbücher", children: "Start" }))).not.toContain("data-center");
+  const tiles = (perRow?: number) =>
+    renderToString(() => createComponent(Tiles, { label: "Wege", perRow, items: [{ icon: "notebook", title: "Tagebuch" }] }));
+  expect(tiles(4)).toMatch(/data-per-row=""[^>]*style="--k2-per-row:\s*4;\s*--k2-per-row-half:\s*2"/);
+  // where n do not fit, a row holds half of them, rounded up
+  expect(tiles(3)).toMatch(/--k2-per-row-half:\s*2"/);
+  // a count is a whole number of at least one
+  expect(tiles(2.7)).toMatch(/--k2-per-row:\s*2;/);
+  expect(tiles(-3)).toMatch(/--k2-per-row:\s*1;\s*--k2-per-row-half:\s*1"/);
+  expect(tiles(undefined)).not.toContain("data-per-row");
+  expect(tiles(undefined)).not.toContain("--k2-per-row");
+});
+
 test("a multi-line field sends its value as the text of its textarea, leading blank lines too", () => {
   for (const value of ["Zwei <Zeilen>\nund mehr", "\nErste\nZweite", "\n\nNach zwei Leerzeilen", ""]) {
     const markup = renderToString(() => createComponent(Input, { multiline: true, label: "Notiz", value }));
@@ -110,6 +129,20 @@ test("a text field sends autocomplete, length, keyboard, spelling and capitals i
   expect(renderToString(() => createComponent(Input, { label: "Suche" }))).not.toMatch(
     /autocomplete|maxlength|inputmode|spellcheck|autocapitalize/,
   );
+});
+
+test("an empty state that went wrong carries its tone on its sign; a plain one stays neutral", () => {
+  const sign = (markup: string) => markup.match(/<span class="k2-sign"[^>]*>/)?.[0] ?? "";
+  const failed = renderToString(() =>
+    createComponent(Empty, { icon: "alert-triangle", text: "Die Seite konnte nicht geöffnet werden.", tone: "bad" }),
+  );
+  expect(sign(failed)).toContain('data-tone="bad"');
+  const waiting = renderToString(() => createComponent(Empty, { icon: "clock", text: "Der Dienst startet gerade.", tone: "warn" }));
+  expect(sign(waiting)).toContain('data-tone="warn"');
+  // without a tone nothing is guessed, and no retry appears: it is not `Failed`
+  const plain = renderToString(() => createComponent(Empty, { icon: "inbox", text: "Noch keine Einlieferung." }));
+  expect(sign(plain)).not.toContain("data-tone");
+  expect(failed).not.toContain("refresh");
 });
 
 // A note's outline comes from the server already at its levels, heard as such before any script runs.
@@ -180,6 +213,88 @@ test("Ticks are drawn by the server alone: a picture with its sentence and one t
   expect(markup).toContain('aria-label="Quelle: 2 Abrufe, 1 fehlgeschlagen"');
   expect(markup.match(/<i data-s="(ok|bad|none)"/g)).toEqual(['<i data-s="none"', '<i data-s="ok"', '<i data-s="bad"']);
   expect(markup).toContain("--k2-c:#7c3aed");
+});
+
+test("a RangeBar is drawn by the server alone: its words, its place on the scale and the colours of its part", async () => {
+  const { RangeBar } = await import("./marks");
+  const markup = renderToString(() =>
+    createComponent(RangeBar, {
+      from: 0,
+      to: 10,
+      domain: [-10, 30],
+      stops: [
+        { at: 0, color: "#0369a1" },
+        { at: 10, color: "#15803d" },
+      ],
+      label: "0° bis 10°",
+    }),
+  );
+  expect(markup).toContain('role="img"');
+  expect(markup).toContain('aria-label="0° bis 10°"');
+  // a quarter in from the start, half the scale short of its end
+  expect(markup).toContain("--k2-range-start:25%");
+  expect(markup).toContain("--k2-range-end:50%");
+  expect(markup).toContain("--k2-range-fill:linear-gradient(var(--k2-range-way, to right), #0369a1 0%, #15803d 100%)");
+});
+
+test("a RangeBar reads from and to in either order, holds a range past its scale to the scale, and stays empty without numbers", async () => {
+  const { RangeBar } = await import("./marks");
+  const draw = (from: number, to: number) =>
+    renderToString(() => createComponent(RangeBar, { from, to, domain: [0, 10], label: "Bereich" }));
+  // the order does not matter
+  expect(draw(8, 2)).toBe(draw(2, 8));
+  // past the scale: held to its ends
+  const past = draw(-5, 15);
+  expect(past).toContain("--k2-range-start:0%");
+  expect(past).toContain("--k2-range-end:0%");
+  // at the scale's very end: a stub that stands at the end (the CSS keeps its 4 px inside the track)
+  expect(draw(10, 10)).toContain("--k2-range-start:100%");
+  // no number: the track alone, no range on it
+  expect(draw(Number.NaN, 3)).not.toContain("<i");
+  expect(renderToString(() => createComponent(RangeBar, { from: 1, to: 2, domain: [5, 5], label: "leer" }))).not.toContain("<i");
+});
+
+test("a RangeBar's colours are colours: stops sorted, held to the visible part, and anything else dropped", async () => {
+  const { RangeBar } = await import("./marks");
+  const markup = renderToString(() =>
+    createComponent(RangeBar, {
+      from: -20,
+      to: 5,
+      domain: [-10, 10],
+      stops: [
+        { at: 10, color: "#15803d" },
+        { at: 0, color: "red), url(https://example.org/x.png), linear-gradient(red" },
+        { at: -10, color: "light-dark(#1d4ed8, #93c5fd)" },
+        { at: 0, color: "#0369a1;background:url(https://example.org/x.png)" },
+      ],
+      label: "-10° bis 5°",
+    }),
+  );
+  expect(markup).not.toContain("url(");
+  // the visible part runs from -10 to 5: the stops sit at their place on it, in the order of the scale
+  expect(markup).toContain(
+    "--k2-range-fill:linear-gradient(var(--k2-range-way, to right), light-dark(#1d4ed8, #93c5fd) 0%, #15803d 133.3%)",
+  );
+});
+
+test("a decorative RangeBar says nothing to assistive technology", async () => {
+  const { RangeBar } = await import("./marks");
+  const markup = renderToString(() => createComponent(RangeBar, { from: 1, to: 2, domain: [0, 4], decorative: true }));
+  // as a decorative Avatar: hidden from assistive technology, without words of its own
+  expect(markup).toContain('aria-hidden="true"');
+  expect(markup).not.toContain("aria-label");
+});
+
+test("an Icon takes a data colour as a checked --k2-c, and drops what is no colour", async () => {
+  const { Icon } = await import("./marks");
+  const colored = renderToString(() => createComponent(Icon, { name: "sun", color: "light-dark(#b45309, #fbbf24)" }));
+  expect(colored).toContain("--k2-c:light-dark(#b45309, #fbbf24)");
+  expect(colored).toContain("data-color");
+  for (const color of ["red;background:url(https://example.org/x.png)", "red", "light-dark(#fff, red)"]) {
+    const markup = renderToString(() => createComponent(Icon, { name: "sun", color }));
+    expect(markup).not.toMatch(/--k2-c|url\(|background/);
+    expect(markup).not.toContain("data-color");
+  }
 });
 
 // A Heat is drawn whole by the server: every day of the 53 weeks with its tone and words, today marked and the one Tab

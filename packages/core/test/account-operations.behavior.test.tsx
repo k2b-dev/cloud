@@ -34,18 +34,23 @@ describe("account operations feedback", () => {
       success ? "successful enqueue shows one toast, not a second confirmation" : "failed enqueue never reports success and allows retry",
       async () => {
         const dom = createDomTestHarness();
-        const { prompts, toast } = await import("@k2b/ui");
-        const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
-        const error = spyOn(prompts, "error").mockResolvedValue(undefined);
-        const notification = spyOn(toast, "success").mockImplementation(() => "test-toast");
-        const { default: Operations } = await import("../src/pages/admin/settings/_components/AccountOperations.island");
+        const { Dialog } = await import("@k2b/ui/v2");
+        const confirm = spyOn(Dialog, "confirm").mockResolvedValue(true);
+        const { default: Operations } = await import("../src/pages/admin/signin/AccountOperations");
         const dispose = render(() => createComponent(Operations, { freeIpaEnabled: false }), dom.root);
         cleanup = () => {
           dispose();
+          // the toast region v2 adds to the page goes before the harness takes the document away
+          for (const toaster of document.body.querySelectorAll(":scope > .k2-ui")) toaster.remove();
           dom.cleanup();
         };
-        const run = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Run: Local full account expiry"]')!;
-        expect(run).not.toBeNull();
+        // the job's row holds its one deed, "Run"
+        const row = [...dom.root.querySelectorAll('[data-k2-part="Row"]')].find((element) =>
+          element.textContent?.includes("Local full account expiry"),
+        )!;
+        expect(row).toBeDefined();
+        const run = [...row.querySelectorAll("button")].find((button) => button.textContent?.includes("Run"))!;
+        expect(run).toBeDefined();
         run.click();
         await flush();
         expect(post).toHaveBeenCalledTimes(1);
@@ -55,8 +60,10 @@ describe("account operations feedback", () => {
         respond(Response.json(success ? { jobId: "test-job" } : { message: "Job unavailable" }, { status: success ? 200 : 503 }));
         await flush();
         expect(confirm).toHaveBeenCalledTimes(1);
-        expect(notification).toHaveBeenCalledTimes(success ? 1 : 0);
-        expect(error).toHaveBeenCalledTimes(success ? 0 : 1);
+        const toasts = document.body.textContent ?? "";
+        // one toast with the outcome: the queued job, or the server's reason and never the success words
+        expect(toasts.split("Local full account expiry maintenance queued.").length - 1).toBe(success ? 1 : 0);
+        expect(toasts.includes("Job unavailable")).toBe(!success);
         expect(run.disabled).toBe(false);
         expect(dom.root.querySelector('a[href="/admin/observability/logs?source=auth:local-user:backfill"]')).not.toBeNull();
       },

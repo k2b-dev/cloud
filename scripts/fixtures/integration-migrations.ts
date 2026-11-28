@@ -29,6 +29,9 @@ export const migrateIntegrationDatabase = async (): Promise<void> => {
       if (module.migrate) await module.migrate();
     }
   }
+  // A running app never waits for its index builds; this process closes its connections next, so it waits here.
+  const { settleBackgroundIndexBuilds } = await import("../../packages/cloud/src/services/concurrent-index");
+  await settleBackgroundIndexBuilds();
 };
 
 if (import.meta.main) {
