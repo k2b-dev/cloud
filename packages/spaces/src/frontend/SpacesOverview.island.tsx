@@ -31,7 +31,6 @@ import {
   createNewSpace,
   createPinnedSpaces,
   createSpacesNavigationItems,
-  listenSpacesNavigationHints,
   type SidebarSpace,
 } from "./[id]/_components/sidebar/spaces-navigation";
 import { subscribeToSpacesDataInvalidation } from "./[id]/_components/workspace/workspace-events";
@@ -56,7 +55,6 @@ type ActivityPage = { data: ActivityItem[]; nextCursor: string | null };
 type Props = {
   spaces: SidebarSpace[];
   canCreate?: boolean;
-  sidebarHint?: boolean;
   initialView: OverviewView;
   initialPinnedSpaceIds: string[];
   initialWork: OverviewWork;
@@ -217,7 +215,6 @@ export default function SpacesOverview(props: Props) {
     };
     tabsHost?.addEventListener("click", onTabClick);
     onCleanup(() => tabsHost?.removeEventListener("click", onTabClick));
-    onCleanup(listenSpacesNavigationHints(document, props.spaces));
     onCleanup(
       listenPopState(({ url }) => {
         const value = url.searchParams.get("view");
@@ -398,7 +395,6 @@ export default function SpacesOverview(props: Props) {
             myWorkCount={counts().mine}
             current={{ kind: "overview" }}
             canCreate={canCreate()}
-            hint={{ id: "spaces.overview-sidebar", open: Boolean(props.sidebarHint) && canCreate() }}
           />
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>

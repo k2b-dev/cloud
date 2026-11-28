@@ -5,11 +5,10 @@ import { ALERTS_PATH } from "../WebhookForm";
 
 export const SETTINGS_HREF = {
   alerts: ALERTS_PATH,
-  health: "/admin/observability/settings/health-check",
-  retention: "/admin/observability/settings/retention",
+  general: "/admin/observability/settings/general",
 } as const;
 
-/** The areas of the settings record in the head. */
+/** The areas of the settings record in the head: the alerts, and the check with the retention of operational data. */
 export function SettingsTabs(props: { current: keyof typeof SETTINGS_HREF }) {
   const locale = useLocale();
   const t = () => areaMessages.resolve([locale()]).t;
@@ -18,8 +17,7 @@ export function SettingsTabs(props: { current: keyof typeof SETTINGS_HREF }) {
       label={t().settings}
       items={[
         { label: t().alertsShort, icon: "webhook", href: SETTINGS_HREF.alerts, current: props.current === "alerts" },
-        { label: t().healthCheckShort, icon: "heart-rate-monitor", href: SETTINGS_HREF.health, current: props.current === "health" },
-        { label: t().retention, icon: "archive", href: SETTINGS_HREF.retention, current: props.current === "retention" },
+        { label: t().generalShort, icon: "heart-rate-monitor", href: SETTINGS_HREF.general, current: props.current === "general" },
       ]}
     />
   );

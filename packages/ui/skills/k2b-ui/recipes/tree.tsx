@@ -1,7 +1,7 @@
 // Recipe: folders as a tree. The sidebar's `Nav` group holds the folder tree, the table shows the open folder's
 // content as rows in levels. Both load a folder's children the first time it opens and page a long level.
 // The open folder comes from the address: its way stands open in the tree, on the server's page too.
-import { Bar, Button, Nav, type NavTreeNode, Pane, Path, StatusRow, Table, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Nav, type NavTreeNode, navTree, Pane, Path, StatusRow, Table, Workspace } from "@k2b/ui/v2";
 
 type Entry = { id: string; name: string; size?: string; changed: string; children?: Entry[]; folder?: boolean };
 
@@ -67,14 +67,14 @@ export default function FilesTree() {
             },
             {
               label: "Ordner",
-              tree: {
+              tree: navTree({
                 label: "Ordner",
                 items: folders,
                 current: "website",
                 // the app fetches the children and puts them into `items`; a rejection marks the folder failed
                 load: async () => {},
                 loadMore: async () => {},
-              },
+              }),
             },
           ]}
         />

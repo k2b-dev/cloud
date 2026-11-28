@@ -26,13 +26,16 @@ const dismissed = () => {
  * place. The server draws the one this device found last, and the browser checks it again; a new line waits for the
  * next visit, so it never moves the chats.
  */
-export default function ChatDeviceNotice(props: {
+export type ChatDeviceNoticeProps = {
   /** The line as the workspace holds it, starting with what the server drew; shared by every copy of the sidebar. */
   notice: DeviceNotice;
   onNotice: (notice: DeviceNotice) => void;
   dateConfig: DateContext;
   now: () => Date;
-}): JSX.Element {
+};
+
+/** The line's state and deeds, shared by the v1 line and Chat's v2 notice. */
+export function createDeviceNotice(props: ChatDeviceNoticeProps) {
   const t = useChatMessages();
   const locale = useLocale();
   const notice = () => props.notice;
@@ -111,7 +114,11 @@ export default function ChatDeviceNotice(props: {
     if (state.reason === "quietHours") return until ? t().quietHoursUntil({ time: until }) : t().doNotDisturb;
     return until ? t().doNotDisturbUntil({ time: until }) : t().doNotDisturb;
   };
+  return { t, notice, busy, quiet, quietLine, enable, notNow, endQuiet };
+}
 
+export default function ChatDeviceNotice(props: ChatDeviceNoticeProps): JSX.Element {
+  const { t, notice, busy, quiet, quietLine, enable, notNow, endQuiet } = createDeviceNotice(props);
   return (
     <Switch>
       <Match when={quiet()}>

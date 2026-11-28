@@ -1,14 +1,12 @@
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
-import { useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
   Chip,
-  Empty,
   Failed,
   FilterBar,
-  Icon,
   List,
+  Mark,
   type NavProps,
   Pane,
   Row,
@@ -16,6 +14,7 @@ import {
   StatusRow,
   Table,
   Text,
+  useLocale,
 } from "@k2b/ui/v2";
 import { createMemo, For, Show } from "solid-js";
 import { gatewayOpsMessages } from "../../messages";
@@ -28,42 +27,59 @@ import type { OpsChart } from "./ops-chart";
 export type FailingRoute = {
   key: string;
   route: string;
-  app: { label: string; icon: string };
+  app: { label: string; icon: string; color?: string };
   errors: string;
   requests: string;
   rate: string;
+  /** The share of errors is high enough to stand in red. */
+  bad: boolean;
   href: string;
 };
+
+/** An app of the registry with its state in the window: online, needs a look, or offline. */
+export type OverviewApp = { id: string; label: string; icon: string; color?: string; status: "ok" | "warn" | "bad"; detail?: string };
 
 export type OverviewScreenProps = {
   nav: NavProps;
   state: OverviewState;
-  /** What the window says in one statement, and why. */
+  /** What the window says in one statement. */
   verdict: { label: string; description: string };
-  signals: OverviewSignal[];
+  /** The hero (server errors with their real history) first, then the volumes of the window. */
   cells: KeyCell[];
-  charts: { chart: OpsChart; icon: string; empty: string; href: string; linkLabel: string }[];
+  /** The signals that need someone, each a link to where it is looked at; the hero's own figure is not repeated. */
+  signals: OverviewSignal[];
+  /** The log severity over the window. */
+  logs?: { chart: OpsChart; empty: string; href: string; linkLabel: string };
   routes: { rows: FailingRoute[]; error: string | null; href: string };
   /** The three services of the infrastructure record, each with its state; none when it did not answer in time. */
   services: { key: string; label: string; icon: string; href: string; status: "ok" | "warn" | "bad" | undefined }[];
-};
-
-/** A signal's sign: its symbol in the colour of its weight. Unread sources stay grey, as nothing is known. */
-const SIGNAL_COLOR: Record<OverviewSignal["severity"], string> = {
-  critical: "var(--k2-bad-dot)",
-  warning: "var(--k2-warn-dot)",
-  unavailable: "var(--k2-muted)",
+  /** The apps of the registry with their state; null when health could not be read. */
+  apps: OverviewApp[] | null;
 };
 
 /**
- * Operations at a glance on v2: one statement for the window, the key figures, the signals that need someone (each a
- * link to where it is looked at), the two error charts and the routes that fail most. Everything comes with the first
- * HTML; a new window is a new address.
+ * Operations at a glance on v2: the window's statement, the server errors with their history as the hero, the signals
+ * that need someone, the failing routes and the log severity; beside them the services and the apps with their state.
+ * Everything comes with the first HTML; a new window is a new address.
  */
 export default function OverviewScreen(props: OverviewScreenProps) {
   const locale = useLocale();
   const t = () => gatewayOpsMessages.resolve([locale()]).t;
   const query = createMemo(() => overviewQuery(locale()));
+  // a state in a word: neutral when good, colour only where something needs a look
+  const stateOf = (status: "ok" | "warn" | "bad" | undefined, ok: string, detail?: string) =>
+    status === "bad" ? (
+      <Chip status="bad">{detail ?? t().needsAttentionLabel}</Chip>
+    ) : status === "warn" ? (
+      <Chip status="warn">{detail ?? t().needsReview}</Chip>
+    ) : status === "ok" ? (
+      <Text type="meta" muted>
+        {ok}
+      </Text>
+    ) : (
+      <Chip icon="database-off">{t().unavailable}</Chip>
+    );
+  // a signal's weight in a word, red or amber; an unread source stays grey, as nothing is known
   const severity = (signal: OverviewSignal) =>
     signal.severity === "critical" ? (
       <Chip status="bad">{t().needsAttentionLabel}</Chip>
@@ -72,19 +88,7 @@ export default function OverviewScreen(props: OverviewScreenProps) {
     ) : (
       <Chip icon="database-off">{t().unavailable}</Chip>
     );
-  // a service's state in a word; red and amber only where something needs a look
-  const serviceState = (status: OverviewScreenProps["services"][number]["status"]) =>
-    status === "bad" ? (
-      <Chip status="bad">{t().needsAttentionLabel}</Chip>
-    ) : status === "warn" ? (
-      <Chip status="warn">{t().needsReview}</Chip>
-    ) : status === "ok" ? (
-      <Text type="meta" muted>
-        {t().healthy}
-      </Text>
-    ) : (
-      <Chip icon="database-off">{t().unavailable}</Chip>
-    );
+  const online = () => props.apps?.filter((app) => app.status === "ok").length ?? 0;
   return (
     <AdminWorkspace
       nav={props.nav}
@@ -95,34 +99,34 @@ export default function OverviewScreen(props: OverviewScreenProps) {
         />
       }
     >
-      <Pane
-        label={t().observability}
-        scrollKey="gateway-ops-overview"
-        status={
-          <>
-            <FilterBar
-              query={query()}
-              state={props.state}
-              onChange={(next) => location.assign(overviewHref(query(), next))}
-              icons={{ range: "clock" }}
-            />
-            <StatusRow
-              lead={props.verdict.label}
-              facts={[{ after: props.signals.length === 0 ? t().allSignalsQuiet : t().openSignals({ count: props.signals.length }) }]}
-            />
-          </>
-        }
-      >
-        {/* k2b-ui gap: Cells stacks one cell per line on the phone; four key figures want 2x2 or one dense row there */}
-        <KeyCells cells={props.cells} />
-        <Section icon="bell" title={t().signals} summary={props.verdict.description}>
-          <Show when={props.signals.length > 0} fallback={<Empty icon="circle-check" text={t().noSignalsHint} />}>
+      <Pane.Split>
+        <Pane
+          label={t().observability}
+          scrollKey="gateway-ops-overview"
+          status={
+            <>
+              <FilterBar
+                query={query()}
+                state={props.state}
+                onChange={(next) => location.assign(overviewHref(query(), next))}
+                icons={{ range: "clock" }}
+              />
+              <StatusRow
+                lead={props.verdict.label}
+                facts={[{ after: props.signals.length === 0 ? t().allSignalsQuiet : t().openSignals({ count: props.signals.length }) }]}
+              />
+            </>
+          }
+        >
+          {/* k2b-ui gap: hero band (look.md rule 1); until it lands the hero is the first cell, with its real history */}
+          <KeyCells cells={props.cells} />
+          {/* the signals are the exceptions under the hero: one row each, a link to where it is looked at */}
+          <Show when={props.signals.length > 0}>
             <List label={t().signals}>
               <For each={props.signals}>
                 {(signal) => (
                   <Row
-                    icon={signal.icon.replace(/^ti\s+(ti-)?/, "")}
-                    color={SIGNAL_COLOR[signal.severity]}
+                    mark={{ icon: signal.icon.replace(/^ti\s+(ti-)?/, "") }}
                     lines={[signal.title, signal.detail]}
                     marks={severity(signal)}
                     href={signal.href}
@@ -131,70 +135,102 @@ export default function OverviewScreen(props: OverviewScreenProps) {
               </For>
             </List>
           </Show>
-        </Section>
-        {/* the three services at a glance; each opens its area of the infrastructure record */}
-        <Section icon="server-2" title={t().infrastructure}>
-          <List label={t().infrastructure}>
-            <For each={props.services}>
-              {(service) => <Row icon={service.icon} lines={[service.label]} end={serviceState(service.status)} href={service.href} />}
-            </For>
-          </List>
-        </Section>
-        <For each={props.charts}>
-          {(entry) => (
-            <OpsChartSection chart={entry.chart} icon={entry.icon} empty={entry.empty} height={200}>
-              <Bar
-                end={
-                  <Button variant="text" href={entry.href} forward>
-                    {entry.linkLabel}
-                  </Button>
-                }
+          <Section
+            icon="route"
+            title={t().failingRoutes}
+            count={props.routes.rows.length}
+            more={{ label: t().openTraffic, href: props.routes.href }}
+          >
+            <Show when={!props.routes.error} fallback={<Failed text={props.routes.error ?? ""} onRetry={() => location.reload()} />}>
+              <Table
+                label={t().failingRoutes}
+                rows={props.routes.rows}
+                rowKey={(row) => row.key}
+                open={(row) => ({ href: row.href })}
+                empty={{ icon: "circle-check", text: t().noFailingRoutes }}
+                phone={(row) => ({
+                  lines: [row.route, `${row.app.label} · ${row.errors} / ${row.requests}`],
+                  marks: row.bad ? <Chip status="bad">{row.rate}</Chip> : <Text type="meta">{row.rate}</Text>,
+                })}
+                columns={[
+                  { title: t().route, width: { min: 220, default: 360 }, cell: (row) => row.route },
+                  {
+                    title: t().app,
+                    width: { min: 120, default: 160 },
+                    // k2b-ui gap: a table cell has no mark (object symbol in its colour) beside text that may be cut
+                    cell: (row) => (
+                      <>
+                        <Mark icon={row.app.icon} color={row.app.color} /> {row.app.label}
+                      </>
+                    ),
+                    drop: true,
+                  },
+                  { title: t().errors, width: { min: 80, default: 100 }, align: "end", cell: (row) => row.errors },
+                  { title: t().requests, width: { min: 90, default: 110 }, align: "end", cell: (row) => row.requests },
+                  {
+                    title: t().errorRate,
+                    width: { min: 90, default: 100 },
+                    align: "end",
+                    cell: (row) => (row.bad ? <Text tone="bad">{row.rate}</Text> : row.rate),
+                  },
+                ]}
               />
-            </OpsChartSection>
-          )}
-        </For>
-        <Section
-          icon="route"
-          title={t().failingRoutes}
-          summary={t().failingRoutesDescription}
-          more={{ label: t().openTraffic, href: props.routes.href }}
-        >
-          <Show when={!props.routes.error} fallback={<Failed text={props.routes.error ?? ""} onRetry={() => location.reload()} />}>
-            <Table
-              label={t().failingRoutes}
-              rows={props.routes.rows}
-              rowKey={(row) => row.key}
-              open={(row) => ({ href: row.href })}
-              empty={{ icon: "circle-check", text: t().noFailingRoutes }}
-              phone={(row) => ({ lines: [row.route, row.app.label], marks: <Chip status="bad">{row.rate}</Chip> })}
-              columns={[
-                {
-                  title: t().route,
-                  width: { min: 220, default: 420 },
-                  cell: (row) => ({ lines: [row.route, `${row.errors} / ${row.requests}`] }),
-                },
-                {
-                  title: t().app,
-                  width: { min: 110, default: 160 },
-                  // k2b-ui gap: a table cell has no mark (object symbol in its colour) beside text that may be cut
-                  cell: (row) => (
-                    <>
-                      <Icon name={row.app.icon} /> {row.app.label}
-                    </>
-                  ),
-                  drop: true,
-                },
-                {
-                  title: t().errorRate,
-                  width: { min: 110, default: 130 },
-                  align: "end",
-                  cell: (row) => <Chip status="bad">{row.rate}</Chip>,
-                },
-              ]}
-            />
+            </Show>
+          </Section>
+          <Show when={props.logs}>
+            {(logs) => (
+              <OpsChartSection chart={logs().chart} icon="file-alert" empty={logs().empty} height={180}>
+                <Bar
+                  end={
+                    <Button variant="text" href={logs().href} forward>
+                      {logs().linkLabel}
+                    </Button>
+                  }
+                />
+              </OpsChartSection>
+            )}
           </Show>
-        </Section>
-      </Pane>
+        </Pane>
+        <Pane side label={t().infrastructure}>
+          {/* the three services at a glance; each opens its area of the infrastructure record */}
+          <Section icon="server-2" title={t().infrastructure}>
+            <List label={t().infrastructure}>
+              <For each={props.services}>
+                {(service) => (
+                  <Row
+                    mark={{ icon: service.icon }}
+                    lines={[service.label]}
+                    end={stateOf(service.status, t().healthy)}
+                    href={service.href}
+                  />
+                )}
+              </For>
+            </List>
+          </Section>
+          <Section
+            icon="apps"
+            title={t().apps}
+            summary={props.apps ? t().appsOnlineOf({ online: String(online()), total: String(props.apps.length) }) : undefined}
+          >
+            <Show when={props.apps} fallback={<Failed text={t().unavailable} onRetry={() => location.reload()} />}>
+              {(apps) => (
+                <List label={t().apps}>
+                  <For each={apps()}>
+                    {(app) => (
+                      <Row
+                        mark={{ icon: app.icon, color: app.color }}
+                        lines={[app.label]}
+                        end={stateOf(app.status, t().online, app.detail)}
+                        href={`/admin/apps?app=${encodeURIComponent(app.id)}`}
+                      />
+                    )}
+                  </For>
+                </List>
+              )}
+            </Show>
+          </Section>
+        </Pane>
+      </Pane.Split>
     </AdminWorkspace>
   );
 }

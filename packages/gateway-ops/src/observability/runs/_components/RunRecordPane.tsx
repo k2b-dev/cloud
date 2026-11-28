@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Chip, Empty, Facts, Failed, List, Notice, Pane, Row, Section, Text } from "@k2b/ui/v2";
+import { Bar, Button, Chip, Empty, Facts, Failed, List, Notice, Pane, RecordHead, Row, Section, Text } from "@k2b/ui/v2";
 import { Show } from "solid-js";
 import { runsMessages } from "../messages";
 import type { RunRef } from "../query";
@@ -39,7 +39,8 @@ export default function RunRecordPane(props: Props) {
       back={{ label: t().runs, href: props.closeHref }}
       head={
         <Bar
-          start={<Text type="lead">{title()}</Text>}
+          // k2b-ui gap: tinted object head (look.md rule 5); until it lands the run names itself and its kind
+          start={<RecordHead name={title()} kinds={[props.kindLabel]} />}
           end={<Button variant="ghost" icon="x" label={t().closeRecord} href={props.closeHref} />}
         />
       }

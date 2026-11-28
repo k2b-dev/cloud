@@ -3,13 +3,13 @@ import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { logging, type TraceWindow, trace } from "@k2b/cloud/services";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
-import { alignCountSeries } from "../frontend/operational-charts";
 import { buildGatewayHealth } from "../health";
 import { gatewayOpsMessages } from "../messages";
 import { observabilityAdminNav } from "./_components/admin-nav";
 import { INFRA_HREF } from "./_components/InfrastructureTabs";
 import type { KeyCell } from "./_components/KeyCells";
 import { readAttention } from "./_components/ObservabilityArea";
+import type { FailingRoute, OverviewApp } from "./_components/OverviewScreen";
 import OverviewScreen from "./_components/OverviewScreen.island";
 import { opsCharts } from "./_components/ops-chart";
 import { readInfraStates } from "./infrastructure/sections";
@@ -20,6 +20,9 @@ import { getTelemetryOverview, getTelemetryTimeseries, listTelemetryRoutes } fro
 /** Routes the overview lists; Telemetry lists them all. */
 const FAILING_ROUTES = 5;
 
+/** From this share of errors a route stands in red: one request in fifty fails. */
+const BAD_ROUTE_SHARE = 0.02;
+
 /** Reports a source that could not be read instead of rendering it as zero. */
 const settled = async <T,>(load: () => Promise<T>, fallback: T): Promise<{ value: T; error: string | null }> => {
   try {
@@ -29,7 +32,12 @@ const settled = async <T,>(load: () => Promise<T>, fallback: T): Promise<{ value
   }
 };
 
-/** Operations at a glance on v2: the window's statement, key figures, open signals, error charts and failing routes. */
+const iconOf = (icon: string | undefined) => icon?.replace(/^ti\s+(ti-)?/, "") || "apps";
+
+/**
+ * Operations at a glance on v2: the window's statement, the server errors with their history as the hero, the signals
+ * that need someone, the failing routes and the log severity; beside them the services and the apps with their state.
+ */
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const { t } = gatewayOpsMessages.resolve([locale]);
@@ -76,35 +84,49 @@ export default ssr<AuthContext>(async (c) => {
     locale,
   );
   const verdict = overviewVerdict(signals, locale);
+  const telemetryHref = `/admin/observability/telemetry?range=${range}`;
+  const share = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 2 });
 
-  // A figure that could not be read says so instead of showing zero.
+  // The hero: the server errors of the window with their real history per interval. A figure that could not be read
+  // says so instead of showing zero.
+  const errorSeries = telemetryTimeseries.value.map((point) => point.serverErrors);
+  const errorTotal = errorSeries.reduce((sum, value) => sum + value, 0);
+  const hero: KeyCell = {
+    icon: "alert-circle",
+    label: t.serverErrors,
+    value: telemetry.value ? number(telemetry.value.serverErrors) : "—",
+    meta: telemetry.value
+      ? t.shareOfRequests({
+          rate: share.format(telemetry.value.requests > 0 ? telemetry.value.serverErrors / telemetry.value.requests : 0),
+          requests: number(telemetry.value.requests),
+        })
+      : t.unavailable,
+    tone: (telemetry.value?.serverErrors ?? 0) > 0 ? "bad" : undefined,
+    href: `${telemetryHref}&only=errors`,
+    trend:
+      errorSeries.length > 1
+        ? { values: errorSeries, label: t.serverErrorsTrend({ total: number(errorTotal), peak: number(Math.max(...errorSeries)) }) }
+        : undefined,
+  };
   const cells: KeyCell[] = [
+    hero,
     {
       icon: "apps",
       label: t.appsOnline,
       value: health.value ? `${health.value.apps.length - offlineApps.length}/${health.value.apps.length}` : "—",
       meta: health.error ? t.unavailable : t.registeredAppsLabel,
-      tone: offlineApps.length > 0 ? "bad" : undefined,
-    },
-    {
-      icon: "arrows-exchange",
-      label: t.requests,
-      value: telemetry.value ? number(telemetry.value.requests) : "—",
-      meta: telemetry.value ? `${number(telemetry.value.slowRequests)} ${t.slowRequests}` : t.unavailable,
     },
     {
       icon: "player-play",
-      label: t.failedRuns,
-      value: jobStats.value ? number(jobStats.value.failed) : "—",
-      meta: jobStats.value ? (jobStats.value.stuck > 0 ? t.stuckRunsTitle({ count: jobStats.value.stuck }) : jobsWindow) : t.unavailable,
-      tone: (jobStats.value?.failed ?? 0) > 0 ? "warn" : undefined,
+      label: t.runs,
+      value: jobStats.value ? number(jobStats.value.runs) : "—",
+      meta: jobStats.value ? jobsWindow : t.unavailable,
     },
     {
-      icon: "file-alert",
-      label: t.logWarnings,
-      value: logSummary.value ? number(logSummary.value.warnings24h) : "—",
+      icon: "file-text",
+      label: t.logEntries,
+      value: logSummary.value ? number(logSummary.value.total24h) : "—",
       meta: logSummary.value ? t.last24h : t.unavailable,
-      tone: (logSummary.value?.warnings24h ?? 0) > 0 ? "warn" : undefined,
     },
   ];
 
@@ -112,30 +134,8 @@ export default ssr<AuthContext>(async (c) => {
     logTimeseries.value.length > 1
       ? logTimeseries.value[1]!.at.getTime() - logTimeseries.value[0]!.at.getTime()
       : TELEMETRY_RANGES[range].bucketSeconds * 1000;
-  const telemetryHref = `/admin/observability/telemetry?range=${range}`;
-  // each chart with the page it is looked at on
-  const chartLinks = [
-    { icon: "alert-circle", empty: t.noTrafficRange, href: telemetryHref, linkLabel: t.openTraffic },
-    { icon: "file-alert", empty: t.noLogEntries, href: `/admin/observability/logs?time=last-${range}`, linkLabel: t.openLogs },
-  ];
-  const charts = opsCharts(
+  const [logChart] = opsCharts(
     [
-      {
-        kind: "line",
-        title: t.serverErrors,
-        description: t.serverErrorsDescription,
-        maxGap: interval,
-        error: telemetryTimeseries.error,
-        series: [
-          {
-            label: t.errors,
-            data: alignCountSeries(
-              telemetryTimeseries.value.map((point) => ({ x: new Date(point.at).getTime(), y: point.serverErrors })),
-              interval,
-            ),
-          },
-        ],
-      },
       {
         kind: "line",
         title: t.logSeverityOverTime,
@@ -149,29 +149,39 @@ export default ssr<AuthContext>(async (c) => {
       },
     ],
     locale,
-  ).flatMap((chart, index) => {
-    const link = chartLinks[index];
-    return link ? [{ chart, ...link }] : [];
-  });
+  );
 
   const appOf = (id: string) => {
     const app = apps.find((candidate) => candidate.id === id);
-    return { label: app?.name || id, icon: app?.icon?.replace(/^ti\s+(ti-)?/, "") || "apps" };
+    return { label: app?.name || id, icon: iconOf(app?.icon), color: app?.appearance?.accent };
   };
-  const percent = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 });
+  const rate = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 });
   const routes = {
     error: failingRoutes.error,
     href: `${telemetryHref}&only=errors`,
-    rows: failingRoutes.value.slice(0, FAILING_ROUTES).map((row) => ({
-      key: `${row.appId}:${row.route}`,
-      route: row.route,
-      app: appOf(row.appId),
-      errors: number(row.errors),
-      requests: number(row.requests),
-      rate: percent.format(row.requests > 0 ? row.errors / row.requests : 0),
-      href: `${telemetryHref}&app=${encodeURIComponent(row.appId)}&route=${encodeURIComponent(row.route)}`,
-    })),
+    rows: failingRoutes.value.slice(0, FAILING_ROUTES).map(
+      (row): FailingRoute => ({
+        key: `${row.appId}:${row.route}`,
+        route: row.route,
+        app: appOf(row.appId),
+        errors: number(row.errors),
+        requests: number(row.requests),
+        rate: rate.format(row.requests > 0 ? row.errors / row.requests : 0),
+        bad: row.requests > 0 && row.errors / row.requests >= BAD_ROUTE_SHARE,
+        href: `${telemetryHref}&app=${encodeURIComponent(row.appId)}&route=${encodeURIComponent(row.route)}`,
+      }),
+    ),
   };
+  // every registered app with its state; health already reads them all, so this costs no read of its own
+  const appRows: OverviewApp[] | null = health.value
+    ? health.value.apps.map((app) => ({
+        id: app.id,
+        label: app.name,
+        icon: iconOf(app.icon),
+        color: appOf(app.id).color,
+        status: app.status === "ok" ? "ok" : app.online ? "warn" : "bad",
+      }))
+    : null;
 
   return () => (
     <AdminLayout c={c} ui="v2" title={t.observability}>
@@ -179,15 +189,24 @@ export default ssr<AuthContext>(async (c) => {
         nav={observabilityAdminNav(c, locale, attention, "home")}
         state={state}
         verdict={{ label: verdict.label, description: verdict.description }}
-        signals={signals}
         cells={cells}
-        charts={charts}
+        // the hero already says how many server errors there are and leads to them
+        signals={signals.filter((signal) => signal.id !== "server-errors")}
+        logs={
+          logChart && {
+            chart: logChart,
+            empty: t.noLogEntries,
+            href: `/admin/observability/logs?time=last-${range}`,
+            linkLabel: t.openLogs,
+          }
+        }
         routes={routes}
         services={[
           { key: "postgres", label: "Postgres", icon: "database", href: INFRA_HREF.postgres, status: infra.postgres },
           { key: "valkey", label: "Valkey", icon: "database", href: INFRA_HREF.valkey, status: infra.valkey },
           { key: "nats", label: "NATS", icon: "topology-star-3", href: INFRA_HREF.nats, status: infra.nats },
         ]}
+        apps={appRows}
       />
     </AdminLayout>
   );

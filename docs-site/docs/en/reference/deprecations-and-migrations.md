@@ -710,13 +710,18 @@ addresses redirect with their query:
 | `/admin/observability/nats` | `/admin/observability/infrastructure/nats` |
 | `/admin/observability/nats/access` | `/admin/observability/infrastructure/nats-access` |
 | `/admin/observability/alerts` | `/admin/observability/settings` |
-| `/admin/observability/health-check` | `/admin/observability/settings/health-check` |
-| `/admin/observability/retention` | `/admin/observability/settings/retention` |
+| `/admin/observability/health-check` | `/admin/observability/settings/general` |
+| `/admin/observability/retention` | `/admin/observability/settings/general` |
+| `/admin/observability/settings/health-check` | `/admin/observability/settings/general` |
+| `/admin/observability/settings/retention` | `/admin/observability/settings/general` |
 
 List filters live in the address in the v2 form (`q=` for the search,
 `sort=<field>.<direction>`); old filter parameters lead to the same list. An
 alert opens beside the list at `/admin/observability/settings?webhook=<id>`,
-and `?webhook=new` opens the form for a new one.
+and `?webhook=new` opens the form for a new one. The health check and the
+retention of operational data share one form with one Save in the record's
+second area, `/admin/observability/settings/general`. In the sidebar the record
+is called **Alerts and retention**.
 
 Operators: no migration is needed. Update bookmarks and links in your own
 runbooks.

@@ -34,7 +34,7 @@ const apps: HealthApp[] = [
  * `state` "empty" or "loadfail" the list's other states; "unreadable" marks stored values as unreadable.
  */
 export const SettingsScreenFixture = (props: {
-  area?: "alerts" | "health" | "retention";
+  area?: "alerts" | "general";
   open?: string | null;
   state?: "normal" | "empty" | "loadfail" | "unreadable";
   worst?: boolean;
@@ -62,19 +62,11 @@ export const SettingsScreenFixture = (props: {
     <LocaleProvider locale={locale}>
       {area === "alerts" ? (
         <SettingsScreen nav={fixtureNav} timeZone="Europe/Berlin" webhooks={webhooks} apps={apps} open={props.open ?? null} />
-      ) : area === "health" ? (
-        <SettingsFormScreen
-          nav={fixtureNav}
-          area="health"
-          values={{ schedule: "*/5 * * * *", targets: ["alerts.internal", "10.20.0.0/16"] }}
-          unreadable={{ schedule: unreadable }}
-        />
       ) : (
         <SettingsFormScreen
           nav={fixtureNav}
-          area="retention"
-          values={{ logs: 14, events: 14, rollups: 90 }}
-          unreadable={{ events: unreadable }}
+          values={{ schedule: "*/5 * * * *", targets: ["alerts.internal", "10.20.0.0/16"], logs: 14, events: 14, rollups: 90 }}
+          unreadable={{ schedule: unreadable, events: unreadable }}
         />
       )}
     </LocaleProvider>

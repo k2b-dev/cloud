@@ -10,8 +10,7 @@ import { createChannelApi } from "./channel-api";
 
 type Page = z.infer<typeof ConversationPageSchema>;
 
-/** The discoverable catalog is a reloadable workspace page; membership changes refresh the canonical sidebar. */
-export default function DiscoverChannels(props: {
+export type DiscoverChannelsProps = {
   initial?: Page | null;
   query: string;
   revision: number;
@@ -21,7 +20,10 @@ export default function DiscoverChannels(props: {
   onBack: (navigation: LinkNavigateEvent) => Promise<void>;
   /** Where Back leads: the chat list of the full view or of the panel. */
   listHref?: string;
-}): JSX.Element {
+};
+
+/** The catalog's state: the search in the address, pages at the depth already read, and subscribing with its retry. */
+export function createChannelCatalog(props: DiscoverChannelsProps) {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
   const api = createChannelApi();
@@ -120,6 +122,14 @@ export default function DiscoverChannels(props: {
       if (!disposed) setPending(pending().filter((known) => known !== id));
     }
   };
+  return { search, setSearch, rows, cursor, busy, error, pending, load, subscribe, retry: () => void load(retryMore) };
+}
+
+/** The discoverable catalog is a reloadable workspace page; membership changes refresh the canonical sidebar. */
+export default function DiscoverChannels(props: DiscoverChannelsProps): JSX.Element {
+  const locale = useLocale();
+  const t = () => chatMessages.resolve([locale()]).t;
+  const { search, setSearch, rows, cursor, busy, error, pending, load, subscribe, retry } = createChannelCatalog(props);
   return (
     <section class="chat-discover" aria-label={t().browseChannels}>
       <header class="chat-conversation__header">
@@ -167,7 +177,7 @@ export default function DiscoverChannels(props: {
             <Show when={error()}>
               <InlineGuidance tone="danger" role="alert">
                 {t().channelListFailed}{" "}
-                <Button variant="text" onClick={() => void load(retryMore)}>
+                <Button variant="text" onClick={retry}>
                   {t().retry}
                 </Button>
               </InlineGuidance>

@@ -4,6 +4,7 @@ import { CloudResourceRefSchema, ErrorResponseSchema } from "@k2b/cloud/contract
 import {
   auth,
   getLocale,
+  getTimeZone,
   jsonResponse,
   REQUEST_IDLE_TIMEOUT_SECONDS,
   rateLimit,
@@ -212,6 +213,7 @@ import { mailLive } from "../service/live";
 import { mailLiveChannels } from "../service/live-channels";
 import type { AttachmentDownload } from "../service/messages";
 import { discoverMailConfigurations } from "../service/onboarding-discovery";
+import { loadReceivedPerDay } from "../service/received-per-day";
 import { CountRefreshBusy } from "../service/view-count-cache";
 import { loadMailboxConversationDetail, loadMailboxListView, loadMailboxPageData, resolveWorkspaceRequest } from "../service/workspace";
 import legacyLiveRoutes from "../ws";
@@ -344,6 +346,10 @@ const workspaceRouteQuerySchema = z.object({
   listMode: z.enum(["conversations", "messages"]).default("conversations"),
   /** "keep": the browser already holds the drag's people for this mailbox; the answer then leaves them out (null). */
   dropAssignees: z.enum(["load", "keep"]).default("load"),
+  /**
+   * "load": the mails per day, for the v2 reader when the switch opens no mail; otherwise the answer leaves them out.
+   */
+  receivedPerDay: z.enum(["load", "keep"]).default("keep"),
 });
 const attachmentQuerySchema = z.object({
   inline: z
@@ -1161,6 +1167,8 @@ const mailOperationsApi = new Hono<MailApiContext>()
         listMode: query.listMode,
         locale: getLocale(c),
         dropAssignees: query.dropAssignees,
+        receivedPerDay: query.receivedPerDay,
+        timeZone: getTimeZone(c),
       });
       return respondAggregate(
         c,
@@ -1173,6 +1181,14 @@ const mailOperationsApi = new Hono<MailApiContext>()
     } finally {
       setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
     }
+  })
+  // The year of mail the v2 reader shows while none is open, when the page or the mailbox switch did not bring it (a
+  // deep link opened a mail): one bounded aggregate, reused per reader and day.
+  .get("/mailboxes/:mailboxId/received-per-day", v("param", mailboxParamSchema), async (c) => {
+    const mailboxId = internalMailboxId(c);
+    const access = await mailboxAccess.requireMailboxAccess(requestContext(c), mailboxId, "read");
+    if (!access.ok) return respondPublic(c, access);
+    return respondPublic(c, ok(await loadReceivedPerDay({ mailboxId, access: access.data, timeZone: getTimeZone(c) })));
   })
   .get("/mailboxes/:mailboxId/workspace-list", v("param", mailboxParamSchema), v("query", workspaceRouteQuerySchema), async (c) => {
     // A list's last page names the done conversations it leaves out from the cached counts; allow their bounded cold fill.

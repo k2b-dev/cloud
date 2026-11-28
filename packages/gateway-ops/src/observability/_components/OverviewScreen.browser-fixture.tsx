@@ -1,7 +1,8 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { NavProps } from "@k2b/ui/v2";
 import { buildOverviewSignals, overviewQuery, overviewVerdict } from "../overview";
-import OverviewScreen, { type FailingRoute } from "./OverviewScreen";
+import type { FailingRoute, OverviewApp } from "./OverviewScreen";
+import OverviewScreen from "./OverviewScreen.island";
 import { opsCharts } from "./ops-chart";
 
 // Invented operations for render and browser tests: fixed times, no production data.
@@ -20,19 +21,42 @@ const HOUR = 3_600_000;
 const series = (base: number, burst: number) =>
   Array.from({ length: 24 }, (_, index) => ({ x: END - (23 - index) * HOUR, y: index >= 15 && index <= 17 ? burst : base + (index % 3) }));
 
-const ROUTES: FailingRoute[] = [
-  ["mail", "Mail", "mail", "/api/mail/send", 41, 1_812],
-  ["files", "Dateien", "folder", "/api/files/upload/:id", 17, 3_406],
-  ["notebooks", "Notizbücher", "notebook", "/api/notebooks/:id/pages", 6, 9_120],
-  ["calendar", "Kalender", "calendar", "/api/calendar/sync", 3, 640],
-].map(([id, label, icon, route, errors, requests]) => ({
+const APPS: [id: string, label: string, icon: string, color: string][] = [
+  ["mail", "Mail", "mail", "#2563eb"],
+  ["files", "Dateien", "folder", "#d97706"],
+  ["pulse", "Pulse", "activity", "#db2777"],
+  ["grids", "Grids", "table", "#16a34a"],
+  ["notebooks", "Notizbücher", "notebook", "#7c3aed"],
+  ["spaces", "Spaces", "layout-kanban", "#0891b2"],
+  ["chat", "Chat", "message-circle", "#0d9488"],
+  ["contacts", "Kontakte", "address-book", "#ea580c"],
+  ["calendar", "Kalender", "calendar", "#c2410c"],
+  ["assistant", "Assistent", "sparkles", "#9333ea"],
+  ["tools", "Werkzeuge", "tool", "#475569"],
+  ["core", "Cloud", "cloud", "#57534e"],
+];
+const app = (id: string) => {
+  const found = APPS.find((entry) => entry[0] === id);
+  return { label: found?.[1] ?? id, icon: found?.[2] ?? "apps", color: found?.[3] };
+};
+
+const ROUTES: FailingRoute[] = (
+  [
+    ["pulse", "/api/pulse/streams", 214, 214],
+    ["chat", "/api/chat/rooms/:id/messages", 61, 2_840],
+    ["files", "/api/files/upload/:id", 22, 1_904],
+    ["mail", "/api/mail/send", 9, 6_120],
+    ["grids", "/api/grids/bases/:id/rows", 6, 3_311],
+  ] as const
+).map(([id, route, errors, requests]) => ({
   key: `${id}:${route}`,
-  route: String(route),
-  app: { label: String(label), icon: String(icon) },
-  errors: Number(errors).toLocaleString("de"),
-  requests: Number(requests).toLocaleString("de"),
-  rate: new Intl.NumberFormat("de", { style: "percent", maximumFractionDigits: 1 }).format(Number(errors) / Number(requests)),
-  href: `/admin/observability/telemetry?range=24h&app=${id}&route=${encodeURIComponent(String(route))}`,
+  route,
+  app: app(id),
+  errors: errors.toLocaleString("de"),
+  requests: requests.toLocaleString("de"),
+  rate: new Intl.NumberFormat("de", { style: "percent", maximumFractionDigits: 1 }).format(errors / requests),
+  bad: errors / requests >= 0.02,
+  href: `/admin/observability/telemetry?range=24h&app=${id}&route=${encodeURIComponent(route)}`,
 }));
 
 const WORST_ROUTE: FailingRoute = {
@@ -42,8 +66,12 @@ const WORST_ROUTE: FailingRoute = {
   errors: "123.456",
   requests: "123.456",
   rate: "100 %",
+  bad: true,
   href: "/admin/observability/telemetry?range=24h&app=werkstatt",
 };
+
+/** Server errors per hour of the window: a quiet base with the burst of the incident. */
+const ERRORS = [4, 6, 3, 5, 8, 6, 4, 3, 2, 3, 5, 9, 12, 48, 61, 22, 9, 7, 10, 14, 18, 25, 16, 11];
 
 /** The overview for one window and data set, as the page renders it. */
 export const OverviewScreenFixture = (props: { search: string; locale?: string; data?: OverviewFixtureData }) => {
@@ -62,10 +90,10 @@ export const OverviewScreenFixture = (props: { search: string; locale?: string; 
         ? []
         : worst
           ? ["kunden-und-auftraege-werkstatt-nord", "mail", "files", "notebooks", "calendar", "календарь-синхронизация"]
-          : ["calendar"],
-      serverErrors: quiet ? 0 : worst ? 1_234_567 : 67,
+          : ["pulse"],
+      serverErrors: quiet ? 0 : worst ? 1_234_567 : 311,
       rateLimited: quiet ? 0 : 12,
-      failedRuns: quiet ? 0 : worst ? 98_765 : 7,
+      failedRuns: quiet ? 0 : worst ? 98_765 : 14,
       stuckRuns: quiet ? 0 : 1,
       logErrors: quiet ? 0 : 23,
       unavailable: worst ? { logs: "connect ECONNREFUSED 10.0.0.12:5432 — the log store did not answer within 5 s" } : {},
@@ -73,15 +101,8 @@ export const OverviewScreenFixture = (props: { search: string; locale?: string; 
     locale,
   );
   const verdict = overviewVerdict(signals, locale);
-  const charts = opsCharts(
+  const [logChart] = opsCharts(
     [
-      {
-        kind: "line",
-        title: "Serverfehler",
-        description: "5xx-Antworten im gewählten Auswertungszeitraum.",
-        maxGap: HOUR,
-        series: [{ label: "Fehler", data: quiet ? series(0, 0) : series(1, 40) }],
-      },
       {
         kind: "line",
         title: "Protokollstufen im Zeitverlauf",
@@ -95,75 +116,75 @@ export const OverviewScreenFixture = (props: { search: string; locale?: string; 
       },
     ],
     locale,
-  ).map((chart, index) => ({
-    chart,
-    icon: index === 0 ? "alert-circle" : "file-alert",
-    empty: "Keine Werte",
-    href: index === 0 ? "/admin/observability/telemetry?range=24h" : "/admin/observability/logs?time=last-24h",
-    linkLabel: index === 0 ? "Datenverkehr öffnen" : "Protokolle öffnen",
-  }));
+  );
+  const errors = quiet ? ERRORS.map(() => 0) : worst ? ERRORS.map((value) => value * 4_000) : ERRORS;
+  const apps: OverviewApp[] = [
+    ...(worst
+      ? [
+          {
+            id: "kunden-und-auftraege-werkstatt-nord",
+            label: "Kunden & Aufträge (Werkstatt Nord) – Auftragsverwaltung",
+            icon: "tool",
+            status: "bad" as const,
+          },
+        ]
+      : []),
+    ...APPS.map(([id, label, icon, color]) => ({
+      id,
+      label,
+      icon,
+      color,
+      status: quiet ? ("ok" as const) : id === "pulse" ? ("bad" as const) : id === "chat" ? ("warn" as const) : ("ok" as const),
+    })),
+  ];
   return (
     <LocaleProvider locale={locale}>
       <OverviewScreen
         nav={nav}
         state={state}
         verdict={{ label: verdict.label, description: verdict.description }}
-        signals={signals}
-        services={[
-          {
-            key: "postgres",
-            label: "Postgres",
-            icon: "database",
-            href: "/admin/observability/infrastructure/postgres",
-            status: quiet ? "ok" : "warn",
-          },
-          {
-            key: "valkey",
-            label: "Valkey",
-            icon: "database",
-            href: "/admin/observability/infrastructure/valkey",
-            status: worst ? "bad" : "ok",
-          },
-          {
-            key: "nats",
-            label: "NATS",
-            icon: "topology-star-3",
-            href: "/admin/observability/infrastructure/nats",
-            status: worst ? undefined : "ok",
-          },
-        ]}
+        signals={signals.filter((signal) => signal.id !== "server-errors")}
         cells={[
           {
-            icon: "apps",
-            label: "Apps online",
-            value: quiet ? "14/14" : "13/14",
-            meta: "registrierte Apps",
+            icon: "alert-circle",
+            label: "Serverfehler",
+            value: quiet ? "0" : worst ? "1.234.567" : "311",
+            meta: quiet ? "0 % von 45.530 Anfragen" : worst ? "10 % von 12.345.678.901 Anfragen" : "0,68 % von 45.530 Anfragen",
             tone: quiet ? undefined : "bad",
+            href: "/admin/observability/telemetry?range=24h&only=errors",
+            trend: { values: errors, label: "Serverfehler je Stunde" },
           },
-          { icon: "arrows-exchange", label: "Anfragen", value: worst ? "12.345.678.901" : "48.213", meta: "112 Langsame Anfragen" },
-          {
-            icon: "player-play",
-            label: "Fehlgeschlagene Läufe",
-            value: quiet ? "0" : worst ? "98.765" : "7",
-            meta: "1 Lauf hängt",
-            tone: quiet ? undefined : "warn",
-          },
+          { icon: "apps", label: "Apps online", value: quiet ? "12/12" : "11/12", meta: "registrierte Apps" },
+          { icon: "player-play", label: "Läufe", value: worst ? "12.345.678" : "3.482", meta: "24h" },
           worst
-            ? { icon: "file-alert", label: "Protokollwarnungen", value: "—", meta: "nicht verfügbar" }
-            : {
-                icon: "file-alert",
-                label: "Protokollwarnungen",
-                value: quiet ? "0" : "318",
-                meta: "letzte 24 Std.",
-                tone: quiet ? undefined : "warn",
-              },
+            ? { icon: "file-text", label: "Logeinträge", value: "—", meta: "nicht verfügbar" }
+            : { icon: "file-text", label: "Logeinträge", value: quiet ? "1.204" : "9.120", meta: "letzte 24 Std." },
         ]}
-        charts={charts}
+        logs={
+          logChart && {
+            chart: logChart,
+            empty: "Keine Werte",
+            href: "/admin/observability/logs?time=last-24h",
+            linkLabel: "Protokolle öffnen",
+          }
+        }
         routes={{
           rows: quiet ? [] : worst ? [WORST_ROUTE, ...ROUTES] : ROUTES,
           error: null,
           href: "/admin/observability/telemetry?range=24h&only=errors",
         }}
+        services={[
+          { key: "postgres", label: "Postgres", icon: "database", href: "/admin/observability/infrastructure/postgres", status: "ok" },
+          { key: "valkey", label: "Valkey", icon: "database", href: "/admin/observability/infrastructure/valkey", status: "ok" },
+          {
+            key: "nats",
+            label: "NATS",
+            icon: "topology-star-3",
+            href: "/admin/observability/infrastructure/nats",
+            status: quiet ? "ok" : worst ? undefined : "warn",
+          },
+        ]}
+        apps={apps}
       />
     </LocaleProvider>
   );
