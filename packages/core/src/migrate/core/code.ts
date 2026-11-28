@@ -1,4 +1,5 @@
 import { sql } from "@k2b/cloud";
+import { createIndexIfMissing } from "@k2b/cloud/services/concurrent-index";
 import type { SQL } from "bun";
 import { migrateCodeActivity } from "./code-activity";
 import { migrateUnusedCodeDatabases } from "./code-unused-databases";
@@ -32,7 +33,8 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     await tx`CREATE UNIQUE INDEX IF NOT EXISTS codes_app_owner ON code.codes(owner_app_id) WHERE owner_kind = 'app'`.simple();
     await tx`CREATE INDEX IF NOT EXISTS codes_person_owner ON code.codes(owner_user_id,id) WHERE owner_kind = 'person'`.simple();
     // Administration › Code lists all Code by title, one page at a time.
-    await tx`CREATE INDEX IF NOT EXISTS codes_title_order ON code.codes(lower(title),id)`.simple();
+    // One row per automation, so the first deploy builds it once; later starts find it in the catalog and take no lock.
+    await createIndexIfMissing(tx, { name: "codes_title_order", table: "code.codes", definition: "(lower(title), id)" });
     await tx`CREATE TABLE IF NOT EXISTS code.databases (
       code_id TEXT PRIMARY KEY REFERENCES code.codes(id) ON DELETE CASCADE,
       namespace TEXT NOT NULL UNIQUE CHECK(namespace = 'code_' || code_id),
