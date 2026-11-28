@@ -215,7 +215,8 @@ test("after a click on the entry the '…' gives way again when the pointer leav
 
 test("a closed fold that holds the open entry carries the open entry's tint", async () => {
   await withPage(async (page) => {
-    const bills = fold(page, "Rechnungen");
+    // the fold's dot says its state in its name
+    const bills = fold(page, "Rechnungen In Ordnung");
     expect(await bills.getAttribute("aria-expanded")).toBe("true");
     expect(await bills.getAttribute("aria-controls")).toBeTruthy();
     const tint = () => bills.evaluate((element) => getComputedStyle(element).backgroundColor);
