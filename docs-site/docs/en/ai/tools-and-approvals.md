@@ -760,6 +760,9 @@ the place.
 - Where remembering for this chat is allowed, **See everything** offers the
   checkbox **Don't ask again in this chat** (`remember: "chat"`). A chat
   choice ends when the chat is deleted.
+- On a `@k2b/ui` v2 page the card keeps the same look. Place it as
+  `<Band><Canvas><ApprovalFrame … /></Canvas></Band>`; Cloud gives it the
+  page's text edge.
 - A place passes data and answers, never a class, a style, or a variant. The
   `approval-card-calls` rule fails on look props, on `Chat.Decision` outside
   `ApprovalCard`, and on other stylesheets that style the card.

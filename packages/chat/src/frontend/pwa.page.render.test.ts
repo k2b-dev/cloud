@@ -172,7 +172,7 @@ describe("Chat in the Cloud app", () => {
     expect(channelsSpy.mock.calls.at(-1)?.[0]).toMatchObject({ query: { q: "studio" } });
     expect(document.querySelector(".chat-app")?.hasAttribute("data-open")).toBe(true);
     expect(document.querySelector(".chat-app__main")?.textContent).toContain("Loading…");
-    const props = [...document.querySelectorAll("solid-island")].map((island) => island.getAttribute("data-props")).join(" ");
+    const props = [...document.querySelectorAll("solid-island")].map((island) => island.firstChild?.nodeValue).join(" ");
     expect(props).toContain("Studio decisions");
     expect(props).toContain("studio");
   });

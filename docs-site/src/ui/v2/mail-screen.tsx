@@ -5,9 +5,9 @@ import {
   Button,
   Canvas,
   Chip,
+  HeadSearch,
   Icon,
   Inline,
-  Input,
   List,
   Nav,
   Notice,
@@ -246,9 +246,9 @@ export const MailScreen = (props: { open?: boolean; selecting?: boolean }) => {
           }
           end={
             <>
-              <Input type="search" icon="search" placeholder="Suchen" label="Suchen" />
+              <HeadSearch placeholder="Suchen" label="Suchen" />
               <Button variant="ghost" icon="dots" label="Weitere Aktionen" />
-              <Button variant="primary" icon="pencil">
+              <Button variant="primary" floats icon="pencil">
                 Neue Nachricht
               </Button>
             </>
@@ -318,7 +318,7 @@ export const MailScreen = (props: { open?: boolean; selecting?: boolean }) => {
                     <Button variant="ghost" icon="clock" label="Später" />
                     <Button variant="ghost" avatar={{ name: "Mira Solberg", color: teal }} label="Zugewiesen an Mira Solberg" />
                     <Button variant="ghost" icon="dots" label="Weitere Aktionen" />
-                    <Button variant="ghost" icon="x" label="Schließen" />
+                    <Button variant="ghost" icon="x" label="Schließen" closes />
                   </>
                 }
               />

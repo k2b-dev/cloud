@@ -1,4 +1,4 @@
-import { Button, NoticeCard, useLocale } from "@k2b/ui";
+import { Choice, Notice, useLocale } from "@k2b/ui/v2";
 import { createSignal, For, type JSX } from "solid-js";
 import type { AiAdminConflict } from "./client";
 import { conflictingFields, DEFAULT_CONFLICT_CHOICE, mergeDrafts } from "./merge-drafts";
@@ -6,8 +6,8 @@ import { aiAreaMessages } from "./messages";
 import { formatAiTime } from "./presentation";
 
 /**
- * The conflict state: who saved first and when, a choice for every field both changed, and the two ways out.
- * The form below stays as the person left it until they decide.
+ * The conflict state: who saved first and when, the two ways out, and under it a choice for every field both
+ * changed (mine by default). The form below stays as the person left it until they decide.
  */
 export function ConflictNotice<T extends Record<string, unknown>>(props: {
   conflict: AiAdminConflict;
@@ -33,51 +33,39 @@ export function ConflictNotice<T extends Record<string, unknown>>(props: {
   const title = () =>
     name() ? t().conflictTitle({ name: name()!, time: formatAiTime(locale(), props.conflict.changedAt) }) : t().conflictTitleUnknown;
   return (
-    <NoticeCard tone="warning" icon="ti ti-git-merge" title={title()} detail={t().conflictSub} role="alert">
-      <div class="grid gap-3">
-        <For each={overlapping()}>
-          {(field) => (
-            <fieldset class="grid gap-1">
-              <legend class="font-medium">{field.label}</legend>
-              <label class="flex items-center gap-2">
-                <input
-                  type="radio"
-                  class="accent-(--k2b-action-solid)"
-                  name={`conflict-${String(field.key)}`}
-                  checked={(choices()[field.key] ?? DEFAULT_CONFLICT_CHOICE) === "mine"}
-                  onChange={() => setChoices((current) => ({ ...current, [field.key]: "mine" }))}
-                />
-                {t().conflictMine({ value: show(field, props.mine[field.key]) })}
-              </label>
-              <label class="flex items-center gap-2">
-                <input
-                  type="radio"
-                  class="accent-(--k2b-action-solid)"
-                  name={`conflict-${String(field.key)}`}
-                  checked={choices()[field.key] === "theirs"}
-                  onChange={() => setChoices((current) => ({ ...current, [field.key]: "theirs" }))}
-                />
-                {name()
+    <>
+      <Notice
+        tone="warn"
+        icon="git-merge"
+        title={title()}
+        actions={[{ label: t().conflictDiscard, disabled: props.busy, onClick: props.onDiscard }]}
+        primary={{
+          label: t().conflictMerge,
+          disabled: props.busy,
+          onClick: () => props.onMerge(mergeDrafts(props.base, props.mine, props.theirs, keys(), choices())),
+        }}
+      >
+        {t().conflictSub}
+      </Notice>
+      <For each={overlapping()}>
+        {(field) => (
+          <Choice
+            name={`conflict-${String(field.key)}`}
+            label={field.label}
+            value={choices()[field.key] ?? DEFAULT_CONFLICT_CHOICE}
+            onChange={(value) => setChoices((current) => ({ ...current, [field.key]: value === "theirs" ? "theirs" : "mine" }))}
+            options={[
+              { value: "mine", label: t().conflictMine({ value: show(field, props.mine[field.key]) }) },
+              {
+                value: "theirs",
+                label: name()
                   ? t().conflictTheirs({ name: name()!, value: show(field, props.theirs[field.key]) })
-                  : t().conflictTheirsUnknown({ value: show(field, props.theirs[field.key]) })}
-              </label>
-            </fieldset>
-          )}
-        </For>
-        <div class="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            size="sm"
-            loading={props.busy}
-            onClick={() => props.onMerge(mergeDrafts(props.base, props.mine, props.theirs, keys(), choices()))}
-          >
-            {t().conflictMerge}
-          </Button>
-          <Button type="button" size="sm" variant="secondary" disabled={props.busy} onClick={props.onDiscard}>
-            {t().conflictDiscard}
-          </Button>
-        </div>
-      </div>
-    </NoticeCard>
+                  : t().conflictTheirsUnknown({ value: show(field, props.theirs[field.key]) }),
+              },
+            ]}
+          />
+        )}
+      </For>
+    </>
   );
 }

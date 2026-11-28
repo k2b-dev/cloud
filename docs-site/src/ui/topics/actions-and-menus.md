@@ -16,7 +16,10 @@ Offers of a workshop. The head holds the views, a hint on the refresh button, a 
 - A deed that cannot be taken now is `disabled`, and a sentence beside it says why, such as the `Notice` "Freigabe fehlt".
 - A deed under way is `busy`: the button keeps its width, its look and the focus, and takes no second press.
 - A toggle is `pressed`: `true` on, `false` off. Never on a link or on the primary action.
-- The head's "…" is a `Menu` without words or a symbol of its own, at the end of its `Bar`. Where the head gives way (on the phone, or below 1100 px in a head with a title), its buttons without `keep` leave, and the "…" lists them first when it opens: a button runs its own click, a link opens as it does, a `Menu` with words becomes a submenu, a pressed toggle shows its tick and a disabled one stays disabled. Put no copy of them into the "…" yourself. A `Menu` or `Popover` that shows only its symbol (such as "Später" with a clock) stays in the head and keeps its own entries. A head without a "…" keeps its buttons.
+
+## On the phone
+
+Every control of a head stays on the phone, a `Popover` and a `Menu` alike. Only the twin of `Workspace primary` (`floats`) and a detail's close × beside its way back (`closes`) leave the head there.
 
 ## Menu or popover?
 
@@ -44,7 +47,9 @@ The one button: `primary` once per page, framed by default, `ghost` and `text` f
 
 ### Menu
 
-More deeds behind a button or behind "…": items, sections, one choice, toggles and submenus. An entry whose `onClick` returns a Promise keeps the menu open and turns until it settles.
+More deeds behind a button or behind "…": items, sections, one choice, toggles and submenus. An entry may carry a data `color`, such as the colour of an area in a filter: a dot before its words, in place of an icon; it adds nothing to the entry's name. An entry whose `onClick` returns a Promise keeps the menu open and turns until it settles.
+
+An entry can also open a `panel`, such as a `DatePicker`, as its next step: `panel: menuPanel((close) => …)`, which brings the panel's code along, so a menu without a panel loads none of it. The panel is a dialog of its own: it takes the place of the menu the entry stands in (on the phone a sheet of its own), under a head that leads back. Its keys and focus are its own, so the arrows walk a calendar, not the menu; Escape and the back button lead back to the entry. An entry that sets a value through its submenu or panel shows that value with `current` at its end, in the app's colour, in place of `meta`. A choice whose options say enough by themselves, such as offered times with the one set now ticked, may go without a heading (`title: ""`).
 
 <Props of="Menu MenuItem MenuSection" />
 
@@ -62,14 +67,14 @@ A panel behind a button: Escape and a press outside close it, the focus moves in
 
 ## Not in v2 yet
 
-On the phone a head's "…" stays at the end of its head; it does not move into the shell's bar above the page, as the mockup of the customer record shows. Write `// k2b-ui gap: head more in the host bar` at that place.
+A head whose controls do not fit beside its title folds the last ones into "…" with #4392. Until then, write `// k2b-ui gap: #4392 (bar fold)` where a head has more controls than room.
 
 ## Do and don't
 
 ### Do
 
 - Give a row's "…" and its `Menu.Context` the same list of entries.
-- Name every icon button and every "…" with `label`, such as "Aktionen für Regal Archiv".
+- Name every icon button and every "…" with `label`, such as "Aktionen für Regal Archiv". A button with words takes a `label` only where the words alone do not say enough; it begins with the words, such as "Öffnen: Hausordnung" for "Öffnen".
 - Put deeds that destroy last, with `danger`; the line before them comes by itself.
 - Say why a deed is disabled, in the sentence beside it.
 

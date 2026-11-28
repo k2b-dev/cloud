@@ -1,9 +1,8 @@
 import { Avatar, type AvatarProps } from "@k2b/ui";
 import type { JSX } from "solid-js";
-import { cloudAvatarSource } from "./avatar-url";
+import { type CloudAvatarKind, cloudAvatarImage, cloudAvatarSource } from "./avatar-url";
 
-/** Who an avatar stands for; agents and service accounts are square, people round. */
-export type CloudAvatarKind = "user" | "service_account" | "system";
+export { type CloudAvatarKind, cloudAvatarImage };
 
 export type CloudAvatarProps = Omit<AvatarProps, "name" | "src" | "shape" | "icon"> & {
   username: string;
@@ -15,21 +14,6 @@ export type CloudAvatarProps = Omit<AvatarProps, "name" | "src" | "shape" | "ico
 const avatarSource = cloudAvatarSource;
 
 export { cloudAvatarSource };
-
-/**
- * Where an avatar's image comes from. A person has one only with a hash; a service account always has one, its photo
- * or its robot, so it is linked even without a hash and revalidates. A system actor has none.
- */
-export const cloudAvatarImage = (params: {
-  kind: CloudAvatarKind;
-  userId?: string | null;
-  avatarHash?: string | null;
-}): string | undefined => {
-  if (params.kind === "user") return avatarSource(params.userId, params.avatarHash);
-  if (params.kind === "system" || !params.userId) return undefined;
-  const rev = params.avatarHash ? `?rev=${encodeURIComponent(params.avatarHash)}` : "";
-  return `/api/accounts/users/${encodeURIComponent(params.userId)}/avatar${rev}`;
-};
 
 const KIND_ICON: Record<CloudAvatarKind, string | undefined> = {
   user: undefined,

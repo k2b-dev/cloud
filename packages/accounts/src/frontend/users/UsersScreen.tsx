@@ -7,8 +7,8 @@ import {
   Chip,
   Failed,
   FilterBar,
+  HeadSearch,
   Inline,
-  Input,
   ListOrder,
   Menu,
   Notice,
@@ -246,9 +246,7 @@ export default function UsersScreen(props: UsersScreenProps) {
           }
           end={
             <>
-              <Input
-                type="search"
-                icon="search"
+              <HeadSearch
                 name="q"
                 label={t().searchUsers}
                 placeholder={t().searchUsers}
@@ -265,7 +263,7 @@ export default function UsersScreen(props: UsersScreenProps) {
                 }}
               />
               <Menu label={t().more} items={[{ label: t().duplicateEmails, icon: "copy", href: "/app/accounts/duplicate-emails" }]} />
-              <Button variant="primary" icon="user-plus" href="/app/accounts/users/new">
+              <Button variant="primary" floats icon="user-plus" href="/app/accounts/users/new">
                 {t().newUser}
               </Button>
             </>

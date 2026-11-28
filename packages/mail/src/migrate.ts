@@ -22,6 +22,7 @@ import {
 } from "./migrate-reply-drafts";
 import baselineSchema from "./schema.sql" with { type: "text" };
 import { MAIL_ACTIVITY_FEED_ACTIONS } from "./service/activity-feed";
+import { migrateAttachmentFiles } from "./service/attachment-file-index";
 import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
 import { migrateRoomAccessEvents, migrateRoomAccessIndexes } from "./service/room-access-events";
 import { MAIL_RULE_RETIREMENT_NAME, MAIL_RULE_RETIREMENT_VERSION, retireMailRules } from "./service/rule-retirement-migrate";
@@ -327,6 +328,13 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   // leave this null and cannot be mistaken for a quarantine repair receipt.
   await tx`ALTER TABLE mail.draft_document_rests ADD COLUMN IF NOT EXISTS quarantine_revision bigint
     CHECK (quarantine_revision > 0), ADD COLUMN IF NOT EXISTS quarantine_state bytea`.simple();
+  // Device input kept as a recovery copy of an existing draft. Many rests may name the same
+  // draft, so this cannot reuse the unique rest_draft_id, which names a draft the rest created.
+  await tx`ALTER TABLE mail.draft_document_rests ADD COLUMN IF NOT EXISTS kept_draft_id uuid
+    REFERENCES mail.drafts(id) ON DELETE CASCADE`.simple();
+  // F6 erasure and the cascade look rests up by the draft that keeps their copy.
+  await tx`CREATE INDEX IF NOT EXISTS draft_document_rests_kept_draft_idx
+    ON mail.draft_document_rests(kept_draft_id) WHERE kept_draft_id IS NOT NULL`.simple();
 
   await tx.unsafe(automationLogSchema).simple();
   await ensureMailWorkflowEffectOrderSchema(tx);
@@ -866,6 +874,7 @@ export const migrate = async (): Promise<ReplyDraftMigrationResult> => {
         await migrateAiDailyBudget(tx);
         await migrateSourceNames(tx);
         await migrateConversationSummaries(tx);
+        await migrateAttachmentFiles(tx);
         await migrateWorkspacePreferences(tx);
         await migrateWorkflowAi(tx);
       });

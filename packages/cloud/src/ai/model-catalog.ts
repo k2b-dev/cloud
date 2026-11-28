@@ -20,7 +20,7 @@ import {
 } from "../shared/ai-models";
 import { listAiCredentialProviderIds } from "./credentials";
 import { AiModelAccessConflict, type AiModelAccessDraft, aiModelAccess } from "./model-access";
-import { getAiRequestHeaders } from "./request-headers";
+import { getAiRequestHeaders, listAiRequestHeaderNames } from "./request-headers";
 import type { AiModelProfile } from "./types";
 
 export const lockAiModelCatalog = async (db = sql) => {
@@ -104,12 +104,19 @@ const requireRow = <T>(value: T | undefined): T => {
   if (!value) throw new AiConfigError("model_not_found", "Model or provider no longer exists.");
   return value;
 };
-const presentProvider = async (value: Record<string, unknown>, db = sql, credentialIds?: string[]): Promise<AiProvider> => {
+/** A list passes the credential IDs and header names it read once for all providers; one provider reads its own. */
+const presentProvider = async (
+  value: Record<string, unknown>,
+  db = sql,
+  read?: { credentialIds: string[]; headerNames: Record<string, string[]> },
+): Promise<AiProvider> => {
   const id = z.string().parse(value.id);
   return AiProviderSchema.parse({
     ...value,
-    credentialSet: (credentialIds ?? (await listAiCredentialProviderIds(db))).includes(id),
-    requestHeaderNames: Object.keys(await getAiRequestHeaders(id, db)).sort(),
+    credentialSet: (read?.credentialIds ?? (await listAiCredentialProviderIds(db))).includes(id),
+    requestHeaderNames: read
+      ? (Object.hasOwn(read.headerNames, id) && read.headerNames[id]) || []
+      : Object.keys(await getAiRequestHeaders(id, db)).sort(),
   });
 };
 const validateProvider = (provider: z.infer<typeof AiProviderInputSchema>) => {
@@ -173,11 +180,16 @@ export const validateAiCatalogModel = (model: z.infer<typeof AiModelInputSchema>
 };
 export const aiModelCatalog = {
   async providers(db = sql, admin = true) {
-    const [values, credentialIds] = await Promise.all([rows("providers", undefined, db), listAiCredentialProviderIds(db)]);
+    // Header names come from one read of every provider's headers, never one read per provider.
+    const [values, credentialIds, headerNames] = await Promise.all([
+      rows("providers", undefined, db),
+      listAiCredentialProviderIds(db),
+      admin ? listAiRequestHeaderNames(db) : {},
+    ]);
     return Promise.all(
       values.map((row) =>
         admin
-          ? presentProvider(row, db, credentialIds)
+          ? presentProvider(row, db, { credentialIds, headerNames })
           : AiProviderSchema.parse({ ...row, credentialSet: credentialIds.includes(z.string().parse(row.id)), requestHeaderNames: [] }),
       ),
     );

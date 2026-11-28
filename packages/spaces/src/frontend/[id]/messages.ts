@@ -7,22 +7,9 @@ export const spaceMessages = i18n.define({
     en: {
       headReset: "Reset",
       headViews: "Views",
-      headShowViews: "Show",
-      headViewsHint: "List, Table, Kanban, and Calendar are now tabs at the top of the page.",
-      sidebarHintSwitch: "All your Spaces are now here in the sidebar. One click opens another Space.",
-      sidebarHintOverview: "Your Spaces are now in one sidebar, here and in every Space. “New space” is at the end of the list.",
       headSpaceMenu: "Space menu",
       headPeople: "People with access",
       headSpacePeople: ({ names }: { names: string }) => `People with access to this Space: ${names}`,
-      headOpenMenu: "Open menu",
-      headMenuHint: ({ ical, shortcuts }: { ical: boolean; shortcuts: boolean }): string =>
-        ical && shortcuts
-          ? "Space settings, the iCal URL, and keyboard shortcuts are now under “…”."
-          : ical
-            ? "Space settings and the iCal URL are now under “…”."
-            : shortcuts
-              ? "Space settings and keyboard shortcuts are now under “…”."
-              : "Space settings are now under “…”.",
       headCopyFailed: "Could not copy the iCal URL. Open the menu and try again.",
       cancel: "Cancel",
       all: "All",
@@ -858,22 +845,9 @@ export const spaceMessages = i18n.define({
     de: {
       headReset: "Zurücksetzen",
       headViews: "Ansichten",
-      headShowViews: "Zeigen",
-      headViewsHint: "Liste, Tabelle, Kanban und Kalender sind jetzt Tabs oben auf der Seite.",
-      sidebarHintSwitch: "Alle Spaces stehen jetzt hier in der Leiste. Ein Klick öffnet einen anderen Space.",
-      sidebarHintOverview: "Deine Spaces stehen jetzt in einer Leiste, hier und in jedem Space. „Neuer Space“ steht am Ende der Liste.",
       headSpaceMenu: "Space-Menü",
       headPeople: "Personen mit Zugriff",
       headSpacePeople: ({ names }: { names: string }) => `Personen mit Zugriff auf diesen Space: ${names}`,
-      headOpenMenu: "Menü öffnen",
-      headMenuHint: ({ ical, shortcuts }: { ical: boolean; shortcuts: boolean }): string =>
-        ical && shortcuts
-          ? "Space-Einstellungen, iCal-Adresse und Tastenkürzel findest du jetzt unter „…“."
-          : ical
-            ? "Space-Einstellungen und iCal-Adresse findest du jetzt unter „…“."
-            : shortcuts
-              ? "Space-Einstellungen und Tastenkürzel findest du jetzt unter „…“."
-              : "Die Space-Einstellungen findest du jetzt unter „…“.",
       headCopyFailed: "Die iCal-Adresse konnte nicht kopiert werden. Öffne das Menü und versuche es erneut.",
       cancel: "Abbrechen",
       all: "Alle",

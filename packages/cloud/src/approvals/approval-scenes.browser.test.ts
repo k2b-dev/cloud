@@ -26,7 +26,9 @@ const buildHarness = async (entrypoint = resolve(import.meta.dir, "approval-scen
         name: "solid-approval-scenes-test",
         setup(builder) {
           // Root fixtures have no application package scope; use the public browser distribution.
-          builder.onResolve({ filter: /^@k2b\/ui$/ }, () => ({ path: resolve(ui, "dist/browser/index.js") }));
+          builder.onResolve({ filter: /^@k2b\/ui(\/v2)?$/ }, ({ path }) => ({
+            path: resolve(ui, path === "@k2b/ui" ? "dist/browser/index.js" : "dist/browser/v2/index.js"),
+          }));
           builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
             const result = await transformAsync(await Bun.file(path).text(), {
               filename: path,
@@ -77,6 +79,8 @@ const SCENE_CSS = `
   .scene { box-sizing: border-box; width: min(100%, 796px); margin: 0 auto; padding: 24px 16px; }
   .scene-label { margin: 18px 0 0; font: 600 13px/1.4 var(--font-sans, sans-serif); color: var(--k2b-text-secondary); }
   .scene--everywhere { width: min(100%, 1400px); }
+  /* the v2 review is a pane of the app's page: the page gives its edges, not the scene */
+  .scene--review-admin { padding: 0; }
   .scene-places { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 24px 28px; align-items: start; }
   .scene-places [data-place="page"] { grid-column: 1 / -1; }
   .scene-places [data-place="panel"] { max-width: 420px; }
@@ -188,7 +192,9 @@ describe("Approval scenes", () => {
           expect(await noOverflow(page)).toBe(0);
           await shot(page, `review-facts-${theme}-${width}`);
           await page.goto("https://cloud.example.test/?scene=review-admin");
+          // The v2 review decides in Cloud's one approval card, as chat and the side panel do; its head has no decisions.
           const admin = page.locator(".cloud-approval-frame");
+          expect(await admin.count()).toBe(1);
           const secondary = admin.getByRole("button", {
             name: width === 390 ? "Ablehnen / ändern" : "Ablehnen oder ändern …",
             exact: true,
@@ -201,12 +207,16 @@ describe("Approval scenes", () => {
             }));
             expect(singleLine.height).toBeLessThanOrEqual(singleLine.line + 1);
           }
+          const approve = admin.locator("[data-approval-primary]");
+          expect(await approve.isVisible()).toBe(true);
+          expect(await page.locator(".scene--review-admin").getByRole("button", { name: "Version 5 freigeben" }).count()).toBe(1);
           expect(await noOverflow(page)).toBe(0);
           await shot(page, `review-admin-${theme}-${width}`);
           await secondary.click();
           await page.getByRole("dialog").waitFor();
-          expect(await admin.locator("[data-approval-primary]").getAttribute("aria-busy")).toBeNull();
-          expect(await admin.locator("[data-approval-primary]").isDisabled()).toBe(true);
+          // While the decision dialog is open the approval waits for it: approve is off, and not busy.
+          expect(await approve.getAttribute("aria-busy")).toBeNull();
+          expect(await approve.isDisabled()).toBe(true);
           await shot(page, `review-admin-decision-${theme}-${width}`);
           await page.keyboard.press("Escape");
           await page.getByRole("dialog").waitFor({ state: "detached" });

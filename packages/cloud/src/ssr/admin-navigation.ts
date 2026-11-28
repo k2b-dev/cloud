@@ -15,7 +15,7 @@ export type AdminLink = {
   match?: string[];
   waiting?: { count: number; label: string };
 };
-/** A group without `label` stands at the top without a heading, such as the overview. */
+/** A group without `label` stands without a heading. */
 export type AdminGroup = { label?: string; links: AdminLink[] };
 
 const normalizeAdminHref = (href: string | undefined): string | undefined => {
@@ -24,8 +24,9 @@ const normalizeAdminHref = (href: string | undefined): string | undefined => {
 };
 
 /**
- * The admin bar: the overview, then what an operator sets up once, then what they run every day, then one entry per
- * app with settings of its own. Only the links are grouped here; no page and no address moves.
+ * The admin bar: what an operator sets up once, then what they run every day, then one entry per app with settings of
+ * its own. Only the links are grouped here; no page and no address moves. `/admin` itself has no entry: it opens the
+ * operations overview, or Apps without it.
  */
 export const buildAdminGroups = (
   apps: readonly RuntimeContext["apps"][number][],
@@ -66,7 +67,6 @@ export const buildAdminGroups = (
   const observabilityPaths = contributed("observability").map((link) => link.href);
 
   return [
-    { links: [{ href: "/admin", icon: "ti-dashboard", label: t.overview }] },
     {
       label: t.adminSetup,
       links: [
@@ -74,7 +74,6 @@ export const buildAdminGroups = (
         { href: "/admin/storage", icon: "ti-database", label: t.storage },
         { href: "/admin/signin", icon: "ti-shield-lock", label: t.signinSecurity },
         { href: "/admin/outgoing-mail", icon: "ti-mail", label: t.outgoingMail },
-        { href: "/admin/settings?tab=email-templates", icon: "ti-template", label: t.emailTemplates },
         { href: "/admin/announcements", icon: "ti-speakerphone", label: t.announcements },
         { href: "/admin/ai", icon: "ti-sparkles", label: t.ai },
       ],
@@ -83,7 +82,6 @@ export const buildAdminGroups = (
       label: t.adminOperations,
       links: [
         { href: "/admin/apps", icon: "ti-apps", label: t.apps },
-        { href: "/admin/rail", icon: "ti-layout-sidebar", label: t.rail },
         {
           href: "/admin/code",
           icon: "ti-code",

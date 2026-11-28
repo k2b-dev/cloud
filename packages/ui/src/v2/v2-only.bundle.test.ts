@@ -25,11 +25,17 @@ const allowed: Record<string, number> = {
   "surfaces/person-color.ts": 270, // personColor for `Avatar`
 };
 
-test("an island of v2 alone (every export, and useLocale) bundles no v1 module", async () => {
+const v2Index = JSON.stringify(join(import.meta.dir, "index.ts"));
+
+/**
+ * The modules of `packages/ui/src` an island of `source` loads on its first render (the entry chunk and what it imports
+ * statically), with the bytes each brings, minified; the behaviour layer and the libraries stay outside.
+ */
+const islandModules = async (source: string): Promise<Record<string, number>> => {
   const directory = await mkdtemp(join(tmpdir(), "k2-v2-only-"));
   const entry = join(directory, "island.ts");
   try {
-    await Bun.write(entry, `import * as v2 from ${JSON.stringify(join(import.meta.dir, "index.ts"))};\nconsole.log(v2, v2.useLocale);\n`);
+    await Bun.write(entry, source);
     const result = await Bun.build({
       entrypoints: [entry],
       outdir: join(directory, "out"),
@@ -62,17 +68,64 @@ test("an island of v2 alone (every export, and useLocale) bundles no v1 module",
     const closure = new Set([first[0]]);
     for (const name of closure)
       for (const edge of outputs.get(name)?.imports ?? []) if (edge.kind === "import-statement") closure.add(basename(edge.path));
-    const outside: Record<string, number> = {};
+    const modules: Record<string, number> = {};
     for (const name of closure)
       for (const [path, input] of Object.entries(outputs.get(name)?.inputs ?? {})) {
         const module = relative(src, resolve(path));
-        if (input.bytesInOutput === 0 || module.startsWith("..") || module.startsWith("v2/") || module.startsWith("intl/")) continue;
-        outside[module] = (outside[module] ?? 0) + input.bytesInOutput;
+        if (input.bytesInOutput === 0 || module.startsWith("..")) continue;
+        modules[module] = (modules[module] ?? 0) + input.bytesInOutput;
       }
-    console.info("v2 island: modules outside v2 and intl", outside);
-    expect(Object.keys(outside).sort()).toEqual(Object.keys(allowed).sort());
-    for (const [module, bytes] of Object.entries(outside)) expect(bytes, module).toBeLessThanOrEqual(allowed[module] ?? 0);
+    return modules;
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+};
+
+test("an island of v2 alone (every export, and useLocale) bundles no v1 module", async () => {
+  const modules = await islandModules(`import * as v2 from ${v2Index};\nconsole.log(v2, v2.useLocale);\n`);
+  const outside = Object.fromEntries(
+    Object.entries(modules).filter(([module]) => !module.startsWith("v2/") && !module.startsWith("intl/")),
+  );
+  console.info("v2 island: modules outside v2 and intl", outside);
+  expect(Object.keys(outside).sort()).toEqual(Object.keys(allowed).sort());
+  for (const [module, bytes] of Object.entries(outside)) expect(bytes, module).toBeLessThanOrEqual(allowed[module] ?? 0);
+}, 60_000);
+
+// Guard: a page pays only for the parts it draws. A `Nav` without a tree and a `Menu` without a panel load neither:
+// the tree comes with `navTree`, the panel with `menuPanel` (#4187 and #4157 had added 41 KB and 7.5 KB to every
+// island with a `Nav` or a `Menu`, Chat's first chunk over its budget). The tree's and the panel's behaviour lives in
+// the behaviour layer, outside this measure; their modules here pull it in, so their absence is the guard.
+const lean = `import { Menu, Nav, Workspace } from ${v2Index};\nconsole.log(Menu, Nav, Workspace);\n`;
+// Measured 27.11.2026 (Bun 1.4.4, minified): 64 453 bytes of this package's own code, plus a tenth for growing. It holds
+// `Input` (5.5 KB) for the nav's search (#4443), which nearly every page loads anyway; a tree or a panel never.
+// The head block (look rule 30) is always on in every pane with a head and a toolbar, so its measured bytes count
+// exactly, without a reserve of their own: 294 in `Pane`/`Bar` and 11 in `status-toolbar` (#4537). The head search
+// adds nothing here: it comes with `HeadSearch` (see below).
+const leanBudget = Math.ceil(64_453 * 1.1) + 305; /* head block, measured 28.11.2026 on 1574c0a269 */
+
+test("an island with a Workspace, a Nav and a Menu loads no tree and no menu panel, and stays under its measure", async () => {
+  const modules = await islandModules(lean);
+  const total = Object.values(modules).reduce((sum, bytes) => sum + bytes, 0);
+  console.info(`Workspace, Nav and Menu: ${total} bytes of packages/ui/src (budget ${leanBudget})`);
+  expect(Object.keys(modules).filter((module) => ["v2/nav-tree.tsx", "v2/menu-panel.tsx", "v2/head-search.tsx"].includes(module))).toEqual(
+    [],
+  );
+  expect(total).toBeLessThanOrEqual(leanBudget);
+}, 60_000);
+
+// A head's search (`HeadSearch`: its symbol, its overlay, "/", its words and its held menu) comes with the part that
+// places it, as the tree and the panel do: an island whose head has no search loads none of it.
+test("HeadSearch brings the head search along", async () => {
+  const modules = await islandModules(
+    `import { HeadSearch, Menu, Nav, Workspace } from ${v2Index};\nconsole.log(HeadSearch, Menu, Nav, Workspace);\n`,
+  );
+  expect(modules["v2/head-search.tsx"]).toBeGreaterThan(0);
+}, 60_000);
+
+test("navTree and menuPanel bring the tree and the panel along", async () => {
+  const modules = await islandModules(
+    `import { menuPanel, Menu, Nav, navTree, Workspace } from ${v2Index};\nconsole.log(Menu, Nav, Workspace, navTree, menuPanel);\n`,
+  );
+  expect(modules["v2/nav-tree.tsx"]).toBeGreaterThan(0);
+  expect(modules["v2/menu-panel.tsx"]).toBeGreaterThan(0);
 }, 60_000);

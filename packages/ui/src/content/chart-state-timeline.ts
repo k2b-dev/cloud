@@ -18,6 +18,11 @@ export type StateTimelineInterval = {
   label?: string;
   href?: string;
   tooltip?: string;
+  /**
+   * A start still to come (a planned run): drawn as an outline in its state's colour instead of filled, and its text
+   * alternative says so (`plannedLabel`).
+   */
+  planned?: boolean;
 };
 
 export type StateTimelineRow = {
@@ -45,6 +50,16 @@ export type StateTimelineChartOptions = {
    * share one; `Chart` gives each instance its own. Without it the ids come from the geometry.
    */
   idPrefix?: string;
+  /**
+   * The present moment as the page knows it (the server's request time, then the island's): a thin line over the
+   * lanes with `nowLabel`. The drawing reads no clock of its own, so the server and the first render in the browser
+   * draw the same; without it there is no line.
+   */
+  now?: number;
+  /** The word on the line of `now`, such as "Jetzt"; `Chart` gives it in the page's language. */
+  nowLabel?: string;
+  /** The word a planned start adds to its text alternative, such as "geplant"; `Chart` gives it. */
+  plannedLabel?: string;
 };
 
 const ROW_HEIGHT = 24;
@@ -52,6 +67,10 @@ const TOP = 38;
 const AXIS_HEIGHT = 28;
 const LEGEND_HEIGHT = 24;
 const MIN_VIEW_FRACTION = 1 / 64;
+/** The narrowest a region is drawn: a run of seconds on a day stays visible and can be pointed at, centred on its start. */
+const MIN_REGION = 3;
+/** How near (in drawing units) an axis label may stand to the word of now before it gives way. */
+const NOW_ROOM = 48;
 
 const finiteDomain = (domain: StateTimelineDomain): StateTimelineDomain | null => {
   if (!Number.isFinite(domain[0]) || !Number.isFinite(domain[1]) || domain[0] === domain[1]) return null;
@@ -173,10 +192,26 @@ export const renderStateTimelineSvg = (
       const x2 = mapRange(to, viewport, [plotLeft, plotRight]);
       const style = stateStyles.get(interval.state);
       const stateIndex = style?.index ?? stateIndexes.get(interval.state) ?? 0;
-      const rect = `<rect ${seriesPaint(style?.color, stateIndex, "stdlib-chart-state-region")} x="${fmt(
-        x,
-      )}" y="${fmt(y + 3)}" width="${fmt(Math.max(2, x2 - x))}" height="${ROW_HEIGHT - 6}" rx="3"/>`;
+      // too short to see: the narrowest region, centred on the start and kept on the plot
+      const narrow = x2 - x < MIN_REGION;
+      const left = narrow ? Math.max(plotLeft, Math.min(plotRight - MIN_REGION, x - MIN_REGION / 2)) : x;
+      const regionWidth = narrow ? MIN_REGION : x2 - x;
+      // a planned start: an outline of 1.5 in its state's colour over a faint fill (stroke and width as a style, which
+      // wins over the white edge of 1 every region has)
+      const planned = interval.planned
+        ? ` data-planned="" fill-opacity="0.12" stroke-dasharray="3 2" style="stroke:${
+            style?.color ? escapeXml(style.color) : `var(--stdlib-chart-c${(stateIndex % 8) + 1})`
+          };stroke-width:1.5"`
+        : "";
+      const rect = `<rect ${seriesPaint(style?.color, stateIndex, "stdlib-chart-state-region")}${planned} x="${fmt(
+        left,
+      )}" y="${fmt(y + 3)}" width="${fmt(regionWidth)}" height="${ROW_HEIGHT - 6}" rx="${narrow ? 1 : 3}"/>`;
       const stateLabel = style?.label ?? interval.state;
+      // "geplant" only where the state's own words do not say it already ("Geplant, geplant")
+      const plannedWord =
+        interval.planned && opts.plannedLabel && !stateLabel.toLocaleLowerCase().includes(opts.plannedLabel.toLocaleLowerCase())
+          ? opts.plannedLabel
+          : undefined;
       body.push(
         interactiveGroup(
           chartDatumSvg(
@@ -200,7 +235,7 @@ export const renderStateTimelineSvg = (
           ),
           interval.href,
           interval.tooltip ?? interval.label,
-          [row.label, interval.label, stateLabel].filter(Boolean).join(", "),
+          [row.label, interval.label, stateLabel, plannedWord].filter(Boolean).join(", "),
         ),
       );
     }
@@ -223,15 +258,34 @@ export const renderStateTimelineSvg = (
   const tickTarget = Math.max(2, Math.min(8, Math.floor((plotRight - plotLeft) / 110)));
   const ticks = extendDomainToNice(viewport[0], viewport[1], niceStep(viewport[1] - viewport[0], tickTarget)).ticks;
   const format = opts.xAxis?.format ?? ((value: number) => fmt(value));
+  // now, where the page says: its word stands on the time axis at its time, so the axis labels near it give way
+  const nowX =
+    opts.now !== undefined && Number.isFinite(opts.now) && opts.now >= viewport[0] && opts.now <= viewport[1]
+      ? mapRange(opts.now, viewport, [plotLeft, plotRight])
+      : undefined;
   for (const tick of ticks) {
     if (tick < viewport[0] || tick > viewport[1]) continue;
     const x = mapRange(tick, viewport, [plotLeft, plotRight]);
+    const label =
+      nowX !== undefined && opts.nowLabel && Math.abs(x - nowX) < NOW_ROOM
+        ? ""
+        : `<text class="stdlib-chart-heatmap-label" x="${fmt(x)}" y="${fmt(rowsBottom + 17)}" text-anchor="middle">${escapeXml(format(tick))}</text>`;
+    body.push(`<line x1="${fmt(x)}" x2="${fmt(x)}" y1="${TOP}" y2="${fmt(rowsBottom)}" stroke="currentColor" opacity="0.08"/>`, label);
+  }
+
+  // now: a thin line over the lanes down to the time axis, and its word on the axis, kept inside the plot at its ends
+  // (the band above the lanes belongs to the controls of an interactive chart)
+  if (nowX !== undefined) {
+    const anchor = nowX < plotLeft + 24 ? "start" : nowX > plotRight - 24 ? "end" : "middle";
     body.push(
-      `<line x1="${fmt(x)}" x2="${fmt(x)}" y1="${TOP}" y2="${fmt(rowsBottom)}" stroke="currentColor" opacity="0.08"/>`,
-      `<text class="stdlib-chart-heatmap-label" x="${fmt(x)}" y="${fmt(rowsBottom + 17)}" text-anchor="middle">${escapeXml(
-        format(tick),
-      )}</text>`,
+      `<line class="stdlib-chart-state-now" x1="${fmt(nowX)}" x2="${fmt(nowX)}" y1="${TOP}" y2="${fmt(rowsBottom + 4)}" stroke="currentColor" stroke-width="1"/>`,
     );
+    if (opts.nowLabel)
+      body.push(
+        `<text class="stdlib-chart-heatmap-label stdlib-chart-state-now-label" x="${fmt(nowX)}" y="${fmt(rowsBottom + 17)}" text-anchor="${anchor}">${escapeXml(
+          opts.nowLabel,
+        )}</text>`,
+      );
   }
 
   if (opts.xAxis?.label) {

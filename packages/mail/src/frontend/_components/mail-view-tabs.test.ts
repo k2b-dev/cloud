@@ -75,4 +75,11 @@ describe("mailbox head tabs", () => {
       "saved:Saved1",
     ]);
   });
+  test("pending counts keep their place empty, unavailable ones show a dash; every count keeps three digits' width", () => {
+    const views = (viewCounts: Parameters<typeof mailboxViewTabs>[0]["viewCounts"]) =>
+      mailboxViewTabs({ ...input, viewCounts }).filter((tab) => expectedViews.includes(tab.id as (typeof expectedViews)[number]));
+    expect(views("pending").map((tab) => [tab.count, tab.countReserve])).toEqual(expectedViews.map(() => ["", "999"]));
+    expect(views("unavailable").map((tab) => tab.count)).toEqual(expectedViews.map(() => "–"));
+    expect(views(counts)[0]).toMatchObject({ count: "#3", countReserve: "999" });
+  });
 });

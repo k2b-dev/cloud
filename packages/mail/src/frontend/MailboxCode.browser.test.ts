@@ -184,7 +184,7 @@ if (shots) mkdirSync(shots, { recursive: true });
 const load = async (
   state: string,
   width: number,
-  options: { phone?: boolean; dark?: boolean; catchUp?: string; locale?: "de" | "en"; usesBoundChat?: boolean } = {},
+  options: { phone?: boolean; dark?: boolean; catchUp?: string; history?: string; locale?: "de" | "en"; usesBoundChat?: boolean } = {},
 ): Promise<Page> => {
   const page = await (await browser.newContext(contextFor(width))).newPage();
   await page.goto(server.url.href);
@@ -194,6 +194,7 @@ const load = async (
     locale: options.locale ?? "de",
     phone: options.phone,
     catchUp: options.catchUp,
+    history: options.history,
     usesBoundChat: options.usesBoundChat,
   });
   await settled(page);
@@ -203,6 +204,31 @@ const shoot = async (page: Page, name: string) => {
   if (shots) await page.screenshot({ path: resolve(shots, `${name}.png`), fullPage: false });
 };
 const overflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+
+describe("The retired rules' history on the Code page", () => {
+  for (const [name, width] of Object.entries(widths))
+    test(`${name} ${width}px: every state fits, one line per entry, nothing raw`, async () => {
+      for (const history of ["tag", "eintrag", "leer", "lauf", "fehler"]) {
+        const page = await load("overview", width, { history });
+        try {
+          expect({ history, overflow: await overflow(page) }).toEqual({ history, overflow: 0 });
+          expect(await page.locator(".mail-code-history").count()).toBe(1);
+          expect(await page.locator("pre:visible").count()).toBe(0);
+          // a run's date and time stay on one line
+          const runTimes = await page
+            .locator('.mail-code-history__line[data-kind="run"] .mail-code-history__time')
+            .evaluateAll((times) => times.map((time) => time.getClientRects().length && time.getBoundingClientRect().height));
+          expect({ history, wrapped: runTimes.filter((height) => height > 24) }).toEqual({ history, wrapped: [] });
+          // the step scrolls inside the page: bring the opened run or the runs' error into the picture
+          const runPart = page.locator(".mail-code-history__steps, .mail-code-history .k2b-placeholder").last();
+          if (shots && (await runPart.count())) await runPart.scrollIntoViewIfNeeded();
+          await shoot(page, `history-${history}-${width}`);
+        } finally {
+          await page.context().close();
+        }
+      }
+    }, 60_000);
+});
 
 describe("Mailbox Code page in a browser", () => {
   for (const [name, width] of Object.entries(widths))
@@ -604,7 +630,7 @@ describe("Process existing mail in a browser", () => {
         const link = page.getByRole("link", { name: "Vorhandene E-Mails nachholen" });
         expect({ state, count: await link.count() }).toEqual({ state, count: shown ? 1 : 0 });
         if (shown) {
-          expect(await link.getAttribute("href")).toBe("/app/mail/Mb4kd2/code/catch-up");
+          expect(await link.getAttribute("href")).toBe("/app/mail/Mb4kd2/code?catchUp=1");
           // The line ends the Code page's overview, where "Incoming mail" stood, without a divider.
           expect(await page.locator(".cloud-code .mail-code-backfill").count()).toBe(1);
           expect(await page.locator("main hr").count()).toBe(0);

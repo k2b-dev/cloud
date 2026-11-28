@@ -250,8 +250,6 @@ export default function MailReaderV2(props: {
   const derive = createMailMessageDerive({
     mailboxId: () => data().mailbox.id,
     identities: () => data().identities,
-    currentUserId: () => props.session.currentUserId,
-    returnHref: () => c().requestPath(),
     selection: () => data().selectedConversationId,
     shows: (messageId) => data().detailMessages.some((shown) => shown.id === messageId),
     explainSenderUnavailable,
@@ -346,6 +344,7 @@ export default function MailReaderV2(props: {
                 label={props.text.close}
                 href={listHref()}
                 onNavigate={(nav) => c().closeConversation(nav)}
+                closes
               />
             </>
           }
@@ -449,7 +448,7 @@ export default function MailReaderV2(props: {
               text={props.text}
               onReply={c().canWrite() ? () => setReplyRequest((count) => count + 1) : undefined}
               onRespond={reply()?.shown() ? (intent, message) => reply()?.respond(intent, message) : undefined}
-              onDerive={c().canWrite() && props.session.currentUserId ? derive.derive : undefined}
+              onDerive={c().canWrite() && !c().assignedOnly() ? derive.derive : undefined}
             />
           ) : (
             <Notice

@@ -6,8 +6,8 @@ import {
   Chip,
   Empty,
   Failed,
+  HeadSearch,
   Inline,
-  Input,
   List,
   Loading,
   Nav,
@@ -94,9 +94,7 @@ export function Fixture() {
             }
             end={
               <>
-                <Input
-                  type="search"
-                  icon="search"
+                <HeadSearch
                   label="Suchen"
                   placeholder="Suchen"
                   ref={search}

@@ -1,6 +1,6 @@
-import { createSignal } from "solid-js";
+import { createSignal, type JSX, Show } from "solid-js";
 import { render } from "solid-js/web";
-import { Bar, Button, Chip, Input, Pane, Path, StatusRow, Table, Tabs, Workspace } from "../src/v2";
+import { Bar, Button, Chip, HeadSearch, Pane, Path, StatusRow, Table, Tabs, Text, Workspace } from "../src/v2";
 
 // A filtered list as an operations log draws it: a head with views, a search and "…"; a status row with the result,
 // key figures, a loading mark and the order controls, above a large table with a sticky first column, group rows of
@@ -23,11 +23,26 @@ declare global {
      * off and blocked: then the toggle is disabled and the reason stands as a figure in the row.
      */
     __k2Logs?: (live?: "on" | "until-now" | "first-page") => void;
+    /** A list with an entry open beside it, its status row as proxy-auth draws it: a long lead and a warning chip at the end. */
+    __k2Proxy?: () => void;
+    /** Three key figures, for a long lead beside figures and filters (the order of giving way). */
+    __k2ThreeFacts?: () => void;
+    /** Mail's list column: a select box, a short lead, one long figure and no filters. */
+    __k2MailFact?: () => void;
+    /**
+     * Tinted chips of the statement: an exception "1 ohne Zugriff" and a warning "2 laufen ab"; `"none"` passes
+     * `marks={false}`, as `missing() > 0 && <Chip …/>` does while nothing is missing.
+     */
+    __k2Marks?: (state?: "shown" | "none") => void;
+    /** Twelve entries selected, with seven actions: the bar of what can be done with them, as Files draws it; `false` ends the selection. */
+    __k2Selection?: (on?: boolean) => void;
     /** The search of the head takes Escape itself (its onKeyDown calls preventDefault) and counts it. */
     __k2TakeEscape?: boolean;
     __k2Escapes?: number;
     /** Set before the fixture mounts: the head shows where the page stands (a `Path`) instead of its views. */
     __k2PathHead?: boolean;
+    /** Set before the fixture mounts: the head holds nothing but its search (no menu "…"), so on the phone it gives way. */
+    __k2BareHead?: boolean;
   }
 }
 
@@ -84,8 +99,44 @@ const [longLead, setLongLead] = createSignal(false);
 window.__k2LongLead = () => setLongLead(true);
 const [logs, setLogs] = createSignal<"on" | "until-now" | "first-page" | undefined>();
 window.__k2Logs = (live = "on") => setLogs(live);
+const [proxy, setProxy] = createSignal(false);
+window.__k2Proxy = () => setProxy(true);
+const [three, setThree] = createSignal(false);
+window.__k2ThreeFacts = () => setThree(true);
+const [mail, setMail] = createSignal(false);
+window.__k2MailFact = () => {
+  setFilters(false);
+  setMail(true);
+};
+const [chips, setChips] = createSignal<"shown" | "none" | undefined>();
+window.__k2Marks = (state = "shown") => setChips(state);
+const [selecting, setSelecting] = createSignal(false);
+window.__k2Selection = (on = true) => setSelecting(on);
+/** Seven deeds for the selected entries, as Files offers them; the last one destroys. */
+const selectionActions = [
+  { label: "Herunterladen", icon: "download" },
+  { label: "Teilen", icon: "share" },
+  { label: "Verschieben", icon: "folder-symlink" },
+  { label: "Kopieren", icon: "copy" },
+  { label: "Umbenennen", icon: "pencil" },
+  { label: "Als Favorit markieren", icon: "star" },
+  { label: "In den Papierkorb", icon: "trash" },
+];
 const liveBlocked = () =>
   logs() === "until-now" ? "Live nur mit Zeitraum bis jetzt" : logs() === "first-page" ? "Live nur auf der ersten Seite" : undefined;
+
+/** The list alone, or (proxy) beside an open entry in a split: a column of a split keeps at least 400 px, so the other
+ * states keep the list alone and can narrow it to 320 px. */
+const Frame = (props: { children: JSX.Element }) => (
+  <Show when={proxy()} fallback={props.children}>
+    <Pane.Split>
+      {props.children}
+      <Pane detail label="Client" head={<Bar start={<Text type="lead">Uptime Kuma</Text>} />}>
+        <Text>Erreichbarkeit der Dienste</Text>
+      </Pane>
+    </Pane.Split>
+  </Show>
+);
 
 const root = document.getElementById("root");
 if (!root) throw new Error("status-table: #root is missing");
@@ -118,9 +169,7 @@ render(
           }
           end={
             <>
-              <Input
-                type="search"
-                icon="search"
+              <HeadSearch
                 placeholder="Durchsuchen"
                 label="Durchsuchen"
                 onKeyDown={(event) => {
@@ -129,87 +178,116 @@ render(
                   window.__k2Escapes = (window.__k2Escapes ?? 0) + 1;
                 }}
               />
-              <Button keep variant="ghost" icon="dots" label="Weitere Aktionen" />
+              {window.__k2BareHead ? null : <Button variant="ghost" icon="dots" label="Weitere Aktionen" />}
             </>
           }
         />
       }
     >
-      <Pane
-        label="Protokolle"
-        status={
-          <StatusRow
-            lead={
-              logs()
-                ? "300 von 12.345 Einträgen"
-                : longLead()
-                  ? "11 von 11 Einträgen aus Gateway, Mail und Zustellung"
-                  : filters()
-                    ? "11 von 11 Einträgen"
-                    : "4 neu"
-            }
-            loading={loading()}
-            facts={[
-              ...(logs()
-                ? [
-                    { value: "1.204", after: "Fehler" },
-                    { value: 321, after: "Warnungen" },
-                    ...(liveBlocked() ? [{ after: liveBlocked() }] : []),
-                  ]
-                : [
-                    { value: 6, after: "Fehler" },
-                    { value: 5, after: "Warnungen" },
-                  ]),
-              ...(more()
-                ? [
-                    { before: "zuletzt", value: "10:43:48", after: "aus dem Gateway" },
-                    { value: 2, after: "Quellen" },
-                  ]
-                : []),
+      <Frame>
+        <Pane
+          label="Protokolle"
+          status={
+            <StatusRow
+              select={mail() ? { label: "Alle auswählen" } : undefined}
+              lead={
+                mail()
+                  ? "7 ungelesen"
+                  : proxy()
+                    ? "1 Client ist bis zur Konfiguration gesperrt"
+                    : logs()
+                      ? "300 von 12.345 Einträgen"
+                      : longLead()
+                        ? "11 von 11 Einträgen aus Gateway, Mail, Zustellung und dem Abgleich der Kalender"
+                        : filters()
+                          ? "11 von 11 Einträgen"
+                          : "4 neu"
+              }
+              loading={loading()}
+              selection={
+                selecting() ? { count: "12 ausgewählt", actions: selectionActions, clear: { label: "Auswahl aufheben" } } : undefined
+              }
+              marks={
+                chips() === "shown" ? (
+                  <>
+                    <Chip status="bad">1 ohne Zugriff</Chip>
+                    <Chip status="warn">2 laufen ab</Chip>
+                  </>
+                ) : chips() === "none" ? (
+                  false
+                ) : undefined
+              }
+              facts={[
+                ...(mail()
+                  ? [{ before: "Heute", value: 12, after: "erledigt · 5 davon automatisch" }]
+                  : proxy()
+                    ? []
+                    : logs()
+                      ? [
+                          { value: "1.204", after: "Fehler" },
+                          { value: 321, after: "Warnungen" },
+                          ...(liveBlocked() ? [{ after: liveBlocked() }] : []),
+                        ]
+                      : [
+                          { value: 6, after: "Fehler" },
+                          { value: 5, after: "Warnungen" },
+                          ...(three() ? [{ value: 2, after: "Quellen" }] : []),
+                        ]),
+                ...(more()
+                  ? [
+                      { before: "zuletzt", value: "10:43:48", after: "aus dem Gateway" },
+                      { value: 2, after: "Quellen" },
+                    ]
+                  : []),
+              ]}
+              filters={
+                proxy() ? (
+                  <Chip status="warn" icon="lock">
+                    bis zur Konfiguration gesperrt
+                  </Chip>
+                ) : logs() ? (
+                  <>
+                    <Button icon="broadcast" pressed={logs() === "on"} disabled={liveBlocked() !== undefined} title={liveBlocked()}>
+                      Live
+                    </Button>
+                    <Button icon="arrows-sort" menu>
+                      Eingang ↓
+                    </Button>
+                    <Button icon="stack-2" menu>
+                      Keine Gruppen
+                    </Button>
+                  </>
+                ) : filters() ? (
+                  <>
+                    <Button variant="text" icon="arrows-sort">
+                      Neueste zuerst
+                    </Button>
+                    <Button variant="ghost" icon="stack-2" menu>
+                      Nach Minute
+                    </Button>
+                  </>
+                ) : undefined
+              }
+            />
+          }
+        >
+          <Table
+            label="Einträge"
+            rows={entries}
+            rowKey={(entry) => entry.id}
+            sticky
+            group={(entry) => ({ key: entry.minute, head: () => <span>{entry.minute} Uhr</span>, meta: "2 Einträge" })}
+            phone={(entry) => ({ lines: [entry.message, `${entry.time} · ${entry.source}`], time: entry.ms, marks: level(entry) })}
+            columns={[
+              { title: "Zeit", width: { min: 100, default: 120 }, cell: (entry) => entry.time },
+              { title: "Stufe", width: { min: 90, default: 110 }, cell: level },
+              { title: "Quelle", width: { min: 90, default: 120 }, cell: (entry) => entry.source },
+              { title: "Nachricht", width: { min: 200, default: 420 }, cell: (entry) => entry.message },
+              { title: "Dauer", align: "end", width: { min: 80, default: 100 }, cell: (entry) => entry.ms },
             ]}
-            filters={
-              logs() ? (
-                <>
-                  <Button icon="broadcast" pressed={logs() === "on"} disabled={liveBlocked() !== undefined} title={liveBlocked()}>
-                    Live
-                  </Button>
-                  <Button icon="arrows-sort" menu>
-                    Eingang ↓
-                  </Button>
-                  <Button icon="stack-2" menu>
-                    Keine Gruppen
-                  </Button>
-                </>
-              ) : filters() ? (
-                <>
-                  <Button variant="text" icon="arrows-sort">
-                    Neueste zuerst
-                  </Button>
-                  <Button variant="ghost" icon="stack-2" menu>
-                    Nach Minute
-                  </Button>
-                </>
-              ) : undefined
-            }
           />
-        }
-      >
-        <Table
-          label="Einträge"
-          rows={entries}
-          rowKey={(entry) => entry.id}
-          sticky
-          group={(entry) => ({ key: entry.minute, head: () => <span>{entry.minute} Uhr</span>, meta: "2 Einträge" })}
-          phone={(entry) => ({ lines: [entry.message, `${entry.time} · ${entry.source}`], time: entry.ms, marks: level(entry) })}
-          columns={[
-            { title: "Zeit", width: { min: 100, default: 120 }, cell: (entry) => entry.time },
-            { title: "Stufe", width: { min: 90, default: 110 }, cell: level },
-            { title: "Quelle", width: { min: 90, default: 120 }, cell: (entry) => entry.source },
-            { title: "Nachricht", width: { min: 200, default: 420 }, cell: (entry) => entry.message },
-            { title: "Dauer", align: "end", width: { min: 80, default: 100 }, cell: (entry) => entry.ms },
-          ]}
-        />
-      </Pane>
+        </Pane>
+      </Frame>
     </Workspace>
   ),
   root,

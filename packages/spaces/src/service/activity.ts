@@ -1,6 +1,8 @@
 import { sql } from "@k2b/cloud";
 import type { AccessSubject } from "@k2b/cloud/server";
-import { buildSpacePrincipalCondition } from "./access";
+import { toPgUuidArray } from "@k2b/cloud/services";
+import { buildSpacePrincipalCondition, mayReadAcrossSpaces } from "./access";
+import { listReachableSpaceIds, type ReachableSpaceIds, reachableIdsForSql } from "./reach";
 
 type SqlExecutor = typeof sql;
 
@@ -139,10 +141,26 @@ export const list = async (params: {
   timeline?: boolean;
   before?: string;
   after?: string;
+  /** The Spaces the subject reaches, when the request resolved them already. */
+  spaceIds?: ReachableSpaceIds;
 }): Promise<SpaceActivityPage> => {
+  // A read across Spaces checks the subject's reach itself, as every other cross-Space read does: a Space-bound
+  // account reads only with its binding, whatever path calls this.
+  if (!params.spaceId && !params.itemId && !(await mayReadAcrossSpaces(params.subject, params.boundSpaceId))) {
+    return { items: [], nextCursor: null };
+  }
   const cursor = decodeActivityCursor(params.cursor);
   const limit = Math.min(Math.max(params.limit ?? 30, 1), 100);
-  const principal = buildSpacePrincipalCondition(params.subject);
+  // A read across Spaces filters by the reachable ids, so it stays on idx_spaces_activity_space;
+  // a read of one Space or task checks the grants of the rows it already narrowed to.
+  const narrowed = Boolean(params.spaceId || params.itemId || params.boundSpaceId);
+  const spaceIds = params.spaceIds ?? (narrowed ? null : await listReachableSpaceIds(params.subject));
+  const reachable = spaceIds
+    ? sql`activity.space_id = ANY(${toPgUuidArray(reachableIdsForSql(spaceIds))}::uuid[])`
+    : sql`EXISTS (
+      SELECT 1 FROM spaces.space_access sa JOIN auth.access a ON a.id = sa.access_id
+      WHERE sa.space_id = activity.space_id AND a.permission <> 'none' AND ${buildSpacePrincipalCondition(params.subject)}
+    )`;
   const rows = await sql<ActivityRow[]>`
     SELECT activity.id, activity.space_id, space.short_id AS space_short_id, space.name AS space_name,
       space.color AS space_color, activity.item_id, item.short_id AS item_short_id,
@@ -160,10 +178,7 @@ export const list = async (params: {
     LEFT JOIN spaces.items item ON item.id = activity.item_id
     LEFT JOIN auth.users actor_user ON activity.actor_kind = 'user' AND actor_user.id = activity.actor_id
     LEFT JOIN auth.service_accounts actor_service ON activity.actor_kind = 'service_account' AND actor_service.id = activity.actor_id
-    WHERE EXISTS (
-      SELECT 1 FROM spaces.space_access sa JOIN auth.access a ON a.id = sa.access_id
-      WHERE sa.space_id = activity.space_id AND a.permission <> 'none' AND ${principal}
-    )
+    WHERE ${reachable}
       AND (${!params.timeline} OR (item.id IS NOT NULL AND item.space_id = activity.space_id AND activity.action NOT LIKE 'comment.%'))
       AND (${params.before ?? null}::timestamptz IS NULL OR activity.last_occurred_at < ${params.before ?? null}::timestamptz)
       AND (${params.after ?? null}::timestamptz IS NULL OR activity.last_occurred_at > ${params.after ?? null}::timestamptz)

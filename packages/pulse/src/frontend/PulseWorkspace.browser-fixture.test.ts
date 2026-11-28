@@ -7,12 +7,14 @@ describe("Pulse SSR document fixture", () => {
       "<!DOCTYPE html><HTML><HEAD><title>Fixture</title><SCRIPT>head()</SCRIPT></HEAD><BODY>" +
         '<main data-note="body > shell"><script>const tag = "<script>";</script>' +
         '<ScRiPt data-note=">">mixed()</sCrIpT><template><SCRIPT>nested()</SCRIPT></template>' +
-        '<p>&lt;script&gt; stays readable</p><solid-island data-file="PulseWorkspace.island.tsx" data-props="fixture">' +
+        '<p>&lt;script&gt; stays readable</p><solid-island data-file="PulseWorkspace.island.tsx">' +
+        "<!--ssr-props:{}-->" +
         "<section>Actual workspace</section></solid-island></main></BODY><SCRIPT>loader()</SCRIPT></HTML>",
     );
     expect(content).toBe(
       '<main data-note="body > shell"><template></template><p>&lt;script&gt; stays readable</p>' +
-        '<solid-island data-file="PulseWorkspace.island.tsx" data-props="fixture" id="root">' +
+        '<solid-island data-file="PulseWorkspace.island.tsx" id="root">' +
+        "<!--ssr-props:{}-->" +
         "<section>Actual workspace</section></solid-island></main>",
     );
   });

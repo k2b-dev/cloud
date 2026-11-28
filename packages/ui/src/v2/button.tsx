@@ -2,7 +2,7 @@ import { createUniqueId, type JSX, children as resolveChildren, Show } from "sol
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { linkOr } from "./link";
-import { Avatar, Icon } from "./marks";
+import { Face, Icon } from "./marks";
 import type { Action, OnNavigate, Person } from "./types";
 
 type ButtonBase = {
@@ -19,6 +19,11 @@ type ButtonBase = {
   href?: string;
   /** With `href`: opens the page in place on a plain click (see `OnNavigate`); a disabled link never calls it. */
   onNavigate?: OnNavigate;
+  /**
+   * With `href`: the browser saves what the address leads to instead of opening it; a text names the file
+   * ("Angebot Küche.pdf"). Such a link never opens in place, and a disabled one downloads nothing.
+   */
+  download?: boolean | string;
   /** The deed of a button that has no address; never for what has one (use `href`). */
   onClick?: JSX.EventHandler<HTMLElement, MouseEvent>;
   /** The button opens a menu: a chevron after the label. */
@@ -42,10 +47,21 @@ type ButtonBase = {
   /** `submit` sends the form the button stands in; `button` by default. */
   type?: "button" | "submit";
   /**
-   * Stays in a head on the phone and in a head with a title without room (below 1100 px of its own width), where the
-   * other buttons move into the head's "…" (an icon-only `Menu`), which lists them by itself.
+   * @deprecated Every control of a head stays on the phone now; only `floats` leaves it. `keep` changes nothing and
+   * goes with the next breaking release.
    */
   keep?: boolean;
+  /**
+   * The page's main action in its head that `Workspace`'s `primary` repeats: on the phone the floating button stands
+   * for it, so the head lets it go there (one primary per page). A head left with nothing but its path and search
+   * then gives way to the host's bar; any other control keeps the head.
+   */
+  floats?: boolean;
+  /**
+   * The close x of a detail's head. On the phone the detail is a page with its way back (`Pane back`) above it, which
+   * stands for the x there, so the head lets it go: the detail has one way back.
+   */
+  closes?: boolean;
   /**
    * A hint under the pointer, for a button whose words give way to its symbol in a narrow place (the bar of a
    * selection). An icon button shows its label as the hint by itself.
@@ -63,7 +79,11 @@ export type ButtonProps = ButtonBase &
     | {
         /** The words on the button. */
         children: JSX.Element;
-        /** Another name for assistive technology, only where the words alone do not say enough. */
+        /**
+         * The name assistive technology hears instead of the words, only where they alone do not say enough: it begins
+         * with the words ("Öffnen: Hausordnung" for "Öffnen"), so a person who says them by voice still reaches it.
+         * No hint under the pointer (that is `title`).
+         */
         label?: string;
       }
     | {
@@ -88,17 +108,16 @@ export const Button = (props: ButtonProps) => {
   return (
     // a disabled link is an anchor without an address: it leads nowhere and takes no `onNavigate`
     <Dynamic
-      // a link carries its way of opening, so the head's "…" can open it in place when the link gives way there
-      ref={(node: HTMLElement) => Reflect.set(node, Symbol.for("k2b.ui.v2.onNavigate"), props.onNavigate)}
       component={off() && props.href !== undefined ? "a" : linkOr(props.href, "button")}
       href={off() ? undefined : props.href}
-      onNavigate={off() || props.href === undefined ? undefined : props.onNavigate}
+      onNavigate={off() || props.href === undefined || props.download ? undefined : props.onNavigate}
+      download={off() || props.href === undefined || !props.download ? undefined : props.download === true ? "" : props.download}
       type={props.href ? undefined : (props.type ?? "button")}
       disabled={props.href ? undefined : props.disabled}
       aria-disabled={(props.href && props.disabled) || props.busy ? "true" : undefined}
       aria-busy={props.busy ? "true" : undefined}
       aria-pressed={props.href === undefined && props.pressed !== undefined ? (props.pressed ? "true" : "false") : undefined}
-      aria-label={iconOnly() ? props.label : undefined}
+      aria-label={props.label}
       id={props.about ? self : undefined}
       aria-labelledby={props.about ? `${self} ${props.about}` : undefined}
       title={iconOnly() ? props.label : props.title}
@@ -114,10 +133,12 @@ export const Button = (props: ButtonProps) => {
       data-icon-only={iconOnly() ? "" : undefined}
       data-menu={props.menu ? "" : undefined}
       data-keep={props.keep ? "" : undefined}
+      data-floats={props.floats ? "" : undefined}
+      data-closes={props.closes ? "" : undefined}
     >
       <>
         <Show when={props.avatar} fallback={<Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>}>
-          {(person) => <Avatar {...person()} decorative />}
+          {(person) => <Face {...person()} decorative />}
         </Show>
         <Show when={!iconOnly()}>
           <span class="k2-btn-label">{label()}</span>

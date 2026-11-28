@@ -35,7 +35,11 @@ import {
   FeedbackEntrySchema,
   FeedbackInputSchema,
   FreeSignupInputSchema,
+  MAX_PUBLIC_MENU_ITEMS,
+  MAX_PUBLIC_SECTIONS,
+  MENU_ITEM_LIMIT,
   OpeningRuleInputSchema,
+  PUBLIC_SECTION_LIMIT,
   PublicSectionInputSchema,
   PublicSectionOrderSchema,
   PublicSectionPatchSchema,
@@ -47,9 +51,11 @@ import {
   ShiftTemplateSchema,
   TemplateSignupInputSchema,
   UpcomingSlotSchema,
+  VENUE_PAGE_MAX,
   VenueDashboardQuerySchema,
   VenueDashboardSchema,
   VenueInputSchema,
+  VenuePageQuerySchema,
   VenueResourceIdSchema,
   VenueSchema,
   VenueTemplateCreateInputSchema,
@@ -175,8 +181,8 @@ export const venueTodayWidgetHandler = async (c: Context<AuthContext>) => {
   const userResult = requireUserBackedActor(c);
   if (!userResult.ok) return c.body(null, 403);
   const user = userResult.data;
-  const venues = await venueService.venues.list(user);
-  const venue = venues[0];
+  // The widget shows one venue: the first by name the person can read.
+  const [venue] = await venueService.venues.discover(user, { limit: 1 });
   if (!venue) return c.body(null, 204);
 
   const dashboard = await venueService.dashboard(venue, user);
@@ -367,12 +373,20 @@ const venueRoutes = new Hono<AuthContext>()
     describeRoute({
       tags: ["Venues"],
       summary: "List accessible venues",
-      responses: { 200: jsonResponse(z.object({ venues: z.array(VenueSchema) }), "Accessible venues") },
+      description: `One page of the venues the caller can read, newest first: \`limit\` (${VENUE_PAGE_MAX} at most and by default) and \`offset\` page through them, \`q\` searches names and slugs. A page shorter than \`limit\` is the last.`,
+      responses: { 200: jsonResponse(z.object({ venues: z.array(VenueSchema).max(VENUE_PAGE_MAX) }), "One page of accessible venues") },
     }),
+    v("query", VenuePageQuerySchema),
     async (c) => {
       const subject = getVenueAccessSubject(c);
       if (!subject.ok) return respond(c, subject);
-      return respond(c, ok({ venues: await venueService.publicResources.projectVenues(await venueService.venues.list(subject.data)) }));
+      const page = c.req.valid("query");
+      const venues = await venueService.venues.list(subject.data, {
+        limit: page.limit ?? VENUE_PAGE_MAX,
+        offset: page.offset,
+        query: page.q,
+      });
+      return respond(c, ok({ venues: await venueService.publicResources.projectVenues(venues) }));
     },
   )
   .post(
@@ -842,9 +856,12 @@ const venueRoutes = new Hono<AuthContext>()
     describeRoute({
       tags: ["Venues"],
       summary: "Create public section",
+      description: `Requires admin permission. A venue stores at most ${MAX_PUBLIC_SECTIONS} sections and ${MAX_PUBLIC_MENU_ITEMS} menu items in all its menus together, drafts included; a section past either limit answers 422 with code \`${PUBLIC_SECTION_LIMIT}\` or \`${MENU_ITEM_LIMIT}\` and stores nothing.`,
       responses: {
         201: jsonResponse(PublicSectionSchema, "Created public section"),
-        422: jsonResponse(ErrorResponseSchema, "Malformed image"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid section"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        422: jsonResponse(ErrorResponseSchema, "Malformed image (`MALFORMED_IMAGE`), or the venue's section or menu item limit is reached"),
       },
     }),
     v("param", VenueIdParamSchema),
@@ -852,7 +869,7 @@ const venueRoutes = new Hono<AuthContext>()
     async (c) => {
       const venue = await adminVenue(c, c.req.valid("param").id);
       if (!venue.ok) return respond(c, venue);
-      const created = await venueService.sections.create(venue.data.id, c.req.valid("json"));
+      const created = await venueService.sections.create(venue.data.id, c.req.valid("json"), getLocale(c));
       return respond(
         c,
         await projectResult(created, async (value) => (await venueService.publicResources.projectSections([value]))[0]!),
@@ -890,10 +907,9 @@ const venueRoutes = new Hono<AuthContext>()
     describeRoute({
       tags: ["Venues"],
       summary: "Update public section",
-      description:
-        "Change only the fields in the body. Omitted fields keep their stored value: an edit keeps a draft (`enabled: false`) off the public page and keeps its position. Requires admin permission.",
+      description: `Change only the fields in the body. Omitted fields keep their stored value: an edit keeps a draft (\`enabled: false\`) off the public page and keeps its position. Requires admin permission. A change that adds menu items past the venue's ${MAX_PUBLIC_MENU_ITEMS} in all menus together answers 422 with code \`${MENU_ITEM_LIMIT}\` and changes nothing; a change that adds none always saves.`,
       responses: {
-        422: jsonResponse(ErrorResponseSchema, "Malformed image"),
+        422: jsonResponse(ErrorResponseSchema, "Malformed image (`MALFORMED_IMAGE`), or the venue's menu item limit is reached"),
         200: jsonResponse(PublicSectionSchema, "Updated section"),
         400: jsonResponse(ErrorResponseSchema, "Invalid section"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
@@ -908,7 +924,7 @@ const venueRoutes = new Hono<AuthContext>()
       if (!venue.ok) return respond(c, venue);
       const resource = await resolveOwned("sections", venue.data.id, param.resourceId);
       if (!resource.ok) return respond(c, resource);
-      const updated = await venueService.sections.update(venue.data.id, resource.data, c.req.valid("json"));
+      const updated = await venueService.sections.update(venue.data.id, resource.data, c.req.valid("json"), getLocale(c));
       return respond(c, await projectResult(updated, async (value) => (await venueService.publicResources.projectSections([value]))[0]!));
     },
   )

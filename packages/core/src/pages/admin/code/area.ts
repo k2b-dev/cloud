@@ -92,19 +92,22 @@ export const parseCodeAreaQuery = (query: Record<string, string | undefined>): C
   return { sec };
 };
 
-/** The deepest level the selection reaches; the workspace shows it and as many levels before it as fit. */
-export const codeAreaLevel = (query: CodeAreaQuery): "area" | "section" | "detail" =>
-  query.id ? "detail" : query.sec ? "section" : "area";
+/** The section the address opens; without one the area opens on the approvals, the work that waits. */
+export const codeAreaSection = (query: CodeAreaQuery): CodeAreaSection => query.sec ?? "approvals";
 
-/** Sections whose content fills the list and detail columns together. */
-export const isWideCodeSection = (section: CodeAreaSection | undefined): boolean =>
-  section === "approvals" ||
-  section === "databases" ||
-  section === "policy" ||
-  section === "history" ||
-  section === "cleanup" ||
-  section === "limits" ||
-  section === "runners";
+/** The sign of each section in the admin bar. */
+export const CODE_SECTION_ICON: Record<CodeAreaSection, string> = {
+  approvals: "inbox",
+  code: "code",
+  policy: "table-options",
+  groups: "users-group",
+  effective: "user-search",
+  history: "history",
+  cleanup: "recycle",
+  databases: "database",
+  limits: "gauge",
+  runners: "server-2",
+};
 
 /** Rows grouped as the policy table shows them. */
 export const CODE_POLICY_ROW_GROUPS: readonly { key: "grpRead" | "grpSilent" | "grpAsk" | "grpAiNet"; rows: CodePolicyRow[] }[] = [

@@ -69,21 +69,20 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       cells: [".k2-cells", "250,166 1125x117"],
       section: [".k2-sec", "250,283 765x181"],
       todo: [".k2-sec .k2-row", "250,335 765x60"],
-      facts: [".k2-facts", "1016,499 359x200"],
+      // the mockup's 200 px and two rows of 32 px more: the kinds of the head ("Kundentyp", "Art") also stand in the
+      // facts, since on the phone they give way to the name (decision of 27.11., #4465)
+      facts: [".k2-facts", "1016,499 359x264"],
       // the rail of the shell beside the app: its logo and the open app (Kunden)
       railLogo: [".ui-v2-rail__logo", "-44,4 32x32"],
       railApp: [".ui-v2-rail__app[data-current]", "-48,92 40x36"],
     },
     390: {
-      // The mockup moves the record's "…" into the shell's bar; v2 keeps it at the end of the head's first line, so
-      // the record's deeds stay in reach (a head never hides them without a "…"). The kinds go to a second line of
-      // the identity, and all below moves 36 px down (docs: actions-and-menus, "Not in v2 yet").
-      head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x93"],
-      tabs: ['[data-slot="head"] > .k2-tabs-nav', "0,93 390x44"],
-      notice: [".k2-notice", "0,137 390x137"],
-      cells: [".k2-cells", "0,274 390x279"],
-      section: [".k2-sec", "0,553 390x245"],
-      todo: [".k2-sec .k2-row", "0,605 390x92"],
+      head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x57"],
+      tabs: ['[data-slot="head"] > .k2-tabs-nav', "0,57 390x44"],
+      notice: [".k2-notice", "0,101 390x137"],
+      cells: [".k2-cells", "0,238 390x279"],
+      section: [".k2-sec", "0,517 390x245"],
+      todo: [".k2-sec .k2-row", "0,569 390x92"],
     },
   },
   // akte-einlieferungen.html
@@ -100,15 +99,14 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       railApp: [".ui-v2-rail__app[data-current]", "-48,92 40x36"],
     },
     390: {
-      // mockup v17: the steps stand 12 px apart on the phone, so all below them moves 16 px down; the record's head
-      // holds its "…" and grows by 36 px, as at the overview
-      section: [".k2-sec", "0,137 390x1421"],
-      group: [".k2-group", "16,241 358x382"],
-      groupHead: [".k2-gh", "17,242 356x84"],
-      steps: [".k2-steps", "17,390 356x148"],
-      table: [".k2-group .k2-table", "17,944 356x204"],
-      facts: ['[data-k2-part="Facts"]', "17,1228 356x64"],
-      folded: [".k2-group[data-folded]", "16,1321 358x102"],
+      // mockup v17: the steps stand 12 px apart on the phone, so all below them moves 16 px down
+      section: [".k2-sec", "0,101 390x1421"],
+      group: [".k2-group", "16,205 358x382"],
+      groupHead: [".k2-gh", "17,206 356x84"],
+      steps: [".k2-steps", "17,354 356x148"],
+      table: [".k2-group .k2-table", "17,908 356x204"],
+      facts: ['[data-k2-part="Facts"]', "17,1192 356x64"],
+      folded: [".k2-group[data-folded]", "16,1285 358x102"],
     },
   },
   keys: { 1440: {}, 390: {} },

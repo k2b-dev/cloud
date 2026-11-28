@@ -400,7 +400,7 @@ describe("buildIslands()", () => {
         import { toJSON } from "seroval";
         const element = document.createElement("solid-island");
         element.dataset.id = ${JSON.stringify(id)};
-        element.dataset.props = JSON.stringify(toJSON({}));
+        element.innerHTML = '<!--ssr-props:' + JSON.stringify(toJSON({})) + "-->";
         document.body.append(element);
         await import(${JSON.stringify(join(outdir, id + ".js"))});
         const button = document.querySelector("button");
