@@ -666,7 +666,7 @@ describe(`Spaces month view in ${browserName}`, () => {
     try {
       for (const width of [1200, 960, 800]) {
         await page.setViewportSize({ width, height: 900 });
-        await settle(page);
+        await settled(page);
         const bar = await box(page, '[data-k2-part="FilterBar"]');
         const header = await box(page, ".k2b-calendar-header");
         expect({
