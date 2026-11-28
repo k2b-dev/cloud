@@ -7,9 +7,12 @@ import { gatewayOpsMessages } from "../../messages";
 import { observabilityAdminNav } from "../_components/admin-nav";
 import type { KeyCell } from "../_components/KeyCells";
 import { areaText, readAttention } from "../_components/ObservabilityArea";
-import { getTelemetryAppTotals, getTelemetryPrefixTotals } from "../telemetry/service";
+import { getTelemetryAppTotals, getTelemetryPrefixTotals, getTelemetryTimeseries } from "../telemetry/service";
 import RoutesScreen from "./_components/RoutesScreen.island";
 import { ROUTES_SEARCH_MAX, routesQuery } from "./query";
+
+/** Apps the context column lists by their requests; the table shows every prefix. */
+const BY_APP = 12;
 
 /** Uptime in the largest whole unit that says it: seconds, minutes, hours, days. */
 const uptime = (ms: number, locale: string) => {
@@ -40,6 +43,7 @@ export default ssr<AuthContext>(async (c) => {
     id: app.id,
     label: app.name || app.id,
     icon: app.icon?.replace(/^ti\s+(ti-)?/, "") || "apps",
+    color: app.appearance?.accent,
   }));
   const query = routesQuery(locale, apps, params.get("app") ?? undefined);
   const parsed = query.parse(params);
@@ -47,14 +51,16 @@ export default ssr<AuthContext>(async (c) => {
     parsed.state.search && parsed.state.search.length > ROUTES_SEARCH_MAX ? { ...parsed.state, search: undefined } : parsed.state;
   const range = state.filters.range.kind === "preset" ? state.filters.range.preset : "24h";
 
-  const [snapshot, appTotals, prefixTotals, attention] = await Promise.all([
+  const [snapshot, appTotals, prefixTotals, timeseries, attention] = await Promise.all([
     latestGatewayRouteSnapshot(),
     getTelemetryAppTotals(range),
     getTelemetryPrefixTotals(range),
+    // the requests per interval of the window, for the hero's history; the same rollup read as the overview's
+    getTelemetryTimeseries({ range }).catch(() => []),
     readAttention(),
   ]);
   const number = (value: number) => value.toLocaleString(locale);
-  const appOf = (id: string) => apps.find((app) => app.id === id) ?? { id, label: id, icon: "apps" };
+  const appOf = (id: string) => apps.find((app) => app.id === id) ?? { id, label: id, icon: "apps", color: undefined };
   const needle = state.search?.toLowerCase();
   const all = (snapshot?.routes ?? [])
     .map((route) => ({ ...route, totals: prefixTotals.get(route.prefix) }))
@@ -74,19 +80,28 @@ export default ssr<AuthContext>(async (c) => {
   // requests the router could not give to any app are counted under the gateway itself
   const unmatched = appTotals.get("gateway")?.requests ?? 0;
   const providers = registered.filter((app) => app.id !== "gateway" && app.id !== "gateway-router" && app.capabilities).length;
+  const requestSeries = timeseries.map((point) => point.requests);
   const cells: KeyCell[] = [
-    {
-      icon: "route",
-      label: t.gatewayRoutesTitle,
-      value: snapshot ? number(snapshot.routeCount) : "—",
-      meta: snapshot ? `v${snapshot.tableVersion}` : t.noRouter,
-    },
+    // k2b-ui gap: hero band (look.md rule 1); until it lands the requests of the window lead, with their real history
     {
       icon: "arrows-exchange",
       label: t.requests,
       value: number(windowRequests),
       meta: unmatched > 0 ? t.unmatchedRequests({ count: number(unmatched), range }) : range,
       tone: unmatched > 0 ? "warn" : undefined,
+      trend:
+        requestSeries.length > 1
+          ? {
+              values: requestSeries,
+              label: t.requestsTrend({ total: number(windowRequests), peak: number(Math.max(...requestSeries)) }),
+            }
+          : undefined,
+    },
+    {
+      icon: "route",
+      label: t.gatewayRoutesTitle,
+      value: snapshot ? number(snapshot.routeCount) : "—",
+      meta: snapshot ? `v${snapshot.tableVersion}` : t.noRouter,
     },
     { icon: "plug", label: t.capabilities, value: number(providers), meta: t.providers },
     {
@@ -117,6 +132,12 @@ export default ssr<AuthContext>(async (c) => {
         )}
         rows={rows}
         total={all.length}
+        // the apps by their requests in the window, from the totals already read; the gateway's own unmatched ones stay out
+        byApp={[...appTotals.entries()]
+          .filter(([id, totals]) => id !== "gateway" && totals.requests > 0)
+          .sort((left, right) => right[1].requests - left[1].requests)
+          .slice(0, BY_APP)
+          .map(([id, totals]) => ({ ...appOf(id), requests: totals.requests }))}
       />
     </AdminLayout>
   );

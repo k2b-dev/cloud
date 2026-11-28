@@ -1,6 +1,23 @@
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Chip, FilterBar, Icon, Input, type NavProps, Notice, Pane, StatusRow, Table, Text } from "@k2b/ui/v2";
+import {
+  Bar,
+  Button,
+  Chip,
+  FilterBar,
+  Input,
+  List,
+  Mark,
+  type NavProps,
+  Notice,
+  Pane,
+  Progress,
+  Row,
+  Section,
+  StatusRow,
+  Table,
+  Text,
+} from "@k2b/ui/v2";
 import { createMemo, For } from "solid-js";
 import { gatewayOpsMessages } from "../../../messages";
 import { type KeyCell, KeyCells } from "../../_components/KeyCells";
@@ -9,7 +26,7 @@ import { type RoutesState, routesHref, routesQuery } from "../query";
 /** One prefix of the router's table with the window's traffic, worded by the server. */
 export type RouteRow = {
   prefix: string;
-  app: { id: string; label: string; icon: string };
+  app: { id: string; label: string; icon: string; color?: string };
   requests: string;
   errors: string;
   /** The prefix answered with errors in the window. */
@@ -26,6 +43,8 @@ export type RoutesScreenProps = {
   rows: RouteRow[];
   /** All prefixes of the table, before the filters. */
   total: number;
+  /** The apps with the most requests in the window, most first. */
+  byApp: { id: string; label: string; icon: string; color?: string; requests: number }[];
 };
 
 /**
@@ -66,67 +85,86 @@ export default function RoutesScreen(props: RoutesScreenProps) {
         />
       }
     >
-      <Pane
-        label={t().gatewayRoutesTitle}
-        scrollKey="gateway-ops-routes"
-        status={
-          <>
-            <FilterBar query={query()} state={props.state} onChange={go} base={query().reset()} icons={{ range: "clock", app: "apps" }} />
-            <StatusRow
-              lead={
-                filtered()
-                  ? t().filteredRoutesCount({ count: number(props.rows.length), total: number(props.total) })
-                  : t().routesCount({ count: props.total })
-              }
-            />
-          </>
-        }
-      >
-        <KeyCells cells={props.cells} />
-        <For each={props.warnings}>{(warning) => <Notice tone="warn">{warning}</Notice>}</For>
-        <Table
+      <Pane.Split>
+        <Pane
           label={t().gatewayRoutesTitle}
-          rows={props.rows}
-          rowKey={(row) => row.prefix}
-          sticky
-          open={(row) => ({ href: `/admin/apps?app=${encodeURIComponent(row.app.id)}` })}
-          empty={
-            filtered() || props.state.search
-              ? {
-                  icon: "filter-off",
-                  text: t().noMatchingRoutes({ query: props.state.search ?? "" }),
-                  action: { label: t().clear, icon: "filter-off", href: routesHref(query(), query().reset()) },
+          scrollKey="gateway-ops-routes"
+          status={
+            <>
+              <FilterBar query={query()} state={props.state} onChange={go} base={query().reset()} icons={{ range: "clock", app: "apps" }} />
+              <StatusRow
+                lead={
+                  filtered()
+                    ? t().filteredRoutesCount({ count: number(props.rows.length), total: number(props.total) })
+                    : t().routesCount({ count: props.total })
                 }
-              : { icon: "route", text: t().noRouterSnapshot }
+              />
+            </>
           }
-          phone={(row) => ({
-            lines: [row.prefix, row.app.label],
-            time: row.requests,
-            marks: row.failing ? <Chip status="bad">{row.errors}</Chip> : undefined,
-          })}
-          columns={[
-            { title: t().prefix, width: { min: 220, default: 420 }, cell: (row) => row.prefix },
-            {
-              title: t().app,
-              width: { min: 120, default: 200 },
-              // k2b-ui gap: a table cell has no mark (object symbol in its colour) beside text that may be cut
-              cell: (row) => (
-                <>
-                  <Icon name={row.app.icon} /> {row.app.label}
-                </>
-              ),
-              drop: true,
-            },
-            { title: t().requests, width: { min: 100, default: 120 }, align: "end", cell: (row) => row.requests },
-            {
-              title: t().errors,
-              width: { min: 90, default: 110 },
-              align: "end",
-              cell: (row) => (row.failing ? <Chip status="bad">{row.errors}</Chip> : "—"),
-            },
-          ]}
-        />
-      </Pane>
+        >
+          <KeyCells cells={props.cells} />
+          <For each={props.warnings}>{(warning) => <Notice tone="warn">{warning}</Notice>}</For>
+          <Table
+            label={t().gatewayRoutesTitle}
+            rows={props.rows}
+            rowKey={(row) => row.prefix}
+            sticky
+            open={(row) => ({ href: `/admin/apps?app=${encodeURIComponent(row.app.id)}` })}
+            empty={
+              filtered() || props.state.search
+                ? {
+                    icon: "filter-off",
+                    text: t().noMatchingRoutes({ query: props.state.search ?? "" }),
+                    action: { label: t().clear, icon: "filter-off", href: routesHref(query(), query().reset()) },
+                  }
+                : { icon: "route", text: t().noRouterSnapshot }
+            }
+            phone={(row) => ({
+              lines: [row.prefix, row.app.label],
+              time: row.requests,
+              marks: row.failing ? <Chip status="bad">{row.errors}</Chip> : undefined,
+            })}
+            columns={[
+              { title: t().prefix, width: { min: 220, default: 420 }, cell: (row) => row.prefix },
+              {
+                title: t().app,
+                width: { min: 120, default: 200 },
+                // k2b-ui gap: a table cell has no mark (object symbol in its colour) beside text that may be cut
+                cell: (row) => (
+                  <>
+                    <Mark icon={row.app.icon} color={row.app.color} /> {row.app.label}
+                  </>
+                ),
+                drop: true,
+              },
+              { title: t().requests, width: { min: 100, default: 120 }, align: "end", cell: (row) => row.requests },
+              {
+                title: t().errors,
+                width: { min: 90, default: 110 },
+                align: "end",
+                cell: (row) => (row.failing ? <Chip status="bad">{row.errors}</Chip> : "—"),
+              },
+            ]}
+          />
+        </Pane>
+        {/* a context column beside the table on a large screen: where the traffic of the window goes */}
+        <Pane side={{ from: 1100 }} label={t().requestsByApp}>
+          <Section icon="chart-bar" title={t().requestsByApp}>
+            <List label={t().requestsByApp}>
+              <For each={props.byApp}>
+                {(app) => (
+                  <Row
+                    mark={{ icon: app.icon, color: app.color }}
+                    lines={[app.label]}
+                    end={<Progress value={app.requests} of={props.byApp[0]?.requests ?? 0} label={number(app.requests)} />}
+                    href={routesHref(query(), { ...props.state, filters: { ...props.state.filters, app: app.id } })}
+                  />
+                )}
+              </For>
+            </List>
+          </Section>
+        </Pane>
+      </Pane.Split>
     </AdminWorkspace>
   );
 }

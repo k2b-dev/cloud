@@ -20,10 +20,10 @@ const nav: NavProps = {
   groups: [{ items: [{ label: "Betrieb", icon: "dashboard", href: "/admin/observability", current: true }] }],
 };
 const APPS = [
-  { id: "mail", label: "Mail", icon: "mail" },
-  { id: "files", label: "Dateien", icon: "folder" },
-  { id: "notebooks", label: "Notizbücher", icon: "notebook" },
-  { id: "werkstatt", label: "Kunden & Aufträge (Werkstatt Nord)", icon: "tool" },
+  { id: "mail", label: "Mail", icon: "mail", color: "#2563eb" },
+  { id: "files", label: "Dateien", icon: "folder", color: "#d97706" },
+  { id: "notebooks", label: "Notizbücher", icon: "notebook", color: "#7c3aed" },
+  { id: "werkstatt", label: "Kunden & Aufträge (Werkstatt Nord)", icon: "tool", color: "#475569" },
 ];
 const LONG = "/api/werkstatt/kunden/:kundeId/auftraege/:auftragId/positionen/:positionId/anhaenge/:anhangId/vorschau";
 
@@ -113,10 +113,11 @@ export const PagesFixture = (props: { screen: PagesFixtureScreen; search: string
           nav={nav}
           apps={APPS.map((app) => ({ id: app.id, label: app.label }))}
           state={query.parse(params).state}
-          cells={cells(worst).map((cell, index) => ({ ...cell, label: ["Routen", "Anfragen", "Capabilities", "Laufzeit"][index]! }))}
+          cells={cells(worst).map((cell, index) => ({ ...cell, label: ["Anfragen", "Routen", "Capabilities", "Laufzeit"][index]! }))}
           warnings={worst ? [`${LONG} · werkstatt: shadowed (a longer prefix of another app answers first)`] : []}
           rows={routes(worst)}
           total={routes(worst).length}
+          byApp={APPS.map((app, index) => ({ ...app, requests: worst ? 12_345_678_901 / (index + 1) : 14_210 - index * 3_100 }))}
         />
       );
     }

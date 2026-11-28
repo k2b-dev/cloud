@@ -63,6 +63,9 @@ export const gatewayOpsMessages = i18n.define({
       prefix: "Prefix",
       noRouter: "no router",
       unmatchedRequests: ({ count, range }: { count: string; range: string }) => `${count} unmatched · ${range}`,
+      requestsTrend: ({ total, peak }: { total: string; peak: string }) =>
+        `Requests per interval of the window: ${total} in all, at most ${peak} in one interval`,
+      requestsByApp: "Requests by app",
       providers: "providers",
       uptime: "Uptime",
       sinceTime: ({ time }: { time: string }) => `since ${time}`,
@@ -986,6 +989,8 @@ export const gatewayOpsMessages = i18n.define({
       prefix: "Präfix",
       noRouter: "kein Router",
       unmatchedRequests: ({ count, range }) => `${count} nicht zugeordnet · ${range}`,
+      requestsTrend: ({ total, peak }) => `Anfragen je Abschnitt des Zeitraums: ${total} insgesamt, höchstens ${peak} in einem Abschnitt`,
+      requestsByApp: "Anfragen nach App",
       providers: "Provider",
       uptime: "Laufzeit",
       sinceTime: ({ time }) => `seit ${time}`,
