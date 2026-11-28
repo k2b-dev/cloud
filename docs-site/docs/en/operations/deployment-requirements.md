@@ -268,8 +268,9 @@ See [Public site](/en/docs/build/public-surface#assign-and-check-domains) and
 ## Upgrade Core before v2 visitor pages
 
 Visitor pages built with `MinimalLayout ui="v2"` link Core's `/public/v2.css`
-instead of `global.css`. Core serves it from this release on and declares the
-route beside `/public/global.css`, with the same caching. Deploy Core first in
+instead of `global.css`. Core up to `cloud-v0.86.0` serves no `v2.css`; the
+next release serves it and declares the route beside `/public/global.css`,
+with the same caching. Deploy Core first in
 a rolling upgrade. An application on this `@k2b/cloud` that finds an older
 Core in the registry, which does not declare `/public/v2.css`, keeps linking
 that Core's `global.css`. That sheet has neither the v2 frame of a visitor page
@@ -278,6 +279,8 @@ inline; it stays usable until Core is upgraded. The centered card of a page
 with `measure` is a rule of the same sheet: until Core serves it, such a page
 spans the window. Nothing else changes: no environment variable, no external
 service.
+This fallback is removed once the oldest supported Core is the release that
+serves `v2.css`.
 
 ## App-paid capabilities
 
