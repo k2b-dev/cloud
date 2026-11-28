@@ -30,6 +30,7 @@ export {
   type NavSearch,
   type NavSwitcher,
   type NavSwitcherOption,
+  type NavSwitcherPart,
   Notice,
   type NoticeProps,
   Path,
@@ -159,6 +160,7 @@ export {
   type TriggerProps,
 } from "./menu";
 export { menuPanel } from "./menu-panel";
+export { navSwitcher } from "./nav-switcher";
 export { type NavTree, type NavTreeGroup, type NavTreeNode, navTree } from "./nav-tree";
 // The overlays: v2 shapes on the behaviour layer.
 export { type ConfirmOptions, confirm, Dialog, type DialogProps } from "./overlays";

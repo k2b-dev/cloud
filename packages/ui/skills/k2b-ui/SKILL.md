@@ -83,7 +83,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | the app's sections in the sidebar | `Nav` | `list-detail.tsx` |
 | folders or pages in levels: in the sidebar; as rows (a folder's content) | a `Nav` group with `tree` (`load`, `loadMore` for what opens); `Table` with `rowKey` and `tree` | `tree.tsx` |
 | the app's own rows in the sidebar (conversations), the phone's page | `Nav` `list` with `phone: "page"`, `search` and `primary` | `conversations.tsx` |
-| switch between an app's things (notebooks, bases, places) | `Nav` `switcher`; on the phone the same `switcher` to `V2WorkspaceNavigation` | – |
+| switch between an app's things (notebooks, bases, places) | `Nav` `switcher={navSwitcher(…)}`; on the phone the same switcher to `V2WorkspaceNavigation` | – |
 | views of the page, or areas of a record | `Tabs` (in the head `Bar`, or as `Pane` head) | `mail.tsx`, `record.tsx` |
 | where a sub-page stands | `Path` in the head `Bar start` | – |
 | the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |

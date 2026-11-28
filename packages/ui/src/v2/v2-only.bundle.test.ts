@@ -100,18 +100,21 @@ const lean = `import { Menu, Nav, Workspace } from ${v2Index};\nconsole.log(Menu
 // `Input` (5.5 KB) for the nav's search (#4443), which nearly every page loads anyway; a tree or a panel never.
 const leanBudget = Math.ceil(64_453 * 1.1);
 
-test("an island with a Workspace, a Nav and a Menu loads no tree and no menu panel, and stays under its measure", async () => {
+test("an island with a Workspace, a Nav and a Menu loads no tree, no menu panel and no switcher, and stays under its measure", async () => {
   const modules = await islandModules(lean);
   const total = Object.values(modules).reduce((sum, bytes) => sum + bytes, 0);
   console.info(`Workspace, Nav and Menu: ${total} bytes of packages/ui/src (budget ${leanBudget})`);
-  expect(Object.keys(modules).filter((module) => module === "v2/nav-tree.tsx" || module === "v2/menu-panel.tsx")).toEqual([]);
+  expect(Object.keys(modules).filter((module) => ["v2/nav-tree.tsx", "v2/menu-panel.tsx", "v2/nav-switcher.tsx"].includes(module))).toEqual(
+    [],
+  );
   expect(total).toBeLessThanOrEqual(leanBudget);
 }, 60_000);
 
-test("navTree and menuPanel bring the tree and the panel along", async () => {
+test("navTree, menuPanel and navSwitcher bring the tree, the panel and the switcher along", async () => {
   const modules = await islandModules(
-    `import { menuPanel, Menu, Nav, navTree, Workspace } from ${v2Index};\nconsole.log(Menu, Nav, Workspace, navTree, menuPanel);\n`,
+    `import { menuPanel, Menu, Nav, navSwitcher, navTree, Workspace } from ${v2Index};\nconsole.log(Menu, Nav, Workspace, navTree, menuPanel, navSwitcher);\n`,
   );
   expect(modules["v2/nav-tree.tsx"]).toBeGreaterThan(0);
   expect(modules["v2/menu-panel.tsx"]).toBeGreaterThan(0);
+  expect(modules["v2/nav-switcher.tsx"]).toBeGreaterThan(0);
 }, 60_000);

@@ -545,7 +545,7 @@ name wraps in a small table and ends with "…" in one with column widths.
 ## Components
 
 - `Nav`: `title`, `icon`, `switcher?`, `search?`, `primary?`, `groups: { label?, action?, items }[]`, `list?`, `phone?`, `foot`.
-  `switcher` (`{ label, current?, options, search, noMatch, more, actions? }`) is the
+  `switcher` (`navSwitcher({ label, current?, options, search, noMatch, more, actions? })`, which brings its code along, so a `Nav` without one loads none of it) is the
   open thing of an app that holds several (a notebook, a base) as a button
   under the name; its panel lists `options` (`{ label, href, icon, color?,
   meta?, group?, current? }`) in the order the app gives, consecutive options

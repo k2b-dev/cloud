@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import { Nav, type NavSwitcherOption, Pane, Text, Workspace } from "../src/v2";
+import { Nav, type NavSwitcherOption, navSwitcher, Pane, Text, Workspace } from "../src/v2";
 
 // A sidebar with a switcher between an app's bases: the open base on the button; behind it the five opened last, then
 // all the others by name, a search (12 bases, from 8 on), and "Neue Base" and "Aus Vorlage". Hooks on `window`:
@@ -50,7 +50,7 @@ export function Demo() {
         <Nav
           title="Grids"
           icon="table"
-          switcher={{
+          switcher={navSwitcher({
             label: "Base wechseln",
             current: { label: "Werkstatt", icon: "database", color: "#0369a1" },
             options: options(),
@@ -61,7 +61,7 @@ export function Demo() {
               { label: "Neue Base", icon: "plus", onClick: did("new") },
               { label: "Aus Vorlage", icon: "template", onClick: did("template") },
             ],
-          }}
+          })}
           groups={[{ items: [{ label: "Übersicht", icon: "layout-dashboard", href: "/app/grids/B0", current: true }] }]}
         />
       }
