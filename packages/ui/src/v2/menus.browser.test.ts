@@ -735,16 +735,16 @@ test("a tab that hides hands its focus to the menu tab, and a menu tab that goes
   await withPage(async (page) => {
     const focused = () => page.evaluate(() => document.activeElement?.textContent?.replace(/\s+/g, "") ?? "");
     const areas = page.getByRole("navigation", { name: "Bereiche" });
-    await areas.getByRole("button", { name: "Reklamationen" }).focus();
+    await areas.getByRole("button", { name: "Reklamationen, Retouren und Garantie" }).focus();
     await settled(page);
-    expect(await focused()).toBe("Reklamationen");
+    expect(await focused()).toBe("Reklamationen,RetourenundGarantie");
     await page.setViewportSize({ width: 390, height: 900 });
     await settled(page);
     expect(await focused()).toMatch(/^Mehr\+\d+$/);
     await page.setViewportSize({ width: 1440, height: 900 });
     await settled(page);
     expect(await areas.getByRole("button", { name: /Mehr/ }).count()).toBe(0);
-    expect(await focused()).toBe("Reklamationen");
+    expect(await focused()).toBe("Reklamationen,RetourenundGarantie");
     // the views have a menu tab of their own that always stands
     const views = page.getByRole("navigation", { name: "Ansichten" });
     await views.getByRole("link", { name: /Wartet auf Material/ }).focus();
@@ -762,28 +762,43 @@ test("a place picked from a 'Mehr' that then goes hands the focus to the last ta
   await withPage(async (page) => {
     const areas = page.getByRole("navigation", { name: "Bereiche" });
     const hidden = () => areas.locator(".k2-tab[data-overflow]").allTextContents();
-    // the widest window in which only the last place hides
-    let width = 1440;
-    for (; width > 390; width -= 10) {
+    // a window in which only the last place hides, and the four before it leave the open tab its least room of 96 px
+    const fitsOpen = () =>
+      page.evaluate(() => {
+        const row = document.querySelector('nav[aria-label="Bereiche"] .k2-tabs')!;
+        const gap = Number.parseFloat(getComputedStyle(row).columnGap) || 0;
+        const before = [...row.children].slice(0, 4).reduce((sum, tab) => sum + tab.getBoundingClientRect().width + gap, 0);
+        return row.clientWidth - before >= 96;
+      });
+    // the widest window in which a place hides (by halving: at 1440 all show, at 390 some hide)
+    const hides = async (width: number) => {
       await page.setViewportSize({ width, height: 900 });
       await settled(page);
-      if ((await hidden()).length > 0) break;
+      return (await hidden()).length > 0;
+    };
+    let [wide, narrow] = [1440, 390];
+    while (wide - narrow > 4) {
+      const middle = Math.round((wide + narrow) / 2);
+      if (await hides(middle)) narrow = middle;
+      else wide = middle;
     }
-    expect((await hidden()).map((text) => text.trim())).toEqual(["Reklamationen"]);
+    await hides(narrow);
+    expect((await hidden()).map((text) => text.trim())).toEqual(["Reklamationen, Retouren und Garantie"]);
+    expect(await fitsOpen()).toBe(true);
     await areas.getByRole("button", { name: /Mehr/ }).focus();
     await page.keyboard.press("Enter");
     await page.locator(menu).waitFor();
-    await page.getByRole("menuitem", { name: "Reklamationen" }).focus();
+    await page.getByRole("menuitem", { name: "Reklamationen, Retouren und Garantie" }).focus();
     await page.keyboard.press("Enter");
     await closed(page, menu);
     await settled(page);
-    expect(await deeds(page)).toContain("area:reklamationen");
+    expect(await deeds(page)).toContain("area:reklamationen, retouren und garantie");
     expect(await areas.getByRole("button", { name: /Mehr/ }).count()).toBe(0);
     const held = await page.evaluate(() => ({
       body: document.activeElement === document.body,
       text: document.activeElement?.textContent?.replace(/\s+/g, "") ?? "",
     }));
-    expect(held).toEqual({ body: false, text: "Reklamationen" });
+    expect(held).toEqual({ body: false, text: "Reklamationen,RetourenundGarantie" });
   });
 });
 

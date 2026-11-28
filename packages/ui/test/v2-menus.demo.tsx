@@ -76,7 +76,7 @@ export function Demo() {
             <Tabs
               label="Bereiche"
               // the open place is the one picked last, from the line or from "Mehr"
-              items={["Aufträge", "Angebote", "Rechnungen", "Lieferscheine", "Reklamationen"].map((name) => ({
+              items={["Aufträge", "Angebote", "Rechnungen", "Lieferscheine", "Reklamationen, Retouren und Garantie"].map((name) => ({
                 label: name,
                 current: area() === name,
                 onClick: () => {
