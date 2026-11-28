@@ -186,6 +186,25 @@ try {
   run([process.execPath, "--no-install", "-e", fieldSmoke], consumer);
   run([process.execPath, "--no-install", "--conditions=browser", "-e", fieldSmoke], consumer, { ...process.env, FIELD_BROWSER: "1" });
 
+  // The unread mark on its own entry: small islands import it without the main entry.
+  const statusSmoke = `
+    const mode = process.env.STATUS_BROWSER ? "browser" : "ssr";
+    const resolved = import.meta.resolve("@k2b/ui/sidebar-status");
+    if (!resolved.includes("/node_modules/@k2b/ui/dist/" + mode + "/sidebar-status.js")) {
+      throw new Error("sidebar status did not resolve to packed dist/" + mode + "/sidebar-status.js: " + resolved);
+    }
+    if (mode === "ssr") {
+      const { AppWorkspaceSidebarItemStatus } = await import("@k2b/ui/sidebar-status");
+      const { renderToString } = await import("solid-js/web");
+      const html = renderToString(() => AppWorkspaceSidebarItemStatus({ unread: 3 }));
+      if (!html.includes("k2b-app-workspace__sidebar-status-count") || !html.includes(">3<")) {
+        throw new Error("packed AppWorkspaceSidebarItemStatus did not render its count on the server");
+      }
+    }
+  `;
+  run([process.execPath, "--no-install", "-e", statusSmoke], consumer);
+  run([process.execPath, "--no-install", "--conditions=browser", "-e", statusSmoke], consumer, { ...process.env, STATUS_BROWSER: "1" });
+
   const inspectionSmoke = `
     const resolved = import.meta.resolve("@k2b/ui/chart-inspection");
     if (!resolved.includes("/node_modules/@k2b/ui/dist/browser/chart-inspection.js")) {

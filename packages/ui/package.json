@@ -42,6 +42,12 @@
       "import": "./dist/ssr/chat-decision-field.js",
       "default": "./dist/ssr/chat-decision-field.js"
     },
+    "./sidebar-status": {
+      "types": "./dist/types/sidebar-status.d.ts",
+      "browser": "./dist/browser/sidebar-status.js",
+      "import": "./dist/ssr/sidebar-status.js",
+      "default": "./dist/ssr/sidebar-status.js"
+    },
     "./hover-card": {
       "types": "./dist/types/hover-card.d.ts",
       "browser": "./dist/browser/hover-card.js",

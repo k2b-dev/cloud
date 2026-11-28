@@ -1,4 +1,4 @@
-import { AppWorkspaceSidebarItemStatus } from "@k2b/ui";
+import { AppWorkspaceSidebarItemStatus } from "@k2b/ui/sidebar-status";
 import { onCleanup, onMount, Show } from "solid-js";
 import { appBadgeCount, watchAppBadges } from "./app-badges";
 

@@ -1113,9 +1113,11 @@ state visible with the default `"always"` value.
 
 ### Unread counts, dots, and mentions
 
-Import `AppWorkspaceSidebarItemStatus` directly from `@k2b/ui` in small islands that
-need only the unread mark. It has the same props and behavior as
-`AppWorkspace.SidebarItemStatus`, which remains available.
+Import `AppWorkspaceSidebarItemStatus` from `@k2b/ui/sidebar-status` in small islands
+that need only the unread mark: that entry holds the mark and its few words, not the
+main entry with every component. It has the same props and behavior as
+`AppWorkspace.SidebarItemStatus`, which remains available, and `@k2b/ui` still exports
+it too.
 
 Put `SidebarItemStatus` in `meta`, `SidebarItemMeta`, or a `NavTree.Item`
 `meta` to show what is new in a conversation, inbox, or feed:
