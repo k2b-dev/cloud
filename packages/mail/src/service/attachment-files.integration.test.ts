@@ -265,7 +265,7 @@ suite("Mail attachments as a file-provider source", () => {
         // An image the body shows, sent without an inline disposition: the reader shows it in place, so it stays out.
         { filename: "chart.png", type: "image/png", bytes: 6000, disposition: "attachment", contentId: `chart-${suffix}@example.test` },
       ],
-      html: `<p>Body of first</p><img src="cid:logo-${suffix}@example.test" alt="Logo"><img src="cid:chart-${suffix}%40example.test" alt="Chart"><a href="cid:icon-${suffix}@example.test">Icon</a>`,
+      html: `<p>Body of first</p><img src="cid:logo-${suffix}@example.test" alt="Logo"><img src="cid:chart-${suffix}%40example.test" alt="Chart"><a href="cid:icon-${suffix}@example.test">Icon</a><a href="https://files.example.org/share">Files</a>`,
     });
     await sql`INSERT INTO mail.conversation_assignees (conversation_id, user_id) VALUES (${first.conversationId}::uuid, ${assigned.id}::uuid)`;
     await receive(mailbox, "bob", {
@@ -548,8 +548,9 @@ suite("Mail attachments as a file-provider source", () => {
 
   test("the backfill indexes earlier attachments once, resumes from its cursor and changes nothing on a repeat", async () => {
     // The backfill reads the stored body in SQL; it must decide like ingest did, also for an `href="cid:"` link.
-    const snapshot = () => sql<{ attachment_id: string; month: string; sender_email: string; body_references: boolean }[]>`
-      SELECT attachment_id, month::text, sender_email, body_references FROM mail.attachment_files
+    const snapshot = () =>
+      sql<{ attachment_id: string; month: string; sender_email: string; body_references: boolean; link_domains: string[] }[]>`
+      SELECT attachment_id, month::text, sender_email, body_references, link_domains FROM mail.attachment_files
       WHERE mailbox_id IN (${mailbox.id}::uuid, ${other.id}::uuid) ORDER BY attachment_id
     `;
     // The sanitizer drops a `cid:` href, so the stored body gets one here: the SQL rule must not count it.
@@ -698,6 +699,61 @@ suite("Mail attachments as a file-provider source", () => {
     expect(await items(reader, { parent: `${mailbox.shortId}/2026/02/e:${encodeURIComponent(address)}` })).toEqual(["offer.pdf"]);
   });
 
+  test("attachments of a message a deny rule matches are not listed, except mail Cloud sent itself", async () => {
+    const first = envelopes.get("first")!.contentId;
+    const [links] = await sql<{ link_domains: string[] }[]>`
+      SELECT link_domains FROM mail.attachment_files WHERE message_id = ${first}::uuid LIMIT 1
+    `;
+    expect(links?.link_domains).toEqual(["files.example.org"]);
+    // The sent copy from the projection test also lies in Sent, which marks it as mail Cloud sent.
+    const [sent] = await sql<{ id: string }[]>`
+      INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role, sync_status)
+      VALUES (${newShortId()}, ${mailbox.resourceId}::uuid, ${`sent-${suffix}`}, 'Sent', 'sent', 'current') RETURNING id
+    `;
+    const [sentCopy] = await sql<{ message_id: string }[]>`
+      SELECT message_id FROM mail.attachment_files WHERE filename = 'offer.pdf' AND mailbox_id = ${mailbox.id}::uuid
+    `;
+    const [ref] = await sql<{ id: string }[]>`
+      INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+      VALUES (${sent!.id}::uuid, ${sentCopy!.message_id}::uuid, 1, 9003) RETURNING id
+    `;
+    await sql`INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags)
+      VALUES (${ref!.id}::uuid, ${sent!.id}::uuid, ${sentCopy!.message_id}::uuid, ARRAY[]::text[])`;
+    const withRule = async (target: "sender_address" | "sender_domain" | "link_domain", value: string, check: () => Promise<void>) => {
+      const [rule] = await sql<{ id: string }[]>`
+        INSERT INTO mail.security_policies (disposition, target, value) VALUES ('deny', ${target}, ${value}) RETURNING id
+      `;
+      try {
+        await check();
+      } finally {
+        await sql`DELETE FROM mail.security_policies WHERE id = ${rule!.id}::uuid`;
+      }
+    };
+    await withRule("sender_address", bob.address, async () => {
+      expect(await items(reader, { parent: march })).toEqual(["Alice Example (alice@example.test)"]);
+      expect(await items(reader, { parent: bobMarch })).toEqual([]);
+    });
+    await withRule("link_domain", "example.org", async () => {
+      const files = await items(reader, { parent: aliceMarch });
+      expect(files).not.toContain("report.pdf");
+      expect(files).toContain("a1.txt");
+    });
+    await withRule("sender_domain", "example.test", async () => {
+      // Every sender of March is at example.test; of their mail only the copy Cloud sent stays.
+      expect(await items(reader, { parent: march })).toEqual([]);
+      expect(await items(reader, { parent: `${mailbox.shortId}/2026/02/e:${encodeURIComponent(address)}` })).toEqual(["offer.pdf"]);
+      // Mail without a sender has no domain to match.
+      expect(await items(reader, { parent: mailbox.shortId })).toEqual(["2026", "2025"]);
+    });
+    // A disabled rule matches nothing.
+    await sql`INSERT INTO mail.security_policies (disposition, target, value, enabled) VALUES ('deny', 'sender_address', ${bob.address}, false)`;
+    try {
+      expect(await items(reader, { parent: bobMarch })).toEqual(["contract.txt"]);
+    } finally {
+      await sql`DELETE FROM mail.security_policies WHERE value = ${bob.address}`;
+    }
+  });
+
   test("the backfill never waits on a delete or a date move, loses nothing to a rollback and reads the moved date", async () => {
     const rolledBack = envelopes.get("alice-1")!.contentId;
     const moved = envelopes.get("alice-2")!.contentId;
@@ -814,7 +870,7 @@ suite("Mail attachments as a file-provider source", () => {
       await hydration`BEGIN`;
       // As hydration does: the message row first, then its attachments' index rows.
       await hydration`SELECT id FROM mail.message_contents WHERE id = ${message}::uuid FOR UPDATE`;
-      await indexMessageAttachments(hydration, message, []);
+      await indexMessageAttachments(hydration, message, { contentIds: [], linkDomains: [] });
       moved = sql`UPDATE mail.message_contents SET internal_date = '2026-07-04T09:00:00Z' WHERE id = ${message}::uuid AND 1 = 1`.then(
         (rows) => rows,
       );
@@ -859,7 +915,7 @@ suite("Mail attachments as a file-provider source", () => {
     `;
     await sql`INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags)
       VALUES (${ref!.id}::uuid, ${mailbox.folderId}::uuid, ${bulk!.id}::uuid, ARRAY[]::text[])`;
-    await indexMessageAttachments(sql, bulk!.id, []);
+    await indexMessageAttachments(sql, bulk!.id, { contentIds: [], linkDomains: [] });
     await sql`ANALYZE mail.attachment_files`;
     await sql`ANALYZE mail.conversation_assignees`;
     await sql`ANALYZE mail.conversation_messages`;

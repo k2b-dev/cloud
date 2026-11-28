@@ -14,6 +14,7 @@ import { storeReadableBlob } from "./message-blobs";
 import { normalizeMailSubject } from "./message-threading";
 import type { OutboundDraftSnapshot } from "./outbound-mime";
 import { splitSearchText } from "./search-chunks";
+import { messageLinkDomains } from "./security-evidence";
 
 type SqlClient = typeof sql;
 
@@ -200,7 +201,10 @@ const insertAttachments = async (params: {
       params.snapshot.renderedHtml,
       attachments.map((attachment) => attachment.contentId),
     );
-    await indexMessageAttachments(params.db, params.messageId, shown);
+    await indexMessageAttachments(params.db, params.messageId, {
+      contentIds: shown,
+      linkDomains: messageLinkDomains(params.snapshot.renderedHtml ?? null),
+    });
   }
 };
 

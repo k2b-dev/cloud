@@ -25,6 +25,7 @@ import { parseMessageReceiptSource, recordMessageReceipt } from "./message-recei
 import { assessMessageSourceSize } from "./message-source-size";
 import { estimateHydrationWorkingSet, withProcessingMemory } from "./processing-memory-budget";
 import { splitSearchText } from "./search-chunks";
+import { messageLinkDomains } from "./security-evidence";
 
 type HydratedPart = {
   partPath: string;
@@ -1124,7 +1125,7 @@ export const hydrateMessageFromSource = async (params: {
                 sanitizedHtml,
                 parts.filter((part) => part.attachment).map((part) => part.contentId),
               );
-              await indexMessageAttachments(tx, params.messageId, shown);
+              await indexMessageAttachments(tx, params.messageId, { contentIds: shown, linkDomains: messageLinkDomains(sanitizedHtml) });
             }
             if (!duplicate.duplicateFound) {
               collaborationEvent = await applyVerifiedConversationTransition({ db: tx, messageId: params.messageId });

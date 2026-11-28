@@ -116,6 +116,36 @@ const scopedFiles = (mailboxId: string, access: MailboxAccess) =>
  * list's signature-logo threshold; nothing `attachment.content.read` refuses as too large; and only mail that still
  * lies in a folder, like the Mail list.
  */
+const sameOrSubdomain = (domain: SqlFragment) =>
+  sql`(${domain} = policy.value OR right(${domain}, length(policy.value) + 1) = '.' || policy.value)`;
+
+/**
+ * The reader opens no links or attachments of a message an enabled deny rule matches by sender address, sender domain
+ * or link domain, unless Cloud sent it itself (`assessMessages` in `security.ts`); the source leaves those files out.
+ */
+const linksDisabled = () => sql`
+  EXISTS (
+    SELECT 1 FROM mail.security_policies policy
+    WHERE policy.enabled AND policy.disposition = 'deny' AND (
+      (policy.target = 'sender_address' AND policy.value = f.sender_email)
+      OR (policy.target = 'sender_domain' AND ${sameOrSubdomain(sql`substring(f.sender_email from '@([^@]+)$')`)})
+      OR (policy.target = 'link_domain' AND EXISTS (
+        SELECT 1 FROM unnest(f.link_domains) AS link(domain) WHERE ${sameOrSubdomain(sql`link.domain`)}
+      ))
+    )
+  )
+  AND NOT EXISTS (SELECT 1 FROM mail.outbox_submissions submission WHERE submission.message_id = f.message_id)
+  AND NOT EXISTS (
+    SELECT 1
+    FROM mail.message_placements outgoing
+    JOIN mail.folders folder ON folder.id = outgoing.folder_id
+    JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
+    LEFT JOIN mail.folder_role_overrides override ON override.mailbox_id = resource.mailbox_id AND override.folder_id = folder.id
+    WHERE outgoing.message_id = f.message_id AND outgoing.deleted_at IS NULL
+      AND COALESCE(override.role, folder.role) IN ('sent', 'drafts')
+  )
+`;
+
 const shown = () => sql`
   NOT (f.body_references AND lower(f.content_type) LIKE 'image/%')
   AND NOT (
@@ -123,6 +153,7 @@ const shown = () => sql`
     AND f.size_bytes < ${MIN_LIST_IMAGE_BYTES}
   )
   AND f.size_bytes <= ${MAX_DRAFT_ATTACHMENT_BYTES}
+  AND NOT (${linksDisabled()})
   AND EXISTS (
     SELECT 1 FROM mail.message_placements placement
     WHERE placement.message_id = f.message_id AND placement.deleted_at IS NULL

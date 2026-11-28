@@ -143,6 +143,10 @@ attachments are not in the source:
   logos. Other small files, such as an SVG, stay in the source.
 - A file larger than 100 MiB, which `attachment.content.read` does not open.
 - An attachment of a message that is no longer in any folder.
+- An attachment of a message whose links and attachments the Mail reader
+  does not open, because an enabled deny rule of the administrator matches
+  its sender address, sender domain or a link domain in its body. Mail that
+  Cloud sent itself stays in the source.
 
 Months are in UTC, because capabilities do not know the person's time zone.
 
@@ -178,9 +182,11 @@ attachments per transaction. The job saves its position in
 from that position. The job does not wait for a message that Mail is storing
 or syncing at that moment. It leaves that message for a later run and pauses
 for 50 ms between transactions. For messages stored before the upgrade, the
-job recognizes an image's `cid:` source only with the Content-ID as written or
-with `@` written as `%40`; other encoded sources count as not shown. Until the job is
-done, the source shows only part of the older attachments.
+job recognizes an image's `cid:` source only with the Content-ID as written
+or with `@` written as `%40`; other encoded sources count as not shown. It
+reads the link domains of such messages from the host of each `http` or
+`https` link. Until the job is done, the source shows only part of the older
+attachments.
 
 A replica that still runs an older image does not add attachments to the
 table. It also removes rows when it loads a message again, because loading

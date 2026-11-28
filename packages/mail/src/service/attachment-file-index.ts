@@ -29,7 +29,8 @@ export const migrateAttachmentFiles = async (db: SqlClient): Promise<void> => {
       blob_id uuid NOT NULL,
       disposition text,
       content_id text,
-      body_references boolean NOT NULL
+      body_references boolean NOT NULL,
+      link_domains text[] NOT NULL
     )
   `.simple();
   // Years, months and senders group in this order; a sender's files read it newest first.
@@ -72,14 +73,16 @@ export const migrateAttachmentFiles = async (db: SqlClient): Promise<void> => {
  * `bodyReferences` a boolean over `a` and `mc` that says whether the message body shows the part through its
  * Content-ID.
  */
-const insertAttachmentFiles = (db: SqlClient, attachments: SqlFragment, bodyReferences: SqlFragment) => db<{ attachment_id: string }[]>`
+const insertAttachmentFiles = (db: SqlClient, attachments: SqlFragment, bodyReferences: SqlFragment, linkDomains: SqlFragment) => db<
+  { attachment_id: string }[]
+>`
   INSERT INTO mail.attachment_files (
     attachment_id, mailbox_id, message_id, internal_date, sender_email, sender_name,
-    filename, size_bytes, content_type, blob_id, disposition, content_id, body_references
+    filename, size_bytes, content_type, blob_id, disposition, content_id, body_references, link_domains
   )
   SELECT a.id, mc.mailbox_id, mc.id, mc.internal_date, COALESCE(sender.normalized_email, ''),
     NULLIF(btrim(sender.display_name), ''), a.filename, a.size_bytes, a.content_type, a.blob_id, a.disposition, a.content_id,
-    COALESCE(${bodyReferences}, false)
+    COALESCE(${bodyReferences}, false), COALESCE(${linkDomains}, ARRAY[]::text[])
   FROM mail.attachments a
   JOIN mail.message_contents mc ON mc.id = a.message_id
   LEFT JOIN LATERAL (
@@ -98,11 +101,16 @@ const insertAttachmentFiles = (db: SqlClient, attachments: SqlFragment, bodyRefe
  * Ingest calls this in the transaction that stores the message, after its attachments and addresses. The caller
  * passes the stored Content-IDs the body shows, decided by the reader's rule (`bodyReferencedContentIds`).
  */
-export const indexMessageAttachments = async (db: SqlClient, messageId: string, bodyContentIds: readonly string[]): Promise<void> => {
+export const indexMessageAttachments = async (
+  db: SqlClient,
+  messageId: string,
+  body: { contentIds: readonly string[]; linkDomains: readonly string[] },
+): Promise<void> => {
   await insertAttachmentFiles(
     db,
     sql`SELECT id FROM mail.attachments WHERE message_id = ${messageId}::uuid`,
-    sql`a.content_id = ANY(${toPgTextArray([...bodyContentIds])}::text[])`,
+    sql`a.content_id = ANY(${toPgTextArray([...body.contentIds])}::text[])`,
+    sql`${toPgTextArray([...body.linkDomains])}::text[]`,
   );
 };
 
@@ -121,6 +129,15 @@ const storedBodyReferences = () => {
     FROM (SELECT lower(mc.sanitized_html) AS html) body
   ) END`;
 };
+
+/**
+ * The stored body's link domains in SQL, for the backfill: the lower-case host of each `<a href="http(s)://…">`,
+ * without user info and a trailing dot. Ingest uses the assessment's own parser (`messageLinkDomains`).
+ */
+const storedLinkDomains = () => sql`ARRAY(
+  SELECT DISTINCT rtrim(link[1], '.')
+  FROM regexp_matches(lower(COALESCE(mc.sanitized_html, '')), '<a[[:space:]][^>]*href=["'']https?://(?:[^/"''?#@]*@)?([a-z0-9.-]+)', 'g') AS link
+)`;
 
 /** One statement: lock one batch without waiting, and say where its cursor may move. */
 const lockBackfillBatch = (db: SqlClient, afterId: string) => db<
@@ -147,7 +164,7 @@ const lockBackfillBatch = (db: SqlClient, afterId: string) => db<
 
 /** One statement: index already stored attachments (a subquery of `id`), reading their bodies in SQL. */
 export const indexStoredAttachments = (db: SqlClient, attachments: SqlFragment) =>
-  insertAttachmentFiles(db, attachments, storedBodyReferences());
+  insertAttachmentFiles(db, attachments, storedBodyReferences(), storedLinkDomains());
 
 /** One statement, after the batch is locked: index the locked attachments from a fresh snapshot. */
 const indexBackfillBatch = (db: SqlClient, ids: readonly string[]) =>
