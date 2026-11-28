@@ -19,7 +19,10 @@ window.addEventListener(
   (event) => {
     if (event.defaultPrevented || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
     const target = event.target;
-    if (target instanceof Element && target.closest("input, textarea, select, [contenteditable]:not([contenteditable=false]), [role=textbox]"))
+    if (
+      target instanceof Element &&
+      target.closest("input, textarea, select, [contenteditable]:not([contenteditable=false]), [role=textbox]")
+    )
       return;
     if (document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')) return;
     const key = event.key.toLowerCase();

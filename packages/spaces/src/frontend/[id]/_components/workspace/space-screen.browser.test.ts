@@ -51,10 +51,7 @@ describe("a Space on v2", () => {
         // An open item on the phone is its own page without the list's floating action (coordinator, 26.11.); the v2
         // outline still asks for a primary there. Waits for #4373, which teaches describe.ts that case; then a test again.
         // The worst case also meets the phone gap named above: the shell's Back cuts a Space name near 100 characters.
-        test.todo(
-          `${view.name} ${address.split("?")[1]} ${state}: keeps the v2 layout rules (waits for #4373${state === "worst" ? " and the shell's Back for a 100-character Space name" : ""})`,
-          () => {},
-        );
+        test.todo(`${view.name} ${address.split("?")[1]} ${state}: keeps the v2 layout rules (waits for #4373${state === "worst" ? " and the shell's Back for a 100-character Space name" : ""})`, () => {});
       } else
         test(`${view.name} ${address.split("?")[1]} ${state}: keeps the v2 rules and shows no loading on the first picture`, async () => {
           const { context, tab, errors } = await open(view, address, state);

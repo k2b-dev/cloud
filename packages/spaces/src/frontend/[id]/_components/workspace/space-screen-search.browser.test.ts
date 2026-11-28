@@ -34,7 +34,11 @@ const searching = (hold?: string) => {
       if (!words) return undefined;
       if (words === hold) await held;
       const shown = items.filter((item) => found(words).includes(item.id));
-      return { kind: "list", currentView: "list", itemsResult: { items: shown, page: 1, pageSize: 50, total: shown.length, totalPages: 1 } };
+      return {
+        kind: "list",
+        currentView: "list",
+        itemsResult: { items: shown, page: 1, pageSize: 50, total: shown.length, totalPages: 1 },
+      };
     },
   };
 };

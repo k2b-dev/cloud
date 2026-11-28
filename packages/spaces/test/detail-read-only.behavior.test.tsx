@@ -2,8 +2,8 @@ import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import type { SpaceItem } from "@/contracts";
-import type { SpaceItemDetail } from "../src/frontend/[id]/_components/workspace/workspace-types";
 import { createDomTestHarness, type DomTestHarness } from "../../ui/test/dom";
+import type { SpaceItemDetail } from "../src/frontend/[id]/_components/workspace/workspace-types";
 import { installV2Globals } from "./v2-dom";
 
 // The open item on v2 for people who may only read it, for a generated occurrence of a series, and for who has access,
@@ -69,9 +69,7 @@ const detailOf = (item: Partial<SpaceItem> = {}, extra: Partial<SpaceItemDetail>
   recurringContext: null,
   references: [],
   links: [{ url: "https://example.org/release-notes", label: "Release notes", createdAt: now, preview: null }],
-  attachments: [
-    { id: "File01", filename: "board.webp", mimeType: "image/webp", sizeBytes: 42_000, kind: "image", createdAt: now },
-  ],
+  attachments: [{ id: "File01", filename: "board.webp", mimeType: "image/webp", sizeBytes: 42_000, kind: "image", createdAt: now }],
   checklist: [{ id: "Chk001", label: "Write the notes", completed: false, createdAt: now, updatedAt: now }],
   blockedBy: [{ blocker: { id: "Blk001", spaceId: "Space1", title: "Freeze the branch", completedAt: null }, createdAt: now }],
   blocks: [],
@@ -268,7 +266,9 @@ describe("Spaces detail for readers and occurrences", () => {
     const failed = fresh();
     const disposeFailed = await mount(failed, { canWrite: false, access: { members: [], state: "error", retry: () => retried++ } });
     expect(section(failed)?.textContent).toContain("Could not load who has access");
-    [...(section(failed)?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((button) => button.textContent?.trim() === "Retry")?.click();
+    [...(section(failed)?.querySelectorAll<HTMLButtonElement>("button") ?? [])]
+      .find((button) => button.textContent?.trim() === "Retry")
+      ?.click();
     expect(retried).toBe(1);
     disposeFailed();
     failed.cleanup();
@@ -280,7 +280,12 @@ describe("Spaces detail for readers and occurrences", () => {
     const dispose = await mount(dom, { canWrite: false });
     const html = dom.root.innerHTML;
     expect(html).toContain(
-      renderMarkdownInfoBlock({ type: "warning", title: "Before the release", bodyHtml: "<p>Check the <strong>migration</strong>.</p>\n", locale: "en" }),
+      renderMarkdownInfoBlock({
+        type: "warning",
+        title: "Before the release",
+        bodyHtml: "<p>Check the <strong>migration</strong>.</p>\n",
+        locale: "en",
+      }),
     );
     expect(html).toContain(renderMarkdownInfoBlock({ type: "success", bodyHtml: "<p>Approved.</p>\n", locale: "en" }));
     expect(html).toContain(renderMarkdownInfoBlock({ type: "info", bodyHtml: "<p>Tests are running.</p>\n", locale: "en" }));
