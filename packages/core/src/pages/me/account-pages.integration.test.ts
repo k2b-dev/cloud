@@ -166,7 +166,7 @@ suiteFor(
     // Each count holds with three rows of every list (passkeys, groups, events, keys, approvals, deliveries, phones and
     // devices): one statement per list, never one per row, all of a page in one round. Three of each are the shell's
     // (rail, its shortcuts, the screen preferences); the security page also checks the browser session (one). It reads the
-    // app approval settings twice, once for its offer and once inside the device list (platform service).
+    // app approval settings twice, once for its offer and once inside the device list (platform service, #4528).
     const budget = {
       "/me": 10,
       "/me?groups=all": 11,
