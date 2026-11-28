@@ -1072,7 +1072,8 @@ export type TilesProps = {
 
 const TileName = (props: { tile: Tile }) => (
   <span class="k2-tile-name">
-    <span class="k2-tile-title">
+    {/* a name of one word cannot take a second line without breaking inside it: it stays one line and ends in "…" */}
+    <span class="k2-tile-title" data-one-word={/\s/.test(props.tile.title.trim()) ? undefined : ""}>
       <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate} onOpen={props.tile.onOpen}>
         {props.tile.title}
       </RowOpen>

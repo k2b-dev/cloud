@@ -61,7 +61,7 @@ const notebooks: Tile[] = [
 
 const GRIDS = "#0d9488";
 const bases: Tile[] = [
-  { icon: "plus", title: "Leere Base", meta: "Eine leere Tabelle", color: GRIDS, preview: { icon: "table" }, onOpen: () => undefined },
+  { icon: "plus", title: "Leere Base", meta: "Noch ohne Tabellen", color: GRIDS, preview: { icon: "table" }, onOpen: () => undefined },
   {
     icon: "wallet",
     title: "Private Finanzen",
