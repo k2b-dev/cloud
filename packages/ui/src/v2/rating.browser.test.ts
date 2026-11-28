@@ -98,6 +98,7 @@ test("keyboard: one Tab stop, Enter and the arrows choose, Space chooses, Enter 
     expect(await focused(page)).toBe("3 von 5 Sternen");
     expect(await chosen(page, "Wie war dein Besuch?")).toEqual(["3 von 5 Sternen"]);
     expect(await page.evaluate(() => window.__rated)).toEqual([1, 2, 3, 4, 3]);
+    await settled(page);
     // the stars up to the chosen one fill; the field's hint reads the choice
     expect((await stars(page, "Wie war dein Besuch?")).map((star) => star.filled)).toEqual([true, true, true, false, false]);
     expect(await page.getByText("3 von 5", { exact: true }).count()).toBe(1);
@@ -248,6 +249,7 @@ test("a chosen star keeps 3:1 on its own tint in light and dark, and the layout 
     await withPage({ dark }, async (page) => {
       await group(page, "Wie war dein Besuch?").getByRole("radio", { name: "4 von 5 Sternen" }).click();
       await page.mouse.move(0, 0);
+      await settled(page);
       seen.push((await look(page))[0]!);
       if (dark) expect((await measureV2Layout(page)).problems).toEqual([]);
     });
@@ -260,6 +262,7 @@ test("a pointer previews in neutral ink: over a star below the choice the choice
     const rating = group(page, "Wie war dein Besuch?");
     await rating.getByRole("radio", { name: "4 von 5 Sternen" }).click();
     await page.mouse.move(0, 0);
+    await settled(page);
     const before = await look(page);
     expect(await rating.getAttribute("data-preview")).toBeNull();
     expect(before.map((star) => star.shown)).toEqual([true, true, true, true, false]);
@@ -278,6 +281,7 @@ test("a pointer previews in neutral ink: over a star below the choice the choice
     expect(await chosen(page, "Wie war dein Besuch?")).toEqual(["4 von 5 Sternen"]);
     // over the fifth star: the star past the choice fills in neutral ink, without the tint
     await rating.getByRole("radio", { name: "5 von 5 Sternen" }).hover();
+    await settled(page);
     const past = await look(page);
     expect(past[4]!.shown).toBe(true);
     expect(past[4]!.sign).not.toEqual(amber.sign);

@@ -1687,7 +1687,7 @@ const RatingStars = (props: RatingProps) => {
         {(index) => (
           // the stars up to the choice, whatever a pointer previews (core's own fill follows the preview)
           <rating.Item class="k2-star" index={index} data-chosen={index <= (rating.chosen() ?? 0) ? "" : undefined}>
-            <svg class="k2-star-line" viewBox="0 0 24 24" aria-hidden="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d={STAR_PATH} />
             </svg>
             <svg class="k2-star-fill" viewBox="0 0 24 24" aria-hidden="true">
