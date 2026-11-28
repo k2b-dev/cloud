@@ -98,7 +98,16 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
   const quote = (text: string | null | undefined, max?: number) => (text && text.trim() ? `"${clip(text, max)}"` : "");
   const part = (element: Element | null) => element?.getAttribute("data-k2-part") ?? "";
   const partOf = (element: Element): Element | null => element.parentElement?.closest("[data-k2-part]") ?? null;
-  const hidden = (element: Element) => options.layout === true && element.getClientRects().length === 0;
+  /** Inside a box of no height that clips what overflows it (a head that gave way): drawn, but nobody can see it. */
+  // A control in a head that gave way (its bar folded to no height under the shell's search) is gone, though it keeps
+  // its own box. Only the head: elsewhere a box of no height that clips is a dialog or a sheet on its way in.
+  const clippedAway = (element: Element) => {
+    const head = element.closest('[data-slot="head"] > .k2-bar');
+    if (!head) return false;
+    const style = getComputedStyle(head);
+    return /hidden|clip/.test(`${style.overflowX} ${style.overflowY}`) && head.getBoundingClientRect().height === 0;
+  };
+  const hidden = (element: Element) => options.layout === true && (element.getClientRects().length === 0 || clippedAway(element));
   const textOf = (element: Element | null | undefined) => clip(element?.textContent ?? "");
   /** Stands directly in the flow of a column, not in a head, a bar or a row. */
   const inFlow = (element: Element) => {
@@ -588,17 +597,33 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     const surface = surfaceOf(button);
     bySurface.set(surface, [...(bySurface.get(surface) ?? []), button]);
   }
+  // On the phone an open detail is a page of its own, and the list's main action does not float over it on purpose.
+  // (its way back shows only then: beside the list on a wide screen the detail is no page, and the check stays)
+  const detailIsPage = [...root.querySelectorAll('.k2-pane[data-detail] > [data-k2-part="Back"]')].some((back) => !hidden(back));
   if (
     options.layout &&
+    !detailIsPage &&
     !bySurface.get(root)!.length &&
     allPrimaries.some((button) => surfaceOf(button) === root && !button.classList.contains("k2-fab"))
   )
     problems.push("the primary action is hidden at this width: give Workspace a `primary` action so the phone shows it");
-  for (const [surface, primaries] of bySurface)
-    if (primaries.length > 1)
+  for (const [surface, primaries] of bySurface) {
+    // The head's twin of the floating button left without `floats`: on the phone both stand, so name the fix.
+    const fab = primaries.find((button) => button.classList.contains("k2-fab"));
+    const twin =
+      fab &&
+      primaries.find(
+        (button) => button !== fab && button.closest('[data-slot="head"]') && quote(button.textContent, 24) === quote(fab.textContent, 24),
+      );
+    if (twin && primaries.length === 2)
+      problems.push(
+        `the head's ${quote(twin.textContent, 24)} repeats the floating button: mark it \`floats\` so the phone shows the main action once`,
+      );
+    else if (primaries.length > 1)
       problems.push(
         `${primaries.length} primary buttons ${surface === root ? "" : `in ${surfaceName(surface)} `}(${primaries.map((button) => quote(button.textContent, 24)).join(", ")}): one primary action per ${surface === root ? "page" : "dialog"}; make the others secondary`,
       );
+  }
   // Cut text a person sees: a control's label that does not fit its control, a line of a three-line row that wraps.
   if (options.layout) {
     for (const control of root.querySelectorAll(".k2-btn, .k2-chip, .k2-tab")) {

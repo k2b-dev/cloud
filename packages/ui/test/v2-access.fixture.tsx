@@ -90,7 +90,7 @@ export const AccessScreen = (props: {
                 pressed={props.favourite ?? false}
                 onClick={() => props.onFavourite?.()}
               />
-              <Button variant="primary" icon="plus">
+              <Button variant="primary" icon="plus" floats>
                 Schlüssel erstellen
               </Button>
             </>
