@@ -54,7 +54,7 @@ describe("root test orchestration", () => {
       "--preload",
       join(workspaceRoot, "packages", "ui", "test", "solid-dom-preload.ts"),
     ]);
-    expect(core?.command).toContain(join(workspaceRoot, "packages/core/src/pages/admin/CacheNotice.behavior.test.ts"));
+    expect(core?.command).toContain(join(workspaceRoot, "packages/core/test/consent.behavior.test.tsx"));
     expect(core?.command.some((arg) => arg.endsWith(".test.ts") && !arg.includes(".behavior."))).toBeFalse();
     expect(suites.some((suite) => suite.name === "@k2b/cloud-app-tools behavior")).toBeTrue();
   });
