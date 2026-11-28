@@ -1,4 +1,3 @@
-import { markHintSeen } from "@k2b/cloud/browser/hints";
 import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
 import { Nav, type NavGroup, useToast } from "@k2b/ui/v2";
@@ -40,10 +39,6 @@ export function useSpacesNav(props: SpacesNavProps) {
     pin(wasPinned ? before.filter((id) => id !== space.id) : [space.id, ...before]);
     toast(wasPinned ? t().unpinned({ name: space.name }) : t().pinned({ name: space.name }), { undo: () => pin(before) });
   };
-  const visit = () => {
-    markHintSeen("spaces.sidebar-switch");
-    markHintSeen("spaces.overview-sidebar");
-  };
   const groups = createMemo((): NavGroup[] => [
     {
       items: [
@@ -70,7 +65,6 @@ export function useSpacesNav(props: SpacesNavProps) {
           icon: SPACE_MARK_ICON,
           color: space.color ?? undefined,
           href: `/app/spaces/${space.id}`,
-          onClick: visit,
           count: count(space.openItemCount),
           current: props.current.kind === "space" && props.current.id === space.id,
           menu: [

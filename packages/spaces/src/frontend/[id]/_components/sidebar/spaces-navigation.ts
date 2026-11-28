@@ -1,4 +1,3 @@
-import { markHintSeen } from "@k2b/cloud/browser/hints";
 import { createSignal, onCleanup, onMount } from "solid-js";
 
 export type SidebarSpace = { id: string; name: string; color: string; openItemCount: number };
@@ -49,17 +48,3 @@ export const orderSidebarSpaces = (spaces: SidebarSpace[], pinnedSpaceIds: strin
     if (b === -1) return -1;
     return a - b;
   });
-
-/** Phone navigation lives in the Cloud shell, outside the sidebar island. */
-export const listenSpacesNavigationHints = (document: Document, spaces: SidebarSpace[]) => {
-  const hrefs = new Set(spaces.map((space) => `/app/spaces/${space.id}`));
-  const onClick = (event: MouseEvent) => {
-    if (!(event.target instanceof Element)) return;
-    const anchor = event.target.closest("a");
-    if (!anchor || !hrefs.has(anchor.getAttribute("href") ?? "")) return;
-    markHintSeen("spaces.sidebar-switch");
-    markHintSeen("spaces.overview-sidebar");
-  };
-  document.addEventListener("click", onClick, true);
-  return () => document.removeEventListener("click", onClick, true);
-};

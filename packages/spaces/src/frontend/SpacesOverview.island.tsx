@@ -31,7 +31,7 @@ import { formatDeadline } from "@/presentation/deadline";
 import { spaceCommandMessages } from "../commands";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
 import SpacesNav, { SPACE_MARK_ICON, useSpacesNav } from "./_components/spaces-nav";
-import { listenSpacesNavigationHints, type SidebarSpace } from "./[id]/_components/sidebar/spaces-navigation";
+import type { SidebarSpace } from "./[id]/_components/sidebar/spaces-navigation";
 import { subscribeToSpacesDataInvalidation } from "./[id]/_components/workspace/workspace-events";
 import { readResponseError } from "./lib/response";
 import { overviewMessages } from "./overview-messages";
@@ -149,7 +149,6 @@ export default function SpacesOverview(props: Props) {
         await Promise.all([work.refresh(), activity.refresh()]);
       }),
     );
-    onCleanup(listenSpacesNavigationHints(document, props.spaces));
     onCleanup(
       listenPopState(({ url }) => {
         const value = url.searchParams.get("view");

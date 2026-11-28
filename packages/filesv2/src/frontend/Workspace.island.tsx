@@ -1,11 +1,10 @@
 import { openCommand } from "@k2b/cloud/browser/commands";
-import { markHintSeen } from "@k2b/cloud/browser/hints";
 import { publishPageContext } from "@k2b/cloud/browser/panel";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { navigate as commitHistory, type LinkNavigateEvent, listenPopState } from "@k2b/ssr/nav";
-import { AppWorkspace, ButtonLink, createNavigation, Dropdown, InlineGuidance, MovedHint, Placeholder, toast, useLocale } from "@k2b/ui";
+import { AppWorkspace, ButtonLink, createNavigation, Dropdown, InlineGuidance, Placeholder, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
@@ -22,7 +21,6 @@ import { historyExecutionHref } from "./execution-url";
 import FavoritesPage from "./FavoritesPage";
 import { IssueMessage } from "./feedback";
 import { createFilesUploads } from "./files-uploads";
-import { RECENT_MOVED_HINT } from "./hints";
 import { type HistoryActions, type HistoryEnvironment, type HistoryTarget, isCurrent } from "./history-actions";
 import {
   entryHref,
@@ -383,8 +381,6 @@ export default function Workspace(props: {
       !!searchState(new URL(target, "https://files.invalid").searchParams)
     );
   };
-  // Once, at the sidebar's Activity: Recent now lives there. The server decides; dismissing or using it ends it.
-  const [recentMovedHint, setRecentMovedHint] = createSignal(!!props.initial.hints?.recentMoved);
   const dialogLifetime = new AbortController();
   onCleanup(() => dialogLifetime.abort());
   // The sidebar's Activity replaces Recent: it always opens "Me" across all storage (approved 08.11.); inside Activity
@@ -857,18 +853,6 @@ export default function Workspace(props: {
                     <AppWorkspace.SidebarItemIcon icon="ti ti-history" />
                     <AppWorkspace.SidebarItemLabel>{b().activity}</AppWorkspace.SidebarItemLabel>
                   </AppWorkspace.SidebarItem>
-                  <MovedHint
-                    open={recentMovedHint()}
-                    target={() => document.querySelector<HTMLElement>(".filesv2-sidebar-activity") ?? undefined}
-                    placement="right"
-                    onDismiss={() => {
-                      setRecentMovedHint(false);
-                      markHintSeen(RECENT_MOVED_HINT);
-                    }}
-                    action={{ label: b().openActivity, href: activityUrl({ actor: "me" }) }}
-                  >
-                    <strong>{b().recentMovedTitle}</strong> {b().recentMovedText}
-                  </MovedHint>
                   <AppWorkspace.SidebarItem
                     href={viewUrl(null, "favorites")}
                     navigation="enhanced"
@@ -1185,7 +1169,6 @@ export default function Workspace(props: {
                                 true,
                               );
                             }}
-                            selectionPillHint={!!props.initial.hints?.selectionPill}
                             onShare={(paths) =>
                               void openShareDialog({
                                 baseId: directory().base.id,
