@@ -43,7 +43,7 @@ describe("performance baseline contracts", () => {
       keep: false,
       skipBuild: false,
       runs: 3,
-      pages: ["document", "faq", "mail-mailbox", "assistant-chat", "notebooks-editor", "files", "accounts", "spaces"],
+      pages: ["document", "mail-mailbox", "assistant-chat", "notebooks-editor", "files", "accounts", "spaces"],
     });
     expect(
       parseArgs(["--pages", "files,document", "--runs", "1", "--skip-build", "--keep", "--out", ".local/example", "--compare", "old.json"]),
@@ -66,26 +66,26 @@ describe("performance baseline contracts", () => {
   test("HTML counts instances, distinct entries, decoded UTF-8 props, inline and external modules", async () => {
     const props = JSON.stringify(toJSON({ text: "Grüße & <world>" }));
     const empty = JSON.stringify(toJSON({}));
-    const encoded = props.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
-    const html = `<base href="/app/faq/"><solid-island data-id="one" data-props="${encoded}"></solid-island><solid-client data-id="one" data-props="${Bun.escapeHTML(empty)}"></solid-client><script type="module">const p="/faq/_ssr/123";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script><script type="module" src="extra.js"></script><script type="module">import "./inline.js";</script><link rel="stylesheet" href="/public/faq/app.css"><link rel="preload" href="ignored.css">`;
-    const info = await inspectHtml(html, "http://127.0.0.1:4100/faq");
+    const encoded = props.replaceAll("<", "\\u003c").replaceAll(">", "\\u003e");
+    const html = `<base href="/app/fixture/"><solid-island data-id="one"><!--ssr-props:${encoded}--></solid-island><solid-client data-id="one"><!--ssr-props:${empty}--></solid-client><script type="module">const p="/fixture/_ssr/123";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script><script type="module" src="extra.js"></script><script type="module">import "./inline.js";</script><link rel="stylesheet" href="/public/fixture/app.css"><link rel="preload" href="ignored.css">`;
+    const info = await inspectHtml(html, "http://127.0.0.1:4100/fixture");
     expect(info.islands).toBe(2);
-    expect(info.islandEntries).toEqual(["/faq/_ssr/123/one.js"]);
-    expect(info.modules).toEqual(["/app/faq/extra.js", "/app/faq/inline.js", "/faq/_ssr/123/one.js"]);
-    expect(info.css).toEqual(["/public/faq/app.css"]);
-    expect(info.propsBytes).toBe(Buffer.byteLength(props) + Buffer.byteLength(empty));
+    expect(info.islandEntries).toEqual(["/fixture/_ssr/123/one.js"]);
+    expect(info.modules).toEqual(["/app/fixture/extra.js", "/app/fixture/inline.js", "/fixture/_ssr/123/one.js"]);
+    expect(info.css).toEqual(["/public/fixture/app.css"]);
+    expect(info.propsBytes).toBe(Buffer.byteLength(encoded) + Buffer.byteLength(empty));
     expect(info.propsShare).toBeCloseTo(info.propsBytes / Buffer.byteLength(html), 6);
   });
 
   test("content-hashed SSR prefixes and modulepreload preserve the inspector module set", async () => {
-    const html = `<solid-island data-id="one" data-props="{}"></solid-island><script type="module">const p="/faq/_ssr/0123456789abcdef";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`;
+    const html = `<solid-island data-id="one"><!--ssr-props:{}--></solid-island><script type="module">const p="/fixture/_ssr/0123456789abcdef";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`;
     const preload = `["chunk-abc.js","chunk-def.js"].forEach(f=>{const l=document.createElement('link');l.rel='modulepreload';l.href=p+'/'+f;document.head.append(l)});`;
     const withPreloads = html.replace(";document.querySelectorAll", ";" + preload + "document.querySelectorAll");
-    const original = await inspectHtml(html, "http://127.0.0.1:4100/faq");
-    const preloaded = await inspectHtml(withPreloads, "http://127.0.0.1:4100/faq");
+    const original = await inspectHtml(html, "http://127.0.0.1:4100/fixture");
+    const preloaded = await inspectHtml(withPreloads, "http://127.0.0.1:4100/fixture");
     expect(preloaded.islandEntries).toEqual(original.islandEntries);
     expect(preloaded.modules).toEqual(original.modules);
-    expect(original.islandEntries).toEqual(["/faq/_ssr/0123456789abcdef/one.js"]);
+    expect(original.islandEntries).toEqual(["/fixture/_ssr/0123456789abcdef/one.js"]);
     expect(assetPath("/app/mail/_ssr/0123456789abcdef/x.js", ["mail"])).toEqual({ app: "mail", file: "_ssr/x.js" });
   });
 
@@ -437,7 +437,7 @@ const asset = (input: Partial<PwaAsset> = {}): PwaAsset => ({
 
 test("pwa is opt-in; existing origins are HTTPS and restricted to the mobile flows", () => {
   expect(parseArgs([]).pages).toEqual([...defaultPageIds]);
-  expect(parseArgs(["--pages", "pwa,faq"]).pages).toEqual(["pwa", "faq"]);
+  expect(parseArgs(["--pages", "pwa,document"]).pages).toEqual(["pwa", "document"]);
   expect(pageApps.pwa).toEqual(["pwa", "spaces", "chat"]);
   expect(localPwaApps).toEqual(["assistant"]);
   expect(parseArgs(["--pages", "pwa", "--origin", "https://example.test:443/"])).toMatchObject({ origin: "https://example.test" });
@@ -450,7 +450,13 @@ test("pwa is opt-in; existing origins are HTTPS and restricted to the mobile flo
     "invalid",
   ])
     expect(() => parseArgs(["--pages", "pwa", "--origin", origin])).toThrow();
-  for (const extra of [["--pages", "faq"], ["--pages", "pwa,faq"], ["--pages", "pwa", "--skip-build"], ["--pages", "pwa", "--keep"], []])
+  for (const extra of [
+    ["--pages", "document"],
+    ["--pages", "pwa,document"],
+    ["--pages", "pwa", "--skip-build"],
+    ["--pages", "pwa", "--keep"],
+    [],
+  ])
     expect(() => parseArgs(["--origin", "https://example.test", ...extra])).toThrow();
   for (const value of ["1", "2", "1000"]) expect(parseArgs(["--rtt", value]).rttMs).toBe(Number(value));
   for (const value of ["0", "-1", "1001", "2.5", "NaN", "1ms"]) expect(() => parseArgs(["--rtt", value])).toThrow();

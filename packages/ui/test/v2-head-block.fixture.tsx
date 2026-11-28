@@ -1,272 +1,119 @@
-import { orderQuery } from "../skills/k2b-ui/recipes/filtered-table";
-import { Bar, Button, FilterBar, Input, List, Nav, Pane, Path, Row, Tabs, Text, Workspace } from "../src/v2";
+import { LocaleProvider } from "../src/intl/locale";
+import { Bar, Button, HeadSearch, Input, List, Pane, Path, Row, StatusRow, Text, Workspace } from "../src/v2";
 
-declare global {
-  interface Window {
-    /** How often each main action ran, by its name. */
-    __created?: Record<string, number>;
-  }
-}
+// A pane's head and its toolbar as one block, the head's search as its symbol, and a row's time beside its deed, as the
+// test sets them up:
+// - `path`: a head with a path, a search, two ghost buttons with words and "+", above a toolbar (a StatusRow): two rows
+//   close together without a line between them, one line under the block; one row where the pane is wide;
+// - `filled`: `path` with words in the search from the address, as the server sends them;
+// - `withEnd`: `path` whose search has a filter at its end, as Mail's: it keeps its field;
+// - `nested`: `path` whose search holds a plain search in its end: that one is no head search;
+// - `floats`: `path` whose main action is the floating button's twin (`Button floats`, #4373): on the phone it leaves
+//   the head, the block and the head search stay;
+// - `longPath`: `path` with seven places, which fold into "…" where the pane is narrow and stand whole where it is wide;
+// - `actions`: a head of actions only (a search), above the same toolbar: one row on every width;
+// - `state`: a head above a plain `Bar` that says the state of an open entry: no toolbar, so no block; it keeps its line;
+// - `workspace`: a workspace head of actions only (a search) above a pane with a toolbar and no head of its own, the
+//   case DR's #4470 moves into the pane's first row;
+// - `rows`: a list whose rows of one line carry a time, a deed, or both: every row keeps one height.
+export type Kind = "path" | "filled" | "withEnd" | "nested" | "floats" | "longPath" | "actions" | "state" | "workspace" | "rows";
 
-const ran = (name: string) => () => {
-  window.__created = { ...window.__created, [name]: (window.__created?.[name] ?? 0) + 1 };
-};
+const Status = () => (
+  <StatusRow
+    lead="13 Einträge"
+    filters={
+      <>
+        <Button icon="plus">Filter</Button>
+        <Button icon="arrows-sort">Name</Button>
+      </>
+    }
+  />
+);
 
-const state = orderQuery.parse("status=open,work").state;
+const files = ["Angebote", "Aufmaß", "Fotos", "Budget 2027.xlsx", "Lieferplan.pdf", "Notizen.md"];
 
-/**
- * A head whose toolbar stands in it (Files, Notebooks): the folder's name, its filter bar, the search and the main
- * action. It stands in the head line while the head has room, and wraps as the head's second row below that.
- */
-export function ToolbarInHead() {
+const Search = (props: { kind: Kind }) => (
+  <HeadSearch
+    label="Suchen"
+    value={props.kind === "filled" ? "Angebot" : undefined}
+    end={
+      props.kind === "withEnd" ? (
+        <Button variant="ghost" icon="filter" label="Filter der Suche" />
+      ) : props.kind === "nested" ? (
+        <Input type="search" label="Im Filter suchen" />
+      ) : undefined
+    }
+  />
+);
+
+export const Fixture = (props: { kind: Kind }) => {
+  const withPath = () => ["path", "filled", "withEnd", "nested", "floats", "longPath", "state"].includes(props.kind);
+  const places = () =>
+    props.kind === "longPath"
+      ? [
+          { label: "Alle Ablagen", href: "#alle" },
+          { label: "Werkstatt", href: "#werkstatt" },
+          { label: "Lager Nord", href: "#lager" },
+          { label: "Angebote", href: "#angebote" },
+          { label: "Kunden 2027", href: "#kunden" },
+          { label: "Ausschreibung", href: "#ausschreibung" },
+          { label: "Lieferplan Frühjahr" },
+        ]
+      : [{ label: "Alle Ablagen", href: "#alle" }, { label: "Werkstatt" }];
   return (
-    <Workspace
-      head={
-        <Bar
-          start={
-            <>
-              <Text weight="strong">Verträge</Text>
-              <FilterBar query={orderQuery} state={state} onChange={() => {}} results="3 Aufträge" />
-            </>
-          }
-          end={
-            <>
-              <Input type="search" icon="search" label="Aufträge durchsuchen" placeholder="Aufträge durchsuchen" />
-              <Button variant="primary" icon="plus">
-                Auftrag
-              </Button>
-            </>
-          }
-        />
-      }
-    >
-      <Pane label="Aufträge">
-        <List label="Aufträge">
-          <Row icon="file-text" lines={["Einbauschrank Flur"]} />
-        </List>
-      </Pane>
-    </Workspace>
-  );
-}
-
-/** A head with two main actions (Files: upload and a new folder): the platform makes them one "+". */
-export function TwoCreates() {
-  return (
-    <Workspace
-      head={
-        <Bar
-          start={<Text weight="strong">Ablage</Text>}
-          end={
-            <>
-              <Input type="search" icon="search" label="Dateien durchsuchen" placeholder="Dateien durchsuchen" />
-              <Button variant="primary" icon="upload" onClick={ran("Hochladen")}>
-                Hochladen
-              </Button>
-              <Button variant="primary" icon="folder-plus" onClick={ran("Neuer Ordner")}>
-                Neuer Ordner
-              </Button>
-            </>
-          }
-        />
-      }
-      primary={{ label: "Hochladen", icon: "upload" }}
-    >
-      <Pane label="Dateien">
-        <List label="Dateien">
-          <Row icon="file" lines={["Angebot.pdf"]} />
-        </List>
-      </Pane>
-    </Workspace>
-  );
-}
-
-/**
- * A page the sidebar's current entry names ("Einstellungen"): the head repeats it as its title, beside an action.
- * `detail` declares a wide detail, so the sidebar is a drawer from 1024 px of window on.
- */
-export function NamedPlace(props: { detail?: number; bare?: boolean }) {
-  return (
-    <Workspace
-      detail={props.detail}
-      sidebar={
-        <Nav
-          title="Ablage"
-          icon="folder"
-          groups={[
-            {
-              items: [
-                { label: "Alle Ablagen", icon: "folders", href: "#alle" },
-                { label: "Einstellungen", icon: "settings", href: "#einstellungen", current: true },
-              ],
-            },
-          ]}
-        />
-      }
-      head={
-        <Bar
-          start={<Text weight="strong">Einstellungen</Text>}
-          end={props.bare ? undefined : <Button icon="device-floppy">Speichern</Button>}
-        />
-      }
-    >
-      <Pane label="Einstellungen">
-        <List label="Einstellungen">
-          <Row icon="bell" lines={["Benachrichtigungen"]} />
-        </List>
-      </Pane>
-    </Workspace>
-  );
-}
-
-/** A list whose address holds a search (`?q=Zeppelin`): the server renders the head's search with its words. */
-export function SearchWithWords() {
-  return (
-    <Workspace
-      head={
-        <Bar
-          start={
-            <Tabs
-              label="Ansichten"
-              items={[
-                { label: "Alle", current: true, href: "?q=Zeppelin" },
-                { label: "Meine", href: "?view=mine&q=Zeppelin" },
-              ]}
-            />
-          }
-          end={<Input type="search" icon="search" label="Notizbücher durchsuchen" value="Zeppelin" />}
-        />
-      }
-    >
-      <Pane label="Notizbücher">
-        <List label="Notizbücher">
-          <Row icon="notebook" lines={["Kein Notizbuch passt zu „Zeppelin“"]} />
-        </List>
-      </Pane>
-    </Workspace>
-  );
-}
-
-/** A photo of a long name, opened in its folder (U3): its path gives way before the head's actions. */
-export const longPhoto = "IMG_2026_11_26_Kaffeehaus_am_Marktplatz_im_Morgenlicht_mit_Blick_auf_den_Brunnen_Espresso.jpg";
-
-/** The head of an open photo: the path to it (its folder is the page itself, `#fotos`) and two actions. */
-export function LongPath() {
-  return (
-    <Workspace
-      head={
-        <Bar
-          start={
-            <Path
-              label="Ort"
-              items={[{ label: "Ablage", href: "#ablage" }, { label: "Fotos 2026", href: "#fotos" }, { label: longPhoto }]}
-            />
-          }
-          end={
-            <>
-              <Button icon="share">Teilen</Button>
-              <Button icon="download">Herunterladen</Button>
-            </>
-          }
-        />
-      }
-    >
-      <Pane label="Foto">
-        <List label="Angaben">
-          <Row icon="photo" lines={[longPhoto]} />
-        </List>
-      </Pane>
-    </Workspace>
-  );
-}
-
-/**
- * An open item of a Space (W3): the detail's head shows where it stands (a path) and its name small after it, with an
- * action; `path: false` gives the detail its name alone, as the page's only title.
- */
-export function OpenItem(props: { path?: boolean }) {
-  return (
-    <Workspace detail>
-      <Pane.Split>
-        <Pane label="Aufgaben">
-          <List label="Aufgaben">
-            <Row icon="circle" lines={["Lieferanten anschreiben"]} />
-          </List>
-        </Pane>
+    <LocaleProvider locale="de">
+      <Workspace head={props.kind === "workspace" ? <Bar end={<Search kind={props.kind} />} /> : undefined}>
         <Pane
-          detail
-          label="Aufgabe"
-          back={{ label: "Beschaffung", href: "#space" }}
+          label="Dateien"
           head={
-            <Bar
-              start={
-                <>
-                  {props.path !== false && <Path label="Ort" items={[{ label: "Beschaffung", href: "#space" }, { label: "Offen" }]} />}
-                  <Text>Lieferanten anschreiben</Text>
-                </>
-              }
-              end={<Button icon="check">Erledigt</Button>}
-            />
+            props.kind === "rows" || props.kind === "workspace" ? undefined : (
+              <Bar
+                start={withPath() ? <Path label="Ort" items={places()} /> : undefined}
+                end={
+                  <>
+                    <Search kind={props.kind} />
+                    {withPath() && props.kind !== "state" ? (
+                      <>
+                        <Button variant="ghost" icon="share">
+                          Teilen
+                        </Button>
+                        <Button variant="ghost" icon="download">
+                          Laden
+                        </Button>
+                        {props.kind === "floats" ? (
+                          <Button variant="primary" floats icon="plus">
+                            Neu
+                          </Button>
+                        ) : (
+                          <Button variant="ghost" icon="plus" label="Neu" />
+                        )}
+                      </>
+                    ) : undefined}
+                  </>
+                }
+              />
+            )
+          }
+          status={
+            props.kind === "rows" ? undefined : props.kind === "state" ? (
+              <Bar start={<Text>3 Nachrichten · Wartet auf Antwort</Text>} />
+            ) : (
+              <Status />
+            )
           }
         >
-          <List label="Angaben">
-            <Row icon="calendar" lines={["Fällig am 2. Dezember"]} />
+          <List label="Einträge">
+            {files.map((name, index) => (
+              <Row
+                icon="file"
+                lines={[name]}
+                time={index === 1 ? undefined : `heute, 0${index}:40`}
+                action={index < 2 ? { label: "Wiederherstellen", icon: "arrow-back-up", onClick: () => {} } : undefined}
+              />
+            ))}
           </List>
         </Pane>
-      </Pane.Split>
-    </Workspace>
+      </Workspace>
+    </LocaleProvider>
   );
-}
-
-/** A head of a search and the main action alone (W5: Pulse's bases); `words` gives the search words from the address. */
-export function SearchAndAction(props: { words?: string }) {
-  return (
-    <Workspace
-      head={
-        <Bar
-          end={
-            <>
-              <Input type="search" icon="search" label="Basen durchsuchen" value={props.words} />
-              <Button variant="primary" icon="plus">
-                Neue Basis
-              </Button>
-            </>
-          }
-        />
-      }
-      primary={{ label: "Neue Basis", icon: "plus", href: "#neu" }}
-    >
-      <Pane label="Basen">
-        <List label="Basen">
-          <Row icon="database" lines={["Kundenkartei"]} />
-          <Row icon="database" lines={["Inventar"]} />
-        </List>
-      </Pane>
-    </Workspace>
-  );
-}
-
-/** A form beside its list whose own head holds two main actions ("Speichern", "Veröffentlichen"): a pane keeps both. */
-export function PaneWithTwoActions() {
-  return (
-    <Workspace head={<Bar start={<Text weight="strong">Seiten</Text>} />}>
-      <Pane
-        label="Seite"
-        head={
-          <Bar
-            start={<Text type="lead">Startseite</Text>}
-            end={
-              <>
-                <Button variant="primary">Speichern</Button>
-                <Button variant="primary">Veröffentlichen</Button>
-              </>
-            }
-          />
-        }
-      >
-        <List label="Abschnitte">
-          <Row icon="file" lines={["Begrüßung"]} />
-        </List>
-      </Pane>
-    </Workspace>
-  );
-}
+};

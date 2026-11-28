@@ -1,4 +1,4 @@
-import { Avatar, Bar, Button, Chip, Icon, Inline, Input, Nav, Pane, Path, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
+import { Avatar, Bar, Button, Chip, HeadSearch, Icon, Inline, Nav, Pane, Path, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
 import { createSignal } from "solid-js";
 
 // The large table of Grids, as in the approved mockup (tabelle-grids.html): 34 orders in 11 columns, grouped by state.
@@ -154,8 +154,8 @@ export default function TableScreen() {
           start={<Path label="Ort" items={[{ label: "Werkstatt", href: "#werkstatt" }, { label: "Aufträge" }]} />}
           end={
             <>
-              <Input type="search" icon="search" placeholder="Suchen" label="Suchen" />
-              <Button variant="primary" icon="plus">
+              <HeadSearch placeholder="Suchen" label="Suchen" />
+              <Button variant="primary" floats icon="plus">
                 Auftrag
               </Button>
             </>

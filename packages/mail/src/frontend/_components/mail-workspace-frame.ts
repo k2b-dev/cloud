@@ -18,8 +18,10 @@ export type MailWorkspaceFrame = Pick<
   | "identities"
   | "scheduledCount"
   | "viewCounts"
+  | "viewCountsPending"
   | "localTags"
   | "dropAssignees"
+  | "receivedPerDay"
 >;
 
 /** Typed field by field, so the frame cannot take a list or selection field the snapshot gains. */
@@ -34,8 +36,10 @@ export const pickMailWorkspaceFrame = (data: MailboxPageData): MailWorkspaceFram
   identities: data.identities,
   scheduledCount: data.scheduledCount,
   viewCounts: data.viewCounts,
+  ...(data.viewCountsPending ? { viewCountsPending: data.viewCountsPending } : {}),
   localTags: data.localTags,
   dropAssignees: data.dropAssignees,
+  receivedPerDay: data.receivedPerDay,
 });
 
 /**

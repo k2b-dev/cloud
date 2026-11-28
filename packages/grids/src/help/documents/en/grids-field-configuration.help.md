@@ -42,6 +42,8 @@ Names are unique within the table. Grids ignores case and surrounding whitespace
 | `file` | `maxFiles` 1–100 when set; `accept` with up to 100 MIME types, wildcard MIME types, or extensions. Upload and detach use the file operations, not record JSON writes. |
 | `object_list` | See the column contract below. |
 
+Tables, the record view and record details show numbers and dates in the reader's language. A number has thousands separators (`12.400,5` in German). An amount whose `unit` is a currency code such as `EUR` shows the currency sign (`12.400,00 €`) when `decimalPlaces` is empty or matches the currency. A date shows short and numeric (`14.11.2026`). Stored values, the API, the CLI and exports keep the stored form (`12400.00`, `2026-11-14`).
+
 For a principal value, use `[{"type":"user","id":"<user-uuid>"}]` or a `group` or `service_account` reference. Machine callers can read stored references, but writing nonempty Principal values requires a user-backed directory context. Hidden identities keep private labels. An identity in a field is data. It does not give access. To fill in the current user securely, use the configured submission action of a published app, not an input that the user can edit.
 
 ## Configure relations and calculated values {icon="link"}

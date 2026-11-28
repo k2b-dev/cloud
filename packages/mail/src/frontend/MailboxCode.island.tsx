@@ -8,6 +8,7 @@ import type { MailboxCodePageData } from "../service/workspace";
 import MailSidebar from "./_components/MailSidebar";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import { createMailboxPreferences } from "./_components/mail-mailbox-preferences";
+import MailCodeHistory, { type MailCodeHistoryData } from "./MailCodeHistory";
 import MailCodeCatchUp, {
   MailCodeBackfillLink,
   type MailCodeCatchUpData,
@@ -30,6 +31,7 @@ export default function MailboxCode(props: {
   currentUserEmail: string | null;
   contactDirectory: MailContactDirectory;
   catchUp?: MailCodeCatchUpData;
+  history?: MailCodeHistoryData;
 }) {
   const preferences = createMailboxPreferences(props.sidebar);
   // The same rule as the mailbox page's dot, from the data this page already has.
@@ -72,15 +74,22 @@ export default function MailboxCode(props: {
             <Show
               when={props.catchUp}
               fallback={
-                <CodePage
-                  data={props.code}
-                  footer={
-                    // The Code page shows its footer only on the overview of a running automation.
-                    <Show when={mailCodeCatchUpAvailable(props.code, props.mailbox)}>
-                      <MailCodeBackfillLink href={mailCodeCatchUpHref(props.code.href)} />
-                    </Show>
+                <Show
+                  when={props.history}
+                  fallback={
+                    <CodePage
+                      data={props.code}
+                      footer={
+                        // The Code page shows its footer only on the overview of a running automation.
+                        <Show when={mailCodeCatchUpAvailable(props.code, props.mailbox)}>
+                          <MailCodeBackfillLink href={mailCodeCatchUpHref(props.code.href)} />
+                        </Show>
+                      }
+                    />
                   }
-                />
+                >
+                  {(history) => <MailCodeHistory data={history()} />}
+                </Show>
               }
             >
               {(data) => <MailCodeCatchUp data={data()} />}

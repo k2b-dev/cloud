@@ -11,7 +11,6 @@ import { DeliveriesScreen, RecordScreen } from "./record-screen";
 import TableScreen from "./TableScreen.island";
 import V2Inspect from "./V2Inspect.island";
 import V2InspectSwitch from "./V2InspectSwitch.island";
-import V2PhoneSearch from "./V2PhoneSearch.island";
 
 /** The language of the demo screens' data, and so of the library's own words on them. */
 export const DEMO_LOCALE = "de";
@@ -167,12 +166,12 @@ export type V2ScreenName = keyof typeof v2Screens;
 /**
  * The platform's bar above an app on the phone (52 px), drawn as the mockup has it: the app's name with its switcher,
  * or the name of the list it leads back to, then search and more. It is a picture of the Cloud shell, not part of v2,
- * so assistive technology skips it, except its search, which opens the search of the page's head as Cloud's does.
+ * so assistive technology skips it.
  */
 export const PhoneBar = (props: V2Screen["phone"]) => (
-  <div class="ui-v2-phonebar">
+  <div class="ui-v2-phonebar" aria-hidden="true">
     {/* the name's place: while an open detail brings its own way back (`Back`), that stands here instead */}
-    <span class="ui-v2-phonebar__name" aria-hidden="true">
+    <span class="ui-v2-phonebar__name">
       <Show
         when={"back" in props ? props.back : undefined}
         fallback={
@@ -193,8 +192,10 @@ export const PhoneBar = (props: V2Screen["phone"]) => (
       </Show>
     </span>
     <span class="ui-v2-phonebar__fill" />
-    <V2PhoneSearch />
-    <span class="ui-v2-phonebar__button" aria-hidden="true">
+    <span class="ui-v2-phonebar__button">
+      <i class="ti ti-search" />
+    </span>
+    <span class="ui-v2-phonebar__button">
       <i class={"back" in props ? "ti ti-dots" : "ti ti-menu-2"} />
     </span>
   </div>
@@ -231,8 +232,7 @@ export const RailPicture = (props: NonNullable<V2Screen["rail"]>) => (
 export const V2ScreenPage = (props: { name: V2ScreenName; search?: string }) => {
   const screen: V2Screen = v2Screens[props.name];
   return (
-    // the phone bar is the host's, as Cloud's shell is: the head's search and a detail's way back belong to it there
-    <div class="k2-ui ui-v2-screen" data-k2-host-search="" style={screen.app ? { "--k2-app": screen.app } : undefined}>
+    <div class="k2-ui ui-v2-screen" style={screen.app ? { "--k2-app": screen.app } : undefined}>
       <PhoneBar {...screen.phone} />
       <Show when={screen.rail}>{(rail) => <RailPicture {...rail()} />}</Show>
       {/* the demo data is German, so the library's own words are too; islands read it from <html lang> (see server.tsx) */}

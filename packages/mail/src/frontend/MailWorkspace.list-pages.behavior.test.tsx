@@ -332,9 +332,15 @@ describe("Mail workspace list pages", () => {
     [...dom.root.querySelectorAll<HTMLElement>("[data-mail-conversation-list] [data-conversation-id]")].map(
       (row) => row.dataset.conversationId,
     );
-  const needsActionLink = () =>
-    [...dom.root.querySelectorAll<HTMLAnchorElement>("a")].find((link) => link.getAttribute("href") === `${path}?view=needs_action`)
-      ?.textContent;
+  // the tab's words as a person reads them: the width its count reserves is hidden from everyone
+  const needsActionLink = () => {
+    const link = [...dom.root.querySelectorAll<HTMLAnchorElement>("a")].find(
+      (candidate) => candidate.getAttribute("href") === `${path}?view=needs_action`,
+    );
+    const shown = link?.cloneNode(true) as HTMLAnchorElement | undefined;
+    for (const hidden of shown?.querySelectorAll('[aria-hidden="true"]') ?? []) hidden.remove();
+    return shown?.textContent;
+  };
   const listPages = (...cursors: string[]) => cursors.map((cursor) => `${path}?view=needs_action&cursor=${cursor}`);
   const scroller = () => dom.root.querySelector<HTMLElement>(`[data-scroll-preserve="mail-list-${MAILBOX_ID}"]`)!;
 

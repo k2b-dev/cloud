@@ -227,8 +227,23 @@ class FakeWebSocket {
 const path = `/app/mail/${MAILBOX_ID}`;
 /** Long enough for a refresh through the mocked API to finish. */
 const settle = () => Bun.sleep(60);
+/** Waits until `condition` holds, at most `ms`: the counts' retry pauses are real time. */
+const until = async (condition: () => boolean, ms = 5_000) => {
+  const deadline = performance.now() + ms;
+  while (!condition()) {
+    if (performance.now() > deadline) throw new Error("Condition did not hold in time");
+    await Bun.sleep(25);
+  }
+};
 
-type RecordedRequest = { route: string; mailboxId: string; href: string; signal: AbortSignal | null | undefined };
+type RecordedRequest = {
+  route: string;
+  mailboxId: string;
+  href: string;
+  /** What the request asked for the year of mail: "load" or "keep". */
+  received: string | null;
+  signal: AbortSignal | null | undefined;
+};
 
 describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
   const m = modules!;
@@ -296,7 +311,13 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
         if (route === "workspace-route" || route === "workspace-list") {
           const mailboxId = url.pathname.split("/").at(-2)!;
           const href = url.searchParams.get("href")!;
-          requests.push({ route, mailboxId, href, signal: init?.signal ?? (input instanceof Request ? input.signal : undefined) });
+          requests.push({
+            route,
+            mailboxId,
+            href,
+            received: url.searchParams.get("receivedPerDay"),
+            signal: init?.signal ?? (input instanceof Request ? input.signal : undefined),
+          });
           await held.get(mailboxId);
           if (failure === "network") throw new TypeError("Network unavailable");
           if (failure === "json") return new Response("{invalid json");
@@ -322,7 +343,7 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     else Reflect.deleteProperty(globalThis, "CSS");
     setSystemTime();
   });
-  const mount = (requestPath = path, snapshot = snapshotFor(requestPath)) => {
+  const mount = (requestPath = path, snapshot = snapshotFor(requestPath), loadsReceivedPerDay = false) => {
     dom.window.history.replaceState(null, "", requestPath);
     dispose = render(
       () =>
@@ -338,6 +359,7 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
           initialUserPreferences: m.readMailUserPreferencesFromCookieHeader("", MAILBOX_ID),
           initialTheme: m.readThemeFromCookieHeader(""),
           calendarIntegrationAvailable: false,
+          loadsReceivedPerDay,
           sidebar: { mailboxes: mailboxes.map((box) => ({ ...box, receivingAddress: null })), pinnedMailboxIds: [], hiddenMailboxIds: [] },
         }),
       dom.root,
@@ -415,6 +437,169 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     expect(document.title).toBe("Sales");
     expect(m.readPageTrail()).toEqual({ title: "Sales", ancestors: [] });
     expect(scope()).toEqual([{ type: "mail.mailbox", id: "Box002" }]);
+  });
+
+  const zero = { needs_action: 0, mine: 0, unassigned: 0, waiting: 0, done: 0, snoozed: 0, send_problems: 0, recently_active: 0, kept: 0 };
+  /** Answers the pending counts with `answers` in turn (a status, or 200 with these needs-action counts). */
+  const countsServer = (answers: (number | "network")[]) => {
+    const asked: string[] = [];
+    const inner = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+        if (!url.pathname.endsWith("/workspace-counts")) return inner(input, init);
+        asked.push(url.searchParams.get("href") ?? "");
+        const answer = answers[Math.min(asked.length - 1, answers.length - 1)]!;
+        if (answer === "network") throw new TypeError("Network unavailable");
+        if (answer === 202) return Response.json({ pending: true }, { status: 202 });
+        if (answer >= 400) return Response.json({ error: "refreshing", code: "MAIL_COUNTS_REFRESHING" }, { status: answer });
+        return Response.json({
+          viewCounts: { ...zero, needs_action: answer },
+          assignedGroups: { needsAction: 0, waiting: 0 },
+          doneLeftOut: 4,
+        });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    return asked;
+  };
+  // the count the tab shows, without the hidden width it reserves
+  const needsActionTab = () =>
+    dom.root.querySelector(`a[href="/app/mail/${MAILBOX_ID}?view=needs_action"] .k2b-view-tabs__count > span`)?.textContent ?? "";
+
+  test("pending counts keep their place, then load for this route and show", async () => {
+    const asked = countsServer([7]);
+    mount(path, { ...snapshotFor(path), viewCounts: zero, viewCountsPending: true });
+    expect(needsActionTab()).not.toMatch(/\d/);
+    await settle();
+    expect(asked).toEqual([path]);
+    expect(needsActionTab()).toContain("7");
+  });
+
+  test("a count still running answers 202; the browser asks again after a pause and then shows it", async () => {
+    const asked = countsServer([202, 5]);
+    mount(path, { ...snapshotFor(path), viewCounts: zero, viewCountsPending: true });
+    await settle();
+    expect(asked).toHaveLength(1);
+    await until(() => asked.length === 2);
+    await settle();
+    expect(needsActionTab()).toContain("5");
+  });
+
+  test("counts that never come end in a dash and a toast that tries again", async () => {
+    const asked = countsServer([503, "network", 503, 9]);
+    mount(path, { ...snapshotFor(path), viewCounts: zero, viewCountsPending: true });
+    await until(() => needsActionTab().includes("–"));
+    expect(asked).toHaveLength(3);
+    expect(needsActionTab()).toContain("–");
+    const retry = [...document.querySelectorAll("button")].find((button) => button.textContent?.includes("Try again"));
+    expect(retry).toBeDefined();
+    retry!.click();
+    await settle();
+    expect(asked).toHaveLength(4);
+    expect(needsActionTab()).toContain("9");
+  }, 10_000);
+
+  test("an empty list after a done day says all done at once; the done line's ring waits unnamed for the counts", async () => {
+    countsServer([3]);
+    mount(path, {
+      ...snapshotFor(path),
+      listItems: [],
+      doneTodayCounts: { doneToday: 4, doneByAutomation: 1 },
+      viewCounts: zero,
+      viewCountsPending: true,
+    });
+    expect(dom.root.querySelector("[data-mail-all-done]")).not.toBeNull();
+    await settle();
+    expect(dom.root.querySelector("[data-mail-all-done]")).not.toBeNull();
+  });
+
+  test("the done line keeps its ring in place, unnamed while the counts are pending", async () => {
+    countsServer([3]);
+    mount(path, {
+      ...snapshotFor(path),
+      doneTodayCounts: { doneToday: 4, doneByAutomation: 0 },
+      viewCounts: zero,
+      viewCountsPending: true,
+    });
+    const ring = () => dom.root.querySelector("[data-mail-done-line] .k2b-progress-ring");
+    expect(ring()).not.toBeNull();
+    expect(ring()?.getAttribute("role")).toBeNull();
+    await settle();
+    expect(ring()?.getAttribute("aria-label")).toContain("4");
+  });
+
+  test("a navigation while the counts are pending asks for the new route; the old route's late answer writes nothing", async () => {
+    const asked: string[] = [];
+    let answerA: () => void = () => {};
+    const heldA = new Promise<void>((resolve) => {
+      answerA = resolve;
+    });
+    const inner = globalThis.fetch;
+    // every snapshot of this test is cold: its counts pending, its done footer without a number
+    const cold = { viewCounts: zero, viewCountsPending: true as const, hiddenDone: { count: null, more: false } };
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+        if (url.pathname.endsWith("/workspace-counts")) {
+          const href = url.searchParams.get("href") ?? "";
+          asked.push(href);
+          // folder A's count answers late, after the reader went on to folder B
+          if (href.includes("folder=FolderA")) await heldA;
+          const done = href.includes("folder=FolderA") ? 4 : 6;
+          return Response.json({ viewCounts: { ...zero, needs_action: done }, assignedGroups: null, doneLeftOut: done });
+        }
+        const response = await inner(input, init);
+        if (!url.pathname.endsWith("/workspace-route") && !url.pathname.endsWith("/workspace-list")) return response;
+        return Response.json({ ...(await response.json()), ...cold });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const a = `${path}?folder=FolderA`;
+    const b = `${path}?folder=FolderB`;
+    mount(a, { ...snapshotFor(a), ...cold });
+    await settle();
+    expect(asked).toEqual([a]);
+    await pop(b);
+    await until(() => asked.length === 2);
+    expect(asked[1]).toBe(b);
+    // a folder shows no view tabs: the done footer names the folder's count
+    const doneFooter = () => dom.root.querySelector("[data-mail-hidden-done]")?.textContent ?? "";
+    await until(() => doneFooter().includes("6"));
+    answerA();
+    await settle();
+    expect(doneFooter()).toContain("6");
+    expect(doneFooter()).not.toContain("4");
+  });
+
+  test("leaving the mailbox stops the tries for its pending counts", async () => {
+    const asked = countsServer([202]);
+    mount(path, { ...snapshotFor(path), viewCounts: zero, viewCountsPending: true });
+    await settle();
+    expect(asked).toHaveLength(1);
+    dispose();
+    dispose = () => {};
+    // fixed wait: past the first pause, when a live page would ask again; nothing may ask
+    await Bun.sleep(1_200);
+    expect(asked).toHaveLength(1);
+  });
+
+  test("a page without the v2 reader never asks a switch for the year of mail", async () => {
+    mount();
+    link("Box002").click();
+    await settle();
+    expect(requests.map(({ route, received }) => ({ route, received }))).toEqual([{ route: "workspace-route", received: "keep" }]);
+  });
+
+  test("the v2 reader asks a switch for the new mailbox's year of mail, unless the switch opens a mail", async () => {
+    mount(path, snapshotFor(path), true);
+    link("Box002").click();
+    await settle();
+    await pop("/app/mail/Box003?conversation=Conv1");
+    expect(requests.map(({ mailboxId, received }) => ({ mailboxId, received }))).toEqual([
+      { mailboxId: "Box002", received: "load" },
+      { mailboxId: "Box003", received: "keep" },
+    ]);
   });
 
   test("the retained list clears A's bulk selection before B can act", async () => {

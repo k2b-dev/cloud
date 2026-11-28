@@ -2,32 +2,39 @@ import {
   type Accessor,
   createContext,
   createEffect,
+  createMemo,
+  createRenderEffect,
   createSignal,
   createUniqueId,
   For,
   type JSX,
+  Match,
   onCleanup,
   onMount,
   children as resolveChildren,
   Show,
+  Switch,
   splitProps,
   useContext,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
-import { BarPlaceContext, HeadPlaceContext, SidebarPlaceContext, StatusPlaceContext, type StatusRowKind } from "./bar-place";
+import { Announcer } from "./announce";
+import { type Fold, watchFold } from "./bar-fold";
 import { useDrawer } from "./behavior/overlays";
 import { type GripOptions, useGrip } from "./behavior/resize";
 import { ActionButton } from "./button";
+import { type Column, ColumnsContext, type DetailEmpty, InnerContext } from "./columns-context";
 import { RowOpen } from "./content";
 import { linkOr } from "./link";
-import { custom, Icon } from "./marks";
-import { Menu, type MenuEntry } from "./menu";
+import { Avatar, Chip, custom, Icon, Mark, Spark, type SparkProps } from "./marks";
+import { BarFold, Menu, type MenuItem } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 import { ConfirmDialog } from "./overlays";
 import { Empty, PlaceholderValue } from "./states";
+import { StatusToolbarContext } from "./status-toolbar";
 import { Toasts } from "./toast";
-import type { Action, Width } from "./types";
+import { type Action, type ColumnWidth, columnPx, draggable, type OnNavigate, type Person, type Status, type Width } from "./types";
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -158,15 +165,18 @@ export type WorkspaceProps = {
   /**
    * A detail opens beside the columns at times (a reader beside a list), and keeps at least this width (`true`:
    * 400 px). The workspace keeps its room also while it is closed: the sidebar never moves between column and drawer
-   * when it opens, and `detailEmpty` stands in its place, so the column beside it keeps its width.
+   * when it opens, and `detailEmpty` stands in its place, so the column beside it keeps its width. It is the room of a
+   * detail at any depth: also of one in a split inside a column (Files: a list beside its open file, under a status
+   * row), which counts nothing else for it.
    */
   detail?: true | number;
   /**
    * What stands in the detail's place while none is open, such as `{ icon: "mail", text: "Keine Nachricht
    * ausgewählt" }`; "Nothing selected" in the language of the page when not set. Not on the phone, where the list is
-   * the page.
+   * the page. `hero` stands above the sentence: a picture of the place as a whole, such as a `Heat` of the mails
+   * received per day with a line that sums it up.
    */
-  detailEmpty?: { icon: string; text: string };
+  detailEmpty?: { icon: string; text: string; hero?: JSX.Element };
   /**
    * A `Pane` or `Pane.Split`, written inside the Workspace: its columns tell it their widths, so it knows when the
    * sidebar becomes a drawer. A column made before the Workspace (kept in a variable) is not counted.
@@ -179,23 +189,21 @@ const sidebarDefault: Width = { min: 200, default: 248 };
 const flexibleMin = 400;
 
 /**
- * A column of the workspace and what it needs at least: its minimum, or 400 px for a column without a width; a detail
- * says so, since the workspace counts it once, open or closed.
+ * A pane's head and its toolbar as one block (look rule 30): the pane hands its toolbar to its head's `Bar`, which
+ * stands it between its start and its end, so the bar stays one box (it measures what it folds) and the order of the
+ * Tab key is the order on the screen. The first bar made in the head claims the block, so a bar inside it finds it
+ * taken; it tells the pane what it made of it: `""` (the toolbar under the start and the end, or beside them where the
+ * pane is wide), `"row"` (no start: the toolbar beside the end) or `undefined` (no toolbar). Told while the parts are
+ * made, so the server and the first render agree.
  */
-type Column = { readonly need: number; readonly detail: boolean; readonly block: boolean };
-/**
- * The columns of a workspace register here: the panes at its top, alone or side by side in a `Pane.Split`. The split
- * at the top also learns what stands in the place of a declared detail while none is open.
- */
-type Columns = {
-  register: (column: Column) => void;
-  empty: () => { icon: string; text: string } | undefined;
-  /** The workspace has a head: a column under it with toolbar rows makes one block with it. */
-  head: () => boolean;
-  /** A column makes one block with the head: the columns beside it stand as low, so their lines meet. */
-  blocked: () => boolean;
-};
-const ColumnsContext = createContext<Columns | undefined>();
+type HeadBlock = () =>
+  | {
+      /** The pane's toolbar, while its status is one. */
+      toolbar: () => JSX.Element | undefined;
+      tell: (block: string | undefined) => void;
+    }
+  | undefined;
+const HeadBlockContext = createContext<HeadBlock>();
 
 /**
  * The working surface of an app: a sidebar, a head and the columns below it, with one hairline between columns and
@@ -211,26 +219,14 @@ const ColumnsContext = createContext<Columns | undefined>();
  */
 export const Workspace = (props: WorkspaceProps) => {
   const t = useUiMessages();
-  const overlay = useOverlayMessages();
   const width = () => props.sidebarWidth ?? sidebarDefault;
   // A part passed as JSX is made once, here, and read from here: reading the prop again would make it again (the
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
-  // the sidebar tells which page its current entry names; the head's title does not name it a second time
-  const [placeName, setPlaceName] = createSignal<() => string | undefined>();
-  const sidebar = resolveChildren(() => (
-    <SidebarPlaceContext.Provider value={(name) => setPlaceName(() => name)}>{props.sidebar}</SidebarPlaceContext.Provider>
-  ));
-  // the head's main actions: where they are several, the phone's round button offers them all as one "+"
-  const [headCreates, setHeadCreates] = createSignal<() => readonly MenuEntry[]>();
-  const headPlace = {
-    place: () => placeName()?.(),
-    creates: (entries: () => readonly MenuEntry[]) => {
-      setHeadCreates(() => entries);
-      return () => setHeadCreates((current) => (current === entries ? undefined : current));
-    },
-  };
-  const head = resolveChildren(() => <HeadPlaceContext.Provider value={headPlace}>{props.head}</HeadPlaceContext.Provider>);
-  const fabCreates = () => headCreates()?.() ?? [];
+  const sidebar = resolveChildren(() => props.sidebar);
+  const head = resolveChildren(() => props.head);
+  // `detailEmpty` written as an object in JSX is a getter that makes its hero anew on every read: read it once here.
+  const detailEmpty = createMemo(() => props.detailEmpty);
+  const emptyHero = resolveChildren(() => detailEmpty()?.hero);
   const [columns, setColumns] = createSignal<readonly Column[]>([]);
   const register = (column: Column) => {
     setColumns((list) => [...list, column]);
@@ -238,16 +234,19 @@ export const Workspace = (props: WorkspaceProps) => {
   };
   // the detail the workspace declares, at its minimum; it counts open or closed
   const declared = () => (props.detail === undefined ? undefined : props.detail === true ? flexibleMin : props.detail);
+  // Read where it is drawn, never ahead: on the server the panes register their columns while they render, after this
+  // line, so a value computed here would not know an open detail yet.
   const empty = () =>
     declared() === undefined || columns().some((column) => column.detail)
       ? undefined
-      : (props.detailEmpty ?? { icon: "click", text: t().nothingSelected });
+      : { icon: detailEmpty()?.icon ?? "click", text: detailEmpty()?.text ?? t().nothingSelected, hero: emptyHero() };
   // The room the sidebar needs beside the columns: its default, every column's minimum and the lines between them, in
   // the workspace's content box (inside its edge), which the container query measures. A declared detail counts at
   // its declared minimum, open or closed, so the room stays the same when it opens.
   const room = () => {
-    const list = columns().filter((column) => !column.detail);
-    const open = columns().filter((column) => column.detail);
+    const counted = columns().filter((column) => !column.away);
+    const list = counted.filter((column) => !column.detail);
+    const open = counted.filter((column) => column.detail);
     const detail = declared() ?? (open.length > 0 ? Math.max(...open.map((column) => column.need)) : 0);
     const panes = list.length + (detail ? 1 : 0);
     return width().default + 1 + list.reduce((sum, column) => sum + column.need, 0) + detail + Math.max(0, panes - 1);
@@ -260,9 +259,7 @@ export const Workspace = (props: WorkspaceProps) => {
     `@media (min-width: 768px) { .k2-ui [data-k2-ws="${id}"] > .k2-ws-side { max-width: calc(100% - ${room() - width().default}px); } ` +
     `@container k2-ws-${id} (width < ${room()}px) { ` +
     `.k2-ui [data-k2-ws="${id}"] > :is(.k2-ws-side, .k2-ws-side + .k2-seam) { display: none; } ` +
-    `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-ws-toggle: inline-flex; --k2-ws-drawer: 1; } ` +
-    // the sidebar is a drawer now: the head names the page again
-    `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-names-place: static; --k2-names-place-size: auto; --k2-names-place-clip: none; --k2-names-place-head: var(--k2-h-head); } } }`;
+    `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-ws-toggle: inline-flex; --k2-ws-drawer: 1; } } }`;
   const [drawerOpen, setDrawerOpen] = createSignal(false);
   const drawer = useDrawer(() => ({ open: drawerOpen(), onOpenChange: setDrawerOpen, side: "start" }));
   let element: HTMLDivElement | undefined;
@@ -345,17 +342,8 @@ export const Workspace = (props: WorkspaceProps) => {
             {head()}
           </div>
         </Show>
-        <ColumnsContext.Provider
-          value={{ register, empty, head: () => head() !== undefined, blocked: () => columns().some((column) => column.block) }}
-        >
-          {props.children}
-        </ColumnsContext.Provider>
+        <ColumnsContext.Provider value={{ register, empty }}>{props.children}</ColumnsContext.Provider>
       </div>
-      {/* the head and the toolbar rows of the column under it are one block: the head draws no line of its own (made
-          after the columns, which tell it, so the server's page has it too) */}
-      <Show when={columns().some((column) => column.block)}>
-        <style>{`.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] .k2-bar { border-bottom-color: transparent; }`}</style>
-      </Show>
       <Show when={sidebar()}>
         <style>{drawerRule()}</style>
         {/* the sidebar once more, made only while the drawer is open (in the browser, after a press) */}
@@ -370,18 +358,10 @@ export const Workspace = (props: WorkspaceProps) => {
           backdrop={{ class: "k2-backdrop" }}
           onClick={pick}
         >
-          <BarPlaceContext.Provider value={undefined}>{props.sidebar}</BarPlaceContext.Provider>
+          {props.sidebar}
         </drawer.Popup>
       </Show>
-      <Show when={fabCreates().length > 1}>
-        {/* several main actions in the head: the round button is their one "+" (its own words, or "Neu") */}
-        <span class="k2-fab-menu">
-          <Menu variant="primary" icon="plus" items={fabCreates()}>
-            {overlay().create}
-          </Menu>
-        </span>
-      </Show>
-      <Show when={fabCreates().length < 2 && props.primary}>
+      <Show when={props.primary}>
         {(action) => (
           // a disabled link is an anchor without an address, as in `Button`
           <Dynamic
@@ -406,6 +386,8 @@ export const Workspace = (props: WorkspaceProps) => {
       <ConfirmDialog host={() => element} />
       {/* the one toaster of the page: every `useToast` shows here, also one called above the Workspace */}
       <Toasts />
+      {/* the page's one live region: `announce` says its news here, also from another island */}
+      <Announcer />
     </div>
   );
 };
@@ -413,50 +395,97 @@ export const Workspace = (props: WorkspaceProps) => {
 // ── Pane and Pane.Split ──────────────────────────────────────────────────────────────────────────────────────────
 
 type SplitEntry = {
-  readonly width?: Width;
+  readonly width?: ColumnWidth;
   readonly label?: string;
+  /** A context column (`side`): the split lets it give way to the end of the main column where it lacks the room. */
+  readonly side?: PaneProps["side"];
+  /** What the pane needs: its minimum, or what a split inside it needs beside each other, whichever is more. */
+  readonly need: number;
+  /** A detail (`Pane detail`): its room is the workspace's declared `detail`, open or closed. */
+  readonly detail: boolean;
   element?: HTMLElement;
   /** The pane's width in px while its grip has moved it. */
   size?: Accessor<number | undefined>;
   resize?: (px: number) => void;
 };
+/** The place of a declared detail while none is open: a pane without a width, which needs no room of its own. */
+const emptyDetail: SplitEntry = { need: 0, detail: true };
 /** A pane inside a split registers its width and name for the seam beside it, for as long as it exists. */
 const SplitContext = createContext<(entry: SplitEntry) => void>();
+/** Whether the split is a main column with one context column after it: then the context gives way where there is no room. */
+const ContextualContext = createContext<Accessor<boolean>>();
 
 export type PaneProps = {
   /** The head of this column: a `Bar` (56 px; 52 px for a reader beside a list) or `Tabs`. */
   head?: JSX.Element;
   /**
    * What stays under the head while the column scrolls: a `StatusRow` (52 px) above a list, or a `Bar` (40 px) with
-   * the state of an open entry, such as "3 Nachrichten · Wartet auf Antwort · Tag" above a reader.
+   * the state of an open entry, such as "3 Nachrichten · Wartet auf Antwort · Tag" above a reader. With a `head` it is
+   * one block: no line between them, close together; from 1200 px of the pane, or under a head of actions only, it
+   * joins the head's row.
    */
   status?: JSX.Element;
-  /** A column that can be dragged wider: its minimum and default width. Only inside `Pane.Split`. */
-  width?: Width;
+  /** A column that can be dragged wider: its minimum and default width; `{ fixed }`: one width, no grip. Only inside `Pane.Split`. */
+  width?: ColumnWidth;
   /** The name of the column and of its grip, such as "List". */
   label?: string;
   /**
    * The detail of a list (a reader): beside the list on a wide screen. On the phone, while it is there (something is
    * open), it is the page and the list gives way; render it only while something is open. What is open belongs in
    * the address, so reload, back and forward show the same. A detail that closes in place hands the focus back to
-   * what opened it, such as the row.
+   * what opened it, such as the row. Its room is the workspace's `detail`, also for a detail in a split inside a column:
+   * declare it there, so the sidebar does not jump when the detail opens.
    */
   detail?: boolean;
   /**
    * The way back to the list on the phone, where the detail is a page of its own, such as "Posteingang". Give it an
    * `href`: the address of the list without the open entry. While it is there, the head of the workspace gives way on
    * the phone, so the way back is the one bar above the detail; it is the part `Back`, which a shell may show in its
-   * own bar instead. With `back`, the close × of the detail's head needs no `keep`: like every head action without
-   * it, the × gives way on the phone, so the detail has one way back there.
+   * own bar instead. Mark the close × of the detail's head `Button closes`: with `back` it gives way on the phone, so
+   * the detail has one way back there. A pane without a `head` (an editor, whose name stood in the workspace's head)
+   * names itself after the way back by its `label`: "‹ Werkstatt  Notizen.md".
    */
   back?: Action;
-  /** The side column of a record (the info column): quieter sections. */
-  side?: boolean;
+  /**
+   * The way back shows on a wide screen too: for a page that stands in the place of another one, not beside a list,
+   * such as a discussion in the place of its room's stream ("‹ Frühlingsausstellung").
+   */
+  wideBack?: boolean;
+  /**
+   * The context column (quieter sections): the info column of a record, what a form feeds, a chart beside a table, or
+   * the right half of a detail that grows on a large screen (who and what happened, beside what it is).
+   *
+   * In a `Pane.Split` of exactly one main column and this context column after it, the context stands beside the main
+   * column only where the split holds both at their default widths (a column without a `width` at 400 px). With less
+   * room it gives way to the end of the main column: the split then scrolls in one piece, the main column first and
+   * the context under it at the full width, so the main column is never squeezed and nothing hides; and it needs no
+   * room of the workspace, so the sidebar never becomes a drawer for it. `{ from }` asks for more room, in px of the
+   * split, for a main column that needs it, such as a table (`{ from: 1400 }`: a large screen); never less than the
+   * defaults. The rule is a `<style>` beside the split, made from these widths on the server too; a page whose content
+   * security policy allows no inline style keeps the context column beside, as in any other split, and so does a split
+   * with no place above it that measures (`k2-host`: a Workspace's main column or a pane), such as one in a dialog or a
+   * sidebar. `side` belongs on the inner column only: an outer `Pane detail` with `side` becomes the context column of
+   * the list and moves under it.
+   *
+   * In any other split (a list, its reader and an info column) it stands beside as every column does and counts
+   * toward the room of the workspace. Known: the split's rule asks for its panes as its own children, so a pane that
+   * an island wraps on its own gives way only where the island's wrapper is transparent to `>`.
+   */
+  side?: boolean | { from: number };
   /**
    * A name under which the page keeps this column's scroll position, such as "mail-list": back and forward bring
    * the list back where it was (the page restores every `data-scroll-preserve` region, as v1's `ScrollArea` does).
    */
   scrollKey?: string;
+  /**
+   * The content stands in the middle of the column: across at its own measure, at most that of four cards (4 × 240 px
+   * with their gaps, between the text edges), and in the middle of the height where it fits. Taller content starts at
+   * the top and scrolls, as in any pane; on the phone it always starts at the top. For a page with little on it and
+   * nothing beside it, such as the first start of an app without any data: one line and a few `Tiles`. A line of text
+   * stands centred over them, on the phone at the start. It draws no
+   * line and no box of its own, and it is CSS alone, so the server's first render already stands there.
+   */
+  center?: boolean;
   /** Bands, rows, sections; the pane pads nothing. */
   children?: JSX.Element;
 };
@@ -465,6 +494,16 @@ export type PaneProps = {
 export const Pane = (props: PaneProps) => {
   // the width the grip beside it gave it; its default until then
   const [size, setSize] = createSignal<number>();
+  // what a split inside this column needs beside each other (see `InnerContext`); the column needs the larger of that
+  // and its own minimum, and says so to the split it stands in or to the workspace, at any depth
+  const [inner, setInner] = createSignal<readonly Accessor<number>[]>([]);
+  const registerInner = (need: Accessor<number>) => {
+    setInner((list) => [...list, need]);
+    onCleanup(() => setInner((list) => list.filter((other) => other !== need)));
+  };
+  // a fixed column needs its one width; one that can be dragged, its minimum
+  const own = () => (props.width === undefined ? flexibleMin : draggable(props.width) ? props.width.min : columnPx(props.width));
+  const need = () => Math.max(own(), ...inner().map((each) => each()));
   const entry: SplitEntry = {
     get width() {
       return props.width;
@@ -472,40 +511,52 @@ export const Pane = (props: PaneProps) => {
     get label() {
       return props.label;
     },
-    size,
-    resize: setSize,
-  };
-  useContext(SplitContext)?.(entry);
-  const head = resolveChildren(() => props.head);
-  // the toolbar rows in its status place, in their order: a filter bar, a status row
-  const [rows, setRows] = createSignal<readonly StatusRowKind[]>([]);
-  const hear = (row: StatusRowKind) => {
-    setRows((list) => [...list, row]);
-    return () =>
-      setRows((list) => {
-        const at = list.indexOf(row);
-        return at < 0 ? list : [...list.slice(0, at), ...list.slice(at + 1)];
-      });
-  };
-  // a column at the top of a workspace tells it what it needs; panes inside this one are not its columns
-  const columns = useContext(ColumnsContext);
-  // under the workspace's head, a column without a head of its own makes one block of the head and its toolbar rows
-  const block = () => columns !== undefined && columns.head() && head() === undefined && rows().length > 0;
-  columns?.register({
+    get side() {
+      return props.side;
+    },
     get need() {
-      return props.width?.min ?? flexibleMin;
+      return need();
     },
     get detail() {
       return props.detail === true;
     },
-    get block() {
-      return block();
+    size,
+    resize: setSize,
+  };
+  useContext(SplitContext)?.(entry);
+  const contextual = useContext(ContextualContext);
+  // a column at the top of a workspace tells it what it needs; panes inside this one are not its columns, but what a
+  // split inside it needs counts. A context column beside a single main column needs nothing: where there is no room
+  // beside, it stands under the main column.
+  useContext(ColumnsContext)?.register({
+    get need() {
+      return need();
+    },
+    get detail() {
+      return props.detail === true;
+    },
+    get away() {
+      return Boolean(props.side) && (contextual?.() ?? false);
     },
   });
-  // a column beside the one that makes the block (a reader beside its list) stands as low as that block's rows, so the
-  // line under its head meets the line under their last row (K1)
-  const besideBlock = () => columns !== undefined && !block() && columns.blocked();
-  const status = resolveChildren(() => <StatusPlaceContext.Provider value={hear}>{props.status}</StatusPlaceContext.Provider>);
+  // whether the status is a toolbar of the list (StatusRow, FilterBar): only a toolbar joins the head as one block
+  const [toolbars, setToolbars] = createSignal(0);
+  const status = resolveChildren(() => <StatusToolbarContext.Provider value={setToolbars}>{props.status}</StatusToolbarContext.Provider>);
+  // the head's bar takes the toolbar between its start and its end, and says what it made of it
+  const [block, setBlock] = createSignal<string>();
+  const head = resolveChildren(() => {
+    let taken = false;
+    const claim: HeadBlock = () => {
+      if (taken) return;
+      taken = true;
+      onCleanup(() => {
+        taken = false;
+        setBlock();
+      });
+      return { toolbar: () => (toolbars() > 0 ? status() : undefined), tell: setBlock };
+    };
+    return <HeadBlockContext.Provider value={claim}>{props.head}</HeadBlockContext.Provider>;
+  });
   let section: HTMLElement | undefined;
   // A detail appears because something opened it, which then has the focus (the row). When the detail goes while the
   // focus is in it (its way back, its close button), the focus returns there instead of falling to the page.
@@ -533,36 +584,51 @@ export const Pane = (props: PaneProps) => {
       aria-label={props.label}
       data-width={props.width ? "" : undefined}
       data-detail={props.detail ? "" : undefined}
-      // a detail with its way back: on the phone its `Back` closes it, so the × of its head leaves
-      data-back={props.detail && props.back ? (head() !== undefined ? "head" : "") : undefined}
-      data-beside-block={besideBlock() ? "" : undefined}
       data-side={props.side ? "" : undefined}
+      data-wide-back={props.wideBack && props.back ? "" : undefined}
+      data-center={props.center ? "" : undefined}
       style={custom({
-        "--k2-pane-w": props.width ? `${size() ?? props.width.default}px` : undefined,
-        "--k2-pane-min": props.width ? `${props.width.min}px` : undefined,
+        "--k2-pane-w": props.width ? `${size() ?? columnPx(props.width)}px` : undefined,
+        "--k2-pane-min": props.width ? `${draggable(props.width) ? props.width.min : columnPx(props.width)}px` : undefined,
       })}
     >
-      {/* the way back shows only on the phone, above the head of the detail; a public part, so a shell can find it */}
+      {/* the way back shows on the phone (with `wideBack` everywhere), above the head; a public part, so a shell can find it */}
       <Show when={props.back}>
         {(back) => (
           <div class="k2-pane-back" data-k2-part="Back">
             {/* a long name is cut with "…"; the whole name is the hint under the pointer */}
             <ActionButton action={{ icon: "chevron-left", ...back() }} variant="text" titled />
+            {/* the workspace's head gives way here: a pane without a head of its own names what stands open */}
+            <Show when={!head() && props.label}>
+              {(label) => (
+                // the page's name for assistive technology too: it heads the pane as its title would
+                <span class="k2-pane-back-name" role="heading" aria-level={2}>
+                  {label()}
+                </span>
+              )}
+            </Show>
           </div>
         )}
       </Show>
+      {/* A head and its status row are one block (look rule 30): no line between them, close together, and where
+          the pane is wide, or the head has no start, the status row joins the head's row. Decided while the parts are
+          made, the same on the server. */}
       <Show when={head()}>
-        <div class="k2-slot" data-slot="head">
+        <div class="k2-slot" data-slot="head" data-block={block()}>
           {head()}
         </div>
       </Show>
-      <Show when={status()}>
-        <div class="k2-slot" data-slot="status" data-block={block() ? rows().join(" ") : undefined}>
+      {/* a head with a toolbar in its bar is one block; any other status keeps its own place under the head (the bar
+          that told the block takes it back when it goes) */}
+      <Show when={status() && block() === undefined}>
+        <div class="k2-slot" data-slot="status">
           {status()}
         </div>
       </Show>
       <div class="k2-scroll" data-scroll-preserve={props.scrollKey}>
-        <ColumnsContext.Provider value={undefined}>{props.children}</ColumnsContext.Provider>
+        <ColumnsContext.Provider value={undefined}>
+          <InnerContext.Provider value={registerInner}>{props.children}</InnerContext.Provider>
+        </ColumnsContext.Provider>
       </div>
     </section>
   );
@@ -583,11 +649,29 @@ Pane.Split = (props: {
   };
   // at the top of a workspace that declares a detail: what stands in its place while none is open
   const columns = useContext(ColumnsContext);
+  // exactly one main column and one context column after it, and no place of a detail: only then the context gives way
+  // (a list, its reader and an info column keep their own columns and scrollers)
+  const contextual = () => {
+    const [main, context, ...rest] = entries();
+    return rest.length === 0 && main !== undefined && !main.side && Boolean(context?.side) && !columns?.empty();
+  };
+  // inside a column: what its panes need beside each other, each at its minimum (a column without a width at 400 px)
+  // with the lines between them; a context column that gives way needs nothing
+  // A context column that gives way asks nothing beyond its column's own minimum; a detail counts nothing either (the
+  // workspace's declared `detail` holds its room, open or closed, so the sidebar does not jump when it opens).
+  if (!columns)
+    useContext(InnerContext)?.(() => {
+      if (contextual()) return 0;
+      const beside = entries().filter((entry) => !entry.detail);
+      return beside.reduce((sum, entry) => sum + entry.need, 0) + Math.max(0, beside.length - 1);
+    });
   return (
     <SplitContext.Provider value={register}>
-      <SplitBody entries={entries()} empty={columns?.empty()}>
-        {props.children}
-      </SplitBody>
+      <ContextualContext.Provider value={contextual}>
+        <SplitBody entries={entries()} empty={columns?.empty()} contextual={contextual()}>
+          {props.children}
+        </SplitBody>
+      </ContextualContext.Provider>
     </SplitContext.Provider>
   );
 };
@@ -598,7 +682,13 @@ Pane.Split = (props: {
  * of the list is the same two nodes, so nothing in it comes and goes on its own (that would not be removed cleanly
  * after hydration). In the browser a pane's entry is found by its element, on the server by its order.
  */
-const SplitBody = (props: { entries: readonly SplitEntry[]; empty: { icon: string; text: string } | undefined; children: JSX.Element }) => {
+const SplitBody = (props: {
+  entries: readonly SplitEntry[];
+  empty: DetailEmpty | undefined;
+  /** One main column and one context column after it (see `Pane side`). */
+  contextual: boolean;
+  children: JSX.Element;
+}) => {
   const resolved = resolveChildren(() => props.children);
   // a pane hidden by `Show` or `{open && <Pane …/>}` stays in the list as what renders nothing: it gets no seam
   const panes = () => resolved.toArray().filter((pane) => pane !== undefined && pane !== null && typeof pane !== "boolean" && pane !== "");
@@ -611,11 +701,12 @@ const SplitBody = (props: { entries: readonly SplitEntry[]; empty: { icon: strin
   // of a detail that is not open counts as a pane without a width, so the grip stays where it is when it opens.
   const grip = (index: number): SeamGrip | undefined => {
     const left = entryOf(index);
-    const right = entryOf(index + 1) ?? (props.empty && index === panes().length - 1 ? {} : undefined);
+    const right = entryOf(index + 1) ?? (props.empty && index === panes().length - 1 ? emptyDetail : undefined);
     if (!right) return undefined;
     const moving = right.width ? right : left?.width ? left : undefined;
     const width = moving?.width;
-    if (!moving || !width) return undefined;
+    // a fixed width has no grip: it keeps its width
+    if (!moving || !draggable(width)) return undefined;
     return {
       label: moving.label ?? "Column",
       width,
@@ -636,27 +727,78 @@ const SplitBody = (props: { entries: readonly SplitEntry[]; empty: { icon: strin
       },
     };
   };
+  // The room a context column needs beside its main column: both at their default width (a column without a width at
+  // 400 px; the context's default includes the line before it), or the more its `from` asks. The panes registered while
+  // they rendered above, so the server's page and the first render in the browser make the same rule.
+  const id = createUniqueId();
+  const room = () => {
+    if (!props.contextual) return undefined;
+    const [main, context] = props.entries;
+    // a fixed column counts its one width
+    const both = (main?.width ? columnPx(main.width) : flexibleMin) + (context?.width ? columnPx(context.width) : flexibleMin);
+    return typeof context?.side === "object" ? Math.max(context.side.from, both) : both;
+  };
+  // Below that room (from 768 px on; the phone stacks every split) the split wraps: the context column and the line
+  // before it take a row each, under the main column at the full width, and the split scrolls in one piece, to the end
+  // of its content. Above it nothing wraps, whatever width a grip gave a column. An element cannot ask its own width:
+  // the split itself asks its place (`k2-host`: the workspace's main column, or the pane the split stands in), which is
+  // as wide as the split. What stands inside the split asks the split, under a name only this split carries: the
+  // nearest `k2-host` of a column's scroller is that column, which is narrower than the room beside its context, so a
+  // rule there would always hold (#4340: the main column could not scroll). The grips' reach (their `::after`) stays
+  // inside its line, so the scroller ends at the content. Made per split, as the room is the split's own.
+  const split = `.k2-ui .k2-split[data-k2-split="${id}"][data-context]`;
+  const own = `k2-split-${id}`;
+  const flowRule = (px: number) =>
+    `.k2-ui .k2-split[data-k2-split="${id}"] { container: ${own} / inline-size; } ` +
+    `@media (min-width: 768px) { @container k2-host (width < ${px}px) { ` +
+    `${split} { flex-wrap: wrap; align-content: flex-start; overflow-x: hidden; overflow-y: auto; scrollbar-width: none; } ` +
+    `${split}::-webkit-scrollbar { display: none; } } ` +
+    `@container ${own} (width < ${px}px) { ` +
+    `${split} > .k2-pane, ${split} > .k2-seam + .k2-pane[data-width] { flex: 0 0 100%; width: auto; min-width: 0; min-height: auto; overflow: visible; } ` +
+    `${split} > .k2-pane > .k2-scroll { flex: none; overflow: visible; -webkit-mask-image: none; mask-image: none; animation: none; } ` +
+    `${split} > .k2-seam { flex: 0 0 100%; width: auto; height: 1px; } ${split} > .k2-seam > .k2-grip { display: none; } ` +
+    // the line across under the main column is the one line there: the last line inside the main column gives way
+    `${split} > .k2-pane:first-child > .k2-scroll > :is(.k2-sec, .k2-row):last-child, ` +
+    `${split} > .k2-pane:first-child > .k2-scroll > .k2-list:last-child > .k2-row:last-child, ` +
+    `${split} > .k2-pane:first-child > .k2-scroll > .k2-table-phone:last-child > .k2-list > .k2-row:last-child { border-bottom: 0; } } }`;
+  // The rule stays once it is made, also while a detail stands in the place of the context (the split then drops its
+  // `data-context`): no `<style>` comes and goes, so the browser does not restyle the page each time.
+  const rule = createMemo<string | undefined>((made) => {
+    const px = room();
+    return px === undefined ? made : flowRule(px);
+  });
   return (
-    <div class="k2-split" data-k2-part="Pane.Split">
-      <For each={panes()}>
-        {(pane, index) => (
-          <>
-            {pane}
-            <Seam grip={grip(index())} />
-          </>
-        )}
-      </For>
-      {/* the place of the declared detail while none is open: the column beside it keeps its width (not on the phone) */}
-      <Show when={props.empty}>
-        {(empty) => (
-          <section class="k2-pane" data-k2-part="Pane" data-detail-empty="" aria-label={empty().text}>
-            <div class="k2-scroll">
-              <Empty icon={empty().icon} text={empty().text} />
-            </div>
-          </section>
-        )}
-      </Show>
-    </div>
+    <>
+      <Show when={rule()}>{(text) => <style data-k2-rule="">{text()}</style>}</Show>
+      <div
+        class="k2-split"
+        data-k2-part="Pane.Split"
+        data-k2-split={rule() === undefined ? undefined : id}
+        data-context={room() === undefined ? undefined : ""}
+      >
+        <For each={panes()}>
+          {(pane, index) => (
+            <>
+              {pane}
+              <Seam grip={grip(index())} />
+            </>
+          )}
+        </For>
+        {/* the place of the declared detail while none is open: the column beside it keeps its width (not on the phone) */}
+        <Show when={props.empty}>
+          {(empty) => (
+            <section class="k2-pane" data-k2-part="Pane" data-detail-empty="" aria-label={empty().text}>
+              <div class="k2-scroll">
+                <Show when={empty().hero}>
+                  <div class="k2-detail-hero">{empty().hero}</div>
+                </Show>
+                <Empty icon={empty().icon} text={empty().text} />
+              </div>
+            </section>
+          )}
+        </Show>
+      </div>
+    </>
   );
 };
 
@@ -675,90 +817,86 @@ export type BarProps = {
  * stylesheet reads the place from the slot the bar stands in, so a bar built ahead and passed on behaves the same.
  * In a column narrower than 480 px, a bar in the flow whose start is an `Inline` wraps instead of cutting: its things
  * and its end flow as one line, one line stays 40, and only a second line makes the bar higher.
+ *
+ * The start keeps a least: its name at `--k2-start-least` (16ch; its whole content, where narrower), or its open
+ * tab. Where the end does not fit beside the whole start (six actions beside tabs on the phone), the end folds first:
+ * its buttons that do not fit move into a menu "…" at its end, in their order, the last first. Where the end's last
+ * `Menu` "…" (no symbol of its own, whatever its `label`) is followed only by parts that never fold (the primary, a
+ * closing ×, a menu with a symbol or words of its own), they are that menu's first section; an end made outside
+ * the bar (an island of its own) gets the bar's own "…" instead. The primary action, a closing ×, a menu and a search
+ * never fold. Only when nothing more can fold does the start shorten its words with "…", down to its least. The
+ * browser measures the fold once the page is alive; before that the bar stands as it does when nothing folds (the end
+ * whole, the start given way down to its least), so the server's page is the live one wherever nothing folds. Only an
+ * end that has to fold cuts, from its start, until the fold takes over.
  */
 export const Bar = (props: BarProps) => {
-  // what stands in its places marks the bar, already on the server: a title in its start, the "…" at its end
-  const [title, setTitle] = createSignal(0);
-  const [toolbar, setToolbar] = createSignal(0);
-  const [path, setPath] = createSignal(0);
-  const [search, setSearch] = createSignal(0);
-  const [more, setMore] = createSignal(0);
-  const [kept, setKept] = createSignal(0);
-  const counter = (set: (change: (count: number) => number) => void) => () => {
-    set((count) => count + 1);
-    return () => set((count) => count - 1);
-  };
-  const marks = {
-    title: counter(setTitle),
-    toolbar: counter(setToolbar),
-    path: counter(setPath),
-    more: counter(setMore),
-    search: counter(setSearch),
-    kept: counter(setKept),
-  };
-  /** A list of what parts of the bar tell it, each gone with its part. */
-  const heard = <T,>() => {
-    const [list, setList] = createSignal<readonly T[]>([]);
-    const add = (item: T) => {
-      setList((items) => [...items, item]);
-      return () => setList((items) => items.filter((other) => other !== item));
-    };
-    return [list, add] as const;
-  };
-  // In a workspace's head, the main actions at its end: more than one become one "+" menu (one create action at a
-  // head's end), which the phone's round button offers too. A bar elsewhere (a pane's, a section's) keeps its actions.
-  const head = useContext(HeadPlaceContext);
-  const [creates, create] = heard<() => MenuEntry | undefined>();
-  const entries = () => creates().flatMap((entry) => entry() ?? []);
-  const many = () => entries().length > 1;
-  if (head) onCleanup(head.creates(entries));
-  const [searches, filled] = heard<() => boolean>();
-  const [titles, repeats] = heard<() => boolean>();
   const t = useOverlayMessages();
-  const start = resolveChildren(() => (
-    <BarPlaceContext.Provider value={{ place: "start", mark: (what) => marks[what](), repeats }}>{props.start}</BarPlaceContext.Provider>
-  ));
-  const end = resolveChildren(() => (
-    <BarPlaceContext.Provider value={{ place: "end", mark: (what) => marks[what](), filled, ...(head ? { create } : {}) }}>
-      {props.end}
-    </BarPlaceContext.Provider>
-  ));
-  const parts = (resolved: typeof start) =>
-    resolved.toArray().filter((part) => part !== undefined && part !== null && typeof part !== "boolean").length;
-  // A bar whose start is empty and whose end holds only its empty search and its main actions: on the phone the main
-  // action floats as the round button and a host's bar opens the search, so such a head may show nothing
-  // (`data-hollow`). A search with words shows them, and its head with them.
-  const hollow = () => {
-    // a main action with `keep` stays in the head on the phone, so the head has something to show
-    if (start() !== undefined || kept() > 0 || searches().some((holds) => holds())) return undefined;
-    const count = parts(end);
-    if (count === 0 || count !== search() + entries().length) return undefined;
-    return search() > 0 ? "search" : "";
+  // the entries of the buttons that do not fit, and the menu of the end that holds them; none on the server's page
+  const [folded, setFolded] = createSignal<readonly MenuItem[]>([]);
+  const [host, setHost] = createSignal<HTMLElement>();
+  // the bar's own "…" takes another name where the end holds a menu of the same name that does not take the buttons
+  const [twin, setTwin] = createSignal(false);
+  let bar: HTMLDivElement | undefined;
+  let watch: Fold | undefined;
+  // menus that offered themselves before the bar watched (children mount before the bar's effect runs)
+  const waiting = new Map<HTMLElement, () => void>();
+  const offer = (trigger: HTMLElement) => {
+    if (watch) return watch.offer(trigger);
+    waiting.set(trigger, () => {});
+    return () => {
+      waiting.get(trigger)?.();
+      waiting.delete(trigger);
+    };
   };
-  // a bar that holds nothing but a title that repeats the sidebar's page gives way whole while the sidebar shows
-  const onlyRepeats = () => end() === undefined && parts(start) === 1 && titles().some((repeat) => repeat());
+  // the first bar of a pane's head claims its block, before its parts are made (a bar inside them finds it taken)
+  const headBlock = useContext(HeadBlockContext)?.();
+  const start = resolveChildren(() => props.start);
+  // the pane's toolbar, which this head bar stands between its start and its end (one block, one box, one Tab order)
+  const toolbar = () => headBlock?.toolbar();
+  createRenderEffect(() => headBlock?.tell(toolbar() === undefined ? undefined : start() === undefined ? "row" : ""));
+  // the end is made inside the fold's context, so a menu "…" in it can offer itself to take the folded buttons
+  const end = resolveChildren(() => <BarFold.Provider value={{ offer, host, entries: folded }}>{props.end}</BarFold.Provider>);
+  const hasEnd = createMemo(() => end() !== undefined);
+  createEffect(() => {
+    if (!bar || !hasEnd()) return;
+    const own = t().moreActions;
+    const fold = watchFold(bar, (entries, menu) => {
+      setFolded(entries);
+      setHost(menu);
+      setTwin(
+        !menu &&
+          [...(bar?.querySelectorAll('.k2-bar-end [aria-haspopup="menu"][data-icon-only]') ?? [])].some(
+            (other) => !other.closest(".k2-bar-fold") && other.getAttribute("aria-label") === own,
+          ),
+      );
+    });
+    watch = fold;
+    for (const trigger of waiting.keys()) waiting.set(trigger, fold.offer(trigger));
+    onCleanup(() => {
+      watch = undefined;
+      fold.stop();
+    });
+  });
   return (
-    <div
-      class="k2-bar"
-      data-k2-part="Bar"
-      data-hollow={hollow()}
-      data-names-place={onlyRepeats() ? "" : undefined}
-      data-title={title() > 0 ? "" : undefined}
-      data-toolbar={toolbar() > 0 ? "" : undefined}
-      data-path={path() > 0 ? "" : undefined}
-    >
+    <div ref={bar} class="k2-bar" data-k2-part="Bar">
       <Show when={start() !== undefined}>
         <div class="k2-bar-start">{start()}</div>
       </Show>
-      <Show when={end() !== undefined}>
-        <div class="k2-bar-end" data-more={more() > 0 ? "" : undefined} data-creates={many() ? "" : undefined}>
+      <Show when={toolbar()}>
+        {(part) => (
+          <div class="k2-slot" data-slot="status">
+            {part()}
+          </div>
+        )}
+      </Show>
+      <Show when={hasEnd()}>
+        <div class="k2-bar-end">
           {end()}
-          <Show when={many()}>
-            {/* the bar's own "+": outside its end's place, so it joins no "+" itself */}
-            <span class="k2-creates">
-              <Menu variant="primary" icon="plus" items={entries()}>
-                {t().create}
-              </Menu>
+          <Show when={folded().length > 0 && !host()}>
+            <span class="k2-bar-fold">
+              <BarFold.Provider value={undefined}>
+                <Menu items={folded()} label={twin() ? t().moreInBar : undefined} />
+              </BarFold.Provider>
             </span>
           </Show>
         </div>
@@ -800,10 +938,13 @@ export type CellProps = {
   meta?: JSX.Element;
   /** The cell leads to this page: a chevron at its end. */
   href?: string;
+  /** A short history beside the value, such as orders per day this week (`Spark`). */
+  trend?: SparkProps;
   /**
    * The value is on its way: a quiet bar lies on the value and on its quiet line, while symbol and label stay. What is
    * there (a refresh) keeps its exact room unseen under the bar, a quiet line of several lines too; a value not there
    * yet is a bar of one line. So nothing moves when it comes. Assistive technology hears "Wird geladen…" at the value.
+   * A `trend` keeps its place unseen meanwhile.
    */
   loading?: boolean;
 };
@@ -840,6 +981,7 @@ Cells.Cell = (props: CellProps) => {
         <Show when={!props.loading} fallback={<PlaceholderValue>{props.value}</PlaceholderValue>}>
           {props.value}
         </Show>
+        <Show when={props.trend}>{(trend) => <Spark {...trend()} />}</Show>
       </span>
       <Show when={meta() !== undefined}>
         <span class="k2-cell-meta">
@@ -854,44 +996,285 @@ Cells.Cell = (props: CellProps) => {
 
 // ── Tiles ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
+/** A figure on a card, such as "6 Tabellen" or a state such as "8 knapp". */
+/** The symbol a state brings when a figure names none, so a state is always colour, symbol and word. */
+const statIcon: Record<Status, string> = { ok: "circle-check", warn: "alert-circle", bad: "alert-triangle" };
+
+export type TileStat = {
+  /** A Tabler icon before the words. */
+  icon?: string;
+  /** The figure in words, such as "6 Tabellen". */
+  label: string;
+  /**
+   * A state: its colour, its symbol and its words, never a colour alone. Without an `icon` the state brings its own:
+   * a check for ok, a circle with "!" for waiting, a triangle for wrong.
+   */
+  status?: Status;
+  /** "Waits for you", in the blue of selection, such as "3 Anträge". */
+  yours?: boolean;
+};
+
 export type Tile = {
   /** A Tabler icon for the kind of thing, such as `file-type-pdf`. */
   icon: string;
   /** The name, such as a file name. */
   title: string;
-  /** A quiet line under the name, such as the size. */
+  /** A quiet line under the name, such as the size or a description. */
   meta?: string;
-  /** The tile opens this page or file. */
+  /** The tile opens this page or file … */
   href?: string;
+  /** … in place on a plain click (see `OnNavigate`). */
+  onNavigate?: OnNavigate;
+  /**
+   * Without `href`: the deed of the whole tile, such as opening the dialog that makes a notebook from a template. The
+   * tile's name is then a button, and the whole tile presses it.
+   */
+  onOpen?: () => void;
+  /** The data colour of the thing: its symbol becomes its mark on a tint of this colour. */
+  color?: string;
+  /** Cards only: figures and states under the name, such as tables, forms and "8 knapp". */
+  stats?: readonly TileStat[];
+  /** Cards only: the people at the foot, such as who changed it last (`Avatar.Stack`). */
+  people?: readonly Person[];
+  /** Cards only: quiet words at the end of the foot, such as "Felix · vor 2 Min". */
+  foot?: string;
+  /** Cards only: a short history at the top end, in the thing's colour (`Spark`). */
+  trend?: SparkProps;
+  /**
+   * Cards only: a glance of what the thing holds, across the top of the card above its name: a small table (its
+   * columns and first rows, as words), a page (its title and first words), or a sign for a thing that holds nothing yet.
+   * It is a picture of the content: assistive technology reads the card by its name. Keep its values short: the app
+   * chooses columns and rows whose words fit, at most about 12 characters a cell, so nothing is cut with "…" at 1440 or
+   * on the phone; leave out what does not fit, such as a book's author. A cut cell reads as cheap. The phone shows a
+   * table's first two columns, so a column that matters, such as an amount, comes second.
+   */
+  preview?: TilePreview;
+};
+
+/** What a card's preview shows: the app gives the words, the card draws them. */
+export type TilePreview =
+  | { table: { columns: readonly TilePreviewColumn[]; rows: readonly (readonly string[])[] }; page?: never; icon?: never }
+  | { page: { title: string; text?: string }; table?: never; icon?: never }
+  | { icon: string; table?: never; page?: never };
+
+/**
+ * A column of a preview's table: its head, or its head and its place. `align: "end"` sets the column at the end with
+ * figures of one width, for amounts and counts.
+ */
+export type TilePreviewColumn = string | { label: string; align?: "end" };
+
+const columnLabel = (column: TilePreviewColumn) => (typeof column === "string" ? column : column.label);
+const columnAlign = (column: TilePreviewColumn | undefined) =>
+  column !== undefined && typeof column !== "string" ? column.align : undefined;
+
+/** The columns of a preview's table that the phone's narrow card shows; the rest are marked `data-past`. */
+const TILE_PREVIEW_PHONE_COLUMNS = 2;
+
+const TilePreviewView = (props: { preview: TilePreview }) => (
+  <div class="k2-tile-preview" aria-hidden="true">
+    <Switch>
+      <Match when={"table" in props.preview && props.preview.table}>
+        {(table) => (
+          <table class="k2-tile-pv-table">
+            <thead>
+              <tr>
+                <For each={table().columns}>
+                  {(column, index) => (
+                    <th data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined} data-align={columnAlign(column)}>
+                      {columnLabel(column)}
+                    </th>
+                  )}
+                </For>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={table().rows}>
+                {(row) => (
+                  <tr>
+                    <For each={row}>
+                      {(cell, index) => (
+                        <td
+                          data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined}
+                          data-align={columnAlign(table().columns[index()])}
+                        >
+                          {cell}
+                        </td>
+                      )}
+                    </For>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        )}
+      </Match>
+      <Match when={"page" in props.preview && props.preview.page}>
+        {(page) => (
+          <span class="k2-tile-pv-page">
+            <b>{page().title}</b>
+            <Show when={page().text}>{(text) => <span>{text()}</span>}</Show>
+          </span>
+        )}
+      </Match>
+      <Match when={"icon" in props.preview && props.preview.icon}>{(icon) => <Icon name={icon()} />}</Match>
+    </Switch>
+  </div>
+);
+
+/** The last card, which makes a new thing: a dashed frame, its name, and optional quick choices such as templates. */
+export type TileCreate = {
+  /** What it makes, such as "Neue Base". */
+  title: string;
+  /** A quiet line, such as "Leer beginnen oder aus einer Vorlage". */
+  meta?: string;
+  /** The page that makes it … */
+  href?: string;
+  /** … or the deed. */
+  onClick?: () => void;
+  /** Quick choices as round chips, such as the templates "CRM" and "Lager". */
+  choices?: readonly Action[];
 };
 
 /** Like things side by side, such as attachments. Each is pressed, so each is round; never nested. */
 export type TilesProps = {
   /** The tiles, in order. */
   items: readonly Tile[];
+  /**
+   * `card`: each thing a card in a grid (at least 240 px a card), with its mark, figures, people and a short history,
+   * such as the bases of Grids or the projects of a team. Without it: small tiles in one wrapping line (attachments).
+   */
+  variant?: "card";
+  /** Cards only: the last card makes a new thing. */
+  create?: TileCreate;
+  /**
+   * At most this many tiles share a row and grow with its width, such as the four ways to start a notebook across
+   * the page. A tile never gets narrower than 240 px for it: where n do not fit, they stand in rows of half of them
+   * (four as 2 × 2, never 3 + 1), and below that one under the other. On the phone a row always holds half of them,
+   * even below 240 px a tile.
+   */
+  perRow?: number;
   /** One deed after the tiles, such as "Alle herunterladen". */
   more?: Action;
   /** A name for the tiles, for assistive technology. */
   label?: string;
 };
 
-export const Tiles = (props: TilesProps) => (
-  <div class="k2-tiles" data-k2-part="Tiles" role="list" aria-label={props.label}>
-    <For each={props.items}>
-      {(tile) => (
-        <div class="k2-tile" role="listitem" data-open={tile.href !== undefined ? "" : undefined}>
-          <Icon name={tile.icon} />
-          <span>
-            <span class="k2-tile-title">
-              <RowOpen href={tile.href}>{tile.title}</RowOpen>
+const TileName = (props: { tile: Tile }) => (
+  <span class="k2-tile-name">
+    {/* a name of one word cannot take a second line without breaking inside it: it stays one line and ends in "…" */}
+    <span class="k2-tile-title" data-one-word={/\s/.test(props.tile.title.trim()) ? undefined : ""}>
+      <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate} onOpen={props.tile.onOpen}>
+        {props.tile.title}
+      </RowOpen>
+    </span>
+    <Show when={props.tile.meta}>
+      <span class="k2-tile-meta">{props.tile.meta}</span>
+    </Show>
+  </span>
+);
+
+const TileCard = (props: { tile: Tile }) => (
+  <div
+    class="k2-tile"
+    role="listitem"
+    data-open={props.tile.href !== undefined || props.tile.onOpen ? "" : undefined}
+    data-preview={props.tile.preview ? "" : undefined}
+    style={custom({ "--k2-c": props.tile.color })}
+  >
+    <Show when={props.tile.preview}>{(preview) => <TilePreviewView preview={preview()} />}</Show>
+    <span class="k2-tile-top">
+      <Mark icon={props.tile.icon} color={props.tile.color} />
+      <TileName tile={props.tile} />
+      <Show when={props.tile.trend}>{(trend) => <Spark {...trend()} />}</Show>
+    </span>
+    <Show when={props.tile.stats?.length}>
+      <span class="k2-tile-stats">
+        <For each={props.tile.stats}>
+          {(stat) => (
+            <span class="k2-tile-stat" data-status={stat.status} data-yours={stat.yours ? "" : undefined}>
+              <Show when={stat.icon ?? (stat.status ? statIcon[stat.status] : undefined)}>{(name) => <Icon name={name()} />}</Show>
+              {stat.label}
             </span>
-            <Show when={tile.meta}>
-              <span class="k2-t-meta">{tile.meta}</span>
-            </Show>
-          </span>
-        </div>
-      )}
-    </For>
+          )}
+        </For>
+      </span>
+    </Show>
+    <Show when={props.tile.people?.length || props.tile.foot}>
+      <span class="k2-tile-foot">
+        <Show when={props.tile.people?.length}>
+          <Avatar.Stack people={props.tile.people ?? []} />
+        </Show>
+        <Show when={props.tile.foot}>
+          <span class="k2-tile-foot-text">{props.tile.foot}</span>
+        </Show>
+      </span>
+    </Show>
+  </div>
+);
+
+const TileMake = (props: { create: TileCreate }) => (
+  <div class="k2-tile" role="listitem" data-create="" data-open={props.create.href !== undefined || props.create.onClick ? "" : undefined}>
+    <span class="k2-tile-top">
+      <Mark icon="plus" />
+      <span class="k2-tile-name">
+        <span class="k2-tile-title">
+          <RowOpen href={props.create.href} onOpen={props.create.onClick}>
+            {props.create.title}
+          </RowOpen>
+        </span>
+        <Show when={props.create.meta}>
+          <span class="k2-tile-meta">{props.create.meta}</span>
+        </Show>
+      </span>
+    </span>
+    <Show when={props.create.choices?.length}>
+      <span class="k2-tile-choices">
+        <For each={props.create.choices}>
+          {(choice) => (
+            <Chip href={choice.href} onNavigate={choice.onNavigate} onClick={choice.onClick} icon={choice.icon}>
+              {choice.label}
+            </Chip>
+          )}
+        </For>
+      </span>
+    </Show>
+  </div>
+);
+
+/** How many tiles share a row, a whole number of at least one, and the half (rounded up) they fall back to. */
+const perRowStyle = (perRow: number) => {
+  const count = Math.max(1, Math.floor(perRow));
+  return custom({ "--k2-per-row": String(count), "--k2-per-row-half": String(Math.ceil(count / 2)) });
+};
+
+export const Tiles = (props: TilesProps) => (
+  <div
+    class="k2-tiles"
+    data-k2-part="Tiles"
+    data-variant={props.variant}
+    data-per-row={props.perRow ? "" : undefined}
+    style={props.perRow ? perRowStyle(props.perRow) : undefined}
+    role="list"
+    aria-label={props.label}
+  >
+    <Show
+      when={props.variant === "card"}
+      fallback={
+        <For each={props.items}>
+          {(tile) => (
+            <div class="k2-tile" role="listitem" data-open={tile.href !== undefined || tile.onOpen ? "" : undefined}>
+              <Show when={tile.color} fallback={<Icon name={tile.icon} />}>
+                {(color) => <Mark icon={tile.icon} color={color()} />}
+              </Show>
+              <TileName tile={tile} />
+            </div>
+          )}
+        </For>
+      }
+    >
+      <For each={props.items}>{(tile) => <TileCard tile={tile} />}</For>
+      <Show when={props.create}>{(create) => <TileMake create={create()} />}</Show>
+    </Show>
     <Show when={props.more}>{(more) => <ActionButton action={more()} variant="text" />}</Show>
   </div>
 );
@@ -901,8 +1284,16 @@ export const Tiles = (props: TilesProps) => (
 export type CanvasProps = {
   /** What the drawing shows, for assistive technology. */
   label: string;
-  /** The height of the drawing in px; the width comes from its place. */
-  height?: number;
+  /**
+   * The height of the drawing in px; the width comes from its place. `"fill"`: the drawing is the whole pane (an
+   * editor, a frame of another page, a map that is the page). It stands directly in its `Pane` and takes the height
+   * the pane has left under what stands above it, from the first render on, so nothing is measured and nothing moves;
+   * it scrolls itself, and below 240 px the pane scrolls instead. It asks its pane for those 240 px only, never for
+   * what the drawing holds: one drawing that asks for no height of its own takes the whole height, and what is taller
+   * scrolls inside it. Give it one child, the drawing: a second child stands in a row of its own under the first and
+   * is cut away.
+   */
+  height?: number | "fill";
   /** The drawing: an SVG, a map, a chart of `@k2b/ui`; inside it, CSS is free. */
   children: JSX.Element;
 };
@@ -920,7 +1311,8 @@ export const Canvas = (props: CanvasProps) => (
     role="group"
     aria-label={props.label}
     data-height={props.height !== undefined ? "" : undefined}
-    style={custom({ "--k2-canvas-h": props.height !== undefined ? `${props.height}px` : undefined })}
+    data-fill={props.height === "fill" ? "" : undefined}
+    style={custom({ "--k2-canvas-h": typeof props.height === "number" ? `${props.height}px` : undefined })}
   >
     {props.children}
   </div>

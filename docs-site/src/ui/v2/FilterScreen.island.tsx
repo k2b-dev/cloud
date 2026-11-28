@@ -4,7 +4,7 @@ import {
   Chip,
   FilterBar,
   type FilterBarViews,
-  Input,
+  HeadSearch,
   ListOrder,
   Nav,
   Pane,
@@ -82,9 +82,9 @@ const Frame = (props: {
         start={<Tabs label="Ansichten" items={props.tabs} />}
         end={
           <>
-            <Input type="search" icon="search" label={props.search} placeholder={props.search} />
+            <HeadSearch label={props.search} placeholder={props.search} />
             {props.primary ? (
-              <Button variant="primary" icon="plus">
+              <Button variant="primary" floats icon="plus">
                 {props.primary}
               </Button>
             ) : undefined}

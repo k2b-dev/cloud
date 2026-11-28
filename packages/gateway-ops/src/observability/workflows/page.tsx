@@ -29,7 +29,7 @@ import { areaText, ObservabilityArea, ObservabilityPane, readAttention } from ".
 import { WorkflowEffectsView, WorkflowEventsView, WorkflowFamiliesView, WorkflowRunsView } from "./_components/WorkflowQueues";
 import WorkflowRunDetailView from "./_components/WorkflowRunDetail";
 import WorkflowsFilterBar from "./_components/WorkflowsFilterBar.island";
-import { FINDINGS_PER_PAGE, RUN_STATES, RUNS_PER_PAGE, type WorkflowView, windowStart, workflowsFilter } from "./filters";
+import { FINDINGS_PER_PAGE, RUN_STATES, RUNS_PER_PAGE, TIMELINE_SAMPLE, type WorkflowView, windowStart, workflowsFilter } from "./filters";
 import { LAG_WARN_MS } from "./presentation";
 import { buildWorkflowTimelineRows } from "./timeline";
 
@@ -186,7 +186,7 @@ export default ssr<AuthContext>(async (c) => {
         })
       : Promise.resolve([]),
     !state.run && state.view === "runs" && !state.parent
-      ? listWorkflowRunTimeline(runFilter, { limit: 2_000 })
+      ? listWorkflowRunTimeline(runFilter, { limit: TIMELINE_SAMPLE })
       : Promise.resolve({ runs: [], total: 0 }),
     !state.run && state.view === "effects"
       ? listStrandedWorkflowEffects({

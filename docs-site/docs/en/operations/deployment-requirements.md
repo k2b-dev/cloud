@@ -130,6 +130,85 @@ before Studio cleanup begins. A running container alone is insufficient.
 Custom deployments must probe `/_cloud/ready` on Mail before starting
 Assistant; Compose does not enforce this order automatically.
 
+## Remove the FAQ application when upgrading
+
+The built-in FAQ application is removed from this release. **Upgrading
+permanently deletes all FAQ entries**, including translations, audiences and
+their order. Core drops the FAQ schema even when the application is absent.
+Application Help continues to work; the new release publishes no FAQ image.
+
+Before stopping the old service, export your entries with an administrator
+profile connected to the old installation. Choose an unused output filename:
+
+```bash
+cld --profile <admin-profile> faq list --json > faq-export.json
+```
+
+This command returns all entries, including IDs, translations, Markdown answers,
+audiences, positions, and creation timestamps. It needs the old running FAQ app
+and its installed `faq` CLI plugin; after removal, the API and this command are
+unavailable. Keep the JSON export as the complete source copy.
+
+To move the content into Notebooks, create a notebook and copy each question
+and Markdown answer into a note, in the desired order. Keep language variants
+in separate notes or sections. Review the notebook's sharing before copying:
+FAQ audiences are not converted into notebook access. Notebooks requires
+sign-in and notebook access; it does not replace anonymous FAQ publication.
+In-app Help remains application-authored documentation and does not import your
+FAQ entries automatically. Export before upgrading: after the migration,
+the entries can only be recovered from a pre-upgrade backup or export.
+
+Stop and remove the old service using your previous Compose configuration,
+including your normal environment and infrastructure overlays:
+
+```bash
+docker compose -f compose.prod.yml stop app-faq
+docker compose -f compose.prod.yml rm -f app-faq
+```
+
+Wait at least three minutes after the old service stops, so any remaining
+registry lease expires before Core performs the database cleanup. Then deploy
+the new release. For Kubernetes or custom deployments, remove the
+FAQ workload and service from your manifests. Remove its app-key mount and
+secret from deployment configuration after the service is gone. Core also
+deletes the application's remembered registration, package assignment, app
+keys and service accounts with their grants, settings and domains, rail
+entries and chooser/consent preferences, notification definitions and
+deliveries, approvals and remembered approval grants, Help/search documents
+and app Skill catalogs, app-owned Code, workflow runs/scopes and their AI
+admission/budget state, event subscriptions/outbox data, and its own capability
+execution and idempotency records. Explicit FAQ grants are removed from other
+workloads' mandates; affected active mandates are paused and audited.
+
+Historical audit events, AI inference/quota and structured-run records,
+outgoing-mail messages, logging data and other providers' capability execution
+records stay, including executions called through FAQ. Core writes one
+`app.removed` audit event only when it removes or changes rows; fresh
+installations get no removal event. Direct counts separate deletions from
+changes to surviving rows; foreign-key cascades delete additional dependent
+rows. Revoked mandates owned by other applications stay unchanged. Other
+applications' data stays. Back up the database before upgrading if you need
+removed data.
+
+Stopping the old FAQ service first is mandatory: restarting its old container
+would recreate an empty FAQ schema. Remove it from automatic restart and
+deployment configuration before upgrading. On large installations the cleanup
+transaction can extend Core startup and hold database locks. Wait for Core's
+readiness check to pass before starting the remaining applications.
+
+You can remove the cached CLI module with
+`cld --profile <admin-profile> plugins remove faq` after exporting.
+
+There is no application-specific compatibility or registration path. An old
+container is an unknown application handled by the generic registry. Stop it
+before upgrading: graceful shutdown withdraws its live registration; otherwise
+its last heartbeat lease expires within three minutes. The gateway and shell
+then drop its routes and footer link. Until expiry, a stopped service can still return a gateway
+error through an old route; other applications remain available. Core removes
+the remembered FAQ listing during the upgrade.
+Update bookmarks, integrations, and external links to `/faq`, `/admin/faq`, and
+`/api/faq`; those surfaces are removed without a redirect.
+
 ## Applications start with a key file and Core address
 
 This release supplies a Compose template that gives ordinary apps only
@@ -545,7 +624,7 @@ unchanged; do not remove or replace them.
 | NATS JetStream 2.14.3+ | Registry, coordination, durable jobs, schedules and live events | Supply `NATS_SERVERS` and one `SYNC_NAMESPACE` shared by the deployment. Use persistent storage on three nodes (default `SYNC_REPLICAS=3`) and `max_payload: 16MB` for notebook updates. The JetStream account must fit every stream's configured byte limit times its replicas; see [Reserve JetStream storage](#reserve-jetstream-storage) for the budget per application. Production can use mounted credentials and TLS through `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE`; both are optional in `compose.prod.yml`. The supplied Compose wires one shared credentials path into every application service; per-application NATS credentials or a separate system credential need per-service overrides of that shared environment. |
 | Valkey / Redis-compatible service | Rate limits, caches and short-lived authentication flows | Supply `REDIS_URL`. JWT browser sessions do not use Redis session storage. |
 | Private service network | Gateway-to-app traffic, public-key retrieval and Core broker calls | Make each advertised app address reachable. Do not publish individual app, database or coordination ports. Protect cross-host traffic with authenticated TLS or an equivalent protected transport. |
-| Public gateway and HTTPS origin | Browser/API entry, callbacks, secure cookies and WebSockets | Configure DNS, ingress/TLS and `app.url` (`APP_URL` can bootstrap it). Preserve streaming, WebSocket upgrades and the `Origin` header: application live sockets signed in with a session accept only the origin of `app.url`. Only the gateway receives public application traffic. On the Cloud host, the gateway streams HTML and JSON with Brotli or gzip according to `Accept-Encoding`; ingress compression of these responses is not needed. Pass `Content-Encoding` through and do not compress or buffer SSE or NDJSON streams. Proxies and ingress must pass responses with `Cache-Control: no-transform` through without compression or any other transformation. Pass the `Sec-Fetch-Site` and `Sec-Fetch-Dest` request headers through unchanged; on the Cloud host, the gateway keeps cross-site requests and subresource loads uncompressed. Cookie-less app-domain requests without `Authorization` also compress text, JavaScript, XML and SVG, including cross-site visits. Browsers that send no Fetch Metadata headers, such as Safari before 16.4, receive uncompressed answers. The gateway waits up to 4 minutes for an app's response headers and then answers 502; a reverse proxy in front of the gateway must wait at least 5 minutes for response headers. |
+| Public gateway and HTTPS origin | Browser/API entry, callbacks, secure cookies and WebSockets | Configure DNS, ingress/TLS and `app.url` (`APP_URL` can bootstrap it). Preserve streaming, WebSocket upgrades and the `Origin` header: application live sockets signed in with a session accept only the origin of `app.url`. Only the gateway receives public application traffic. On the Cloud host, the gateway streams HTML and JSON with Brotli or gzip according to `Accept-Encoding`; ingress compression of these responses is not needed. Pass `Content-Encoding` through and do not compress or buffer SSE or NDJSON streams. Proxies and ingress must pass responses with `Cache-Control: no-transform` through without compression or any other transformation. Never let a proxy or optimizer strip HTML comments from pages (for example mod_pagespeed `remove_comments`): server-rendered islands carry their data in them and show an error without it. Pass the `Sec-Fetch-Site` and `Sec-Fetch-Dest` request headers through unchanged; on the Cloud host, the gateway keeps cross-site requests and subresource loads uncompressed. Cookie-less app-domain requests without `Authorization` also compress text, JavaScript, XML and SVG, including cross-site visits. Browsers that send no Fetch Metadata headers, such as Safari before 16.4, receive uncompressed answers. The gateway waits up to 4 minutes for an app's response headers and then answers 502; a reverse proxy in front of the gateway must wait at least 5 minutes for response headers. |
 | Clock synchronization | JWT expiry and short-lived invocations | Synchronize all hosts; invocation clock-skew tolerance is two seconds. |
 | Browser for diagrams | Mermaid diagrams in Notebooks and rendered Markdown | Users on Safari need Safari 17.4 or later (iOS and iPadOS 17.4 or later). Mermaid 12 targets ES2024 and is not transpiled for older browsers. |
 
@@ -872,7 +951,6 @@ or mutate real data without approval.
 | App ID | Startup requirements | Feature dependencies and configuration | Functional check |
 | --- | --- | --- | --- |
 | [Contacts](/en/apps/contacts) (`contacts`) | Baseline | No additional external service for contact books and records. Cross-app use requires whichever consumer/provider is selected. | Create and read a disposable contact in a test book; verify another account's access boundary. |
-| [FAQ](/en/apps/faq) (`faq`) | Baseline | No additional external service for authored FAQ content. | Publish a test entry and verify its intended visibility on `/faq`. |
 | [Files](/en/apps/filesv2) (`filesv2`) | Baseline; application-owned storage assignments | Filegate 7.1.0 with independent roots, backend token, a browser-reachable public origin outside Cloud cookie scope, and exact CORS origins. Personal and group Cloud storage requires local Linux identities; [machine storage](/en/docs/identity/files-machine-storage) uses independent ownership, explicit path grants and the existing Filegate service identity without Unix provisioning. FreeIPA requires valid POSIX identities and root `execution: true` with the explicitly configured Unix-execution daemon privileges. Set `managed: true` only for exclusive Filegate writers; keep it false with external writers. File references survive rename and move only on Filegate 7 roots with `index: true` and `managed: true`. Optional: Collabora Online 26.04 or later with its own browser-reachable address and TLS; Collabora must reach Cloud's public address (or the configured WOPI origin) and Cloud must reach Collabora. Several Collabora instances need sticky routing on `WOPISrc`. | Inspect existing storage in `/admin/filesv2`, browse an authorized directory and download through a lease. Verify external filesystem additions and denied access. With Collabora configured, open one `odt` from two sessions, save, and inspect history according to the root cooldown. Verify conflicts on managed roots; unmanaged roots provide only best-effort conflict checks. Test the real mount and export before production acceptance. |
 | [Grids](/en/apps/grids) (`grids`) | Baseline | Files are stored in Postgres (`grids.max_file_size_mb` controls upload size). Document PDF rendering requires Gotenberg. Workflow email uses notifications as app `core` and requires a [default outgoing mail sender profile](/en/docs/operations/outgoing-mail). Other workflow integrations require their selected providers. | Create a test base/table/record; upload a small file. If documents are enabled, render a test PDF. |
 | [Mail](/en/apps/mail) (`mail`) | Baseline; an unconnected mailbox is not proof of provider readiness | Mailbox synchronization and delivery require configured IMAP/SMTP endpoints, TLS, credentials and network-policy approval. Users connect their own mailboxes through IMAP/SMTP; managed Google/Microsoft browser authorization is not available. Incoming automations need Mail's workload credential and mandates; AI steps need AI configuration, Spaces actions need Spaces. Recipient suggestions and participant contacts need the contact-directory app, Contacts by default (**Administration → Mail → Contact directory** or `cld mail admin contact-directory`). | Verify a test mailbox connection and synchronization; send only to an approved test recipient. Exercise one permitted automation if enabled. |

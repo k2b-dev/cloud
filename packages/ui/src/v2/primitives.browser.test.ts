@@ -8,7 +8,7 @@ import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { personColor } from "../surfaces/person-color";
-import { measureV2Layout } from "./testing";
+import { describeV2Page, measureV2Layout } from "./testing";
 import { gripTolerance, hairline, heights, textEdge, typeRoles } from "./tokens";
 
 // Every v2 primitive measured in a real engine, in the place where the approved mockup puts it: the layout rules of
@@ -201,10 +201,11 @@ describe("v2 primitives keep the numbers of the mockup", () => {
           expect(numbers.head).toBe(width < textEdge.phoneBelow ? heights.tabs : heights.head);
           expect(numbers.status).toBe(heights.status);
           // The rows as the mockup measures them: one line 40; two lines 53 and three lines 73 (their content of 36 and
-          // 56 px, 8 px above and below, and the line); with a button at the end 61. On the phone one line takes 60.
+          // 56 px, 8 px above and below, and the line); with a button at the end 60, as the last row of the list, which
+          // ends without a line (look rule 4). On the phone one line takes 60.
           if (width >= textEdge.phoneBelow) {
             expect(numbers.bar).toBe(heights.bar);
-            expect(numbers.rows).toEqual([heights.row, heights.row2 + hairline.width, heights.row3 + hairline.width, 61]);
+            expect(numbers.rows).toEqual([heights.row, heights.row2 + hairline.width, heights.row3 + hairline.width, 60]);
           } else expect(numbers.rows.slice(0, 3)).toEqual([60, heights.row2 + hairline.width, heights.row3 + hairline.width]);
           expect(numbers.title).toEqual(["ellipsis", true]);
           expect(numbers.iconText).toBe(edge + textEdge.afterIcon);
@@ -241,9 +242,9 @@ describe("v2 primitives keep the numbers of the mockup", () => {
           });
           if (width >= textEdge.phoneBelow) expect(shown).toMatchObject({ list: true, head: true, back: 0 });
           else {
-            // the detail takes the whole workspace: the head of the workspace gives way, and its way back is the chevron
-            // at the start of its head's row (W3: way back and title in one row), at the top
-            expect(shown).toEqual({ list: false, head: false, detail: 0, back: heights.status, top: 0 });
+            // the detail takes the whole workspace: the head of the workspace gives way, and its way back is the one bar
+            // of 44 px above its head, at the top
+            expect(shown).toEqual({ list: false, head: false, detail: 0, back: heights.tabs, top: 0 });
             expect(await page.getByRole("link", { name: "Posteingang" }).getAttribute("href")).toBe("#posteingang");
           }
           expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
@@ -295,11 +296,11 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       TEST_TIMEOUT,
     );
 
-  // On the phone the title of an open entry is the page's title: beside the actions the head keeps ("…") it is never
-  // cut, it takes a second line and the head grows; on a wide screen it stays one line in a head of 52 px.
+  // On the phone the title of an open entry is the page's title: beside the head's actions (their symbols below 600 px) it
+  // is never cut, it takes a second line and the head grows; on a wide screen it stays one line in a head of 52 px.
   for (const width of [390, 1440])
     test(
-      `${width} px: the title of an open entry ${width < 768 ? "wraps beside the kept actions instead of being cut" : "stays one line"}`,
+      `${width} px: the title of an open entry ${width < 768 ? "wraps beside the actions instead of being cut" : "stays one line"}`,
       async () => {
         const page = await open("layout", { width });
         try {
@@ -334,8 +335,9 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       TEST_TIMEOUT,
     );
 
-  // On the phone an open detail has one way back: its Back. The × that closes it beside the list (without `keep`, as
-  // every head action) gives way in its head from 767 px down; from 768 px the × closes the detail and there is no Back.
+  // On the phone an open detail has one way back: its Back. The × that closes it beside the list (`Button closes`) gives
+  // way in its head from 767 px down; from 768 px the × closes the detail and there is no Back. Every other head action
+  // stays on the phone, as "Erledigt" here.
   for (const width of [390, 767, 768, 1440])
     test(
       `${width} px: an open detail shows either its way back or its close ×, never both`,
@@ -348,14 +350,14 @@ describe("v2 primitives keep the numbers of the mockup", () => {
             return {
               back: seen(pane.querySelector(':scope > [data-k2-part="Back"]')),
               close: seen(pane.querySelector('[data-slot="head"] [aria-label="Schließen"]')),
-              // the other kept or unkept actions of the head follow their own rule: "Erledigt" leaves on the phone
+              // every other action of the head stays at every width, as "Erledigt"
               done: seen(
                 [...pane.querySelectorAll('[data-slot="head"] .k2-btn')].find((button) => button.textContent === "Erledigt") ?? null,
               ),
             };
           });
           const phone = width < textEdge.phoneBelow;
-          expect(shown).toEqual({ back: phone, close: !phone, done: !phone });
+          expect(shown).toEqual({ back: phone, close: !phone, done: true });
           // (the layout rules at the two boundary widths belong to the workspace between phone and wide screen, which
           // still cuts the detail's head at 768; measured here at the phone and the wide screen)
           if (width === 390 || width === 1440) expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
@@ -366,29 +368,132 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       TEST_TIMEOUT,
     );
 
-  // A long name of the list (a search) never takes the row: the way back is the chevron at the start of the title's row,
-  // and the whole name is its accessible name and its hint under the pointer (W3).
+  // A section's head actions keep their name everywhere. On the phone an action with a LEADING symbol shows only the
+  // symbol and keeps its words as its name and hint; a trailing chevron ("forward", "menu") is no reason to hide them.
+  for (const width of [1440, 390])
+    test(
+      `${width} px: section head actions keep their names; only a leading symbol may stand for the words`,
+      async () => {
+        const page = await open("headActions", { width });
+        try {
+          // a label kept for its name is visually hidden at 1 px; words that stand are wider
+          const found = await page.evaluate(() =>
+            [...document.querySelectorAll('[data-k2-part="Section"] .k2-sh-end .k2-btn')].map((button) => {
+              const label = button.querySelector<HTMLElement>(".k2-btn-label")!;
+              return { words: label.textContent, shown: label.getBoundingClientRect().width > 1, title: button.getAttribute("title") };
+            }),
+          );
+          const phone = width === 390;
+          expect(found).toEqual([
+            { words: "Filtern", shown: !phone, title: "Filtern" },
+            { words: "Weiter", shown: true, title: null },
+            { words: "Rohdaten anzeigen", shown: true, title: null },
+          ]);
+          for (const name of ["Filtern", "Weiter", "Rohdaten anzeigen"])
+            expect(await page.getByRole("button", { name, exact: true }).count()).toBe(1);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
+  // A long name of the list (a search) is cut with "…" on one line: the way back never leaves its bar, and the whole
+  // name stays its accessible name and its hint under the pointer.
   test(
-    "390 px: the way back to a list with a long name is the chevron in the title's row, its whole name its name",
+    "390 px: the way back to a list with a long name stays on one line in its bar, ending in …",
     async () => {
       const name = "Suchergebnisse für „Eichenplatten Lieferung KW 49“ in allen Postfächern und Ordnern";
       const page = await open("longBack", { width: 390 });
       try {
         const found = await page.evaluate(() => {
-          const button = document.querySelector('.k2-pane[data-detail] > [data-k2-part="Back"] .k2-btn')!;
-          const head = document.querySelector('.k2-pane[data-detail] > [data-slot="head"] > .k2-bar')!.getBoundingClientRect();
-          const box = button.getBoundingClientRect();
+          const bar = document.querySelector('.k2-pane[data-detail] > [data-k2-part="Back"]')!;
+          const button = bar.querySelector(".k2-btn")!;
+          const label = button.querySelector<HTMLElement>(".k2-btn-label")!;
+          const box = bar.getBoundingClientRect();
+          const right = box.right - Number.parseFloat(getComputedStyle(bar).paddingRight);
           return {
-            small: box.width <= 40,
-            inRow: box.top >= head.top - 1 && box.bottom <= head.bottom + 1,
+            inside: button.getBoundingClientRect().right <= right + 0.5,
+            lines: Math.round(label.getBoundingClientRect().height / 20),
+            ellipsis: getComputedStyle(label).textOverflow === "ellipsis" && label.scrollWidth > label.clientWidth,
             title: button.getAttribute("title"),
           };
         });
-        expect(found).toEqual({ small: true, inRow: true, title: name });
+        expect(found).toEqual({ inside: true, lines: 1, ellipsis: true, title: name });
         expect(await page.getByRole("link", { name, exact: true }).count()).toBe(1);
         const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
         expect(layout.cut).toEqual([]);
         expect(layout.problems).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // break-ui: an endless name never takes the way back's words to nothing; the way back keeps a few letters and "…"
+  test(
+    "390 px: a detail named far longer than its bar keeps a few letters of its way back",
+    async () => {
+      const page = await open("namedBackLong", { width: 390 });
+      try {
+        const found = await page.evaluate(() => {
+          const bar = document.querySelector('.k2-pane[data-detail] > [data-k2-part="Back"]')!;
+          const label = bar.querySelector<HTMLElement>(".k2-btn .k2-btn-label")!;
+          const name = bar.querySelector<HTMLElement>(".k2-pane-back-name")!;
+          return {
+            backShown: label.getBoundingClientRect().width >= 40,
+            nameCut: name.scrollWidth > name.clientWidth,
+          };
+        });
+        expect(found).toEqual({ backShown: true, nameCut: true });
+        expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // A detail without a head of its own (an editor) is named in the bar of its way back, where the workspace's head gives
+  // way: the name is the page, so the way back is cut first and takes at most half the bar.
+  test(
+    "390 px: a detail without a head names itself after its way back, which keeps at most half the bar",
+    async () => {
+      const page = await open("namedBack", { width: 390 });
+      try {
+        const found = await page.evaluate(() => {
+          const bar = document.querySelector('.k2-pane[data-detail] > [data-k2-part="Back"]')!;
+          const button = bar.querySelector<HTMLElement>(".k2-btn")!;
+          const label = button.querySelector<HTMLElement>(".k2-btn-label")!;
+          const name = bar.querySelector<HTMLElement>(".k2-pane-back-name")!;
+          const box = bar.getBoundingClientRect();
+          return {
+            half: button.getBoundingClientRect().width <= box.width / 2 + 0.5,
+            backCut: label.scrollWidth > label.clientWidth,
+            name: name.textContent,
+            nameWhole: name.scrollWidth <= name.clientWidth,
+            after: name.getBoundingClientRect().left >= button.getBoundingClientRect().right,
+            inside: name.getBoundingClientRect().right <= box.right - Number.parseFloat(getComputedStyle(bar).paddingRight) + 0.5,
+            title: button.getAttribute("title"),
+          };
+        });
+        expect(found).toEqual({
+          half: true,
+          backCut: true,
+          name: "Notizen.md",
+          nameWhole: true,
+          after: true,
+          inside: true,
+          title: "Angebote und Ausschreibungen 2026",
+        });
+        // the way back keeps its whole name as a link; the outline says what the bar names
+        expect(await page.getByRole("link", { name: "Angebote und Ausschreibungen 2026", exact: true }).count()).toBe(1);
+        // the name heads the page for assistive technology as well
+        expect(await page.getByRole("heading", { name: "Notizen.md", exact: true }).count()).toBe(1);
+        const outline = await describeV2Page(page, "[data-k2-workspace]");
+        expect(outline).toContain('Back "Angebote und Ausschreibungen 2026" link · names "Notizen.md"');
+        expect(outline).not.toContain("Problems (");
       } finally {
         await page.close();
       }

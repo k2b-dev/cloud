@@ -10,7 +10,6 @@ import {
   Group,
   Icon,
   Input,
-  Menu,
   Nav,
   Notice,
   Pane,
@@ -73,16 +72,8 @@ const RecordFrame = (props: { tab: "overview" | "deliveries"; children: JSX.Elem
           <>
             <Button variant="ghost" icon="search" label="In der Akte suchen" />
             <Button variant="ghost" icon="star" label="Favorit" pressed />
-            {/* the head's "…": on the phone the search and the favourite go into it */}
-            <Menu
-              label="Weitere Aktionen"
-              items={[
-                { label: "Akte drucken", icon: "printer" },
-                { label: "Akte exportieren", icon: "download" },
-                { label: "Akte archivieren", icon: "archive" },
-              ]}
-            />
-            <Button variant="primary" icon="plus" menu>
+            <Button variant="ghost" icon="dots" label="Weitere Aktionen" />
+            <Button variant="primary" floats icon="plus" menu>
               Neu
             </Button>
             <Button variant="ghost" icon="x" label="Schließen" />
@@ -275,6 +266,9 @@ export const RecordScreen = () => (
                 copy: "Am Beispielhang 12, 12345 Beispielstadt",
               },
               { label: "Sprache", value: "Deutsch" },
+              // the kinds of the head stand here too: on the phone they give way to the name
+              { label: "Kundentyp", value: "Privat" },
+              { label: "Art", value: "Einlieferung" },
             ]}
           />
         </Section>

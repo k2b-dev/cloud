@@ -25,6 +25,7 @@ import { createMailNotificationService } from "./notifications";
 import { router } from "./router";
 import { commandRuntime, mailRuntime } from "./service";
 import { applicationAiRuntime } from "./service/application-ai-runtime";
+import { startAttachmentFileBackfill, stopAttachmentFileBackfill } from "./service/attachment-file-index";
 import { startConversationSummaryRuntime, stopConversationSummaryRuntime } from "./service/conversation-summary-jobs";
 import { stopDraftDocumentPruning } from "./service/draft-document-log";
 import { startDraftDocumentLogPolicy, stopDraftDocumentLogPolicy } from "./service/draft-document-log-policy";
@@ -44,6 +45,7 @@ const stopMailRuntimes = (): Promise<void> =>
     stopDraftDocumentSnapshots,
     stopDraftDocumentPruning,
     stopConversationViewCountCache,
+    stopAttachmentFileBackfill,
     () => stopConversationSummaryRuntime(),
     () => mailRuntime.stop(),
     applicationAiRuntime.stop,
@@ -88,6 +90,7 @@ const result = await app.start({
         await commandRuntime.start();
         await applicationAiRuntime.start();
         await startConversationSummaryRuntime();
+        startAttachmentFileBackfill();
       } catch (startError) {
         try {
           await stopMailRuntimes();

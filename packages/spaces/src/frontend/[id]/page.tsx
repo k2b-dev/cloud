@@ -9,7 +9,6 @@ import { isEstimateSuggestionAvailable } from "../../service/estimate-suggestion
 import { isMailInvitationIntegrationAvailable } from "../../service/mail-integration";
 import { loadSpacesSidebar } from "../../service/overview";
 import { spacesPublicResources } from "../../service/public-resources";
-import { firstOpenSpacesHint, spaceHintCandidates } from "../spaces-hints";
 import SpacesWorkspace from "./_components/workspace/SpacesWorkspace";
 import { loadSpacesWorkspaceState } from "./_components/workspace/workspace-state";
 import { spaceMessages } from "./messages";
@@ -55,13 +54,6 @@ export default ssr<AuthContext>(async (c) => {
       action: { label: t.allSpaces, href: "/app/spaces" },
     });
 
-  const openHint = firstOpenSpacesHint(c, spaceHintCandidates(sidebar.spaces.length));
-  const hints = {
-    sidebarSwitch: openHint === "spaces.sidebar-switch",
-    viewTabs: openHint === "spaces.view-tabs",
-    spaceMenu: openHint === "spaces.space-menu",
-  };
-
   return () => (
     <Layout
       context={{ scope: { type: "spaces.space", id: state.space.id } }}
@@ -77,7 +69,6 @@ export default ssr<AuthContext>(async (c) => {
         mailIntegrationAvailable={mailIntegrationAvailable}
         estimateSuggestions={estimateSuggestions}
         sidebar={sidebar}
-        hints={hints}
         people={people}
       />
     </Layout>

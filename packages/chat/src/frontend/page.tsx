@@ -7,7 +7,8 @@ import { chatMessages } from "../messages";
 import { chatRequestContext, oauthAllowsWrites } from "../request-context";
 import { chatService, loadChatView } from "../service";
 
-import ChatWorkspace from "./ChatWorkspace.island";
+import ChatWorkspace, { type ChatWorkspaceProps } from "./ChatWorkspace.island";
+import ChatWorkspaceV2 from "./ChatWorkspaceV2.island";
 import { chatTitle } from "./chat-title";
 import { CHAT_DEVICE_NOTICE_COOKIE, parseDeviceNotice } from "./device-notice";
 import { panelResourceChat } from "./panel-resource";
@@ -53,6 +54,16 @@ export default ssr<AuthContext>(async (c) => {
     archived,
     unread,
   });
+  // A place opens on its "General" stream with its discussions as cards in it (v2; Valentin, v8: no column of its
+  // own). Its old addresses, all threads and the directory, lead there; the list and Chat's own links already do.
+  if (
+    !embedded &&
+    view.open?.conversation.kind === "system" &&
+    chatId &&
+    !c.req.param("message") &&
+    (thread === "all" || /\/threads\/?$/.test(c.req.path))
+  )
+    return c.redirect(`/app/chat/c/${encodeURIComponent(chatId)}/t/general${c.req.query("panel") === "info" ? "?panel=info" : ""}`, 302);
   // `filter` belongs to the system thread directory. Direct v12 URLs without personal state keep the ordinary list.
   if (view.open?.conversation.kind === "system" && !c.req.query("listFilter") && unread) {
     unread = false;
@@ -82,44 +93,47 @@ export default ssr<AuthContext>(async (c) => {
             ? (view.open?.conversation.title ?? t.noAccessTitle)
             : undefined;
   const now = new Date();
-  const workspace = () => (
-    <ChatWorkspace
-      embedded={embedded}
-      resourceChat={resourceChat}
-      resourcePage={resourcePage}
-      panelScope={scope}
-      archived={archived}
-      filter={unread ? "unread" : "all"}
-      collapsed={collapsed}
-      channelsPage={channelsPage}
-      channelQuery={channelQuery}
-      channelPage={channelResult?.ok ? channelResult.data : null}
-      forYouPage={forYouPage}
-      forYouInitial={forYouResult?.ok ? forYouResult.data : null}
-      cursor={view.cursor}
-      sidebar={view.sidebar}
-      open={view.open}
-      chatId={chatId}
-      view={thread}
-      threadsPage={chatId !== null && c.req.path.endsWith("/threads")}
-      guest={getUserBackedActor(c)?.profile === "guest"}
-      panel={chatId && view.open && c.req.query("panel") === "info" ? "info" : null}
-      viewerId={accessSubject.userId}
-      liveDictation={liveDictation}
-      dateConfig={getDateConfig(c)}
-      now={now.toISOString()}
-      deviceNotice={parseDeviceNotice(getCookie(c, CHAT_DEVICE_NOTICE_COOKIE), now)}
-    />
-  );
+  const workspace: ChatWorkspaceProps = {
+    embedded,
+    resourceChat,
+    resourcePage,
+    panelScope: scope,
+    archived,
+    filter: unread ? "unread" : "all",
+    collapsed,
+    channelsPage,
+    channelQuery,
+    channelPage: channelResult?.ok ? channelResult.data : null,
+    forYouPage,
+    forYouInitial: forYouResult?.ok ? forYouResult.data : null,
+    cursor: view.cursor,
+    sidebar: view.sidebar,
+    open: view.open,
+    chatId,
+    view: thread,
+    threadsPage: chatId !== null && c.req.path.endsWith("/threads"),
+    guest: getUserBackedActor(c)?.profile === "guest",
+    panel: chatId && view.open && c.req.query("panel") === "info" ? "info" : null,
+    viewerId: accessSubject.userId,
+    liveDictation,
+    dateConfig: getDateConfig(c),
+    now: now.toISOString(),
+    deviceNotice: parseDeviceNotice(getCookie(c, CHAT_DEVICE_NOTICE_COOKIE), now),
+  };
   if (embedded)
     return () => (
       <PanelLayout c={c} title={title ?? t.appName}>
-        {workspace()}
+        <ChatWorkspace {...workspace} />
       </PanelLayout>
     );
   return () => (
-    <Layout c={c} fullPage title={chatTitle({ start: t.start, appName: t.appName, title, listHref, ownBack: channelsPage || forYouPage })}>
-      {workspace()}
+    <Layout
+      c={c}
+      fullPage
+      ui="v2"
+      title={chatTitle({ start: t.start, appName: t.appName, title, listHref, ownBack: channelsPage || forYouPage })}
+    >
+      <ChatWorkspaceV2 {...workspace} />
     </Layout>
   );
 });

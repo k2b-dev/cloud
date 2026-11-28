@@ -14,12 +14,10 @@ const { startMailV2Server, MAIL_V2_PATH } = await import("./mail-v2.browser-serv
 const mockup: Record<number, Record<string, [selector: string, box: string]>> = {
   1440: {
     head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "250,1 1125x56"],
-    // the head and the list's status row are one block (Valentin 26.11.): no line between them, 4 px apart
-    status: ['[data-k2-part="StatusRow"]', "250,61 432x52"],
-    row: ['[data-k2-part="List"] > [data-k2-part="Row"]', "250,113 432x73"],
-    // the reader stands as low as the list's block, so its head's line meets the status row's (K1)
-    readerHead: ['[data-k2-part="Pane"][data-detail] > [data-slot="head"] > .k2-bar', "683,61 692x52"],
-    notice: ['[data-k2-part="Notice"][data-tone="ai"]', "683,153 692x85"],
+    status: ['[data-k2-part="StatusRow"]', "250,57 432x52"],
+    row: ['[data-k2-part="List"] > [data-k2-part="Row"]', "250,109 432x73"],
+    readerHead: ['[data-k2-part="Pane"][data-detail] > [data-slot="head"] > .k2-bar', "683,57 692x52"],
+    notice: ['[data-k2-part="Notice"][data-tone="ai"]', "683,149 692x85"],
     listGrip: ['[data-k2-part="Pane.Split"] .k2-grip', "677,460 11x20"],
   },
   390: {
@@ -92,20 +90,37 @@ describe("Mail on the v2 pilot", () => {
             }),
           );
         }, mockup[width]!);
-        // the list's status row and the reader's head end on one line (K1), also with the head as one block
-        if (width === 1440) {
-          const bottom = (box: string) => {
-            const [, y = 0, height = 0] = /,(\d+) \d+x(\d+)/.exec(box)!.map(Number);
-            return y + height;
-          };
-          expect(bottom(boxes.status!)).toBe(bottom(boxes.readerHead!));
-        }
         expect(boxes).toEqual(Object.fromEntries(Object.entries(mockup[width]!).map(([part, [, box]]) => [part, box])));
         expect(errorsOf.get(page)).toEqual([]);
       } finally {
         await page.close();
       }
     }, 60_000);
+
+  test("a failed list says what failed in words; a search that is not valid offers to clear it", async () => {
+    const failed = await open(`${MAIL_V2_PATH}?listError=load_failed`);
+    try {
+      const notice = failed.locator('[data-k2-part="Notice"][data-tone="bad"]');
+      await notice.waitFor({ state: "visible" });
+      expect(await notice.textContent()).toContain("Versuche es gleich noch einmal.");
+      expect(await notice.textContent()).not.toContain("load_failed");
+      expect(await notice.getByRole("button", { name: "Erneut versuchen" }).count()).toBe(1);
+    } finally {
+      await failed.close();
+    }
+    const invalid = await open(`${MAIL_V2_PATH}?listError=invalid_search&q=from%3A`);
+    try {
+      const notice = invalid.locator('[data-k2-part="Notice"][data-tone="bad"]');
+      await notice.waitFor({ state: "visible" });
+      expect(await notice.textContent()).toContain("Die Suche in diesem Link ist ungültig.");
+      expect(await invalid.getByText("invalid_search").count()).toBe(0);
+      const clear = notice.getByRole("link", { name: "Suche zurücksetzen" });
+      expect(await clear.getAttribute("href")).not.toContain("q=");
+      expect(await invalid.getByRole("button", { name: "Erneut versuchen" }).count()).toBe(0);
+    } finally {
+      await invalid.close();
+    }
+  });
 
   test("a row opens its conversation in place, and Escape returns to the row", async () => {
     const page = await open(MAIL_V2_PATH);
@@ -187,6 +202,31 @@ describe("Mail on the v2 pilot", () => {
     }
   }, 60_000);
 
+  // Every head action stays on the phone now (#4373): beside them, their words folded to symbols, the subject keeps its
+  // words (it wraps instead of being cut) and nothing in the head runs out of it. At 390 the reader's six symbol
+  // controls still leave the subject about 86 px; the bar fold (#4392) moves the overflow into "⋯" and makes this green.
+  test.todo("on the phone the reader's head keeps its subject whole beside its actions, and nothing runs out of it (#4392)", async () => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`, 390);
+    try {
+      const head = page.locator('[data-k2-part="Pane"][data-detail] > [data-slot="head"] > .k2-bar');
+      await head.waitFor();
+      const measured = await head.evaluate((bar) => {
+        const start = bar.querySelector(":scope > .k2-bar-start")!;
+        const title = start.querySelector<HTMLElement>(".k2-text, h1, h2") ?? (start as HTMLElement);
+        const end = bar.querySelector(":scope > .k2-bar-end")!.getBoundingClientRect();
+        const box = bar.getBoundingClientRect();
+        return {
+          cut: title.scrollWidth > title.clientWidth + 1 || title.scrollHeight > title.clientHeight + 1,
+          endInside: end.right <= box.right + 0.5 && end.left >= box.left - 0.5,
+          overflow: bar.scrollWidth > bar.clientWidth + 1,
+        };
+      });
+      expect(measured).toEqual({ cut: false, endInside: true, overflow: false });
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   test("in a selection each row has its box, which shows and changes what is selected", async () => {
     const page = await open(MAIL_V2_PATH);
     try {
@@ -212,7 +252,7 @@ describe("Mail on the v2 pilot", () => {
     try {
       const head = page.locator('[data-k2-part="Pane"][data-detail] > [data-slot="head"]');
       await head.getByRole("button", { name: "Später" }).click();
-      await page.getByRole("menuitem", { name: "Erinnere mich …" }).waitFor();
+      await page.getByRole("menuitem", { name: "Erinnere mich", exact: true }).waitFor();
       await page.keyboard.press("Escape");
       await head.getByRole("button", { name: "Weitere Aktionen" }).click();
       await page.getByRole("menuitem", { name: /^Als (un)?gelesen markieren$/ }).waitFor();
@@ -231,7 +271,7 @@ describe("Mail on the v2 pilot", () => {
       await page.getByRole("menuitem", { name: "Kontakt ausblenden" }).waitFor();
       await page.getByRole("menuitem", { name: "Einstellungen" }).waitFor();
       await page.keyboard.press("Escape");
-      // The head's filter menu at the search field, v1's (F9): it stays in reach beside the folded search's symbol.
+      // The head's filter menu at the search field, v1's (F9).
       await page.locator('[data-k2-workspace] [data-slot="head"] [data-k2-part="Input"]').getByRole("button", { name: "Filter" }).click();
       await page.getByRole("menuitem", { name: "Weitere Filter …" }).waitFor();
       expect(await page.locator("[data-k2-workspace] button[disabled]").count()).toBe(0);
@@ -343,15 +383,14 @@ describe("Mail on the v2 pilot", () => {
     try {
       await page.evaluate(() => Object.assign(window, { stayed: true }));
       const tabs = page.locator('[data-k2-workspace] [data-k2-part="Tabs"]');
+      expect(await tabs.getByRole("link", { name: /Wartet auf Antwort/ }).isVisible()).toBe(false);
       const more = tabs.getByRole("button", { name: /Weitere/ });
-      // the views without room wait behind it, counted; the first of them leads its menu
-      expect(await more.textContent()).toMatch(/\+\d+/);
+      expect(await more.textContent()).toContain("+9");
       await more.click();
       const first = page.getByRole("menuitem").first();
-      const name = (await first.textContent())?.trim() ?? "";
-      expect(await tabs.getByRole("link", { name }).isVisible()).toBe(false);
+      expect(await first.textContent()).toContain("Wartet auf Antwort");
       await first.click();
-      await page.waitForURL(/view=/);
+      await page.waitForURL(/view=waiting/);
       await settled(page);
       expect(await page.evaluate(() => "stayed" in window)).toBe(true);
       expect(errorsOf.get(page)).toEqual([]);
@@ -426,35 +465,6 @@ describe("Mail on the v2 pilot", () => {
         return { declared: faces.length > 0, loaded: faces.some((face) => face.status === "loaded") };
       });
       expect(plex).toEqual({ declared: true, loaded: true });
-      expect(errorsOf.get(page)).toEqual([]);
-    } finally {
-      await page.close();
-    }
-  }, 60_000);
-
-  // On the phone the reader's head keeps "Später" and its "…"; the buttons that give way stand once in "…", which the
-  // platform fills (Mail adds none of them itself), and "Später" holds only its own entries.
-  test('390 px: each action of the reader\'s head stands once in its "…", and Später keeps its own entries', async () => {
-    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`, 390);
-    try {
-      const head = page.locator('[data-k2-part="Pane"][data-detail] > [data-slot="head"]');
-      const entries = async () => {
-        const menu = page.locator('[data-k2-part="Menu"]:visible');
-        await menu.waitFor();
-        return (await menu.locator('[role="menuitem"], [role="menuitemcheckbox"]').allTextContents()).map((entry) => entry.trim());
-      };
-      await head.getByRole("button", { name: "Weitere Aktionen" }).click();
-      const more = await entries();
-      for (const action of ["Erledigt", "Archivieren", "Löschen"]) expect(more.filter((entry) => entry === action)).toEqual([action]);
-      // the × beside the way back is no entry: Back leads to the same list
-      expect(more).not.toContain("Schließen");
-      expect(new Set(more).size).toBe(more.length);
-      await page.keyboard.press("Escape");
-      await head.getByRole("button", { name: "Später" }).click();
-      const later = await entries();
-      expect(later).toContain("Erinnere mich …");
-      expect(later).not.toContain("Archivieren");
-      expect(later).not.toContain("Erledigt");
       expect(errorsOf.get(page)).toEqual([]);
     } finally {
       await page.close();

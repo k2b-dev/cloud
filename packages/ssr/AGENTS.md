@@ -37,7 +37,7 @@ browsers through `launchBrowser()` from `packages/ui/test/browser.ts`, so the
 gate also runs it in WebKit. A change in the transform,
 build, mount runtime, or adapters reaches every application: also run the
 `@k2b/ui` tests and build the production bundle of at least one application
-(`APP_ID=faq bun run packages/cloud/scripts/build.ts`).
+(`APP_ID=tools bun run packages/cloud/scripts/build.ts`).
 
 ## Key invariants
 
@@ -121,16 +121,23 @@ default; `devSourcemap` opts into `"inline"` or `"none"`.
 
 - the SSR-only wrapper plugin collects `.island` and `.client` default
   imports, wraps their JSX usages in `<solid-island>` or `<solid-client>`,
-  injects `data-id`, `data-props`, and dev-only `data-file`, keeps SSR
-  children for islands, emits empty wrappers for clients, and imports
-  `toJSON` from `seroval` as `__seroval_toJSON` and writes
-  `JSON.stringify(__seroval_toJSON(props))`;
+  injects `data-id` and dev-only `data-file`, writes the props as the
+  wrapper's first child comment `<!--ssr-props:…-->` (`src/props-comment.ts`)
+  through Solid's `ssr`, keeps SSR children for islands after it, emits only
+  that comment for clients, and imports `toJSON` from `seroval` as
+  `__seroval_toJSON` and writes `JSON.stringify(__seroval_toJSON(props))`
+  with every `<` as `\u003c` and `>` as `\u003e`, so the text can hold no
+  `-->`, `--!>` or `<!--`. Never move props into an attribute, which escapes
+  every quote as `&quot;` (#4485), or into an element such as a JSON
+  script, which changes `:empty`, `:first-child` and `+` before mounting
+  and breaks the transparent island CSS of `@k2b/ui` v2;
 - `@babel/preset-typescript` strips types and `babel-preset-solid` compiles
   with `generate: "ssr"` or `"dom"` and `hydratable: false`, so islands
   re-render in the browser instead of hydrating.
 
 Test `transform()` directly in both modes when changing it, including the
-`__seroval_toJSON` alias and the wrapper attributes.
+`__seroval_toJSON` alias, the wrapper attributes, the props comment's size
+against Seroval's JSON, and props that try to end the comment.
 
 ## Mount runtime
 
@@ -149,7 +156,9 @@ An `<input>` takes the value, a `<textarea>` keeps text the island set itself
 and appends what the person added to the server's text, an emptied field
 stays empty; one `InputEvent` with `inputType: "insertReplacementText"`, and
 `change` at once without focus or on leaving the focused field, which also
-gets its selection back. Missing or malformed `data-props` throws there. One
+gets its selection back. The props comment leaves the wrapper before each
+render, before focus and typed text are taken; the text last read stays in the
+shared registry. Missing or malformed props throw inside the boundary. One
 failing element never stops the loop. The default fallback is plain DOM
 (`role="alert"`, `data-ssr-error`, a **Try again** button calling `reset()`).
 Each caught error dispatches a bubbling, cancelable `ssr:island-error` event
@@ -176,7 +185,8 @@ not stop later wrappers.
 Solid disposal runs component and fallback `onCleanup` and effect cleanups and
 empties the wrapper, including while an error fallback is displayed. The outer
 catch path stores a DOM-only disposer; a successful **Try again** replaces it
-with the new Solid disposer. Disposed wrappers can mount again from `data-props`.
+with the new Solid disposer. Disposed wrappers mount again from the props read
+last; a new props comment placed as first child replaces them.
 
 The loader's opening tag always exposes `data-ssr-assets`: the unversioned
 `ssrPath` in development, the versioned asset path in production. A non-empty

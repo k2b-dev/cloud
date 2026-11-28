@@ -42,13 +42,12 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
   mail: {
     1440: {
       head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "250,1 1125x56"],
-      // the head and the toolbar rows under it are one block, 4 px apart (#4290), so all below the head moves 4 px
-      status: ['[data-k2-part="StatusRow"]', "250,61 432x52"],
-      row: [".k2-list > .k2-row", "250,113 432x73"],
-      readerHead: ['.k2-pane[data-detail] > [data-slot="head"] > .k2-bar', "683,61 692x52"],
-      notice: ['.k2-notice[data-tone="ai"]', "683,153 692x85"],
+      status: ['[data-k2-part="StatusRow"]', "250,57 432x52"],
+      row: [".k2-list > .k2-row", "250,109 432x73"],
+      readerHead: ['.k2-pane[data-detail] > [data-slot="head"] > .k2-bar', "683,57 692x52"],
+      notice: ['.k2-notice[data-tone="ai"]', "683,149 692x85"],
       // the first message 12 px below the framed composer, with no line between them (Valentin, v2 of ui-v2-bausteine)
-      message: [".k2-pane[data-detail] .k2-canvas + .k2-band", "683,460 692x285"],
+      message: [".k2-pane[data-detail] .k2-canvas + .k2-band", "683,456 692x285"],
       listGrip: [".k2-split .k2-grip", "677,460 11x20"],
     },
   },
@@ -70,21 +69,20 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       cells: [".k2-cells", "250,166 1125x117"],
       section: [".k2-sec", "250,283 765x181"],
       todo: [".k2-sec .k2-row", "250,335 765x60"],
-      facts: [".k2-facts", "1016,499 359x200"],
+      // the mockup's 200 px and two rows of 32 px more: the kinds of the head ("Kundentyp", "Art") also stand in the
+      // facts, since on the phone they give way to the name (decision of 27.11., #4465)
+      facts: [".k2-facts", "1016,499 359x264"],
       // the rail of the shell beside the app: its logo and the open app (Kunden)
       railLogo: [".ui-v2-rail__logo", "-44,4 32x32"],
       railApp: [".ui-v2-rail__app[data-current]", "-48,92 40x36"],
     },
     390: {
-      // The mockup moves the record's "…" into the shell's bar; v2 keeps it at the end of the head's first line, so
-      // the record's deeds stay in reach (a head never hides them without a "…"). The kinds go to a second line of
-      // the identity, and all below moves 36 px down (docs: actions-and-menus, "Not in v2 yet").
-      head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x93"],
-      tabs: ['[data-slot="head"] > .k2-tabs-nav', "0,93 390x44"],
-      notice: [".k2-notice", "0,137 390x137"],
-      cells: [".k2-cells", "0,274 390x279"],
-      section: [".k2-sec", "0,553 390x245"],
-      todo: [".k2-sec .k2-row", "0,605 390x92"],
+      head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x57"],
+      tabs: ['[data-slot="head"] > .k2-tabs-nav', "0,57 390x44"],
+      notice: [".k2-notice", "0,101 390x137"],
+      cells: [".k2-cells", "0,238 390x279"],
+      section: [".k2-sec", "0,517 390x245"],
+      todo: [".k2-sec .k2-row", "0,569 390x92"],
     },
   },
   // akte-einlieferungen.html
@@ -101,15 +99,14 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       railApp: [".ui-v2-rail__app[data-current]", "-48,92 40x36"],
     },
     390: {
-      // mockup v17: the steps stand 12 px apart on the phone, so all below them moves 16 px down; the record's head
-      // holds its "…" and grows by 36 px, as at the overview
-      section: [".k2-sec", "0,137 390x1421"],
-      group: [".k2-group", "16,241 358x382"],
-      groupHead: [".k2-gh", "17,242 356x84"],
-      steps: [".k2-steps", "17,390 356x148"],
-      table: [".k2-group .k2-table", "17,944 356x204"],
-      facts: ['[data-k2-part="Facts"]', "17,1228 356x64"],
-      folded: [".k2-group[data-folded]", "16,1321 358x102"],
+      // mockup v17: the steps stand 12 px apart on the phone, so all below them moves 16 px down
+      section: [".k2-sec", "0,101 390x1421"],
+      group: [".k2-group", "16,205 358x382"],
+      groupHead: [".k2-gh", "17,206 356x84"],
+      steps: [".k2-steps", "17,354 356x148"],
+      table: [".k2-group .k2-table", "17,908 356x204"],
+      facts: ['[data-k2-part="Facts"]', "17,1192 356x64"],
+      folded: [".k2-group[data-folded]", "16,1285 358x102"],
     },
   },
   keys: { 1440: {}, 390: {} },
@@ -117,20 +114,19 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
   table: {
     1440: {
       head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "250,1 1125x56"],
-      // the head and the status row are one block, 4 px apart (#4290), so all below the head moves 4 px
-      status: ['[data-k2-part="StatusRow"]', "250,61 1125x52"],
-      firstHead: ["thead th:nth-child(2)", "294,113 260x36"],
-      group: ["tbody tr[data-group]", "250,149 1724x36"],
-      row: ["tbody tr:nth-child(2)", "250,185 1724x40"],
-      personCell: ["tbody tr:nth-child(2) td:nth-child(5)", "806,185 176x40"],
+      status: ['[data-k2-part="StatusRow"]', "250,57 1125x52"],
+      firstHead: ["thead th:nth-child(2)", "294,109 260x36"],
+      group: ["tbody tr[data-group]", "250,145 1724x36"],
+      row: ["tbody tr:nth-child(2)", "250,181 1724x40"],
+      personCell: ["tbody tr:nth-child(2) td:nth-child(5)", "806,181 176x40"],
     },
-    // As in the mockup, the head gives way: its path to the phone bar, and its search too, which the phone bar opens
-    // as Cloud's does (the demo is the host of its bar, #4290); with nothing left to show the head takes no room.
+    // The mockup has no head here (its path gives way to the phone bar). The head keeps its bar for the table's own
+    // search as a symbol (#4139), so everything under it starts 56 px lower than in the mockup.
     390: {
-      head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x0"],
-      status: ['[data-k2-part="StatusRow"]', "0,0 390x52"],
-      phoneGroup: [".k2-table-phone .k2-bar", "0,52 390x36"],
-      phoneRow: [".k2-table-phone .k2-row", "0,88 390x53"],
+      head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x56"],
+      status: ['[data-k2-part="StatusRow"]', "0,56 390x52"],
+      phoneGroup: [".k2-table-phone .k2-bar", "0,108 390x36"],
+      phoneRow: [".k2-table-phone .k2-row", "0,144 390x53"],
     },
   },
 };
@@ -464,20 +460,21 @@ describe("v2 demo screens keep the mockup", () => {
 
   // A head with a path and a search (Grids): on the phone the path gives way to the shell's phone bar, the search stays
   // as its symbol at the end of the head.
-  test("table at 390 px: the head lets its path and its search go to the host's phone bar", async () => {
+  test("table at 390 px: the head lets its path go and keeps its search as a symbol", async () => {
     const page = await show("table", 390);
     try {
       const found = await page.evaluate(() => {
         const bar = document.querySelector('.k2-ws-main > [data-slot="head"] > .k2-bar')!;
-        const search = bar.querySelector<HTMLElement>(".k2-input[data-search]")!;
+        const box = bar.getBoundingClientRect();
+        const search = bar.querySelector(".k2-input[data-search]")!.getBoundingClientRect();
+        const path = bar.querySelector(".k2-path")!;
         return {
-          path: bar.querySelector(".k2-path")!.getClientRects().length,
-          // the field stays in the page for the phone bar to open (Cloud's `openPageSearch`), out of sight until then
-          search: search.isConnected && search.getBoundingClientRect().height <= 1,
-          head: Math.round(bar.getBoundingClientRect().height),
+          path: path.getClientRects().length,
+          search: [Math.round(search.width), Math.round(search.height)],
+          atEnd: Math.round(box.right - Number.parseFloat(getComputedStyle(bar).paddingRight) - search.right),
         };
       });
-      expect(found).toEqual({ path: 0, search: true, head: 0 });
+      expect(found).toEqual({ path: 0, search: [36, 36], atEnd: 0 });
     } finally {
       await page.close();
     }

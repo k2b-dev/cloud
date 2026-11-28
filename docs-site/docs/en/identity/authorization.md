@@ -728,6 +728,18 @@ always keeps a manager. A failed call stops the
 save; changes already saved stay saved, and the dialog keeps exactly the open
 ones with **Try again**. Closing with open changes asks before discarding them.
 
+On a page built with `@k2b/ui/v2` (its layout has `ui: "v2"`), import
+`openAccessDialog` from `@k2b/cloud/access/v2` instead. It takes the same props,
+keeps the same draft, rules, questions, and saving order, and opens a v2
+`Dialog` in its own v2 scope, so it works from any island. It is a separate
+entry, so pages that are still v1 do not load v2. Pass v2 content as
+`extraSections`, such as `ResourceApiKeys` from the same entry: the same props
+as the v1 component, one row per key, a v2 dialog to create one (name, level,
+expiry), and its token shown once to copy. `AccessSummary` from the same entry
+shows the members as one stack of faces with "+n" and the same line as v1. In
+the v2 dialog and summary, people and agents show their avatar; groups, Code's
+accounts, API keys and the audiences show a mark in their kind's colour.
+
 The last entry that manages the resource keeps Manage: its lower levels and its
 removal are disabled, counted on the result after saving (`effectiveEntries`
 applies as in the editor). "All signed-in people" and "Public with link" are

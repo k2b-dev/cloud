@@ -1,18 +1,24 @@
 import { createComponent, type JSX } from "solid-js";
 import * as actions from "../../../../packages/ui/skills/k2b-ui/recipes/actions";
 import * as content from "../../../../packages/ui/skills/k2b-ui/recipes/content";
+import * as conversations from "../../../../packages/ui/skills/k2b-ui/recipes/conversations";
 import * as dialogs from "../../../../packages/ui/skills/k2b-ui/recipes/dialogs";
 import * as filteredTable from "../../../../packages/ui/skills/k2b-ui/recipes/filtered-table";
 import * as form from "../../../../packages/ui/skills/k2b-ui/recipes/form";
 import * as formDetail from "../../../../packages/ui/skills/k2b-ui/recipes/form-detail";
 import * as frame from "../../../../packages/ui/skills/k2b-ui/recipes/frame";
+import * as home from "../../../../packages/ui/skills/k2b-ui/recipes/home";
 import * as listDetail from "../../../../packages/ui/skills/k2b-ui/recipes/list-detail";
 import * as mail from "../../../../packages/ui/skills/k2b-ui/recipes/mail";
+import * as overview from "../../../../packages/ui/skills/k2b-ui/recipes/overview";
+import * as publicPage from "../../../../packages/ui/skills/k2b-ui/recipes/public-page";
 import * as record from "../../../../packages/ui/skills/k2b-ui/recipes/record";
 import * as recordGroups from "../../../../packages/ui/skills/k2b-ui/recipes/record-groups";
 import * as settings from "../../../../packages/ui/skills/k2b-ui/recipes/settings";
+import * as start from "../../../../packages/ui/skills/k2b-ui/recipes/start";
 import * as states from "../../../../packages/ui/skills/k2b-ui/recipes/states";
 import * as table from "../../../../packages/ui/skills/k2b-ui/recipes/table";
+import * as tree from "../../../../packages/ui/skills/k2b-ui/recipes/tree";
 
 /**
  * One state a recipe offers beside its default screen, such as `empty`, `loading` or `failed`.
@@ -44,18 +50,24 @@ const RECIPE_LOCALE = "de";
 export const recipes = {
   actions,
   content,
+  conversations,
   dialogs,
   "filtered-table": filteredTable,
   form,
   "form-detail": formDetail,
   frame,
+  home,
   "list-detail": listDetail,
   mail,
+  "public-page": publicPage,
+  overview,
   record,
   "record-groups": recordGroups,
   settings,
+  start,
   states,
   table,
+  tree,
 } satisfies Record<string, RecipeModule>;
 
 export type RecipeName = keyof typeof recipes;

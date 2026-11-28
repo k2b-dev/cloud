@@ -4,9 +4,9 @@ import {
   Button,
   Chip,
   FilterBar,
+  HeadSearch,
   Icon,
   Inline,
-  Input,
   ListOrder,
   Notice,
   Pane,
@@ -110,9 +110,7 @@ export default function GroupsScreen(props: GroupsScreenProps) {
           }
           end={
             <>
-              <Input
-                type="search"
-                icon="search"
+              <HeadSearch
                 name="q"
                 label={t().searchGroups}
                 placeholder={t().searchGroups}
@@ -129,7 +127,7 @@ export default function GroupsScreen(props: GroupsScreenProps) {
                 }}
               />
               <Show when={props.isAdmin}>
-                <Button variant="primary" icon="plus" onClick={() => setCreating(true)}>
+                <Button variant="primary" floats icon="plus" onClick={() => setCreating(true)}>
                   {t().newGroup}
                 </Button>
               </Show>

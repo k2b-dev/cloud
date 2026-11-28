@@ -1,20 +1,10 @@
 import { z } from "zod";
 
-export const defaultPageIds = [
-  "document",
-  "faq",
-  "mail-mailbox",
-  "assistant-chat",
-  "notebooks-editor",
-  "files",
-  "accounts",
-  "spaces",
-] as const;
+export const defaultPageIds = ["document", "mail-mailbox", "assistant-chat", "notebooks-editor", "files", "accounts", "spaces"] as const;
 export const pageIds = [...defaultPageIds, "pwa"] as const;
 export type PageId = (typeof pageIds)[number];
 export const pageApps: Record<PageId, string[]> = {
   document: ["core"],
-  faq: ["faq"],
   "mail-mailbox": ["mail"],
   "assistant-chat": ["assistant"],
   "notebooks-editor": ["notebooks"],
@@ -674,6 +664,9 @@ export function longTaskMetrics(tasks: { start: number; duration: number }[], fc
   };
 }
 
+/** Starts the comment that carries an island's props (`@k2b/ssr`, src/props-comment.ts). */
+const PROPS_COMMENT = "ssr-props:";
+
 export function decodeAttribute(value: string) {
   const named: Record<string, string> = { amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", nbsp: "\u00a0" };
   return value.replace(/&(#x[\da-f]+|#\d+|amp|quot|apos|lt|gt|nbsp);/gi, (original: string, entity: string) => {
@@ -681,6 +674,27 @@ export function decodeAttribute(value: string) {
     const code = Number.parseInt(entity.slice(entity[1]?.toLowerCase() === "x" ? 2 : 1), entity[1]?.toLowerCase() === "x" ? 16 : 10);
     return code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : "\ufffd";
   });
+}
+
+/** Each island's serialized props as the browser reads them (its props comment), or undefined without one. */
+export async function islandPropsTexts(html: string) {
+  const texts: (string | undefined)[] = [];
+  await new HTMLRewriter()
+    .on("solid-island, solid-client", {
+      element() {
+        texts.push(undefined);
+      },
+    })
+    .onDocument({
+      comments(c) {
+        // The props comment is a wrapper's first child, so it belongs to the wrapper that opened last.
+        if (c.text.startsWith(PROPS_COMMENT) && texts.length && texts[texts.length - 1] === undefined)
+          texts[texts.length - 1] = c.text.slice(PROPS_COMMENT.length);
+      },
+    })
+    .transform(new Response(html))
+    .text();
+  return texts;
 }
 
 /** Reads markup with Bun's HTML parser, never evaluates serialized seroval props. */
@@ -712,7 +726,11 @@ export async function inspectHtml(html: string, documentUrl: string) {
         const id = e.getAttribute("data-id");
         if (!id) throw new Error("Island without data-id");
         ids.add(id);
-        propsBytes += Buffer.byteLength(decodeAttribute(e.getAttribute("data-props") ?? "{}"));
+      },
+    })
+    .onDocument({
+      comments(c) {
+        if (c.text.startsWith(PROPS_COMMENT)) propsBytes += Buffer.byteLength(c.text.slice(PROPS_COMMENT.length));
       },
     })
     .on("script", {

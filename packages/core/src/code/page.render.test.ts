@@ -293,11 +293,11 @@ describe("Code pages in the Cloud layout", () => {
         legalLinks: [{ label: "Imprint", href: "/impressum" }],
       },
       {
-        id: "faq-probe",
+        id: "fixture-probe",
         name: "Questions probe",
         icon: "ti ti-help",
-        routes: ["/app/faq-probe"],
-        nav: { href: "/app/faq-probe", section: "primary" },
+        routes: ["/app/fixture-probe"],
+        nav: { href: "/app/fixture-probe", section: "primary" },
       },
       {
         id: "payroll-probe",
@@ -401,9 +401,9 @@ describe("Code pages in the Cloud layout", () => {
   };
   /** The props of every island in the page, as the browser receives them. */
   const islandProps = (html: string) =>
-    [...html.matchAll(/<solid-island[^>]*data-props="([^"]*)"/g)].map(
+    [...html.matchAll(/<solid-island[^>]*><!--ssr-props:([^>]*)-->/g)].map(
       (match) =>
-        JSON.parse(match[1]!.replaceAll("&quot;", '"').replaceAll("&amp;", "&")) as {
+        JSON.parse(match[1]!) as {
           t: { p?: { k?: string[]; v?: unknown[] } };
         },
     );

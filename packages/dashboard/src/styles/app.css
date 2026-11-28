@@ -234,7 +234,10 @@
   font-weight: 600;
 }
 
-.dashboard-page .dashboard-widget-placeholder {
+/* A widget's message sits in its frame without the 24px block padding that @k2b/ui gives a placeholder
+   (`.k2b-ui .k2b-placeholder`, same specificity). A page links this sheet before the shared global.css, so the
+   placeholder class is named here as well to outrank that rule in the order the page loads them (#4411). */
+.dashboard-page .k2b-placeholder.dashboard-widget-placeholder {
   gap: 0.25rem;
   padding: 0 0.75rem;
 }
@@ -252,6 +255,19 @@
 }
 .dashboard-page .dashboard-tile[data-size="small"] .dashboard-widget-placeholder:has(.k2b-placeholder__action) .k2b-placeholder__icon {
   display: none;
+}
+
+/* A widget that still loads: an empty body in its frame, only the slow notice's line in the middle. */
+.dashboard-widget-pending {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.75rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  text-align: center;
 }
 
 /* The slow notice has its line from the start and only fades in. */

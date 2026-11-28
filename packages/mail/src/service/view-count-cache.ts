@@ -2,6 +2,7 @@ import { redis, sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { z } from "zod";
 import { conversationViewSchema } from "../contracts";
+import { cachedReadLoadLimit, cachedReadLoadSettled, cachedReadLoadsRunning, trackCachedReadLoad } from "./cached-read-loads";
 import type { MailboxConversationCounts } from "./view-count-query";
 
 // The snapshot may be reused for 30 seconds. Reads in its second half quietly renew it.
@@ -11,6 +12,13 @@ export const VIEW_COUNT_MAX_AGE_MS = 30_000;
 const REFRESH_AFTER_MS = VIEW_COUNT_MAX_AGE_MS / 2;
 const FILL_WAIT_MS = VIEW_COUNT_MAX_AGE_MS;
 const FILL_LEASE_MS = 10_000; // Cloud's normal request idle budget; crashed owners release themselves.
+/**
+ * How long a page or a workspace snapshot waits for cold counts before it shows its list without them: a tenth of
+ * Cloud's request idle budget (FILL_LEASE_MS). A warm cache answers in milliseconds and a fill that is nearly done
+ * still reaches the first render; a cold count of a large mailbox, which takes seconds, no longer holds the page. The
+ * count goes on and lands in the cache, where the browser picks it up once.
+ */
+export const FIRST_RENDER_COUNT_WAIT_MS = FILL_LEASE_MS / 10;
 const CACHE_COMMAND_MS = 100;
 const log = logger("mail:view-count-cache");
 const snapshotSchema = z.object({
@@ -61,10 +69,10 @@ const read = async (key: string) => {
   }
 };
 
-// Leave one shared connection available for the rest of the workspace. This also bounds
-// fallback computations during a Valkey outage; different readers never share a snapshot.
-const activeLoads = new Set<Promise<MailboxConversationCounts>>();
-const loadLimit = () => Math.max(1, (sql.options.max ?? 10) - 1);
+// The counts share one budget with Mail's other cached reads (cached-read-loads), so one connection stays free for the
+// rest of the workspace. This also bounds fallback computations during a Valkey outage; different readers never share
+// a snapshot.
+
 const waitFor = async <T>(task: Promise<T>, ms = FILL_WAIT_MS): Promise<T> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -80,16 +88,10 @@ const waitFor = async <T>(task: Promise<T>, ms = FILL_WAIT_MS): Promise<T> => {
 };
 const boundedLoad = async (load: () => Promise<MailboxConversationCounts>) => {
   const deadline = Date.now() + FILL_WAIT_MS;
-  while (activeLoads.size >= loadLimit()) {
-    await waitFor(Promise.race([...activeLoads].map((task) => task.catch(() => undefined))), deadline - Date.now());
+  while (cachedReadLoadsRunning() >= cachedReadLoadLimit()) {
+    await waitFor(cachedReadLoadSettled(), deadline - Date.now());
   }
-  const task = load();
-  activeLoads.add(task);
-  try {
-    return await task;
-  } finally {
-    activeLoads.delete(task);
-  }
+  return trackCachedReadLoad(load);
 };
 
 const fill = (key: string, load: () => Promise<MailboxConversationCounts>): Promise<MailboxConversationCounts> => {
@@ -151,12 +153,27 @@ const fill = (key: string, load: () => Promise<MailboxConversationCounts>): Prom
   return task;
 };
 
+type CountsParams = { mailboxId: string; reader: string; load: () => Promise<MailboxConversationCounts> };
+
 /** Call only after the current reader passed Mail's access/execution check. */
-export const cachedConversationViewCounts = async (params: {
-  mailboxId: string;
-  reader: string;
-  load: () => Promise<MailboxConversationCounts>;
-}): Promise<MailboxConversationCounts> => {
+export const cachedConversationViewCounts = (params: CountsParams): Promise<MailboxConversationCounts> => counts(params, FILL_WAIT_MS);
+
+/**
+ * As `cachedConversationViewCounts`, but a cold count is awaited only until `until` (epoch ms): then null, while the
+ * count goes on and fills the cache. Call only after the current reader passed Mail's access/execution check.
+ */
+export const cachedConversationViewCountsBy = async (
+  params: CountsParams & { until: number },
+): Promise<MailboxConversationCounts | null> => {
+  try {
+    return await counts(params, Math.max(0, params.until - Date.now()));
+  } catch (error) {
+    if (error instanceof CountRefreshBusy) return null;
+    throw error;
+  }
+};
+
+const counts = async (params: CountsParams, waitMs: number): Promise<MailboxConversationCounts> => {
   const [version] = await sql<[{ database: string; version: string }]>`
     SELECT current_database() AS database, COALESCE(version::text, 'initial') AS version
     FROM (SELECT 1) singleton
@@ -167,10 +184,10 @@ export const cachedConversationViewCounts = async (params: {
   try {
     snapshot = await read(key);
   } catch {
-    return waitFor(fill(key, params.load));
+    return waitFor(fill(key, params.load), waitMs);
   }
-  if (!snapshot) return waitFor(fill(key, params.load));
-  if (Date.now() - snapshot.at >= REFRESH_AFTER_MS && activeLoads.size < loadLimit()) {
+  if (!snapshot) return waitFor(fill(key, params.load), waitMs);
+  if (Date.now() - snapshot.at >= REFRESH_AFTER_MS && cachedReadLoadsRunning() < cachedReadLoadLimit()) {
     void fill(key, params.load).catch((error: unknown) =>
       log.warn("Count refresh failed; the next read retries", { error: error instanceof Error ? error.message : String(error) }),
     );

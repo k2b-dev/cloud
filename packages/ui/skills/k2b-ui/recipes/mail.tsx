@@ -1,11 +1,14 @@
 // Recipe: a list with a reader (mail). Three-line rows on the left; the reader shows the thread: a bar with its state,
-// an AI summary, one Band per message with the sender row, the text in Prose and the attachments as Tiles.
+// an AI summary, one Band per message with the sender row, the text in Prose and the attachments as Tiles. While no
+// message is open, the reader's place shows the mails of the last 53 weeks as a Heat above its sentence.
 import {
   Avatar,
   Band,
   Bar,
   Button,
   Chip,
+  Heat,
+  type HeatDay,
   Icon,
   Inline,
   List,
@@ -60,14 +63,38 @@ const threads: Thread[] = [
     at: "gestern",
   },
 ];
-const open = threads[0]!;
+// the mails received per day: one bounded aggregate of the last 53 weeks, here a fixed pattern (quiet weekends)
+const today = "2026-11-27";
+const received: HeatDay[] = Array.from({ length: 369 }, (_, index) => {
+  const date = new Date(Date.UTC(2025, 10, 24 + index)).toISOString().slice(0, 10);
+  return { date, count: index % 7 >= 5 ? index % 3 : ((index * 37) % 11) + (index % 7 === 0 ? 6 : 1) };
+});
+const number = new Intl.NumberFormat("de-DE");
 
-export default function MailScreen() {
+type Props = {
+  /** No message is open: the reader's place shows the year of mail above its sentence. */
+  closed?: boolean;
+};
+
+export default function MailScreen(props: Props) {
+  const open = props.closed ? undefined : threads[0];
+  // The hero is made once, here: written inside the `detailEmpty` object it would be made again on every read.
+  const hero = (
+    <Heat
+      days={received}
+      today={today}
+      label="Mails pro Tag"
+      unit={(count) => (count === 1 ? "1 Nachricht" : `${number.format(count)} Nachrichten`)}
+      summary={({ total, days }) =>
+        `${number.format(total)} Mails in den letzten 12 Monaten · Ø ${number.format(Math.round(total / days))} pro Tag`
+      }
+    />
+  );
   return (
     <Workspace
       // a detail opens beside the list: the sidebar keeps room for it, and its place says so while none is open
       detail
-      detailEmpty={{ icon: "mail", text: "Keine Nachricht ausgewählt" }}
+      detailEmpty={{ icon: "mail", text: "Keine Nachricht ausgewählt", hero }}
       sidebar={
         <Nav
           title="Mail"
@@ -96,7 +123,7 @@ export default function MailScreen() {
             />
           }
           end={
-            <Button variant="primary" icon="pencil">
+            <Button variant="primary" floats icon="pencil">
               Neue Nachricht
             </Button>
           }
@@ -120,7 +147,7 @@ export default function MailScreen() {
             {threads.map((thread) => (
               <Row
                 unread={thread.unread}
-                current={thread.id === open.id}
+                current={thread.id === open?.id}
                 lines={[thread.from, thread.subject, thread.preview]}
                 meta={thread.count}
                 time={thread.at}
@@ -139,60 +166,69 @@ export default function MailScreen() {
             ))}
           </List>
         </Pane>
-        <Pane
-          detail
-          label="Nachricht"
-          head={
-            <Bar
-              start={<Text type="lead">{open.subject}</Text>}
-              end={
-                <>
-                  <Button icon="check">Erledigt</Button>
-                  <Button variant="ghost" icon="archive" label="Archivieren" />
-                  <Button variant="ghost" icon="dots" label="Weitere Aktionen" />
-                </>
-              }
-            />
-          }
-          status={
-            <Bar
-              start={
-                <Inline>
-                  <Text type="meta">3 Nachrichten</Text>
-                  <Chip status="warn">Wartet auf Antwort</Chip>
-                  <Chip tag color="#0f766e">
-                    Angebot
-                  </Chip>
-                </Inline>
-              }
-              end={<Avatar name="Ada Renz" color="#be123c" />}
-            />
-          }
-        >
-          <Notice tone="ai" title="Kurz gesagt" actions={[{ label: "Bearbeiten" }]}>
-            Brandt liefert 14 Eichenplatten in KW 49 und braucht bis Freitag eine Bestätigung.
-          </Notice>
-          <Band>
-            <Row
-              avatar={{ name: "Holzwerk Brandt", color: "#57534e" }}
-              strong
-              lines={["Holzwerk Brandt", "an Mira Solberg · heute, 09:42"]}
-              end={
-                <>
-                  <Button variant="ghost" icon="arrow-back-up" label="Antworten" />
-                  <Button variant="ghost" icon="dots" label="Weitere Aktionen" />
-                </>
-              }
-            />
-            <Prose
-              markdown={
-                "Guten Tag Frau Solberg,\n\ndie 14 Platten können wir in KW 49 liefern. Bitte bestätigen Sie bis Freitag.\n\nViele Grüße  \nJonas Brandt"
-              }
-            />
-            <Tiles items={[{ icon: "file-type-pdf", title: "Angebot-4471.pdf", meta: "212 KB" }]} more={{ label: "Alle herunterladen" }} />
-          </Band>
-        </Pane>
+        {open && (
+          <Pane
+            detail
+            label="Nachricht"
+            head={
+              <Bar
+                start={<Text type="lead">{open.subject}</Text>}
+                end={
+                  <>
+                    <Button icon="check">Erledigt</Button>
+                    <Button variant="ghost" icon="archive" label="Archivieren" />
+                    <Button variant="ghost" icon="dots" label="Weitere Aktionen" />
+                  </>
+                }
+              />
+            }
+            status={
+              <Bar
+                start={
+                  <Inline>
+                    <Text type="meta">3 Nachrichten</Text>
+                    <Chip status="warn">Wartet auf Antwort</Chip>
+                    <Chip tag color="#0f766e">
+                      Angebot
+                    </Chip>
+                  </Inline>
+                }
+                end={<Avatar name="Ada Renz" color="#be123c" />}
+              />
+            }
+          >
+            <Notice tone="ai" title="Kurz gesagt" actions={[{ label: "Bearbeiten" }]}>
+              Brandt liefert 14 Eichenplatten in KW 49 und braucht bis Freitag eine Bestätigung.
+            </Notice>
+            <Band>
+              <Row
+                avatar={{ name: "Holzwerk Brandt", color: "#57534e" }}
+                strong
+                lines={["Holzwerk Brandt", "an Mira Solberg · heute, 09:42"]}
+                end={
+                  <>
+                    <Button variant="ghost" icon="arrow-back-up" label="Antworten" />
+                    <Button variant="ghost" icon="dots" label="Weitere Aktionen" />
+                  </>
+                }
+              />
+              <Prose
+                markdown={
+                  "Guten Tag Frau Solberg,\n\ndie 14 Platten können wir in KW 49 liefern. Bitte bestätigen Sie bis Freitag.\n\nViele Grüße  \nJonas Brandt"
+                }
+              />
+              <Tiles
+                items={[{ icon: "file-type-pdf", title: "Angebot-4471.pdf", meta: "212 KB" }]}
+                more={{ label: "Alle herunterladen" }}
+              />
+            </Band>
+          </Pane>
+        )}
       </Pane.Split>
     </Workspace>
   );
 }
+
+export const states = {
+  closed: () => <MailScreen closed />,
+};

@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
+import { withNormalizedSelectColors } from "../field-types/select-colors";
 import type { SqlClient } from "./audit";
 import { parseJsonbRow } from "./jsonb";
 import type { Field } from "./types";
@@ -14,7 +15,7 @@ export const mapFieldRow = (row: DbRow): Field => ({
   description: (row.description as string | null) ?? null,
   icon: (row.icon as string | null) ?? null,
   type: row.type as string,
-  config: parseJsonbRow<Record<string, unknown>>(row.config, {}),
+  config: withNormalizedSelectColors(row.type as string, parseJsonbRow<Record<string, unknown>>(row.config, {})),
   position: row.position as number,
   required: row.required as boolean,
   presentable: (row.presentable as boolean | null) ?? false,

@@ -1,8 +1,10 @@
 import { Readable } from "node:stream";
 import { sql } from "@k2b/cloud";
 import { toPgTextArray } from "@k2b/cloud/services";
+import { bodyReferencedContentIds } from "../content-ids";
 import { withShortIdDb } from "../lib/short-id";
 import { normalizeEmailAddress } from "./address-normalization";
+import { indexMessageAttachments } from "./attachment-file-index";
 import { sha256Json } from "./canonical";
 import { isKeptConversation } from "./conversation-keep-rules";
 import { discardConversationSummaries } from "./conversation-summary-lifecycle";
@@ -12,6 +14,7 @@ import { storeReadableBlob } from "./message-blobs";
 import { normalizeMailSubject } from "./message-threading";
 import type { OutboundDraftSnapshot } from "./outbound-mime";
 import { splitSearchText } from "./search-chunks";
+import { messageLinkDomains } from "./security-evidence";
 
 type SqlClient = typeof sql;
 
@@ -192,6 +195,16 @@ const insertAttachments = async (params: {
       )
     `,
     );
+  }
+  if (attachments.length > 0) {
+    const shown = bodyReferencedContentIds(
+      params.snapshot.renderedHtml,
+      attachments.map((attachment) => attachment.contentId),
+    );
+    await indexMessageAttachments(params.db, params.messageId, {
+      contentIds: shown,
+      linkDomains: messageLinkDomains(params.snapshot.renderedHtml ?? null),
+    });
   }
 };
 

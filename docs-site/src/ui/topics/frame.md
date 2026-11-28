@@ -17,17 +17,13 @@ Open orders of a workshop: the sidebar holds the app's places, the head holds th
 The workspace decides from its own width, on the server's page too, so nothing jumps when the page comes alive. Switch the example to 1024 and 390 px to see each.
 
 - **Tablet:** where the sidebar at its default width does not fit beside every column at its minimum, it becomes a drawer behind a button at the start of the head. A declared `detail` counts also while it is closed, so the sidebar does not jump when an entry opens.
-- **Phone (below 768 px):** the sidebar leaves. In a head with a "…" (a `Menu` without words or a symbol of its own), the buttons without `keep` give way, and the "…" lists them by itself, with their names, states and deeds; a head without a "…" keeps them, so no deed vanishes unseen. The main action floats at the bottom right from `Workspace primary`. The list is the page; an open entry is a page of its own.
-- **A head with a title, without room:** a head that names its page (a `Text` in `Bar start`) gives way below 1100 px of its own width, such as a laptop beside its sidebar. First its buttons without `keep` move into the "…", while the main action stays. Then its tabs give way, whole tab by whole tab, and its title is cut with "…" last. A head of tabs alone keeps its actions.
-
-## The head as one block
-
-- **One line:** the head and the toolbar rows of the column under it (a `FilterBar`, a `StatusRow` in the `Pane status`) are one block. No line stands between them, they stand 4 px apart, and the last row draws the one line under the block.
-- **A toolbar in the head:** a `FilterBar` in the head's `Bar start` stands in the head line while the head has room. Below 1100 px of the head's width it wraps as the head's second row, without a line between.
-- **The search is its symbol:** at every width, a search in the head shows only its magnifier while it holds no words. A click, a tap or "/" opens it over the title and the views. With words it stays open, also from the address on the server's page and on the phone, so a filtered list says so; emptied, it folds back. Escape takes the focus from it and keeps its words. A search without a placeholder shows its name as one. While a menu at the field's end is open (a filter), the field stays open.
-- **No title twice:** while the sidebar shows, a head title with the words of the sidebar's current entry ("Einstellungen", "Alle Ablagen") gives way; the head keeps its views, actions and toolbar. On the phone and where the sidebar is a drawer, the head names the page.
-- **One main action:** the head's end holds the search and one main action. Where an app passes several (`variant="primary"`, such as "Hochladen" and "Neuer Ordner"), the head shows them as one "+" menu with their names and deeds. On the phone the main action floats as the round button from `Workspace primary`.
-- **One way back:** on the phone, the open entry's `Pane back` is the one way back to the list, with the list's address as `href`. The close × of its head gives way there, so there are never two.
+- **Context column:** in a split of one main column and a `Pane side` after it, the context stands beside only where the split holds both at their default widths. With less it gives way to the end of the main column at its full width, and the split scrolls in one piece: the main column is never squeezed, and nothing hides. `side={{ from: 1400 }}` asks for a large screen (a table that needs its room). It needs no room of the workspace, so the sidebar never becomes a drawer for it. A list, its reader and an info column stay beside each other as before. Put `side` on the inner column only: an outer `Pane detail` with `side` becomes the list's context column and moves under the list. A split with no measuring place above it (in a dialog, a sidebar, outside a `Workspace`) never gives way.
+- **A split inside a column:** a column whose content is a split (a list of folders beside the files) asks the workspace for what the panes of that split need beside each other, so the sidebar becomes a drawer before the split runs past the window. A detail in it counts through the workspace's `detail`, open or closed (Files: `detail={320}`), so the sidebar does not jump when it opens. What stands in a dialog or a popover asks the workspace behind it for no room.
+- **A detail that grows:** the same part inside a `Pane detail`, under its one head: what it is on the left, who and what happened in a `Pane side` on the right. From a window of ~1680 px beside a list of 640 px it stands in two columns, below that in reading order.
+- **Phone (below 768 px):** the sidebar leaves, and every head action stays (`keep` is deprecated and changes nothing). The main action floats at the bottom right from `Workspace primary`; its twin in the head carries `floats` and leaves the head there. A head gives way only when it holds nothing but where the page stands: its path, its search and that twin. Any other control, such as a menu "…", keeps the head at its height. The list is the page; an open entry is a page of its own.
+- **One way back:** on the phone, the open entry's `Pane back` is the one way back to the list, with the list's address as `href`. Mark the close × of its head `Button closes`: it gives way there, so there are never two.
+- **Narrow head:** below 600 px a head control with a symbol keeps only the symbol; its words stay its name. A menu keeps its chevron.
+- **The bar names the page:** a pane with `back` and no `head` of its own, such as an editor whose name stood in the workspace's head, shows its `label` after the way back on the phone: "‹ Werkstatt  Notizen.md". The way back takes at most half the bar and is cut first; its whole name stays its hint.
 
 ## Tabs or path?
 
@@ -35,12 +31,14 @@ The workspace decides from its own width, on the server's page too, so nothing j
 
 - Views of the same thing: "Offen", "Diese Woche", "Erledigt", or the areas of a record.
 - They stand in the head `Bar start` beside the actions, or as the `head` of a `Pane`.
-- A tab without room hides whole and joins the menu tab ("Weitere").
+- A tab without room hides whole and joins the menu tab ("Weitere"); its focus moves to the menu tab, never to the page.
 
 ### Path
 
 - Where a sub-page stands: "Lager › Halle 1"; the last item is the page itself.
-- It stands in the head `Bar start` instead of tabs.
+- It stands in the head `Bar start` instead of tabs, and takes the room the actions leave; the actions keep their words.
+- Without room the places before the page shorten first, each down to its own width or 12 characters; the page itself shortens last, with "…".
+- When the places do not fit even at that least, they go into a "…" that opens them as a menu: first the ones between the first place and the parent (from four places on), then all of them. The server sends every place, shortened; only a path without room even so folds, once, in the browser.
 - On the phone the head with a path is hidden, and the shell's bar names the page.
 
 ## Parts
@@ -55,13 +53,15 @@ One per screen: the sidebar, the head, the main action, and the columns; it turn
 
 ### Pane
 
-A column that scrolls, with no padding: a head, a status that stays, a `width` inside a split, and `detail`, `back` and `side`.
+A column that scrolls, with no padding: a head, a status that stays, a `width` inside a split, and `detail`, `back` (on a wide screen too with `wideBack`) and `side`.
+
+A pane's `head` and its toolbar (a `StatusRow` or `FilterBar` as its `status`) are one block: the head's `Bar` stands the toolbar between its start and its end, with no line between them, one line under the block, and the two rows close together. Where the pane is 1200 px or wider, they stand in one row: the path, then the filters and how the list shows, then the head's actions; the Tab key follows that order. A head of actions only (a `Bar` without `start`) always shares the toolbar's row. Any other status, such as the state of an open entry, keeps its own row under the head. So give the head of a list's pane to the pane (`Pane head`), not to the workspace, when the pane has a `status`. The head's search is `HeadSearch` in the head's `end`, with a `label`: it stands as its symbol, named by its label, and opens over its neighbours when pressed or with "/". Its words keep it open in the row, and Escape leaves it with its words. Its code comes with it, so a page whose heads have no search loads none of it. A row keeps its height when it carries a deed: on one line the time stands at the end and the deed after it; on the phone the deed takes the row under the text.
 
 <Props of="Pane" />
 
 ### Bar
 
-A bar of fixed height with one line below and two places, `start` and `end`; its height comes from its place.
+A bar of fixed height with one line below and two places, `start` and `end`; its height comes from its place. The `start` keeps a least: its name at `--k2-start-least` (16ch), or its open tab. Buttons of the `end` that do not fit beside the whole `start` move into a menu "…" at its end, in their order, or into the end's own `Menu` "…" (one without a symbol of its own, whatever its `label`) as its first section, so a bar never shows two "…" (an end made outside the `Bar`, in an island of its own, gets the bar's "Mehr in dieser Leiste" instead); the primary action, a closing ×, a menu and a search stay. Only when nothing more can fold does the `start` shorten its words with "…", down to its least, never to nothing.
 
 <Props of="Bar" />
 
@@ -96,7 +96,7 @@ Until they are fixed, use the nearest part and write `// k2b-ui gap: …` at tha
 
 - Put the app's places in `Nav`, its views in `Tabs`, and its main action in the head and in `Workspace primary`.
 - Render the detail only while the address names an entry, and give its `back` the list's address.
-- Declare `detail` and `detailEmpty` on the workspace when a detail opens beside the list.
+- Declare `detail` and `detailEmpty` on the workspace when a detail opens beside the list. While nothing is open, `detailEmpty` may carry a `hero`: a picture of the place as a whole, such as a [`Heat`](/en/ui/v2/content) of the mails received per day with a line that sums it up.
 - Give a long list a `scrollKey`, so back and forward return to where it was.
 
 ### Don't

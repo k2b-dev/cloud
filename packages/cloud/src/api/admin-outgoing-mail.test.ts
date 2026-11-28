@@ -38,6 +38,7 @@ const profile: AdminMailProfile = {
   updatedAt: "2026-01-01T00:00:00.000Z",
   updatedBy: null,
   appCount: 1,
+  usedLast24h: 0,
 };
 const user = buildProjectedUser({ id: crypto.randomUUID(), provider: "local", profile: "user", effective_admin: true });
 const authorized = () =>

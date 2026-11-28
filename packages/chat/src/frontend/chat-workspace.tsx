@@ -1,0 +1,4119 @@
+import type { DictationSource } from "@k2b/cloud/ai/browser";
+import { refreshAppBadges } from "@k2b/cloud/browser/app-badges";
+import { onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
+import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
+import type { CloudResourcePickerOptions } from "@k2b/cloud/browser/resource-picker";
+import type { CloudResourceRef } from "@k2b/cloud/contracts";
+import { layout } from "@k2b/cloud/ssr/layout-runtime";
+import { Link, type LinkNavigateEvent, listenPopState, navigate, refreshCurrentPath } from "@k2b/ssr/nav";
+import type { DateContext } from "@k2b/stdlib";
+import { clipboard } from "@k2b/stdlib/browser";
+import {
+  AppWorkspace,
+  announce,
+  Button,
+  ButtonLink,
+  Dropdown,
+  dialogCore,
+  IconButton,
+  IconButtonLink,
+  InlineGuidance,
+  type MessageRowStatus,
+  NoticeCard,
+  Placeholder,
+  prompts,
+  ScrollArea,
+  TextInput,
+  toast,
+  useLocale,
+  type VirtualFeedController,
+} from "@k2b/ui";
+import type { MenuEntry } from "@k2b/ui/v2";
+import { batch, createEffect, createMemo, createSignal, type JSX, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
+import { Dynamic } from "solid-js/web";
+import type { z } from "zod";
+import { chatMessages } from "../messages";
+import {
+  type AttachmentView,
+  type ConversationPageSchema,
+  type ConversationSchema,
+  type ForYouPageSchema,
+  type ItemEventSchema,
+  MAX_MESSAGE_ATTACHMENTS,
+  MAX_MESSAGE_REFS,
+  MESSAGE_MAX_CODE_POINTS,
+  type Mention,
+  MessageBodySchema,
+  type MessagePageSchema,
+  type MessageSchema,
+  type PersonalConversationSchema,
+  type ReadUpdateSchema,
+  type SharedItem,
+  type SidebarPreferencesSchema,
+  type ThreadListSchema,
+} from "../service/contracts";
+import { messagePlainText, renderSystemMessage } from "../system-messages";
+import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
+import ChatDeviceNotice from "./ChatDeviceNotice";
+import ChatList from "./ChatList";
+import ChatSystemChats, { createSystemChatList } from "./ChatSystemChats";
+import { ThreadMenu, ThreadPicker } from "./ChatThreads";
+import { createChatCommands } from "./chat-commands";
+import { ChatInfoPanel, ChatSearch, ChatThreadColumn, ChatThreadsPage, DiscoverChannels, ForYou } from "./chat-deferred-views";
+import {
+  openAddPeopleDialog,
+  openChannelDialog,
+  openChatDetailsDialog,
+  openLeaveChatDialog,
+  openMessageMutationDialog,
+  openNewChatDialog,
+  openThreadDialog,
+} from "./chat-dialog-openers";
+import { ChatDraftConflict, chatDrafts } from "./chat-drafts";
+import { messageTime, sameDay } from "./chat-format";
+import type { DraftQuote } from "./chat-quote-selection";
+import { createChatSearch } from "./chat-search-state";
+import { type ChatSend, createAttachmentUpload, createChatSends, createChatSendsApi } from "./chat-sends";
+import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
+import { chatTitle } from "./chat-title";
+import type { DeviceNotice } from "./device-notice";
+import { FollowToggle } from "./FollowToggle";
+import { createForYouApi } from "./for-you-api";
+import { createItemEventsApi } from "./item-events-api";
+import type { ChosenMember } from "./MemberPicker";
+import { createNotificationCleanup } from "./notification-cleanup";
+import ResourceChatStart from "./ResourceChatStart";
+import { createReadReporter, seenRange } from "./read-reporter";
+import { createResourceCards, FRESH_MS } from "./resource-cards";
+import { type ResourceChat, resourceChatExists, resourceChatPath } from "./resource-chat";
+import {
+  panelHref as conversationHref,
+  parseRoute,
+  type Route,
+  routeAddress,
+  threadsPageHref as threadsPageAddress,
+  UNREAD_COUNT_PATH,
+} from "./route";
+import { containerIcon, loadSystemThreads, openResourceDiscussion, openResourceThread, openSystemChat } from "./system-chats";
+import {
+  chatHasThreads,
+  isUnread,
+  messageThread,
+  type Thread,
+  type ThreadList,
+  type ThreadView,
+  threadHref as threadAddress,
+  threadIcon,
+  threadOf,
+  viewName,
+  viewReadStart,
+} from "./threads";
+import type { ChatDetailV2, ChatHeadButton, ChatListNotice } from "./v2/ChatFrameV2";
+import type { ChatListModel, ChatRowsContext } from "./v2/ChatListV2";
+import type { ChatV2Parts } from "./v2/chat-v2-parts";
+
+type ReadUpdate = z.infer<typeof ReadUpdateSchema>;
+
+type Conversation = z.infer<typeof ConversationSchema>;
+type Message = z.infer<typeof MessageSchema>;
+type Store = ReturnType<typeof createChatStore>;
+type Sends = ReturnType<typeof createChatSends>;
+
+export type ChatWorkspaceProps = {
+  /** The same workspace served without the Cloud shell in its provider route. */
+  embedded?: boolean;
+  /** In the panel: the discussion about the host page's resource, which the panel opens first and leads back to. */
+  resourceChat?: ResourceChat | null;
+  /** In the panel: the address is the ready discussion about the resource, while nobody has written there. */
+  resourcePage?: boolean;
+  /** In the panel: the place the server read from the shared context, the start the browser's context is compared to. */
+  panelScope?: ResourceChat["ref"] | null;
+  /** Live dictation is set up and allowed for this person; the composer then shows Dictate. */
+  liveDictation?: boolean;
+  /** The Cloud app's Chat below `/pwa/chat`: the list beside the open chat from 64 rem, one after the other below. */
+  app?: boolean;
+  archived?: boolean;
+  filter?: "all" | "unread";
+  collapsed?: z.infer<typeof SidebarPreferencesSchema>["collapsed"];
+  channelsPage?: boolean;
+  channelQuery?: string;
+  channelPage?: z.infer<typeof ConversationPageSchema> | null;
+  /** The address is the "For you" page; the server read its first page, or `null` when that failed. */
+  forYouPage?: boolean;
+  forYouInitial?: z.infer<typeof ForYouPageSchema> | null;
+  /** The live cursor the server read before every part of this snapshot. */
+  cursor: string;
+  sidebar: z.infer<typeof ConversationPageSchema>;
+  open: {
+    conversation: Conversation;
+    page: z.infer<typeof MessagePageSchema>;
+    threads: z.infer<typeof ThreadListSchema>;
+    focus: string | null;
+  } | null;
+  /** The chat in the address, also when the reader may not see it. */
+  chatId: string | null;
+  /** The open part of the chat: "all", "general", or a thread's ID. */
+  view: ThreadView;
+  /** The phone's page with the chat's threads. */
+  threadsPage: boolean;
+  viewerId: string;
+  guest: boolean;
+  panel: "info" | null;
+  dateConfig: DateContext;
+  /** The server's clock, so relative day labels render the same on the server and in the browser. */
+  now: string;
+  /** The line about this device above the chats that this device showed last; the browser checks it again. */
+  deviceNotice?: DeviceNotice;
+};
+
+const liveDictationSource: DictationSource = {
+  async devices() {
+    const module = await importOnDemand(() => import("@k2b/cloud/ai/browser"));
+    if (!module) throw new Error("Dictation code could not load");
+    return module.createLiveDictationSource({ app: "chat" }).devices();
+  },
+  start(options) {
+    let session: ReturnType<DictationSource["start"]> | undefined;
+    const pending = importOnDemand(() => import("@k2b/cloud/ai/browser")).then((module) => {
+      if (!module || options.signal.aborted) return undefined;
+      session = module.createLiveDictationSource({ app: "chat" }).start(options);
+      return session;
+    });
+    return {
+      events: {
+        async *[Symbol.asyncIterator]() {
+          const source = await pending;
+          if (!source) {
+            if (!options.signal.aborted) yield { type: "error" as const, code: "connection_lost" as const, retryable: true };
+            return;
+          }
+          yield* source.events;
+        },
+      },
+      async stop() {
+        session ??= await pending;
+        await session?.stop();
+      },
+    };
+  },
+};
+
+const initialChat = (open: NonNullable<ChatWorkspaceProps["open"]>, view: ThreadView): OpenChat => ({
+  id: open.conversation.id,
+  view,
+  threads: open.threads,
+  threadsStatus: "ready",
+  threadsRevision: 0,
+  status: "live",
+  caughtUp: false,
+  conversation: open.conversation,
+  messages: open.page.items,
+  membershipRev: 0,
+  historyRev: 0,
+  watermark: open.page.rev,
+  seqHead: open.page.seqHead,
+  hasOlder: open.page.from > 1,
+  hasNewer: open.page.to < open.page.seqHead,
+});
+const chatRoute = (chatId: string | null, view: ThreadView = "all", extra: Partial<Route> = {}): Route => ({
+  chatId,
+  view,
+  threads: false,
+  messageId: null,
+  panel: null,
+  ...extra,
+});
+
+/**
+ * The chat app's full view: the chats in the sidebar and one open chat. The server renders the authorized snapshot;
+ * in the browser one store keeps it live, and switching chats loads the next snapshot before the address changes.
+ * Below 64 rem the list and a chat are separate pages.
+ */
+export function ChatWorkspaceView(
+  props: ChatWorkspaceProps & {
+    /** The full page on @k2b/ui v2 (`/app/chat`) draws v2's frame; the panel and the Cloud app keep v1's for now. */
+    v2?: ChatV2Parts;
+  },
+): JSX.Element {
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+  });
+  const openCloudResourcePicker = async (options: CloudResourcePickerOptions) => {
+    const source = route();
+    const module = await importOnDemand(() => import("@k2b/cloud/browser/resource-picker"));
+    if (disposed || route() !== source) return undefined;
+    return module?.openCloudResourcePicker(options);
+  };
+
+  const basePath = props.app ? "/pwa/chat" : props.embedded ? "/app/chat/panel" : "/app/chat";
+  const panelHref = (id: string, info: "info" | null, message?: string | null, view: ThreadView = "all") =>
+    conversationHref(id, info, message, view, basePath);
+  const threadHref = (id: string, view: ThreadView, message?: string | null) => threadAddress(id, view, message, basePath);
+  const threadsPageHref = (id: string) => threadsPageAddress(id, basePath);
+  const locale = useLocale();
+  const t = () => chatMessages.resolve([locale()]).t;
+  const [route, setRoute] = createSignal<Route>({
+    channels: props.channelsPage,
+    forYou: props.forYouPage,
+    resource: props.resourcePage,
+    query: props.channelQuery,
+    chatId: props.chatId,
+    view: props.view,
+    threads: props.threadsPage,
+    messageId: props.open?.focus ?? null,
+    panel: props.panel,
+  });
+  const [resourceChat, setResourceChat] = createSignal(props.resourceChat ?? null);
+  // The panel is about to follow the host page's place from its start; it shows that discussion loading meanwhile.
+  const [followPending, setFollowPending] = createSignal(false);
+  /** The panel shows the resource's discussion: its container's chat, an item's thread, or the ready start. */
+  const atResource = () => {
+    const target = resourceChat();
+    const current = route();
+    if (!target) return false;
+    if (!resourceChatExists(target)) return Boolean(current.resource);
+    return current.chatId === target.id && !current.channels && (!target.item || current.view === target.thread);
+  };
+  /** The discussion about the resource before anyone wrote there. */
+  const pendingResource = () => {
+    const target = resourceChat();
+    return route().resource && target && !resourceChatExists(target) ? target : null;
+  };
+  // History is not reactive; keep its list marker for the header rendered before each address commit.
+  const [listPredecessor, setListPredecessor] = createSignal(false);
+  const [archived, setArchived] = createSignal(props.archived ?? false);
+  const [filter, setFilter] = createSignal(props.filter ?? "all");
+  const [collapsed, setCollapsed] = createSignal(props.collapsed ?? []);
+  // "For you": the unread count from the server's sidebar read, and a revision the page reads again on.
+  const [forYouUnread, setForYouUnread] = createSignal(props.sidebar.forYouUnread ?? 0);
+  const [forYouRevision, setForYouRevision] = createSignal(0);
+  const [listRetry, setListRetry] = createSignal<(() => void) | null>(null);
+  const [listError, setListError] = createSignal<string | null>(null);
+  const [listPending, setListPending] = createSignal(false);
+  let collapsePending = false;
+  const [listLoading, setListLoading] = createSignal(false);
+  let activeListLoads = 0;
+  const loadList = async <T,>(work: () => Promise<T>): Promise<T> => {
+    setListLoading(++activeListLoads > 0);
+    try {
+      return await work();
+    } finally {
+      setListLoading(--activeListLoads > 0);
+    }
+  };
+  const retainedUnread = new Set<string>();
+  let listIntent = 0;
+  let pendingListIntent: number | null = null;
+  const listHref = (path = archived() ? `${basePath}/archive` : basePath) => {
+    const url = new URL(path, "https://chat.invalid");
+    const id = /\/c\/([^/]+)/.exec(url.pathname)?.[1];
+    const target =
+      rows().find((row) => row.id === id) ??
+      (conversation()?.id === id ? conversation() : null) ??
+      (props.open && props.open.conversation.id === id ? props.open.conversation : null);
+    // The system thread directory already owns `filter`; personal list state has its own key there.
+    if (target?.kind === "system") {
+      if (filter() === "unread") url.searchParams.set("listFilter", "unread");
+      else url.searchParams.delete("listFilter");
+    } else if (filter() === "unread") url.searchParams.set("filter", "unread");
+    if (archived() && url.pathname.includes("/c/")) url.searchParams.set("list", "archive");
+    return url.pathname + url.search;
+  };
+  const viewHref = (path: string) => {
+    const url = new URL(listHref(path), location.href);
+    const source = new URL(location.href);
+    if (conversation()?.kind === "system" && /\/c\/([^/]+)/.exec(source.pathname)?.[1] === /\/c\/([^/]+)/.exec(url.pathname)?.[1])
+      for (const key of ["q", "filter"]) if (source.searchParams.has(key)) url.searchParams.set(key, source.searchParams.get(key)!);
+    return url.pathname + url.search;
+  };
+  const [panel, setPanel] = createSignal<"info" | null>(props.panel);
+  const [rows, setRows] = createSignal<readonly Conversation[]>(props.sidebar.items);
+  // The line about this device lives here, so a sidebar that renders again shows what the reader last saw.
+  const [deviceNotice, setDeviceNotice] = createSignal<DeviceNotice>(props.deviceNotice ?? { kind: "none" });
+  const [hasMore, setHasMore] = createSignal(props.sidebar.nextCursor !== null);
+  const [chat, setChat] = createSignal<OpenChat | null>(props.open ? initialChat(props.open, props.view) : null);
+  const [liveStopped, setLiveStopped] = createSignal(false);
+  const [busy, setBusy] = createSignal(false);
+  // The latest open whose snapshot is still loading; an older one that a newer navigation superseded no longer counts.
+  let openToken = 0;
+  let pendingOpen = 0;
+  /** An info toggle chosen while a chat was still opening; it runs once that open ends, for the same chat only. */
+  let deferredPanel: { chatId: string | null; run: () => void } | undefined;
+  const deferPanel = (run: () => void) => {
+    deferredPanel = { chatId: route().chatId, run };
+  };
+  const runDeferredPanel = () => {
+    const deferred = deferredPanel;
+    deferredPanel = undefined;
+    if (deferred && pendingOpen === 0 && deferred.chatId === route().chatId) deferred.run();
+  };
+  let systemOpen = 0;
+  let pendingSends = 0;
+
+  // The outbox changes its entries in place; this counts its changes so the history reads them again.
+  const [sendsVersion, setSendsVersion] = createSignal(0);
+  // The list keeps its order while messages arrive elsewhere; it sorts again on the reader's own actions.
+  const [order, setOrder] = createSignal<readonly string[]>(props.sidebar.items.map((row) => row.id));
+  const [now, setNow] = createSignal(new Date(props.now));
+  // Each part of a chat keeps its own draft and its own reply; "All threads" and a chat without threads use the chat's.
+  const draftId = (target: Pick<Route, "chatId" | "view">) =>
+    target.chatId === null ? null : target.view === "all" ? target.chatId : `${target.chatId}:${target.view}`;
+  const drafts = new Map<string, string>();
+  const savedTexts = new Map<string, string>();
+  const [draftConflicts, setDraftConflicts] = createSignal<Record<string, string>>({});
+  const [draft, setDraft] = createSignal("");
+  const draftError = createMemo(() => {
+    const body = draft();
+    if (!body.trim() || MessageBodySchema.safeParse(body).success) return undefined;
+    return body.includes("\u0000")
+      ? t().messageInvalidCharacters
+      : t().messageTooLong({ limit: MESSAGE_MAX_CODE_POINTS.toLocaleString(locale()) });
+  });
+  const [draftStorageFailed, setDraftStorageFailed] = createSignal(false);
+  const [composerReady, setComposerReady] = createSignal(!props.embedded);
+  const unsavedDrafts = new Set<string>();
+  let savedDrafts: ReturnType<typeof chatDrafts> | undefined;
+  const readDraft = (id: string) => {
+    if (drafts.has(id)) return drafts.get(id)!;
+    try {
+      if (!savedDrafts) throw new Error("Draft storage unavailable");
+      const text = savedDrafts.read(id);
+      drafts.set(id, text);
+      savedTexts.set(id, text);
+      return text;
+    } catch {
+      setDraftStorageFailed(true);
+      return "";
+    }
+  };
+  const changeDraft = (text: string) => {
+    const id = draftId(route());
+    setDraft(text);
+    if (!id) return;
+    drafts.set(id, text);
+    unsavedDrafts.add(id);
+    try {
+      if (!savedDrafts) throw new Error("Draft storage unavailable");
+      savedDrafts.write(id, text, expectedDraft(id));
+      savedTexts.set(id, text);
+      unsavedDrafts.delete(id);
+    } catch (error) {
+      if (error instanceof ChatDraftConflict) setDraftConflicts((all) => ({ ...all, [id]: error.saved }));
+      else setDraftStorageFailed(true);
+    }
+  };
+  /**
+   * The text another view of this tab may have saved meanwhile, such as the panel's iframe. The Cloud app is one
+   * window, and its device storage also hands back text it could not keep yet, which is no other view's edit.
+   */
+  const expectedDraft = (id: string) => (props.app ? undefined : (savedTexts.get(id) ?? ""));
+  /**
+   * The web keeps drafts for the tab. The Cloud app keeps them in the device's storage, so a chat's draft survives the
+   * app being ended in the background; signing out of the app deletes them.
+   */
+  const draftStorage = (): Pick<Storage, "getItem" | "setItem" | "removeItem"> =>
+    props.app
+      ? {
+          getItem: (key) => pwaDrafts.read(props.viewerId, key) ?? null,
+          setItem: (key, value) => {
+            if (!pwaDrafts.write(props.viewerId, key, value)) throw new Error("Draft storage unavailable");
+          },
+          removeItem: (key) => pwaDrafts.remove(props.viewerId, key),
+        }
+      : window.sessionStorage;
+  const retryDraftStorage = () => {
+    try {
+      savedDrafts = chatDrafts(props.viewerId, draftStorage());
+      for (const id of unsavedDrafts) {
+        try {
+          const text = drafts.get(id)!;
+          savedDrafts.write(id, text, expectedDraft(id));
+          savedTexts.set(id, text);
+          unsavedDrafts.delete(id);
+        } catch (error) {
+          if (error instanceof ChatDraftConflict) setDraftConflicts((all) => ({ ...all, [id]: error.saved }));
+          else throw error;
+        }
+      }
+      const id = draftId(route());
+      if (id && !drafts.has(id)) {
+        const text = savedDrafts.read(id);
+        drafts.set(id, text);
+        savedTexts.set(id, text);
+      }
+      if (id) setDraft(drafts.get(id) ?? "");
+      if (props.embedded) savedDrafts.select(id);
+      setDraftStorageFailed(false);
+    } catch {
+      setDraftStorageFailed(true);
+    }
+  };
+  const resolveDraftConflict = (id: string, useSaved: boolean) => {
+    if (!savedDrafts) return;
+    try {
+      const expected = draftConflicts()[id];
+      if (expected === undefined) return;
+      const saved = savedDrafts.read(id);
+      // A newer edit requires a fresh choice; never overwrite text absent from the displayed comparison.
+      if (saved !== expected) {
+        setDraftConflicts((all) => ({ ...all, [id]: saved }));
+        return;
+      }
+      if (useSaved) {
+        drafts.set(id, saved);
+        savedTexts.set(id, saved);
+        unsavedDrafts.delete(id);
+        if (draftId(route()) === id) setDraft(saved);
+      } else {
+        const local = drafts.get(id) ?? "";
+        savedDrafts.write(id, local, expected);
+        savedTexts.set(id, local);
+        unsavedDrafts.delete(id);
+      }
+      setDraftConflicts((all) => {
+        const next = { ...all };
+        delete next[id];
+        return next;
+      });
+    } catch (error) {
+      if (error instanceof ChatDraftConflict) setDraftConflicts((all) => ({ ...all, [id]: error.saved }));
+      else setDraftStorageFailed(true);
+    }
+  };
+  const [readFailure, setReadFailure] = createSignal<{ run: () => Promise<unknown> | undefined }>();
+  const [retryingRead, setRetryingRead] = createSignal(false);
+  const readNotice = () => (
+    <Show when={readFailure()}>
+      {(failure) => (
+        <span class="chat-read-status">
+          <span>{t().readStateFailed}</span>
+          <Button
+            variant="text"
+            size="xs"
+            class="chat-read-status__retry"
+            loading={retryingRead()}
+            onClick={async () => {
+              setRetryingRead(true);
+              try {
+                await changeRead(failure().run);
+                refreshSearch();
+              } finally {
+                setRetryingRead(false);
+              }
+            }}
+          >
+            {t().retry}
+          </Button>
+        </span>
+      )}
+    </Show>
+  );
+  const draftNotice = () => (
+    <>
+      <Show when={eventsFailed()}>
+        <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+          {t().itemEventsFailed}{" "}
+          <Button variant="text" size="xs" onClick={() => void loadEvents()}>
+            {t().retry}
+          </Button>
+        </InlineGuidance>
+      </Show>
+      <Show when={draftStorageFailed()}>
+        <NoticeCard tone="danger" title={t().draftNotSaved} detail={t().draftNotSavedDescription}>
+          <Button variant="ghost" onClick={retryDraftStorage}>
+            {t().retry}
+          </Button>
+        </NoticeCard>
+      </Show>
+      <Show when={draftId(route()) && draftConflicts()[draftId(route())!] !== undefined}>
+        <NoticeCard tone="warning" title={t().draftChangedElsewhere} detail={t().draftChangedElsewhereDescription}>
+          <pre class="max-h-32 overflow-auto whitespace-pre-wrap">{draftConflicts()[draftId(route())!]}</pre>
+          <Button variant="secondary" onClick={() => resolveDraftConflict(draftId(route())!, true)}>
+            {t().useSavedDraft}
+          </Button>
+          <Button variant="ghost" onClick={() => resolveDraftConflict(draftId(route())!, false)}>
+            {t().keepLocalDraft}
+          </Button>
+        </NoticeCard>
+      </Show>
+    </>
+  );
+  // A stored message keeps the key of the send it came from, so its row is not replaced when it arrives.
+  const sendKeys = new Map<string, string>();
+  let store: Store | undefined;
+  // The same store as `store`, for the info panel, which renders before the store exists and loads once it does.
+  const [liveStore, setLiveStore] = createSignal<Store>();
+  const [localBumps, setLocalBumps] = createSignal(0);
+  let outbox: Sends | undefined;
+  let feed: VirtualFeedController | undefined;
+
+  // The Cloud app counts unread messages in every chat, not only the loaded rows. When the rows' counts change, a read
+  // here or a message elsewhere, it reads the total again and lets the sidebar's count follow.
+  const [unreadTotal, setUnreadTotal] = createSignal<number>();
+  if (props.app) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const readTotal = async () => {
+      const response = await fetch(UNREAD_COUNT_PATH, { credentials: "same-origin", headers: { accept: "application/json" } }).catch(
+        () => null,
+      );
+      const body: unknown = response?.ok ? await response.json().catch(() => null) : null;
+      if (typeof body === "object" && body !== null && "count" in body && typeof body.count === "number") setUnreadTotal(body.count);
+    };
+    onMount(() => void readTotal());
+    createEffect(
+      on(
+        () => rows().reduce((sum, row) => sum + row.unread, 0),
+        () => {
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            void readTotal();
+            refreshAppBadges();
+          }, 300);
+        },
+        { defer: true },
+      ),
+    );
+    onCleanup(() => clearTimeout(timer));
+  }
+
+  const sortRows = () => setOrder(rows().map((row) => row.id));
+  const listRows = createMemo(() => {
+    const rank = new Map(order().map((id, index) => [id, index]));
+    const known = rows()
+      .filter((row) => row.kind !== "system" && rank.has(row.id))
+      .sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+    const ordered = [...rows().filter((row) => row.kind !== "system" && !rank.has(row.id)), ...known];
+    if (filter() !== "unread") return ordered;
+    return ordered.filter((row) => {
+      if (row.unread > 0 || row.read?.unreadFromSeq != null) retainedUnread.add(row.id);
+      return retainedUnread.has(row.id);
+    });
+  });
+  // The store may hold the next chat a moment before the address names it; the chat it holds is what shows.
+  const openChat = () => {
+    const current = chat();
+    return current && current.status !== "no-access" && current.conversation ? current : null;
+  };
+  // Open Info only when requested, then keep its search, pages and filters for
+  // this chat just as the eager panel did. Changing chats disposes that state.
+  const [infoMounted, setInfoMounted] = createSignal(props.panel === "info");
+  createEffect(
+    on([() => openChat()?.id, panel], ([id, visible], previous) => {
+      if (visible === "info") setInfoMounted(true);
+      else if (id !== previous?.[0]) setInfoMounted(false);
+    }),
+  );
+
+  const conversation = () => openChat()?.conversation ?? null;
+  const system = () => conversation()?.kind === "system";
+  const systemList = createSystemChatList();
+  // Read chats close their notifications on this device, and the badges follow the counts.
+  const cleanup = createNotificationCleanup();
+  createEffect(() => cleanup(rows()));
+  onCleanup(cleanup.dispose);
+  createEffect(
+    on([liveStore, systemList.page], ([live, page]) => {
+      if (live && page) live.includeSystemChats(page.items.flatMap((item) => (item.conversation ? [item.conversation] : [])));
+    }),
+  );
+  const [systemExpanded, setSystemExpanded] = createSignal(props.open?.conversation.kind === "system");
+  /** The list's search; it lasts while the reader moves between chats and ends with "Escape" or an empty field. */
+  const [searchQuery, setSearchQuery] = createSignal("");
+  const chatSearch = createChatSearch(() => searchQuery().trim());
+  /** A hit may be a chat the list does not hold, so the search asks again after an action changed one. */
+  const refreshSearch = () => {
+    if (searchQuery().trim()) chatSearch.retry();
+  };
+  // A resource discussion opened from "For you", the search, or another app shows where it lives in the list.
+  createEffect(
+    on(
+      () => (system() ? conversation()!.id : null),
+      (id) => id && setSystemExpanded(true),
+      { defer: true },
+    ),
+  );
+  const [creatingThread, setCreatingThread] = createSignal(false);
+  const canCreateThread = () => {
+    const current = conversation();
+    return !!current && !current.channel && (system() ? current.permission !== "read" : current.permission === "admin");
+  };
+  const generalName = () => (system() ? (conversation()?.title ?? "") : t().general);
+  const threadName = (view: ThreadView) => (view === "general" ? generalName() : viewName(view, openChat()?.threads ?? null, t()));
+  const noAccess = () => route().chatId !== null && openChat() === null;
+  const breadcrumbs = (title?: string) =>
+    chatTitle({
+      start: t().start,
+      appName: t().appName,
+      title,
+      listHref: listHref(archived() ? `${basePath}/archive` : basePath),
+      ownBack: !!(route().channels || route().forYou),
+    });
+  // The trail names the chat in the address. It follows live renames and lost access, and keeps its last title while
+  // the store already holds the next chat but the address does not name it yet.
+  const trailTitle = createMemo<string | undefined>((previous) => {
+    const id = route().chatId;
+    if (route().channels) return t().browseChannels;
+    if (route().forYou) return t().forYou;
+    if (!id) return undefined;
+    if (chat()?.id !== id) return previous;
+    return conversation()?.title ?? t().threadUnavailable;
+  });
+  createEffect(
+    on(
+      () => [trailTitle(), archived(), filter(), !!(route().channels || route().forYou)] as const,
+      ([title]) => layout.update({ breadcrumbs: breadcrumbs(title) }),
+      { defer: true },
+    ),
+  );
+
+  // A sent message the loaded history covers leaves the outbox; its stored row keeps the send's key. The stored message
+  // names its send's clientId, so it replaces the send also when it arrives live before the send's answer.
+  const prune = () => {
+    const current = store?.openConversation;
+    if (!current || current.status === "no-access" || !outbox) return;
+    const lastSeq = current.messages.at(-1)?.seq ?? 0;
+    const stored = new Map(
+      current.messages.flatMap((message) =>
+        message.clientId && message.author.id === props.viewerId ? [[message.clientId, message.id] as const] : [],
+      ),
+    );
+    for (const send of outbox.sends(current.id)) {
+      const id = stored.get(send.clientId) ?? send.message?.id;
+      if (!id) continue;
+      sendKeys.set(id, send.clientId);
+      if (stored.has(send.clientId) || (send.status === "sent" && send.message && send.message.seq <= lastSeq))
+        outbox.forget(send.clientId);
+    }
+  };
+
+  // A quote names its original; a click jumps to it, in the history or, when it is not loaded, around it.
+  const quoteOf = (chatId: string, message: Message) => {
+    const reply = message.replyTo;
+    if (!reply) return undefined;
+    if ("deleted" in reply) return { author: "", text: t().quotedDeleted };
+    return {
+      author: reply.author.id === props.viewerId ? t().you : reply.author.name,
+      text: reply.preview,
+      onSelect: () => void jumpTo(chatId, reply.id),
+    };
+  };
+  // A quoted passage jumps to its message and tints the passage there.
+  const quotesOf = (chatId: string, message: Message) =>
+    message.quotes?.map((quote) =>
+      "deleted" in quote
+        ? { author: "", text: t().quoteGone }
+        : {
+            author: quote.author.id === props.viewerId ? t().you : quote.author.name,
+            text: quote.text,
+            onSelect: () => void jumpTo(chatId, quote.id, quote.text),
+          },
+    );
+  // In "All threads", a chip under each message names its thread and opens it.
+  const originOf = (chatId: string, view: ThreadView) => {
+    const name = threadName(view);
+    if (system() && view === "general") return { label: name, icon: containerIcon(conversation()?.icon) };
+    if (!name) return undefined;
+    return {
+      label: name,
+      icon: view === "general" ? "ti ti-messages" : threadIcon(threadOf(openChat()?.threads ?? null, view)),
+      selectLabel: t().openThread({ name }),
+      onSelect: () => void openView(chatId, view),
+    };
+  };
+  // Changes to the items of a container show between its messages. They are read through the owning app
+  // for the loaded window of messages, again when the history changes, when the page comes back and once a minute.
+  // They are no messages; a failed read keeps the ones shown and says so, with a way to read them again.
+  type ItemEvent = z.infer<typeof ItemEventSchema>;
+  const itemEvents = createItemEventsApi();
+  const [events, setEvents] = createSignal<{ key: string; chat: string; view: string; list: readonly ItemEvent[] }>();
+  // Event and group rows keep their objects while they show the same, so the feed keeps their elements and focus.
+  const eventRows = new Map<string, ChatFeedItem>();
+  const keepEventRow = (row: ChatFeedItem) => {
+    const known = eventRows.get(row.key);
+    if (
+      known &&
+      known.body === row.body &&
+      known.at === row.at &&
+      known.icon === row.icon &&
+      known.href === row.href &&
+      known.origin?.label === row.origin?.label &&
+      known.group?.label === row.group?.label &&
+      known.group?.time === row.group?.time
+    )
+      return known;
+    eventRows.set(row.key, row);
+    return row;
+  };
+  const [eventsFailed, setEventsFailed] = createSignal(false);
+  const [openGroups, setOpenGroups] = createSignal<ReadonlySet<string>>(new Set());
+  /** The window the events belong to: from the first loaded message, up to the last one when newer ones follow. */
+  const eventsWindow = () => {
+    const current = openChat();
+    if (!current || current.conversation?.kind !== "system" || current.view === "general") return null;
+    return {
+      chat: current.id,
+      view: current.view,
+      after: current.messages[0]?.createdAt,
+      before: current.hasNewer ? current.messages.at(-1)?.createdAt : undefined,
+    };
+  };
+  // Memos, so an update of the chat that keeps the window and the history's length reads nothing again.
+  const eventsKey = createMemo(() => {
+    const window = eventsWindow();
+    return window ? JSON.stringify(window) : null;
+  });
+  const loadedMessages = createMemo(() => openChat()?.messages.length);
+  let eventsRequest: AbortController | undefined;
+  const loadEvents = async () => {
+    const window = eventsWindow();
+    const key = eventsKey();
+    eventsRequest?.abort();
+    if (!window || !key) return;
+    const request = new AbortController();
+    eventsRequest = request;
+    const list: ItemEvent[] = [];
+    try {
+      let cursor: string | undefined;
+      // A window holds the changes between its messages; ten pages bound a very busy one. A chat without messages
+      // shows its latest page of changes.
+      for (let page = 0; page < (window.after ? 10 : 1); page++) {
+        const result = await itemEvents.list(
+          window.chat,
+          {
+            thread: window.view === "all" ? "all" : window.view,
+            limit: 100,
+            ...(window.after ? { after: window.after } : {}),
+            ...(window.before ? { before: window.before } : {}),
+            ...(cursor ? { cursor } : {}),
+          },
+          request.signal,
+        );
+        if (result.unavailable) throw new Error("Item events unavailable");
+        list.push(...result.items);
+        if (!result.nextCursor) break;
+        cursor = result.nextCursor;
+      }
+      if (request.signal.aborted) return;
+      setEvents({ key, chat: window.chat, view: window.view, list });
+      setEventsFailed(false);
+    } catch (error) {
+      if (!request.signal.aborted && !(error instanceof Error && error.name === "AbortError")) setEventsFailed(true);
+    }
+  };
+  const eventsPlace = createMemo(() => {
+    const window = eventsWindow();
+    return window ? `${window.chat}:${window.view}` : null;
+  });
+  createEffect(
+    on(eventsPlace, () => {
+      setOpenGroups(new Set<string>());
+      setEventsFailed(false);
+    }),
+  );
+  createEffect(
+    on(eventsKey, (key) => {
+      if (key) void loadEvents();
+      else {
+        eventsRequest?.abort();
+        setEvents(undefined);
+      }
+    }),
+  );
+  createEffect(on(loadedMessages, () => void loadEvents(), { defer: true }));
+  onMount(() => {
+    const visible = () => {
+      if (document.visibilityState === "visible") void loadEvents();
+    };
+    document.addEventListener("visibilitychange", visible);
+    const timer = setInterval(visible, 60_000);
+    onCleanup(() => {
+      document.removeEventListener("visibilitychange", visible);
+      clearInterval(timer);
+      eventsRequest?.abort();
+    });
+  });
+  const eventOrigin = (chatId: string, event: ItemEvent) => {
+    const thread = event.thread;
+    if ("id" in thread)
+      return {
+        label: thread.name,
+        icon: threadIcon(threadOf(openChat()?.threads ?? null, thread.id)),
+        selectLabel: t().openThread({ name: thread.name }),
+        onSelect: () => void openView(chatId, thread.id),
+      };
+    const canOpen = ["write", "admin"].includes(openChat()?.conversation?.permission ?? "");
+    return {
+      label: thread.name,
+      icon: "ti ti-messages",
+      ...(canOpen
+        ? {
+            selectLabel: t().openThread({ name: thread.name }),
+            onSelect: () =>
+              void openResourceThread(chatId, { ref: thread.ref }).then(
+                (opened) => openView(chatId, opened.id),
+                () => toast.error(t().requestFailed),
+              ),
+          }
+        : {}),
+    };
+  };
+  /** Three or more events in a row on one day stand as one line that opens them. */
+  const groupEvents = (list: readonly ChatFeedItem[], mixed: boolean): ChatFeedItem[] => {
+    const result: ChatFeedItem[] = [];
+    const config = { ...props.dateConfig, locale: locale() };
+    for (let index = 0; index < list.length; ) {
+      const run: ChatFeedItem[] = [];
+      while (index < list.length && list[index]!.kind === "event" && (run.length === 0 || sameDay(run[0]!.at, list[index]!.at, config)))
+        run.push(list[index++]!);
+      if (run.length >= 3) {
+        const first = run[0]!;
+        const key = `events:${first.key}`;
+        const expanded = openGroups().has(key);
+        const names = [...new Set(run.map((item) => item.origin?.label).filter((name): name is string => Boolean(name)))];
+        result.push(
+          keepEventRow({
+            key,
+            kind: "eventGroup",
+            authorId: "",
+            authorName: "",
+            body: "",
+            at: first.at,
+            own: false,
+            group: {
+              label: mixed
+                ? t().eventChangesTo({ count: run.length, names: names.slice(0, 2).join(", "), more: Math.max(names.length - 2, 0) })
+                : t().eventChanges({ count: run.length }),
+              time: `${messageTime(first.at, config)}–${messageTime(run.at(-1)!.at, config)}`,
+              expanded: () => openGroups().has(key),
+              toggle: () =>
+                setOpenGroups((open) => {
+                  const next = new Set(open);
+                  if (next.has(key)) next.delete(key);
+                  else next.add(key);
+                  return next;
+                }),
+            },
+          }),
+        );
+        if (expanded) result.push(...run);
+      } else if (run.length) result.push(...run);
+      else result.push(list[index++]!);
+    }
+    return result;
+  };
+  // v2: the state a place's discussions are shown in (its cards and its head menu), and the server's pages of them
+  // for that state, so the menu finds a discussion whose card lies outside the loaded window too.
+  type PlaceFilter = "all" | "open" | "done" | "unread";
+  const [placeFilter, setPlaceFilter] = createSignal<PlaceFilter>("all");
+  const [placeFound, setPlaceFound] = createSignal<{ chat: string; filter: PlaceFilter; list: ThreadList } | null>(null);
+  const placeShows = (thread: Thread) => {
+    const filter = placeFilter();
+    return filter === "all" || (filter === "unread" ? thread.unread > 0 : (filter === "done") === !!thread.resource?.done);
+  };
+  const findDiscussions = async (chatId: string, filter: PlaceFilter, more = false) => {
+    const previous = placeFound();
+    const same = previous?.chat === chatId && previous.filter === filter;
+    const cursor = more && same ? (previous.list.nextCursor ?? undefined) : undefined;
+    const page = await loadSystemThreads(
+      chatId,
+      { filter: filter === "all" ? undefined : filter, cursor },
+      AbortSignal.timeout(15_000),
+    ).catch(() => null);
+    if (!page) return void toast.error(t().threadsLoadFailed, { title: t().threadsLoadFailedTitle });
+    if (placeFilter() !== filter || conversation()?.id !== chatId) return;
+    setPlaceFound({ chat: chatId, filter, list: { ...page, items: more && same ? [...previous.list.items, ...page.items] : page.items } });
+  };
+  const items = createMemo<readonly ChatFeedItem[]>((previous) => {
+    const current = openChat();
+    if (!current) return [];
+    const cache = new Map(previous?.map((item) => [item.key, item]));
+    sendsVersion();
+    const own = outbox?.sends(current.id) ?? [];
+    const stored = new Set(current.messages.map((message) => message.id));
+    const reuse = (item: ChatFeedItem) => {
+      const known = cache.get(item.key);
+      return known &&
+        known.body === item.body &&
+        known.status === item.status &&
+        known.revision === item.revision &&
+        known.at === item.at &&
+        known.seq === item.seq &&
+        known.origin?.label === item.origin?.label &&
+        known.quote?.text === item.quote?.text &&
+        known.quotes?.map((quote) => quote.text).join() === item.quotes?.map((quote) => quote.text).join() &&
+        known.attachments?.map((attachment) => attachment.id).join() === item.attachments?.map((attachment) => attachment.id).join()
+        ? known
+        : item;
+    };
+    const view = current.view;
+    // In "All threads", every message names its thread from its first frame, also a send that is still on its way.
+    const mixed = view === "all" && current.threads !== null && chatHasThreads(current.conversation);
+    const result = current.messages.map((message) => {
+      const own = message.kind === "text" && message.author.id === props.viewerId;
+      return reuse({
+        thread: message.thread,
+        refs: message.refs,
+        attachments: message.attachments,
+        quote: quoteOf(current.id, message),
+        quotes: quotesOf(current.id, message),
+        origin: mixed && message.kind === "text" ? originOf(current.id, messageThread(message)) : undefined,
+        via: message.via,
+        key: sendKeys.get(message.id) ?? message.id,
+        kind: message.kind,
+        authorId: message.author.id,
+        authorName: own ? t().you : message.author.name,
+        body: message.system ? renderSystemMessage(message.system, message.author.name, locale()) : (message.body ?? ""),
+        at: message.createdAt,
+        own,
+        status: own ? "sent" : undefined,
+        seq: message.seq,
+        messageId: message.id,
+        revision: message.contentRevision ?? 0,
+        edited: !!message.editedAt,
+        deleted: !!message.deletedAt,
+      });
+    });
+    // Events stand between the stored messages by time; the window's own bounds keep out what belongs to other pages.
+    const loaded = events();
+    const first = current.messages[0]?.createdAt;
+    const last = current.messages.at(-1)?.createdAt;
+    // The previous window's events stay until the new window's arrive, as long as the chat and view are the same.
+    if (loaded && loaded.chat === current.id && loaded.view === current.view) {
+      const shown = loaded.list
+        .filter((event) => (!first || event.at >= first) && (!current.hasNewer || !last || event.at <= last))
+        .map((event) =>
+          keepEventRow({
+            key: `event:${event.id}`,
+            kind: "event",
+            authorId: "",
+            authorName: "",
+            body: event.sentence,
+            icon: event.icon,
+            href: event.href,
+            at: event.at,
+            own: false,
+            origin: mixed ? eventOrigin(current.id, event) : undefined,
+          }),
+        )
+        .sort((a, b) => a.at.localeCompare(b.at));
+      let next = 0;
+      const merged: ChatFeedItem[] = [];
+      for (const item of result) {
+        while (next < shown.length && shown[next]!.at < item.at) merged.push(shown[next++]!);
+        merged.push(item);
+      }
+      merged.push(...shown.slice(next));
+      result.splice(0, result.length, ...groupEvents(merged, mixed));
+    }
+    // v2: a place's discussions about its items stand as cards in its "General" stream, at their last activity
+    // (Valentin, v8: no column of its own). They come from the thread list the chat already holds, no query of their
+    // own; a discussion whose last activity lies outside the loaded window shows once the reader gets there.
+    if (props.v2 && current.conversation?.kind === "system" && view === "general" && current.threads) {
+      const words = props.v2.chatV2Messages.resolve([locale()]).t;
+      const cards = current.threads.items
+        .filter((thread) => thread.resource && !thread.archived && placeShows(thread))
+        .filter((thread) => (!first || thread.lastActivityAt >= first) && (!current.hasNewer || !last || thread.lastActivityAt <= last))
+        .map((thread): ChatFeedItem => {
+          const resource = thread.resource!;
+          const author = thread.lastMessage?.author ?? null;
+          return {
+            key: `discussion:${thread.id}`,
+            kind: "discussion",
+            authorId: "",
+            authorName: "",
+            body: thread.name,
+            at: thread.lastActivityAt,
+            own: false,
+            discussion: {
+              href: listHref(threadHref(current.id, thread.id)),
+              onOpen: () => void openView(current.id, thread.id),
+              name: thread.name,
+              icon: threadIcon(thread),
+              state: resource.status ?? (resource.done ? t().threadsDone : t().threadsOpen),
+              done: !!resource.done,
+              line: thread.lastMessage
+                ? `${author?.id === props.viewerId ? t().you : (author?.name.split(" ")[0] ?? "")}: ${thread.lastMessage.preview}`
+                : t().noMessagesYet,
+              author,
+              unread: thread.unread,
+              unreadLabel: thread.unread > 0 ? words.newCount({ count: thread.unread.toLocaleString(locale()) }) : "",
+              openLabel: words.openDiscussion,
+            },
+          };
+        })
+        .sort((a, b) => a.at.localeCompare(b.at));
+      if (cards.length > 0) {
+        let next = 0;
+        const merged: ChatFeedItem[] = [];
+        for (const item of result) {
+          while (next < cards.length && cards[next]!.at < item.at) merged.push(cards[next++]!);
+          merged.push(item);
+        }
+        merged.push(...cards.slice(next));
+        result.splice(0, result.length, ...merged);
+      }
+    }
+    // Sends wait at the end of the newest history; a window further back shows them once the reader is there.
+    if (!current.hasNewer) {
+      const lastSeq = current.messages.at(-1)?.seq ?? 0;
+      for (const send of own) {
+        if (view !== "all" && send.thread !== view) continue;
+        if (send.message && stored.has(send.message.id)) continue;
+        if (send.status === "sent" && (!send.message || send.message.seq <= lastSeq)) continue;
+        const status: MessageRowStatus = send.status;
+        result.push(
+          reuse({
+            key: send.clientId,
+            kind: "text",
+            thread: send.thread === "general" ? null : send.thread,
+            refs: send.refs,
+            attachments: send.attachments,
+            origin: mixed ? originOf(current.id, send.thread) : undefined,
+            quote: send.replyTo ? { author: send.replyTo.author, text: send.replyTo.text } : undefined,
+            quotes: send.quotes.length ? send.quotes.map((quote) => ({ author: quote.author, text: quote.text })) : undefined,
+            authorId: props.viewerId,
+            authorName: t().you,
+            body: send.body,
+            at: send.message?.createdAt ?? send.createdAt,
+            own: true,
+            status,
+            // A send whose quotes were refused cannot succeed again: it offers only Discard.
+            ...(status === "failed"
+              ? send.held
+                ? // Its quote's code did not load: try again, or send it without that quote on purpose.
+                  {
+                    retry: () => void retryQuotes(send.clientId),
+                    // The field takes back only text, reply and quotes, so a send with shared files or elements stays.
+                    toDraft: send.refs.length || send.attachments.length ? undefined : () => backToDraft(send),
+                    failure: {
+                      reason: t().quoteUnavailable,
+                      action: { label: t().sendWithoutQuote, onSelect: () => sendWithoutMissingQuotes(send.clientId) },
+                    },
+                  }
+                : { retry: send.refused ? undefined : () => outbox?.retry(send.clientId), discard: () => outbox?.forget(send.clientId) }
+              : {}),
+          }),
+        );
+      }
+    }
+    return result;
+  });
+  // A send that was not sent holds back the later ones of its chat until it is retried or discarded.
+  const waiting = () => {
+    const current = openChat();
+    sendsVersion();
+    return current ? outbox?.sends(current.id).find((send) => send.status !== "sent" && !send.refused)?.status === "failed" : false;
+  };
+  const focusKey = () => {
+    const id = route().messageId;
+    return id ? (sendKeys.get(id) ?? id) : null;
+  };
+
+  // "New messages" stands above the first message from others after the read position as the chat opened, and stays
+  // there until the reader leaves the chat, also while the read position moves on.
+  const [marker, setMarker] = createSignal<string | null>(null);
+  const [unreadGap, setUnreadGap] = createSignal<{ from: number; key: string | null } | null>(null);
+  // Reports what the reader sees in the open chat. After the reader marks it unread, nothing is reported until they
+  // leave it, so the mark is not read away at once.
+  let reporter: { chatId: string; reporter: ReturnType<typeof createReadReporter> } | undefined;
+  let paused = false;
+  let phone: MediaQueryList | undefined;
+  // Replay can paint many intermediate windows. Only the caught-up window starts new reading.
+  const catchingUp = createMemo(() => openChat()?.status === "live" && !openChat()?.caughtUp);
+  const reading = () =>
+    !catchingUp() &&
+    Boolean(phone) &&
+    document.visibilityState === "visible" &&
+    document.hasFocus() &&
+    !(panel() === "info" && phone?.matches);
+  // Per open part of a chat: each thread has its own read state and its own "New messages".
+  const openKey = createMemo(() => {
+    const current = openChat();
+    return current ? `${current.id}:${current.view}` : null;
+  });
+  createEffect(
+    on(openKey, (key) => {
+      const current = openChat();
+      const read = current?.conversation?.read ?? null;
+      const start = current ? viewReadStart(current.view, read, current.threads) : null;
+      const first =
+        start === null || !current || (current.hasOlder && (current.messages[0]?.seq ?? Infinity) > start + 1)
+          ? undefined
+          : current.messages.find((message) => isUnread(message, props.viewerId, read, current.threads));
+      setMarker(first?.id ?? null);
+      setUnreadGap(null);
+      reporter?.reporter.dispose();
+      reporter = undefined;
+      paused = false;
+      if (!key || !current || start === null) return;
+      const id = current.id;
+      const view = current.view;
+      reporter = {
+        chatId: id,
+        reporter: createReadReporter({
+          start,
+          active: () => reading() && !paused,
+          onGap: (from) => {
+            if (from === null) {
+              setUnreadGap(null);
+              return;
+            }
+            const current = openChat();
+            // A deep link keeps its initial destination; once reading has advanced, a later gap is new.
+            if (current?.id !== id || current.view !== view || (route().messageId && from <= start + 1)) return;
+            const first = current.messages.find(
+              (message) => message.seq >= from && message.kind === "text" && message.author.id !== props.viewerId,
+            );
+            const key = first && (current.messages[0]?.seq ?? Infinity) <= from ? first.id : null;
+            if (!marker() && key) setMarker(key);
+            setUnreadGap((previous) => (previous?.from === from && previous.key === key ? previous : { from, key }));
+          },
+          // "All threads" reads every thread up to what the reader saw; a thread only itself.
+          post: async (seq) => {
+            if (paused) return;
+            if (!store) throw new Error("Chat is not live yet");
+            if (!(await changeRead(() => store?.markRead(id, seq, view), key))) throw new Error("Chat read failed");
+          },
+        }),
+      };
+    }),
+  );
+  createEffect(() => {
+    const current = openChat();
+    const start = current ? viewReadStart(current.view, current.conversation?.read ?? null, current.threads) : null;
+    if (current && start !== null && reporter?.chatId === current.id) untrack(() => reporter?.reporter.setStart(start));
+  });
+  let visibleRange: { first: ChatFeedItem; last: ChatFeedItem } | null = null;
+  let readFrame: number | undefined;
+  const reportVisible = (visible: { first: ChatFeedItem; last: ChatFeedItem } | null) => {
+    visibleRange = visible;
+    if (readFrame !== undefined) return;
+    // A replay can render several intermediate windows in one task. Read only the window that reaches a frame.
+    readFrame = requestAnimationFrame(() => {
+      readFrame = undefined;
+      const visible = visibleRange;
+      if (!visible || catchingUp()) return;
+      const list = items();
+      const range = seenRange(
+        list,
+        list.findIndex((item) => item.key === visible.first.key),
+        list.findIndex((item) => item.key === visible.last.key),
+        openChat()?.hasOlder ?? true,
+      );
+      if (range) reporter?.reporter.seen(range.first, range.last);
+    });
+  };
+  createEffect(
+    on(catchingUp, (pending) => {
+      if (!pending) reportVisible(visibleRange);
+    }),
+  );
+  onCleanup(() => {
+    if (readFrame !== undefined) cancelAnimationFrame(readFrame);
+  });
+  const changeRead = async (work: () => Promise<unknown> | undefined, selection?: string) => {
+    try {
+      await work();
+      if (selection === undefined || selection === openKey()) setReadFailure(undefined);
+      return true;
+    } catch (error) {
+      if (!(error instanceof Error && error.name === "AbortError") && (selection === undefined || selection === openKey()))
+        setReadFailure({ run: work });
+      return false;
+    }
+  };
+  // The server stops at the newest message, so the largest position marks the whole chat read.
+  let unreadAction = 0;
+  const markRead = (id: string) => void changeRead(() => store?.markRead(id, Number.MAX_SAFE_INTEGER, "all")).then(refreshSearch);
+  const markUnread = async (id: string, from?: ChatFeedItem) => {
+    const selection = openKey();
+    const target = reporter;
+    const previousGap = unreadGap();
+    if (openChat()?.id === id) unreadAction++;
+    const open = openChat()?.id === id;
+    if (!from) {
+      if (open) paused = true;
+      if (open && reporter?.chatId === id) await reporter.reporter.settled();
+      const changed = await changeRead(() => store?.markUnread(id));
+      refreshSearch();
+      if (open && reporter === target) {
+        if (changed) setUnreadGap(null);
+        else {
+          paused = false;
+          target?.reporter.activate();
+        }
+      }
+      return;
+    }
+    // "Mark unread from here" in the open chat: the marker moves at once, a failure puts everything back. Every step
+    // after an await checks that the chat is still open, so a late answer or a retry from another chat never moves
+    // the marker of the chat on screen.
+    const isOpen = () => openChat()?.id === id && openKey() === selection;
+    const wasPaused = paused;
+    if (open) paused = true;
+    // Let earlier reads finish before the server applies the unread mark, so Undo starts from their state.
+    if (open && reporter?.chatId === id) await reporter.reporter.settled();
+    // Each thread has its own boundary; Undo restores the one of the message's thread.
+    const thread = from.thread ?? null;
+    const boundary = () =>
+      thread === null
+        ? (conversation()?.read?.unreadFromSeq ?? null)
+        : (threadOf(openChat()?.threads ?? null, thread)?.read?.unreadFromSeq ?? null);
+    const before = isOpen()
+      ? { marker: marker(), unreadFrom: boundary(), paused: wasPaused, thread }
+      : { marker: null, unreadFrom: null, paused: false, thread, closed: true as const };
+    if (isOpen()) {
+      setMarker(from.key);
+      setUnreadGap(null);
+    }
+    let result: ReadUpdate | undefined;
+    try {
+      result = await store?.markUnread(id, from.messageId);
+    } catch {
+      if (isOpen() && !("closed" in before)) {
+        setMarker(before.marker);
+        setUnreadGap(previousGap);
+        paused = before.paused;
+        if (reporter === target) target?.reporter.activate();
+      }
+      // An action answers once: its message closes, so a second press cannot repeat it.
+      const failed = toast.error(t().readStateFailed, {
+        action: {
+          label: t().retry,
+          onClick: () => {
+            failed.dismiss();
+            void markUnread(id, from);
+          },
+        },
+      });
+      return;
+    }
+    const done = toast(t().markedUnreadFrom({ name: from.authorName.split(" ")[0] ?? from.authorName }), {
+      iconClass: "ti ti-mail",
+      action: {
+        label: t().undo,
+        variant: "ghost",
+        onClick: () => {
+          done.dismiss();
+          void undoUnread(id, {
+            ...before,
+            lastReadSeq:
+              thread === null ? (result?.lastReadSeq ?? null) : (result?.threads.find((entry) => entry.id === thread)?.lastReadSeq ?? null),
+          });
+        },
+      },
+    });
+  };
+  // Undo puts back the read state from before "Mark unread from here": a boundary that existed is set again, found
+  // through the server when its message is not loaded; otherwise the chat is read up to where it was.
+  const undoUnread = async (
+    id: string,
+    before: {
+      marker: string | null;
+      unreadFrom: number | null;
+      paused: boolean;
+      thread: string | null;
+      lastReadSeq: number | null;
+      closed?: true;
+    },
+  ) => {
+    const restored = await changeRead(async () => {
+      if (before.unreadFrom === null) return store?.markRead(id, before.lastReadSeq ?? Number.MAX_SAFE_INTEGER, before.thread ?? "general");
+      const message = await store?.messageAt(id, before.unreadFrom);
+      if (!message) throw new Error("The earlier unread boundary is gone");
+      return store?.markUnread(id, message);
+    });
+    if (!restored || openChat()?.id !== id || before.closed) return;
+    setMarker(before.marker);
+    paused = before.paused;
+  };
+  // Reactions change in place: rows read them by message, so a new count never rebuilds the message.
+  const reactionsById = createMemo(() => new Map(openChat()?.messages.map((message) => [message.id, message.reactions]) ?? []));
+  const react = (item: ChatFeedItem, emoji: string, on: boolean) => {
+    const current = openChat();
+    if (!store || !current || !item.messageId) return;
+    void store
+      .react(current.id, item.messageId, emoji, on)
+      .catch((error: unknown) => toast.error(error instanceof ChatRequestError ? error.message : t().requestFailed));
+  };
+  const mutate = (item: ChatFeedItem, operation: "edit" | "delete") => {
+    const current = openChat();
+    if (!current || !item.messageId || item.revision === undefined) return;
+    void openMessageMutationDialog({
+      locale: locale(),
+      conversationId: current.id,
+      messageId: item.messageId,
+      revision: item.revision,
+      body: item.body,
+      operation,
+      onSaved: () => store?.refreshMessages(current.id),
+    });
+  };
+  const copy = (item: ChatFeedItem) =>
+    void clipboard.copy(item.body).then(
+      () => announce(t().copied),
+      () => toast.error(t().copyFailed),
+    );
+  const markOpenRead = async () => {
+    const current = openChat();
+    const live = store;
+    if (!current || !live) return;
+    const target = reporter;
+    const intent = unreadAction;
+    await changeRead(async () => {
+      await live.markRead(current.id, current.seqHead, current.view);
+      if (intent !== unreadAction || target !== reporter || openKey() !== `${current.id}:${current.view}`) return;
+      paused = false;
+      // Retry repeats the accepted-read cleanup too; a failed write keeps both markers.
+      target?.reporter.advance(current.seqHead);
+      setMarker(null);
+      setUnreadGap(null);
+      target?.reporter.activate();
+      announce(t().markedRead);
+    }, `${current.id}:${current.view}`);
+  };
+  const readAll = async () => {
+    const live = store;
+    if (!live) return;
+    await changeRead(async () => {
+      let result = await live.readAll(false);
+      if (result.outcome === "confirm") {
+        const confirmed = await prompts.confirm(t().markAllReadDescription, {
+          title: t().markAllReadTitle,
+          icon: "ti ti-checks",
+          confirmText: t().markAllRead,
+        });
+        if (!confirmed) return;
+        result = await live.readAll(true);
+      }
+      // Each request marks one bounded batch; the server says whether more chats wait.
+      while (result.outcome === "done" && result.more) result = await live.readAll(true, result.nextCursor ?? undefined);
+    });
+  };
+
+  const applyListUrl = (url: URL, refresh = false) =>
+    loadList(async () => {
+      const token = ++listIntent;
+      const nextArchived = url.pathname === `${basePath}/archive` || url.searchParams.get("list") === "archive";
+      const id = /\/c\/([^/]+)/.exec(url.pathname)?.[1];
+      const target =
+        rows().find((row) => row.id === id) ??
+        (conversation()?.id === id ? conversation() : null) ??
+        (props.open && props.open.conversation.id === id ? props.open.conversation : null);
+      const nextFilter =
+        (url.searchParams.get("listFilter") ?? (target?.kind === "system" ? null : url.searchParams.get("filter"))) === "unread"
+          ? "unread"
+          : "all";
+      // A newer intent must also undo a pending request whose target has not reached the signals yet.
+      const changed = nextArchived !== archived() || nextFilter !== filter();
+      const reload = refresh || pendingListIntent !== null || changed;
+      pendingListIntent = token;
+      try {
+        if (reload) await store?.showArchive(nextArchived, nextFilter === "unread", !changed ? [...retainedUnread] : []);
+        if (token !== listIntent) return null;
+        if (reload) {
+          if (changed) retainedUnread.clear();
+          setArchived(nextArchived);
+          sortRows();
+        }
+        setFilter(nextFilter);
+        return token;
+      } catch (error) {
+        if (token !== listIntent) return null;
+        throw error;
+      } finally {
+        if (pendingListIntent === token) pendingListIntent = null;
+      }
+    });
+  // One step can be refused twice (the link and the history entry it adds). While the notice shows, it says
+  // enough: a second copy would stack beside it and be announced twice.
+  const PREPARING_NOTICE_MS = 4_000;
+  let preparingShownAt = Number.NEGATIVE_INFINITY;
+  const notifyPreparing = () => {
+    const shownAt = performance.now();
+    if (shownAt - preparingShownAt < PREPARING_NOTICE_MS) return;
+    preparingShownAt = shownAt;
+    toast(t().sendPreparing, { duration: PREPARING_NOTICE_MS });
+  };
+  /** A message being prepared keeps its chat open; true when that refused a move to `chatId`. */
+  const keepsChat = (chatId: string | null) => {
+    if (pendingSends === 0 || chatId === route().chatId) return false;
+    notifyPreparing();
+    return true;
+  };
+  const changeList = async (next: "all" | "unread" | "archive") => {
+    if (!store || listLoading() || listPending()) return;
+    if (next === "archive" && pendingSends > 0) {
+      notifyPreparing();
+      return;
+    }
+    if ((!archived() && filter() === next) || (next === "archive" && archived() && filter() === "all" && !route().chatId)) return;
+    setListError(null);
+    const path =
+      next === "archive"
+        ? `${basePath}/archive`
+        : next === "unread" && archived()
+          ? `${basePath}/archive${filter() === "unread" ? "" : "?filter=unread"}`
+          : `${basePath}${next === "unread" ? "?filter=unread" : ""}`;
+    const url = new URL(path, location.href);
+    try {
+      const token = await applyListUrl(url);
+      if (token === null) return;
+      const current = route();
+      const currentPath = current.chatId
+        ? current.threads
+          ? `${threadsPageHref(current.chatId)}${current.panel === "info" ? "?panel=info" : ""}`
+          : panelHref(current.chatId, current.panel, current.messageId, current.view)
+        : null;
+      const target = next !== "archive" && currentPath ? viewHref(currentPath) : url.pathname + url.search;
+      if (next === "archive" && (await open(chatRoute(null))) !== "applied") return;
+      if (token === listIntent) {
+        setListPredecessor(false);
+        navigate(target, { scroll: "preserve" });
+      }
+    } catch {
+      setListError(t().listFailed);
+      setListRetry(() => () => void changeList(next));
+    }
+  };
+  const refreshList = async (path = location.pathname + location.search) => {
+    if (!store) return;
+    try {
+      if ((await applyListUrl(new URL(path, location.href), true)) === null) return;
+      sortRows();
+      setListError(null);
+      setListRetry(null);
+    } catch {
+      setListError(t().listFailed);
+      setListRetry(() => () => void refreshList());
+    }
+  };
+  const personal = async (id: string, patch: z.infer<typeof PersonalConversationSchema>) => {
+    if (!store) return;
+    if (listPending()) {
+      toast(t().savingList);
+      return;
+    }
+    setListPending(true);
+    setListError(null);
+    setListRetry(null);
+    try {
+      await store.personal(id, patch);
+      sortRows();
+      refreshSearch();
+    } catch (error) {
+      if (error instanceof ChatRequestError && error.status === 400) {
+        setListError(t().pinPositionChanged);
+        setListRetry(() => () => void refreshList());
+      } else {
+        setListError(t().personalFailed);
+        setListRetry(() => () => void personal(id, patch));
+      }
+    } finally {
+      setListPending(false);
+    }
+  };
+  const collapse = async (section: z.infer<typeof SidebarPreferencesSchema>["collapsed"][number], isOpen: boolean) => {
+    if (!store) return;
+    if (listPending()) {
+      toast(t().savingList);
+      return;
+    }
+    setListPending(true);
+    setListError(null);
+    collapsePending = true;
+    const previous = collapsed();
+    const next = isOpen ? collapsed().filter((value) => value !== section) : [...new Set([...collapsed(), section])];
+    setCollapsed(next);
+    try {
+      const saved = await store.savePreferences(next);
+      setCollapsed(saved.collapsed);
+    } catch {
+      setCollapsed(previous);
+      setListError(t().personalFailed);
+      setListRetry(() => () => void collapse(section, isOpen));
+    } finally {
+      collapsePending = false;
+      setCollapsed(store.collapsed);
+      setListPending(false);
+    }
+  };
+  const more = async () => {
+    const live = store;
+    if (!live || listLoading()) return;
+    setListError(null);
+    try {
+      await loadList(async () => {
+        const previous = listRows().map((row) => row.id);
+        await live.loadMoreSidebar();
+        setOrder([
+          ...previous,
+          ...rows()
+            .map((row) => row.id)
+            .filter((id) => !previous.includes(id)),
+        ]);
+      });
+    } catch {
+      setListError(t().listFailed);
+      setListRetry(() => () => void more());
+    }
+  };
+  // Each part of a chat keeps its own draft and its own reply.
+  const applyRoute = (next: Route) => {
+    const previous = draftId(route());
+    if (previous) {
+      replies.set(previous, reply());
+      quoteDrafts.set(previous, quotes());
+    }
+    setRoute(next);
+    setPanel(next.panel);
+    const key = draftId(next);
+    setDraft(key ? readDraft(key) : "");
+    setReply(key ? (replies.get(key) ?? null) : null);
+    setQuotes(key ? (quoteDrafts.get(key) ?? []) : []);
+    setNow(new Date());
+    sortRows();
+    if (props.embedded) {
+      try {
+        if (!savedDrafts) throw new Error("Draft storage unavailable");
+        savedDrafts.select(next.chatId);
+      } catch {
+        setDraftStorageFailed(true);
+      }
+    }
+  };
+  /** Loads the chat's snapshot before the address changes; only an applied open may change it. */
+  const open = async (next: Route): Promise<"applied" | "superseded" | "failed" | "blocked"> => {
+    systemOpen++;
+
+    if (!store) return "failed";
+    if (keepsChat(next.chatId)) return "blocked";
+    if (
+      pendingOpen === 0 &&
+      route().chatId === next.chatId &&
+      route().view === next.view &&
+      route().threads === next.threads &&
+      route().channels === next.channels &&
+      route().forYou === next.forYou &&
+      route().messageId === next.messageId &&
+      route().panel !== next.panel
+    ) {
+      setRoute(next);
+      setPanel(openChat() ? next.panel : null);
+      return "applied";
+    }
+    if (!next.chatId) {
+      const live = store;
+      // Closing the chat supersedes a pending open, and an info toggle chosen during it.
+      pendingOpen = 0;
+      deferredPanel = undefined;
+      setBusy(false);
+      batch(() => {
+        live.closeConversation();
+        applyRoute(next);
+      });
+      return "applied";
+    }
+    const token = ++openToken;
+    pendingOpen = token;
+    setBusy(true);
+    try {
+      const result = await store.openChat(next.chatId, next.messageId ?? undefined, next.view);
+      if (result.status === "superseded") return "superseded";
+      if (result.status === "opened" && store.openConversation?.conversation?.kind === "system") void store.refreshThreads();
+      applyRoute({
+        ...next,
+        messageId: result.status === "opened" ? next.messageId : null,
+        panel: result.status === "opened" ? next.panel : null,
+      });
+      return "applied";
+    } catch {
+      toast.error(t().openFailed);
+      return "failed";
+    } finally {
+      if (pendingOpen === token) {
+        pendingOpen = 0;
+        setBusy(false);
+        runDeferredPanel();
+      }
+    }
+  };
+  const jumpUnreadGap = async () => {
+    const gap = unreadGap();
+    const id = route().chatId;
+    if (!gap || busy() || !id) return;
+    if (gap.key && feed?.scrollToKey(gap.key, { align: "start" })) return;
+    // A live resync can have discarded the gap. Reuse the permission-aware snapshot around first unread.
+    const previous = route();
+    const token = openToken;
+    await reporter?.reporter.settled();
+    // A pending read must not pull the reader back after they opened another chat or panel.
+    if (route() !== previous || openToken !== token) return;
+    const next = { ...previous, chatId: id, messageId: null };
+    if ((await open(next)) !== "applied") return;
+    navigate(viewHref(panelHref(id, next.panel, null, next.view)), {
+      replace: true,
+      scroll: "preserve",
+    });
+    const current = openChat();
+    const start = current ? viewReadStart(current.view, current.conversation?.read ?? null, current.threads) : null;
+    const first =
+      start === null
+        ? undefined
+        : current?.messages.find((message) => isUnread(message, props.viewerId, current.conversation?.read ?? null, current.threads));
+    if (first) {
+      if (!marker()) setMarker(first.id);
+      feed?.scrollToKey(first.id, { align: "start" });
+    }
+    setUnreadGap(null);
+  };
+  const openFromList = async (id: string, navigation: LinkNavigateEvent) => {
+    const fromList = route().chatId === null;
+    // A phone shows a chat with threads as its page of threads first; a wider window opens "All threads" and its rows.
+    const row = rows().find((candidate) => candidate.id === id);
+    if (phone?.matches && row?.kind !== "system" && chatHasThreads(row)) {
+      if ((await open(chatRoute(id, "all", { threads: true }))) === "applied") {
+        setListPredecessor(fromList);
+        navigation.push(viewHref(threadsPageHref(id)), {
+          scroll: "preserve",
+          state: { chatFromList: fromList },
+        });
+      }
+      return;
+    }
+    if ((await open(chatRoute(id))) !== "applied") return;
+    const target = viewHref(panelHref(id, null));
+    if (location.pathname + location.search !== target) {
+      setListPredecessor(fromList);
+      navigation.push(target, { scroll: "preserve", state: { chatFromList: fromList } });
+    }
+    if (pendingListIntent !== null) await refreshList(target);
+  };
+  const openSystemFromList = async (id: string, navigation: LinkNavigateEvent) => {
+    const row = systemList.page()?.items.find((item) => item.conversation?.id === id);
+    const ref = row?.ref ?? rows().find((row) => row.id === id)?.resource ?? (conversation()?.id === id ? conversation()?.resource : null);
+    if (!ref) return;
+    await openSystem({ type: ref.type, id: ref.id }, (href) => navigation.push(href, { scroll: "preserve" }));
+  };
+  /** Opens a container's chat, starting it when nobody has written there yet. */
+  const openSystem = async (
+    ref: { type: string; id: string },
+    go: (href: string) => void = (href) => navigate(href, { scroll: "preserve" }),
+  ) => {
+    const token = ++systemOpen;
+    setBusy(true);
+    try {
+      const current = await openSystemChat({ resourceType: ref.type, resourceId: ref.id });
+      if (token !== systemOpen) return;
+      store?.includeSystemChats([current]);
+      // v2 opens a place on its "General" stream, its discussions as cards in it; v1 keeps "All threads".
+      const start: ThreadView = props.v2 ? "general" : "all";
+      if ((await open(chatRoute(current.id, start))) === "applied") {
+        setListPredecessor(false);
+        go(viewHref(threadHref(current.id, start)));
+      }
+    } catch {
+      if (token === systemOpen) toast.error(t().openFailed);
+    } finally {
+      if (token === systemOpen) setBusy(false);
+    }
+  };
+  const openOverview = async (navigation?: LinkNavigateEvent) => {
+    const id = conversation()?.id;
+    if (!id || (await open(chatRoute(id, "all", { threads: true }))) !== "applied") return;
+    setListPredecessor(false);
+    if (navigation) navigation.push(viewHref(threadsPageHref(id)), { scroll: "preserve" });
+    else navigate(viewHref(threadsPageHref(id)), { scroll: "preserve" });
+  };
+  /** Opens another part of the open chat, from the list, the picker, a thread chip, or a new thread. */
+  const openView = async (id: string, view: ThreadView, navigation?: LinkNavigateEvent, message?: string) => {
+    // A thread opened from the directory traverses back to that entry, also with Info above the thread.
+    const options = { scroll: "preserve" as const, state: { threadFromPage: route().threads && route().panel === null } };
+    const next = chatRoute(id, view, { messageId: message ?? null });
+    if ((await open(next)) !== "applied") return;
+    const href = viewHref(threadHref(id, view, message));
+    setListPredecessor(false);
+    if (navigation) navigation.push(href, options);
+    else navigate(href, options);
+  };
+  /** A quote's original: in the loaded history it is highlighted in place, otherwise the chat opens around it. */
+  // The quoted passage of a message the chat opens around, tinted once the history holds it.
+  const [jumpPassage, setJumpPassage] = createSignal<{ message: string; text: string }>();
+  const jumpTo = async (id: string, message: string, passage?: string) => {
+    const key = sendKeys.get(message) ?? message;
+    if (openChat()?.id === id && feed?.scrollToKey(key, { highlight: true, highlightText: passage })) return;
+    setJumpPassage(passage ? { message, text: passage } : undefined);
+    // A quote lies in the reply's own thread, so the open view holds it once the history around it is loaded.
+    await openView(id, openChat()?.view ?? "all", undefined, message);
+  };
+
+  // Info adds one entry above the chat; both header destinations skip it when traversing to their predecessor.
+  const predecessorDepth = (key: "chatFromList" | "threadFromPage") => {
+    const state: unknown = history.state;
+    if (!state || typeof state !== "object" || !(key in state) || Reflect.get(state, key) !== true) return 0;
+    return "chatInfoFromChat" in state && state.chatInfoFromChat === true ? 2 : 1;
+  };
+  const listDepth = () => predecessorDepth("chatFromList");
+  // The panel starts in a resource's discussion; its way back is always "All chats", the thread picker stays in the head.
+  const backToThreadDirectory = () => !props.embedded && threaded() && !listPredecessor();
+  const backToList = async (navigation: LinkNavigateEvent) => {
+    const depth = listDepth();
+    // Refused before history moves: a refused Back would show the list's address until it returned (#2503).
+    if (depth > 0) {
+      if (!keepsChat(null)) history.go(-depth);
+    } else if ((await open(chatRoute(null))) === "applied") {
+      if (props.app) navigation.replaceWith(listHref(), { scroll: "preserve", state: null });
+      else navigation.push(listHref(), { scroll: "preserve" });
+    }
+  };
+  const backToThreads = async (navigation: LinkNavigateEvent) => {
+    const depth = predecessorDepth("threadFromPage");
+    const id = route().chatId;
+    if (depth > 0) history.go(-depth);
+    else if (id && (await open(chatRoute(id, route().view, { threads: true }))) === "applied") {
+      if (props.app) navigation.replaceWith(viewHref(threadsPageHref(id)), { scroll: "preserve" });
+      else navigation.push(viewHref(threadsPageHref(id)), { scroll: "preserve" });
+    }
+  };
+
+  const openInfo = (navigation?: LinkNavigateEvent) => {
+    if (pendingOpen !== 0) {
+      deferPanel(() => openInfo(navigation));
+      return;
+    }
+    const id = route().chatId;
+    if (!id || !openChat() || panel() === "info") return;
+    const messageId = route().messageId;
+    setPanel("info");
+    setRoute({ ...route(), chatId: id, messageId, panel: "info" });
+    const options = {
+      scroll: "preserve" as const,
+      state: {
+        chatFromList: listDepth() === 1,
+        ...(predecessorDepth("threadFromPage") === 1 ? { threadFromPage: true } : {}),
+        chatInfoFromChat: true,
+      },
+    };
+    if (navigation) navigation.push(viewHref(routeAddress(route(), basePath)), options);
+    else navigate(viewHref(routeAddress(route(), basePath)), options);
+  };
+  const infoFromChat = () => {
+    const state: unknown = history.state;
+    return !!state && typeof state === "object" && "chatInfoFromChat" in state && state.chatInfoFromChat === true;
+  };
+  // A shared item jumps to its message: in place when the open view holds it, otherwise in the message's thread. A phone
+  // shows the message instead of the info page.
+  const jumpToShared = (item: SharedItem) => {
+    const current = openChat();
+    if (!current) return;
+    const view = current.view === "all" || current.view === messageThread(item) ? current.view : messageThread(item);
+    if (view === current.view && feed?.scrollToKey(sendKeys.get(item.messageId) ?? item.messageId, { highlight: true })) {
+      if (phone?.matches) closeInfo();
+      return;
+    }
+    void openView(current.id, view, undefined, item.messageId);
+  };
+  const closeInfo = (navigation?: LinkNavigateEvent) => {
+    if (pendingOpen !== 0) {
+      deferPanel(() => closeInfo(navigation));
+      return;
+    }
+    const id = route().chatId;
+    if (!id || panel() === null) return;
+    if (infoFromChat()) {
+      history.back();
+      return;
+    }
+    const messageId = route().messageId;
+    setPanel(null);
+    setRoute({ ...route(), chatId: id, messageId, panel: null });
+    const options = { scroll: "preserve" as const, replace: props.app, ...(props.app ? { state: null } : {}) };
+    if (navigation && props.app) navigation.replaceWith(viewHref(routeAddress(route(), basePath)), options);
+    else if (navigation) navigation.push(viewHref(routeAddress(route(), basePath)), options);
+    else navigate(viewHref(routeAddress(route(), basePath)), options);
+  };
+
+  /** A chat the person just started, or chose among existing ones, opens in place like a chat from the list. */
+  const openChosen = async (id: string | undefined) => {
+    if (!id) return;
+    const fromList = route().chatId === null;
+    if ((await open(chatRoute(id))) !== "applied") return;
+    const chosen = store?.openConversation?.conversation;
+    const listPath = chosen?.archived ? `${basePath}/archive` : basePath;
+    const target = new URL(panelHref(id, null), location.href);
+    if (chosen?.archived) target.searchParams.set("list", "archive");
+    // The chat has opened successfully. A failed list refresh must not leave the address naming the previous chat.
+    setListPredecessor(fromList);
+    navigate(target.pathname + target.search, { scroll: "preserve", state: { chatFromList: fromList } });
+    await refreshList(listPath);
+  };
+  const channelApi = async () => (await importOnDemand(() => import("./channel-api")))?.createChannelApi();
+  const [channelRevision, setChannelRevision] = createSignal(0);
+  // The SSR catalog seeds only the first mount. Returning later reads current membership and discovery.
+  let initialChannelPage = props.channelsPage ? props.channelPage : undefined;
+  const takeInitialChannelPage = () => {
+    const initial = initialChannelPage;
+    initialChannelPage = undefined;
+    return initial;
+  };
+  // The server's first "For you" page seeds only the first mount; later visits read it again.
+  let initialForYou = props.forYouPage ? props.forYouInitial : undefined;
+  const takeInitialForYou = () => {
+    const initial = initialForYou;
+    initialForYou = undefined;
+    return initial;
+  };
+  const showForYou = async (navigation: LinkNavigateEvent) => {
+    if ((await open(chatRoute(null, "all", { forYou: true }))) === "applied") navigation.push(listHref(`${basePath}/for-you`));
+  };
+  const subscribe = async (id: string) => {
+    const api = await channelApi();
+    if (!api) return;
+    await api.join(id);
+    setChannelRevision((revision) => revision + 1);
+    await store?.refreshSidebar();
+    if (route().chatId === id) await open(route());
+  };
+  const editDiscovery = async () => {
+    const current = conversation();
+    if (!store || !current || current.permission !== "admin") return;
+    await openChannelDialog({
+      store,
+      viewerId: props.viewerId,
+      locale: locale(),
+      guest: props.guest,
+      conversation: current,
+      onSaved: async () => {
+        await store?.refreshSidebar();
+        if (route().chatId === current.id) await open(route());
+      },
+    });
+  };
+  const newChat = async (initialPerson?: ChosenMember, active = () => true) => {
+    if (!store) return;
+    const id = await openNewChatDialog({
+      store,
+      guest: props.guest,
+      viewerId: props.viewerId,
+      dateConfig: props.dateConfig,
+      locale: locale(),
+      initialPerson,
+    });
+    if (active()) await openChosen(id);
+  };
+  createChatCommands(newChat, () => t().contactUnavailable);
+  // The dialogs only offer what the viewer may do; the server decides every request again.
+  const addPeople = async () => {
+    const current = conversation();
+    if (!store || current?.permission !== "admin") return;
+    await openChosen(
+      await openAddPeopleDialog({
+        store,
+        conversation: current,
+        guest: props.guest,
+        viewerId: props.viewerId,
+        locale: locale(),
+        onAdded: () => setLocalBumps((revision) => revision + 1),
+      }),
+    );
+  };
+  const editDetails = () => {
+    const current = conversation();
+    if (store && current && current.permission !== "read") void openChatDetailsDialog({ store, conversation: current, locale: locale() });
+  };
+  const leaveChat = async () => {
+    const current = conversation();
+    if (!store || !current) return;
+    if (!(await openLeaveChatDialog({ store, conversation: current, viewerId: props.viewerId, locale: locale() }))) return;
+    // The chat now shows "No access"; its address drops the panel that went with it. Info opened from the chat goes
+    // back to the chat's own entry, so one Back press still leaves the chat.
+    if (route().chatId === current.id && infoFromChat()) {
+      history.back();
+      return;
+    }
+    setPanel(null);
+    if (route().chatId === current.id) {
+      setRoute(chatRoute(current.id));
+      navigate(viewHref(panelHref(current.id, null)), { replace: true, scroll: "preserve" });
+    }
+  };
+
+  const [unsubscribing, setUnsubscribing] = createSignal(false);
+  const unsubscribe = async () => {
+    const current = conversation();
+    if (!store || !current || unsubscribing()) return;
+    setUnsubscribing(true);
+    try {
+      let canRejoin = false;
+      try {
+        canRejoin = (await store.leave(current.id)).canRejoin;
+      } catch (error) {
+        if (!(error instanceof ChatRequestError) || error.status !== 409) throw error;
+        // The last manager hands over first; they gave the channel away on purpose, so nothing offers it back.
+        if (!(await openLeaveChatDialog({ store, conversation: current, viewerId: props.viewerId, locale: locale() }))) return;
+      }
+      // Only while the channel is still on screen does the page move on; a chat opened meanwhile stays.
+      if (route().chatId === current.id && pendingOpen === 0 && (await open(chatRoute(null, "all", { channels: true }))) === "applied")
+        navigate(`${basePath}/channels`, { replace: true });
+      // Subscribing again uses the channel's audience, which may not include someone a manager had added directly.
+      const done = toast(
+        t().unsubscribed({ name: current.title }),
+        canRejoin
+          ? {
+              action: {
+                label: t().subscribeAgain,
+                onClick: () => {
+                  done.dismiss();
+                  void subscribe(current.id).catch(() => toast.error(t().requestFailed));
+                },
+              },
+            }
+          : undefined,
+      );
+    } catch {
+      toast.error(t().requestFailed);
+    } finally {
+      setUnsubscribing(false);
+    }
+  };
+
+  // System chats use item discussions; manual chats let admins create named threads.
+  const createThread = async () => {
+    const current = conversation();
+    if (!store || !current || !canCreateThread() || creatingThread()) return;
+    setCreatingThread(true);
+    try {
+      if (current.kind === "system") {
+        if (!current.resource || !current.discussionItemType) return;
+        const item = await openCloudResourcePicker({
+          title: t().discussElement,
+          scope: { ref: current.resource, label: current.title, icon: containerIcon(current.icon) },
+          requireReader: true,
+          resourceType: current.discussionItemType,
+        });
+        if (!item || conversation()?.id !== current.id) return;
+        if (item.ref.type !== current.discussionItemType) return;
+        const thread = await openResourceThread(current.id, { ref: { type: item.ref.type, id: item.ref.id } });
+        if (conversation()?.id !== current.id) return;
+        await store.refreshThreads();
+        await openView(current.id, thread.id);
+        return;
+      }
+      const thread = await openThreadDialog({
+        store,
+        chatId: current.id,
+        title: current.title,
+        memberCount: current.memberCount,
+        threads: openChat()?.threads ?? null,
+        locale: locale(),
+      });
+      if (!thread) return;
+      toast(t().threadCreated({ name: thread.name }));
+      await openView(current.id, thread.id);
+    } catch (error) {
+      if (current.kind === "system") toast.error(t().itemThreadFailed, { duration: 0 });
+      else throw error;
+    } finally {
+      setCreatingThread(false);
+    }
+  };
+  const renameThread = async () => {
+    const current = openChat();
+    const thread = threadOf(current?.threads ?? null, current?.view);
+    if (!store || !current?.conversation || !thread) return;
+    const renamed = await openThreadDialog({
+      store,
+      chatId: current.id,
+      title: current.conversation.title,
+      memberCount: current.conversation.memberCount,
+      threads: current.threads,
+      thread,
+      locale: locale(),
+    });
+    if (renamed && renamed.name !== thread.name) toast(t().threadRenamed({ name: renamed.name }));
+  };
+  const setThreadArchived = async (id: string, threadId: string, archived: boolean) => {
+    try {
+      await store?.updateThread(id, threadId, { archived });
+      return true;
+    } catch {
+      toast.error(archived ? t().archiveFailed : t().restoreFailed);
+      return false;
+    }
+  };
+  const archiveThread = async () => {
+    const current = openChat();
+    const thread = threadOf(current?.threads ?? null, current?.view);
+    if (!current || !thread) return;
+    const confirmed = await prompts.confirm(t().archiveConfirmText, {
+      title: t().archiveConfirmTitle({ name: thread.name }),
+      icon: "ti ti-archive",
+      confirmText: t().archiveThread,
+    });
+    if (!confirmed || !(await setThreadArchived(current.id, thread.id, true))) return;
+    // The archived thread stays readable under "Archived"; the reader continues in General.
+    await openView(current.id, "general");
+    const done = toast(t().threadArchivedToast({ name: thread.name }), {
+      iconClass: "ti ti-archive",
+      action: {
+        label: t().undo,
+        variant: "ghost",
+        onClick: () => {
+          done.dismiss();
+          void setThreadArchived(current.id, thread.id, false).then(async (restored) => {
+            if (restored) await openView(current.id, thread.id);
+          });
+        },
+      },
+    });
+  };
+  const restoreThread = async () => {
+    const current = openChat();
+    const thread = threadOf(current?.threads ?? null, current?.view);
+    if (current && thread && (await setThreadArchived(current.id, thread.id, false))) toast(t().restored);
+  };
+
+  // Shared elements resolve in the browser with the reader's own session; the server render shows their placeholders.
+  const [cards, setCards] = createSignal<ReturnType<typeof createResourceCards>>();
+  onMount(() => {
+    const resolver = createResourceCards();
+    setCards(resolver);
+    // Shown cards read again once a minute while the page is visible, so lost or new access shows without a reload.
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") resolver.tick();
+    }, FRESH_MS);
+    onCleanup(() => clearInterval(timer));
+  });
+  const pickResource = async () => {
+    const item = await openCloudResourcePicker({ title: t().shareResource, requireReader: true });
+    return item ? { ref: item.ref, title: item.title, icon: item.icon ?? item.appIcon } : null;
+  };
+
+  // A message goes to the open thread; in "All threads" to General. A reply goes to its original's thread.
+  const [reply, setReply] = createSignal<ChatFeedItem | null>(null);
+  const replies = new Map<string, ChatFeedItem | null>();
+  // Quoted passages of the draft; they lie in one thread with its reply, which the message goes to.
+  const [quotes, setQuotes] = createSignal<readonly DraftQuote[]>([]);
+  const quoteDrafts = new Map<string, readonly DraftQuote[]>();
+  // The focus is in the field before a quote's module has loaded, so a send waits for the quotes on their way: the
+  // message carries them instead of leaving them behind in the emptied field (#3702). The chain resolves with the
+  // quotes whose code did not load. They stay with their draft until its next send or a later load, so that send never
+  // goes out without them unasked (#3999).
+  type QuoteRequest = { item: ChatFeedItem; text: string; draft: string | null };
+  let quotesOnTheWay: Promise<readonly QuoteRequest[]> | undefined;
+  const loadQuoteCode = () => importOnDemand(() => import("./chat-quote-selection"));
+  const quote = (item: ChatFeedItem, text: string) => {
+    const draft = draftId(route());
+    const landed = (quotesOnTheWay ?? Promise.resolve<readonly QuoteRequest[]>([])).then(async (missing) => {
+      const requests = [...missing.filter((request) => request.draft === draft), { item, text, draft }];
+      const module = await loadQuoteCode();
+      if (!module) return requests;
+      if (draftId(route()) !== draft) return [];
+      for (const request of requests) {
+        const next = module.addQuote(quotes(), reply(), request.item, request.text, t().quotesReplaced);
+        if (!next) continue;
+        if (!next.keepReply) setReply(null);
+        setQuotes(next.quotes);
+      }
+      return [];
+    });
+    quotesOnTheWay = landed;
+    void landed.then((missing) => {
+      if (quotesOnTheWay === landed && missing.length === 0) quotesOnTheWay = undefined;
+    });
+  };
+  // A quote whose message was deleted leaves the draft.
+  createEffect(() => {
+    const gone = new Set(openChat()?.messages.flatMap((message) => (message.deletedAt ? [message.id] : [])) ?? []);
+    if (quotes().some((entry) => gone.has(entry.id))) setQuotes((list) => list.filter((entry) => !gone.has(entry.id)));
+  });
+  /** The draft each send with quotes came from, so a refused one goes back where it was written. */
+  const sendDrafts = new Map<string, string>();
+  /**
+   * A send whose quotes the server refused stays as "Not sent" with only Discard, so nothing is lost and nothing retries
+   * in vain. While its draft is open and empty, it goes back into the field instead: its text and the quotes whose
+   * message is still there with their words.
+   */
+  const giveBack = (send: ChatSend) => {
+    const id = sendDrafts.get(send.clientId);
+    sendDrafts.delete(send.clientId);
+    toast(t().quotedSendRejected, { iconClass: "ti ti-quote" });
+    if (id === undefined || id !== draftId(route()) || draft().trim() || quotes().length) return;
+    const loaded = openChat()?.id === send.conversationId ? openChat()!.messages : [];
+    const words = (text: string) => text.replace(/\s+/gu, "");
+    const valid = send.quotes.flatMap((quote) => {
+      const original = loaded.find((message) => message.id === quote.id);
+      if (original && (original.deletedAt || !words(messagePlainText(original.body ?? "")).includes(words(quote.text)))) return [];
+      return [{ key: crypto.randomUUID(), ...quote, thread: send.thread }];
+    });
+    changeDraft(send.body);
+    setQuotes(valid);
+    outbox?.forget(send.clientId);
+  };
+  const answer = (item: ChatFeedItem) => {
+    if (quotes()[0] && quotes()[0]!.thread !== (item.thread ?? "general")) {
+      toast(t().quotesReplaced, { iconClass: "ti ti-info-circle" });
+      setQuotes([]);
+    }
+    setReply(item);
+  };
+  /** Sends that wait for quotes whose code did not load: the draft's reply and quotes at send time, and the missing ones. */
+  const heldForQuotes = new Map<
+    string,
+    {
+      answered: ChatFeedItem | null;
+      quoted: readonly DraftQuote[];
+      missing: readonly QuoteRequest[];
+      target: (answered: ChatFeedItem | null, quoted: readonly DraftQuote[]) => Parameters<Sends["release"]>[1];
+    }
+  >();
+  /** "Retry" loads the quote's code again and sends the message with its quotes; it stays "not sent" while it cannot. */
+  const retryQuotes = async (clientId: string) => {
+    const held = heldForQuotes.get(clientId);
+    if (!held || !outbox) return;
+    outbox.retry(clientId);
+    const module = await loadQuoteCode();
+    if (!module) return outbox?.fail(clientId);
+    let { answered, quoted } = held;
+    for (const request of held.missing) {
+      const next = module.addQuote(quoted, answered, request.item, request.text, t().quotesReplaced);
+      if (!next) continue;
+      if (!next.keepReply) answered = null;
+      quoted = next.quotes;
+    }
+    heldForQuotes.delete(clientId);
+    outbox?.release(clientId, held.target(answered, quoted));
+  };
+  /**
+   * The person's choice not to send it now: its text goes back into the field, before what is there already, with its
+   * reply and quotes. A quote whose code still does not load waits with the draft again, like a new one.
+   */
+  const backToDraft = (send: ChatSend) => {
+    const held = heldForQuotes.get(send.clientId);
+    if (!held || !outbox) return;
+    heldForQuotes.delete(send.clientId);
+    sendDrafts.delete(send.clientId);
+    outbox.forget(send.clientId);
+    changeDraft(draft().trim() ? `${send.body}\n\n${draft()}` : send.body);
+    if (held.answered && !reply()) setReply(held.answered);
+    const thread = quotes()[0]?.thread;
+    setQuotes([...quotes(), ...held.quoted.filter((entry) => thread === undefined || entry.thread === thread)]);
+    for (const request of held.missing) quote(request.item, request.text);
+  };
+  /** The person's choice to send the message with the quotes it already has. */
+  const sendWithoutMissingQuotes = (clientId: string) => {
+    const held = heldForQuotes.get(clientId);
+    if (!held) return;
+    heldForQuotes.delete(clientId);
+    outbox?.release(clientId, held.target(held.answered, held.quoted));
+  };
+  // A message that only shares Cloud elements has no text.
+  const uploads = createAttachmentUpload();
+  const forYouApi = createForYouApi();
+  const send = async (
+    text: string,
+    refs: readonly CloudResourceRef[] = [],
+    attachments: readonly AttachmentView[] = [],
+    mentions: readonly Mention[] = [],
+  ): Promise<boolean> => {
+    const current = openChat();
+    const id = draftId(route());
+    const shares = refs.length + attachments.length;
+    const body = shares > 0 && !text.trim() ? "" : text;
+    if (
+      !current ||
+      !outbox ||
+      refs.length > MAX_MESSAGE_REFS ||
+      attachments.length > MAX_MESSAGE_ATTACHMENTS ||
+      (body === "" ? shares === 0 : !MessageBodySchema.safeParse(body).success) ||
+      draftStorageFailed() ||
+      (id !== null && draftConflicts()[id] !== undefined) ||
+      pendingOpen !== 0
+    )
+      return false;
+    // The composer has cleared its draft, but the outbox does not own it until history is ready.
+    pendingSends++;
+    try {
+      if (current.hasNewer) await store?.loadLatest();
+      const target = (answered: ChatFeedItem | null, quoted: readonly DraftQuote[]) => ({
+        thread: answered ? (answered.thread ?? "general") : (quoted[0]?.thread ?? (current.view === "all" ? "general" : current.view)),
+        replyTo: answered?.messageId ? { id: answered.messageId, author: answered.authorName, text: answered.body } : null,
+        quotes: quoted.map(({ id, author, text }) => ({ id, author, text })),
+      });
+      // The message shows as pending at once; only its post waits for quotes still on their way (#3999).
+      const waiting = quotesOnTheWay;
+      const sent = outbox.send(current.id, body, { ...target(reply(), quotes()), refs, attachments, mentions, hold: !!waiting });
+      if (waiting) {
+        // This send takes over the quotes of its draft that did not load; those of other drafts are dropped with it.
+        const missing = (await waiting).filter((request) => request.draft === id);
+        if (quotesOnTheWay === waiting) quotesOnTheWay = undefined;
+        const held = { answered: reply(), quoted: quotes(), missing, target };
+        // A quote whose code did not load keeps the message back as "not sent" until the person retries or sends it
+        // without that quote; it never goes out without it unasked.
+        if (missing.length) {
+          heldForQuotes.set(sent.clientId, held);
+          outbox.fail(sent.clientId);
+        } else outbox.release(sent.clientId, target(held.answered, held.quoted));
+      }
+      if (id !== null && (sent.quotes.length || heldForQuotes.has(sent.clientId))) sendDrafts.set(sent.clientId, id);
+      setReply(null);
+      setQuotes([]);
+      feed?.scrollToEnd();
+      return true;
+    } finally {
+      pendingSends--;
+    }
+  };
+
+  onMount(() => {
+    try {
+      savedDrafts = chatDrafts(props.viewerId, draftStorage());
+    } catch {
+      setDraftStorageFailed(true);
+    }
+    const opened = draftId(route());
+    if (opened) setDraft(readDraft(opened));
+    const storageChanged = (event: StorageEvent) => {
+      if (!savedDrafts) return;
+      try {
+        if (event.storageArea !== window.sessionStorage) return;
+        for (const id of drafts.keys()) {
+          if (event.key !== null && event.key !== savedDrafts.key(id)) continue;
+          const text = savedDrafts.read(id);
+          if (unsavedDrafts.has(id)) {
+            if (text !== savedTexts.get(id)) setDraftConflicts((all) => ({ ...all, [id]: text }));
+            continue;
+          }
+          drafts.set(id, text);
+          savedTexts.set(id, text);
+          if (draftId(route()) === id) setDraft(text);
+        }
+      } catch {
+        setDraftStorageFailed(true);
+      }
+    };
+    window.addEventListener("storage", storageChanged);
+    onCleanup(() => window.removeEventListener("storage", storageChanged));
+    setListPredecessor(listDepth() > 0);
+    phone = window.matchMedia("(max-width: 47.999rem)");
+    const live = createChatStore({
+      viewerId: props.viewerId,
+      cursor: props.cursor,
+      sidebar: props.sidebar,
+      archived: props.archived,
+      unread: props.filter === "unread",
+      collapsed: props.collapsed,
+      ...(props.open
+        ? { open: { conversation: props.open.conversation, page: props.open.page, threads: props.open.threads, view: props.view } }
+        : {}),
+    });
+    store = live;
+    if (props.open?.conversation.kind === "system") void live.refreshThreads();
+    setLiveStore(live);
+    const sync = () => {
+      const focused = document.activeElement;
+      // The reader's own message moves its chat to the top: that is the reader's action, not a move under the pointer.
+      const top = live.sidebar.find((row) => row.pinnedRank === null);
+      const firstUnpinned = order().find((id) => live.sidebar.some((row) => row.id === id && row.pinnedRank === null));
+      const ownTop = top?.lastMessage?.author.id === props.viewerId && top.id === live.openConversation?.id && firstUnpinned !== top.id;
+      if (!collapsePending) setCollapsed(live.collapsed);
+      setForYouUnread(live.forYouUnread);
+      setForYouRevision(live.forYouRevision);
+      setRows(live.sidebar);
+      if (ownTop) sortRows();
+      setHasMore(live.hasMoreSidebar);
+      // A send its stored message replaces leaves in the same step as the message arrives, so its row never goes missing.
+      batch(() => {
+        prune();
+        setChat(live.openConversation);
+      });
+      if (live.openConversation?.status === "no-access") setPanel(null);
+      setLiveStopped(live.liveStatus === "stopped");
+      // Moving a keyed pin with insertBefore can blur its handle or menu trigger in the browser.
+      if (
+        focused instanceof HTMLElement &&
+        focused.isConnected &&
+        focused.closest(".chat-list-pins") &&
+        document.activeElement === document.body
+      ) {
+        // The blur hides hover actions, so reveal them through the row's visible link before restoring its control.
+        focused.closest(".k2b-app-workspace__sidebar-item")?.querySelector<HTMLAnchorElement>("a[href]")?.focus({ preventScroll: true });
+        focused.focus({ preventScroll: true });
+      }
+      // Subscriptions changed elsewhere, such as in another tab: the catalog reads them again.
+      if (live.subscriptionsVersion !== subscriptionsSeen) {
+        subscriptionsSeen = live.subscriptionsVersion;
+        setChannelRevision((revision) => revision + 1);
+      }
+    };
+    let subscriptionsSeen = live.subscriptionsVersion;
+    onCleanup(live.subscribe(sync));
+    sync();
+
+    const box = createChatSends({ post: createChatSendsApi(), onRejected: giveBack });
+    outbox = box;
+    onCleanup(onPanelBeforeLeave(() => !box.unsent() && unsavedDrafts.size === 0 && !dialogCore.isOpen() && pendingSends === 0));
+    setComposerReady(true);
+    const leave = (event: BeforeUnloadEvent) => {
+      if (box.unsent() || unsavedDrafts.size > 0 || pendingSends > 0) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", leave);
+    onCleanup(() => window.removeEventListener("beforeunload", leave));
+    const failed = new Set<string>();
+    onCleanup(
+      box.subscribe(() => {
+        prune();
+        const current = route().chatId;
+        for (const entry of current ? box.sends(current) : []) {
+          if (entry.status === "failed" && !failed.has(entry.clientId)) announce(t().messageNotSent);
+          if (entry.status === "failed") failed.add(entry.clientId);
+          else failed.delete(entry.clientId);
+        }
+        setSendsVersion((version) => version + 1);
+      }),
+    );
+
+    onCleanup(
+      listenPopState(({ url }) => {
+        const next = parseRoute(url);
+        if (!next) return;
+        setListPredecessor(listDepth() > 0);
+        // The browser already shows the new address; when its chat cannot load in place, the server renders it.
+        void applyListUrl(url)
+          .then((token) => (token === null ? "superseded" : open(next)))
+          .then((result) => {
+            if (result === "failed") refreshCurrentPath();
+            if (result === "blocked") {
+              const current = route();
+              navigate(listHref(current.chatId ? panelHref(current.chatId, current.panel, current.messageId, current.view) : undefined), {
+                replace: true,
+                scroll: "preserve",
+              });
+            }
+          })
+          .catch(() => refreshCurrentPath());
+      }),
+    );
+    // The way up from a chat goes back to the list in place; a list opened before the chat is the previous entry.
+    onCleanup(
+      layout.handleUp((href) => {
+        if (
+          ![basePath, `${basePath}/archive`].includes(new URL(href, location.href).pathname) ||
+          (!route().chatId && !route().channels && !route().forYou)
+        )
+          return false;
+        const depth = listDepth();
+        if (depth > 0) {
+          if (!keepsChat(null)) history.go(-depth);
+        } else
+          void open(chatRoute(null)).then(
+            (result) => result === "applied" && navigate(listHref(archived() ? `${basePath}/archive` : basePath)),
+          );
+        return true;
+      }),
+    );
+    const activate = () => reporter?.reporter.activate();
+    // Back on the catalog after a while away, it reads current subscriptions.
+    const revisit = () => {
+      if (route().channels && document.visibilityState === "visible") setChannelRevision((revision) => revision + 1);
+    };
+    document.addEventListener("visibilitychange", revisit);
+    onCleanup(() => document.removeEventListener("visibilitychange", revisit));
+    createEffect(on(panel, activate));
+    phone.addEventListener("change", activate);
+    document.addEventListener("visibilitychange", activate);
+    window.addEventListener("focus", activate);
+    onCleanup(() => {
+      phone?.removeEventListener("change", activate);
+      document.removeEventListener("visibilitychange", activate);
+      window.removeEventListener("focus", activate);
+      reporter?.reporter.dispose();
+      box.dispose();
+      live.dispose();
+    });
+    if (props.embedded) {
+      // Following the host page's place loads with the panel, outside the first bundle. A chat opened since then
+      // means the reader left the panel's start.
+      const opensAtMount = openToken;
+      // Following the host page's place loads with the panel, outside the first bundle.
+      let stopFollowing: (() => void) | undefined;
+      onCleanup(() => stopFollowing?.());
+      void importOnDemand(() => import("./panel-follow")).then((module) => {
+        if (!module || disposed) return;
+        stopFollowing = module.followPanelContext({
+          route,
+          resourceChat,
+          setResourceChat,
+          atResource,
+          setFollowPending,
+          atStart: () => {
+            const current = route();
+            return (
+              !current.chatId && !current.channels && !current.forYou && !current.resource && !archived() && openToken === opensAtMount
+            );
+          },
+          opens: () => openToken,
+          open,
+          routeHref: (target) => viewHref(routeAddress(target, basePath)),
+          resourceHref: (target) => viewHref(resourceChatPath(target, basePath)),
+          navigateReplace: (href) => navigate(href, { replace: true, scroll: "preserve" }),
+          chatRoute,
+          served: props.panelScope ?? null,
+          disposed: () => disposed,
+        });
+      });
+      try {
+        const selected = props.chatId ?? savedDrafts?.selection();
+        if (props.chatId) savedDrafts?.select(props.chatId);
+        // Only the list's start restores the last chat; the resource's ready discussion stays where the server put it.
+        else if (selected && !props.resourcePage) {
+          void open(chatRoute(selected)).then((result) => {
+            if (result === "applied") navigate(listHref(panelHref(selected, null)), { replace: true, scroll: "manual" });
+          });
+        }
+      } catch {
+        setDraftStorageFailed(true);
+      }
+    }
+  });
+
+  const pinnedRows = () =>
+    listRows()
+      .filter((row) => row.kind !== "system" && row.pinnedRank !== null)
+      .sort((a, b) => a.pinnedRank! - b.pinnedRank!);
+  const reorder = (id: string, direction: "up" | "down") => {
+    const pins = pinnedRows();
+    const neighbor = pins[pins.findIndex((row) => row.id === id) + (direction === "up" ? -1 : 1)];
+    if (neighbor) void personal(id, { pinned: true, ...(direction === "up" ? { before: neighbor.id } : { after: neighbor.id }) });
+  };
+  const listProps = () => ({
+    basePath,
+    href: (id: string) => listHref(panelHref(id, null)),
+    pending: listPending() || listLoading(),
+    onPersonal: (id: string, patch: z.infer<typeof PersonalConversationSchema>) => void personal(id, patch),
+    activeId: openChat()?.id ?? null,
+    viewerId: props.viewerId,
+    dateConfig: props.dateConfig,
+    now,
+    onOpen: openFromList,
+    onMarkRead: markRead,
+    onMarkUnread: (id: string) => void markUnread(id),
+    threads:
+      openChat() && threaded()
+        ? {
+            threads: openChat()?.threads ?? null,
+            status: openChat()?.threadsStatus ?? ("loading" as const),
+            view: route().threads ? null : (openChat()?.view ?? null),
+            canAdmin: canCreateThread(),
+            system: system(),
+            total: conversation()?.summaryCursor == null ? conversation()?.threads : undefined,
+            creating: creatingThread(),
+            onOverview: openOverview,
+            onNavigate: (view: ThreadView, event: LinkNavigateEvent) => openView(openChat()!.id, view, event),
+            onCreate: () => void createThread(),
+            onRetry: () => void store?.refreshThreads(),
+          }
+        : undefined,
+  });
+  const systemSection = () => (
+    <ChatSystemChats
+      state={systemList}
+      list={listProps()}
+      current={conversation()}
+      updates={rows()}
+      unavailableId={chat()?.status === "no-access" ? chat()!.id : null}
+      expanded={systemExpanded()}
+      onExpanded={setSystemExpanded}
+      onOpen={openSystemFromList}
+    />
+  );
+  const list = (entries: () => readonly Conversation[], pinned = false): JSX.Element => (
+    <ChatList
+      rows={entries()}
+      {...listProps()}
+      activeId={openChat()?.id ?? null}
+      viewerId={props.viewerId}
+      dateConfig={props.dateConfig}
+      now={now}
+      hasMore={false}
+      onOpen={openFromList}
+      onMore={() => void more()}
+      pending={listPending() || listLoading()}
+      onPersonal={(id, patch) => void personal(id, patch)}
+      onReorder={pinned ? reorder : undefined}
+      onMarkRead={markRead}
+      onMarkUnread={(id) => void markUnread(id)}
+    />
+  );
+  /** The open part of the chat, as the head names it and the composer addresses it. */
+  const viewTitle = () => viewName(openChat()?.view ?? "all", openChat()?.threads ?? null, t());
+  const openThread = () => (conversation()?.channel ? undefined : threadOf(openChat()?.threads ?? null, openChat()?.view));
+  const threaded = () => chatHasThreads(conversation());
+  const [subscribing, setSubscribing] = createSignal(false);
+  const subscribeOpen = async (id: string) => {
+    setSubscribing(true);
+    try {
+      await subscribe(id);
+    } catch {
+      toast.error(t().requestFailed);
+    } finally {
+      setSubscribing(false);
+    }
+  };
+  // Where the reader cannot write, a quiet line replaces the composer and names why.
+  const notice = (): JSX.Element | undefined => {
+    const current = conversation();
+    if (!current) return undefined;
+    if (openThread()?.archived)
+      return (
+        <>
+          <i class="ti ti-archive" aria-hidden="true" />
+          <span>{t().archivedNotice}</span>
+          <Show when={current.permission === "admin"}>
+            <Button size="sm" variant="ghost" onClick={() => void restoreThread()}>
+              {t().restore}
+            </Button>
+          </Show>
+        </>
+      );
+    if (current.channel && !current.member)
+      return (
+        <>
+          <span>{t().subscribeQuestion}</span>
+          <Button loading={subscribing()} onClick={() => void subscribeOpen(current.id)}>
+            {t().subscribe}
+          </Button>
+        </>
+      );
+    if (current.permission === "read")
+      return (
+        <>
+          <i class="ti ti-eye" aria-hidden="true" />
+          <span>{current.channel ? t().channelReadOnly : t().readOnlyIn({ title: current.title })}</span>
+        </>
+      );
+    return undefined;
+  };
+  const placeholder = () => {
+    const current = conversation();
+    if (!current) return undefined;
+    const answered = reply();
+    if (answered)
+      return (system() || openChat()?.view === "all") && threaded()
+        ? t().replyIn({ name: threadName(answered.thread ?? "general") })
+        : t().replyPlaceholder;
+    if (!threaded()) return t().composerPlaceholder({ title: current.title });
+    return t().composerPlaceholder({ title: openChat()?.view === "all" ? generalName() : viewTitle() });
+  };
+  const replyHint = (item: ChatFeedItem) =>
+    !threaded()
+      ? t().replyHintPlain
+      : openChat()?.view === "all"
+        ? t().replyHintIn({ name: threadName(item.thread ?? "general") })
+        : t().replyHint;
+  const unreadHint = (item: ChatFeedItem) =>
+    threaded() ? t().markUnreadThreadHint({ name: threadName(item.thread ?? "general") }) : t().markUnreadFromHereHint;
+  const infoLink = (current: Conversation) => (
+    <IconButtonLink
+      label={t().chatInfo}
+      href={listHref(routeAddress({ ...route(), chatId: current.id, panel: panel() === "info" ? null : "info" }, basePath))}
+      navigation="enhanced"
+      // The clicked address says what the person chose; the panel can change before the view transition calls back (#2116).
+      onNavigate={(navigation) => (navigation.url.searchParams.get("panel") === "info" ? openInfo(navigation) : closeInfo(navigation))}
+      aria-expanded={panel() === "info"}
+      aria-controls="k2b-workspace-detail-chat-info"
+    >
+      <i class="ti ti-info-circle" aria-hidden="true" />
+    </IconButtonLink>
+  );
+  const chatsActions = () => (
+    <Dropdown.Root position="bottom-right" items={[{ label: t().markAllRead, icon: "ti ti-checks", action: () => void readAll() }]}>
+      <Dropdown.Trigger iconOnly label={t().chatsActions} tooltip={t().chatsActions} size="xs">
+        <i class="ti ti-dots text-xs" />
+      </Dropdown.Trigger>
+    </Dropdown.Root>
+  );
+
+  /** Unread messages in every chat but the open one, for the Cloud app's way back to the list. */
+  const othersUnread = (id: string) => {
+    const chats = rows().filter((row) => row.kind !== "system");
+    const loaded = chats.reduce((sum, row) => (row.id === id ? sum : sum + row.unread), 0);
+    const total = unreadTotal();
+    const current = conversation();
+    const opened =
+      chats.find((row) => row.id === id) ?? (current?.id === id && current.kind !== "system" && current.member ? current : undefined);
+    return total === undefined ? loaded : Math.max(loaded, total - (opened?.unread ?? 0));
+  };
+  const threadsPageOpen = () => (route().threads && openChat()?.id && threaded() ? conversation() : null);
+  const threadsPageView = (current: Conversation): JSX.Element => (
+    <ChatThreadsPage
+      basePath={basePath}
+      conversation={current}
+      canCreate={canCreateThread()}
+      creating={creatingThread()}
+      revision={(openChat()?.watermark ?? 0) + (openChat()?.threadsRevision ?? 0)}
+      threads={openChat()?.threads ?? null}
+      status={openChat()?.threadsStatus ?? "loading"}
+      viewerId={props.viewerId}
+      dateConfig={props.dateConfig}
+      now={now}
+      info={infoLink(current)}
+      backCount={props.app ? othersUnread(current.id) : undefined}
+      onBack={backToList}
+      onOpen={(view, navigation) => openView(current.id, view, navigation)}
+      onCreate={() => void createThread()}
+      onRetry={() => void store?.refreshThreads()}
+    />
+  );
+  const openResourceChat = async (navigation: LinkNavigateEvent) => {
+    const target = resourceChat();
+    if (!target) return;
+    const fromList = route().chatId === null;
+    const next = resourceChatExists(target) ? chatRoute(target.id, target.thread ?? "all") : chatRoute(null, "all", { resource: true });
+    if ((await open(next)) !== "applied") return;
+    setListPredecessor(fromList);
+    navigation.push(viewHref(resourceChatPath(target, basePath)), { scroll: "preserve", state: { chatFromList: fromList } });
+  };
+  /**
+   * The first message starts the discussion: the server opens it with the same checks, then the message goes in. The
+   * text moves into the new chat's draft before the ready start leaves, so a failed open or send keeps it there.
+   */
+  const startResourceChat = async (text: string) => {
+    const target = resourceChat();
+    if (!target || resourceChatExists(target)) return false;
+    let found: Awaited<ReturnType<typeof openResourceDiscussion>>;
+    try {
+      found = await openResourceDiscussion(target.ref);
+    } catch {
+      toast.error(t().requestFailed);
+      return false;
+    }
+    store?.includeSystemChats([found.conversation]);
+    const view = found.thread ?? "all";
+    if ((await open(chatRoute(found.conversation.id, view))) !== "applied") return false;
+    navigate(viewHref(threadHref(found.conversation.id, view)), { replace: true, scroll: "preserve" });
+    if (resourceChat() === target) setResourceChat({ ...target, id: found.conversation.id, thread: found.thread });
+    changeDraft(text);
+    if (await send(text)) changeDraft("");
+    return true;
+  };
+  /** In the panel: back to the discussion about the host page's resource, wherever the reader went from there. */
+  const resourceChatButton = () => (
+    <Show when={!atResource() && resourceChat()}>
+      {(target) => (
+        <IconButtonLink
+          href={listHref(resourceChatPath(target(), basePath))}
+          navigation="enhanced"
+          onNavigate={openResourceChat}
+          label={t().chatAboutResource({ title: target().title })}
+        >
+          <i class="ti ti-message-circle-share" aria-hidden="true" />
+        </IconButtonLink>
+      )}
+    </Show>
+  );
+  const conversationView = (): JSX.Element => (
+    <>
+      {/* One history per chat: a new chat starts at its end or its linked message, never at the last chat's place. */}
+      <Show when={openChat()?.id} keyed>
+        <Show when={conversation()}>
+          {(current) => (
+            <ChatConversation
+              dictation={props.liveDictation ? liveDictationSource : undefined}
+              framed={props.v2 ? { onNewAway: (away) => setNewAway(away) } : undefined}
+              actions={
+                <>
+                  <Show when={props.embedded}>{resourceChatButton()}</Show>
+                  <Show when={!system() && current().permission === "admin"}>
+                    <IconButton label={t().addPeople} variant="ghost" onClick={() => void addPeople()}>
+                      <i class="ti ti-user-plus" aria-hidden="true" />
+                    </IconButton>
+                  </Show>
+                  <Show when={!system() && current().permission === "admin" && openThread() && !openThread()?.archived}>
+                    <ThreadMenu onRename={() => void renameThread()} onArchive={() => void archiveThread()} />
+                  </Show>
+                  <Show when={current().channel && current().member}>
+                    <Dropdown.Root
+                      position="bottom-right"
+                      items={[
+                        {
+                          label: t().unsubscribe,
+                          icon: "ti ti-bell-off",
+                          description: t().unsubscribeDescription,
+                          disabled: unsubscribing(),
+                          action: () => void unsubscribe(),
+                        },
+                      ]}
+                    >
+                      <Dropdown.Trigger iconOnly label={t().chatActions({ title: current().title })}>
+                        <i class="ti ti-dots" />
+                      </Dropdown.Trigger>
+                    </Dropdown.Root>
+                  </Show>
+                  <Show when={system() && openThread()?.resource && openThread()?.following !== undefined ? openThread() : null}>
+                    {(thread) => (
+                      <FollowToggle
+                        following={thread().following === true}
+                        onToggle={(on) =>
+                          store ? store.follow(current().id, thread().id, on) : Promise.reject(new Error("Chat is not live yet"))
+                        }
+                      />
+                    )}
+                  </Show>
+                  {infoLink(current())}
+                </>
+              }
+              chatId={current().id}
+              muted={current().notifications?.level === "none"}
+              title={system() && openThread() ? openThread()!.name : current().title}
+              resource={system() ? (openThread()?.resource ?? undefined) : undefined}
+              // A wider window picks the thread beside the title; a phone and a window with the thread column
+              // name the thread as the title instead. CSS decides, so server and browser render the same head.
+              titleExtra={
+                threaded() ? (
+                  <span class="chat-conversation__picker">
+                    <ThreadPicker
+                      chatId={current().id}
+                      threads={openChat()?.threads ?? null}
+                      unread={current().unread}
+                      view={openChat()?.view ?? "all"}
+                      basePath={basePath}
+                      canAdmin={canCreateThread()}
+                      system={system()}
+                      total={current().summaryCursor == null ? current().threads : undefined}
+                      creating={creatingThread()}
+                      onOverview={openOverview}
+                      onSelect={(view) => void openView(current().id, view)}
+                      onCreate={() => void createThread()}
+                    />
+                  </span>
+                ) : undefined
+              }
+              wideTitle={
+                threaded()
+                  ? {
+                      title: viewTitle(),
+                      chat: current().title,
+                      subtitle:
+                        openChat()?.view === "all"
+                          ? `${current().title} · ${t().allThreadsHint}`
+                          : openChat()?.view === "general"
+                            ? `${current().title} · ${t().generalHint}`
+                            : (openThread()?.description ?? current().title),
+                    }
+                  : undefined
+              }
+              backHref={backToThreadDirectory() ? listHref(threadsPageHref(current().id)) : undefined}
+              draftKey={`${current().id}:${openChat()?.view ?? "all"}`}
+              notice={
+                <>
+                  {draftNotice()}
+                  <Show when={current().incomplete || openChat()?.threads?.incomplete}>
+                    <InlineGuidance tone="neutral" role="status">
+                      {t().discussionsIncomplete}{" "}
+                      <Button variant="text" size="xs" onClick={() => refreshCurrentPath()}>
+                        {t().retry}
+                      </Button>
+                    </InlineGuidance>
+                  </Show>
+                </>
+              }
+              composerNotice={
+                notice() ? (
+                  <Show when={readFailure()} fallback={notice()}>
+                    {readNotice()}
+                  </Show>
+                ) : undefined
+              }
+              placeholder={placeholder()}
+              target={threaded() ? (openChat()?.view === "all" ? generalName() : viewTitle()) : undefined}
+              reply={
+                reply()
+                  ? {
+                      author: reply()?.authorName ?? "",
+                      text: reply()?.body ?? "",
+                      onCancel: () => setReply(null),
+                      onSelect: () => {
+                        const answered = reply();
+                        if (answered?.messageId) void jumpTo(current().id, answered.messageId);
+                      },
+                    }
+                  : undefined
+              }
+              onReply={notice() ? undefined : answer}
+              quotes={quotes().map((entry) => ({
+                id: entry.key,
+                author: entry.author,
+                text: entry.text,
+                onRemove: () => setQuotes((list) => list.filter((other) => other !== entry)),
+                onSelect: () => void jumpTo(current().id, entry.id, entry.text),
+              }))}
+              onQuote={notice() ? undefined : quote}
+              replyHint={replyHint}
+              unreadHint={unreadHint}
+              listHref={listHref()}
+              memberCount={current().memberCount}
+              subtitle={
+                system() && openThread()
+                  ? current().title
+                  : system()
+                    ? t().systemMembers
+                    : current().channel
+                      ? t().subscribers({ count: current().memberCount })
+                      : undefined
+              }
+              items={items()}
+              hasOlder={openChat()?.hasOlder ?? false}
+              hasNewer={openChat()?.hasNewer ?? false}
+              onLoadOlder={() => store?.loadOlder() ?? Promise.resolve(false)}
+              onLoadNewer={() => store?.loadNewer() ?? Promise.resolve(false)}
+              onLoadNewest={() => store?.loadLatest() ?? Promise.resolve()}
+              focusKey={focusKey()}
+              focusText={jumpPassage()?.message === route().messageId ? jumpPassage()?.text : undefined}
+              canWrite={
+                composerReady() &&
+                !busy() &&
+                current().permission !== "read" &&
+                (system() || current().member) &&
+                !draftStorageFailed() &&
+                draftConflicts()[draftId(route()) ?? ""] === undefined
+              }
+              hint={
+                <Show
+                  when={readFailure()}
+                  fallback={draftError() ?? (liveStopped() ? t().liveStopped : waiting() ? t().messagesWaiting : undefined)}
+                >
+                  {readNotice()}
+                </Show>
+              }
+              draft={draft()}
+              onDraftChange={changeDraft}
+              onSend={send}
+              // A discard that fails leaves the file to the nightly cleanup of unsent uploads (24 hours).
+              onDiscard={(attachment) => void uploads.discard(current().id, attachment).catch(() => {})}
+              onUpload={(file, signal) =>
+                uploads.upload(
+                  current().id,
+                  openChat()?.view && !["all", "general"].includes(openChat()!.view) ? openChat()!.view : null,
+                  file,
+                  signal,
+                )
+              }
+              people={{
+                search: async (query, signal) =>
+                  (
+                    await forYouApi.candidates(
+                      current().id,
+                      query,
+                      openChat()?.view && openChat()!.view !== "all" ? openChat()!.view : "general",
+                      signal,
+                    )
+                  ).items.map((candidate) => ({
+                    id: `${candidate.principal.type}:${candidate.principal.id}`,
+                    name: candidate.name,
+                    agent: candidate.agent,
+                  })),
+              }}
+              cards={cards()}
+              onPickResource={pickResource}
+              onBack={backToThreadDirectory() ? backToThreads : backToList}
+              backCount={props.app ? othersUnread(current().id) : undefined}
+              allChats={props.embedded}
+              busy={busy()}
+              dateConfig={props.dateConfig}
+              now={now}
+              controller={(controller) => {
+                feed = controller;
+              }}
+              markerKey={marker()}
+              unreadGap={unreadGap() ? { key: unreadGap()?.key ?? null, jump: () => void jumpUnreadGap() } : undefined}
+              onVisibleChange={reportVisible}
+              onMarkUnreadFrom={(item) => void markUnread(current().id, item)}
+              reactions={(id) => reactionsById().get(id) ?? []}
+              onReact={react}
+              onEdit={current().permission !== "read" && (system() || current().member) ? (item) => mutate(item, "edit") : undefined}
+              onDelete={current().permission !== "read" && (system() || current().member) ? (item) => mutate(item, "delete") : undefined}
+              onCopy={copy}
+              // With the info open, Esc closes it first; the workspace owns that.
+              onEscape={() => panel() === null && markOpenRead()}
+            />
+          )}
+        </Show>
+      </Show>
+    </>
+  );
+  const noAccessView = (): JSX.Element => (
+    <Placeholder
+      variant="panel"
+      class="flex-1"
+      icon="ti ti-lock"
+      title={t().threadUnavailable}
+      action={
+        <Show
+          when={props.app}
+          fallback={
+            <Link href={basePath} onNavigate={backToList}>
+              {t().backToChats}
+            </Link>
+          }
+        >
+          <ButtonLink class="chat-app__to-list" variant="secondary" href={basePath} navigation="enhanced" onNavigate={backToList}>
+            {t().backToChats}
+          </ButtonLink>
+        </Show>
+      }
+      description={t().noAccessDescription}
+    />
+  );
+  /**
+   * The Cloud app: the list as a column of its own and the open chat beside it; one at a time below 64 rem. Threads
+   * show in the list's rows and the picker, so the app has no thread column.
+   */
+  const appView = (): JSX.Element => (
+    <div
+      class="chat-app"
+      data-open={openChat() || noAccess() || route().channels ? "" : undefined}
+      data-info={panel() === "info" ? "" : undefined}
+    >
+      <section class="chat-app__list" aria-label={t().chats}>
+        <header class="chat-app__head">
+          <h1>{t().appName}</h1>
+          <Show when={liveStopped()}>
+            <span class="chat-app__status" role="status">
+              <i class="ti ti-plug-connected-x" aria-hidden="true" />
+              {t().disconnected}
+            </span>
+          </Show>
+          <IconButton label={t().newChat} onClick={() => void newChat()}>
+            <i class="ti ti-edit" aria-hidden="true" />
+          </IconButton>
+          {chatsActions()}
+        </header>
+        <div class="chat-app__rows">{listContent()}</div>
+      </section>
+      <div class="chat-app__main">
+        <Switch>
+          <Match when={route().channels}>
+            <DiscoverChannels
+              initial={takeInitialChannelPage()}
+              query={route().query ?? ""}
+              onQuery={(query) => {
+                setRoute({ ...route(), query });
+                // Typing only rewrites the address; it never animates the page.
+                navigate(`${basePath}/channels${query ? `?q=${encodeURIComponent(query)}` : ""}`, {
+                  replace: true,
+                  scroll: "preserve",
+                  viewTransition: false,
+                });
+              }}
+              revision={channelRevision()}
+              onSubscribe={subscribe}
+              onOpen={(id) => openChosen(id)}
+              onBack={backToList}
+              listHref={basePath}
+            />
+          </Match>
+          <Match when={threadsPageOpen()}>{(current) => threadsPageView(current())}</Match>
+          <Match when={openChat()?.id}>{conversationView()}</Match>
+          <Match when={noAccess()}>{noAccessView()}</Match>
+          <Match when={true}>
+            <Placeholder
+              variant="panel"
+              class="flex-1"
+              icon="ti ti-message-circle"
+              title={t().selectChatTitle}
+              description={t().selectChatDescription}
+            />
+          </Match>
+        </Switch>
+      </div>
+    </div>
+  );
+
+  // "Discover channels" opens the catalog beside the Channels section; its code loads with the first opening.
+  // The catalog stays mounted once loaded; it is open while its anchor is set, as the shared popover expects.
+  const [catalogView, setCatalogView] = createSignal<typeof import("./ChannelCatalog").default>();
+  const [catalogAnchor, setCatalogAnchor] = createSignal<HTMLElement>();
+  const toggleCatalog = async (anchor: HTMLElement) => {
+    if (catalogAnchor()) return void setCatalogAnchor(undefined);
+    if (!catalogView()) {
+      const module = await importOnDemand(() => import("./ChannelCatalog"));
+      if (!module) return;
+      setCatalogView(() => module.default);
+    }
+    if (anchor.isConnected) setCatalogAnchor(anchor);
+  };
+  const discoverButton = () => (
+    <>
+      <AppWorkspace.SidebarSectionAction visibility="always">
+        <IconButton
+          size="xs"
+          variant="ghost"
+          label={t().browseChannels}
+          aria-haspopup="dialog"
+          aria-expanded={catalogAnchor() ? "true" : "false"}
+          onClick={(event) => void toggleCatalog(event.currentTarget)}
+        >
+          <i class="ti ti-info-circle text-xs" aria-hidden="true" />
+        </IconButton>
+      </AppWorkspace.SidebarSectionAction>
+    </>
+  );
+  // Section actions render once per sidebar form; the catalog lives once, beside the workspace.
+  const catalogPopover = () => (
+    <Show when={catalogView()}>
+      {(view) => (
+        <Dynamic
+          component={view()}
+          anchor={catalogAnchor()}
+          onClose={() => setCatalogAnchor(undefined)}
+          onOpen={(id: string) => void openChosen(id)}
+        />
+      )}
+    </Show>
+  );
+  const archiveLink = () => (
+    <AppWorkspace.SidebarItem
+      href={`${basePath}/archive`}
+      navigation="enhanced"
+      active={archived()}
+      icon="ti ti-archive"
+      onNavigate={() => void changeList("archive")}
+    >
+      {t().archive}
+    </AppWorkspace.SidebarItem>
+  );
+  /** The list's view: all chats by default, or only unread ones, also in the archive; the order stays by recent activity. */
+  const filterMenu = () => {
+    const label = () => (filter() === "unread" ? t().filterChatsActive({ name: t().unreadChats }) : t().filterChats);
+    return (
+      <Dropdown.Root
+        position="bottom-right"
+        label={t().filterChats}
+        items={[
+          {
+            choice: "radio" as const,
+            label: t().allChats,
+            icon: "ti ti-messages",
+            // "All" is the active list, also from the archive, as the list's way back there.
+            checked: () => !archived() && filter() === "all",
+            action: () => void (!archived() && filter() === "all" ? undefined : changeList("all")),
+          },
+          {
+            choice: "radio" as const,
+            label: t().unreadChats,
+            icon: "ti ti-mail",
+            checked: () => filter() === "unread",
+            action: () => void (filter() === "unread" ? undefined : changeList("unread")),
+          },
+        ]}
+      >
+        <Dropdown.Trigger
+          iconOnly
+          variant="ghost"
+          class="chat-list-filter"
+          label={label()}
+          tooltip={label()}
+          disabled={listLoading() || listPending()}
+          data-active={filter() === "unread" ? "true" : undefined}
+        >
+          <i class="ti ti-adjustments-horizontal" aria-hidden="true" />
+        </Dropdown.Trigger>
+      </Dropdown.Root>
+    );
+  };
+  const searchField = () => (
+    <div class="chat-list-search">
+      <TextInput
+        type="search"
+        icon="ti ti-search"
+        value={searchQuery}
+        onValueChange={setSearchQuery}
+        aria-label={t().searchChats}
+        placeholder={t().searchChats}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape" || !searchQuery()) return;
+          event.preventDefault();
+          event.stopPropagation();
+          setSearchQuery("");
+        }}
+      />
+      {filterMenu()}
+    </div>
+  );
+  const listErrorLine = () => (
+    <>
+      {/* A read state changed from the list with no chat open has no other place to say that it failed. */}
+      <Show when={!openChat()}>{readNotice()}</Show>
+      <Show when={listError()}>
+        {(error) => (
+          <InlineGuidance role="alert" tone="danger" class="chat-list-error">
+            {error()}
+            <Show when={listRetry()}>
+              <Button size="sm" variant="ghost" disabled={listPending() || listLoading()} onClick={() => listRetry()?.()}>
+                {t().retry}
+              </Button>
+            </Show>
+          </InlineGuidance>
+        )}
+      </Show>
+    </>
+  );
+  const listContent = (includeArchive = true) => (
+    <>
+      {/* The panel is about the host page's resource; it switches chats but does not start or search them. */}
+      <Show when={!props.embedded}>{searchField()}</Show>
+      <Show
+        when={!searchQuery().trim()}
+        fallback={
+          <>
+            {/* An action on a hit that fails says so here, as it does above the list. */}
+            {listErrorLine()}
+            <ChatSearch
+              search={chatSearch}
+              basePath={basePath}
+              active={{ chatId: openChat()?.id ?? null, view: openChat()?.view ?? "all" }}
+              chatRow={(hit) => {
+                // The list's own row once the store holds it, so pinning, archiving and reading show at once.
+                const row = () => rows().find((candidate) => candidate.id === hit.id) ?? hit;
+                return (
+                  <ChatList
+                    rows={[row()]}
+                    {...listProps()}
+                    threads={undefined}
+                    activeId={openChat()?.id ?? null}
+                    viewerId={props.viewerId}
+                    dateConfig={props.dateConfig}
+                    now={now}
+                    hasMore={false}
+                    onOpen={(id, navigation) => {
+                      const ref = row().resource;
+                      if (row().kind !== "system") return openFromList(id, navigation);
+                      if (ref) return openSystem({ type: ref.type, id: ref.id }, (href) => navigation.push(href, { scroll: "preserve" }));
+                    }}
+                    onMore={() => {}}
+                    pending={listPending() || listLoading()}
+                    onPersonal={(id, patch) => void personal(id, patch)}
+                    onMarkRead={markRead}
+                    onMarkUnread={(id) => void markUnread(id)}
+                  />
+                );
+              }}
+              onThread={(chatId, thread, navigation) => openView(chatId, thread, navigation)}
+              onSystem={(ref) => openSystem(ref)}
+            />
+          </>
+        }
+      >
+        {/* Without chats, or when they did not load, the list has more important things to say. */}
+        <Show when={rows().length > 0 && !listError()}>
+          <ChatDeviceNotice notice={deviceNotice()} onNotice={setDeviceNotice} dateConfig={props.dateConfig} now={now} />
+        </Show>
+        <Show when={!props.app && !props.embedded}>
+          <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
+            {t().newChat}
+          </AppWorkspace.SidebarItem>
+        </Show>
+        <Show when={!props.app && !props.embedded}>
+          <AppWorkspace.SidebarItem
+            href={listHref(`${basePath}/for-you`)}
+            navigation="enhanced"
+            onNavigate={showForYou}
+            active={route().forYou}
+            icon="ti ti-at"
+            meta={<AppWorkspace.SidebarItemStatus unread={forYouUnread() || undefined} />}
+          >
+            {t().forYou}
+          </AppWorkspace.SidebarItem>
+        </Show>
+        <div class="chat-list-feedback">
+          {/* Loading is quiet: the list keeps its rows and place, and only screen readers hear the progress. */}
+          <p role="status" aria-live="polite" class="sr-only">
+            {!listError() && (listLoading() ? t().loadingChats : listPending() ? t().savingList : "")}
+          </p>
+          {listErrorLine()}
+        </div>
+        <Show
+          when={archived()}
+          fallback={
+            <>
+              <Show when={pinnedRows().length > 0}>
+                <AppWorkspace.SidebarSection
+                  title={t().pinnedChats}
+                  collapsible
+                  open={!collapsed().includes("pinned")}
+                  onOpenChange={(open) => void collapse("pinned", open)}
+                >
+                  <ScrollArea class="chat-list-pins" scrollPreserveKey="chat-pins">
+                    {list(pinnedRows, true)}
+                  </ScrollArea>
+                </AppWorkspace.SidebarSection>
+              </Show>
+              <AppWorkspace.SidebarSection
+                title={t().chats}
+                actions={props.app ? undefined : chatsActions()}
+                collapsible
+                open={!collapsed().includes("chats")}
+                onOpenChange={(open) => void collapse("chats", open)}
+              >
+                <Show
+                  when={listRows().some((row) => row.pinnedRank === null && !row.channel && row.kind !== "system")}
+                  fallback={
+                    <Show when={!hasMore() && !listLoading() && listRows().length === 0}>
+                      <Placeholder variant="inline" align="left" description={filter() === "unread" ? t().noUnreadChats : t().noneYet} />
+                    </Show>
+                  }
+                >
+                  {list(() => listRows().filter((row) => row.pinnedRank === null && !row.channel && row.kind !== "system"))}
+                </Show>
+              </AppWorkspace.SidebarSection>
+              <AppWorkspace.SidebarSection
+                title={t().channels}
+                actions={discoverButton()}
+                collapsible
+                open={!collapsed().includes("channels")}
+                onOpenChange={(open) => void collapse("channels", open)}
+              >
+                {list(() => listRows().filter((row) => row.channel && row.pinnedRank === null && row.kind !== "system"))}
+              </AppWorkspace.SidebarSection>
+            </>
+          }
+        >
+          <AppWorkspace.SidebarSection title={t().archive}>
+            <Show when={listRows().length > 0} fallback={<Placeholder variant="inline" align="left" description={t().archiveEmpty} />}>
+              {list(listRows)}
+            </Show>
+          </AppWorkspace.SidebarSection>
+        </Show>
+        <Show when={hasMore()}>
+          <AppWorkspace.SidebarItem disabled={listLoading() || listPending()} icon="ti ti-dots" onClick={() => void more()}>
+            {t().showMoreChats}
+          </AppWorkspace.SidebarItem>
+        </Show>
+        {systemSection()}
+        <Show when={includeArchive}>{archiveLink()}</Show>
+      </Show>
+    </>
+  );
+  // v1's panel, or v2's info with the same props: one place decides what Info holds.
+  const infoView = (Panel: typeof ChatInfoPanel = ChatInfoPanel) => (
+    <>
+      {/* One panel per chat, like its history: search and loaded members never carry over to the next chat. */}
+      <Show when={infoMounted() && openChat()?.id} keyed>
+        <Show when={conversation()}>
+          {(current) => (
+            <Panel
+              conversation={current()}
+              viewerId={props.viewerId}
+              active={panel() === "info"}
+              revision={(openChat()?.membershipRev ?? 0) + localBumps()}
+              store={liveStore()}
+              onClose={() => closeInfo()}
+              onAddPeople={() => void addPeople()}
+              onEditDetails={editDetails}
+              onDiscovery={current().permission === "admin" ? () => void editDiscovery() : undefined}
+              onCreateThread={!system() && !current().channel && current().permission === "admin" ? () => void createThread() : undefined}
+              sharedProps={{
+                chatId: current().id,
+                revision: openChat() ? `${openChat()!.watermark}:${openChat()!.historyRev}` : undefined,
+                threads: openChat()?.threads ?? null,
+                viewerId: props.viewerId,
+                dateConfig: props.dateConfig,
+                now,
+                cards: cards(),
+                load: (query) => (store ? store.shared(current().id, query) : Promise.reject(new Error("Chat is not live yet"))),
+                onJump: jumpToShared,
+              }}
+              notificationProps={
+                current().notifications
+                  ? {
+                      conversation: current(),
+                      notifications: current().notifications!,
+                      dateConfig: props.dateConfig,
+                      now,
+                      save: (input) =>
+                        store ? store.setNotifications(current().id, input) : Promise.reject(new Error("Chat is not live yet")),
+                    }
+                  : undefined
+              }
+              onLeave={() => void (current().channel ? unsubscribe() : leaveChat())}
+            />
+          )}
+        </Show>
+      </Show>
+    </>
+  );
+  // ── The full page on @k2b/ui v2 (`/app/chat`): the same controller in v2's frame ──────────────────────────────────
+  const v2t = () => props.v2!.chatV2Messages.resolve([locale()]).t;
+  const atList = () => !route().forYou && !route().channels;
+  const showChannels = async (navigation: LinkNavigateEvent) => {
+    if ((await open(chatRoute(null, "all", { channels: true }))) === "applied") navigation.push(listHref(`${basePath}/channels`));
+  };
+  const loadedUnread = () => rows().reduce((sum, row) => sum + row.unread, 0);
+  /** A place's discussions hand their search and state filter to the pane's head once their page has loaded. */
+  const [directoryTools, setDirectoryTools] = createSignal<JSX.Element>();
+  // The chats stand in the nav itself (Valentin, v8), so there is no "Chats" entry: "Unread" and "Archive" filter them,
+  // and pressed again they lead back to all chats.
+  const unreadOn = () => atList() && !archived() && filter() === "unread";
+  const archiveOn = () => atList() && archived();
+  const v2Nav = () => ({
+    label: t().appName,
+    groups: [
+      {
+        items: [
+          {
+            label: t().unreadChats,
+            icon: "mail",
+            href: unreadOn() ? basePath : `${basePath}?filter=unread`,
+            current: unreadOn(),
+            count: (unreadTotal() ?? loadedUnread()) || undefined,
+            onNavigate: (navigation: LinkNavigateEvent) =>
+              atList() ? void changeList(unreadOn() ? "all" : "unread") : navigation.fallback(),
+            // the head's "…" is gone (Valentin, v8): reading all of them is a deed of the unread ones
+            menu: [{ label: t().markAllRead, icon: "checks", onClick: () => void readAll() }],
+          },
+          {
+            label: t().forYou,
+            icon: "at",
+            href: `${basePath}/for-you`,
+            current: route().forYou === true,
+            count: forYouUnread() || undefined,
+            onNavigate: showForYou,
+          },
+          {
+            label: t().browseChannels,
+            icon: "speakerphone",
+            href: `${basePath}/channels`,
+            current: route().channels === true,
+            onNavigate: showChannels,
+          },
+        ],
+      },
+    ],
+    foot: [
+      {
+        label: t().archive,
+        icon: "archive",
+        href: archiveOn() ? basePath : `${basePath}/archive`,
+        current: archiveOn(),
+        onNavigate: (navigation: LinkNavigateEvent) =>
+          atList() ? void changeList(archiveOn() ? "all" : "archive") : navigation.fallback(),
+      },
+    ],
+  });
+  const rowMenu = (row: Conversation): MenuEntry[] => {
+    const pending = listPending() || listLoading();
+    const pins = pinnedRows();
+    const unread = row.unread > 0 || row.read?.unreadFromSeq != null;
+    return [
+      ...(row.kind === "system"
+        ? []
+        : [
+            {
+              label: row.pinnedRank === null ? t().pinChat : t().unpinChat,
+              icon: "pin",
+              disabled: pending,
+              onClick: () => void personal(row.id, { pinned: row.pinnedRank === null }),
+            },
+            ...(row.pinnedRank !== null && !row.archived
+              ? [
+                  {
+                    label: t().moveUp,
+                    icon: "arrow-up",
+                    disabled: pending || pins[0]?.id === row.id,
+                    onClick: () => reorder(row.id, "up"),
+                  },
+                  {
+                    label: t().moveDown,
+                    icon: "arrow-down",
+                    disabled: pending || pins.at(-1)?.id === row.id,
+                    onClick: () => reorder(row.id, "down"),
+                  },
+                ]
+              : []),
+            {
+              label: row.archived ? t().restoreChat : t().archiveChat,
+              icon: "archive",
+              disabled: pending,
+              onClick: () => void personal(row.id, { archived: !row.archived }),
+            },
+          ]),
+      unread
+        ? { label: t().markRead, icon: "mail-opened", onClick: () => markRead(row.id) }
+        : { label: t().markUnread, icon: "mail", onClick: () => void markUnread(row.id) },
+    ];
+  };
+  const rowsContext: ChatRowsContext = {
+    get label() {
+      return t().chats;
+    },
+    get activeId() {
+      return openChat()?.id ?? null;
+    },
+    viewerId: props.viewerId,
+    dateConfig: props.dateConfig,
+    now,
+    // a place leads to its "General" stream, so its address is the one the page keeps
+    href: (row) => listHref(panelHref(row.id, null, null, row.kind === "system" ? "general" : "all")),
+    onNavigate: (row) => (navigation) => {
+      if (row.kind !== "system") return openFromList(row.id, navigation);
+      const ref = row.resource;
+      if (ref) return openSystem({ type: ref.type, id: ref.id }, (href) => navigation.push(href, { scroll: "preserve" }));
+      return openSystemFromList(row.id, navigation);
+    },
+    menu: rowMenu,
+  };
+  /** The discussions about places, as v1's section shows them: the known ones and the open one. */
+  const systemRows = () => {
+    const found = new Map(
+      rows()
+        .filter((row) => row.kind === "system")
+        .map((row) => [row.id, row]),
+    );
+    const current = conversation();
+    if (current?.kind === "system") found.set(current.id, current);
+    if (chat()?.status === "no-access") found.delete(chat()!.id);
+    return [...found.values()];
+  };
+  const moreChats = () =>
+    hasMore()
+      ? { label: t().showMoreChats, icon: "dots", disabled: listLoading() || listPending(), onClick: () => void more() }
+      : undefined;
+  /**
+   * The one list (Valentin, v8): no headings and no lines between kinds. The pinned chats on top, then the chats and
+   * channels in the server's order (last activity), then the discussions about places, each source with its own way
+   * to more.
+   */
+  const v2List = (): ChatListModel => {
+    const more = moreChats();
+    if (archived()) return { rows: listRows(), empty: t().archiveEmpty, more: more ? [more] : [] };
+    const rest = listRows().filter((row) => row.pinnedRank === null && row.kind !== "system");
+    const systemMore = Object.values(systemList.page()?.cursors ?? {}).some(Boolean);
+    return {
+      rows: [...pinnedRows(), ...rest, ...systemRows()],
+      empty: hasMore() || listLoading() ? undefined : filter() === "unread" ? t().noUnreadChats : t().noneYet,
+      more: [
+        ...(more ? [more] : []),
+        ...(systemMore
+          ? [
+              {
+                label: v2t().moreDiscussions,
+                icon: "dots",
+                disabled: systemList.status() === "loading",
+                onClick: () => void systemList.load(true),
+              },
+            ]
+          : []),
+      ],
+    };
+  };
+  const v2Notices = (): ChatListNotice[] => {
+    const notices: ChatListNotice[] = [];
+    const error = listError();
+    if (error)
+      notices.push({
+        tone: "bad",
+        text: error,
+        action: listRetry() ? { label: t().retry, disabled: listPending() || listLoading(), onClick: () => listRetry()?.() } : undefined,
+      });
+    const failure = readFailure();
+    if (failure && !openChat())
+      notices.push({
+        tone: "bad",
+        text: t().readStateFailed,
+        action: {
+          label: t().retry,
+          disabled: retryingRead(),
+          onClick: async () => {
+            setRetryingRead(true);
+            try {
+              await changeRead(failure.run);
+              refreshSearch();
+            } finally {
+              setRetryingRead(false);
+            }
+          },
+        },
+      });
+    if (draftStorageFailed())
+      notices.push({ tone: "bad", text: t().draftNotSaved, action: { label: t().retry, onClick: retryDraftStorage } });
+    if (systemList.status() === "failed")
+      notices.push({
+        tone: "bad",
+        text: t().systemChatsFailed,
+        action: { label: t().retry, onClick: () => void systemList.load(systemList.more()) },
+      });
+    else if (systemList.status() === "ready" && systemList.page()?.skipped.length)
+      notices.push({
+        tone: "warn",
+        text: t().systemChatsPartial,
+        action: { label: t().retry, onClick: () => void systemList.load(false) },
+      });
+    return notices;
+  };
+  const [followBusy, setFollowBusy] = createSignal(false);
+  const toggleFollow = async (chatId: string, threadId: string, on: boolean) => {
+    if (!store) return;
+    setFollowBusy(true);
+    try {
+      await store.follow(chatId, threadId, on);
+    } catch (failure) {
+      toast.error(failure instanceof ChatRequestError ? failure.message : t().followFailed, { title: t().followFailedTitle });
+    } finally {
+      setFollowBusy(false);
+    }
+  };
+  const [newAway, setNewAway] = createSignal<{ direction: "above" | "below"; jump: () => void } | null>(null);
+  const backAction = (): ChatDetailV2["back"] => {
+    // A discussion about an item leads back to its place's "General" stream, where its card stands.
+    const current = conversation();
+    const view = openChat()?.view;
+    if (current?.kind === "system" && view && view !== "general" && view !== "all")
+      return {
+        label: current.title,
+        href: listHref(threadHref(current.id, "general")),
+        onNavigate: (navigation: LinkNavigateEvent) => openView(current.id, "general", navigation),
+      };
+    // A place has no directory of its own in v2 (its route leads to the place): its stream leads back to the chats.
+    if (props.v2 && current?.kind === "system") return { label: t().chats, href: listHref(), onNavigate: backToList };
+    return backToThreadDirectory() && route().chatId
+      ? { label: t().backToThreads, href: listHref(threadsPageHref(route().chatId!)), onNavigate: backToThreads }
+      : { label: t().chats, href: listHref(), onNavigate: backToList };
+  };
+  /**
+   * A place's head menu (v2): what to show (all, open, done, unread), its General stream and its discussions in that
+   * state, each opening as a page of its own, more from the server while it has them, and "Discuss an item".
+   */
+  const placeMenu = (current: Conversation): MenuEntry[] => {
+    const view = openChat()?.view ?? "general";
+    const found = placeFound();
+    const list = found?.chat === current.id && found.filter === placeFilter() ? found.list : null;
+    const shown = list?.items ?? (openChat()?.threads?.items ?? []).filter((thread) => thread.resource && placeShows(thread));
+    const go = (target: ThreadView) => (navigation: LinkNavigateEvent) => openView(current.id, target, navigation);
+    const states: { value: PlaceFilter; label: string }[] = [
+      { value: "all", label: t().allThreads },
+      { value: "open", label: t().threadsOpen },
+      { value: "done", label: t().threadsDone },
+      { value: "unread", label: t().threadsUnread },
+    ];
+    return [
+      {
+        title: v2t().discussionState,
+        choice: placeFilter(),
+        onChoose: (value: string) => {
+          const next = states.find((state) => state.value === value)?.value;
+          if (!next) return;
+          setPlaceFilter(next);
+          void findDiscussions(current.id, next);
+        },
+        items: states.map((state) => ({ label: state.label, value: state.value })),
+      },
+      {
+        title: t().systemChats,
+        choice: view,
+        items: [
+          {
+            label: viewName("general", openChat()?.threads ?? null, t()),
+            icon: "messages",
+            value: "general",
+            href: listHref(threadHref(current.id, "general")),
+            onNavigate: go("general"),
+          },
+          ...shown.map((thread) => ({
+            label: thread.name,
+            icon: threadIcon(thread).replace(/^ti ti-/, ""),
+            value: thread.id,
+            meta: [
+              thread.resource?.status ?? (thread.resource?.done ? t().threadsDone : t().threadsOpen),
+              thread.unread > 0 ? thread.unread.toLocaleString(locale()) : "",
+            ]
+              .filter(Boolean)
+              .join(" · "),
+            href: listHref(threadHref(current.id, thread.id)),
+            onNavigate: go(thread.id),
+          })),
+        ],
+      },
+      ...(list === null || list.nextCursor != null
+        ? [
+            {
+              label: t().moreThreads,
+              icon: "dots",
+              onClick: () => findDiscussions(current.id, placeFilter(), list !== null),
+            } satisfies MenuEntry,
+          ]
+        : []),
+      ...(canCreateThread()
+        ? [{ label: t().discussElement, icon: "plus", disabled: creatingThread(), onClick: () => void createThread() } satisfies MenuEntry]
+        : []),
+    ];
+  };
+  const chatDetail = (current: Conversation): ChatDetailV2 => {
+    const thread = openThread();
+    const resource = system() ? (thread?.resource ?? undefined) : undefined;
+    const status = resource ? (resource.status ?? (resource.done ? t().threadsDone : null)) : null;
+    const subtitle = system()
+      ? t().systemMembers
+      : current.channel
+        ? t().subscribers({ count: current.memberCount })
+        : t().members({ count: current.memberCount });
+    const buttons: ChatHeadButton[] = [];
+    const away = newAway();
+    if (away)
+      buttons.push({
+        label: t().jumpToNew,
+        icon: away.direction === "above" ? "arrow-up" : "arrow-down",
+        words: true,
+        disabled: busy(),
+        onClick: away.jump,
+      });
+    if (resource?.href)
+      // the discussion's item and following it stay on the phone too, folded into "…" where the head has no room
+      buttons.push({
+        label: t().openInType({ title: resource.typeTitle }),
+        icon: "external-link",
+        href: resource.href,
+        words: true,
+        keep: true,
+      });
+    if (system() && thread?.resource && thread.following !== undefined)
+      buttons.push({
+        label: thread.following ? t().followOn : t().followOff,
+        icon: thread.following ? "bell-ringing" : "bell-plus",
+        words: true,
+        pressed: thread.following === true,
+        keep: true,
+        busy: followBusy(),
+        onClick: () => void toggleFollow(current.id, thread.id, !thread.following),
+      });
+    buttons.push({
+      label: t().chatInfo,
+      keep: true,
+      icon: "info-circle",
+      pressed: panel() === "info",
+      href: listHref(routeAddress({ ...route(), chatId: current.id, panel: panel() === "info" ? null : "info" }, basePath)),
+      onNavigate: (navigation) => (navigation.url.searchParams.get("panel") === "info" ? openInfo(navigation) : closeInfo(navigation)),
+    });
+    const admin = !system() && current.permission === "admin";
+    const menu: MenuEntry[] = [
+      ...(admin ? [{ label: t().addPeople, icon: "user-plus", onClick: () => void addPeople() }] : []),
+      ...(admin && thread && !thread.archived
+        ? [
+            { label: t().renameThread, icon: "pencil", onClick: () => void renameThread() },
+            { label: t().archiveThread, icon: "archive", onClick: () => void archiveThread() },
+          ]
+        : []),
+      ...(current.channel && current.member
+        ? [{ label: t().unsubscribe, icon: "bell-off", disabled: unsubscribing(), onClick: () => void unsubscribe() }]
+        : []),
+    ];
+    return {
+      key: "chat",
+      label: current.title,
+      head: {
+        name: system() && thread ? thread.name : current.title,
+        avatar: current.channel || system() ? undefined : { name: current.title },
+        kinds: status ? [status] : undefined,
+        ids: [
+          // A discussion about an element says where it stands (its context), else what kind of element it is, as v1.
+          ...(resource ? [{ value: resource.context ?? resource.typeTitle }] : []),
+          // a place's discussion names its place in its way back, which stands above it on every screen
+          ...(system() && thread ? [] : [{ value: subtitle }]),
+          ...(current.notifications?.level === "none" ? [{ icon: "bell-off", value: t().notificationsOffMark }] : []),
+        ],
+      },
+      back: backAction(),
+      wideBack: system() && !!thread,
+      // a place's General stream holds the menu of its discussions and their state; a discussion leads back to it
+      picker: system()
+        ? thread
+          ? undefined
+          : { label: t().switchThread({ name: viewTitle() }), name: viewTitle(), items: placeMenu(current) }
+        : threaded()
+          ? {
+              label: t().switchThread({ name: viewTitle() }),
+              name: viewTitle(),
+              items: props.v2!.threadMenu({
+                t: t(),
+                chatId: current.id,
+                basePath,
+                view: openChat()?.view ?? "all",
+                threads: openChat()?.threads ?? null,
+                unread: current.unread,
+                system: system(),
+                canAdmin: canCreateThread(),
+                creating: creatingThread(),
+                total: current.summaryCursor == null ? current.threads : undefined,
+                onSelect: (view) => (navigation) => openView(current.id, view, navigation),
+                onOverview: (navigation) => openOverview(navigation),
+                onCreate: () => void createThread(),
+              }),
+            }
+          : undefined,
+      buttons,
+      menu,
+      content: conversationView,
+    };
+  };
+  const pageDetail = (key: string, name: string, content: () => JSX.Element): ChatDetailV2 => ({
+    key,
+    label: name,
+    head: { name },
+    back: { label: t().chats, href: listHref(), onNavigate: backToList },
+    content,
+  });
+  const v2Detail = (): ChatDetailV2 | null => {
+    const V2 = props.v2!;
+    if (route().forYou)
+      return {
+        ...pageDetail("for-you", t().forYou, () => (
+          <V2.ForYouPaneV2
+            initial={takeInitialForYou()}
+            revision={forYouRevision()}
+            basePath={basePath}
+            dateConfig={props.dateConfig}
+            now={now}
+            onOpen={(item) => openView(item.conversation.id, item.thread.id, undefined, item.message.id)}
+          />
+        )),
+        drawing: false,
+      };
+    if (route().channels)
+      return {
+        ...pageDetail("channels", t().browseChannels, () => (
+          <V2.DiscoverChannelsPaneV2
+            initial={takeInitialChannelPage()}
+            query={route().query ?? ""}
+            onQuery={(query) => {
+              setRoute({ ...route(), query });
+              // Typing only rewrites the address; it never animates the page.
+              navigate(`${basePath}/channels${query ? `?q=${encodeURIComponent(query)}` : ""}`, {
+                replace: true,
+                scroll: "preserve",
+                viewTransition: false,
+              });
+            }}
+            revision={channelRevision()}
+            onSubscribe={subscribe}
+            onOpen={(id) => openChosen(id)}
+            onBack={backToList}
+            listHref={basePath}
+          />
+        )),
+        drawing: false,
+      };
+    const threads = threadsPageOpen();
+    if (threads?.kind === "system")
+      return {
+        ...pageDetail(`threads:${threads.id}`, t().threadsIn({ title: threads.title }), () => (
+          <V2.SystemThreadsPaneV2
+            conversation={threads}
+            basePath={basePath}
+            viewerId={props.viewerId}
+            dateConfig={props.dateConfig}
+            now={now}
+            revision={(openChat()?.watermark ?? 0) + (openChat()?.threadsRevision ?? 0)}
+            onOpen={(view, navigation) => openView(threads.id, view, navigation)}
+            tools={(element) => setDirectoryTools(() => element)}
+          />
+        )),
+        // The head holds the search and the state filter; who belongs to the place stands in its info.
+        head: { name: threads.title },
+        tools: directoryTools,
+        drawing: false,
+      };
+    if (threads)
+      return {
+        key: `threads:${threads.id}`,
+        label: t().threadsIn({ title: threads.title }),
+        head: {
+          name: threads.title,
+          avatar: threads.channel ? undefined : { name: threads.title },
+          ids: [{ value: t().members({ count: threads.memberCount }) }],
+        },
+        back: { label: t().chats, href: listHref(), onNavigate: backToList },
+        buttons: [
+          ...(canCreateThread()
+            ? [
+                {
+                  label: t().newThread,
+                  icon: "plus",
+                  words: true,
+                  keep: true,
+                  disabled: creatingThread(),
+                  onClick: () => void createThread(),
+                },
+              ]
+            : []),
+          {
+            label: t().chatInfo,
+            icon: "info-circle",
+            keep: true,
+            pressed: panel() === "info",
+            href: listHref(`${threadsPageHref(threads.id)}${panel() === "info" ? "" : "?panel=info"}`),
+            onNavigate: (navigation: LinkNavigateEvent) =>
+              navigation.url.searchParams.get("panel") === "info" ? openInfo(navigation) : closeInfo(navigation),
+          },
+        ],
+        content: () => (
+          <V2.ThreadsPaneV2
+            conversation={threads}
+            basePath={basePath}
+            threads={openChat()?.threads ?? null}
+            status={openChat()?.threadsStatus ?? "loading"}
+            viewerId={props.viewerId}
+            dateConfig={props.dateConfig}
+            now={now}
+            onOpen={(view, navigation) => openView(threads.id, view, navigation)}
+            onRetry={() => void store?.refreshThreads()}
+          />
+        ),
+        drawing: false,
+      };
+    const current = conversation();
+    if (openChat()?.id && current) return chatDetail(current);
+    if (noAccess())
+      return {
+        ...pageDetail("no-access", t().noAccessTitle, () => (
+          <V2.NoAccessV2 back={{ label: t().backToChats, href: listHref(basePath), onNavigate: backToList }} />
+        )),
+        head: { name: t().threadUnavailable },
+        drawing: false,
+      };
+    return null;
+  };
+  const V2 = props.v2;
+  if (V2)
+    return (
+      <V2.ChatFrameV2
+        nav={v2Nav()}
+        newChat={{ label: t().newChat, icon: "message-plus", onClick: () => void newChat() }}
+        search={{
+          get value() {
+            return searchQuery();
+          },
+          onInput: setSearchQuery,
+          onKeyDown: (event) => {
+            if (event.key !== "Escape" || !searchQuery()) return;
+            event.preventDefault();
+            event.stopPropagation();
+            setSearchQuery("");
+          },
+        }}
+        list={{
+          get notices() {
+            return v2Notices();
+          },
+          content: (
+            <Show
+              when={!searchQuery().trim()}
+              fallback={
+                <V2.ChatSearchV2
+                  search={chatSearch}
+                  basePath={basePath}
+                  active={{ chatId: openChat()?.id ?? null, view: openChat()?.view ?? "all" }}
+                  context={rowsContext}
+                  known={(hit) => rows().find((row) => row.id === hit.id) ?? hit}
+                  onThread={(chatId, thread) => (navigation) => openView(chatId, thread, navigation)}
+                  onSystem={(ref) => void openSystem(ref)}
+                />
+              }
+            >
+              <Show when={rows().length > 0 && !listError()}>
+                <V2.ChatDeviceNoticeV2 notice={deviceNotice()} onNotice={setDeviceNotice} dateConfig={props.dateConfig} now={now} />
+              </Show>
+              <V2.ChatListV2 list={v2List} context={rowsContext} />
+            </Show>
+          ),
+        }}
+        detail={v2Detail}
+        info={() => {
+          const current = conversation();
+          if (panel() !== "info" || !current) return null;
+          const admin = current.kind !== "system" && current.permission === "admin";
+          // The chat's own deeds, as v1's Info has them in its head's "…".
+          const menu: MenuEntry[] =
+            current.kind === "system"
+              ? []
+              : [
+                  ...(admin ? [{ label: t().discoverySettings, icon: "compass", onClick: () => void editDiscovery() }] : []),
+                  ...(current.permission !== "read" ? [{ label: t().editDetails, icon: "pencil", onClick: editDetails }] : []),
+                  ...(admin && !current.channel ? [{ label: t().newThread, icon: "hash", onClick: () => void createThread() }] : []),
+                  ...(current.member && (current.channel || current.memberCount > 1)
+                    ? [
+                        {
+                          label: current.channel ? t().unsubscribe : t().leaveChat,
+                          icon: current.channel ? "bell-off" : "logout",
+                          danger: true,
+                          onClick: () => void (current.channel ? unsubscribe() : leaveChat()),
+                        },
+                      ]
+                    : []),
+                ];
+          // On the phone the info is the page; its way back names the chat it returns to.
+          return {
+            close: { label: v2t().closeInfo, onClick: () => closeInfo() },
+            back: { label: current.title, onClick: () => closeInfo() },
+            menu,
+          };
+        }}
+        infoContent={() => infoView(V2.ChatInfoPaneV2)}
+      />
+    );
+  return (
+    <>
+      {catalogPopover()}
+      <Show when={!openChat()}>{draftNotice()}</Show>
+      <Show when={props.embedded && !openChat() && !atResource() && resourceChat()}>
+        <div class="flex shrink-0 justify-end p-1">{resourceChatButton()}</div>
+      </Show>
+      <AppWorkspace
+        mobileSurface="flush"
+        class={`chat-workspace ${props.app ? "chat-workspace--app h-full" : props.embedded ? "flex-1 min-h-0" : "h-full"}`}
+      >
+        <Show when={!props.app}>
+          <AppWorkspace.Sidebar label={t().chats}>
+            <AppWorkspace.SidebarDesktop>
+              <AppWorkspace.SidebarBody scrollPreserveKey="chat-sidebar">{listContent(false)}</AppWorkspace.SidebarBody>
+              <AppWorkspace.SidebarFooter>{archiveLink()}</AppWorkspace.SidebarFooter>
+            </AppWorkspace.SidebarDesktop>
+          </AppWorkspace.Sidebar>
+        </Show>
+        <AppWorkspace.Content>
+          <AppWorkspace.Main
+            scroll={false}
+            aria-busy={busy()}
+            class={`chat-workspace__main ${threaded() && !route().threads ? "chat-main chat-main--threads" : "chat-main"}`}
+          >
+            <Show when={!props.app} fallback={appView()}>
+              {/* From a 1800 px window, a chat with threads shows them in a column of their own; CSS decides, so the server
+                render and the first frame agree, and crossing the width moves nothing in the reading column. The pane
+                stays in place for every chat, because a pane that appears later would take the conversation with it. */}
+              <AppWorkspace.MainPane
+                id="chat-threads"
+                label={t().threadsIn({ title: conversation()?.title ?? "" })}
+                class="chat-thread-pane"
+                defaultSize={336}
+                minSize={288}
+                maxSize={480}
+                scroll={false}
+              >
+                <Show when={threaded() && !route().threads ? conversation() : null}>
+                  {(current) => (
+                    <ChatThreadColumn
+                      conversation={current()}
+                      basePath={basePath}
+                      canCreate={canCreateThread()}
+                      creating={creatingThread()}
+                      revision={(openChat()?.watermark ?? 0) + (openChat()?.threadsRevision ?? 0)}
+                      threads={openChat()?.threads ?? null}
+                      status={openChat()?.threadsStatus ?? "loading"}
+                      view={openChat()?.view ?? "all"}
+                      viewerId={props.viewerId}
+                      dateConfig={props.dateConfig}
+                      now={now}
+                      onOpen={(view, navigation) => openView(current().id, view, navigation)}
+                      onCreate={() => void createThread()}
+                      onRetry={() => void store?.refreshThreads()}
+                    />
+                  )}
+                </Show>
+              </AppWorkspace.MainPane>
+              <Switch>
+                <Match when={route().forYou}>
+                  <ForYou
+                    initial={takeInitialForYou()}
+                    revision={forYouRevision()}
+                    basePath={basePath}
+                    dateConfig={props.dateConfig}
+                    now={now}
+                    onOpen={(item) => openView(item.conversation.id, item.thread.id, undefined, item.message.id)}
+                    onBack={backToList}
+                  />
+                </Match>
+                <Match when={route().channels}>
+                  <DiscoverChannels
+                    initial={takeInitialChannelPage()}
+                    query={route().query ?? ""}
+                    onQuery={(query) => {
+                      setRoute({ ...route(), query });
+                      // Typing only rewrites the address; it never animates the page.
+                      navigate(`${basePath}/channels${query ? `?q=${encodeURIComponent(query)}` : ""}`, {
+                        replace: true,
+                        scroll: "preserve",
+                        viewTransition: false,
+                      });
+                    }}
+                    revision={channelRevision()}
+                    onSubscribe={subscribe}
+                    onOpen={(id) => openChosen(id)}
+                    onBack={backToList}
+                    listHref={basePath}
+                  />
+                </Match>
+                <Match when={threadsPageOpen()}>{(current) => threadsPageView(current())}</Match>
+                <Match when={openChat()?.id}>{conversationView()}</Match>
+                <Match when={noAccess()}>{noAccessView()}</Match>
+                <Match when={pendingResource()}>
+                  {(target) => (
+                    <ResourceChatStart
+                      title={target().title}
+                      canWrite={target().canWrite}
+                      listHref={listHref(basePath)}
+                      onBack={backToList}
+                      onStart={startResourceChat}
+                    />
+                  )}
+                </Match>
+                <Match when={followPending()}>
+                  {/* A place shared after the panel loaded (such as after "Allow"): its discussion loading, in the
+                      frame it opens in, instead of the list the panel is about to leave. Leaving ends the wait, and
+                      following then finds that the reader moved. */}
+                  <ResourceChatStart
+                    loading
+                    title=""
+                    canWrite={false}
+                    listHref={listHref(basePath)}
+                    onBack={(navigation) => {
+                      setFollowPending(false);
+                      return backToList(navigation);
+                    }}
+                    onStart={startResourceChat}
+                  />
+                </Match>
+                <Match when={true}>
+                  <nav class="chat-list-page" aria-label={t().chats}>
+                    {listContent()}
+                  </nav>
+                  <div class="chat-select">
+                    <Placeholder
+                      variant="panel"
+                      class="flex-1"
+                      icon="ti ti-messages"
+                      title={rows().length ? t().selectChatTitle : t().noChatsTitle}
+                      description={rows().length ? t().selectChatDescription : t().noChatsDescription}
+                    />
+                  </div>
+                </Match>
+              </Switch>
+            </Show>
+          </AppWorkspace.Main>
+          <AppWorkspace.Detail
+            id="chat-info"
+            phone="page"
+            width="md"
+            open={panel() === "info" && conversation() !== null}
+            onClose={() => closeInfo()}
+          >
+            {infoView()}
+          </AppWorkspace.Detail>
+        </AppWorkspace.Content>
+      </AppWorkspace>
+    </>
+  );
+}

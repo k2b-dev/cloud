@@ -198,6 +198,11 @@ enhancement, not the only rendering path.
 
 ## One-time hints for moved paths
 
+When a path moves, redirect its old URL to the new place with all parameters,
+and keep the control reachable where people look for it. Do not open a hint
+that says where something moved; built-in Cloud applications show none. The
+helpers below stay supported for applications that already use them.
+
 Render `MovedHint` directly after the old control. Decide visibility on the
 server with `hintOpen(c, "files.tags", { allowed })` from `@k2b/cloud/ssr`.
 `allowed` is required: check whether the person may use the new path. The
