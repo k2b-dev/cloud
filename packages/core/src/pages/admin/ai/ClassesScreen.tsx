@@ -421,7 +421,7 @@ function SlotDetail(props: { slot: AiModelSlot; data: AiClassesData; appNames: R
           )}
         </Show>
       </Show>
-      <Section icon="cube" title={t().assignment} summary={slotHint(t(), props.slot)}>
+      <Section title={t().assignment} summary={slotHint(t(), props.slot)}>
         <Facts
           items={[
             {
@@ -438,7 +438,7 @@ function SlotDetail(props: { slot: AiModelSlot; data: AiClassesData; appNames: R
         />
       </Section>
       <Show when={modelClass()}>
-        <Section icon="arrow-down-right" title={t().clsFallbackHead} summary={t().clsFallbackRule}>
+        <Section title={t().clsFallbackHead} summary={t().clsFallbackRule}>
           <Text>
             <For each={chain()}>
               {(entry, index) => (
@@ -453,7 +453,7 @@ function SlotDetail(props: { slot: AiModelSlot; data: AiClassesData; appNames: R
             </For>
           </Text>
         </Section>
-        <Section icon="users" title={t().clsUsersHead} count={usageRows().length + 1}>
+        <Section title={t().clsUsersHead} count={usageRows().length + 1}>
           <Row icon="users" lines={[props.slot === "balanced" ? t().clsPeopleStart : t().clsPeople]} />
           <For each={usageRows()}>
             {(row) => (
@@ -465,7 +465,7 @@ function SlotDetail(props: { slot: AiModelSlot; data: AiClassesData; appNames: R
             )}
           </For>
         </Section>
-        <Section icon="eye" title={t().clsPreview}>
+        <Section title={t().clsPreview}>
           {/* k2b-ui gap: the people's model card is a v1 component of @k2b/cloud; it stands in a Canvas until it moves to v2 */}
           <Canvas label={t().clsPreview}>
             <AiModelCard stops={stops()} value={previewClass()} preview />

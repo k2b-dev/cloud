@@ -218,7 +218,7 @@ export default function ConnectionDetail(props: { provider: AiProvider; back: { 
           {error()}
         </Notice>
       </Show>
-      <Section icon="plug-connected" title={t().connection}>
+      <Section title={t().connection}>
         <Facts items={[{ label: t().type, value: aiProviderTypeLabel(t(), base().type), hint: t().typeFixed }]} />
         <Field label={t().name} required>
           <Input value={draft().label} disabled={saving()} onInput={(label) => update({ label })} />
@@ -259,7 +259,7 @@ export default function ConnectionDetail(props: { provider: AiProvider; back: { 
           </Field>
         </Show>
       </Section>
-      <Section icon="shield" title={t().dataBoundary}>
+      <Section title={t().dataBoundary}>
         <Show
           when={base().dataBoundary !== "restricted"}
           fallback={
@@ -278,7 +278,7 @@ export default function ConnectionDetail(props: { provider: AiProvider; back: { 
         </Show>
       </Section>
       <Show when={info().headers}>
-        <Section icon="list-details" title={t().extraHeaders}>
+        <Section title={t().extraHeaders}>
           <HeaderRows t={t()} headers={headers()} onChange={setHeaders} disabled={saving()} />
         </Section>
       </Show>

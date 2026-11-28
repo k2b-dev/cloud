@@ -259,14 +259,14 @@ export default function PeopleScreen(props: { nav: NavProps; data: AiPeopleData 
               {t().disabledHint}
             </Notice>
           </Show>
-          <Section icon="chart-line" color={AI_COLOR} title={t().timeline} count={unit()} summary={t().chartHint}>
+          <Section title={t().timeline} count={unit()} summary={t().chartHint}>
             <Canvas label={t().timeline} height={140}>
               <Show when={hasPoints(costSeries())} fallback={<Empty icon="chart-line" text={t().noUsage} />}>
                 <TimeChart series={costSeries()} step={STEP[q().range]} format={(value) => amount(value)} axis={axis} />
               </Show>
             </Canvas>
           </Section>
-          <Section icon="users" title={t().users} count={n(report().total)}>
+          <Section title={t().users} count={n(report().total)}>
             <Table
               label={t().users}
               rows={report().items}
@@ -314,7 +314,7 @@ export default function PeopleScreen(props: { nav: NavProps; data: AiPeopleData 
             <PageBar page={report().page} perPage={report().perPage} total={report().total} href={(page) => href({ page })} />
           </Section>
           <Show when={byModel().length > 1}>
-            <Section icon="chart-bar" title={t().byModel} summary={t().modelChartHint}>
+            <Section title={t().byModel} summary={t().modelChartHint}>
               <Canvas label={t().byModel} height={180}>
                 <BarChart data={byModel()} format={(value) => amount(value)} />
               </Canvas>
@@ -382,7 +382,6 @@ export default function PeopleScreen(props: { nav: NavProps; data: AiPeopleData 
                       <For each={snapshot().balances}>
                         {(balance) => (
                           <Section
-                            icon="gauge"
                             title={modelName(balance.scope)}
                             actions={[
                               {
