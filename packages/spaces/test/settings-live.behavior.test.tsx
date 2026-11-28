@@ -40,13 +40,15 @@ class FakeWebSocket {
   }
 }
 
+/** What the server holds now; every settings read answers it. */
+const server: { name: string; reads: number; icalToken: string | null } = { name: "Planning", reads: 0, icalToken: null };
 const context = (name: string): SpaceSettingsContext => ({
   space: {
     id: "Space1",
     name,
     description: null,
     color: "#6366f1",
-    icalToken: null,
+    icalToken: server.icalToken,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     columns: [],
@@ -61,8 +63,6 @@ const context = (name: string): SpaceSettingsContext => ({
   wormholes: [],
   githubTokenConfigured: false,
 });
-/** What the server holds now; every settings read answers it. */
-const server = { name: "Planning", reads: 0 };
 if (!isServer) {
   mock.module("@/api/client", () => ({
     apiClient: {
@@ -114,6 +114,7 @@ describe("Spaces settings while the Space changes elsewhere", () => {
     (globalThis as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
     server.name = "Planning";
     server.reads = 0;
+    server.icalToken = null;
   });
   afterEach(() => {
     dispose();
@@ -122,7 +123,7 @@ describe("Spaces settings while the Space changes elsewhere", () => {
     dom.cleanup();
   });
 
-  const mount = async () => {
+  const mount = async (tab: "general" | "calendar" = "general") => {
     const { LocaleProvider } = await import("@k2b/ui");
     const { default: SettingsScreen } = await import("../src/frontend/[id]/_components/edit/SettingsScreen");
     dispose = render(
@@ -133,7 +134,7 @@ describe("Spaces settings while the Space changes elsewhere", () => {
             return createComponent(SettingsScreen, {
               sidebar: { spaces: [], pinnedSpaceIds: [], recentSpaceIds: [], unlistedSpaceCount: 0, myWorkCount: 0 },
               settings: context("Planning"),
-              tab: "general",
+              tab,
               baseUrl: "https://cloud.example.test",
             });
           },
@@ -166,6 +167,18 @@ describe("Spaces settings while the Space changes elsewhere", () => {
     await settle();
     expect(server.reads).toBe(reads);
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  test("without a draft, the calendar area follows a new iCal address made elsewhere", async () => {
+    server.icalToken = "tokenbefore";
+    const socket = await mount("calendar");
+    expect(dom.root.textContent).toContain("/api/spaces/calendar/ical/tokenbefore.ics");
+    // Another admin makes a new address: the old one is dead, so the page must not keep showing it.
+    server.icalToken = "tokenafter";
+    socket.message({ t: "event", id: "1", cursor: "s6t.spaces.2", data: { type: "space.updated" } });
+    await settle();
+    expect(dom.root.textContent).toContain("/api/spaces/calendar/ical/tokenafter.ics");
+    expect(dom.root.textContent).not.toContain("tokenbefore");
   });
 
   test("with unsaved changes, a change elsewhere keeps them, says the Space changed, and offers the reload", async () => {
@@ -202,6 +215,13 @@ describe("Spaces settings while the Space changes elsewhere", () => {
 
     await back("/app/spaces/Space1/settings?tab=tags");
     expect(question()).not.toBeUndefined();
+    // A second Back while the question is open asks nothing more: one question at a time.
+    await back("/app/spaces/Space1/settings?tab=statuses");
+    expect(
+      [...dom.document.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"]')].filter((dialog) =>
+        dialog.textContent?.includes("Discard changes?"),
+      ),
+    ).toHaveLength(1);
     [...question()!.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Cancel")!.click();
     await settle();
     expect(question()).toBeUndefined();

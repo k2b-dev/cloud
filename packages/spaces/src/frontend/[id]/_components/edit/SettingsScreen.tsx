@@ -122,10 +122,21 @@ export default function SettingsScreen(props: SettingsScreenProps) {
       "api-keys": "key",
       danger: "alert-triangle",
     })[id];
+  /** One question at a time: a second Back or tab click while it is open asks nothing more (null). */
+  let asking = false;
+  const askDiscard = async (): Promise<boolean | null> => {
+    if (asking) return null;
+    asking = true;
+    try {
+      return await discardQuestion();
+    } finally {
+      asking = false;
+    }
+  };
   /** Another area opens in place; unsaved changes are discarded only after the person agrees. */
   const open = async (id: SettingsTab) => {
     if (id === tab()) return;
-    if (dirty() && !(await discardQuestion())) return;
+    if (dirty() && (await askDiscard()) !== true) return;
     setDirty(false);
     setTab(id);
     navigate(tabHref(id), { scroll: "preserve" });
@@ -137,12 +148,18 @@ export default function SettingsScreen(props: SettingsScreenProps) {
         if (!next || next === tab()) return;
         // Back and forward leave an area as a tab does: unsaved changes go only after the person agrees, and
         // otherwise the address returns to the area that stays open.
-        if (dirty() && !(await discardQuestion())) {
-          navigate(tabHref(tab()), { scroll: "preserve" });
-          return;
+        if (dirty()) {
+          const agreed = await askDiscard();
+          if (agreed === null) return;
+          if (!agreed) {
+            navigate(tabHref(tab()), { scroll: "preserve" });
+            return;
+          }
         }
         setDirty(false);
-        setTab(next);
+        // A further Back while the question was open moved the address on: the area it names now opens.
+        const now = SETTINGS_TABS.find((entry) => entry === new URL(window.location.href).searchParams.get("tab")) ?? tabs()[0];
+        setTab(now ?? next);
       }),
     ),
   );

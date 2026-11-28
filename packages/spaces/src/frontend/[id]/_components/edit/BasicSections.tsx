@@ -143,6 +143,14 @@ export function GeneralSection(props: { space: SpaceDetail; onDirtyChange: (dirt
 export function DefaultsSection(props: { spaceId: string; initialSettings: SpaceUserSettings }) {
   const m = useSpaceMessages();
   const [view, setView] = createSignal<ViewType>(props.initialSettings.view);
+  // Nothing here waits as a draft (each choice saves at once), so a fresh read of the settings is what it shows.
+  createEffect(
+    on(
+      () => props.initialSettings.view,
+      (next) => setView(next),
+      { defer: true },
+    ),
+  );
   const [widgets, setWidgets] = createSignal<WidgetSettings>(readWidgetSettings());
   const views: { value: ViewType; label: string }[] = [
     { value: "list", label: m.list },
@@ -215,6 +223,14 @@ export function CalendarSection(props: { spaceId: string; icalToken: string | nu
   const m = useSpaceMessages();
   const toast = useToast();
   const [token, setToken] = createSignal(props.icalToken);
+  // A new address made elsewhere (another admin, another tab) replaces the old one, which no longer works.
+  createEffect(
+    on(
+      () => props.icalToken,
+      (next) => setToken(next),
+      { defer: true },
+    ),
+  );
   const regenerate = mutations.create<{ icalToken: string }, void>({
     mutation: async () => {
       const res = await apiClient[":id"]["regenerate-ical-token"].$post({ param: { id: props.spaceId } });
