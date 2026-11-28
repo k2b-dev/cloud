@@ -20,10 +20,13 @@ import {
 import { createEffect, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import {
+  MAX_PUBLIC_MENU_ITEMS,
+  MAX_PUBLIC_SECTIONS,
   type PublicSection,
   type PublicSectionInput,
   type PublicStatus,
   PublicStatusSchema,
+  publicMenuItemCount,
   type Venue,
   type VenueDashboard,
   type VenueInput,
@@ -167,6 +170,22 @@ export function PublicPageEditor(props: {
     const byId = new Map(props.dashboard.sections.map((section) => [section.id, section]));
     return [...ids.flatMap((id) => byId.get(id) ?? []), ...props.dashboard.sections.filter((section) => !ids.includes(section.id))];
   };
+  // Saving refuses more sections or menu items than the page holds, drafts included; the list stops at the same
+  // limits. A page saved before them shows every section here, and a notice says what visitors miss of the visible ones.
+  const itemsIn = (sections: PublicSection[]) => sections.reduce((sum, section) => sum + publicMenuItemCount(section), 0);
+  const sectionTotal = () => props.dashboard.sections.length;
+  const menuItemTotal = () => itemsIn(props.dashboard.sections);
+  const atSectionLimit = () => sectionTotal() >= MAX_PUBLIC_SECTIONS;
+  const visibleSections = () => props.dashboard.sections.filter((section) => section.enabled);
+  const overLimits = () => visibleSections().length > MAX_PUBLIC_SECTIONS || itemsIn(visibleSections()) > MAX_PUBLIC_MENU_ITEMS;
+  /** Why saving would refuse a copy of `section`, as the server decides it; `null` when the copy fits. */
+  const copyRefusal = (section: PublicSection): string | null => {
+    if (atSectionLimit()) return t().sectionLimitHint({ count: sectionTotal(), max: MAX_PUBLIC_SECTIONS });
+    const items = publicMenuItemCount(section);
+    const total = menuItemTotal() + items;
+    return items > 0 && total > MAX_PUBLIC_MENU_ITEMS ? t().copyMenuItemsTooMany({ count: total, max: MAX_PUBLIC_MENU_ITEMS }) : null;
+  };
+
   /** Adding, copying, deleting, and reordering change the set of sections, so they wait for each other. */
   const SET_KEY = "sections:set";
   const sectionKey = (id: string) => `section:${id}`;
@@ -277,6 +296,7 @@ export function PublicPageEditor(props: {
       venueId: venue().id,
       nextPosition: Math.max(0, ...props.dashboard.sections.map((section) => section.position)) + 1,
       publicPageEnabled: venue().publicEnabled,
+      otherMenuItems: menuItemTotal(),
     };
     return runPromptedAction(
       () =>
@@ -287,6 +307,7 @@ export function PublicPageEditor(props: {
               guardDismiss={context.setDismissHandler}
               nextPosition={intent.nextPosition}
               publicPageEnabled={intent.publicPageEnabled}
+              otherMenuItems={intent.otherMenuItems}
               submit={async (input) => {
                 const response = await apiClient.venues[":id"].sections.$post({ param: { id: intent.venueId }, json: input });
                 return response.ok ? null : await readError(response, t().addSectionFailed);
@@ -306,6 +327,7 @@ export function PublicPageEditor(props: {
       venueId: venue().id,
       section: { ...section, content: { ...section.content } },
       publicPageEnabled: venue().publicEnabled,
+      otherMenuItems: menuItemTotal() - publicMenuItemCount(section),
     };
     return runPromptedAction(
       () =>
@@ -317,6 +339,7 @@ export function PublicPageEditor(props: {
               initial={intent.section}
               nextPosition={intent.section.position}
               publicPageEnabled={intent.publicPageEnabled}
+              otherMenuItems={intent.otherMenuItems}
               title={t().editPublicSection}
               submitLabel={t().saveSection}
               submit={async ({ position: _position, ...patch }) => {
@@ -432,7 +455,9 @@ export function PublicPageEditor(props: {
             {
               label: t().duplicateSection,
               icon: "ti ti-copy",
-              disabled: actions.pending(SET_KEY),
+              // A copy the server would refuse names the reason in the menu, where the entry is.
+              description: copyRefusal(row.section) ?? undefined,
+              disabled: actions.pending(SET_KEY) || copyRefusal(row.section) !== null,
               action: () => duplicate(row.section),
             },
             {
@@ -490,14 +515,37 @@ export function PublicPageEditor(props: {
       {/* Below 1024 px the list stacks above the preview; from 1280 px its rows give titles more room. */}
       <div class="grid items-start gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] xl:grid-cols-[minmax(0,32rem)_minmax(0,1fr)]">
         <div class="paper p-3" ref={list} data-public-sections="">
+          <Show when={overLimits()}>
+            <InlineGuidance tone="warning" icon="ti ti-alert-triangle" class="mb-3" data-page-over-limits="">
+              {t().pageOverLimits({
+                sections: visibleSections().length,
+                items: itemsIn(visibleSections()),
+                maxSections: MAX_PUBLIC_SECTIONS,
+                maxItems: MAX_PUBLIC_MENU_ITEMS,
+              })}
+            </InlineGuidance>
+          </Show>
           <SettingsCollection
             title={t().sections}
-            description={t().sectionsDescription}
+            description={
+              <span id="venue-section-limit" data-section-limit="">
+                {t().sectionsDescription}{" "}
+                {atSectionLimit()
+                  ? t().sectionLimitHint({ count: sectionTotal(), max: MAX_PUBLIC_SECTIONS })
+                  : t().sectionCount({ count: sectionTotal(), max: MAX_PUBLIC_SECTIONS })}
+              </span>
+            }
             empty={t().noSections}
             class="[&_li:has([data-selected])]:bg-[var(--k2b-hover)]"
           >
             <SettingsCollection.Action>
-              <Button type="button" size="sm" disabled={actions.pending(SET_KEY) || prompting()} onClick={() => void openAdd()}>
+              <Button
+                type="button"
+                size="sm"
+                disabled={actions.pending(SET_KEY) || prompting() || atSectionLimit()}
+                aria-describedby={atSectionLimit() ? "venue-section-limit" : undefined}
+                onClick={() => void openAdd()}
+              >
                 <i class="ti ti-plus" aria-hidden="true" /> {t().addSection}
               </Button>
             </SettingsCollection.Action>
