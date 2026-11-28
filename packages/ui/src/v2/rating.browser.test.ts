@@ -98,6 +98,7 @@ test("keyboard: one Tab stop, Enter and the arrows choose, Space chooses, Enter 
     expect(await focused(page)).toBe("3 von 5 Sternen");
     expect(await chosen(page, "Wie war dein Besuch?")).toEqual(["3 von 5 Sternen"]);
     expect(await page.evaluate(() => window.__rated)).toEqual([1, 2, 3, 4, 3]);
+    await settled(page);
     // the stars up to the chosen one fill; the field's hint reads the choice
     expect((await stars(page, "Wie war dein Besuch?")).map((star) => star.filled)).toEqual([true, true, true, false, false]);
     expect(await page.getByText("3 von 5", { exact: true }).count()).toBe(1);
@@ -150,9 +151,23 @@ test("read-only: a line of small stars as one picture with its words, part of a 
     const cut = await average
       .locator(".k2-star")
       .nth(4)
-      .locator('[data-name="star-filled"]')
+      .locator(".k2-star-fill")
       .evaluate((icon) => getComputedStyle(icon).clipPath);
     expect(cut).toContain("80%");
+    // the filled star is drawn by the rating, never a font glyph: the icon font holds outline glyphs only
+    const drawn = await page.locator(".k2-rating").evaluateAll((roots) =>
+      roots.map((root) => ({
+        glyphs: root.querySelectorAll(".ti").length,
+        fills: [...root.querySelectorAll<SVGSVGElement>(".k2-star-fill")].map((sign) => {
+          const box = sign.querySelector("path")!.getBBox();
+          return box.width > 0 && box.height > 0 && getComputedStyle(sign).fill !== "none";
+        }),
+      })),
+    );
+    for (const { glyphs, fills } of drawn) {
+      expect(glyphs).toBe(0);
+      expect(fills).toEqual([true, true, true, true, true]);
+    }
     const box = await average.boundingBox();
     expect(box?.height).toBeLessThanOrEqual(20);
     expect(await page.getByRole("img", { name: "0 von 5 Sternen" }).count()).toBe(1);
@@ -206,7 +221,7 @@ const look = (page: Page) =>
       return value.startsWith("color(") ? channels.map((channel) => Math.round(channel * 255)) : channels;
     };
     return [...root.querySelectorAll<HTMLElement>(".k2-star")].map((star) => {
-      const sign = getComputedStyle(star.querySelector('[data-name="star-filled"]')!);
+      const sign = getComputedStyle(star.querySelector(".k2-star-fill")!);
       const box = getComputedStyle(star);
       return {
         shown: sign.visibility === "visible",
@@ -234,6 +249,7 @@ test("a chosen star keeps 3:1 on its own tint in light and dark, and the layout 
     await withPage({ dark }, async (page) => {
       await group(page, "Wie war dein Besuch?").getByRole("radio", { name: "4 von 5 Sternen" }).click();
       await page.mouse.move(0, 0);
+      await settled(page);
       seen.push((await look(page))[0]!);
       if (dark) expect((await measureV2Layout(page)).problems).toEqual([]);
     });
@@ -246,6 +262,7 @@ test("a pointer previews in neutral ink: over a star below the choice the choice
     const rating = group(page, "Wie war dein Besuch?");
     await rating.getByRole("radio", { name: "4 von 5 Sternen" }).click();
     await page.mouse.move(0, 0);
+    await settled(page);
     const before = await look(page);
     expect(await rating.getAttribute("data-preview")).toBeNull();
     expect(before.map((star) => star.shown)).toEqual([true, true, true, true, false]);
@@ -264,6 +281,7 @@ test("a pointer previews in neutral ink: over a star below the choice the choice
     expect(await chosen(page, "Wie war dein Besuch?")).toEqual(["4 von 5 Sternen"]);
     // over the fifth star: the star past the choice fills in neutral ink, without the tint
     await rating.getByRole("radio", { name: "5 von 5 Sternen" }).hover();
+    await settled(page);
     const past = await look(page);
     expect(past[4]!.shown).toBe(true);
     expect(past[4]!.sign).not.toEqual(amber.sign);
