@@ -990,8 +990,11 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
       back={{ label: props.spaceName, href: baseHref(), onNavigate: () => props.route.close() }}
       head={
         <Bar
-          // k2b-ui gap: the head truncates a long title and Text takes no title, so the full title shows only in the form.
-          start={<Text type="lead">{item().title}</Text>}
+          start={
+            <Text type="lead" title={item().title}>
+              {item().title}
+            </Text>
+          }
           end={
             <>
               <Show when={canEditItem() && !isEvent()}>
