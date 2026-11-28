@@ -1,7 +1,6 @@
 import { cloudIdMessages, useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
-import { Chart } from "@k2b/ui";
 import {
   Bar,
   Button,
@@ -20,22 +19,23 @@ import {
   type NavGroup,
   Notice,
   Pane,
-  Progress,
+  RangeBar,
   RecordHead,
   Section,
-  StatusRow,
   Table,
   Text,
   useLocale,
   useToast,
   Workspace,
 } from "@k2b/ui/v2";
-import { createSignal, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { weatherMessages } from "../messages";
+import DayChart from "./_components/DayChart";
 import RadarCard from "./_components/RadarCard";
 import { buildDisplayUrl } from "./params";
-import type { GeoResult, WeatherNow, WeatherOpen, WeatherPlace } from "./weather-view";
+import { temperatureColor, temperatureStops, toneColor, type WeatherTone } from "./weather-scale";
+import type { GeoResult, WeatherDay, WeatherNow, WeatherOpen, WeatherPlace } from "./weather-view";
 
 export type WeatherScreenProps = {
   places: readonly WeatherPlace[];
@@ -179,95 +179,173 @@ export default function WeatherScreen(props: WeatherScreenProps) {
   );
 }
 
-/** The open location: what it is like now and how the next hours go, the hours and days, the measurements and radar. */
+/** The open location: the hero and its day, the week and the hours in the colours of weather, the measurements and radar. */
 function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
   const locale = useLocale();
   const t = () => weatherMessages.resolve([locale()]).t;
   const w = () => props.weather;
-  const curve = () => w().hourly.map((hour, index) => ({ x: index, y: hour.degrees }));
-  // whole degrees around the curve, one degree of air above and below, so no label stands on the frame
-  const range = (): [number, number] => {
-    const values = w().hourly.map((hour) => hour.degrees);
-    return [Math.floor(Math.min(...values)) - 1, Math.ceil(Math.max(...values)) + 1];
-  };
-  // a rain chance is a value with a limit: a bar with its words; no chance is a quiet dash
-  const rain = (row: { rain: string; rainChance: number | null }) =>
-    row.rainChance === null ? row.rain : <Progress value={row.rainChance} of={100} label={row.rain} />;
-  const sign = (row: { icon: string; condition: string }) => (
+  // the week's one scale: every day's bar stands on the coldest low and the warmest high of the week
+  const week = (): [number, number] => [Math.min(...w().daily.map((day) => day.low)), Math.max(...w().daily.map((day) => day.high))];
+  const sign = (row: { icon: string; tone: WeatherTone; condition: string }) => (
     <>
-      <Icon name={row.icon} tone="app" /> {row.condition}
+      <Icon name={row.icon} color={toneColor(row.tone)} /> {row.condition}
     </>
   );
+  // a rain chance in the colour of rain: a drop and its share; no chance is a quiet dash
+  const rain = (row: { rain: string; rainChance: number | null }) =>
+    row.rainChance === null ? (
+      row.rain
+    ) : (
+      <>
+        <Icon name="droplet" color={toneColor("rain")} /> {row.rain}
+      </>
+    );
+  // an hour's degrees with a thermometer in their colour, as on the day's line
+  const degrees = (hour: { degrees: number; temperature: string }) => (
+    <>
+      <Icon name="temperature" color={temperatureColor(hour.degrees)} /> {hour.temperature}
+    </>
+  );
+  // a day from its low to its high on the week's one scale, coloured cold to warm; its low and high stand beside it
+  const range = (day: WeatherDay) => <RangeBar from={day.low} to={day.high} domain={week()} stops={temperatureStops} decorative />;
+  const facts = () => [...(w().today ? [`${t().high} ${w().today!.high}`, `${t().low} ${w().today!.low}`] : []), ...w().alerts];
   return (
-    <Pane
-      label={t().weatherFor({ name: props.open.name })}
-      scrollKey={`weather-${props.open.id}`}
-      status={
-        // k2b-ui gap: the hero band (one figure 30/34 in the app colour, its trend beside it, exceptions under it) and
-        // the tinted head of the open thing come from lane DP; until then the status row carries the figure and the
-        // facts, and the curve of the next hours stands right under it.
-        <StatusRow
-          lead={`${w().temperature} · ${w().condition}`}
-          facts={[
-            ...(w().today
-              ? [
-                  { before: t().high, value: w().today!.high },
-                  { before: t().low, value: w().today!.low },
-                ]
-              : []),
-            ...w().alerts.map((alert) => ({ value: alert })),
-          ]}
-        />
-      }
-    >
-      <Show when={curve().length > 1}>
-        <Canvas label={t().temperatureCurve({ from: w().hourly[0]!.temperature, to: w().hourly.at(-1)!.temperature })} height={128}>
-          <Chart
-            kind="line"
-            area
-            // k2b-ui gap: a chart in a v2 screen cannot take the owning app's colour (the palette sits on the drawing
-            // itself), so the curve keeps the chart's first colour until the chart reads the app colour.
-            style={{ height: "100%" }}
-            padding={{ top: 16, right: 20, bottom: 28, left: 52 }}
-            series={[{ label: t().temperature, data: curve() }]}
-            xAxis={{ insetEndpointLabels: true, format: (index) => w().hourly[index]?.time ?? "" }}
-            // the lowest degree stays unwritten: it would stand on the first hour's label
-            yAxis={{
-              domain: range(),
-              ticks: 3,
-              format: (value) => (value === range()[0] ? "" : `${new Intl.NumberFormat(locale()).format(value)}°`),
-            }}
-          />
-        </Canvas>
-      </Show>
+    <Pane label={t().weatherFor({ name: props.open.name })} scrollKey={`weather-${props.open.id}`}>
+      {/* k2b-ui gap: the hero band (one figure 30/34 with its trend beside it) comes from lane DP (#4360); until then the
+          figure and its words stand in the drawing of the day (DayChart). */}
+      <Canvas
+        label={t().dayAhead({
+          now: `${w().temperature} ${w().condition}`,
+          from: w().hourly[0]?.temperature ?? w().temperature,
+          to: w().hourly.at(-1)?.temperature ?? w().temperature,
+        })}
+      >
+        <div
+          style={{
+            padding: "16px var(--k2-edge) 4px",
+            display: "flex",
+            "flex-wrap": "wrap",
+            "align-items": "center",
+            gap: "4px 16px",
+          }}
+        >
+          <span style={{ display: "inline-flex", "align-items": "center", gap: "10px" }}>
+            <i
+              class={`ti ti-${w().icon} wx-sign`}
+              aria-hidden="true"
+              style={{ "font-size": "28px", "line-height": 1, "--wx-c": toneColor(w().tone) }}
+            />
+            <span style={{ font: "600 30px/36px var(--k2-font)", color: "var(--k2-text)", "font-variant-numeric": "tabular-nums" }}>
+              {w().temperature}
+            </span>
+            <span style={{ font: "var(--k2-t-body)", color: "var(--k2-text)" }}>{w().condition}</span>
+          </span>
+          <Show when={facts().length > 0}>
+            <span style={{ font: "var(--k2-t-body)", color: "var(--k2-muted)", "overflow-wrap": "anywhere" }}>{facts().join(" · ")}</span>
+          </Show>
+        </div>
+        {/* the full day from 768 px, the phone's quieter day below: the app stylesheet shows one of the two */}
+        <Show when={w().hourly.length > 1}>
+          <div class="wx-day-wide">
+            <DayChart hours={w().hourly} rain={t().rainChance} locale={locale()} />
+          </div>
+          <div class="wx-day-phone">
+            <DayChart hours={w().hourly} rain={t().rainChance} locale={locale()} compact />
+          </div>
+        </Show>
+      </Canvas>
       <Pane.Split>
         <Pane label={t().hourlyForecast}>
-          <Section icon="calendar" title={t().sevenDayForecast}>
-            <Show when={w().daily.length > 0} fallback={<Empty icon="calendar" text={t().noForecast} />}>
-              <Table
-                label={t().sevenDayForecast}
-                rows={w().daily}
-                phone={(day) => ({ lines: [`${day.day} · ${day.range}`, day.condition], time: day.rain })}
-                columns={[
-                  { title: t().day, width: { min: 64, default: 80 }, cell: (day) => day.day },
-                  { title: t().condition, width: { min: 160, default: 200 }, cell: sign },
-                  { title: t().temperature, width: { min: 104, default: 120 }, align: "end", cell: (day) => day.range },
-                  { title: t().rainChance, width: { min: 120, default: 160 }, cell: rain },
-                  { title: t().sunshineDay, align: "end", drop: true, cell: (day) => day.sunshine },
-                ]}
-              />
+          <Section icon="calendar" title={t().sevenDayForecast} summary={w().daily.length > 0 ? undefined : t().noForecast}>
+            <Show when={w().daily.length > 0}>
+              <Canvas label={t().weekDays}>
+                {/* the week on the phone: one line of 44 px per day, without lines between them; the sign in its colour, the
+                    day in regular weight, the low, the range on the week's one scale, the high, the rain quiet at the end.
+                    From 768 px the table below shows it; the app stylesheet shows one of the two wrappers.
+                    k2b-ui gap: a v2 list of one-line rows with an inset hairline or none (owner Y: List inset, after
+                    #4355; #4463). When it lands, these hand-drawn lines go, and the week's table moves out of this
+                    Canvas again: it stands here only so the breakpoint can switch between the two. */}
+                <div class="wx-week-phone" role="list" style={{ padding: "0 var(--k2-edge) 4px" }}>
+                  <For each={w().daily}>
+                    {(day) => (
+                      <div
+                        role="listitem"
+                        style={{
+                          display: "grid",
+                          "grid-template-columns": "20px minmax(0, 1fr) 40px minmax(56px, 1.4fr) 40px 44px",
+                          "align-items": "center",
+                          "column-gap": "8px",
+                          height: "44px",
+                          font: "var(--k2-t-body)",
+                          color: "var(--k2-text)",
+                          "font-variant-numeric": "tabular-nums",
+                        }}
+                      >
+                        <Icon name={day.icon} label={day.condition} color={toneColor(day.tone)} />
+                        <span style={{ overflow: "hidden", "text-overflow": "ellipsis", "white-space": "nowrap" }}>{day.day}</span>
+                        <span style={{ "text-align": "end", color: "var(--k2-muted)" }}>{day.lowText}</span>
+                        <RangeBar from={day.low} to={day.high} domain={week()} stops={temperatureStops} decorative />
+                        <span>{day.highText}</span>
+                        <span style={{ "text-align": "end", font: "var(--k2-t-meta)", color: "var(--k2-subtle)" }}>{day.rain}</span>
+                      </div>
+                    )}
+                  </For>
+                </div>
+                <div class="wx-week-wide">
+                  {/* the section names the week; the table repeats no name of its own */}
+                  <Table
+                    rows={w().daily}
+                    // a narrow column of the wide screen (1024 px) reads the week in two lines: the sign, the day and its range,
+                    // the bar under them (the phone has its own one-line days above)
+                    phone={(day) => ({
+                      lines: [
+                        <>
+                          <Icon name={day.icon} label={day.condition} color={toneColor(day.tone)} /> {day.day} · {day.range}
+                        </>,
+                        range(day),
+                      ],
+                      time: rain(day),
+                    })}
+                    columns={[
+                      { title: t().day, width: { min: 64, default: 88 }, cell: (day) => day.day },
+                      { title: t().condition, width: { min: 140, default: 168 }, cell: sign },
+                      {
+                        title: t().low,
+                        width: { min: 56, default: 64 },
+                        align: "end",
+                        cell: (day) => day.lowText,
+                      },
+                      {
+                        title: t().temperature,
+                        cell: range,
+                      },
+                      { title: t().high, width: { min: 56, default: 64 }, cell: (day) => day.highText },
+                      { title: t().rainChance, width: { min: 80, default: 88 }, align: "end", cell: rain },
+                      { title: t().sunshineDay, width: { min: 64, default: 72 }, align: "end", drop: true, cell: (day) => day.sunshine },
+                    ]}
+                  />
+                </div>
+              </Canvas>
             </Show>
           </Section>
-          <Section icon="clock" title={t().nextHours}>
-            <Show when={w().hourly.length > 0} fallback={<Empty icon="clock" text={t().noForecast} />}>
+          <Section icon="clock" title={t().nextHours} summary={w().hourly.length > 0 ? undefined : t().noForecast}>
+            <Show when={w().hourly.length > 0}>
               <Table
                 label={t().hourlyForecast}
                 rows={w().hourly}
-                phone={(hour) => ({ lines: [`${hour.time} · ${hour.temperature}`, hour.condition], time: hour.rain })}
+                phone={(hour) => ({
+                  lines: [
+                    <>
+                      {hour.time} · {degrees(hour)}
+                    </>,
+                    sign(hour),
+                  ],
+                  time: rain(hour),
+                })}
                 columns={[
                   { title: t().time, width: { min: 64, default: 80 }, cell: (hour) => hour.time },
                   { title: t().condition, width: { min: 160, default: 220 }, cell: sign },
-                  { title: t().temperature, width: { min: 88, default: 104 }, align: "end", cell: (hour) => hour.temperature },
+                  { title: t().temperature, width: { min: 88, default: 104 }, align: "end", cell: degrees },
                   { title: t().rainChance, cell: rain },
                 ]}
               />
@@ -295,7 +373,7 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
             <Canvas label={t().radarAlt}>
               {/* the radar keeps the text edge, so its dark picture never meets the column's line */}
               <div style={{ padding: "0 20px" }}>
-                <RadarCard showLegend />
+                <RadarCard showLegend locale={locale()} />
               </div>
             </Canvas>
           </Section>

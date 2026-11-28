@@ -4,6 +4,12 @@ import { weatherMessages } from "../../messages";
 // DWD Germany-wide radar GIF
 const DWD_RADAR_URL = "https://www.dwd.de/DWD/wetter/radar/radfilm_brd_akt.gif";
 
+/**
+ * The DWD radar's own colours for the intensity of precipitation, from light to extreme, as the picture draws them. The
+ * legend repeats them in the same order so the picture can be read; they are the provider's colours, not Cloud's.
+ */
+const RADAR_SCALE = ["#22d3ee", "#16a34a", "#4ade80", "#facc15", "#f97316", "#ef4444", "#9333ea", "#1e3a8a"];
+
 type RadarCardProps = {
   /** Show legend (default: true) */
   showLegend?: boolean;
@@ -11,58 +17,48 @@ type RadarCardProps = {
   size?: "sm" | "md" | "lg";
   /** Custom max height class (e.g., "max-h-64") */
   maxHeight?: string;
+  /** The locale of the words; the screen around it passes its own, else the page's. */
+  locale?: string;
 };
 
-const sizeClasses = {
-  sm: {
-    legend: "text-[8px]",
-    source: "text-[8px]",
-    bar: "h-1.5",
-  },
-  md: {
-    legend: "text-[10px]",
-    source: "text-[10px]",
-    bar: "h-2",
-  },
-  lg: {
-    legend: "text-xs",
-    source: "text-xs",
-    bar: "h-2.5",
-  },
+/** The legend's sizes in px: its words, and the height of its colour bar. */
+const legendSizes = {
+  sm: { text: 8, bar: 6 },
+  md: { text: 10, bar: 8 },
+  lg: { text: 12, bar: 10 },
 };
 
-export default function RadarCard({ showLegend = true, size = "md", maxHeight }: RadarCardProps) {
-  const locale = useLocale();
-  const t = () => weatherMessages.resolve([locale()]).t;
-  const s = sizeClasses[size];
+export default function RadarCard(props: RadarCardProps) {
+  const pageLocale = useLocale();
+  const t = () => weatherMessages.resolve([props.locale ?? pageLocale()]).t;
+  const s = legendSizes[props.size ?? "md"];
+  // the quiet words: v2's subtle ink in a v2 screen, the dimmed ink of the v1 wall display around it otherwise
+  const words = { "font-size": `${s.text}px`, "line-height": 1.4, color: "var(--k2-subtle, var(--ui-text-dimmed))" } as const;
 
   return (
     <div class="flex h-full min-h-0 flex-col">
-      <div class={`thumbnail aspect-[540/500] w-full shrink-0 overflow-hidden bg-zinc-100 dark:bg-zinc-800 ${maxHeight ?? ""}`}>
+      <div class={`thumbnail aspect-[540/500] w-full shrink-0 overflow-hidden bg-zinc-100 dark:bg-zinc-800 ${props.maxHeight ?? ""}`}>
         <img src={DWD_RADAR_URL} alt={t().radarAlt} class="h-full w-full object-cover" loading="lazy" />
       </div>
 
-      {showLegend && (
+      {(props.showLegend ?? true) && (
         <>
-          <div class="mt-2" role="img" aria-label={t().precipitationLegend}>
-            <div class={`flex ${s.bar} rounded overflow-hidden`}>
-              <div class="flex-1 bg-cyan-400" />
-              <div class="flex-1 bg-green-600" />
-              <div class="flex-1 bg-green-400" />
-              <div class="flex-1 bg-yellow-400" />
-              <div class="flex-1 bg-orange-500" />
-              <div class="flex-1 bg-red-500" />
-              <div class="flex-1 bg-purple-600" />
-              <div class="flex-1 bg-blue-900" />
+          {/* the picture's colours from light to extreme as fixed values (the app stylesheet paints them, with an outline
+              in forced colours), and its four words under them */}
+          <div role="img" aria-label={t().precipitationLegend} style={{ "margin-top": "8px" }}>
+            <div style={{ display: "flex", height: `${s.bar}px`, "border-radius": "4px", overflow: "hidden" }}>
+              {RADAR_SCALE.map((color) => (
+                <div class="wx-swatch" data-wx-swatch="" style={{ "--wx-c": color }} />
+              ))}
             </div>
-            <div class={`flex justify-between ${s.legend} text-dimmed mt-1`}>
+            <div style={{ display: "flex", "justify-content": "space-between", "margin-top": "4px", ...words }}>
               <span>{t().light}</span>
               <span>{t().moderate}</span>
               <span>{t().heavy}</span>
               <span>{t().extreme}</span>
             </div>
           </div>
-          <p class={`${s.source} text-dimmed mt-1 text-center`}>{t().germany} &bull; DWD</p>
+          <p style={{ "margin-top": "4px", "text-align": "center", ...words }}>{t().germany} · DWD</p>
         </>
       )}
     </div>

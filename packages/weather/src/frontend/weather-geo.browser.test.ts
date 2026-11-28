@@ -54,9 +54,14 @@ beforeAll(async () => {
   });
   if (!built.success) throw new AggregateError(built.logs, "Weather fixture build failed");
   const assets = new Map(await Promise.all(built.outputs.map(async (asset) => [basename(asset.path), await asset.arrayBuffer()] as const)));
-  const css = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] });
-  if (!css.success) throw new AggregateError(css.logs, "Weather styles failed");
-  const styles = await css.outputs[0]!.text();
+  // Cloud's styles and the app's own stylesheet, as a Weather page loads them (its drawings and the phone's week)
+  const sheets = await Promise.all(
+    [resolve(import.meta.dir, "../../../../styles.css"), resolve(import.meta.dir, "../styles/app.css")].map((entry) =>
+      Bun.build({ entrypoints: [entry], plugins: [tailwind] }),
+    ),
+  );
+  for (const sheet of sheets) if (!sheet.success) throw new AggregateError(sheet.logs, "Weather styles failed");
+  const styles = (await Promise.all(sheets.map((sheet) => sheet.outputs[0]!.text()))).join("\n");
   // the Tabler font, so the screenshots show the symbols
   const iconCssUrl = import.meta.resolve("@k2b/ui/icons/tabler.css");
   const iconCss = await Bun.file(fileURLToPath(iconCssUrl)).text();
@@ -333,3 +338,132 @@ test("two places of the same name read apart by their state in the sidebar", asy
     await page.close();
   }
 }, 30_000);
+
+// Weather v4 (review 27.11.: "das klebt hier oben", "zu sehr Wireframe-MVP"): the day has air above its warmest label
+// and no label cut at the drawing's edge, its rain bars stay in the plot, the week stands on one scale in colour, the
+// signs carry the colours of weather, and a missing week is one quiet line, not a hole.
+for (const width of [1440, 390])
+  test(`the day breathes, the week stands on one scale, and the signs carry their colours at ${width} px`, async () => {
+    const page = await browser.newPage({ viewport: { width, height: 900 } });
+    try {
+      for (const name of ["record", "worst"] as const) {
+        await page.goto(`${server.url.href}?screen=${name}`);
+        const canvas = page.locator('[data-k2-part="Canvas"]').first();
+        await canvas.locator("svg:visible").waitFor();
+        await settled(page);
+        const day = await canvas.evaluate((frame) => {
+          const box = frame.getBoundingClientRect();
+          // the server sends the wide and the phone's day; the one this width shows is measured
+          const drawing = [...frame.querySelectorAll(".wx-day-wide, .wx-day-phone")].find((one) => one.getClientRects().length > 0)!;
+          const labels = [...drawing.querySelectorAll("span")]
+            .filter((span) => span.textContent?.trim() && !span.querySelector("span"))
+            .map((span) => span.getBoundingClientRect());
+          const plot = drawing.querySelector("svg")!.getBoundingClientRect();
+          const bars = [...drawing.querySelectorAll("svg rect")]
+            .map((rect) => rect.getBoundingClientRect())
+            .filter((rect) => rect.height < 40);
+          const line = drawing.querySelector('svg path[style*="stroke"]')!;
+          return {
+            cut: labels.filter(
+              (label) => label.top < box.top || label.bottom > box.bottom || label.left < box.left || label.right > box.right,
+            ).length,
+            barsInPlot: bars.every((bar) => bar.left >= plot.left - 0.5 && bar.right <= plot.right + 0.5),
+            stroke: getComputedStyle(line).stroke,
+          };
+        });
+        expect({ name, cut: day.cut, barsInPlot: day.barsInPlot }).toEqual({ name, cut: 0, barsInPlot: true });
+        // the line takes the colour of its degrees, not the chart's one colour
+        expect(day.stroke).toContain("url(");
+      }
+      // the record's week: seven bars on one scale, the coldest day starting at the scale's start
+      await page.goto(`${server.url.href}?screen=record`);
+      await settled(page);
+      // the radar's legend speaks the page's language and draws all of the radar's colours, not one red bar
+      const legend = page.getByRole("img", { name: "Legende der Niederschlagsintensität" });
+      expect(await legend.textContent()).toBe("LeichtMäßigStarkExtrem");
+      expect(await legend.locator("[data-wx-swatch]").count()).toBe(8);
+      await page.getByText("Deutschland · DWD").waitFor({ state: "attached" });
+      // the section names the week once: its drawing and its table repeat no region of the same name
+      expect(await page.locator('[aria-label="7-Tage-Vorhersage"]').count()).toBe(1);
+      // the week shows once: the table on a wide screen, one line per day on the phone
+      const bars = page.locator('[data-k2-part="RangeBar"]:visible');
+      expect(await bars.count()).toBe(7);
+      // the coldest day (So. 29., -3,4°) starts at the scale's start; its words stand beside the bar, which says nothing
+      expect(
+        await bars.nth(3).evaluate((track) => track.querySelector("i")!.getBoundingClientRect().left - track.getBoundingClientRect().left),
+      ).toBe(0);
+      expect(await bars.nth(3).getAttribute("aria-hidden")).toBe("true");
+      if (width === 390) {
+        // the phone (review 27.11., "busy and heavy"): a quieter day of about 160 px, and each day one line of 44 px
+        const phone = await page.evaluate(() => ({
+          day: [...document.querySelectorAll<HTMLElement>(".wx-day-phone > div")].map((day) => day.getBoundingClientRect().height),
+          rows: [...document.querySelectorAll<HTMLElement>('.wx-week-phone [role="listitem"]')].map(
+            (row) => row.getBoundingClientRect().height,
+          ),
+          lists: [...document.querySelectorAll<HTMLElement>('[data-k2-part="Table"], [data-k2-part="List"]')]
+            .filter((list) => list.getClientRects().length > 0)
+            .map((list) => list.getAttribute("aria-label")),
+        }));
+        expect(phone.day.length).toBe(1);
+        expect(phone.day[0]!).toBeLessThanOrEqual(180);
+        expect(phone.rows).toEqual([44, 44, 44, 44, 44, 44, 44]);
+        // the hours' list stays; the week's table and its phone rows give way to the one-line days
+        expect(phone.lists).toEqual(["Stündliche Vorhersage"]);
+      }
+      // a sunny day's sign is amber, a rainy one blue: data colours, not the text ink; read on the week that shows
+      const colors = await page.evaluate(
+        (week) => ({
+          ink: getComputedStyle(document.querySelector(week)!).color,
+          signs: ["sun", "cloud-rain"].map(
+            (name) => getComputedStyle(document.querySelector(`${week} [data-k2-part="Icon"][data-name="${name}"]`)!).color,
+          ),
+          shown: document.querySelector(week)!.getClientRects().length > 0,
+        }),
+        width === 390 ? ".wx-week-phone" : ".wx-week-wide",
+      );
+      expect(colors.shown).toBe(true);
+      expect(colors.signs[0]).not.toBe(colors.signs[1]);
+      expect(colors.signs).not.toContain(colors.ink);
+      // the worst case without a week: one quiet line in its section, no empty state's hole
+      await page.goto(`${server.url.href}?screen=worst`);
+      const week = page.getByRole("region", { name: "7-Tage-Vorhersage" });
+      await week.getByText("Keine Vorhersage").waitFor();
+      // its head and one line (93 px); the empty state with its sign stood about 180 px high (v3)
+      expect((await week.boundingBox())!.height).toBeLessThan(120);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+// Forced colours (review of #4451): the day's line, its rain and its dots draw in the text colour, and the radar's
+// swatches keep an outline, so the drawing and the legend stay readable when the system takes the colours.
+for (const width of [1440, 390])
+  test(`in forced colours the day's line, rain and dots and the radar's swatches stay visible at ${width} px`, async () => {
+    const page = await browser.newPage({ viewport: { width, height: 900 } });
+    try {
+      await page.emulateMedia({ forcedColors: "active" });
+      await page.goto(`${server.url.href}?screen=record`);
+      await page.locator("svg:visible").first().waitFor();
+      await settled(page);
+      const seen = await page.evaluate(() => {
+        const visible = (element: Element) => element.getClientRects().length > 0;
+        const dots = [...document.querySelectorAll<HTMLElement>(".wx-dot")].filter(visible);
+        const line = [...document.querySelectorAll<SVGElement>(".wx-line")].find(visible)!;
+        const rain = [...document.querySelectorAll<SVGElement>(".wx-rain")].filter(visible);
+        const swatches = [...document.querySelectorAll<HTMLElement>("[data-wx-swatch]")];
+        // the system's text colour as this engine resolves it (WebKit emulates the media query but keeps the page's ink)
+        const probe = document.body.appendChild(Object.assign(document.createElement("i"), { style: "color: CanvasText" }));
+        const text = getComputedStyle(probe).color;
+        probe.remove();
+        return {
+          dots: dots.length > 0 && dots.every((dot) => getComputedStyle(dot).backgroundColor === text),
+          line: getComputedStyle(line).stroke === text,
+          rain: rain.length > 0 && rain.every((bar) => getComputedStyle(bar).fill === text),
+          swatches: swatches.length === 8 && swatches.every((swatch) => getComputedStyle(swatch).outlineStyle === "solid"),
+        };
+      });
+      expect(seen).toEqual({ dots: true, line: true, rain: true, swatches: true });
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
