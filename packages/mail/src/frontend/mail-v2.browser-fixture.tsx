@@ -5,6 +5,7 @@ import { mailTestRow } from "./_components/mail-list-test-fixtures";
 import { summaryState } from "./_components/mail-summary-fixtures";
 import { readMailUserPreferencesFromCookieHeader } from "./_components/mail-user-preferences";
 import { readMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
+import MailLandingV2 from "./MailLandingV2.island";
 import MailWorkspacePilot from "./MailWorkspaceV2.island";
 import { mailboxData, sidebar } from "./mail-shell.browser-fixture";
 
@@ -334,6 +335,19 @@ export default function MailV2Fixture(props: {
 }) {
   const url = new URL(props.source, "http://mail.example.test");
   const locale = props.locale ?? "de";
+  // `?landing=empty|failed`: /app/mail when it opens no mailbox (none yet, or the read failed)
+  const landing = url.searchParams.get("landing");
+  if (landing === "empty" || landing === "failed")
+    return (
+      <LocaleProvider locale={locale}>
+        <MailLandingV2
+          error={landing === "failed" ? "Die Datenbank ist gerade nicht erreichbar." : null}
+          retryHref={props.source}
+          currentUserEmail="mira@solberg-kramer.example"
+          contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
+        />
+      </LocaleProvider>
+    );
   const data = mailV2Data(url, props.now);
   return (
     <LocaleProvider locale={locale}>
