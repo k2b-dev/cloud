@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { UserSchema } from "@k2b/cloud/contracts";
 import { createAppEventTestHarness } from "@k2b/cloud/events/testing";
@@ -103,11 +103,11 @@ suite("chat conversations, people, and directory groups", () => {
       SELECT id, ${row.id}::uuid FROM auth.users WHERE id = ANY(${toPgUuidArray(ids)}::uuid[])`;
     return row.id;
   };
-  const bulkUsers = async (count: number) => {
+  const bulkUsers = async (count: number, tracked = trackedUsers) => {
     const prefix = `chat-bulk-${crypto.randomUUID()}`;
     const rows = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name)
       SELECT ${prefix} || '-' || i, 'local', 'user', 'Person ' || lpad(i::text, 4, '0') FROM generate_series(1, ${count}) i RETURNING id`;
-    trackedUsers.push(...rows.map((row) => row.id));
+    tracked.push(...rows.map((row) => row.id));
     return rows.map((row) => row.id);
   };
   const bulkAgents = async (count: number) => {
@@ -222,13 +222,15 @@ suite("chat conversations, people, and directory groups", () => {
       await sql`DELETE FROM audit.events WHERE target_id = ${id} OR actor_uid = ${id} OR metadata->>'serviceAccountId' = ${id}`;
       await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
     }
-    if (users.length) {
-      await sql`DELETE FROM chat.account_prefs WHERE principal_type = 'user' AND principal_id = ANY(${toPgUuidArray(users)}::uuid[])`;
-      await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key = ANY(${toPgTextArray(users.map((id) => "p:" + id))}::text[])`;
-      await sql`DELETE FROM audit.events WHERE actor_user_id = ANY(${toPgUuidArray(users)}::uuid[]) OR target_id = ANY(${toPgTextArray(users)}::text[])`;
-      for (let start = 0; start < users.length; start += 500)
-        await sql`DELETE FROM auth.users WHERE id = ANY(${toPgUuidArray(users.slice(start, start + 500))}::uuid[])`;
-    }
+    await deleteUsers(users);
+  };
+  const deleteUsers = async (users: string[]) => {
+    if (!users.length) return;
+    await sql`DELETE FROM chat.account_prefs WHERE principal_type = 'user' AND principal_id = ANY(${toPgUuidArray(users)}::uuid[])`;
+    await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key = ANY(${toPgTextArray(users.map((id) => "p:" + id))}::text[])`;
+    await sql`DELETE FROM audit.events WHERE actor_user_id = ANY(${toPgUuidArray(users)}::uuid[]) OR target_id = ANY(${toPgTextArray(users)}::text[])`;
+    for (let start = 0; start < users.length; start += 500)
+      await sql`DELETE FROM auth.users WHERE id = ANY(${toPgUuidArray(users.slice(start, start + 500))}::uuid[])`;
   };
   afterEach(cleanup);
 
@@ -903,50 +905,58 @@ suite("chat conversations, people, and directory groups", () => {
     expect(first.items[0]?.id).toBe(chats[51]!.shortId);
   });
 
-  test("pages direct members and rejects adding participant 5,001", async () => {
-    const owner = await user();
-    const headers = await cookie(owner);
-    const chat = await fixture(owner);
-    const directIds: string[] = [];
-    for (let i = 0; i < 101; i++) {
-      const id = await user();
-      directIds.push(id);
-      await grant(chat.id, id, "write", owner);
-    }
-    const path = `/${chat.shortId}/members`;
-    const first = MemberPageSchema.parse(await (await request(headers, path)).json());
-    expect(first.items).toHaveLength(100);
-    const second = MemberPageSchema.parse(await (await request(headers, `${path}?cursor=${first.nextCursor}`)).json());
-    expect(second.items).toHaveLength(2);
-    expect(second.nextCursor).toBeNull();
-    expect(new Set([...first.items, ...second.items].map((member) => member.accessId)).size).toBe(102);
-    const ids = await bulkUsers(4897);
-    const capGroups: string[] = [];
-    for (let start = 0; start < ids.length; start += 500) {
-      const groupId = await group(ids.slice(start, start + 500));
-      capGroups.push(groupId);
-      await groupGrant(chat, groupId, owner);
-    }
-    const last = await user();
-    const reached = await request(headers, path, "POST", { members: [{ type: "user", userId: last }] });
-    expect(reached.status).toBe(200);
-    expect(ConversationSchema.parse(await (await request(headers, `/${chat.shortId}`)).json()).memberCount).toBe(5000);
-    const newcomer = await user();
-    const before = await sql`SELECT a.id FROM auth.access a WHERE a.user_id = ${newcomer}::uuid`;
-    const added = await request(headers, path, "POST", { members: [{ type: "user", userId: newcomer }] });
-    expect(added.status).toBe(400);
-    expect((await added.json()).message).toBe("A chat can have at most 5,000 members.");
-    expect(await sql`SELECT a.id FROM auth.access a WHERE a.user_id = ${newcomer}::uuid`).toEqual(before);
-    expect(ConversationSchema.parse(await (await request(headers, `/${chat.shortId}`)).json()).memberCount).toBe(5000);
-    const additional = await group([...directIds, last, newcomer]);
-    const beforeCreation = await sql`SELECT id FROM chat.conversations WHERE created_by_id = ${owner}::uuid ORDER BY id`;
-    const createOverLimit = await request(headers, "", "POST", {
-      members: [...capGroups, additional].map((groupId) => ({ type: "group", groupId })),
+  // 4,897 people fill the 5,000-member cap. Deleting them checks every table that names a person: about 17 s on the test
+  // VM, more than half of a test's 30 s, and Bun counts `afterEach` into that budget. Over it, the cleanup ran while the
+  // body still read the database (#4589). This block deletes them in its own `afterAll`, right after the test and before
+  // the next one, with a hook budget of its own.
+  describe("the 5,000-member cap", () => {
+    const capPeople: string[] = [];
+    afterAll(() => deleteUsers(capPeople.splice(0)));
+    test("pages direct members and rejects adding participant 5,001", async () => {
+      const owner = await user();
+      const headers = await cookie(owner);
+      const chat = await fixture(owner);
+      const directIds: string[] = [];
+      for (let i = 0; i < 101; i++) {
+        const id = await user();
+        directIds.push(id);
+        await grant(chat.id, id, "write", owner);
+      }
+      const path = `/${chat.shortId}/members`;
+      const first = MemberPageSchema.parse(await (await request(headers, path)).json());
+      expect(first.items).toHaveLength(100);
+      const second = MemberPageSchema.parse(await (await request(headers, `${path}?cursor=${first.nextCursor}`)).json());
+      expect(second.items).toHaveLength(2);
+      expect(second.nextCursor).toBeNull();
+      expect(new Set([...first.items, ...second.items].map((member) => member.accessId)).size).toBe(102);
+      const ids = await bulkUsers(4897, capPeople);
+      const capGroups: string[] = [];
+      for (let start = 0; start < ids.length; start += 500) {
+        const groupId = await group(ids.slice(start, start + 500));
+        capGroups.push(groupId);
+        await groupGrant(chat, groupId, owner);
+      }
+      const last = await user();
+      const reached = await request(headers, path, "POST", { members: [{ type: "user", userId: last }] });
+      expect(reached.status).toBe(200);
+      expect(ConversationSchema.parse(await (await request(headers, `/${chat.shortId}`)).json()).memberCount).toBe(5000);
+      const newcomer = await user();
+      const before = await sql`SELECT a.id FROM auth.access a WHERE a.user_id = ${newcomer}::uuid`;
+      const added = await request(headers, path, "POST", { members: [{ type: "user", userId: newcomer }] });
+      expect(added.status).toBe(400);
+      expect((await added.json()).message).toBe("A chat can have at most 5,000 members.");
+      expect(await sql`SELECT a.id FROM auth.access a WHERE a.user_id = ${newcomer}::uuid`).toEqual(before);
+      expect(ConversationSchema.parse(await (await request(headers, `/${chat.shortId}`)).json()).memberCount).toBe(5000);
+      const additional = await group([...directIds, last, newcomer]);
+      const beforeCreation = await sql`SELECT id FROM chat.conversations WHERE created_by_id = ${owner}::uuid ORDER BY id`;
+      const createOverLimit = await request(headers, "", "POST", {
+        members: [...capGroups, additional].map((groupId) => ({ type: "group", groupId })),
+      });
+      // The owner plus 4,897 grouped people and 103 additional people exceeds the cap.
+      expect(createOverLimit.status).toBe(400);
+      expect((await createOverLimit.json()).message).toBe("A chat can have at most 5,000 members.");
+      expect(await sql`SELECT id FROM chat.conversations WHERE created_by_id = ${owner}::uuid ORDER BY id`).toEqual(beforeCreation);
     });
-    // The owner plus 4,897 grouped people and 103 additional people exceeds the cap.
-    expect(createOverLimit.status).toBe(400);
-    expect((await createOverLimit.json()).message).toBe("A chat can have at most 5,000 members.");
-    expect(await sql`SELECT id FROM chat.conversations WHERE created_by_id = ${owner}::uuid ORDER BY id`).toEqual(beforeCreation);
   });
 
   test("attributes delegated creations to the acting account while granting the person access", async () => {
