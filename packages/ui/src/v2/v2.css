@@ -4202,6 +4202,12 @@
 .k2-ui .k2-bar-start > .k2-tabs-nav {
   flex: 0 1 auto;
 }
+/* In a workspace's head that names its page (W3, a Space's name beside its views), the tabs give way before the title:
+   whole tab by whole tab into "Mehr", and the title shortens only after them. A weight far above the title's (1000),
+   so the title keeps its words while a tab can still go. */
+.k2-ui .k2-ws-main > [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-tabs-nav {
+  flex-shrink: 1000000;
+}
 .k2-ui .k2-tabs-nav {
   display: flex;
   gap: 24px;
