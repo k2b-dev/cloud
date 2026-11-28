@@ -17,8 +17,17 @@ import { ingestJsonBody, ingestResponses, ingestTimeout, respondIngest } from ".
 import {
   CreateSourceApiKeySchema,
   CreateSourceSchema,
+  FetchMinuteSchema,
   IngestBatchSchema,
+  SOURCE_ALERTS_MAX,
+  SOURCE_HISTORY_MAX,
+  SOURCE_HOUR_MINUTES,
+  SOURCE_PAGE_MAX,
+  SourceAlertSchema,
   SourceApiKeySchema,
+  SourceEventSchema,
+  SourceFiguresSchema,
+  SourcePageQuerySchema,
   SourceSchema,
   SourceScrapeSchema,
   UpdateSourceSchema,
@@ -80,22 +89,52 @@ const routes = new Hono<AuthContext>()
     },
   )
   .get(
+    "/bases/:baseId/sources/figures",
+    describeRoute({
+      tags: ["Pulse"],
+      summary: "Read the figures of all of a base's sources",
+      responses: { 200: jsonResponse(SourceFiguresSchema, "Figures of all sources of the base") },
+    }),
+    async (c) => {
+      // Today's values can use the largest read profile (30 s) plus its HTTP margin.
+      setRequestTimeout(c, 40);
+      try {
+        const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
+        if (!baseId.ok) return respond(c, baseId.result);
+        return await respond(c, await pulseService.source.figures(baseId.value, requestAccessScope(c), new Date(), c.req.raw.signal));
+      } finally {
+        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+      }
+    },
+  )
+  .get(
     "/bases/:baseId/sources",
     describeRoute({
       tags: ["Pulse"],
-      summary: "List Pulse sources for a base",
-      responses: { 200: jsonResponse(z.array(SourceSchema), "Pulse sources") },
+      summary: "List Pulse sources for a base, one page at a time",
+      responses: {
+        200: jsonResponse(z.array(SourceSchema), "Pulse sources"),
+        400: jsonResponse(z.object({ code: z.string(), message: z.string() }), "A limit above the page size or an invalid offset"),
+      },
     }),
+    v("query", SourcePageQuerySchema),
     async (c) => {
       // Counts can use the largest read profile (30 s) plus its HTTP margin.
       setRequestTimeout(c, 40);
       try {
         const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
         if (!baseId.ok) return respond(c, baseId.result);
+        const page = c.req.valid("query");
         return await respond(
           c,
-          projectResult(pulseService.source.list(baseId.value, requestAccessScope(c), { signal: c.req.raw.signal }), (items) =>
-            projectSources(items),
+          projectResult(
+            pulseService.source.list(baseId.value, requestAccessScope(c), {
+              signal: c.req.raw.signal,
+              limit: page.limit ?? SOURCE_PAGE_MAX,
+              offset: page.offset,
+              query: page.q,
+            }),
+            (items) => projectSources(items),
           ),
         );
       } finally {
@@ -179,6 +218,59 @@ const routes = new Hono<AuthContext>()
           projectPublicRelations,
         ),
       );
+    },
+  )
+  .get(
+    "/bases/:baseId/sources/:sourceId/minutes",
+    describeRoute({
+      tags: ["Pulse"],
+      summary: "Read a Pulse source's last hour of fetches per minute",
+      responses: {
+        200: jsonResponse(
+          z.array(FetchMinuteSchema).max(SOURCE_HOUR_MINUTES),
+          `The last ${SOURCE_HOUR_MINUTES} minutes, oldest first: whether the fetches worked and the values they brought`,
+        ),
+      },
+    }),
+    async (c) => {
+      const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
+      if (!baseId.ok) return respond(c, baseId.result);
+      const sourceId = await requireBaseResourceParam(c.req.param("sourceId"), "source ID", "sources", baseId.value);
+      if (!sourceId.ok) return respond(c, sourceId.result);
+      return respond(c, await pulseService.source.hour({ baseId: baseId.value, sourceId: sourceId.value, user: requestAccessScope(c) }));
+    },
+  )
+  .get(
+    "/bases/:baseId/sources/:sourceId/alerts",
+    describeRoute({
+      tags: ["Pulse"],
+      summary: "List the alert rules that concern a Pulse source",
+      description:
+        "A rule concerns the source when its SQL or parameters name the source's id, or when one of its keys is the source's target (the endpoint's host).",
+      responses: { 200: jsonResponse(z.array(SourceAlertSchema).max(SOURCE_ALERTS_MAX), "Alert rules of the source, firing first") },
+    }),
+    async (c) => {
+      const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
+      if (!baseId.ok) return respond(c, baseId.result);
+      const sourceId = await requireBaseResourceParam(c.req.param("sourceId"), "source ID", "sources", baseId.value);
+      if (!sourceId.ok) return respond(c, sourceId.result);
+      return respond(c, await pulseService.source.alerts({ baseId: baseId.value, sourceId: sourceId.value, user: requestAccessScope(c) }));
+    },
+  )
+  .get(
+    "/bases/:baseId/sources/:sourceId/history",
+    describeRoute({
+      tags: ["Pulse"],
+      summary: "Read what happened to a Pulse source",
+      description: "Who created or changed the source, and when it stopped delivering or delivered again, newest first.",
+      responses: { 200: jsonResponse(z.array(SourceEventSchema).max(SOURCE_HISTORY_MAX), "The source's history, newest first") },
+    }),
+    async (c) => {
+      const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
+      if (!baseId.ok) return respond(c, baseId.result);
+      const sourceId = await requireBaseResourceParam(c.req.param("sourceId"), "source ID", "sources", baseId.value);
+      if (!sourceId.ok) return respond(c, sourceId.result);
+      return respond(c, await pulseService.source.history({ baseId: baseId.value, sourceId: sourceId.value, user: requestAccessScope(c) }));
     },
   )
   .get(

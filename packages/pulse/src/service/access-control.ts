@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { sql } from "@k2b/cloud";
 import type { RequestActor, ServiceAccount } from "@k2b/cloud/contracts";
 import { type AccessSubject, buildAccessPrincipalCondition, err, fail, ok, type PermissionLevel, type Result } from "@k2b/cloud/server";
@@ -76,6 +77,25 @@ export const readableScopeFilter = (scope: AccessScope): { subject: AccessSubjec
   return { subject: subjectForScope(scope), boundBaseShortId: bound };
 };
 
+/** The grants one page load read; `open` ends with the load, so work it left running reads fresh afterwards. */
+type PageGrants = { grants: Map<string, Promise<PermissionLevel>>; open: boolean };
+const pageAccess = new AsyncLocalStorage<PageGrants>();
+
+/**
+ * Runs one page load with its grants read once: every service it calls checks access itself, and inside this load
+ * the same person's grant on the same base is the same answer, so it is read from the database a single time. Only
+ * page loaders use it; an API request, a job and a transaction read the grant every time.
+ */
+export const withPageAccess = async <T>(load: () => Promise<T>): Promise<T> => {
+  const page: PageGrants = { grants: new Map(), open: true };
+  try {
+    return await pageAccess.run(page, load);
+  } finally {
+    // a timer, a stream or a promise the load started still carries this store; once the page is answered it reads fresh
+    page.open = false;
+  }
+};
+
 /** Pass the transaction that locked the base to authorize a change against the state it writes. */
 export const requireBaseAccess = async (
   baseId: string,
@@ -87,6 +107,51 @@ export const requireBaseAccess = async (
   const bound = boundBaseShortId(scope);
   if (missingBinding(scope, bound)) return fail(err.forbidden("Access denied"));
 
+  const subject = subjectForScope(scope);
+  const read = async () => {
+    const principalMatch = buildAccessPrincipalCondition({
+      subject,
+      columns: {
+        userId: sql`a.user_id`,
+        groupId: sql`a.group_id`,
+        serviceAccountId: sql`a.service_account_id`,
+        authenticatedOnly: sql`a.authenticated_only`,
+      },
+    });
+    const [row] = await db<{ permission: PermissionLevel }[]>`
+      SELECT MAX(a.permission)::text AS permission
+      FROM pulse.base_access ba
+      JOIN pulse.bases b ON b.id = ba.base_id
+      JOIN auth.access a ON a.id = ba.access_id
+      WHERE ba.base_id = ${baseId}::uuid
+        AND (${bound}::text IS NULL OR b.short_id = ${bound})
+        AND ${principalMatch}
+    `;
+    return row?.permission ?? "none";
+  };
+  // inside one page load the grant is read once; a transaction always reads it against the state it locked
+  const page = db === sql ? pageAccess.getStore() : undefined;
+  const memo = page?.open ? page.grants : undefined;
+  const key = `${baseId}|${bound ?? ""}|${JSON.stringify(subject)}`;
+  let pending = memo?.get(key);
+  if (!pending) {
+    pending = read();
+    memo?.set(key, pending);
+  }
+  const granted = await pending;
+  const cap = scopedPermission(scope);
+  const level = PERMISSION_RANK[granted] <= PERMISSION_RANK[cap] ? granted : cap;
+  return PERMISSION_RANK[level] >= PERMISSION_RANK[required] ? ok(level) : fail(err.forbidden("Access denied"));
+};
+
+/**
+ * The bases among `baseIds` the scope administers, in one read: the same grants, binding and scope cap as
+ * `requireBaseAccess`, for a whole list at once.
+ */
+export const adminBaseIdsAmong = async (scope: AccessScope, baseIds: readonly string[]): Promise<Set<string>> => {
+  if (baseIds.length === 0 || !canRequestPermission(scope, "admin")) return new Set();
+  const bound = boundBaseShortId(scope);
+  if (missingBinding(scope, bound)) return new Set();
   const principalMatch = buildAccessPrincipalCondition({
     subject: subjectForScope(scope),
     columns: {
@@ -96,19 +161,17 @@ export const requireBaseAccess = async (
       authenticatedOnly: sql`a.authenticated_only`,
     },
   });
-  const [row] = await db<{ permission: PermissionLevel }[]>`
-    SELECT MAX(a.permission)::text AS permission
+  const rows = await sql<{ base_id: string; permission: PermissionLevel }[]>`
+    SELECT ba.base_id, MAX(a.permission)::text AS permission
     FROM pulse.base_access ba
     JOIN pulse.bases b ON b.id = ba.base_id
     JOIN auth.access a ON a.id = ba.access_id
-    WHERE ba.base_id = ${baseId}::uuid
+    WHERE ba.base_id = ANY(${sql.array([...baseIds], "UUID")})
       AND (${bound}::text IS NULL OR b.short_id = ${bound})
       AND ${principalMatch}
+    GROUP BY ba.base_id
   `;
-  const granted = row?.permission ?? "none";
-  const cap = scopedPermission(scope);
-  const level = PERMISSION_RANK[granted] <= PERMISSION_RANK[cap] ? granted : cap;
-  return PERMISSION_RANK[level] >= PERMISSION_RANK[required] ? ok(level) : fail(err.forbidden("Access denied"));
+  return new Set(rows.filter((row) => row.permission === "admin").map((row) => row.base_id));
 };
 
 export const listBaseIdsVisibleTo = async (

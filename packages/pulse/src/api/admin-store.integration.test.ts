@@ -68,7 +68,7 @@ suite("Pulse store admin API", () => {
   const store = () => {
     current["pulse.clickhouse_connection"] = JSON.stringify(saved);
   };
-  let personId: string, agentId: string, baseId: string;
+  let personId: string, agentId: string, baseId: string, baseShortId: string;
   const accessIds: string[] = [];
   let get: ReturnType<typeof spyOn<typeof app.settings, "get">>;
   let set: ReturnType<typeof spyOn<typeof settings, "set">>;
@@ -87,9 +87,10 @@ suite("Pulse store admin API", () => {
     >`INSERT INTO auth.service_accounts(name, kind) VALUES ('Store fixture', 'agent') RETURNING id`;
     agentId = agent!.id;
     const [base] = await sql<
-      { id: string }[]
-    >`INSERT INTO pulse.bases(short_id, name) VALUES (${newShortId()}, 'Store fixture') RETURNING id`;
+      { id: string; short_id: string }[]
+    >`INSERT INTO pulse.bases(short_id, name, icon, color) VALUES (${newShortId()}, 'Store fixture', 'ti ti-server', 'emerald') RETURNING id, short_id`;
     baseId = base!.id;
+    baseShortId = base!.short_id;
     for (const service of [false, true]) {
       const [grant] = await sql<
         { id: string }[]
@@ -179,6 +180,12 @@ suite("Pulse store admin API", () => {
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
+  test("the admin base list carries each base's symbol and colour, as the app shows them", async () => {
+    const response = await call("admin", "GET", `/api/pulse/admin/bases?q=${baseShortId}`);
+    expect(response.status).toBe(200);
+    const page = (await response.json()) as { items: { id: string; icon?: string; color?: string }[] };
+    expect(page.items.find((item) => item.id === baseShortId)).toMatchObject({ icon: "ti ti-server", color: "emerald" });
+  });
   test("base grants never authorize a person or an agent for any admin route", async () => {
     for (const who of ["person", "agent"] as const)
       for (const [method, path] of paths) {

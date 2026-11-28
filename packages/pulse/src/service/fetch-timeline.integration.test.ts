@@ -1,0 +1,184 @@
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { newShortId } from "../lib/short-id";
+import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
+import { accessScopeFor } from "./access-control";
+import { sourceHour } from "./fetch-timeline";
+import { sourceAlerts } from "./source-alerts";
+import { sourceHistory } from "./source-history";
+import { listSources, sourceFigures } from "./source-management";
+
+// 10:42 in Berlin; the base's day began at 23:00 UTC the evening before
+const NOW = new Date("2026-11-25T09:42:00.000Z");
+
+suiteFor("database", "valkey")("Pulse fetch timeline", () => {
+  let memberId: string, baseId: string, otherBaseId: string, accessId: string, sourceId: string;
+  beforeAll(async () => {
+    const [person] = await sql<{ id: string }[]>`
+      INSERT INTO auth.users(uid, provider, profile, display_name)
+      VALUES (${`fetch-member-${crypto.randomUUID()}`}, 'local', 'user', 'Fetch member') RETURNING id`;
+    memberId = person!.id;
+    const bases = await sql<{ id: string }[]>`
+      INSERT INTO pulse.bases(short_id, name, timezone)
+      VALUES (${newShortId()}, 'Fetch fixture', 'Europe/Berlin'), (${newShortId()}, 'Other fixture', 'Europe/Berlin')
+      RETURNING id`;
+    [baseId, otherBaseId] = bases.map((base) => base.id) as [string, string];
+    const [grant] = await sql<{ id: string }[]>`
+      INSERT INTO auth.access(user_id, permission) VALUES (${memberId}::uuid, 'read') RETURNING id`;
+    accessId = grant!.id;
+    await sql`INSERT INTO pulse.base_access(base_id, access_id) VALUES (${baseId}::uuid, ${accessId}::uuid)`;
+    const sources = await sql<{ id: string }[]>`
+      INSERT INTO pulse.sources(short_id, base_id, kind, name)
+      VALUES (${newShortId()}, ${baseId}::uuid, 'metrics', 'Server'),
+             (${newShortId()}, ${baseId}::uuid, 'http_ingest', 'Shop'),
+             (${newShortId()}, ${otherBaseId}::uuid, 'metrics', 'Elsewhere')
+      RETURNING id`;
+    sourceId = sources[0]!.id;
+    const elsewhere = sources[2]!.id;
+    // a fine minute just now, a minute with one failure and one success, one 21 minutes ago, one at 10:00 (outside
+    // the 30 minutes, inside today), one yesterday evening in Berlin, and another base's fetch
+    for (const [source, base, at, success] of [
+      [sourceId, baseId, "2026-11-25T09:41:30Z", true],
+      [sourceId, baseId, "2026-11-25T09:40:30Z", false],
+      [sourceId, baseId, "2026-11-25T09:40:45Z", true],
+      [sourceId, baseId, "2026-11-25T09:20:30Z", true],
+      [sourceId, baseId, "2026-11-25T09:00:00Z", true],
+      [sourceId, baseId, "2026-11-24T22:30:00Z", true],
+      [elsewhere, otherBaseId, "2026-11-25T09:41:00Z", false],
+    ] as const)
+      await sql`INSERT INTO pulse.source_scrapes(base_id, source_id, started_at, finished_at, duration_ms, success, metrics_count)
+        VALUES (${base}::uuid, ${source}::uuid, ${at}::timestamptz, ${at}::timestamptz + interval '1 second', 600, ${success},
+          ${success ? 86 : 0})`;
+  });
+  afterAll(async () => {
+    for (const id of [baseId, otherBaseId]) if (id) await sql`DELETE FROM pulse.bases WHERE id=${id}::uuid`;
+    if (accessId) await sql`DELETE FROM auth.access WHERE id=${accessId}::uuid`;
+    if (memberId) await sql`DELETE FROM auth.users WHERE id=${memberId}::uuid`;
+  });
+  const scope = () => {
+    const identity = adminFixtureIdentity(memberId, false);
+    const result = accessScopeFor(identity.actor, identity.accessSubject);
+    if (!result.ok) throw new Error("Missing access scope");
+    return result.data;
+  };
+
+  test("a metrics source in the list carries its last 30 minutes, one slot per minute; a push source none", async () => {
+    const list = await listSources(baseId, scope(), { now: NOW });
+    if (!list.ok) throw new Error("The list is not readable");
+    const server = list.data.find((source) => source.name === "Server");
+    const shop = list.data.find((source) => source.name === "Shop");
+    expect(server?.fetches).toHaveLength(30);
+    expect(server?.fetches?.[29]).toBe("ok");
+    expect(server?.fetches?.[28]).toBe("bad");
+    expect(server?.fetches?.[8]).toBe("ok");
+    expect(server?.fetches?.filter((slot) => slot !== "none")).toHaveLength(3);
+    expect(shop && "fetches" in shop).toBe(false);
+  });
+
+  test("paging through the sources misses none and repeats none while a source starts failing between two pages", async () => {
+    // four more sources, created one after the other; pages of two
+    for (const [index, name] of ["Page A", "Page B", "Page C", "Page D"].entries())
+      await sql`INSERT INTO pulse.sources(short_id, base_id, kind, name, created_at)
+        VALUES (${newShortId()}, ${baseId}::uuid, 'metrics', ${name}, ${`2026-11-20T08:0${index}:00Z`}::timestamptz)`;
+    const page = async (offset: number) => {
+      const list = await listSources(baseId, scope(), { limit: 2, offset, now: NOW });
+      if (!list.ok) throw new Error("The list is not readable");
+      return list.data.map((source) => source.name);
+    };
+    const first = await page(0);
+    // the scraper writes the state of every fetch: a source further down starts failing before page two is read
+    await sql`UPDATE pulse.sources SET last_error = 'timeout', last_error_at = now()
+      WHERE base_id = ${baseId}::uuid AND name = 'Page A'`;
+    const seen = [...first, ...(await page(2)), ...(await page(4))];
+    expect(new Set(seen).size).toBe(seen.length);
+    expect(seen.sort()).toEqual(["Page A", "Page B", "Page C", "Page D", "Server", "Shop"]);
+  });
+
+  test("the open source's hour has a minute per slot with the values its fetches brought, and stays closed to others", async () => {
+    const hour = await sourceHour({ baseId, sourceId, user: scope(), now: NOW });
+    if (!hour.ok) throw new Error("The hour is not readable");
+    expect(hour.data).toHaveLength(60);
+    expect(hour.data[59]).toEqual({ slot: "ok", values: 86 });
+    // a failed and a successful fetch in the same minute: the minute failed, the values still count
+    expect(hour.data[58]).toEqual({ slot: "bad", values: 86 });
+    // 10:00 lies 42 minutes back
+    expect(hour.data[17]).toEqual({ slot: "ok", values: 86 });
+    expect(hour.data.filter((minute) => minute.slot !== "none")).toHaveLength(4);
+    const otherBase = await sourceHour({ baseId: otherBaseId, sourceId, user: scope(), now: NOW });
+    expect(otherBase.ok).toBe(false);
+    // a source of another base read through a base the person may read stays unknown
+    const [elsewhere] = await sql<{ id: string }[]>`SELECT id FROM pulse.sources WHERE base_id = ${otherBaseId}::uuid`;
+    const crossed = await sourceHour({ baseId, sourceId: elsewhere!.id, user: scope(), now: NOW });
+    expect(crossed.ok).toBe(false);
+  });
+
+  test("an open source lists the alert rules that name it or fire on its target, and no others", async () => {
+    await sql`UPDATE pulse.sources SET endpoint_url = 'http://10.0.0.12:9100/metrics' WHERE id = ${sourceId}::uuid`;
+    const [server] = await sql<{ short_id: string }[]>`SELECT short_id FROM pulse.sources WHERE id = ${sourceId}::uuid`;
+    const rule = async (base: string, name: string, query: string, state = "ok") => {
+      const [row] = await sql<{ id: string }[]>`
+        INSERT INTO pulse.alert_rules(short_id, base_id, name, sql, comparison, critical, min_duration_seconds, interval_seconds, state)
+        VALUES (${newShortId()}, ${base}::uuid, ${name}, ${query}, 'above', 90, 0, 300, ${state}) RETURNING id`;
+      return row!.id;
+    };
+    // names the source by its id; fires on the source's target; names nothing of it; the id only inside a longer word;
+    // another base naming the source
+    await rule(baseId, "By id", `SELECT 'x' AS key, 1 AS value FROM series WHERE source_id = '${server!.short_id}'`);
+    const byTarget = await rule(baseId, "By target", "SELECT host AS key, avg(value) AS value FROM samples GROUP BY host", "firing");
+    await sql`INSERT INTO pulse.alert_states(rule_id, key, state, since, last_checked_at)
+      VALUES (${byTarget}::uuid, '10.0.0.12:9100', 'firing', now(), now())`;
+    await rule(baseId, "Unrelated", "SELECT 'shop' AS key, 1 AS value");
+    await rule(baseId, "Part of a word", `SELECT 'x${server!.short_id}y' AS key, 1 AS value`);
+    await rule(otherBaseId, "Other base", `SELECT '${server!.short_id}' AS key, 1 AS value`);
+    const alerts = await sourceAlerts({ baseId, sourceId, user: scope() });
+    if (!alerts.ok) throw new Error("The alerts are not readable");
+    // firing first, then by name
+    expect(alerts.data.map((alert) => alert.name)).toEqual(["By target", "By id"]);
+    expect(alerts.data[0]).toMatchObject({ state: "firing" });
+    expect((await sourceAlerts({ baseId: otherBaseId, sourceId, user: scope() })).ok).toBe(false);
+  });
+
+  test("an open source's history names who created and changed it and when it stopped delivering, newest first", async () => {
+    const [server] = await sql<{ short_id: string }[]>`SELECT short_id FROM pulse.sources WHERE id = ${sourceId}::uuid`;
+    const entry = async (kind: string, at: string, data: Record<string, unknown>, actor: Record<string, unknown> | null) =>
+      sql`INSERT INTO pulse.base_activity(base_id, kind, actor, data, at)
+        VALUES (${baseId}::uuid, ${kind}, (${JSON.stringify(actor)}::jsonb #>> '{}')::jsonb,
+          (${JSON.stringify(data)}::jsonb #>> '{}')::jsonb, ${at}::timestamptz)`;
+    const me = { kind: "user", id: memberId, name: "Fetch member" };
+    await entry("source.created", "2026-11-03T08:30:00Z", { sourceId: server!.short_id, name: "Server" }, me);
+    await entry("source.updated", "2026-11-18T10:05:00Z", { sourceId: server!.short_id, name: "Server" }, me);
+    await entry("source_freshness", "2026-11-25T09:41:00Z", { sourceId: server!.short_id, stale: true }, null);
+    // another source's entry and another kind of entry stay out
+    await entry("source.created", "2026-11-20T08:00:00Z", { sourceId: "Zz9Yy8", name: "Other" }, me);
+    await entry("query.saved", "2026-11-21T08:00:00Z", { sourceId: server!.short_id }, me);
+    const history = await sourceHistory({ baseId, sourceId, user: scope() });
+    if (!history.ok) throw new Error("The history is not readable");
+    expect(history.data.map((event) => event.kind)).toEqual(["stale", "updated", "created"]);
+    expect(history.data[1]).toMatchObject({ at: "2026-11-18T10:05:00.000Z", actor: { kind: "user", name: "Fetch member" } });
+    expect(history.data[0]!.actor).toBeNull();
+    expect((await sourceHistory({ baseId: otherBaseId, sourceId, user: scope() })).ok).toBe(false);
+  });
+
+  test("the figures read today's fetches in 48 half-hour slots of the base's day, with one statement per page load", async () => {
+    const meter = await meterSql();
+    try {
+      let figures: Awaited<ReturnType<typeof sourceFigures>> | undefined;
+      const fetchReads = (statements: string[]) => statements.filter((text) => text.includes("pulse:fetches-today"));
+      // the first load reads the day once; a refresh within five minutes reads it from the cache
+      expect(fetchReads(await meter.during(async () => (figures = await sourceFigures(baseId, scope(), NOW))))).toHaveLength(1);
+      expect(fetchReads(await meter.during(() => sourceFigures(baseId, scope(), NOW)))).toHaveLength(0);
+      if (!figures?.ok) throw new Error("The figures are not readable");
+      const today = figures.data.fetchesToday;
+      // 10:42 in Berlin: 10:40 and 10:41 (one failed) in slot 21, 10:20 and 10:00 in slot 20, yesterday 23:30 not today
+      expect(today).toMatchObject({ ok: 4, failed: 1 });
+      expect(today?.slots).toHaveLength(48);
+      expect(today?.slots[21]).toBe("bad");
+      expect(today?.slots[20]).toBe("ok");
+      expect(today?.slots.filter((slot) => slot !== "none")).toHaveLength(2);
+    } finally {
+      await meter.close();
+    }
+  });
+});

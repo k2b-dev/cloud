@@ -80,6 +80,7 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
         { version: 7, name: "sql_dashboards" },
         { version: 8, name: "receipt_checkpoints" },
         { version: 9, name: "source_rejections" },
+        { version: 10, name: "list_indexes" },
       ]);
       expect(await sql`SELECT extname FROM pg_extension ORDER BY extname`).toEqual(extensions);
       const ddl = await readFile(`${import.meta.dir}/schema.ts`, "utf8");

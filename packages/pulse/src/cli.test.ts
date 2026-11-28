@@ -132,8 +132,48 @@ describe("pulse CLI", () => {
 
     await pulseCli.run(ctx);
 
-    expect(calls.map((call) => call.path)).toEqual(["/api/pulse/bases/Ops123", "/api/pulse/bases"]);
+    // the name is searched on the server, so a person with many bases never reads all of them
+    expect(calls.map((call) => call.path)).toEqual(["/api/pulse/bases/Ops123", "/api/pulse/bases?q=Ops123&limit=100&offset=0"]);
     expect(lines[0]).toBe(`Ops123 (${baseId})`);
+  });
+
+  test("a list that answers the same page again ends instead of looping, and repeats no base", async () => {
+    const page = Array.from({ length: 100 }, (_, index) => ({ ...base, id: `R${String(index).padStart(5, "0")}`, name: `Base ${index}` }));
+    const { ctx, calls } = createContext(["list"], {}, [jsonResponse(page), jsonResponse(page)]);
+
+    await pulseCli.run(ctx);
+
+    expect(calls.map((call) => call.path)).toEqual(["/api/pulse/bases?limit=100&offset=0", "/api/pulse/bases?limit=100&offset=100"]);
+  });
+
+  test("a base named by its words is found among every page of the search, so a second base of that name is not missed", async () => {
+    const near = Array.from({ length: 100 }, (_, index) => ({ ...base, id: `N${String(index).padStart(5, "0")}`, name: `Lager ${index}` }));
+    const { ctx, calls, lines } = createContext(["get", "Lager Nord"], {}, [
+      jsonResponse(near),
+      jsonResponse([{ ...base, name: "Lager Nord" }]),
+    ]);
+
+    await pulseCli.run(ctx);
+
+    expect(calls.map((call) => call.path)).toEqual([
+      "/api/pulse/bases?q=Lager%20Nord&limit=100&offset=0",
+      "/api/pulse/bases?q=Lager%20Nord&limit=100&offset=100",
+    ]);
+    expect(lines[0]).toBe(`Lager Nord (${baseId})`);
+  });
+
+  test("lists every base page by page, until a page is shorter than the page size", async () => {
+    const page = (from: number, count: number) =>
+      Array.from({ length: count }, (_, index) => ({
+        ...base,
+        id: `B${String(from + index).padStart(5, "0")}`,
+        name: `Base ${from + index}`,
+      }));
+    const { ctx, calls } = createContext(["list"], {}, [jsonResponse(page(0, 100)), jsonResponse(page(100, 3))]);
+
+    await pulseCli.run(ctx);
+
+    expect(calls.map((call) => call.path)).toEqual(["/api/pulse/bases?limit=100&offset=0", "/api/pulse/bases?limit=100&offset=100"]);
   });
 
   test("rejects an ambiguous exact six-character base name after an ID miss", async () => {
@@ -266,6 +306,40 @@ describe("pulse CLI", () => {
     expect(lines).toEqual([`Revoked access for ${accessId} on Test (Base01).`]);
   });
 
+  test("finds a source past the first full page, reading the list page by page until a short page", async () => {
+    const filler = Array.from({ length: 500 }, (_, index) => ({
+      ...source,
+      id: `f${String(index).padStart(7, "0")}`,
+      name: `Filler ${index}`,
+    }));
+    const { ctx, calls } = createContext(["source-tokens", "list", baseId, "docker"], {}, [
+      jsonResponse(base),
+      jsonResponse(filler),
+      jsonResponse([source]),
+      jsonResponse([sourceToken]),
+    ]);
+
+    await pulseCli.run(ctx);
+
+    expect(calls.map((call) => call.path).slice(0, 3)).toEqual([
+      `/api/pulse/bases/${baseId}`,
+      `/api/pulse/bases/${baseId}/sources?limit=500&offset=0`,
+      `/api/pulse/bases/${baseId}/sources?limit=500&offset=500`,
+    ]);
+  });
+
+  test("a source named by its words is searched on the server; a reference that can be an id reads the whole list", async () => {
+    const { ctx, calls } = createContext(["source-tokens", "list", baseId, "Docker host"], {}, [
+      jsonResponse(base),
+      jsonResponse([{ ...source, name: "Docker host" }]),
+      jsonResponse([sourceToken]),
+    ]);
+
+    await pulseCli.run(ctx);
+
+    expect(calls[1]?.path).toBe(`/api/pulse/bases/${baseId}/sources?limit=500&offset=0&q=Docker%20host`);
+  });
+
   test("lists source ingest tokens with explicit source-token command naming", async () => {
     const { ctx, calls, tables } = createContext(["source-tokens", "list", baseId, "docker"], {}, [
       jsonResponse(base),
@@ -277,7 +351,7 @@ describe("pulse CLI", () => {
 
     expect(calls.map((call) => call.path)).toEqual([
       `/api/pulse/bases/${baseId}`,
-      `/api/pulse/bases/${baseId}/sources`,
+      `/api/pulse/bases/${baseId}/sources?limit=500&offset=0`,
       `/api/pulse/bases/${baseId}/sources/${sourceId}/api-keys`,
     ]);
     expect(tables[0]).toEqual([
@@ -361,7 +435,7 @@ describe("pulse CLI", () => {
 
     expect(calls.map((call) => call.path)).toEqual([
       `/api/pulse/bases/${baseId}`,
-      `/api/pulse/bases/${baseId}/sources`,
+      `/api/pulse/bases/${baseId}/sources?limit=500&offset=0`,
       `/api/pulse/bases/${baseId}/sources/${sourceId}/api-keys`,
       `/api/pulse/bases/${baseId}/sources/${sourceId}/api-keys/${sourceToken.id}`,
     ]);

@@ -68,6 +68,16 @@ export class SourceCreateError extends Error {
   }
 }
 
+/** Saving a source's edit failed: someone changed it meanwhile, the answer was lost, or the server refused it. */
+export class SourceEditError extends Error {
+  constructor(
+    readonly kind: "conflict" | "uncertain" | "rejected",
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 export const createPulseSource = (baseId: string, input: CreateSourceInput, signal?: AbortSignal): Promise<PulseSource> =>
   jsonFetch<PulseSource>(
     `/api/pulse/bases/${baseId}/sources`,

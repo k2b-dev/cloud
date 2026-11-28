@@ -3,6 +3,8 @@ import { type Context, Hono } from "hono";
 import { ssr } from "../config";
 import { pulseMessages } from "../messages";
 import basePage from "./[baseId]/page";
+import queriesPage from "./[baseId]/queries.page";
+import settingsPage from "./[baseId]/settings.page";
 import { pulseNotSetUpGate } from "./not-set-up";
 import page from "./page";
 
@@ -18,6 +20,9 @@ export const redirectRemovedView = (notice?: "dashboards-removed") => (c: Contex
   c.redirect(`/app/pulse/${encodeURIComponent(c.req.param("baseId") ?? "")}${notice ? `?notice=${notice}` : ""}`, 302);
 
 const workspacePages = new Hono<AuthContext>()
+  .get("/queries", auth.requireRole("user", ssr.access), ...queriesPage)
+  .get("/settings/:tab", auth.requireRole("user", ssr.access), ...settingsPage)
+  .get("/settings", auth.requireRole("user", ssr.access), ...settingsPage)
   .get("/sql", auth.requireRole("user", ssr.access), ...basePage)
   .get("/sql/:queryId", auth.requireRole("user", ssr.access), ...basePage)
   .get("/dashboards", auth.requireRole("user", ssr.access), redirectRemovedView("dashboards-removed"))

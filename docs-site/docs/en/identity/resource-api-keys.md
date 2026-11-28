@@ -215,6 +215,29 @@ The component owns the create dialog, permission and expiry inputs, local list
 updates, revoke confirmation, and one-time token display. The application owns
 the API routes and their authorization.
 
+On a screen built with `@k2b/ui/v2`, use `ResourceApiKeySection` instead. It takes
+the same props and returns one v2 `Section`: each key is a row with its access,
+expiry and last use, "Add" in the section head opens a dialog (name, access when
+there is more than one option, expiry of 30 days, 90 days, one year, never, or a
+certain day), the new token shows once with a copy button, and revoking asks
+first. Place it directly in a `Pane` or a `Pane detail`:
+
+```tsx
+import { ResourceApiKeySection } from "@k2b/cloud/access/ui";
+
+<ResourceApiKeySection
+  title="API keys"
+  description="Keys for integrations that work with this item."
+  initialKeys={apiKeys}
+  permissionOptions={[{ value: "write", label: "Send data", description: "Writes new values." }]}
+  createKey={createKey}
+  revokeKey={revokeKey}
+/>
+```
+
+A failed revoke shows as a toast and keeps the row; a failed create stays in the
+dialog with its input.
+
 Keep every other grant in `PermissionEditor` next to the key list, and hide
 only the resource-bound entries that `ResourceApiKeys` manages:
 

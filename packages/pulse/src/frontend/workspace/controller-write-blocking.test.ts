@@ -1,8 +1,7 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { prompts } from "@k2b/ui";
 import { createRoot } from "solid-js";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import type { PulseSource } from "../../contracts";
@@ -54,6 +53,8 @@ test("Pulse write controllers do not repeat a write while canonical data is stal
     dispose = nextDispose;
     return createSourceController({
       selectedBaseId: () => "base-1",
+      notify: () => undefined,
+      confirm: async () => true,
       loading: () => false,
       setLoading: () => false,
       selectedSourceId: () => "",
@@ -77,7 +78,6 @@ test("Pulse write controllers do not repeat a write while canonical data is stal
 
 test("removing the open source returns to the sources URL", async () => {
   const originalFetch = globalThis.fetch;
-  const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
   const requests: string[] = [];
   const destinations: Array<{ view: string; sourceId?: string }> = [];
   globalThis.fetch = (async (input: string | URL | Request) => {
@@ -89,6 +89,8 @@ test("removing the open source returns to the sources URL", async () => {
     dispose = nextDispose;
     return createSourceController({
       selectedBaseId: () => "base-1",
+      notify: () => undefined,
+      confirm: async () => true,
       selectedSourceId: () => source.id,
       loading: () => false,
       setLoading: () => false,
@@ -106,7 +108,6 @@ test("removing the open source returns to the sources URL", async () => {
     expect(destinations).toEqual([{ view: "sources" }]);
   } finally {
     dispose();
-    confirm.mockRestore();
     globalThis.fetch = originalFetch;
   }
 });

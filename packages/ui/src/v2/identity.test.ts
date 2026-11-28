@@ -118,6 +118,23 @@ test("an activity sends the person, the sentence as the link of the thing, and w
   expect(activity.match(/data-activity/g)?.length).toBe(2);
 });
 
+test("initials come from the first and the last word of a name, skip suffixes, and never split a character", async () => {
+  const { initialsOf } = await import("./types");
+  const of = (name: string) => initialsOf({ name });
+  expect(of("Charles Augustus Montgomery III")).toBe("CM");
+  expect(of("Ölaf Ärger Jr.")).toBe("ÖÄ");
+  expect(of("José María García")).toBe("JG");
+  expect(of("Mira")).toBe("M");
+  // Jun and Sen are surnames; only "jun." and "sen." with their dot are suffixes
+  expect(of("Li Jun")).toBe("LJ");
+  expect(of("Amartya Sen")).toBe("AS");
+  expect(of("Karl Weber sen.")).toBe("KW");
+  // an emoji first is one character, not half of one
+  expect(of("🦊 Fuchs Bau")).toBe("🦊B");
+  expect(of("👩‍🔧 Jana Berger")).toBe("👩‍🔧B");
+  expect(initialsOf({ name: "Felix Thal", initials: "FX" })).toBe("FX");
+});
+
 test("a key number with its history that is loading: the bar on the value, the history keeps its place", () => {
   const trend = { values: [3, 5, 8], label: "Änderungen: von 3 auf 8 gestiegen" };
   const loading = html(Cells.Cell, { icon: "table", label: "Änderungen", value: "8", trend, loading: true });

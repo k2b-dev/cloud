@@ -7,6 +7,7 @@ import {
   installAgentSourceOwnership,
   installBaseline,
   installDashboards,
+  installListIndexes,
   installOverviewAlerts,
   installReceiptCheckpoints,
   installSourceRejections,
@@ -21,6 +22,7 @@ const MIGRATIONS = [
   { version: 7, name: "sql_dashboards", up: installDashboards },
   { version: 8, name: "receipt_checkpoints", up: installReceiptCheckpoints },
   { version: 9, name: "source_rejections", up: installSourceRejections },
+  { version: 10, name: "list_indexes", up: installListIndexes },
 ];
 const log = logger("pulse:migrate");
 

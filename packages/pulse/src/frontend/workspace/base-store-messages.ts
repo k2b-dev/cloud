@@ -50,7 +50,7 @@ export const baseStoreMessages = i18n.define({
     },
     de: {
       storeTitle: "Datenspeicher",
-      storeDescription: "Diese Base hat eine eigene Datenbank. Ihre Grenzen legt ein Cloud-Admin fest.",
+      storeDescription: "Diese Basis hat eine eigene Datenbank. Ihre Grenzen legt ein Cloud-Admin fest.",
       state: "Zustand",
       stateProvisioning: "Wird eingerichtet",
       stateActive: "Aktiv",
@@ -62,15 +62,15 @@ export const baseStoreMessages = i18n.define({
       failedProvision:
         "Die Datenbank konnte nicht eingerichtet werden. Beim erneuten Versuch macht Pulse dort weiter, wo es aufgehört hat.",
       failedClear: "Die Daten konnten nicht geleert werden. Beim erneuten Versuch macht Pulse dort weiter, wo es aufgehört hat.",
-      failedDelete: "Die Base konnte nicht gelöscht werden. Beim erneuten Versuch macht Pulse dort weiter, wo es aufgehört hat.",
-      deletingText: "Pulse löscht diese Base im Hintergrund. Hier siehst du, wann das Löschen fertig ist.",
-      staleText: "Pulse löscht diese Base. Der Zustand ließ sich nicht laden; „Erneut versuchen“ fragt nach.",
-      deletedText: "Pulse hat diese Base und ihre Daten gelöscht. Nach dem nächsten Laden erscheint sie hier nicht mehr.",
-      busyText: "Pulse arbeitet an dieser Base. Schreiben wartet, bis sie wieder aktiv ist.",
+      failedDelete: "Die Basis konnte nicht gelöscht werden. Beim erneuten Versuch macht Pulse dort weiter, wo es aufgehört hat.",
+      deletingText: "Pulse löscht diese Basis im Hintergrund. Hier siehst du, wann das Löschen fertig ist.",
+      staleText: "Pulse löscht diese Basis. Der Zustand ließ sich nicht laden; „Erneut versuchen“ fragt nach.",
+      deletedText: "Pulse hat diese Basis und ihre Daten gelöscht. Nach dem nächsten Laden erscheint sie hier nicht mehr.",
+      busyText: "Pulse arbeitet an dieser Basis. Schreiben wartet, bis sie wieder aktiv ist.",
       blockedText:
         "Pulse hat im Datenspeicher einen anderen Prüfpunkt gefunden, zum Beispiel nach einer Wiederherstellung. Die Daten bleiben, neue Werte nimmt Pulse erst an, wenn ein Cloud-Admin entschieden hat.",
       clearBlockedText:
-        "Schreiben ist nach einem abweichenden Prüfpunkt gesperrt. Zuerst entscheidet ein Cloud-Admin, danach kannst du die Base wieder leeren.",
+        "Schreiben ist nach einem abweichenden Prüfpunkt gesperrt. Zuerst entscheidet ein Cloud-Admin, danach kannst du die Basis wieder leeren.",
       retry: "Erneut versuchen",
       retryStarted: "Pulse macht dort weiter, wo es aufgehört hat.",
       retryFailed: "Der erneute Versuch ist nicht gestartet. Es wurde nichts geändert. Versuche es erneut.",

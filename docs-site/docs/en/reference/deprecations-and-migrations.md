@@ -5,13 +5,39 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-25
+updated: 2026-11-27
 ---
 
 # Deprecations and migrations
 
 Studio entries below describe older releases. Studio apps, their APIs and app data
 are now retired without transfer; follow [Studio retirement](/en/docs/operations/studio-retirement).
+
+## The Pulse base list returns one page
+
+`GET /api/pulse/bases` returns at most 100 bases per request, newest change
+first. Before, it returned every base the caller could read.
+
+- To read further, page with `limit` (1 to 100, default 100) and `offset`. A
+  page shorter than `limit` is the last one.
+- To find a base by name or description, pass `q`.
+- A `limit` above 100 answers `400`.
+
+`cld pulse list` pages through all bases for you. A command that takes a base
+by name searches for it with `q`.
+
+## The Pulse source list returns one page
+
+`GET /api/pulse/bases/:baseId/sources` returns at most 500 sources per
+request, newest first. Before, it returned every source of the base.
+
+- To read further, page with `limit` (1 to 500, default 500) and `offset`. A
+  page shorter than `limit` is the last one.
+- The order is stable while sources change state, so paging misses none and
+  repeats none. A source added or removed between two pages shifts the next
+  page by one; dedupe by `id`.
+- To find sources by name, pass `q`.
+- A `limit` above 500 answers `400`.
 
 ## The log list keeps its filters in new address parameters
 

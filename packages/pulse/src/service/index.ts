@@ -13,9 +13,13 @@ import {
   updateBase,
   updateBaseAccess,
 } from "./base-management";
+import { sourceHour } from "./fetch-timeline";
 import { ingestBatch, ingestByApiKey } from "./ingest-writer";
 import { runMetricsSourceScrape } from "./metrics-scraper";
+import { sourceAlerts } from "./source-alerts";
+import { sourceHistory } from "./source-history";
 import {
+  countSources,
   createSource,
   createSourceApiKey,
   getSource,
@@ -24,6 +28,7 @@ import {
   listSources,
   removeSource,
   removeSourceApiKey,
+  sourceFigures,
   updateSource,
 } from "./source-management";
 
@@ -62,8 +67,13 @@ export const pulseService = {
   },
   source: {
     list: listSources,
+    count: countSources,
+    figures: sourceFigures,
     get: getSource,
     scrapes: listSourceScrapes,
+    hour: sourceHour,
+    alerts: sourceAlerts,
+    history: sourceHistory,
     apiKeys: {
       list: listSourceApiKeys,
       create: createSourceApiKey,

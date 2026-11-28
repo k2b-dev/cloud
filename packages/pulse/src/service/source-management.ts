@@ -3,11 +3,12 @@ import type { RequestActor, ServiceAccount, ServiceAccountCredential, User } fro
 import { err, fail, ok, type PermissionLevel, type Result } from "@k2b/cloud/server";
 import { encryptSecret, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { SQL } from "bun";
-import type { PulseSource, PulseSourceScrape, SourceKind } from "../contracts";
+import { FETCH_TICKS, type FetchSlot, type PulseSource, type PulseSourceScrape, type SourceFigures, type SourceKind } from "../contracts";
 import { withShortId } from "../lib/short-id";
 import { SourceConfigSchema } from "../metric-filters";
 import { type AccessScope, requireBaseAccess, requireBaseActive, type UserScope } from "./access-control";
 import { recordBaseActivity } from "./base-activity";
+import { fetchesToday, fetchTicks } from "./fetch-timeline";
 import { checkScrapeTarget } from "./scrape-target";
 import { sourceCounts } from "./source-counts";
 import { tryMirrorSource } from "./source-mirror";
@@ -210,6 +211,8 @@ export const listSources = async (
     FROM pulse.sources
     WHERE NOT deleted AND base_id = ${baseId}::uuid
       AND (${pattern}::text IS NULL OR name ILIKE ${pattern} ESCAPE '\\')
+    -- a stable order for paging: the scraper writes a source's state on every fetch, so the state never orders pages;
+    -- the sources that need attention are named in the figures above the list
     ORDER BY created_at DESC, id ASC
     LIMIT ${limit}
     OFFSET ${offset}
@@ -220,13 +223,80 @@ export const listSources = async (
     rows.map((row) => row.id),
     now,
   );
+  // the page's metrics sources' last minutes of fetches, in one read
+  const ticks = await fetchTicks(
+    rows.filter((row) => row.kind === "metrics").map((row) => row.id),
+    now,
+  );
   return ok(
     rows.map((row) => ({
       ...withRejections(mapSource(row, now), rejections),
       seriesCount: counts.get(row.id)?.seriesCount ?? 0,
       todayCount: counts.get(row.id)?.todayCount ?? (counts.has("") ? 0 : null),
+      ...(row.kind === "metrics" ? { fetches: ticks.get(row.id) ?? Array.from({ length: FETCH_TICKS }, (): FetchSlot => "none") } : {}),
     })),
   );
+};
+
+/** How many sources a base has, for the count on its tab: one count, without the store figures a list reads. */
+export const countSources = async (baseId: string, user: AccessScope): Promise<Result<number>> => {
+  const access = await requireBaseAccess(baseId, user, "read");
+  if (!access.ok) return fail(access.error);
+  const [row] = await sql<
+    { count: number }[]
+  >`SELECT count(*)::int AS count FROM pulse.sources WHERE NOT deleted AND base_id = ${baseId}::uuid`;
+  return ok(row?.count ?? 0);
+};
+
+/**
+ * The figures of all of a base's sources, while a list shows one page of them: how many, how many run, which fail
+ * (the first three by name, the newest failure first), their series and the values they delivered today. One aggregate
+ * over the sources and the base's cached count of today's values (null while the store cannot answer).
+ */
+export const sourceFigures = async (
+  baseId: string,
+  user: AccessScope,
+  now = new Date(),
+  signal?: AbortSignal,
+): Promise<Result<SourceFigures>> => {
+  const access = await requireBaseAccess(baseId, user, "read");
+  if (!access.ok) return fail(access.error);
+  const [totals, failing, counts] = await Promise.all([
+    sql<{ total: number; active: number; failing: number; waiting: number; ids: string[]; metrics: string[]; timezone: string }[]>`
+      SELECT count(s.id)::int AS total,
+        count(s.id) FILTER (WHERE s.enabled)::int AS active,
+        count(s.id) FILTER (WHERE s.enabled AND s.last_error IS NOT NULL)::int AS failing,
+        count(s.id) FILTER (
+          WHERE s.enabled AND s.last_error IS NULL AND s.last_data_at IS NULL AND s.last_seen_at IS NULL
+        )::int AS waiting,
+        COALESCE(array_agg(s.id::text) FILTER (WHERE s.id IS NOT NULL), '{}') AS ids,
+        COALESCE(array_agg(s.id::text) FILTER (WHERE s.kind = 'metrics'), '{}') AS metrics,
+        b.timezone
+      FROM pulse.bases b
+      LEFT JOIN pulse.sources s ON s.base_id = b.id AND NOT s.deleted
+      WHERE b.id = ${baseId}::uuid
+      GROUP BY b.timezone`,
+    sql<{ id: string; name: string; since: Date | null }[]>`
+      SELECT short_id AS id, name, last_error_at AS since FROM pulse.sources
+      WHERE NOT deleted AND enabled AND last_error IS NOT NULL AND base_id = ${baseId}::uuid
+      ORDER BY last_error_at DESC NULLS LAST, name LIMIT 3`,
+    // the base's cached aggregate, the same one the page's list reads in this request
+    sourceCounts(baseId, now, signal),
+  ]);
+  const ids = totals[0]?.ids ?? [];
+  const known = counts.has("");
+  // a day that cannot be read leaves the figures standing without it
+  const fetches = await fetchesToday(baseId, totals[0]?.metrics ?? [], totals[0]?.timezone ?? "UTC", now).catch(() => null);
+  return ok({
+    total: totals[0]?.total ?? 0,
+    active: totals[0]?.active ?? 0,
+    failingCount: totals[0]?.failing ?? 0,
+    failing: failing.map((source) => ({ id: source.id, name: source.name, since: isoNullable(source.since) })),
+    waiting: totals[0]?.waiting ?? 0,
+    series: ids.reduce((sum, id) => sum + (counts.get(id)?.seriesCount ?? 0), 0),
+    today: known ? ids.reduce((sum, id) => sum + (counts.get(id)?.todayCount ?? 0), 0) : null,
+    fetchesToday: fetches,
+  });
 };
 
 export const getSource = async (sourceId: string, user: AccessScope, now = new Date()): Promise<Result<PulseSource>> => {

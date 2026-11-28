@@ -55,10 +55,64 @@ const box = (page: Page, selector: string) =>
       return `${Math.round(rect.width)}x${Math.round(rect.height)}`;
     });
 
-test("a mark takes its size from its place: 20 in the sidebar and a sentence, 24 and 32 leading rows, 36 on a card", async () => {
+test("leading a row or a cell a mark is 24, and 32 where the list or table shows pictures of its things; the row is 44 either way", async () => {
+  await withPage(async (page) => {
+    const sizes = (selector: string) =>
+      page.locator(selector).evaluateAll((marks) =>
+        marks.map((mark) => {
+          const rect = mark.getBoundingClientRect();
+          const row = mark.closest(".k2-row, tr")!.getBoundingClientRect();
+          return `${Math.round(rect.width)}x${Math.round(rect.height)} in ${Math.round(row.height)}`;
+        }),
+      );
+    // who or what a thing is (a base, a table, a form): 24 in a row or cell of 44
+    // (a row of two lines keeps its 52)
+    expect(await sizes("[aria-label='Bases'] > .k2-row > .k2-row-lead > .k2-mk")).toEqual(["24x24 in 44", "24x24 in 52"]);
+    expect(await sizes("[aria-label='Tabellen'] td > .k2-cell-lead > .k2-mk")).toEqual(["24x24 in 44", "24x24 in 44"]);
+    // a list with thumbnails or types (files): 32 for every mark in it, the folder without a picture too
+    expect(await sizes("[aria-label='Dateien'] > .k2-row[data-lines='1'] > .k2-row-lead > .k2-mk")).toEqual(["32x32 in 44", "32x32 in 44"]);
+  });
+});
+
+// one line between groups: a section's last row and the head of the next section, a table and the section after it,
+// never draw two lines at one edge (Valentin 26.11., NO DOUBLE LINES)
+for (const width of [1440, 390])
+  test(`at ${width} px sections of rows and tables draw one line between them`, async () => {
+    await withPage(async (page) => {
+      expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).double).toEqual([]);
+    }, width);
+  });
+
+// the text edge of a list: a row that leads with a thing's mark, one with its thumbnail and one with a person start
+// their names on one edge, 12 px after a lead of one size (W1b #4206 r5)
+for (const width of [1440, 390])
+  test(`at ${width} px a person, a mark and a thumbnail in one list start their names on one edge`, async () => {
+    await withPage(async (page) => {
+      const edges = await page.locator("[aria-label='Dateien'] > .k2-row").evaluateAll((rows) =>
+        rows.map((row) => {
+          const lead = row.querySelector(":scope > .k2-row-lead")!.getBoundingClientRect();
+          const title = row.querySelector(".k2-row-title")!.getBoundingClientRect();
+          return { lead: Math.round(lead.width), gap: Math.round(title.left - lead.right), edge: Math.round(title.left) };
+        }),
+      );
+      expect(edges.length).toBe(6);
+      expect(new Set(edges.map((row) => row.edge)).size).toBe(1);
+      expect(new Set(edges.map((row) => row.gap))).toEqual(new Set([12]));
+      expect(new Set(edges.map((row) => row.lead))).toEqual(new Set([width < 768 ? 40 : 32]));
+    }, width);
+  });
+
+test("a mark takes its size from its place: 20 in the sidebar and a sentence, 32 leading rows of files of 44 px, 36 on a card", async () => {
   await withPage(async (page) => {
     expect(await box(page, ".k2-ni .k2-mk")).toBe("20x20");
-    expect(await box(page, '.k2-row[data-lines="1"] > .k2-row-lead > .k2-mk')).toBe("24x24");
+    // as the mockup's lists of files and folders: a row of one line that leads with a mark is 44 px, its mark 32
+    expect(await box(page, '.k2-row[data-lines="1"] > .k2-row-lead > .k2-mk')).toBe("32x32");
+    expect(
+      await page
+        .locator('.k2-row[data-lines="1"][data-mark]')
+        .first()
+        .evaluate((row) => Math.round(row.getBoundingClientRect().height)),
+    ).toBe(44);
     expect(await box(page, '.k2-row[data-lines="2"][data-mark] > .k2-row-lead > .k2-mk')).toBe("32x32");
     expect(await box(page, ".k2-tiles[data-variant='card'] .k2-tile-top > .k2-mk")).toBe("36x36");
     expect(await box(page, ".k2-row[data-activity] .k2-row-l1 .k2-mk")).toBe("20x20");
@@ -192,14 +246,42 @@ test("a stack in a narrow column shows the faces it holds whole and counts the r
           };
         }),
       );
-      // 4, 8 and 30 people: the count belongs to the faces that stand, one count each, whole and inside the cell
-      expect(found.map((stack) => stack.counts)).toEqual([1, 1, 1]);
-      expect(found.map((stack) => Number(stack.text?.slice(1)) + stack.faces)).toEqual([4, 8, 30]);
+      // 4, 8 and 30 people: the count belongs to the faces that stand, one count each, whole and inside the cell; 2 and
+      // 3 people all show, without a count
+      expect(found.map((stack) => stack.counts)).toEqual([1, 1, 1, 0, 0]);
+      expect(found.slice(0, 3).map((stack) => Number(stack.text?.slice(1)) + stack.faces)).toEqual([4, 8, 30]);
+      expect(found.slice(3).map((stack) => stack.faces)).toEqual([2, 3]);
       for (const stack of found) {
         expect(stack.faces).toBeGreaterThanOrEqual(1);
         expect(stack.whole).toBe(true);
         expect(stack.inside).toBe(true);
       }
+    }, width);
+});
+
+test("a stack whose people all show ends at its last face, faces overlap at most a quarter with a ring, initials from first and last name (W3, review A)", async () => {
+  for (const width of [390, 1024, 1440])
+    await withPage(async (page) => {
+      const found = await page.locator(".k2-table td .k2-avs[data-all]").evaluateAll((stacks) =>
+        stacks.map((stack) => {
+          const faces = [...stack.querySelectorAll<HTMLElement>(".k2-av")];
+          const boxes = faces.map((face) => face.getBoundingClientRect());
+          return {
+            // no room after the last face (a count it does not need)
+            gap: Math.round(stack.getBoundingClientRect().right - boxes.at(-1)!.right),
+            // each face lies over the one before by at most a quarter of its width
+            overlap: Math.max(0, ...boxes.slice(1).map((box, index) => (boxes[index]!.right - box.left) / box.width)),
+            ring: getComputedStyle(faces[0]!).boxShadow.includes("2px"),
+            initials: faces.map((face) => face.textContent),
+          };
+        }),
+      );
+      expect(found.map(({ gap }) => gap)).toEqual([0, 0]);
+      for (const stack of found) {
+        expect(stack.overlap).toBeLessThanOrEqual(0.25);
+        expect(stack.ring).toBe(true);
+      }
+      expect(found[0]!.initials).toEqual(["CM", "🦊B"]);
     }, width);
 });
 

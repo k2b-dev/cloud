@@ -49,6 +49,9 @@ export const AdminBaseRowSchema = z.object({
   rollupLag: z.boolean(),
   id: z.string(),
   name: z.string(),
+  /** The base's symbol (`ti ti-…`) and colour name; older servers leave them out. */
+  icon: z.string().optional(),
+  color: z.string().optional(),
   admins: z.array(z.string()),
   adminCount: z.number(),
   rawRetentionDays: z.number(),

@@ -1,18 +1,22 @@
 import { sql } from "@k2b/cloud";
-import { type AuthContext, expectUserBackedActor, getDateConfig } from "@k2b/cloud/server";
+import { type AuthContext, expectUserBackedActor, getDateConfig, resolveDisplayNames } from "@k2b/cloud/server";
 import { get as getSetting } from "@k2b/cloud/services";
 import type { ServiceError } from "@k2b/stdlib";
 import type { Context } from "hono";
+import type { PulseSource } from "../../contracts";
 import { SHORT_ID_REGEX } from "../../lib/short-id";
 import { pulseService } from "../../service";
-import { accessScopeFor, requireBaseAccess } from "../../service/access-control";
+import { accessScopeFor, requireBaseAccess, withPageAccess } from "../../service/access-control";
 import { alertRules } from "../../service/alert-rules";
 import { readBaseAttention } from "../../service/base-attention";
+import { baseNav } from "../../service/base-nav";
 import { readBasePolicy } from "../../service/base-policy";
-import { projectBases, projectSources, resolveBasePublicId, resolvePublicId } from "../../service/public-resources";
+import { projectSources, resolveBasePublicId, resolvePublicId } from "../../service/public-resources";
 import { savedQueries } from "../../service/saved-queries";
 import { baseSqlLimits } from "../../service/sql-service";
+import type { QueryAuthor } from "../screens/QueriesScreen";
 import { readWorkspacePathState } from "../workspace/routes";
+import { SOURCES_PAGE } from "../workspace/source-page";
 import type { PulseWorkspaceProps } from "../workspace/types";
 
 const publicOrigin = (rawAppUrl: string | null | undefined, requestOrigin: string): string => {
@@ -30,8 +34,12 @@ const publicOrigin = (rawAppUrl: string | null | undefined, requestOrigin: strin
   }
 };
 
-type PageData = { kind: "error"; status: ServiceError["status"] } | { kind: "ok"; baseName: string; workspaceProps: PulseWorkspaceProps };
-export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Context<T>): Promise<PageData> {
+const noSources: PulseSource[] = [];
+
+type PageData =
+  | { kind: "error"; status: ServiceError["status"] }
+  | { kind: "ok"; baseName: string; sourceCount: number; workspaceProps: PulseWorkspaceProps };
+async function loadWorkspace<T extends AuthContext>(c: Context<T>): Promise<PageData> {
   const user = expectUserBackedActor(c);
   const url = new URL(c.req.raw.url);
   const publicBaseId = c.req.param("baseId") ?? "";
@@ -39,37 +47,42 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
   const baseId = await resolvePublicId("bases", publicBaseId);
   if (!baseId) return { kind: "error", status: 404 };
   const route = readWorkspacePathState(`${url.pathname}${url.search}`, publicBaseId);
-  const [base, bases, appUrl] = await Promise.all([
+  const [base, nav, appUrl] = await Promise.all([
     pulseService.base.get(baseId, user),
-    pulseService.base.list(user),
+    // the sidebar names the bases lean: one statement, nothing the sidebar does not show
+    baseNav(user, { currentId: publicBaseId }),
     getSetting<string>("app.url").catch(() => ""),
   ]);
   if (!base.ok) return { kind: "error", status: base.error.status };
-  // The sidebar counts the sources on every view of the base.
-  const sources = await pulseService.source.list(baseId, user, { signal: c.req.raw.signal });
+  // The sources view lists the sources with their store figures; every other view needs only their number for its tab.
+  const sources =
+    route.view === "sources"
+      ? // one page of sources with their store figures, as many as the table shows at a time (bounded read)
+        await pulseService.source.list(baseId, user, {
+          signal: c.req.raw.signal,
+          limit: SOURCES_PAGE,
+          query: url.searchParams.get("q")?.trim() || null,
+        })
+      : { ok: true as const, data: noSources };
   if (!sources.ok) return { kind: "error", status: sources.error.status };
+  const sourceCount = await pulseService.source.count(baseId, user);
+  if (!sourceCount.ok) return { kind: "error", status: sourceCount.error.status };
   const scope = accessScopeFor(c.get("actor"), c.get("accessSubject"));
-  const [write, admin] = scope.ok
-    ? await Promise.all([requireBaseAccess(baseId, scope.data, "write"), requireBaseAccess(baseId, scope.data, "admin")])
-    : [null, null];
-  const [policy, managers] = await Promise.all([
-    readBasePolicy(),
-    sql<{ name: string }[]>`SELECT COALESCE(u.display_name,sa.name,g.name,'Member') AS name
-      FROM pulse.base_access ba JOIN auth.access a ON a.id=ba.access_id
-      LEFT JOIN auth.users u ON u.id=a.user_id LEFT JOIN auth.service_accounts sa ON sa.id=a.service_account_id
-      LEFT JOIN auth.groups g ON g.id=a.group_id WHERE ba.base_id=${baseId}::uuid AND a.permission='admin'
-      ORDER BY a.created_at LIMIT 3`,
-  ]);
+  // one read of the person's level answers both: may they write, may they administer
+  const level = scope.ok ? await requireBaseAccess(baseId, scope.data, "read") : null;
+  const levelData = level?.ok ? level.data : "none";
+  // Settings have a page of their own now (settings.page.tsx); the views of a base need no policy or admin names.
   const props: PulseWorkspaceProps = {
-    initialSettings: { maxRawRetentionDays: policy.maxRawRetentionDays, admins: managers.map((manager) => manager.name) },
-    initialPermissions: { write: write?.ok ?? false, admin: admin?.ok ?? false },
-    initialBases: await projectBases(bases.ok ? bases.data : [base.data]),
+    initialPermissions: { write: levelData === "write" || levelData === "admin", admin: levelData === "admin" },
+    initialNav: nav,
+    // the base names itself by its public id, as every address does
+    initialBase: { ...base.data, id: base.data.shortId },
     initialBaseId: publicBaseId,
     initialRouteState: route,
     initialSources: await projectSources(sources.data),
     initialSourceScrapes: {},
     initialSourceApiKeys: {},
-    initialQueryCoverage: { bases: bases.ok, baseData: true, sourceDetail: true },
+    initialQueryCoverage: { base: true, baseData: true, sourceDetail: true },
     initialDateConfig: getDateConfig(c),
     initialNow: new Date().toISOString(),
     initialOrigin: publicOrigin(appUrl, url.origin),
@@ -77,9 +90,14 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
   };
   // Sources renders the alerts that fired and the data store state on the server.
   if (route.view === "sources") {
-    const attention = await readBaseAttention({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId });
+    const [attention, figures] = await Promise.all([
+      readBaseAttention({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId }),
+      pulseService.source.figures(baseId, user, new Date(), c.req.raw.signal),
+    ]);
     if (!attention.ok) return { kind: "error", status: attention.error.status };
     props.initialAttention = attention.data;
+    // the figures cover all sources, while the list shows their first page
+    props.initialFigures = figures.ok ? figures.data : null;
   }
   if (route.view === "sql") {
     const identity = { actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId };
@@ -100,19 +118,115 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
       error: limits.ok ? null : { code: limits.error.code, details: { ...limits.error } },
     };
   }
-  if (route.sourceId) {
+  if (route.view === "sources" && route.sourceId) {
     const sourceId = await resolveBasePublicId("sources", baseId, route.sourceId);
     const source = sources.data.find((source) => source.id === sourceId);
     if (!source) return { kind: "error", status: 404 };
-    const [scrapes, keys] = await Promise.all([
+    const [scrapes, keys, minutes, alerts, history] = await Promise.all([
       pulseService.source.scrapes({ baseId, sourceId: source.id, user }),
       source.kind === "http_ingest"
         ? pulseService.source.apiKeys.list({ baseId, sourceId: source.id, user })
         : Promise.resolve({ ok: true as const, data: [] }),
+      source.kind === "metrics"
+        ? pulseService.source.hour({ baseId, sourceId: source.id, user })
+        : Promise.resolve({ ok: true as const, data: [] }),
+      pulseService.source.alerts({ baseId, sourceId: source.id, user }),
+      pulseService.source.history({ baseId, sourceId: source.id, user }),
     ]);
     props.initialSourceScrapes[route.sourceId] = scrapes.ok ? scrapes.data : [];
+    props.initialSourceMinutes = { [route.sourceId]: minutes.ok ? minutes.data : [] };
+    props.initialSourceAlerts = { [route.sourceId]: alerts.ok ? alerts.data : [] };
+    props.initialSourceHistory = { [route.sourceId]: history.ok ? history.data : [] };
     props.initialSourceApiKeys[route.sourceId] = keys.ok ? keys.data : [];
     props.initialQueryCoverage.sourceDetail = scrapes.ok && keys.ok;
   }
-  return { kind: "ok", baseName: base.data.name, workspaceProps: props };
+  return { kind: "ok", baseName: base.data.name, sourceCount: sourceCount.data, workspaceProps: props };
 }
+
+/** The base, the bases beside it and its source count: what every page of a base shows around its own content. */
+const loadBaseShell = async <T extends AuthContext>(c: Context<T>) => {
+  const user = expectUserBackedActor(c);
+  const publicBaseId = c.req.param("baseId") ?? "";
+  if (!SHORT_ID_REGEX.test(publicBaseId)) return { kind: "error" as const, status: 404 as const };
+  const baseId = await resolvePublicId("bases", publicBaseId);
+  if (!baseId) return { kind: "error" as const, status: 404 as const };
+  const [base, nav, sources] = await Promise.all([
+    pulseService.base.get(baseId, user),
+    baseNav(user, { currentId: publicBaseId }),
+    pulseService.source.count(baseId, user),
+  ]);
+  if (!base.ok) return { kind: "error" as const, status: base.error.status };
+  return {
+    kind: "ok" as const,
+    baseId,
+    publicBaseId,
+    base: { ...base.data, id: base.data.shortId },
+    nav,
+    sourceCount: sources.ok ? sources.data : 0,
+    identity: { actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId },
+  };
+};
+
+/** The saved queries of a base, one page of `QUERIES_PER_PAGE` from `?offset=`; a failed read becomes the page's Failed state. */
+async function loadQueries<T extends AuthContext>(c: Context<T>, perPage: number) {
+  const shell = await loadBaseShell(c);
+  if (shell.kind === "error") return shell;
+  const raw = Number(c.req.query("offset") ?? 0);
+  const offset = Number.isSafeInteger(raw) && raw > 0 ? raw : 0;
+  const page = await savedQueries.list({ ...shell.identity, limit: perPage, offset });
+  if (!page.ok && page.error.status !== 500) return { kind: "error" as const, status: page.error.status };
+  const authors = page.ok ? await authorNames(page.data.items.flatMap((query) => [query.updatedBy, query.createdBy])) : {};
+  return { ...shell, offset, page: page.ok ? page.data : null, authors, dateConfig: getDateConfig(c) };
+}
+
+/**
+ * Who changed each saved query, by id, named as the access lists name people and agents (display names, code accounts,
+ * disabled accounts); an id is a person's or an agent's, so people are tried first. Ids that are gone stay out.
+ */
+const authorNames = async (ids: (string | null)[]): Promise<Record<string, QueryAuthor>> => {
+  const unique = [...new Set(ids.filter((id): id is string => id !== null))];
+  if (unique.length === 0) return {};
+  const people = await resolveDisplayNames(unique.map((id) => ({ principal: { type: "user" as const, userId: id } })));
+  const rest = unique.filter((_, index) => !people[index]?.displayName);
+  const agents = await resolveDisplayNames(rest.map((id) => ({ principal: { type: "service_account" as const, serviceAccountId: id } })));
+  const named = [
+    ...people.map((entry, index) => [unique[index], entry] as const),
+    ...agents.map((entry, index) => [rest[index], entry] as const),
+  ];
+  return Object.fromEntries(named.filter(([id, entry]) => id && entry.displayName));
+};
+
+/** A base's settings: who may change them and who administers it, plus what the open tab shows on its first picture. */
+async function loadSettings<T extends AuthContext>(c: Context<T>, tab: string) {
+  const shell = await loadBaseShell(c);
+  if (shell.kind === "error") return shell;
+  const scope = accessScopeFor(c.get("actor"), c.get("accessSubject"));
+  const admin = scope.ok ? await requireBaseAccess(shell.baseId, scope.data, "admin") : null;
+  const canAdmin = admin?.ok ?? false;
+  const [policy, managers, access, limits] = await Promise.all([
+    tab === "retention" ? readBasePolicy() : null,
+    canAdmin
+      ? []
+      : sql<{ name: string }[]>`SELECT COALESCE(u.display_name,sa.name,g.name,'Member') AS name
+      FROM pulse.base_access ba JOIN auth.access a ON a.id=ba.access_id
+      LEFT JOIN auth.users u ON u.id=a.user_id LEFT JOIN auth.service_accounts sa ON sa.id=a.service_account_id
+      LEFT JOIN auth.groups g ON g.id=a.group_id WHERE ba.base_id=${shell.baseId}::uuid AND a.permission='admin'
+      ORDER BY a.created_at LIMIT 3`,
+    tab === "members" && canAdmin && scope.ok ? pulseService.base.access.list(shell.baseId, scope.data) : null,
+    tab === "usage" ? baseSqlLimits(shell.identity) : null,
+  ]);
+  return {
+    ...shell,
+    canAdmin,
+    admins: managers.map((manager) => manager.name),
+    maxRawRetentionDays: policy?.maxRawRetentionDays ?? 3650,
+    access: access?.ok ? access.data : null,
+    limits: limits?.ok ? limits.data : null,
+  };
+}
+
+// every page of a base reads the person's grant once per load (withPageAccess), however many services check it
+export const loadPulseWorkspacePageData = <T extends AuthContext>(c: Context<T>) => withPageAccess(() => loadWorkspace(c));
+export const loadPulseQueriesPageData = <T extends AuthContext>(c: Context<T>, perPage: number) =>
+  withPageAccess(() => loadQueries(c, perPage));
+export const loadPulseSettingsPageData = <T extends AuthContext>(c: Context<T>, tab: string) => withPageAccess(() => loadSettings(c, tab));

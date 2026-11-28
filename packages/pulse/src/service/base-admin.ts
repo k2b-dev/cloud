@@ -62,6 +62,8 @@ const adminBaseRow = async (baseId: string, now = new Date()) => {
     {
       short_id: string;
       name: string;
+      icon: string;
+      color: string;
       retention_days: number;
       rollup_retention_days: number;
       sensitive_retention_hours: number;
@@ -80,6 +82,8 @@ const adminBaseRow = async (baseId: string, now = new Date()) => {
     rollupLag: base.rollup_lag,
     id: base.short_id,
     name: base.name,
+    icon: base.icon,
+    color: base.color,
     admins: names.slice(0, 3).map((n) => n.name),
     adminCount: names[0]?.count ?? 0,
     rawRetentionDays: base.retention_days,

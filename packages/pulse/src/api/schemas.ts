@@ -1,7 +1,20 @@
-import { PermissionLevelSchema, PrincipalSchema, ServiceAccountCredentialSchema } from "@k2b/cloud/contracts";
+import { AccessMemberSchema, PermissionLevelSchema, PrincipalSchema, ServiceAccountCredentialSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { BaseColorSchema, BaseIconSchema, BaseTimezoneSchema } from "../base-settings";
-import { METRIC_TYPES, SOURCE_KINDS } from "../contracts";
+import {
+  BASE_PAGE_MAX,
+  FETCH_TICKS,
+  FETCHES_TODAY_SLOTS,
+  METRIC_TYPES,
+  SOURCE_HOUR_MINUTES,
+  SOURCE_KINDS,
+  SOURCE_PAGE_MAX,
+} from "../contracts";
+
+export { SOURCE_ALERTS_MAX } from "../service/source-alerts";
+export { SOURCE_HISTORY_MAX } from "../service/source-history";
+export { SOURCE_HOUR_MINUTES, SOURCE_PAGE_MAX };
+
 import { PULSE_EXTERNAL_INGEST_BATCH_LIMIT, PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT } from "../ingest-limits";
 import { MetricFiltersSchema } from "../metric-filters";
 import { BaseStoreStatusSchema } from "../store/admin-schemas";
@@ -213,6 +226,7 @@ export const MessageSchema = z.object({ message: z.string() });
 
 export const BaseSchema = z.object({
   memberCount: z.number().int().nonnegative(),
+  members: z.array(AccessMemberSchema).max(3).optional(),
   store: BaseStoreStatusSchema,
   shortId: PulseShortIdSchema,
   icon: BaseIconSchema,
@@ -241,9 +255,59 @@ export const StoreOutageSchema = z.object({ unavailable: z.boolean(), since: z.s
 /** One base as its read route returns it: the list fields plus the live store outage the Sources tab re-checks. */
 export const BaseReadSchema = BaseSchema.extend({ outage: StoreOutageSchema });
 
+export const BasePageQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(BASE_PAGE_MAX).optional().describe(`Bases per page, ${BASE_PAGE_MAX} at most and by default`),
+  offset: z.coerce.number().int().min(0).optional().describe("Bases to skip, for the next page"),
+  q: z.string().trim().max(200).optional().describe("Only bases whose name or description contains these words"),
+});
+export const SourcePageQuerySchema = z.object({
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(SOURCE_PAGE_MAX)
+    .optional()
+    .describe(`Sources per page, ${SOURCE_PAGE_MAX} at most and by default`),
+  offset: z.coerce.number().int().min(0).optional().describe("Sources to skip, for the next page"),
+  q: z.string().trim().max(200).optional().describe("Only sources whose name contains these words"),
+});
+export const SourceFiguresSchema = z.object({
+  total: z.number().int().nonnegative(),
+  active: z.number().int().nonnegative(),
+  failingCount: z.number().int().nonnegative(),
+  failing: z
+    .array(z.object({ id: z.string(), name: z.string(), since: z.string().nullable() }))
+    .max(3)
+    .describe("The first three failing sources, newest failure first, with since when they fail"),
+  waiting: z.number().int().nonnegative().describe("Enabled sources that have never delivered"),
+  series: z.number().int().nonnegative(),
+  today: z
+    .number()
+    .int()
+    .nonnegative()
+    .nullable()
+    .describe("Values delivered today in the base's zone; null while the store cannot answer"),
+  fetchesToday: z
+    .object({
+      ok: z.number().int().nonnegative(),
+      failed: z.number().int().nonnegative(),
+      slots: z
+        .array(z.enum(["ok", "bad", "none"]))
+        .length(FETCHES_TODAY_SLOTS)
+        .describe('Half-hour slots from 00:00 in the base\'s zone: "bad" once one fetch failed, "none" without a fetch'),
+    })
+    .nullable()
+    .describe(`Today's fetches of the metrics sources in ${FETCHES_TODAY_SLOTS} half-hour slots of the base's day`),
+});
+
 export const SourceSchema = z.object({
   seriesCount: z.number().int().nonnegative().optional(),
   todayCount: z.number().int().nonnegative().nullable().optional(),
+  fetches: z
+    .array(z.enum(["ok", "bad", "none"]))
+    .max(FETCH_TICKS)
+    .optional()
+    .describe(`In lists, for metrics sources: the last ${FETCH_TICKS} minutes of fetches, oldest first`),
   id: PulseShortIdSchema,
   baseId: PulseShortIdSchema,
   kind: z.enum(SOURCE_KINDS),
@@ -263,6 +327,25 @@ export const SourceSchema = z.object({
   lastErrorAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
+});
+
+export const SourceEventSchema = z.object({
+  at: z.string(),
+  kind: z.enum(["created", "updated", "stale", "fresh"]),
+  actor: z.object({ kind: z.enum(["user", "service_account"]), name: z.string() }).nullable(),
+});
+
+export const SourceAlertSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  state: z.enum(["ok", "pending", "firing", "no_data", "error"]),
+  severity: z.enum(["warn", "critical"]).nullable(),
+  since: z.string().nullable(),
+});
+
+export const FetchMinuteSchema = z.object({
+  slot: z.enum(["ok", "bad", "none"]).describe("ok: every fetch of the minute worked; bad: one failed; none: none ran"),
+  values: z.number().int().nonnegative().describe("Values the minute's fetches brought"),
 });
 
 export const SourceScrapeSchema = z.object({

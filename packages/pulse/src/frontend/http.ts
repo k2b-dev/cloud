@@ -4,7 +4,7 @@ const withJsonContentType = (init?: RequestInit): Headers => {
   return headers;
 };
 
-const messageFromBody = (body: unknown, fallback: string): string => {
+export const messageFromBody = (body: unknown, fallback: string): string => {
   return body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : fallback;
 };
 

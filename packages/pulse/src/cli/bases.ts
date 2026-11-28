@@ -1,7 +1,7 @@
 import { arg, cloudResourceUrl, command, confirmFlag, flag, withCloudResourcePermalink } from "@k2b/cloud/cli";
 import { z } from "zod";
 import type { PulseBase } from "../contracts";
-import { PULSE_BASE_DEFAULT_KEY, requireDefaultBaseRef, resolveBase, resolveBaseFromCommand } from "./context";
+import { listAllBases, PULSE_BASE_DEFAULT_KEY, requireDefaultBaseRef, resolveBase, resolveBaseFromCommand } from "./context";
 import { baseFlag } from "./flags";
 import { baseRows } from "./rows";
 import { jsonRequest, printJsonOrTable, printMessage, printStructured, readApi } from "./shared";
@@ -11,7 +11,7 @@ export const baseCommands = [
   command("list", {
     summary: "List Pulse bases",
     async run({ ctx }) {
-      const bases = await readApi<PulseBase[]>(ctx, "/bases");
+      const bases = await listAllBases(ctx);
       printJsonOrTable(
         ctx,
         bases.map((resource) => withCloudResourcePermalink(ctx, "pulse.base", resource)),
