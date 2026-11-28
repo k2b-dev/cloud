@@ -62,6 +62,15 @@ test("a spark scales its bars to the highest value and keeps a sliver for a zero
   expect(html(Spark, { values: [0, 0], label: "Nichts" }).match(/--k2-v:(\d+)%/g)).toEqual(["--k2-v:8%", "--k2-v:8%"]);
 });
 
+test("sparks that share a max give the same value the same height, and a value above it stands at the top", () => {
+  const bars = (values: number[], max?: number) => html(Spark, { values, label: "Änderungen", max }).match(/--k2-v:(\d+)%/g);
+  expect(bars([10, 20], 40)).toEqual(["--k2-v:25%", "--k2-v:50%"]);
+  expect(bars([20, 5], 40)).toEqual(["--k2-v:50%", "--k2-v:13%"]);
+  expect(bars([30, 80], 40)).toEqual(["--k2-v:75%", "--k2-v:100%"]);
+  // a max of nothing is a spark with nothing to show: slivers, never a division by zero
+  expect(bars([3, 4], 0)).toEqual(["--k2-v:8%", "--k2-v:8%"]);
+});
+
 test("a card sends its mark, figures, people, history and the card that makes a new thing", () => {
   const cards = html(Tiles, {
     variant: "card",

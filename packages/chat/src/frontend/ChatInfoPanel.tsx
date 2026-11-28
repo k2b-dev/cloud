@@ -28,12 +28,8 @@ const SEARCH_DELAY_MS = 250;
 /** `groupSize` stops counting here; the server answers 501 for "more than 500". */
 const GROUP_COUNT_LIMIT = 500;
 
-/**
- * The chat's info beside the history, or its own page on a phone: the purpose and the members, a page of 100 at a
- * time and searchable on the server. Managers change permissions and remove members by the permission editor's rules;
- * the server decides every change again.
- */
-export default function ChatInfoPanel(props: {
+/** What the chat's info shows and does, in v1's panel and in v2's info column. */
+export type ChatInfoPanelProps = {
   conversation: Conversation;
   viewerId: string;
   /** Members load only while the panel shows. */
@@ -52,7 +48,16 @@ export default function ChatInfoPanel(props: {
   notificationProps?: ComponentProps<typeof ChatNotificationSettings>;
   onDiscovery?: () => void;
   onLeave: () => void;
-}): JSX.Element {
+};
+
+/**
+ * The members' state: a page of 100 at a time, searchable on the server, changed by managers by the permission editor's
+ * rules. `focus` names where the focus returns after a page or a removal, as v1 does.
+ */
+export function createMemberList(
+  props: ChatInfoPanelProps,
+  focus: { list: () => HTMLElement | undefined; retry: () => HTMLElement | undefined } = { list: () => undefined, retry: () => undefined },
+) {
   const t = useChatMessages();
   const [input, setInput] = createSignal("");
   const [query, setQuery] = createSignal("");
@@ -67,8 +72,6 @@ export default function ChatInfoPanel(props: {
   const membershipRevision = createMemo(() => props.revision);
   const system = () => props.conversation.kind === "system";
   const manager = () => !system() && props.conversation.permission === "admin";
-  let list: HTMLUListElement | undefined;
-  let retryMore: HTMLButtonElement | undefined;
   let request = 0;
 
   const read = (after?: string) =>
@@ -119,8 +122,9 @@ export default function ChatInfoPanel(props: {
     if (mine !== request) return;
     // The button leaves after the last page, and the retry after it worked; reading goes on in the list. A failure
     // takes the button's place, so focus moves to its retry.
+    const list = focus.list();
     if (moreFailed()) {
-      if (!document.activeElement || document.activeElement === document.body) retryMore?.focus();
+      if (!document.activeElement || document.activeElement === document.body) focus.retry()?.focus();
     } else if ((!cursor() || retry) && list?.contains(document.activeElement) === false) list.focus();
   };
   createEffect(
@@ -175,7 +179,7 @@ export default function ChatInfoPanel(props: {
       const result = await store.removeMember(props.conversation.id, member.accessId);
       if (result.keptThroughGroup) toast(t().removedKeptThroughGroup({ name: member.displayName }));
       setRows((current) => current.filter((row) => row.accessId !== member.accessId));
-      list?.focus();
+      focus.list()?.focus();
       await recount();
     } catch (failure) {
       toast.error(errorMessage(failure, t().requestFailed));
@@ -208,7 +212,56 @@ export default function ChatInfoPanel(props: {
               ]
             : []),
         ];
+  return {
+    t,
+    input,
+    setInput,
+    query,
+    rows,
+    managers,
+    cursor,
+    status,
+    loadingMore,
+    moreFailed,
+    changing,
+    system,
+    manager,
+    load,
+    more,
+    changePermission,
+    remove,
+    commands,
+  };
+}
 
+/**
+ * The chat's info beside the history, or its own page on a phone: the purpose and the members, a page of 100 at a
+ * time and searchable on the server. Managers change permissions and remove members by the permission editor's rules;
+ * the server decides every change again.
+ */
+export default function ChatInfoPanel(props: ChatInfoPanelProps): JSX.Element {
+  let list: HTMLUListElement | undefined;
+  let retryMore: HTMLButtonElement | undefined;
+  const {
+    t,
+    input,
+    setInput,
+    query,
+    rows,
+    managers,
+    cursor,
+    status,
+    loadingMore,
+    moreFailed,
+    changing,
+    system,
+    manager,
+    load,
+    more,
+    changePermission,
+    remove,
+    commands,
+  } = createMemberList(props, { list: () => list, retry: () => retryMore });
   return (
     <DetailPanel>
       <DetailPanel.Header

@@ -392,7 +392,8 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  /* clips like hidden, but nothing scrolls it: not a fragment jump, not scrollIntoView (fragment-jump.browser.test) */
+  overflow: clip;
   background: var(--k2-surface);
   border: 1px solid var(--k2-card-edge);
   border-radius: var(--k2-r-card);
@@ -404,7 +405,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: clip;
 }
 .k2-ui .k2-ws-main {
   flex: 1;
@@ -412,7 +413,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: clip;
   /* the place of a split at the top, as wide as it: a split's own rule asks it (see `Pane side`) */
   container: k2-host / inline-size;
 }
@@ -461,7 +462,7 @@
   border: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: clip;
   background: var(--k2-surface);
   color: var(--k2-text);
   border-radius: 0 var(--k2-r-overlay) var(--k2-r-overlay) 0;
@@ -563,7 +564,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: clip;
   background: var(--k2-surface);
 }
 /* A column with a width keeps its default while there is room and gives way down to its minimum; the flexible column
@@ -706,7 +707,7 @@
   display: flex;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow: clip;
 }
 .k2-ui .k2-scroll > .k2-split {
   flex: 1 0 auto;
@@ -6054,6 +6055,16 @@
   .k2-ui .k2-split {
     flex-direction: column;
     overflow: visible;
+  }
+  /* While its panes stand one under the other, the split of the main column is the page's scroll: the frame around it
+     clips and never scrolls, so a finger, the wheel or a jump moves this split (fab-room.browser.test). */
+  .k2-ui .k2-ws-main > .k2-split {
+    overflow: hidden auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+  }
+  .k2-ui .k2-ws-main > .k2-split::-webkit-scrollbar {
+    display: none;
   }
   .k2-ui .k2-split > .k2-seam {
     width: auto;

@@ -429,6 +429,18 @@ test("a key number shows its trend at the end of its value", async () => {
   });
 });
 
+test("key numbers side by side share one scale when their sparks share a max", async () => {
+  await withPage(async (page) => {
+    const lasts = await page
+      .locator(".k2-cell .k2-spark")
+      .evaluateAll((sparks) => sparks.map((spark) => spark.querySelector("i:last-child")!.getBoundingClientRect().height));
+    // 41 of 41 fills the 20 px; 9 of 41 is about a fifth of it, not the full height of its own highest day
+    expect(lasts.length).toBe(2);
+    expect(lasts[0]).toBe(20);
+    expect(Math.abs(lasts[1]! - 20 * (9 / 41))).toBeLessThan(1);
+  });
+});
+
 for (const width of [1440, 1024, 390])
   test(`the identity screen keeps the layout rules at ${width} px`, async () => {
     await withPage(async (page) => {
