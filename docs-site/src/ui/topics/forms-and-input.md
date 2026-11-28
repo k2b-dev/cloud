@@ -125,6 +125,12 @@ One choice from a few options, all visible.
 
 <Props of="Choice" />
 
+### Rating
+
+Stars from 1 to 5 to rate something, such as a visit: five large stars as one radio group. It is one Tab stop; the arrows move and choose, Space and Enter choose the star in focus, and Enter on the chosen star sends the form, as on any radio. Each star is named by its value ("3 von 5 Sternen"). A star is 56 px high and 44 to 96 px wide, so a thumb meets it on the phone, where the row still fits. A chosen star fills in the amber of a toggle that is on. The `Field` around it gives the question, `required` (the form is not sent without stars), the hint (such as the reading "4 von 5 · Gut") and the error. With `readOnly` it shows a given rating as small stars in a line, one picture with its words; an average such as 4.2 fills part of a star.
+
+<Props of="Rating" />
+
 ## Not in v2 yet
 
 - A time field: a time is an `Input` with a placeholder such as "09:00".

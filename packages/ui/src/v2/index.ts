@@ -87,6 +87,8 @@ export {
   Input,
   type InputProps,
   type InputSend,
+  Rating,
+  type RatingProps,
   Select,
   type SelectOption,
   type SelectProps,
