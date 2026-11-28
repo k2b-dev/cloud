@@ -80,10 +80,8 @@ suite("Notebook graph read access on SSR and REST", () => {
       expect(html).not.toContain("Body must stay out of the graph.");
       const [island] = await selectHtml(html, 'solid-island[data-file="NotebookGraph.island.tsx"]');
       expect(island).toBeDefined();
-      const serialized = island!.attributes["data-props"]!;
-      const props = fromJSON<{ graph: NoteGraph; selectedNoteId: string; from: string }>(
-        JSON.parse(serialized.replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&")),
-      );
+      const serialized = /<solid-island[^>]*data-file="NotebookGraph\.island\.tsx"><!--ssr-props:([^>]*)-->/.exec(html)?.[1];
+      const props = fromJSON<{ graph: NoteGraph; selectedNoteId: string; from: string }>(JSON.parse(serialized ?? ""));
       expect(props.selectedNoteId).toBe(a1.shortId);
       expect(props.from).toBe("book");
       expect(props.graph.nodes.map((node) => node.title).sort()).toEqual([a1.title, a2.title].sort());

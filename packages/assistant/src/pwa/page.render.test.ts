@@ -156,7 +156,11 @@ const render = async (path: string, headers: Record<string, string> = {}) => {
   return { response, document: parser.parseFromString(html, "text/html") as unknown as Document };
 };
 const islandProps = (document: Document) =>
-  fromJSON(JSON.parse(document.querySelector('solid-island[data-file*="AssistantPwa"]')?.getAttribute("data-props") ?? "null")) as {
+  fromJSON(
+    JSON.parse(
+      document.querySelector('solid-island[data-file*="AssistantPwa"]')?.firstChild?.nodeValue?.replace(/^ssr-props:/, "") ?? "null",
+    ),
+  ) as {
     initialAddress: unknown;
     initialDetail: { conversation: { title: string } } | null;
     name: string;

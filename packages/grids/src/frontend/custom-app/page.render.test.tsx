@@ -228,7 +228,7 @@ test("a chart block keeps its subtitle above a fixed-height chart and shows its 
   const html = renderToString(() => createComponent(CustomAppPage, input));
   // The subtitle must not eat into the chart's height, or the chart spills over the next block.
   expect(html).toMatch(
-    /<p class="mb-3 text-sm text-secondary">Open tickets by status<\/p><solid-island data-id="[^"]+"[^>]*><div class="flex h-72 flex-col">/,
+    /<p class="mb-3 text-sm text-secondary">Open tickets by status<\/p><solid-island data-id="[^"]+"[^>]*><!--ssr-props:[^>]*--><div class="flex h-72 flex-col">/,
   );
   expect(html).toMatch(/class="stdlib-chart-axis-label"[^>]*>Tickets</);
   expect(html).toMatch(/class="stdlib-chart-axis-label"[^>]*>Status</);
@@ -281,15 +281,13 @@ test("signed-in and anonymous chart blocks serialize only display data and prese
     const html = renderToString(() => createComponent(CustomAppPage, input));
     const islands: { id: string | null; file: string | null; props: string | null }[] = [];
     await new HTMLRewriter()
-      .on("solid-island", {
+      .on('solid-island[data-file="Chart.island.tsx"]', {
         element(element) {
-          if (element.getAttribute("data-file") === "Chart.island.tsx") {
-            islands.push({
-              id: element.getAttribute("data-id"),
-              file: element.getAttribute("data-file"),
-              props: element.getAttribute("data-props"),
-            });
-          }
+          islands.push({ id: element.getAttribute("data-id"), file: element.getAttribute("data-file"), props: null });
+        },
+        comments(comment) {
+          const island = islands.at(-1)!;
+          if (island.props === null && comment.text.startsWith("ssr-props:")) island.props = comment.text.slice("ssr-props:".length);
         },
       })
       .transform(new Response(html))
@@ -304,9 +302,7 @@ test("signed-in and anonymous chart blocks serialize only display data and prese
       const island = islands[index]!;
       expect(island.id).toMatch(/^[a-f0-9]{12}$/);
       expect(island.file).toBe("Chart.island.tsx");
-      const props: unknown = fromJSON(
-        JSON.parse(island.props!.replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&")),
-      );
+      const props: unknown = fromJSON(JSON.parse(island.props!));
       const decoded = JSON.stringify(props);
       expect(decoded).toContain('"kind":"' + chartType + '"');
       for (const label of ["Neu", "Kundendienst", "Umsatz"]) expect(decoded).toContain(label);

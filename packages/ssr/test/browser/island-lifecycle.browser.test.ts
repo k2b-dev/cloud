@@ -34,8 +34,7 @@ const build = async (source: string, fallback?: string) => {
 const wrapper = (id: string, label = "one", tag = "solid-island") => {
   const element = document.createElement(tag);
   element.dataset.id = id;
-  element.dataset.props = JSON.stringify(toJSON({ label }));
-  element.textContent = "server HTML";
+  element.innerHTML = `<!--ssr-props:${JSON.stringify(toJSON({ label }))}-->server HTML`;
   return element;
 };
 const lifecycleSource = `
@@ -67,7 +66,9 @@ test("a loaded entry mounts late wrappers exactly once and respects root", async
   const content = root.firstChild;
   mountIslands(root);
   expect(root.textContent).toBe("1");
+  // A wrapper outside root keeps its server markup and its props comment for a later mount.
   expect(outside.textContent).toBe("server HTML");
+  expect(outside.firstChild).toBeInstanceOf(Comment);
   const section = document.createElement("section");
   section.append(root, unloaded);
   document.body.append(section);

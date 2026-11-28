@@ -172,12 +172,12 @@ export const local = i18n.define({ baseLocale: "en", messages: { en: { a: "A" },
         const [entry, id, lang, props] = Bun.argv.slice(2);
         const dom = createDomTestHarness();
         dom.document.documentElement.lang = lang;
-        dom.document.body.innerHTML = '<solid-island data-id="' + id + '" data-props="' + props + '"><p>SSR</p></solid-island>';
+        dom.document.body.innerHTML = '<solid-island data-id="' + id + '"><!--ssr-props:' + props + '--><p>SSR</p></solid-island>';
         await import(entry);
         console.log(JSON.stringify(dom.document.querySelector("solid-island").textContent));
         process.exit(0);`,
       );
-      const props = JSON.stringify(toJSON({})).replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+      const props = JSON.stringify(toJSON({}));
       // Server rendering resolves the full catalogs, as \`probeText\` does here.
       const { probeText } = await import(join(root, "probe.ts"));
       for (const lang of ["en", "de", "de-CH", "fr", "en-GB"]) {
