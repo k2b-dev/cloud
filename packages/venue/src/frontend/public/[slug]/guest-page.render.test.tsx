@@ -6,7 +6,8 @@ import "../../ssr-test-plugin";
 import type { PublicSection, PublicStatus } from "../../../contracts";
 import { cafe, guestStates, saturdayAt, statusAt } from "./guest-page.browser-fixture";
 
-const { GuestPage, GuestUnavailable } = await import("./guest-page");
+const { GuestPage, GuestUnavailable, linkTarget } = await import("./guest-page");
+const { formatPhone } = await import("../../../phone-format");
 const { GuestFeedbackPage } = await import("./feedback/guest-feedback-page");
 
 const render = (locale: string, content: () => JSX.Element) =>
@@ -147,6 +148,24 @@ describe("Venue guest page: content and facts", () => {
     const words = text(render("de", () => createComponent(GuestUnavailable, {})));
     expect(words).toContain("Diese Seite ist nicht verfügbar");
     expect(words).toContain("Standorte öffnen");
+  });
+});
+
+describe("Venue guest page: what a link row names", () => {
+  test("a site, with the one path step that names an account; mail and Cloud paths as they are", () => {
+    expect(linkTarget("https://instagram.example/campuscafenord")).toBe("instagram.example/campuscafenord");
+    expect(linkTarget("https://campus.example.org/lageplan/n2")).toBe("campus.example.org");
+    expect(linkTarget("https://kellerbar.example.org/")).toBe("kellerbar.example.org");
+    expect(linkTarget("mailto:cafe-nord@example.org")).toBe("cafe-nord@example.org");
+    expect(linkTarget("/app/grids/forms/Form01")).toBe("/app/grids/forms/Form01");
+  });
+
+  test("a phone number reads as the server writes it, and as stored without a writer", () => {
+    expect(linkTarget("tel:+493012345678", formatPhone)).toBe("+49 30 12345678");
+    expect(linkTarget("tel:+493012345678")).toBe("+493012345678");
+    const status = guestStates.open();
+    const html = render("de", () => createComponent(GuestPage, { status, feedbackUrl: "/x", phone: formatPhone }));
+    expect(text(html)).toContain("Anrufen +49 30 12345678");
   });
 });
 

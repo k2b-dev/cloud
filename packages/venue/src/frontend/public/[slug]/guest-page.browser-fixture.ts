@@ -12,6 +12,12 @@ export const saturdayAt = (time: string) => new Date(`2026-11-28T${time}:00+01:0
 
 const svg = (markup: string) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
 
+const cafeBanner = svg(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 240" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c2d12"/><stop offset=".55" stop-color="#c2410c"/><stop offset="1" stop-color="#fb923c"/></linearGradient></defs><rect width="1200" height="240" fill="url(#g)"/><rect x="0" y="160" width="1200" height="80" fill="#431407" opacity=".35"/><g fill="#fff7ed" opacity=".25"><rect x="80" y="40" width="150" height="120" rx="6"/><rect x="270" y="40" width="150" height="120" rx="6"/><rect x="460" y="40" width="150" height="120" rx="6"/></g><g transform="translate(760 92)"><path d="M0 36h96v34a30 30 0 0 1-30 30H30A30 30 0 0 1 0 70z" fill="#fff7ed"/><path d="M96 44h12a16 16 0 0 1 0 32H96" fill="none" stroke="#fff7ed" stroke-width="9"/></g><circle cx="1090" cy="150" r="34" fill="#fdba74"/></svg>',
+);
+const worstBanner = svg(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 240" preserveAspectRatio="xMidYMid slice"><rect width="1200" height="240" fill="#422006"/><g fill="#facc15">${Array.from({ length: 14 }, (_, i) => `<circle cx="${40 + i * 88}" cy="${60 + (i % 3) * 50}" r="${10 + (i % 4) * 7}" opacity="${0.25 + (i % 5) * 0.12}"/>`).join("")}</g><rect x="0" y="190" width="1200" height="50" fill="#713f12"/></svg>`,
+);
 const cafeLogo = svg(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="#fff"/><circle cx="32" cy="32" r="24" fill="#c2410c"/><path d="M21 27h18v8a8 8 0 0 1-8 8h-2a8 8 0 0 1-8-8z" fill="#fff"/><path d="M39 29h3a4 4 0 0 1 0 8h-3" fill="none" stroke="#fff" stroke-width="3"/></svg>',
 );
@@ -116,7 +122,13 @@ export const statusAt = (fixture: Fixture, now: Date, overrides: Partial<PublicS
 export const cafe: Fixture = (() => {
   const id = "Cafe01";
   return {
-    venue: venue(id, { name: "Campus-Café Nord", accentColor: "#c2410c", icon: "ti ti-cup", logoBase64: cafeLogo }),
+    venue: venue(id, {
+      name: "Campus-Café Nord",
+      accentColor: "#c2410c",
+      icon: "ti ti-cup",
+      logoBase64: cafeLogo,
+      bannerBase64: cafeBanner,
+    }),
     rules: week(id, [["08:00–18:00"], ["08:00–18:00"], ["08:00–18:00"], ["08:00–18:00"], ["08:00–16:00"], ["10:00–15:00"], []]),
     changes: [
       change(id, "2026-12-03", "closed", "Personalversammlung"),
@@ -219,6 +231,7 @@ export const worst: Fixture = (() => {
     venue: venue(id, {
       name: "Studentisches Kultur- und Begegnungszentrum „Alte Mensa“ – Café, Bar & Veranstaltungsraum im Erdgeschoss",
       accentColor: "#eab308",
+      bannerBase64: worstBanner,
       icon: "ti ti-building-community",
       description: "Café am Tag, Bar am Abend, Bühne am Wochenende 🎶 – offen für alle, auch ohne Studierendenausweis.",
     }),
@@ -311,7 +324,7 @@ export const guestStates = {
   exception: () =>
     statusAt({ ...cafe, changes: [change(cafe.venue.id, "2026-11-28", "closed", "Inventur"), ...cafe.changes] }, saturdayAt("12:00")),
   nosections: () => statusAt({ ...cafe, sections: [] }, saturdayAt("12:00")),
-  nobrand: () => statusAt({ ...cafe, venue: { ...cafe.venue, logoBase64: null } }, saturdayAt("12:00")),
+  nobrand: () => statusAt({ ...cafe, venue: { ...cafe.venue, logoBase64: null, bannerBase64: null } }, saturdayAt("12:00")),
   nofeedback: () => statusAt({ ...cafe, venue: { ...cafe.venue, feedbackEnabled: false } }, saturdayAt("12:00")),
   bar: () => statusAt(bar, saturdayAt("18:00")),
   worst: () => statusAt(worst, saturdayAt("19:00")),

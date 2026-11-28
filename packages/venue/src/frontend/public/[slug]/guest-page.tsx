@@ -3,6 +3,7 @@ import {
   Bar,
   Button,
   Chip,
+  Cover,
   Empty,
   Facts,
   Inline,
@@ -172,24 +173,42 @@ const changeLines = (exception: PublicException, locale: string): RowLines => {
 
 type GuestLink = { label: string; href: string; target: string; icon: string };
 
+/** Writes a stored phone number for reading, such as `+49 30 12345678`; the server passes it, so no page script grows. */
+export type PhoneFormat = (stored: string) => string;
+
 /** A link's quiet sign by its kind: phone, mail, a page on this Cloud, or the web. */
 const linkIcon = (href: string) =>
   href.startsWith("tel:") ? "phone" : href.startsWith("mailto:") ? "mail" : href.startsWith("/") ? "link" : "world";
 
+/**
+ * What a link row names under its label: a path on this Cloud as it is; a web page by its site, with its one path step
+ * where it has exactly one, because that names an account (`instagram.example/campuscafenord`); a mail address; a phone
+ * number written for reading where the server can.
+ */
+export const linkTarget = (href: string, phone?: PhoneFormat): string => {
+  if (href.startsWith("/")) return href;
+  const url = new URL(href);
+  if (url.protocol === "http:" || url.protocol === "https:") {
+    const steps = url.pathname.split("/").filter(Boolean);
+    return steps.length === 1 ? `${url.host}/${steps[0]}` : url.host;
+  }
+  const address = decodeURIComponent(url.pathname);
+  return url.protocol === "tel:" && phone ? phone(address) : address;
+};
+
 /** The section's links that visitors can follow, by the rule that saving a section enforces. */
-const guestLinks = (section: PublicSection): GuestLink[] =>
+const guestLinks = (section: PublicSection, phone?: PhoneFormat): GuestLink[] =>
   sectionList(section, "links").flatMap((raw) => {
     const link = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
     const href = typeof link.href === "string" ? publicLinkHref(link.href) : null;
     if (!href) return [];
-    const url = href.startsWith("/") ? null : new URL(href);
-    const target = !url ? href : url.protocol === "http:" || url.protocol === "https:" ? url.host : href.slice(url.protocol.length);
+    const target = linkTarget(href, phone);
     const label = typeof link.label === "string" && link.label.trim() ? link.label.trim() : target;
     return [{ label, href, target, icon: linkIcon(href) }];
   });
 
 /** One section as guests see it, in the admin's order. */
-const GuestSection = (props: { section: PublicSection; color: string }) => (
+const GuestSection = (props: { section: PublicSection; color: string; phone?: PhoneFormat }) => (
   <Switch>
     <Match when={props.section.kind === "notice"}>
       <Notice tone="warn" title={props.section.title}>
@@ -223,7 +242,9 @@ const GuestSection = (props: { section: PublicSection; color: string }) => (
     </Match>
     <Match when={props.section.kind === "links"}>
       <Section icon="link" color={props.color} title={props.section.title}>
-        <For each={guestLinks(props.section)}>{(link) => <Row icon={link.icon} lines={[link.label, link.target]} href={link.href} />}</For>
+        <For each={guestLinks(props.section, props.phone)}>
+          {(link) => <Row icon={link.icon} lines={[link.label, link.target]} href={link.href} />}
+        </For>
       </Section>
     </Match>
   </Switch>
@@ -282,6 +303,7 @@ const Hours = (props: { status: PublicStatus; t: VenueMessages; locale: string }
           {
             title: props.t.guestScale({ from: from(), to: 24 }),
             // k2b-ui gap: G5 (W5, RangeBar with several ranges): a split day draws from its first start to its last end
+            // k2b-ui gap: G2 (coordinator, after #4227): the bars in the venue's colour, today's strongest; neutral until then
             cell: (row) => (
               <RangeBar
                 from={row.closedToday || row.windows.length === 0 ? Number.NaN : hours(row.windows[0]!.startTime)}
@@ -385,6 +407,7 @@ export const Head = (props: { status: PublicStatus; feedbackUrl?: string; t: Ven
     end={
       <Show when={props.feedbackUrl}>
         {(href) => (
+          // k2b-ui gap: G2 (coordinator, after #4227): the primary in the venue's colour with its readable ink
           <Button variant="primary" href={href()} keep>
             {props.t.guestRate}
           </Button>
@@ -396,9 +419,8 @@ export const Head = (props: { status: PublicStatus; feedbackUrl?: string; t: Ven
 
 /** The statement of now, in the main column under the head. */
 const HeroBand = (props: { hero: Hero }) => (
-  // k2b-ui gap: G4 (TI): the hero figure (30/34) with its time beside it; until then the lead type
-  // k2b-ui gap: G2 (W5 after #4227): the figure in the venue's ink and, without a banner, a tint of its colour
-  // k2b-ui gap: G3 (W5, feat/ui-v2-image-band): the venue's banner as a picture band under the head; left out until then
+  // k2b-ui gap: G4 hero 30/34 (TI): until then the lead type, the largest v2 offers
+  // k2b-ui gap: G2 (coordinator, after #4227): the state in the venue's ink and, without a banner, a tint of its colour
   <Band>
     <Inline>
       <Text type="lead" weight="strong">
@@ -421,6 +443,8 @@ export type GuestPageProps = {
   status: PublicStatus;
   /** Where "Rate" leads while the venue takes feedback. */
   feedbackUrl: string;
+  /** Writes phone numbers for reading; without it they show as stored. */
+  phone?: PhoneFormat;
 };
 
 /** The guest page of a venue: one `Workspace`, two columns where the sections need room beside the hours. */
@@ -451,28 +475,32 @@ export const GuestPage = (props: GuestPageProps): JSX.Element => {
   );
   return (
     <Workspace head={<Head status={status()} feedbackUrl={status().venue.feedbackEnabled ? props.feedbackUrl : undefined} t={t()} />}>
-      {/* k2b-ui gap: G1 (W5 after #4227): the wide measure (a 1200 px card) and the 560 one; the page spans the window */}
-      <Show
-        when={status().sections.length > 0}
-        fallback={
-          <Pane label={status().venue.name}>
-            <HeroBand hero={hero()} />
-            {description()}
-            {facts()}
-          </Pane>
-        }
-      >
-        <Pane.Split>
-          <Pane label={status().venue.name}>
-            <HeroBand hero={hero()} />
-            {description()}
-            <For each={status().sections}>{(section) => <GuestSection section={section} color={color()} />}</For>
-          </Pane>
-          <Pane side label={t().guestHours} width={{ fixed: 360 }}>
-            {facts()}
-          </Pane>
-        </Pane.Split>
-      </Show>
+      {/* k2b-ui gap: G1 (coordinator, after #4227): the centred card of at most 1200 px, and 560 px for one task */}
+      <Pane label={status().venue.name}>
+        {/* the venue's banner across both columns, under the head; without one nothing stands here */}
+        <Cover src={status().venue.bannerBase64 ?? undefined} alt="" />
+        <Show
+          when={status().sections.length > 0}
+          fallback={
+            <>
+              <HeroBand hero={hero()} />
+              {description()}
+              {facts()}
+            </>
+          }
+        >
+          <Pane.Split>
+            <Pane label={t().today}>
+              <HeroBand hero={hero()} />
+              {description()}
+              <For each={status().sections}>{(section) => <GuestSection section={section} color={color()} phone={props.phone} />}</For>
+            </Pane>
+            <Pane side label={t().guestHours} width={{ fixed: 360 }}>
+              {facts()}
+            </Pane>
+          </Pane.Split>
+        </Show>
+      </Pane>
     </Workspace>
   );
 };

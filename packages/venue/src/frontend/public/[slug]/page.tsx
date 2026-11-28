@@ -4,6 +4,7 @@ import { MinimalLayout } from "@k2b/cloud/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import { ssr } from "../../../config";
 import { venueMessages } from "../../../messages";
+import { formatPhone } from "../../../phone-format";
 import { venueService } from "../../../service";
 import {
   buildPublicVenueFeedbackUrl,
@@ -53,7 +54,7 @@ export default ssr(async (c) => {
       {refresh ? (
         <PublicVenuePage venueId={id} initialStatus={status} displayHeight={displayHeight} feedbackUrl={feedbackPath} refresh />
       ) : status ? (
-        <GuestPage status={status} feedbackUrl={feedbackPath} />
+        <GuestPage status={status} feedbackUrl={feedbackPath} phone={formatPhone} />
       ) : (
         <GuestUnavailable />
       )}

@@ -102,7 +102,7 @@ export default function GuestFeedback(props: GuestFeedbackProps) {
               </Notice>
             )}
           </Show>
-          {/* k2b-ui gap: G8 (W5): a form that sends to an address without a script; until then the island sends it */}
+          {/* feedback needs a script: the island sends the form (decided; v2 has no form that sends without one) */}
           <Bar
             start={
               <Button variant="text" href={props.backUrl}>

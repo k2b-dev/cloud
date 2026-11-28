@@ -10,6 +10,7 @@ import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../..
 import "../../ssr-test-plugin";
 import { app } from "../../../config";
 import type { PublicStatus } from "../../../contracts";
+import { formatPhone } from "../../../phone-format";
 import { type GuestState, guestStates } from "./guest-page.browser-fixture";
 
 // The two guest pages of a venue on v2, as the server renders them inside `MinimalLayout ui="v2"`: the guest page in
@@ -78,7 +79,7 @@ const guestHtml = (status: PublicStatus | null) =>
   serverPage(
     () =>
       status
-        ? createComponent(GuestPage, { status, feedbackUrl: `/app/venue/public/${status.venue.id}/feedback` })
+        ? createComponent(GuestPage, { status, feedbackUrl: `/app/venue/public/${status.venue.id}/feedback`, phone: formatPhone })
         : createComponent(GuestUnavailable, {}),
     "/app/venue/public/Cafe01",
   );
@@ -263,7 +264,7 @@ describe("Venue guest page on v2", () => {
       expect(places).toEqual(places.toSorted((a, b) => a - b));
       // the week stands beside the sections, at its fixed width
       const side = await box(tab, '[data-k2-part="Pane"][data-side]');
-      const first = await box(tab, '[data-k2-part="Pane"]');
+      const first = await box(tab, '[data-k2-part="Pane"][aria-label="Heute"]');
       expect(side.left).toBeGreaterThan(first.left);
       expect(Math.round(side.width)).toBe(360);
       expect(await tab.locator('[data-k2-part="Pane"][data-side]').innerText()).toContain("Öffnungszeiten");
@@ -281,7 +282,7 @@ describe("Venue guest page on v2", () => {
     for (const view of [desktop, phone]) {
       const { context, tab } = await open(view, guestHtml(guestStates.open()));
       try {
-        const column = await box(tab, '[data-k2-part="Pane"]');
+        const column = await box(tab, '[data-k2-part="Pane"][aria-label="Heute"]');
         const prices = await tab
           .getByText(/^\d+,\d{2} €$/)
           .evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().right));
@@ -293,11 +294,46 @@ describe("Venue guest page on v2", () => {
     }
   }, 60_000);
 
+  test("the venue's banner runs across both columns under the head; without one nothing stands there", async () => {
+    for (const view of [desktop, phone]) {
+      const { context, tab } = await open(view, guestHtml(guestStates.open()));
+      try {
+        const cover = await box(tab, '[data-k2-part="Cover"]');
+        const outer = await box(tab, '[data-k2-part="Pane"]');
+        expect(Math.round(cover.width)).toBe(Math.round(outer.width));
+        expect(cover.bottom - cover.top).toBeGreaterThanOrEqual(120);
+        expect(cover.bottom - cover.top).toBeLessThanOrEqual(180);
+        const hero = await box(tab, '[data-k2-part="Pane"][aria-label="Heute"]');
+        expect(hero.top).toBeGreaterThanOrEqual(cover.bottom - 1);
+      } finally {
+        await context.close();
+      }
+    }
+    const plain = await open(desktop, guestHtml(guestStates.nobrand()));
+    try {
+      expect(await plain.tab.locator('[data-k2-part="Cover"]').count()).toBe(0);
+    } finally {
+      await plain.context.close();
+    }
+  }, 60_000);
+
+  test("phone numbers read as the server wrote them, and a profile keeps its name beside its site", async () => {
+    const { context, tab } = await open(desktop, guestHtml(guestStates.open()));
+    try {
+      const links = (await tab.getByRole("region", { name: "Kontakt und Wege" }).innerText()).replace(/\s+/g, " ");
+      expect(links).toContain("instagram.example/campuscafenord");
+      expect(links).toContain("cafe-nord@example.org");
+      expect(links).toContain("+49 30 12345678");
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
   test("on the phone the week follows the sections, under the hero and the content", async () => {
     const { context, tab } = await open(phone, guestHtml(guestStates.open()));
     try {
       const side = await box(tab, '[data-k2-part="Pane"][data-side]');
-      const first = await box(tab, '[data-k2-part="Pane"]');
+      const first = await box(tab, '[data-k2-part="Pane"][aria-label="Heute"]');
       expect(side.top).toBeGreaterThanOrEqual(first.bottom - 1);
     } finally {
       await context.close();
@@ -452,6 +488,17 @@ describe("Venue feedback page on v2", () => {
         await context.close();
       }
     }, 60_000);
+
+  test("a slim banner above the form says where the guest is", async () => {
+    const { context, tab } = await open(desktop, feedbackHtml(cafe()), { island: islandProps() });
+    try {
+      const cover = await box(tab, '[data-k2-part="Cover"]');
+      expect(cover.bottom - cover.top).toBeGreaterThanOrEqual(72);
+      expect(cover.bottom - cover.top).toBeLessThanOrEqual(88);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
 
   test("the worst case names the way back in general words and fits the phone", async () => {
     const worst = guestStates.worst();

@@ -1,4 +1,4 @@
-import { Empty, Pane, useLocale, Workspace } from "@k2b/ui/v2";
+import { Cover, Empty, Pane, useLocale, Workspace } from "@k2b/ui/v2";
 import { type JSX, Show } from "solid-js";
 import type { PublicStatus } from "../../../../contracts";
 import { venueMessages } from "../../../../messages";
@@ -18,8 +18,10 @@ export const GuestFeedbackPage = (props: { status: PublicStatus | null; backUrl:
         const name = () => status().venue.name;
         return (
           <Workspace head={<Head status={status()} t={t()} />}>
-            {/* k2b-ui gap: G1 (W5 after #4227): the 560 measure of one task; the form spans the window until then */}
+            {/* k2b-ui gap: G1 (coordinator, after #4227): the 560 measure of one task; the form spans the window until then */}
             <Pane label={t().feedback}>
+              {/* the slim banner says where the guest is; without one nothing stands here */}
+              <Cover src={status().venue.bannerBase64 ?? undefined} alt="" slim />
               <Show
                 when={status().venue.feedbackEnabled}
                 fallback={

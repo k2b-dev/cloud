@@ -134,6 +134,7 @@ suite("Venue guest pages load their first view in one bounded read", () => {
       expect(html).toContain("Heute auf der Karte");
       expect(html).toContain("Inventur");
       expect(html).toContain('href="tel:+493012345678"');
+      expect(html).toContain("+49 30 12345678");
       // the guest page needs no script of its own: no island in its content
       const main = html.slice(html.indexOf("<main"), html.indexOf("</main>"));
       expect(main).not.toContain("solid-island");
