@@ -182,11 +182,13 @@ image**, also the image of a draft or hidden section; the random name keeps it
 from being guessed. Removing or replacing an image, deleting its section, or
 deleting the venue deletes the image once the change commits. Another section
 that shows the same image, such as a copy, keeps it. The public page and the
-status API carry the address, never the image data. A new image is a WebP,
-PNG, JPEG, or GIF of at most 256 KiB.
+status API carry the address once an image has moved, not the image data. A
+new image is a WebP, PNG, JPEG, or GIF of at most 256 KiB whose content matches
+its declared format; it is stored as uploaded, without re-encoding.
 
 A menu item's image is either uploaded image data or an address of this
-venue's own menu images. An item whose stored image has another address keeps
+venue's own menu images, which the save stores in the object store's own form
+whatever host the address named. An item whose stored image has another address keeps
 showing it and keeps saving while the item stays unchanged; the section dialog
 marks it with "External image – please upload it again". Once the item changes,
 its image has to be uploaded again or removed: the save answers HTTP 422 with

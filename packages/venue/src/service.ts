@@ -63,6 +63,7 @@ import {
   FEEDBACK_PAGE_SIZE,
   MAX_PUBLIC_MENU_ITEMS,
   MAX_PUBLIC_SECTIONS,
+  MENU_IMAGE_INVALID,
   MENU_ITEM_LIMIT,
   PUBLIC_EXCEPTION_DAYS,
   PUBLIC_SECTION_LIMIT,
@@ -76,12 +77,14 @@ import { withShortIdDb } from "./lib/short-id";
 import { venueMessages } from "./messages";
 import { capPublicSections, filterPublicMenuSections } from "./public-menu";
 import {
-  discardMenuImages,
   enqueueMenuImageCleanup,
+  foreignMenuImageIndex,
+  keepMenuImageUploads,
   type MenuImageLocation,
   menuImageLocation,
   menuImagePrefix,
   notifyMenuImageCleanup,
+  releaseMenuImages,
   sectionImageKeys,
   storeMenuImages,
   unreferencedMenuImageKeys,
@@ -858,9 +861,19 @@ const venueShortIdOf = async (venueId: string): Promise<string | null> => {
   return row?.short_id ?? null;
 };
 
-/** Runs a save that may have written menu images: a refused or failed save commits their deletion. */
+/** The images a save wrote that its saved content shows; the saving transaction keeps them. */
+const keptUploads = (location: MenuImageLocation, uploaded: readonly string[], content: Record<string, unknown>): string[] => {
+  const shown = new Set(sectionImageKeys(location, content));
+  return uploaded.filter((key) => shown.has(key));
+};
+
+/**
+ * Runs a save that may have written menu images. The save keeps the images it shows in its own transaction
+ * ({@link keepMenuImageUploads}); a refused or failed save, and images a concurrent edit dropped, are deleted at once.
+ * A process that stops before that still deletes them once their grace time ends.
+ */
 const withStoredImages = async <T>(
-  venueShortId: string,
+  location: MenuImageLocation,
   uploaded: readonly string[],
   save: () => Promise<Result<T>>,
   kept: (value: T) => Record<string, unknown>,
@@ -869,17 +882,13 @@ const withStoredImages = async <T>(
   try {
     result = await save();
   } catch (error) {
-    await discardMenuImages(venueShortId, uploaded);
+    await releaseMenuImages(uploaded);
     throw error;
   }
-  if (!result.ok) await discardMenuImages(venueShortId, uploaded);
+  if (!result.ok) await releaseMenuImages(uploaded);
   else if (uploaded.length > 0) {
-    // A concurrent edit may have dropped an item between writing its image and saving.
-    const used = new Set(sectionImageKeys(await menuImageLocation(venueShortId), kept(result.data)));
-    await discardMenuImages(
-      venueShortId,
-      uploaded.filter((key) => !used.has(key)),
-    );
+    const used = new Set(keptUploads(location, uploaded, kept(result.data)));
+    await releaseMenuImages(uploaded.filter((key) => !used.has(key)));
   }
   return result;
 };
@@ -1678,11 +1687,18 @@ const createSection = async (venueId: string, input: PublicSectionInput, locale?
   if (!venueShortId) return fail(err.notFound("Venue"));
   const images = await storeMenuImages({ id: venueId, shortId: venueShortId }, input, [], locale);
   if (!images.ok) return images;
-  const prepared = { ...input, content: withMenuImageAddresses(input.content, images.data.addresses) };
+  const { addresses, uploaded } = images.data;
+  const location = await menuImageLocation(venueShortId);
+  const prepared = { ...input, content: withMenuImageAddresses(input.content, addresses) };
   return withStoredImages(
-    venueShortId,
-    images.data.uploaded,
-    () => sql.begin((tx) => createSectionInTx(tx, venueId, prepared, locale)),
+    location,
+    uploaded,
+    () =>
+      sql.begin(async (tx) => {
+        const created = await createSectionInTx(tx, venueId, prepared, locale);
+        if (created.ok) await keepMenuImageUploads(tx, keptUploads(location, uploaded, created.data.content));
+        return created;
+      }),
     (section) => section.content,
   );
 };
@@ -1710,9 +1726,9 @@ const updateSection = async (venueId: string, id: string, patch: PublicSectionPa
   if (!images.ok) return images;
   const { addresses, uploaded } = images.data;
   const result = await withStoredImages(
-    venueShortId,
+    location,
     uploaded,
-    () => updateSectionInTx(venueId, id, patch, { addresses, location }, locale),
+    () => updateSectionInTx(venueId, id, patch, { addresses, location, uploaded }, locale),
     (saved) => saved.section.content,
   );
   if (!result.ok) return result;
@@ -1724,7 +1740,7 @@ const updateSectionInTx = async (
   venueId: string,
   id: string,
   patch: PublicSectionPatch,
-  images: { addresses: ReadonlyMap<string, string>; location: MenuImageLocation },
+  images: { addresses: ReadonlyMap<string, string>; location: MenuImageLocation; uploaded: readonly string[] },
   locale?: string,
 ): Promise<Result<{ section: PublicSection; removedImages: number }>> =>
   sql.begin(async (tx) => {
@@ -1744,6 +1760,15 @@ const updateSectionInTx = async (
     if (!merged.success) {
       return fail(err.badInput(merged.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join(", ")));
     }
+    // The external-image check before the uploads read the section without a lock; repeat it on the locked row, so
+    // an edit that changed an item meanwhile cannot carry another address through.
+    const mergedItems = Array.isArray(merged.data.content.items) ? merged.data.content.items : [];
+    const currentItems = Array.isArray(current.content.items) ? current.content.items : [];
+    const foreign = foreignMenuImageIndex(images.location, mergedItems, currentItems);
+    if (foreign !== null) {
+      const { t } = venueMessages.resolve(locale ? [locale] : []);
+      return fail({ code: MENU_IMAGE_INVALID, status: 422 as const, message: t.menuImageExternal({ position: foreign + 1 }) });
+    }
     const addedItems = publicMenuItemCount(merged.data) - publicMenuItemCount(current);
     const items = others.items + publicMenuItemCount(merged.data);
     if (addedItems > 0 && items > MAX_PUBLIC_MENU_ITEMS) return menuItemLimitReached(items, locale);
@@ -1760,10 +1785,12 @@ const updateSectionInTx = async (
       RETURNING *
     `;
     if (!updated) return fail(err.notFound("Public section"));
+    const saved = mapSection(updated);
+    await keepMenuImageUploads(tx, keptUploads(images.location, images.uploaded, saved.content));
     const before = sectionImageKeys(images.location, current.content);
     const removed = await unreferencedMenuImageKeys(tx, venueId, images.location, before);
     await enqueueMenuImageCleanup(tx, images.location, removed);
-    return ok({ section: mapSection(updated), removedImages: removed.length });
+    return ok({ section: saved, removedImages: removed.length });
   });
 
 /**

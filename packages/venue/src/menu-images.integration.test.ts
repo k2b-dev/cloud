@@ -12,7 +12,7 @@ import { tinyJpeg, withCameraMetadata } from "../../../scripts/fixtures/image-me
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import apiRoutes from "./api";
-import type { PublicSection, VenueDashboard } from "./contracts";
+import { MAX_PUBLIC_SECTIONS, type PublicSection, type VenueDashboard } from "./contracts";
 import { venueMessages } from "./messages";
 import { menuImageCleanup } from "./service/menu-images";
 
@@ -384,6 +384,149 @@ suiteFor(
       const address = items(uploaded)[0]?.image;
       expect(address).toStartWith("https://cloud.example.test/public/storage/");
       expect(await objects(cafe)).toEqual([keyOf(address)]);
+    } finally {
+      await cleanUp(adminId);
+      await menuImageCleanup.reconcile();
+    }
+  });
+
+  test("image bytes must match the declared type; an unknown format is refused and stores nothing", async () => {
+    const { adminId, admin } = await createAdmin();
+    try {
+      const cafe = await trackedVenue(admin, adminId, "Reef Cafe");
+      const jpegBytes = Buffer.from(await tinyJpeg()).toString("base64");
+      const cases = [
+        { label: "PNG label on JPEG bytes", image: `data:image/png;base64,${jpegBytes}` },
+        { label: "PNG label on text bytes", image: `data:image/png;base64,${Buffer.from("not an image at all").toString("base64")}` },
+        { label: "WebP label on PNG bytes", image: `data:image/webp;base64,${PNG_BASE64}` },
+        { label: "unknown format", image: `data:image/bmp;base64,${Buffer.from("BM unknown").toString("base64")}` },
+      ];
+      for (const { label, image } of cases) {
+        const response = await send(
+          "POST",
+          `/api/venue/venues/${cafe}/sections`,
+          { ...admin, "x-cloud-locale": "de" },
+          {
+            kind: "menu",
+            title: "Lunch",
+            content: { items: [{ name: "Soup", image }] },
+          },
+        );
+        expect({ label, status: response.status, body: await response.json() }).toEqual({
+          label,
+          status: 422,
+          body: { code: "MENU_IMAGE_INVALID", message: venueMessages.resolve(["de"]).t.menuImageInvalid({ position: 1 }) },
+        });
+      }
+      expect(await objects(cafe)).toEqual([]);
+      const [pending] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM venue.menu_image_cleanup WHERE venue_short_id = ${cafe}
+      `;
+      expect(pending?.count).toBe(0);
+
+      // Matching bytes are stored as uploaded, with the detected type and its extension.
+      const created = await json<PublicSection>(
+        await send("POST", `/api/venue/venues/${cafe}/sections`, admin, {
+          kind: "menu",
+          title: "Lunch",
+          content: { items: [{ name: "Soup", image: `data:image/jpeg;base64,${jpegBytes}` }] },
+        }),
+        201,
+        "matching JPEG",
+      );
+      const key = keyOf(items(created)[0]?.image);
+      expect(key).toEndWith(".jpg");
+      expect((await storage.public.file(key).stat()).type).toBe("image/jpeg");
+    } finally {
+      await cleanUp(adminId);
+      await menuImageCleanup.reconcile();
+    }
+  });
+
+  test("an own image address under another host is saved in the object store's own form", async () => {
+    const { adminId, admin } = await createAdmin();
+    try {
+      const cafe = await trackedVenue(admin, adminId, "Cove Cafe");
+      const created = await json<PublicSection>(
+        await send("POST", `/api/venue/venues/${cafe}/sections`, admin, {
+          kind: "menu",
+          title: "Lunch",
+          content: { items: [{ name: "Soup", image: pngDataUrl }] },
+        }),
+        201,
+        "create menu",
+      );
+      const canonical = items(created)[0]?.image ?? "";
+      const lookAlike = `https://cloud.example.test.example.org${new URL(canonical).pathname}`;
+      const copy = await json<PublicSection>(
+        await send("POST", `/api/venue/venues/${cafe}/sections`, admin, {
+          kind: "menu",
+          title: "Lunch (copy)",
+          content: { items: [{ name: "Soup", image: lookAlike }] },
+        }),
+        201,
+        "copy with a look-alike host",
+      );
+      expect(items(copy)[0]?.image).toBe(canonical);
+      const edited = await json<PublicSection>(
+        await send("PATCH", `/api/venue/venues/${cafe}/sections/${created.id}`, admin, {
+          content: { items: [{ name: "Soup, hot", image: lookAlike }] },
+        }),
+        200,
+        "edit with a look-alike host",
+      );
+      expect(items(edited)[0]?.image).toBe(canonical);
+      expect(
+        JSON.stringify(
+          await sql`SELECT content FROM venue.public_sections s JOIN venue.venues v ON v.id = s.venue_id WHERE v.short_id = ${cafe}`,
+        ),
+      ).not.toContain("example.org");
+    } finally {
+      await cleanUp(adminId);
+      await menuImageCleanup.reconcile();
+    }
+  });
+
+  test("an image whose save is refused after the upload is deleted; a kept one leaves no pending deletion", async () => {
+    const { adminId, admin } = await createAdmin();
+    try {
+      const cafe = await trackedVenue(admin, adminId, "Bay Cafe");
+      const kept = await json<PublicSection>(
+        await send("POST", `/api/venue/venues/${cafe}/sections`, admin, {
+          kind: "menu",
+          title: "Lunch",
+          content: { items: [{ name: "Soup", image: pngDataUrl }] },
+        }),
+        201,
+        "create menu",
+      );
+      const keptKey = keyOf(items(kept)[0]?.image);
+      const pendingFor = async (key: string) =>
+        (await sql<{ due: boolean }[]>`SELECT next_attempt_at <= now() AS due FROM venue.menu_image_cleanup WHERE object_key = ${key}`).map(
+          (row) => row.due,
+        );
+      expect(await pendingFor(keptKey)).toEqual([]);
+
+      // Fill the venue to its section cap; the next save writes its image, is refused, and deletes it at once.
+      for (let index = 1; index < MAX_PUBLIC_SECTIONS; index++) {
+        await json(
+          await send("POST", `/api/venue/venues/${cafe}/sections`, admin, {
+            kind: "notice",
+            title: `Notice ${index}`,
+            content: { text: "Hi" },
+          }),
+          201,
+          `notice ${index}`,
+        );
+      }
+      const refused = await send("POST", `/api/venue/venues/${cafe}/sections`, admin, {
+        kind: "menu",
+        title: "Cakes",
+        content: { items: [{ name: "Pie", image: `data:image/jpeg;base64,${Buffer.from(await tinyJpeg()).toString("base64")}` }] },
+      });
+      expect(refused.status).toBe(422);
+      await menuImageCleanup.reconcile();
+      expect(await objects(cafe)).toEqual([keptKey]);
     } finally {
       await cleanUp(adminId);
       await menuImageCleanup.reconcile();

@@ -307,8 +307,9 @@ export const MAX_MENU_IMAGE_BYTES = 256 * 1024;
 
 /**
  * Whether a menu item's image is a web address other than the Venue's own menu images, which the save stores at
- * `/public/storage/[~bucket/]<package>/menu/<venue ID>/<random>.<type>`. The editor marks such an image; the
- * server decides from the object store's own address.
+ * `/public/storage/[~bucket/]<package>/menu/<venue ID>/<random>.<type>`. Only the editor's hint reads the path
+ * alone: the server decides from the object store's own address and saves an own image only in its canonical
+ * form, whatever host the address named.
  */
 export const isExternalMenuImage = (image: unknown, venueId: string): boolean => {
   if (typeof image !== "string" || !/^https?:\/\//.test(image)) return false;

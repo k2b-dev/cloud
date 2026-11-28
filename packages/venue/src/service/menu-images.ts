@@ -4,6 +4,7 @@ import { logger } from "@k2b/cloud/services";
 import { stripImageDataUrlMetadata } from "@k2b/cloud/services/image-metadata";
 import { createPgOutbox, PgOutboxDeferred } from "@k2b/cloud/services/outbox";
 import { MAX_MENU_IMAGE_BYTES, MENU_IMAGE_INVALID } from "../contracts";
+import { detectImageType, MENU_IMAGE_TYPES } from "../lib/image-type";
 import { venueMessages } from "../messages";
 
 type SqlClient = typeof sql;
@@ -15,7 +16,6 @@ const log = logger("venue:menu-images");
  * images of drafts and hidden sections unguessable, and the Venue's prefix lets its deletion remove them all. A
  * section stores only the permanent address. Nothing else is stored under `menu/`.
  */
-const IMAGE_TYPES: Record<string, string> = { "image/webp": "webp", "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif" };
 const DATA_URL = /^data:(image\/(?:webp|png|jpeg|gif));base64,([A-Za-z0-9+/]+={0,2})$/;
 const OBJECT_NAME = /^[0-9a-f]{32}\.(?:webp|png|jpg|gif)$/;
 
@@ -34,7 +34,9 @@ export const menuImageLocation = async (venueShortId: string): Promise<MenuImage
 
 /**
  * The object key behind `image` when it is an address of this Venue's menu images, otherwise `null`. Only the path
- * counts, so addresses survive a change of the Cloud's origin; another Venue's images are never this Venue's.
+ * counts, so addresses survive a change of the Cloud's origin; another Venue's images are never this Venue's. Saving
+ * stores such an address only in the object store's own form ({@link storeMenuImages}), never with the host a
+ * client sent.
  */
 export const ownMenuImageKey = (location: MenuImageLocation, image: unknown): string | null => {
   if (typeof image !== "string" || !/^https?:\/\//.test(image)) return null;
@@ -109,6 +111,29 @@ export const enqueueMenuImageCleanup = async (
   `;
 };
 
+/**
+ * How long an image written for a save waits for that save. Its deletion is committed before the upload and runs
+ * after this time unless the save commits first and keeps the image; a save takes seconds, not minutes.
+ */
+const UPLOAD_GRACE_SECONDS = 15 * 60;
+
+/** Commits the delayed deletion of an image about to be written, so a save that never commits leaves nothing. */
+const reserveMenuImageUpload = async (venueShortId: string, key: string): Promise<void> => {
+  await sql`
+    INSERT INTO venue.menu_image_cleanup (venue_short_id, object_key, next_attempt_at)
+    VALUES (${venueShortId}, ${key}, now() + (${UPLOAD_GRACE_SECONDS} * interval '1 second'))
+  `;
+};
+
+/** In the saving transaction: the images it keeps are no longer deleted after the grace time. */
+export const keepMenuImageUploads = async (tx: SqlClient, keys: readonly string[]): Promise<void> => {
+  if (keys.length === 0) return;
+  await tx`
+    DELETE FROM venue.menu_image_cleanup
+    WHERE NOT prefix AND attempts = 0 AND claimed_until IS NULL AND object_key = ANY(${sql.array([...keys], "text")}::text[])
+  `;
+};
+
 /** Wakes the cleanup after a commit that enqueued deletions. */
 export const notifyMenuImageCleanup = (): void => {
   void menuImageCleanup.notify();
@@ -152,6 +177,7 @@ const storedImages = async (venueId: string, images: readonly string[]): Promise
 };
 
 const imageFailure = (message: string) => fail({ code: MENU_IMAGE_INVALID, status: 422 as const, message });
+const isWebAddress = (image: unknown): image is string => typeof image === "string" && /^https?:\/\//.test(image);
 
 const text = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
 
@@ -172,6 +198,22 @@ const itemFingerprint = (item: unknown): string => {
   ]);
 };
 
+/**
+ * The position (from 0) of the first item that shows a web address other than the Venue's own images and is not
+ * saved again unchanged, one with the same fingerprint among `storedItems`; `null` when there is none.
+ */
+export const foreignMenuImageIndex = (
+  location: MenuImageLocation,
+  items: readonly unknown[],
+  storedItems: readonly unknown[],
+): number | null => {
+  const unchanged = new Set(storedItems.map(itemFingerprint));
+  const index = items.findIndex(
+    (item) => isWebAddress(imageOf(item)) && !ownMenuImageKey(location, imageOf(item)) && !unchanged.has(itemFingerprint(item)),
+  );
+  return index < 0 ? null : index;
+};
+
 /** `content` with each image that `addresses` names replaced by its object store address. */
 export const withMenuImageAddresses = (
   content: Record<string, unknown>,
@@ -188,13 +230,17 @@ export const withMenuImageAddresses = (
       };
 
 /**
- * Moves the image data in a menu's items into the object store and returns, per data string, the object's
- * permanent address to put in its item (see {@link withMenuImageAddresses}). An address of this Venue's own menu
- * images stays as it is. Any other web address stays only on an item saved again unchanged, one with the same
- * fingerprint in `storedItems`; once its item changes, the image has to be uploaded again or removed. Data the
- * Venue already stored, from before images moved, converts too but is never refused: without an object store it
- * stays as it is. New data needs a supported type, at most
- * {@link MAX_MENU_IMAGE_BYTES}, and an object store; a refused save leaves no object behind.
+ * Moves the image data in a menu's items into the object store and returns, per image string, the address to put
+ * in its item (see {@link withMenuImageAddresses}):
+ * - an address of this Venue's own menu images becomes the object store's own form of it, whatever host it named;
+ * - any other web address stays only on an item saved again unchanged ({@link foreignMenuImageIndex}); once its item
+ *   changes, the image has to be uploaded again or removed;
+ * - new image data needs a supported type that its bytes confirm, at most {@link MAX_MENU_IMAGE_BYTES}, and an object
+ *   store. It is stored as uploaded, without re-encoding, with the detected type;
+ * - data the Venue already stored, from before images moved, converts too but is never refused: without an object
+ *   store, or when its bytes do not confirm its type, it stays as stored data.
+ * Every written image has its deletion committed first ({@link reserveMenuImageUpload}); the save keeps it with
+ * {@link keepMenuImageUploads}, and a refused save releases it at once.
  */
 export const storeMenuImages = async (
   venue: { id: string; shortId: string },
@@ -203,67 +249,77 @@ export const storeMenuImages = async (
   locale?: string,
 ): Promise<Result<{ addresses: Map<string, string>; uploaded: string[] }>> => {
   const items = menuItems(section.content);
-  const webAddresses = items.flatMap((item, index) => {
-    const image = imageOf(item);
-    return typeof image === "string" && /^https?:\/\//.test(image) ? [{ item, index }] : [];
-  });
-  if (webAddresses.length > 0) {
+  const { t } = venueMessages.resolve(locale ? [locale] : []);
+  const addresses = new Map<string, string>();
+  if (items.some((item) => isWebAddress(imageOf(item)))) {
     const location = await menuImageLocation(venue.shortId);
-    const unchanged = new Set(storedItems.map(itemFingerprint));
-    const foreign = webAddresses.find(({ item }) => !ownMenuImageKey(location, imageOf(item)) && !unchanged.has(itemFingerprint(item)));
-    if (foreign) {
-      const { t } = venueMessages.resolve(locale ? [locale] : []);
-      return imageFailure(t.menuImageExternal({ position: foreign.index + 1 }));
+    const foreign = foreignMenuImageIndex(location, items, storedItems);
+    if (foreign !== null) return imageFailure(t.menuImageExternal({ position: foreign + 1 }));
+    for (const item of items) {
+      const image = imageOf(item);
+      const key = ownMenuImageKey(location, image);
+      if (!key || typeof image !== "string" || addresses.has(image)) continue;
+      const canonical = await storage.public.file(key).url;
+      if (canonical !== image) addresses.set(image, canonical);
     }
   }
   const candidates = items.flatMap((item) => {
     const image = imageOf(item);
-    return typeof image === "string" && !/^https?:\/\//.test(image) ? [image] : [];
+    return typeof image === "string" && !isWebAddress(image) ? [image] : [];
   });
-  if (candidates.length === 0) return ok({ addresses: new Map(), uploaded: [] });
-  const { t } = venueMessages.resolve(locale ? [locale] : []);
+  if (candidates.length === 0) return ok({ addresses, uploaded: [] });
   const stored = await storedImages(venue.id, candidates);
-  const addresses = new Map<string, string>();
   const uploaded: string[] = [];
   let storageMissing = false;
 
-  const discard = async () => {
-    if (uploaded.length === 0) return;
-    await enqueueMenuImageCleanup(sql, { venueShortId: venue.shortId }, uploaded);
-    notifyMenuImageCleanup();
-  };
+  const release = () => releaseMenuImages(uploaded);
 
   try {
     for (const [index, item] of items.entries()) {
       const image = imageOf(item);
-      if (typeof image !== "string" || /^https?:\/\//.test(image) || addresses.has(image)) continue;
+      if (typeof image !== "string" || isWebAddress(image) || addresses.has(image)) continue;
       const older = stored.has(image);
       const match = DATA_URL.exec(image);
       if (!match) {
         if (older) continue;
-        await discard();
+        await release();
         return imageFailure(t.menuImageInvalid({ position: index + 1 }));
       }
-      const [, type, data] = match as unknown as [string, string, string];
+      const [, declared, data] = match as unknown as [string, string, string];
       const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
       if (!older && (data.length * 3) / 4 - padding > MAX_MENU_IMAGE_BYTES) {
-        await discard();
+        await release();
         return imageFailure(t.menuImageTooLarge({ position: index + 1, maxKilobytes: Math.floor(MAX_MENU_IMAGE_BYTES / 1000) }));
       }
+      // The bytes must confirm the declared type before anything parses them as that type.
+      const detected = detectImageType(Buffer.from(data.slice(0, 64), "base64"));
+      if (detected !== declared) {
+        // Older data whose bytes do not confirm its type stays stored data rather than a file with a wrong type.
+        if (older) continue;
+        await release();
+        return imageFailure(t.menuImageInvalid({ position: index + 1 }));
+      }
       const cleaned = stripImageDataUrlMetadata(image);
+      const bytes = Buffer.from(cleaned.slice(cleaned.indexOf(",") + 1), "base64");
       if (storageMissing) {
         addresses.set(image, cleaned);
         continue;
       }
-      const key = `${menuImagePrefix(venue.shortId)}${crypto.randomUUID().replaceAll("-", "")}.${IMAGE_TYPES[type]}`;
+      const key = `${menuImagePrefix(venue.shortId)}${crypto.randomUUID().replaceAll("-", "")}.${MENU_IMAGE_TYPES[detected]}`;
       const file = storage.public.file(key);
+      await reserveMenuImageUpload(venue.shortId, key);
       try {
-        await file.write(Buffer.from(cleaned.slice(cleaned.indexOf(",") + 1), "base64"), { type });
+        await file.write(bytes, { type: detected });
       } catch (error) {
         const code = storageConfigurationCode(error);
-        if (!code) throw error;
+        if (!code) {
+          uploaded.push(key);
+          throw error;
+        }
+        // Nothing was written, so nothing waits for deletion either.
+        await sql`DELETE FROM venue.menu_image_cleanup WHERE object_key = ${key} AND NOT prefix AND claimed_until IS NULL`;
         if (!older) {
-          await discard();
+          await release();
           return fail({ code, status: 503 as const, message: t.menuImageStorageMissing });
         }
         // Older data keeps working without an object store; it converts on a save once one is configured.
@@ -275,7 +331,7 @@ export const storeMenuImages = async (
       addresses.set(image, await file.url);
     }
   } catch (error) {
-    await discard();
+    await release();
     throw error;
   }
 
@@ -283,9 +339,12 @@ export const storeMenuImages = async (
   return ok({ addresses, uploaded });
 };
 
-/** Commits deletion of objects a failed save had already written. */
-export const discardMenuImages = async (venueShortId: string, keys: readonly string[]): Promise<void> => {
+/** Deletes now the images a save wrote but does not keep, whose deletion waits for the grace time. */
+export const releaseMenuImages = async (keys: readonly string[]): Promise<void> => {
   if (keys.length === 0) return;
-  await enqueueMenuImageCleanup(sql, { venueShortId }, keys);
+  await sql`
+    UPDATE venue.menu_image_cleanup SET next_attempt_at = now()
+    WHERE NOT prefix AND attempts = 0 AND claimed_until IS NULL AND object_key = ANY(${sql.array([...keys], "text")}::text[])
+  `;
   notifyMenuImageCleanup();
 };
