@@ -161,3 +161,6 @@ Rule 9. You drew it with your own element or a `Bar` between entries.
   carries the word.
 - `marks` on a two-line `Row`: they add a third line. Use `end` or three
   lines.
+- `side` on an outer `Pane detail` (a list beside an open record): the
+  detail becomes the list's context column and moves under the list. Put
+  `side` on the inner column only, the info column inside the detail.
