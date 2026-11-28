@@ -146,6 +146,11 @@ export default function RoutesScreen(props: RoutesScreenProps) {
               },
             ]}
           />
+          {/* k2b-ui gap: where the context column gives way under a table that ends its column, the table's last row and the
+              seam draw two lines; the source line ends the column instead until the primitive drops the row's line */}
+          <Text type="meta" muted>
+            {t().routesSource}
+          </Text>
         </Pane>
         {/* a context column beside the table on a large screen: where the traffic of the window goes */}
         <Pane side={{ from: 1100 }} label={t().requestsByApp}>
