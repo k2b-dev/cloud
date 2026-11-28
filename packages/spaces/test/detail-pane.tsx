@@ -16,6 +16,8 @@ export function DetailPaneFixture(props: {
   columns?: SpaceColumn[];
   tags?: SpaceTag[];
   locale?: string;
+  /** Who has access, as the route hands it to the detail: null for a reader without access of their own. */
+  access?: ReturnType<ReturnType<typeof useItemDetailRoute>["access"]>;
 }) {
   const base = "/app/spaces/Space1?view=list";
   const route: ReturnType<typeof useItemDetailRoute> = {
@@ -27,7 +29,7 @@ export function DetailPaneFixture(props: {
     close: () => undefined,
     step: () => undefined,
     wormholes: () => [],
-    access: () => null,
+    access: () => props.access ?? null,
     scrollKey: () => "test-detail",
   };
   const space = (): SpaceDetail => ({
