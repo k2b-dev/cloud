@@ -195,10 +195,10 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           input: { id: "Stabile Anhang-ID." },
         },
         "attachment.files.list": {
-          title: "Mail-Anhänge für eine Dateiauswahl durchsuchen",
+          title: "Mail-Anhänge durchsuchen",
           doneTitle: "Mail-Anhänge aufgelistet",
           description:
-            "Liest eine Seite der Mail-Dateiquelle: ohne parent die lesbaren, nicht ausgeblendeten Postfächer nach Adresse; darunter Jahr-, Monats- und Absenderordner, dann die Anhänge dieses Absenders im Monat, neueste zuerst. Eingebettete Bilder und Signaturlogos fehlen. Mit next weiterlesen, bis es null ist. Dateien mit attachment.content.read öffnen.",
+            "Eine Seite der Mail-Dateiquelle: Postfächer, dann Jahr-, Monats- und Absenderordner, dann Dateien. Mit next weiterlesen, bis es null ist; Dateien mit attachment.content.read öffnen.",
           input: {
             parent: "Ordner-ID aus dieser Quelle; weglassen für die Postfächer.",
             query: "Optionaler Namensfilter im Ordner.",
