@@ -45,7 +45,7 @@ const required = <T>(value: T | null | undefined, resource: string): T => {
 const rekey = <T>(values: Record<string, T>, ids: ReadonlyMap<string, string>): Record<string, T> =>
   Object.fromEntries(Object.entries(values).map(([id, value]) => [required(ids.get(id), `map key ${id}`), value]));
 
-const projectCatalog = async (catalog: WorkspaceCatalog): Promise<PublicWorkspaceCatalog> => {
+const projectCatalog = async (catalog: WorkspaceCatalog, base: { id: string; shortId: string }): Promise<PublicWorkspaceCatalog> => {
   const fields = Object.values(catalog.fieldsByTable).flat();
   const views = Object.values(catalog.viewsByTable).flat();
   const forms = Object.values(catalog.formsByTable).flat();
@@ -67,7 +67,8 @@ const projectCatalog = async (catalog: WorkspaceCatalog): Promise<PublicWorkspac
   ];
   // These projections share Bun's default SQL pool. Keeping the small indexed
   // reads sequential avoids pool saturation leaving completed queries pending.
-  const allPublicTables = await toPublicTables(allTables);
+  // every table is of this base, whose public id the page has read already
+  const allPublicTables = await toPublicTables(allTables, new Map([[base.id, base.shortId]]));
   const publicFields = await toPublicFields(fields);
   const publicViews = await toPublicViews(views);
   const allPublicForms = await toPublicForms(allForms);
@@ -314,7 +315,7 @@ const projectRoute = async (
 };
 
 export const projectPublicWorkspaceState = async (state: OkWorkspaceState, locale?: string): Promise<PublicOkWorkspaceState> => {
-  const catalog = await projectCatalog(state.catalog);
+  const catalog = await projectCatalog(state.catalog, state.base);
   const { baseShortId: _baseShortId, ...rest } = state;
   const stored = await getBaseNavigation(state.base.id);
   const visible = new Set(navigationResources(state.base.shortId, catalog).map(navigationReferenceKey));

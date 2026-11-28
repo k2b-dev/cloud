@@ -7,6 +7,7 @@ import documentsPage from "./[baseId]/documents/page";
 import baseDetailPage from "./[baseId]/page";
 import queryWorkspacePage from "./[baseId]/query/page";
 import queryReferencePage from "./[baseId]/query-reference/page";
+import baseSettingsPage from "./[baseId]/settings/page";
 import formulaReferencePage from "./[baseId]/table/[tableId]/formula-reference/page";
 import tableRecordsPage from "./[baseId]/table/[tableId]/page";
 import viewRecordsPage from "./[baseId]/table/[tableId]/view/[viewId]/page";
@@ -78,6 +79,9 @@ export default new Hono<AuthContext>()
   // Document template paths.
   .get("/:baseId/document/:documentTableId/:documentTemplateId", auth.requireRole("user", ssr.access), ...documentTemplatePage)
   .get("/:baseId/documents", auth.requireRole("user", ssr.access), ...documentsPage)
+  // The base's settings, a page of their own with the tab in the address.
+  .get("/:baseId/settings", auth.requireRole("user", ssr.access), ...baseSettingsPage)
+  .get("/:baseId/settings/:tab", auth.requireRole("user", ssr.access), ...baseSettingsPage)
   .get("/:baseId/reference/tables/:sourceId", auth.requireRole("user", ssr.access), ...queryReferencePage)
   .get("/:baseId/reference/:tab", auth.requireRole("user", ssr.access), ...queryReferencePage)
   .get("/:baseId/reference", auth.requireRole("user", ssr.access), ...queryReferencePage)

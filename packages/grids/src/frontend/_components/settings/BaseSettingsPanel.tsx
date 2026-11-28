@@ -19,6 +19,8 @@ type Props = {
   base: PublicBase;
   accessEntries: AccessEntry[];
   navigationResources?: NavigationResource[];
+  /** The tab it opens on: the settings page opens the parts it does not show itself here (`general` by default). */
+  initialTab?: string;
   onClose?: () => void;
   setDismissHandler?: (handler: () => void | Promise<void>) => void;
 };
@@ -27,7 +29,7 @@ export default function BaseSettingsPanel(props: Props) {
   const locale = useLocale();
   const t = useGridsSettingsMessages(locale);
   const { t: navigationText } = navigationMessages.resolve([locale()]);
-  const [activeTab, setActiveTab] = createSignal("general");
+  const [activeTab, setActiveTab] = createSignal(props.initialTab ?? "general");
   const [dirty, setDirty] = createSignal<Record<string, boolean>>({});
   const [saving, setSaving] = createSignal<Record<string, boolean>>({});
   const [navigationPending, setNavigationPending] = createSignal(false);

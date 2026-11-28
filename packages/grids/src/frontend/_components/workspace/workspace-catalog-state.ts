@@ -1,14 +1,24 @@
+import type { PermissionLevel } from "@k2b/cloud/server";
 import type { DocumentTemplateSummary } from "../../../contracts";
 import type { Form, Table } from "../../../service";
 import { gridsService } from "../../../service";
-import { resolveBaseLevel } from "./workspace-state-access";
 import type { AuthUser, WorkspaceCatalog } from "./workspace-state-model";
 
-export const loadCatalog = async (baseId: string, user: AuthUser, includeCustomApps = false): Promise<WorkspaceCatalog> => {
+/**
+ * What the base's navigation lists, for who has `baseLevel` on it (the level the request read already). The app
+ * runners are read only for the app page (`launchers`), the one page whose builder offers them.
+ */
+export const loadCatalog = async (
+  baseId: string,
+  user: AuthUser,
+  baseLevel: PermissionLevel,
+  options: { customApps: boolean; launchers: boolean },
+): Promise<WorkspaceCatalog> => {
   const catalogRaw = await gridsService.base.catalog({
     baseId,
     userId: user.id,
     userGroups: user.memberofGroupIds,
+    level: baseLevel,
   });
   const tables = catalogRaw.tables;
   const formTables = catalogRaw.formTables ?? [];
@@ -35,10 +45,9 @@ export const loadCatalog = async (baseId: string, user: AuthUser, includeCustomA
 
   const [allWorkflows, workflowLaunchers, customApps] = await Promise.all([
     gridsService.workflow?.listForBase ? gridsService.workflow.listForBase(baseId) : Promise.resolve([]),
-    includeCustomApps ? gridsService.workflow.launcher.listForBase(baseId, true) : Promise.resolve([]),
-    includeCustomApps ? gridsService.customApp.listSummariesByBase(baseId) : Promise.resolve([]),
+    options.customApps && options.launchers ? gridsService.workflow.launcher.listForBase(baseId, true) : Promise.resolve([]),
+    options.customApps ? gridsService.customApp.listSummariesByBase(baseId) : Promise.resolve([]),
   ]);
-  const baseLevel = await resolveBaseLevel(user, baseId);
   const workflowLevels = Object.fromEntries(allWorkflows.map((workflow) => [workflow.id, baseLevel]));
   const workflows = allWorkflows
     .filter((workflow) => gridsService.permission.hasAtLeast(workflowLevels[workflow.id] ?? "none", "read"))

@@ -3,6 +3,7 @@
  * three states. `plain` is a small team's Grids, `worst` the break-ui catalogue (long and unbreakable names, one
  * letter, non-Latin, emoji, huge counts), `huge` a Grids with 1,000 bases and a base with 1,000 tables.
  */
+import type { AccessEntry } from "@k2b/cloud/contracts/shared";
 import type { PublicBase, PublicTable } from "../../../api/public-dto";
 import type { BaseTemplate } from "../overview/CreateBaseDialog";
 import type { GridsStartProps } from "../overview/GridsStart";
@@ -349,3 +350,28 @@ export const homeActivityFixture = (variant: FixtureVariant): HomeActivity => {
     })),
   };
 };
+
+/** Who has access to the base, for its settings: a person who manages it, a group that edits, a reader. */
+export const accessFixture = (variant: FixtureVariant): AccessEntry[] => [
+  {
+    id: "00000000-0000-4000-8000-0000000000a1",
+    principal: { type: "user", userId: "00000000-0000-4000-8000-000000000001" },
+    permission: "admin",
+    displayName: "Mira Solberg",
+    createdAt: FIXTURE_NOW,
+  },
+  {
+    id: "00000000-0000-4000-8000-0000000000a2",
+    principal: { type: "group", groupId: "00000000-0000-4000-8000-000000000101" },
+    permission: "write",
+    displayName: variant === "worst" ? "Werkstattleitung-und-Disposition-Nordhausen-Ost-Spätschicht" : "Werkstatt",
+    createdAt: FIXTURE_NOW,
+  },
+  {
+    id: "00000000-0000-4000-8000-0000000000a3",
+    principal: { type: "user", userId: "00000000-0000-4000-8000-000000000002" },
+    permission: "read",
+    displayName: "Jonas Kern",
+    createdAt: FIXTURE_NOW,
+  },
+];

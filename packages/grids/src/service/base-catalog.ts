@@ -133,9 +133,21 @@ const byTable = <T extends { tableId: string }>(items: T[]): Record<string, T[]>
   return out;
 };
 
-export const listForBase = async (params: { baseId: string; userId: string; userGroups: string[] }): Promise<BaseCatalog> => {
-  const grants = await loadBaseGrantsForSubject({ baseId: params.baseId, subject: { type: "user", userId: params.userId } });
-  const level = resolveEffectivePermission(grants, { baseId: params.baseId });
+/** `level` is this user's level on the base when the caller read it in the same request already; else it is read here. */
+export const listForBase = async (params: {
+  baseId: string;
+  userId: string;
+  userGroups: string[];
+  level?: PermissionLevel;
+}): Promise<BaseCatalog> => {
+  const level =
+    params.level ??
+    resolveEffectivePermission(
+      await loadBaseGrantsForSubject({ baseId: params.baseId, subject: { type: "user", userId: params.userId } }),
+      {
+        baseId: params.baseId,
+      },
+    );
   if (!hasAtLeast(level, "read")) {
     return {
       tables: [],

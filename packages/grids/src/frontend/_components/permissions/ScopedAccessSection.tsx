@@ -49,10 +49,11 @@ const grantAccess = async (scope: PermissionScope, principal: Principal, permiss
 };
 
 /**
- * Who may use a base or an app: the stored list, and "Edit access" opens the shared access dialog. Changes apply on
- * Save there; the list reads the result once afterwards.
+ * Who may use a base or an app, and editing it in the shared access dialog: the stored list, its loading and refresh
+ * states, and `run`, which opens the dialog. Changes apply on Save there; the list reads the result once afterwards.
+ * The v1 section and the v2 settings page show it each in their own parts.
  */
-export function ScopedAccessSection(props: Props) {
+export function createScopedAccess(props: Pick<Props, "scope" | "resourceName" | "initialEntries" | "allowedLevels">) {
   const locale = useLocale();
   const t = () => resolveGridsMessages(locale()).t;
   const [entries, setEntries] = createSignal<AccessEntry[] | null>(props.initialEntries ? [...props.initialEntries] : null);
@@ -160,6 +161,18 @@ export function ScopedAccessSection(props: Props) {
       editing = false;
     });
   };
+  return { entries, loading, loadError, refreshError, manageable, load, reload, levels, grant, update, revoke, run };
+}
+
+/**
+ * Who may use a base or an app: the stored list, and "Edit access" opens the shared access dialog. Changes apply on
+ * Save there; the list reads the result once afterwards.
+ */
+export function ScopedAccessSection(props: Props) {
+  const locale = useLocale();
+  const t = () => resolveGridsMessages(locale()).t;
+  const { entries, loading, loadError, refreshError, manageable, load, reload, levels, grant, update, revoke, run } =
+    createScopedAccess(props);
 
   return (
     <SettingsGroup title={props.title} description={props.description}>
