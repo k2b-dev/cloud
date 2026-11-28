@@ -6,6 +6,8 @@ export const helpMessages = i18n.define({
   messages: {
     en: {
       helpFor: ({ app }: { app: string }) => `Help for ${app}`,
+      show: "Show",
+      hide: "Hide",
       moreActions: "More Help actions",
       copyAsMarkdown: "Copy as Markdown",
       openAsPage: "Open as page",
@@ -67,6 +69,8 @@ export const helpMessages = i18n.define({
     },
     de: {
       helpFor: ({ app }) => `Hilfe zu ${app}`,
+      show: "Anzeigen",
+      hide: "Ausblenden",
       moreActions: "Weitere Hilfeaktionen",
       copyAsMarkdown: "Als Markdown kopieren",
       openAsPage: "Als Seite öffnen",

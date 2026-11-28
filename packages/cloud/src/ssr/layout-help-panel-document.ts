@@ -18,7 +18,7 @@ const articleLink = (value: unknown): HelpArticleLink | undefined => {
 };
 
 export const loadPanelDocument = async (
-  state: HelpPanelState,
+  state: Pick<HelpPanelState, "cache" | "storeDocument">,
   topic: HelpDocumentManifest,
   signal: AbortSignal,
   t: { requestFailed: string; invalidDocument: string },

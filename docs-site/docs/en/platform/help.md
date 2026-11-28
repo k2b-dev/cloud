@@ -674,6 +674,14 @@ Pass the result of `preloadLayoutHelpArticle(c, appId, documentId)` from
 article in the first frame. If the helper returns `null`, omit the prop to load
 on demand.
 
+A full-page Help route whose layout has `ui: "v2"` renders the default export of
+`@k2b/cloud/ssr/help-v2/HelpPage` instead of `Layout.HelpPage`. It takes the
+same `documents`, `initialTopic`, `initialArticle` and `includeShortcuts`,
+and `pageBase` is required. The articles are a list and the open article stands
+beside it. The article's address is the app's Help route, so reload, Back and
+Forward show the same article. Core's `/help/apps/<id>` uses it. The side
+panel stays v1 for now.
+
 `Layout.HelpPage` with `embedded` renders no Help head: the host's own window
 names the reader and chooses its article. Its start keeps only the search.
 
