@@ -1,6 +1,8 @@
 import { sql } from "@k2b/cloud";
 import { backgroundWork, logger, startRuntimeInterval, toPgTextArray } from "@k2b/cloud/services";
 import { toPgUuidArray } from "@k2b/cloud/services/postgres";
+import { bodyReferencedContentIds } from "../content-ids";
+import { messageLinkDomains } from "./security-evidence";
 
 type SqlClient = typeof sql;
 type SqlFragment = Bun.SQL.Query<unknown>;
@@ -30,6 +32,7 @@ export const migrateAttachmentFiles = async (db: SqlClient): Promise<void> => {
       disposition text,
       content_id text,
       body_references boolean NOT NULL,
+      -- A message fact cached when the row is written; a later parser change applies to newly indexed mail only.
       link_domains text[] NOT NULL
     )
   `.simple();
@@ -114,31 +117,6 @@ export const indexMessageAttachments = async (
   );
 };
 
-/**
- * The backfill reads the stored HTML in SQL, where the reader's percent-decoding is not at hand: an image source
- * `src="cid:…"` matches its normalized Content-ID followed by the closing quote, as is or with `@` written `%40`.
- * A `cid:` link in `href` does not count, as in the reader.
- */
-const storedBodyReferences = () => {
-  const id = sql`lower(regexp_replace(btrim(a.content_id, E' \t\r\n'), '^<|>$', '', 'g'))`;
-  return sql`CASE WHEN a.content_id IS NULL OR mc.sanitized_html IS NULL THEN false ELSE (
-    SELECT length(${id}) > 0 AND (
-      strpos(body.html, 'src="cid:' || ${id} || '"') > 0
-      OR strpos(body.html, 'src="cid:' || replace(${id}, '@', '%40') || '"') > 0
-    )
-    FROM (SELECT lower(mc.sanitized_html) AS html) body
-  ) END`;
-};
-
-/**
- * The stored body's link domains in SQL, for the backfill: the lower-case host of each `<a href="http(s)://…">`,
- * without user info and a trailing dot. Ingest uses the assessment's own parser (`messageLinkDomains`).
- */
-const storedLinkDomains = () => sql`ARRAY(
-  SELECT DISTINCT rtrim(link[1], '.')
-  FROM regexp_matches(lower(COALESCE(mc.sanitized_html, '')), '<a[[:space:]][^>]*href=["'']https?://(?:[^/"''?#@]*@)?([a-z0-9.-]+)', 'g') AS link
-)`;
-
 /** One statement: lock one batch without waiting, and say where its cursor may move. */
 const lockBackfillBatch = (db: SqlClient, afterId: string) => db<
   { scanned: number; last_id: string | null; below_skipped: string | null; skipped: boolean; locked: string }[]
@@ -162,11 +140,39 @@ const lockBackfillBatch = (db: SqlClient, afterId: string) => db<
     COALESCE((SELECT string_agg(id::text, ',') FROM locked), '') AS locked
 `;
 
-/** One statement: index already stored attachments (a subquery of `id`), reading their bodies in SQL. */
-export const indexStoredAttachments = (db: SqlClient, attachments: SqlFragment) =>
-  insertAttachmentFiles(db, attachments, storedBodyReferences(), storedLinkDomains());
+/**
+ * Index already stored attachments (a subquery of `id`) in two statements: read each message's body once, decide in
+ * TypeScript with the same parsers as ingest (`bodyReferencedContentIds`, `messageLinkDomains`), then insert. One
+ * parser for ingest and backfill, so their rows never differ. Bounded by its caller: a backfill batch is 100 attachments.
+ */
+export const indexStoredAttachments = async (db: SqlClient, attachments: SqlFragment) => {
+  const bodies = await db<{ message_id: string; sanitized_html: string | null; content_ids: string[] }[]>`
+    SELECT mc.id AS message_id, mc.sanitized_html,
+      COALESCE(array_agg(a.content_id) FILTER (WHERE a.content_id IS NOT NULL), ARRAY[]::text[]) AS content_ids
+    FROM mail.attachments a
+    JOIN mail.message_contents mc ON mc.id = a.message_id
+    WHERE a.id IN (${attachments})
+    GROUP BY mc.id
+  `;
+  const facts = Object.fromEntries(
+    bodies.map((body) => [
+      body.message_id,
+      {
+        contentIds: bodyReferencedContentIds(body.sanitized_html, body.content_ids),
+        linkDomains: messageLinkDomains(body.sanitized_html),
+      },
+    ]),
+  );
+  const message = sql`(${JSON.stringify(facts)}::text::jsonb -> mc.id::text)`;
+  return insertAttachmentFiles(
+    db,
+    attachments,
+    sql`a.content_id IN (SELECT jsonb_array_elements_text(${message} -> 'contentIds'))`,
+    sql`ARRAY(SELECT jsonb_array_elements_text(${message} -> 'linkDomains'))`,
+  );
+};
 
-/** One statement, after the batch is locked: index the locked attachments from a fresh snapshot. */
+/** After the batch is locked: index the locked attachments from snapshots taken after the lock. */
 const indexBackfillBatch = (db: SqlClient, ids: readonly string[]) =>
   indexStoredAttachments(db, sql`SELECT unnest(${toPgUuidArray([...ids])}::uuid[])`);
 
@@ -189,8 +195,8 @@ export type AttachmentFileBackfill = { afterId: string; indexed: number; complet
  *
  * A batch first locks what it reads, in its own statement and without waiting: its attachments `FOR KEY SHARE`, their
  * messages `FOR SHARE`, both `SKIP LOCKED`. A delete (hydration's replacement, a purge) or a sync that moves the
- * message's date holds one of them, so waiting could deadlock with a cascade that locks in another order. The insert
- * then runs as the next statement, with a snapshot taken after the locks: a date move that committed before them is
+ * message's date holds one of them, so waiting could deadlock with a cascade that locks in another order. Reading the
+ * bodies and the insert follow as their own statements, with snapshots taken after the locks: a date move that committed before them is
  * read, and one that comes after waits for the batch and then moves its rows (the date trigger). A skipped attachment
  * stays ahead of the cursor, which stops just below the first one, so a delete that rolls back loses nothing. A batch
  * that moves nothing ends the run; the next one retries after the interval. In maintenance „Ruhe“ it stops between

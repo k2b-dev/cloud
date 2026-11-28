@@ -181,12 +181,9 @@ attachments per transaction. The job saves its position in
 `mail.attachment_files_backfill`. A restart or a second replica continues
 from that position. The job does not wait for a message that Mail is storing
 or syncing at that moment. It leaves that message for a later run and pauses
-for 50 ms between transactions. For messages stored before the upgrade, the
-job recognizes an image's `cid:` source only with the Content-ID as written
-or with `@` written as `%40`; other encoded sources count as not shown. It
-reads the link domains of such messages from the host of each `http` or
-`https` link. Until the job is done, the source shows only part of the older
-attachments.
+for 50 ms between transactions. It reads each message body with the same
+rules that Mail uses when it stores a message. Until the job is done, the
+source shows only part of the older attachments.
 
 A replica that still runs an older image does not add attachments to the
 table. It also removes rows when it loads a message again, because loading

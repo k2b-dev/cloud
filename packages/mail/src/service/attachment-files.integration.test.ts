@@ -22,6 +22,7 @@ import { storeReadableBlob } from "./message-blobs";
 import { hydrateMessageFromSource } from "./message-hydration";
 import { materializeOutboundMessage } from "./outbound-message-projection";
 import { outboundDraftSnapshotSchema } from "./outbound-mime";
+import { assessMessages } from "./security";
 import { ingestEnvelope } from "./sync-runtime";
 
 const suite = suiteFor("database", "nats");
@@ -887,6 +888,79 @@ suite("Mail attachments as a file-provider source", () => {
     expect(await monthsOf(message)).toEqual(["2026-03-01"]);
   });
 
+  test("the source lists a message's files exactly when the reader opens its links, after ingest and after the backfill", async () => {
+    const drift = await createMailboxWithFolder(`Drift ${suffix}`, false);
+    const [sentFolder] = await sql<{ id: string }[]>`
+      INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role, sync_status)
+      VALUES (${newShortId()}, ${drift.resourceId}::uuid, ${`drift-sent-${suffix}`}, 'Sent', 'sent', 'current') RETURNING id
+    `;
+    const sent = { ...drift, folderId: sentFolder!.id };
+    const link = (href: string) => `<p>See</p><a href="${href}">link</a>`;
+    const cases: { key: string; from: string; html?: string; target?: typeof drift }[] = [
+      { key: "d1", from: "blocked@drift.test" },
+      { key: "d2", from: "x@sub.blocked.test" },
+      { key: "d3", from: "y@bücher.example" },
+      { key: "d4", from: "z@drift.test", html: link("https://müller.example/x") },
+      { key: "d5", from: "z@drift.test", html: link("https://%65vil.test/") },
+      { key: "d6", from: "z@drift.test", html: link(String.raw`https:\\two.evil.test\x`) },
+      { key: "d7", from: "z@drift.test", html: link("https:three.evil.test") },
+      { key: "d8", from: "z@drift.test", html: link(" https://four.evil.test/") },
+      { key: "d9", from: "z@drift.test", html: link("https://a@b@five.evil.test/") },
+      { key: "d10", from: "off@drift.test" },
+      { key: "d11", from: "blocked@drift.test", target: sent },
+      { key: "d12", from: "ok@drift.test", html: link("https://fine.example/") },
+    ];
+    const messages = new Map<string, string>();
+    for (const [index, item] of cases.entries()) {
+      const received = await receive(item.target ?? drift, `drift-${item.key}`, {
+        from: { name: "", address: item.from },
+        date: `2026-05-${String(index + 1).padStart(2, "0")}T09:00:00.000Z`,
+        parts: [{ filename: `${item.key}.txt`, type: "text/plain", bytes: 100, disposition: "attachment" }],
+        ...(item.html ? { html: item.html } : {}),
+      });
+      messages.set(item.key, received.messageId);
+    }
+    // Half the messages keep their ingest rows, the other half get theirs from the backfill.
+    const backfilled = cases.filter((_, index) => index % 2 === 1).map((item) => messages.get(item.key)!);
+    await sql`DELETE FROM mail.attachment_files
+      WHERE message_id IN (SELECT value::uuid FROM jsonb_array_elements_text(${backfilled}::jsonb))`;
+    await sql`DELETE FROM mail.attachment_files_backfill`;
+    let progress = await backfillAttachmentFiles();
+    for (let run = 1; run < 3 && !progress?.completed; run += 1) progress = await backfillAttachmentFiles();
+    expect(progress?.completed).toBe(true);
+    const rules = await sql<{ id: string }[]>`
+      INSERT INTO mail.security_policies (disposition, target, value, enabled) VALUES
+        ('deny', 'sender_address', 'blocked@drift.test', true),
+        ('deny', 'sender_domain', 'blocked.test', true),
+        ('deny', 'sender_domain', 'xn--bcher-kva.example', true),
+        ('deny', 'link_domain', 'xn--mller-kva.example', true),
+        ('deny', 'link_domain', 'evil.test', true),
+        ('deny', 'sender_address', 'off@drift.test', false)
+      RETURNING id
+    `;
+    try {
+      const assessed = unwrap(await assessMessages(drift.id, [...messages.values()]));
+      const outcomes: Record<string, { disabled: boolean; listed: boolean }> = {};
+      for (const item of cases) {
+        const messageId = messages.get(item.key)!;
+        const [row] = await sql<{ sender_email: string }[]>`
+          SELECT sender_email FROM mail.attachment_files WHERE message_id = ${messageId}::uuid
+        `;
+        const parent = `${drift.shortId}/2026/05/${row!.sender_email ? `e:${encodeURIComponent(row!.sender_email)}` : "-"}`;
+        const listed = (await items(owner, { parent })).includes(`${item.key}.txt`);
+        outcomes[item.key] = { disabled: assessed.get(messageId)!.linksDisabled, listed };
+      }
+      for (const [key, outcome] of Object.entries(outcomes))
+        expect({ key, listed: outcome.listed }).toEqual({ key, listed: !outcome.disabled });
+      // The rules reach what they name: sender, subdomain, international sender, links however written; never a disabled rule or a sent copy.
+      for (const key of ["d1", "d2", "d3", "d4", "d5", "d6", "d7", "d8", "d9"])
+        expect({ key, disabled: outcomes[key]!.disabled }).toEqual({ key, disabled: true });
+      for (const key of ["d10", "d11", "d12"]) expect({ key, disabled: outcomes[key]!.disabled }).toEqual({ key, disabled: false });
+    } finally {
+      await sql`DELETE FROM mail.security_policies WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${rules.map((rule) => rule.id)}::jsonb))`;
+    }
+  });
+
   test("an assigned-only reader's folders read their own attachments, not the mailbox's other rows", async () => {
     const blob = await storeReadableBlob(Readable.from([Buffer.from("x")]), 1);
     const [bulk] = await sql<{ id: string }[]>`
@@ -919,6 +993,12 @@ suite("Mail attachments as a file-provider source", () => {
     await sql`ANALYZE mail.attachment_files`;
     await sql`ANALYZE mail.conversation_assignees`;
     await sql`ANALYZE mail.conversation_messages`;
+    // Rules exist while the plans are read, so their lookup is part of what the plans pay.
+    const planRules = await sql<{ id: string }[]>`
+      INSERT INTO mail.security_policies (disposition, target, value) VALUES
+        ('deny', 'sender_domain', 'plan.invalid'), ('deny', 'link_domain', 'plan.invalid'), ('deny', 'sender_address', 'plan@plan.invalid')
+      RETURNING id
+    `;
     const access: MailboxAccess = { scope: "assigned", permission: "read", userId: assigned.id };
     const sender = { email: alice.address };
     const queries = {
@@ -939,5 +1019,6 @@ suite("Mail attachments as a file-provider source", () => {
     }
     expect((await items(assigned, { parent: aliceMarch })).sort()).toEqual(firstFiles);
     expect(await items(reader, { parent: aliceMarch, limit: 3 })).toHaveLength(3);
+    await sql`DELETE FROM mail.security_policies WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${planRules.map((rule) => rule.id)}::jsonb))`;
   });
 });
