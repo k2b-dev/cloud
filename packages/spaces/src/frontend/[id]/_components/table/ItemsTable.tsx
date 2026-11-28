@@ -94,6 +94,19 @@ export default function ItemsTable(props: Props) {
           cell: (item) => (isInactiveTask(item) ? t.inactive : dates.formatDateTime(itemLastActivityAt(item), props.dateConfig)),
           drop: true,
         },
+        // When it was last changed and when it was made, as main's table showed; they give way first where room is short.
+        {
+          title: t.updated,
+          width: { min: 120, default: 150 },
+          cell: (item) => dates.formatDateTime(item.updatedAt, props.dateConfig),
+          drop: true,
+        },
+        {
+          title: t.created,
+          width: { min: 120, default: 150 },
+          cell: (item) => dates.formatDateTime(item.createdAt, props.dateConfig),
+          drop: true,
+        },
       ]}
     />
   );

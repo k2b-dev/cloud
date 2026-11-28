@@ -144,3 +144,15 @@ test("names whoever works on the task once, first, as on it", () => {
   const faces = [...html.matchAll(/data-k2-part="Avatar"[^>]*>([A-Z]{2})</g)].map((match) => match[1]);
   expect(faces.slice(0, 2)).toEqual(["MB", "VK"]);
 });
+
+test("the table names when an item was created and last updated, as main's table did", async () => {
+  const { dates } = await import("@k2b/stdlib");
+  const berlin = { timeZone: "Europe/Berlin" };
+  const created = "2026-08-20T10:00:00.000Z";
+  const updated = "2026-09-02T15:30:00.000Z";
+  const html = renderTable(task({ createdAt: created, updatedAt: updated }), berlin);
+  expect(html).toContain(">Created<");
+  expect(html).toContain(">Updated<");
+  expect(html).toContain(dates.formatDateTime(created, berlin));
+  expect(html).toContain(dates.formatDateTime(updated, berlin));
+});
