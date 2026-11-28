@@ -116,7 +116,8 @@ export default function BasesOverview(props: Props) {
             <StatusRow
               lead="318 Änderungen heute"
               facts={[{ value: 5, after: "Bases" }]}
-              filters={
+              // chips that say something belong to the statement (`marks`); `filters` holds controls, which fold on the phone
+              marks={
                 <>
                   <Chip yours icon="forms">
                     12 neue Einträge

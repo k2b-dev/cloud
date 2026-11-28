@@ -5945,10 +5945,17 @@
   /* before the fit (the server's page) the end of a status row on the phone cuts from its start, as a bar's end does,
      so its last parts stand whole until the fold takes over */
   .k2-ui .k2-bar[data-status-row] > .k2-bar-end {
+    flex: 0 1 auto;
+    min-width: 0;
     margin-right: -4px;
     padding-inline: 4px;
     overflow: clip;
     justify-content: flex-end;
+  }
+  /* the statement keeps about a word (7 em, at most 40 % of the row) beside an end that does not fold, such as chips
+     that only say something; the fold measures with the same floor (merge of #4210 with #4426) */
+  .k2-ui .k2-bar[data-status-row]:not([data-selecting]) > .k2-bar-start {
+    min-width: min(7em, 40%);
   }
   /* tabs that share a head with actions stand closer */
   .k2-ui .k2-bar-start > .k2-tabs-nav,
