@@ -40,7 +40,10 @@ test("Browser SSR distinguishes retained, empty and failed reads and localizes t
       const html = await response.text();
       expect(response.status).toBe(200);
       expect(html).toContain(label!);
-      expect(html).not.toContain('role="alert"');
+      // the page's announcer always holds an empty alert region; a failed read would show its own words
+      expect(html).not.toContain(
+        locale === "de" ? "Browser-Messungen konnten nicht geladen werden." : "Could not load browser measurements.",
+      );
     }
     read.mockRejectedValueOnce(new Error("query unavailable"));
     const failed = await (await server.request("/?view=browser")).text();
@@ -54,7 +57,7 @@ test("Browser SSR distinguishes retained, empty and failed reads and localizes t
     const retained = await (await server.request("/?view=browser")).text();
     expect(retained).toContain("Previously recorded measurements remain visible");
     expect(retained).toContain("CLS · p75");
-    expect(retained).toContain("k2b-chart-explorer");
+    expect(retained).toContain(`data-chart-kind="line"`);
   } finally {
     read.mockRestore();
     settings.mockRestore();

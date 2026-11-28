@@ -46,8 +46,11 @@ export type TextProps = {
   weight?: "medium" | "strong";
   /** The muted ink, for a second voice beside the main text. */
   muted?: boolean;
-  /** A colour of meaning, never decoration. */
-  tone?: Status | "ai" | "draft";
+  /**
+   * A colour of meaning, never decoration. `app` is the app's ink (the page's own accent with `Workspace accent`),
+   * readable at 4.5:1 on the surface and on the app's tint: for what belongs to it, such as the hero's state.
+   */
+  tone?: Status | "ai" | "draft" | "app";
   /** The words lead to this page: they keep the ink of the text and are underlined (blue is only the main action). */
   href?: string;
   /**
@@ -459,6 +462,8 @@ export const Row = (props: RowProps) => {
       data-end-hover={props.endOnHover ? "" : undefined}
       data-time={time() !== undefined ? "" : undefined}
       data-action={props.action ? "" : undefined}
+      // a deed or an end beside the time: on one line both stand at the end, the time first
+      data-end={end() !== undefined || props.action ? "" : undefined}
     >
       {/* What opens the row lies over all of it and is named by the title; it holds no part of the row, so a link in
           the title stays a link of its own (no link inside a link). */}

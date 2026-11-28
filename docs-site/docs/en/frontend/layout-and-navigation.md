@@ -302,9 +302,10 @@ brings its own head, so the shell's row of the way up stays hidden above it.
 
 On a signed-in phone the search of a v2 page's head sits in the phone bar, as
 in the approved Mail mockup: the bar's search button, named “Search”, opens the
-head's search field (`Input type="search"`), which opens over the head and
-brings the phone's keyboard; Escape folds it away with its words and returns
-the focus to the button, however the field got it. The Tab key reaches the
+head's search field (`HeadSearch`), which opens over the head and brings the
+phone's keyboard; Escape leaves it with its words and returns the focus to the
+button, however the field got it. Empty, the field folds away; its words keep
+it open over the head. The Tab key reaches the
 field only through that button. The head keeps its room for its views. The global
 search then leads the app menu (the ⠿ sheet) as its first entry, “Search
 everywhere”. Without such a field, or while an open detail hides the head, the

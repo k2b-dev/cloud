@@ -22,6 +22,7 @@ import {
 } from "./migrate-reply-drafts";
 import baselineSchema from "./schema.sql" with { type: "text" };
 import { MAIL_ACTIVITY_FEED_ACTIONS } from "./service/activity-feed";
+import { migrateAttachmentFiles } from "./service/attachment-file-index";
 import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
 import { migrateRoomAccessEvents, migrateRoomAccessIndexes } from "./service/room-access-events";
 import { MAIL_RULE_RETIREMENT_NAME, MAIL_RULE_RETIREMENT_VERSION, retireMailRules } from "./service/rule-retirement-migrate";
@@ -873,6 +874,7 @@ export const migrate = async (): Promise<ReplyDraftMigrationResult> => {
         await migrateAiDailyBudget(tx);
         await migrateSourceNames(tx);
         await migrateConversationSummaries(tx);
+        await migrateAttachmentFiles(tx);
         await migrateWorkspacePreferences(tx);
         await migrateWorkflowAi(tx);
       });

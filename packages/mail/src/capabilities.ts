@@ -100,6 +100,7 @@ import {
   senderIdentities,
   triage,
 } from "./service";
+import { listAttachmentFiles } from "./service/attachment-files";
 import * as reviewReaders from "./service/capability-review-readers";
 import { previewMailCodeMessage, resolveMailCodeEvent, selectMailCodeMessages } from "./service/code-messages";
 import { keepError } from "./service/conversation-keep-rules";
@@ -128,6 +129,46 @@ const replyQuoteSource = async (
   if (!chosen || input.quoteSource !== undefined) return chosen;
   return { ...chosen, timeZone: normalizeTimeZone(String((await settingsGet<string>("app.timezone")) || "").trim(), "UTC") };
 };
+
+/**
+ * What the Mail file source returns, within `FileProviderListDataSchema`: strict, so its SDK declarations leave out
+ * the contract's optional fields Mail never sends (icons, tags, locations, incomplete searches).
+ */
+const AttachmentFileEntryFacts = {
+  id: z.string().min(1).max(2048),
+  name: z.string().min(1).max(255),
+  updatedAt: z.string().datetime({ offset: true }).optional(),
+};
+// The contract's list input with short field notes; the Query's description says how to page.
+const AttachmentFilesListInputSchema = z
+  .object({
+    parent: z.string().min(1).max(2048).optional().describe("Folder ID; omit for mailboxes."),
+    query: z.string().max(200).optional().describe("Name filter."),
+    cursor: z.string().min(1).max(16384).optional().describe("Previous next."),
+    limit: z.number().int().min(1).max(100).default(50).describe("Page size."),
+  })
+  .strict();
+const AttachmentFilesListDataSchema = z
+  .object({
+    writable: z.boolean(),
+    items: z
+      .array(
+        z.discriminatedUnion("kind", [
+          z.object({ kind: z.literal("folder"), ...AttachmentFileEntryFacts }).strict(),
+          z
+            .object({
+              kind: z.literal("file"),
+              ...AttachmentFileEntryFacts,
+              size: z.number().int().min(0),
+              mediaType: z.string().min(1).max(255).optional(),
+            })
+            .strict(),
+        ]),
+      )
+      .max(100),
+    next: z.string().min(1).max(16384).nullable(),
+  })
+  .strict();
 
 const requestContext = (context: CapabilityExecutionContext): MailRequestContext => ({
   actor: context.actor,
@@ -2050,6 +2091,20 @@ const queryDefinitions = {
           { rel: "download" as const, href: data.downloadHref, title: data.filename?.trim() || t.downloadAttachment },
         ],
       });
+    },
+  },
+  "attachment.files.list": {
+    title: "Browse mail attachments",
+    description:
+      "One page of the Mail file source: mailboxes, then year, month and sender folders, then files. Continue with next until null; open files with attachment.content.read.",
+    input: AttachmentFilesListInputSchema,
+    data: AttachmentFilesListDataSchema,
+    openWorld: false,
+    async run(input: z.output<typeof AttachmentFilesListInputSchema>, context: CapabilityExecutionContext) {
+      context.signal.throwIfAborted();
+      const listed = await listAttachmentFiles(requestContext(context), input, context.locale);
+      if (!listed.ok) return listed;
+      return ok({ data: listed.data, page: capabilityPage(listed.data.next) });
     },
   },
   "attachment.content.read": {
@@ -5892,5 +5947,7 @@ export const mailCapabilities = localizeCapabilityErrors(
     events: mailEvents,
     queries: queryDefinitions,
     actions: actionDefinitions,
+    // Read-only: attachments come from mail, so there is no save.
+    fileProvider: { list: "attachment.files.list", read: "attachment.content.read" },
   }),
 );

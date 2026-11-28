@@ -65,8 +65,8 @@ const entries = [
   ["Pulse", "pulse/src/frontend/workspace/base-settings-dialog.tsx", "pulse.base", {}],
   ["Venue", "venue/src/frontend/_components/venue-workspace/settings.tsx", "venue.venue", {}],
   ["Files", "filesv2/src/frontend/Templates.tsx", "filesv2.template", {}],
-  ["AI skill", "core/src/pages/admin/settings/_components/AiSkillAdminActions.island.tsx", "core.ai.skill", { skillId: "Targ01" }],
-  ["AI project", "core/src/pages/admin/settings/_components/AiProjectAdminActions.island.tsx", "core.ai.project", { projectId: "Targ01" }],
+  ["AI skill", "core/src/pages/admin/ai/content-access.tsx", "core.ai.skill", { skill: { shortId: "Targ01" } }],
+  ["AI project", "core/src/pages/admin/ai/content-access.tsx", "core.ai.project", { project: { shortId: "Targ01" } }],
   ["Assistant skill", "assistant/src/frontend/AssistantSkillsSettings.tsx", "core.ai.skill", {}],
   ["Assistant project", "assistant/src/frontend/AssistantProjectSettingsDialog.tsx", "core.ai.project", { project: { id: "Targ01" } }],
 ] as const;
@@ -93,17 +93,30 @@ const shareEntry = (file: string) => {
   visit(tree);
   return { sharedDialog, inlineEditor };
 };
-const appTarget = (file: string, props: object): CloudResourceRef => {
+const appTarget = (file: string, type: string, props: object): CloudResourceRef => {
   const source = readFileSync(resolve(import.meta.dir, "../../..", file), "utf8");
   const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  let target: ts.Expression | undefined;
+  const targets: ts.Expression[] = [];
   const visit = (node: ts.Node): void => {
-    if (ts.isPropertyAssignment(node) && node.name.getText(tree) === "target") target ??= node.initializer;
+    if (ts.isPropertyAssignment(node) && node.name.getText(tree) === "target") targets.push(node.initializer);
     if (ts.isJsxAttribute(node) && node.name.getText(tree) === "target" && node.initializer && ts.isJsxExpression(node.initializer))
-      target ??= node.initializer.expression;
+      if (node.initializer.expression) targets.push(node.initializer.expression);
     ts.forEachChild(node, visit);
   };
   visit(tree);
+  // A file with share entries for several resource types (AI skills and projects) names each type literally.
+  const typed = targets.find(
+    (expression) =>
+      ts.isObjectLiteralExpression(expression) &&
+      expression.properties.some(
+        (property) =>
+          ts.isPropertyAssignment(property) &&
+          property.name.getText(tree) === "type" &&
+          ts.isStringLiteral(property.initializer) &&
+          property.initializer.text === type,
+      ),
+  );
+  const target = typed ?? targets[0];
   if (!target) throw new Error(`${file}: the real share entry must supply its target`);
   const expression = ts.transpileModule(`return (${target.getText(tree)});`, {
     compilerOptions: { target: ts.ScriptTarget.ESNext },
@@ -114,8 +127,9 @@ const appTarget = (file: string, props: object): CloudResourceRef => {
     () => ({ id: "Targ01" }),
     () => "Targ01",
     { id: file.startsWith("filesv2/") ? "10000000-0000-4000-8000-000000000001" : "Targ01" },
-    { id: "Targ01" },
-    { id: "Targ01" },
+    // a share entry that takes the skill or project as its argument gets the one of the table's row
+    "skill" in props ? props.skill : { id: "Targ01" },
+    "project" in props ? props.project : { id: "Targ01" },
   );
 };
 
@@ -124,7 +138,7 @@ if (!isServer)
     test(`${label}: the share entry offers Dienstkonto hinzufügen and adds an exact Kennung through its target by default`, async () => {
       // Every app shares through the shared dialog, so none keeps a parallel search, step or row layout (N1-mail-inline).
       if (file) expect(shareEntry(file)).toEqual({ sharedDialog: true, inlineEditor: false });
-      const target = file ? appTarget(file, props) : { type, id: "Targ01" };
+      const target = file ? appTarget(file, type, props) : { type, id: "Targ01" };
       expect(target).toEqual({ type, id: type === "filesv2.template" ? "10000000-0000-4000-8000-000000000001" : "Targ01" });
       const dom = createDomTestHarness();
       dom.document.documentElement.lang = "de";

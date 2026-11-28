@@ -42,6 +42,9 @@ export const browserMessages = i18n.define({
       details: "p75 by receipt interval",
       navigation: "Telemetry view",
       reload: "Reload",
+      byRoute: "By route",
+      vitals: "Web Vitals",
+      p75Summary: ({ count }: { count: string }) => `${count} routes in this selection`,
     },
     de: {
       server: "Server",
@@ -84,6 +87,9 @@ export const browserMessages = i18n.define({
       details: "p75 nach Empfangsintervall",
       navigation: "Telemetry-Ansicht",
       reload: "Neu laden",
+      byRoute: "Nach Route",
+      vitals: "Web Vitals",
+      p75Summary: ({ count }) => `${count} Routen in dieser Auswahl`,
     },
   },
 });
