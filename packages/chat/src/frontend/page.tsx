@@ -7,7 +7,8 @@ import { chatMessages } from "../messages";
 import { chatRequestContext, oauthAllowsWrites } from "../request-context";
 import { chatService, loadChatView } from "../service";
 
-import ChatWorkspace from "./ChatWorkspace.island";
+import ChatWorkspace, { type ChatWorkspaceProps } from "./ChatWorkspace.island";
+import ChatWorkspaceV2 from "./ChatWorkspaceV2.island";
 import { chatTitle } from "./chat-title";
 import { CHAT_DEVICE_NOTICE_COOKIE, parseDeviceNotice } from "./device-notice";
 import { panelResourceChat } from "./panel-resource";
@@ -82,44 +83,47 @@ export default ssr<AuthContext>(async (c) => {
             ? (view.open?.conversation.title ?? t.noAccessTitle)
             : undefined;
   const now = new Date();
-  const workspace = () => (
-    <ChatWorkspace
-      embedded={embedded}
-      resourceChat={resourceChat}
-      resourcePage={resourcePage}
-      panelScope={scope}
-      archived={archived}
-      filter={unread ? "unread" : "all"}
-      collapsed={collapsed}
-      channelsPage={channelsPage}
-      channelQuery={channelQuery}
-      channelPage={channelResult?.ok ? channelResult.data : null}
-      forYouPage={forYouPage}
-      forYouInitial={forYouResult?.ok ? forYouResult.data : null}
-      cursor={view.cursor}
-      sidebar={view.sidebar}
-      open={view.open}
-      chatId={chatId}
-      view={thread}
-      threadsPage={chatId !== null && c.req.path.endsWith("/threads")}
-      guest={getUserBackedActor(c)?.profile === "guest"}
-      panel={chatId && view.open && c.req.query("panel") === "info" ? "info" : null}
-      viewerId={accessSubject.userId}
-      liveDictation={liveDictation}
-      dateConfig={getDateConfig(c)}
-      now={now.toISOString()}
-      deviceNotice={parseDeviceNotice(getCookie(c, CHAT_DEVICE_NOTICE_COOKIE), now)}
-    />
-  );
+  const workspace: ChatWorkspaceProps = {
+    embedded,
+    resourceChat,
+    resourcePage,
+    panelScope: scope,
+    archived,
+    filter: unread ? "unread" : "all",
+    collapsed,
+    channelsPage,
+    channelQuery,
+    channelPage: channelResult?.ok ? channelResult.data : null,
+    forYouPage,
+    forYouInitial: forYouResult?.ok ? forYouResult.data : null,
+    cursor: view.cursor,
+    sidebar: view.sidebar,
+    open: view.open,
+    chatId,
+    view: thread,
+    threadsPage: chatId !== null && c.req.path.endsWith("/threads"),
+    guest: getUserBackedActor(c)?.profile === "guest",
+    panel: chatId && view.open && c.req.query("panel") === "info" ? "info" : null,
+    viewerId: accessSubject.userId,
+    liveDictation,
+    dateConfig: getDateConfig(c),
+    now: now.toISOString(),
+    deviceNotice: parseDeviceNotice(getCookie(c, CHAT_DEVICE_NOTICE_COOKIE), now),
+  };
   if (embedded)
     return () => (
       <PanelLayout c={c} title={title ?? t.appName}>
-        {workspace()}
+        <ChatWorkspace {...workspace} />
       </PanelLayout>
     );
   return () => (
-    <Layout c={c} fullPage title={chatTitle({ start: t.start, appName: t.appName, title, listHref, ownBack: channelsPage || forYouPage })}>
-      {workspace()}
+    <Layout
+      c={c}
+      fullPage
+      ui="v2"
+      title={chatTitle({ start: t.start, appName: t.appName, title, listHref, ownBack: channelsPage || forYouPage })}
+    >
+      <ChatWorkspaceV2 {...workspace} />
     </Layout>
   );
 });
