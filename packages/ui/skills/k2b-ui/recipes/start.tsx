@@ -124,6 +124,10 @@ export default function FirstStart(props: Partial<Props>) {
       <Pane label={props.app ?? "Notizbücher"} center>
         <Text type="lead">{props.line ?? "Leg dein erstes Notizbuch an"}</Text>
         <Tiles variant="card" perRow={4} label="Wege zum Start" items={props.tiles ?? notebooks} />
+        {/* the templates that have no card stay reachable: the dialog that makes it offers them all */}
+        <Text type="meta" muted>
+          Weitere Vorlagen stehen beim Anlegen zur Wahl.
+        </Text>
       </Pane>
     </Workspace>
   );

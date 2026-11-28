@@ -324,7 +324,7 @@ there is nothing to show), its `Mark` in the app's colour, its name and
 `onOpen`, or `href` to an address that opens the dialog.
 
 - The blank way first, then at most three templates; the rest stay in
-  the dialog's choice.
+  the dialog's choice, which a quiet line under the cards says.
 - Four in one row on a wide screen, 2 × 2 where four do not fit and on
   the phone; the line stands centred, on the phone at the start.
 - States: `grids` (the first base: tables and a sign for the blank base).

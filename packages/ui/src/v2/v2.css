@@ -1182,8 +1182,9 @@
 .k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-preview] .k2-tile-title {
   font-weight: 500;
 }
-/* a name that opens (a link, or a button with `onOpen`) is cut with "…" like a plain one: a button would cut hard */
-.k2-ui .k2-tile-title > .k2-row-open {
+/* a name that opens with `onOpen` is a button, which the name around it cannot cut like a link's text: the button cuts
+   itself with "…", so it reads like a link's (the name around a link still does the cutting) */
+.k2-ui .k2-tile-title > .k2-row-open[type="button"] {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
