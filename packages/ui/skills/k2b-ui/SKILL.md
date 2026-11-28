@@ -188,7 +188,7 @@ a `Notice` that names the deed.
   (`tone`), `Cells`, `Tiles`, `Canvas`. **Structure:** `Section`, `Group`,
   `Disclosure`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
-  body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
+  body, lead; `mono` for routes, paths and IDs), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
   `Chip`, `Progress`, `Spark`, `Ticks`, `RangeBar`, `Heat`, `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
   `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`, `ImageInput`,

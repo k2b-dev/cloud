@@ -47,6 +47,11 @@ export type TextProps = {
   /** The muted ink, for a second voice beside the main text. */
   muted?: boolean;
   /**
+   * Words read sign by sign, such as a route, a path or an ID: monospace, in the size of its place (as a `Facts`
+   * value with `mono`).
+   */
+  mono?: boolean;
+  /**
    * A colour of meaning, never decoration. `app` is the app's ink (the page's own accent with `Workspace accent`),
    * readable at 4.5:1 on the surface and on the app's tint: for what belongs to it, such as the hero's state.
    */
@@ -79,6 +84,7 @@ export const Text = (props: TextProps) => (
     data-k2-part="Text"
     data-type={props.type}
     data-tone={props.tone}
+    data-mono={props.mono ? "" : undefined}
   >
     {props.children}
   </Dynamic>
