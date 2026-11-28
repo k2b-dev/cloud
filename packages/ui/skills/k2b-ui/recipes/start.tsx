@@ -8,7 +8,7 @@ const APP = "#ca8a04";
 
 const notebooks: Tile[] = [
   {
-    icon: "notebook",
+    icon: "plus",
     title: "Leeres Notizbuch",
     meta: "1 Seite",
     color: APP,
@@ -20,16 +20,7 @@ const notebooks: Tile[] = [
     title: "Tagebuch",
     meta: "6 Seiten",
     color: APP,
-    preview: {
-      table: {
-        columns: ["Eintrag", "Nächster Schritt", "Status"],
-        rows: [
-          ["Heimische Hecke", "Ins Gartentagebuch", "nächste Durchsicht"],
-          ["Kaffee mit Anna", "Kalender", "geplant"],
-          ["Buch über Üben", "Recherchieren", "ausstehend"],
-        ],
-      },
-    },
+    preview: { page: { title: "Tagebuch", text: "Beginne hier. Schreibe täglich eine kurze Notiz." } },
     onOpen: () => undefined,
   },
   {
@@ -39,11 +30,11 @@ const notebooks: Tile[] = [
     color: APP,
     preview: {
       table: {
-        columns: ["Zutat", "Menge", "Einheit"],
+        columns: ["Zutat", { label: "Menge", align: "end" }, "Einheit"],
         rows: [
-          ["Camembert", "250", "g"],
-          ["Frischkäse", "200", "g"],
           ["Zwiebel", "1,2", "kg"],
+          ["Eier", "8", "Stück"],
+          ["Mehl", "1,5", "kg"],
         ],
       },
     },
@@ -56,11 +47,11 @@ const notebooks: Tile[] = [
     color: APP,
     preview: {
       table: {
-        columns: ["Titel", "Autor", "Status"],
+        columns: ["Titel", "Status"],
         rows: [
-          ["Momo", "Michael Ende", "Liest du"],
-          ["Unterleuten", "Juli Zeh", "Gelesen"],
-          ["Der Process", "Franz Kafka", "Als Nächstes"],
+          ["Momo", "Lese ich"],
+          ["Faust", "Gelesen"],
+          ["Altes Land", "Gelesen"],
         ],
       },
     },
@@ -78,7 +69,7 @@ const bases: Tile[] = [
     color: GRIDS,
     preview: {
       table: {
-        columns: ["Datum", "Text", "Betrag"],
+        columns: ["Datum", "Text", { label: "Betrag", align: "end" }],
         rows: [
           ["03.11.", "Miete", "−980,00"],
           ["05.11.", "Gehalt", "2.640,00"],
@@ -112,7 +103,7 @@ const bases: Tile[] = [
     color: GRIDS,
     preview: {
       table: {
-        columns: ["Nr.", "Kunde", "Betrag"],
+        columns: ["Nr.", "Kunde", { label: "Betrag", align: "end" }],
         rows: [
           ["041", "Brandt", "1.240,00"],
           ["042", "Oswald", "380,00"],

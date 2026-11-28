@@ -111,21 +111,22 @@ test("390 px, alive: the start stays whole, the last actions are in '…' in the
   });
 });
 
-test("a long start beside an end that folds nothing: the server's page is the live one (±1 px), also where the end cuts", async () => {
-  // "long": one button that fits; "closes": a primary with words and a closing button, which fold nothing and, at 240
-  // px, beside the start's least, have to be cut from the start of the end
-  const rects = (page: Page, bar: string) =>
-    page.evaluate((bar) => {
-      const element = document.querySelector(bar)!;
-      return [":scope > .k2-bar-start", ":scope > .k2-bar-start > *", ":scope > .k2-bar-end", ":scope > .k2-bar-end .k2-btn"].flatMap(
-        (selector) =>
-          [...element.querySelectorAll(selector)].map((found) => {
-            const box = found.getBoundingClientRect();
-            return [box.left, box.top, box.width, box.height];
-          }),
-      );
-    }, bar);
-  for (const width of [240, 320, 390, 1024]) {
+/** The boxes of a bar's start, its children, its end and the end's buttons. */
+const rects = (page: Page, bar: string) =>
+  page.evaluate((bar) => {
+    const element = document.querySelector(bar)!;
+    return [":scope > .k2-bar-start", ":scope > .k2-bar-start > *", ":scope > .k2-bar-end", ":scope > .k2-bar-end .k2-btn"].flatMap(
+      (selector) =>
+        [...element.querySelectorAll(selector)].map((found) => {
+          const box = found.getBoundingClientRect();
+          return [box.left, box.top, box.width, box.height];
+        }),
+    );
+  }, bar);
+// "long": one button that fits; "closes": a primary with words and a closing button, which fold nothing and, at 240
+// px, beside the start's least, have to be cut from the start of the end
+for (const width of [240, 320, 390, 1024])
+  test(`at ${width}: a long start beside an end that folds nothing: the server's page is the live one (±1 px), also where the end cuts`, async () => {
     const sent: Record<string, number[][]> = {};
     await withPage(width, false, async (page) => {
       for (const which of ["long", "closes"]) sent[which] = await rects(page, head(which));
@@ -144,8 +145,7 @@ test("a long start beside an end that folds nothing: the server's page is the li
       const end = await edges(page, head("closes"));
       expect([width, close !== null && close.x + close.width <= end.end!.right + 0.5]).toEqual([width, true]);
     });
-  }
-});
+  });
 
 test("a quiet label of 16ch and more beside the title: the title keeps a few letters, the label shortens too", async () => {
   for (const live of [false, true])
@@ -381,6 +381,40 @@ test("an end that ends with its own '…' takes the folded actions as its first 
     await page.locator(head("menu")).getByRole("button", { name: more }).click();
     const entries = await page.locator(".k2-menu").last().locator("[role^='menuitem']").allTextContents();
     expect(entries.map((entry) => entry.trim())).toEqual([...actions.slice(kept.length, 4), "Umbenennen", "Löschen"]);
+  });
+});
+
+/** The "…" buttons a person sees in a bar: the menus with the default symbol, the app's and the bar's own. */
+const dots = (page: Page, bar: string) =>
+  page.evaluate(
+    (bar) =>
+      [...document.querySelectorAll(`${bar} .k2-btn:has(> .k2-icon[data-name="dots"])`)].filter((button) =>
+        button.checkVisibility({ visibilityProperty: true }),
+      ).length,
+    bar,
+  );
+
+test("390 px: an app's '…' with a name of its own ('Mehr zum Angebot') takes the folded actions; exactly one '…'", async () => {
+  await withPage(390, true, async (page) => {
+    expect([await dots(page, head("named")), await page.locator(`${head("named")} .k2-bar-fold`).count()]).toEqual([1, 0]);
+    const kept = (await seen(page, head("named"))).map((control) => control.name).filter((name) => actions.includes(name));
+    expect(kept.length).toBeLessThan(actions.length);
+    await page.locator(head("named")).getByRole("button", { name: "Mehr zum Angebot" }).click();
+    const entries = await page.locator(".k2-menu").last().locator("[role^='menuitem']").allTextContents();
+    // the fixture's four actions: those without room, then the menu's own
+    expect(entries.map((entry) => entry.trim())).toEqual([...actions.slice(kept.length, 4), "Umbenennen"]);
+  });
+});
+
+test("390 px: a menu with a symbol of its own after the '…' ('Ansicht') never folds; the '…' takes the actions, exactly one '…'", async () => {
+  await withPage(390, true, async (page) => {
+    expect([await dots(page, head("view")), await page.locator(`${head("view")} .k2-bar-fold`).count()]).toEqual([1, 0]);
+    const names = (await seen(page, head("view"))).map((control) => control.name);
+    expect(names.at(-1)).toBe("Ansicht");
+    const kept = names.filter((name) => actions.includes(name));
+    await page.locator(head("view")).getByRole("button", { name: more }).click();
+    const entries = await page.locator(".k2-menu").last().locator("[role^='menuitem']").allTextContents();
+    expect(entries.map((entry) => entry.trim())).toEqual([...actions.slice(kept.length, 4), "Umbenennen"]);
   });
 });
 

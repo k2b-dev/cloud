@@ -19,6 +19,9 @@ const hasFolderRole = (folderId: SqlFragment, roles: readonly string[]): SqlFrag
 /** Whether a folder is the mailbox's Trash or Junk. */
 export const isTrashOrJunkFolder = (folderId: SqlFragment): SqlFragment => hasFolderRole(folderId, ["trash", "junk"]);
 
+/** Whether a folder holds mail not yet sent (Drafts) or not wanted (Junk). */
+export const isDraftsOrJunkFolder = (folderId: SqlFragment): SqlFragment => hasFolderRole(folderId, ["drafts", "junk"]);
+
 /** Whether a folder is the mailbox's Sent folder. */
 export const isSentFolder = (folderId: SqlFragment): SqlFragment => hasFolderRole(folderId, ["sent"]);
 

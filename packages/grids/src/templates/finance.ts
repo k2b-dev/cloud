@@ -1,7 +1,7 @@
 import { i18n } from "@k2b/stdlib";
 import { financeApp, financeBudgetViews } from "./finance-app";
 import { financeForms } from "./finance-forms";
-import { currentMonthDate, field, formula, type GridTemplate, record, table } from "./types";
+import { currentMonthDate, field, formula, type GridTemplate, previewAmount, previewDay, record, table } from "./types";
 
 const financeTemplateMessages = i18n.define({
   baseLocale: "en",
@@ -369,7 +369,8 @@ const financeTemplateMessages = i18n.define({
 export type FinanceText = ReturnType<typeof financeTemplateMessages.resolve>["t"];
 
 export const createFinanceTemplate = (locale?: string): GridTemplate => {
-  const { t } = financeTemplateMessages.resolve([locale ?? "en"]);
+  // the preview writes dates and amounts in the language its words resolved to
+  const { t, locale: language } = financeTemplateMessages.resolve([locale ?? "en"]);
 
   return {
     id: "finance",
@@ -379,6 +380,14 @@ export const createFinanceTemplate = (locale?: string): GridTemplate => {
     icon: "ti ti-wallet",
     baseName: t.baseName,
     baseDescription: t.baseDescription,
+    preview: {
+      columns: [{ name: t.date }, { name: t.amount, align: "end" }, { name: t.category }],
+      rows: [
+        [previewDay("2026-04-01", language), previewAmount(3200, language), t.salary],
+        [previewDay("2026-04-02", language), previewAmount(980, language), t.rent],
+        [previewDay("2026-04-18", language), previewAmount(28.9, language), t.books],
+      ],
+    },
     navigationGroups: [
       {
         name: t.transactions,

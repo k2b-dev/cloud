@@ -2,7 +2,7 @@ import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import { Button, Facts, Field, Input, Notice, Section, TagsInput } from "@k2b/ui/v2";
 import { createMemo, createSignal } from "solid-js";
-import ToolsScreen, { ToolPanes } from "../ToolsScreen";
+import ToolsScreen, { ToolPane } from "../ToolsScreen";
 import { toolsWorkspaceMessages } from "../tools-messages";
 
 export const mailtoMessages = i18n.define({
@@ -93,16 +93,17 @@ export default function MailtoGenerator() {
         </Button>
       }
     >
-      <ToolPanes
-        kind="converter"
+      <ToolPane
+        lead="input"
         scrollKey="tools-mailto"
-        input={{
-          label: w().input,
-          children: (
-            <>
-              <Notice tone="warn" title="mailto:">
-                {`mailto: ${t().noticeReplyTo}`}
-              </Notice>
+        label={w().result}
+        input={
+          <>
+            {/* a notice is a band from edge to edge, so it stands before the measured section */}
+            <Notice tone="warn" title="mailto:">
+              {`mailto: ${t().noticeReplyTo}`}
+            </Notice>
+            <Section icon="cursor-text" title={w().input} measure>
               <Field label={t().toLabel} hint={t().toDescription}>
                 <Input type="email" icon="mail" placeholder={t().toPlaceholder} value={to()} onInput={setTo} />
               </Field>
@@ -118,25 +119,22 @@ export default function MailtoGenerator() {
               <Field label={t().bodyLabel} hint={t().bodyDescription} optional={w().optional}>
                 <Input multiline placeholder={t().bodyPlaceholder} value={body()} onInput={setBody} />
               </Field>
-            </>
-          ),
-        }}
-        result={{
-          label: w().result,
-          children: (
-            <>
-              <Section icon="link" title={w().result} summary={mailto() ? undefined : w().nothingYet}>
-                <Facts
-                  items={[
-                    { label: t().mailtoLink, value: mailto() || "–", mono: true, copy: mailto() || undefined },
-                    { label: "Markdown", value: mailto() ? markdownLink() : "–", mono: true, copy: mailto() ? markdownLink() : undefined },
-                    { label: "HTML", value: mailto() ? htmlLink() : "–", mono: true, copy: mailto() ? htmlLink() : undefined },
-                  ]}
-                />
-              </Section>
-            </>
-          ),
-        }}
+            </Section>
+          </>
+        }
+        result={
+          <>
+            <Section icon="link" title={w().result} summary={mailto() ? undefined : w().nothingYet} measure>
+              <Facts
+                items={[
+                  { label: t().mailtoLink, value: mailto() || "–", mono: true, copy: mailto() || undefined },
+                  { label: "Markdown", value: mailto() ? markdownLink() : "–", mono: true, copy: mailto() ? markdownLink() : undefined },
+                  { label: "HTML", value: mailto() ? htmlLink() : "–", mono: true, copy: mailto() ? htmlLink() : undefined },
+                ]}
+              />
+            </Section>
+          </>
+        }
       />
     </ToolsScreen>
   );

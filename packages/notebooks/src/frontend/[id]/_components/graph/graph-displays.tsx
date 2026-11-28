@@ -30,6 +30,8 @@ export function GraphDisplaySwitcher(props: { value: GraphDisplay; onChange: (va
         options={GRAPH_DISPLAY_REGISTRY.map((display) => ({
           value: display.id,
           icon: display.icon,
+          // a narrow head shows only the icon: the name stays as hint on hover (and as the name for assistive technology)
+          title: display.label(t()),
           label: <span class="notebook-graph__display-label">{display.label(t())}</span>,
         }))}
       />
