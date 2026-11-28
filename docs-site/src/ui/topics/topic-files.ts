@@ -6,6 +6,7 @@ import dialogsAndOverlays from "./dialogs-and-overlays.md" with { type: "text" }
 import filterSortGroup from "./filter-sort-group.md" with { type: "text" };
 import formsAndInput from "./forms-and-input.md" with { type: "text" };
 import frame from "./frame.md" with { type: "text" };
+import identity from "./identity.md" with { type: "text" };
 import listsAndTables from "./lists-and-tables.md" with { type: "text" };
 import recordAndDetail from "./record-and-detail.md" with { type: "text" };
 import statesAndNotices from "./states-and-notices.md" with { type: "text" };
@@ -17,6 +18,7 @@ import statesAndNotices from "./states-and-notices.md" with { type: "text" };
 export const topicFiles = [
   ["frame", frame],
   ["lists-and-tables", listsAndTables],
+  ["identity", identity],
   ["filter-sort-group", filterSortGroup],
   ["record-and-detail", recordAndDetail],
   ["forms-and-input", formsAndInput],

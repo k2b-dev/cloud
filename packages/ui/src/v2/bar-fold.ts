@@ -32,7 +32,8 @@ type Watched = {
 };
 
 /** The buttons a bar may fold into "…"; the one list for the fold and for `measureV2Layout`. */
-export const foldable = '.k2-btn:not([data-variant="primary"], [data-floats], [data-closes], [aria-haspopup], [popover])';
+export const foldable =
+  '.k2-btn:not([data-variant="primary"], [data-floats], [data-closes], [aria-haspopup], [popover]), :is(button, a).k2-chip:not([popover])';
 /**
  * What stands after the "…" that takes the folded buttons without folding itself: a closing ×, the primary, a menu
  * of its own (a symbol such as "Ansicht", or words such as "Filter"). A "…" that offers itself is no such menu.
@@ -47,7 +48,8 @@ const laidOut = (element: Element): HTMLElement[] =>
   [...element.children].flatMap((child) => {
     if (!(child instanceof HTMLElement) || child.classList.contains("k2-bar-fold") || child.hasAttribute("popover")) return [];
     const style = getComputedStyle(child);
-    if (style.display === "contents") return laidOut(child);
+    // an island (`display: contents`) and a line of things (`Inline`, the chips of a status row) are looked through
+    if (style.display === "contents" || child.classList.contains("k2-inline")) return laidOut(child);
     return style.position === "absolute" || style.position === "fixed" ? [] : [child];
   });
 
@@ -101,32 +103,46 @@ const measure = (entry: Watched): Found => {
     (Number.parseFloat(endStyle.marginRight) || 0);
   const controls = laidOut(end).filter((control) => control.getClientRects().length > 0);
   const widths = controls.map((control) => control.getBoundingClientRect().width);
+  // the gap before each part: its own line's (the chips of an `Inline` stand at that line's gap), the end's between
+  // parts of different lines
+  const gaps = controls.map((control, index) => {
+    if (index === 0) return 0;
+    const parent = control.parentElement;
+    return parent && parent === controls[index - 1]!.parentElement && parent !== end
+      ? Number.parseFloat(getComputedStyle(parent).columnGap) || 0
+      : endGap;
+  });
   // the end's last "…" menu, after which stand only parts that never fold (a closing ×, the primary, a menu of its
   // own), takes the folded buttons: nothing new stands beside it, and nothing after the ×
   const last = [...controls].reverse().find((control) => entry.hosts.has(control) || !control.matches(neverFolds));
   const host = last && entry.hosts.has(last) ? last : undefined;
   const more = bar.querySelector<HTMLElement>(":scope > .k2-bar-end > .k2-bar-fold .k2-btn");
   // the bar's own "…" is a button of the bar's own height for controls, as square as an icon button
+  // before it is drawn, as wide as a control of the bar (`--k2-h-control`), not as low a chip as the end may hold
+  const control = Number.parseFloat(style.getPropertyValue("--k2-h-control")) || 0;
   const moreWidth = host
     ? 0
-    : (more?.getBoundingClientRect().width ?? Math.max(0, ...controls.map((control) => control.getBoundingClientRect().height)));
+    : (more?.getBoundingClientRect().width ?? Math.max(control, ...controls.map((part) => part.getBoundingClientRect().height)));
   let used =
     rings +
     (start ? start.getBoundingClientRect().width + gap : 0) +
     widths.reduce((sum, width) => sum + width, 0) +
-    endGap * Math.max(0, controls.length - 1);
+    gaps.reduce((sum, width) => sum + width, 0);
   const folded: HTMLElement[] = [];
   // not a fraction over: the start would give that fraction, and a tab of it would hide
   for (let index = controls.length - 1; index >= 0 && used > room; index--) {
-    const control = controls[index]!;
-    if (!control.matches(foldable)) continue;
-    folded.unshift(control);
-    used -= widths[index]! + endGap;
+    const part = controls[index]!;
+    if (!part.matches(foldable)) continue;
+    folded.unshift(part);
+    used -= widths[index]! + gaps[index]!;
     if (folded.length === 1 && moreWidth) used += moreWidth + endGap;
   }
   // a fold that gives no room (one icon button into a "…" as wide) is none: the start gives way instead
   const saved =
-    folded.reduce((sum, control) => sum + widths[controls.indexOf(control)]! + endGap, 0) - (moreWidth ? moreWidth + endGap : 0);
+    folded.reduce((sum, part) => {
+      const index = controls.indexOf(part);
+      return sum + widths[index]! + gaps[index]!;
+    }, 0) - (moreWidth ? moreWidth + endGap : 0);
   if (saved <= 0) return { folded: [], host: undefined };
   return { folded, host: folded.length ? host : undefined };
 };
@@ -142,6 +158,8 @@ const fold = (bars: Iterable<Watched>) => {
     const same = next.length === entry.folded.length && next.every((control, at) => control === entry.folded[at]);
     // a button that folds while it has the focus hands it to the "…" that now holds it, once that is drawn
     const focused = next.find((control) => control === document.activeElement && !entry.folded.includes(control));
+    // the bar's own "…" that holds the focus and goes (every button has room again) hands it to the last button
+    const leaving = next.length === 0 && !!entry.bar.querySelector(":scope > .k2-bar-end > .k2-bar-fold")?.contains(document.activeElement);
     if (!same) {
       for (const control of entry.folded) if (!next.includes(control)) control.removeAttribute("data-k2-folded");
       for (const control of next) control.setAttribute("data-k2-folded", "");
@@ -159,6 +177,15 @@ const fold = (bars: Iterable<Watched>) => {
       entry.show(entries, host);
     }
     if (focused) (host ?? entry.bar.querySelector<HTMLElement>(":scope > .k2-bar-end > .k2-bar-fold .k2-btn"))?.focus();
+    // once the "…" is gone (it goes with the update that `show` starts), the focus would fall to the page
+    if (leaving)
+      queueMicrotask(() => {
+        if (entry.bar.querySelector(":scope > .k2-bar-end > .k2-bar-fold")?.contains(document.activeElement)) return;
+        [...entry.bar.querySelectorAll<HTMLElement>(`:scope > .k2-bar-end :is(${foldable})`)]
+          .filter((control) => !control.closest(`.k2-bar-fold, ${neverFolds}`) && control.getClientRects().length > 0)
+          .at(-1)
+          ?.focus();
+      });
   });
 };
 
