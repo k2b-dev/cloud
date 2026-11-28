@@ -956,16 +956,17 @@ export type Tile = {
    * columns and first rows, as words), a page (its title and first words), or a sign for a thing that holds nothing yet.
    * It is a picture of the content: assistive technology reads the card by its name. Keep its values short: the app
    * chooses columns and rows whose words fit, at most about 12 characters a cell, so nothing is cut with "…" at 1440 or
-   * on the phone (two columns there); leave out what does not fit, such as a book's author. A cut cell reads as cheap.
+   * on the phone; leave out what does not fit, such as a book's author. A cut cell reads as cheap. The phone shows a
+   * table's first two columns, so a column that matters, such as an amount, comes second.
    */
   preview?: TilePreview;
 };
 
 /** What a card's preview shows: the app gives the words, the card draws them. */
 export type TilePreview =
-  | { table: { columns: readonly TilePreviewColumn[]; rows: readonly (readonly string[])[] } }
-  | { page: { title: string; text?: string } }
-  | { icon: string };
+  | { table: { columns: readonly TilePreviewColumn[]; rows: readonly (readonly string[])[] }; page?: never; icon?: never }
+  | { page: { title: string; text?: string }; table?: never; icon?: never }
+  | { icon: string; table?: never; page?: never };
 
 /**
  * A column of a preview's table: its head, or its head and its place. `align: "end"` sets the column at the end with
@@ -981,7 +982,7 @@ const columnAlign = (column: TilePreviewColumn | undefined) =>
 const TILE_PREVIEW_PHONE_COLUMNS = 2;
 
 const TilePreviewView = (props: { preview: TilePreview }) => (
-  <span class="k2-tile-preview" aria-hidden="true">
+  <div class="k2-tile-preview" aria-hidden="true">
     <Switch>
       <Match when={"table" in props.preview && props.preview.table}>
         {(table) => (
@@ -1028,7 +1029,7 @@ const TilePreviewView = (props: { preview: TilePreview }) => (
       </Match>
       <Match when={"icon" in props.preview && props.preview.icon}>{(icon) => <Icon name={icon()} />}</Match>
     </Switch>
-  </span>
+  </div>
 );
 
 /** The last card, which makes a new thing: a dashed frame, its name, and optional quick choices such as templates. */

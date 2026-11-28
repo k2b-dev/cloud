@@ -42,11 +42,11 @@ render(
               preview: {
                 table: {
                   // the amount stands at the end of its column, its figures of one width
-                  columns: ["Datum", "Zahlungspartner", { label: "Betrag", align: "end" }],
+                  columns: ["Datum", { label: "Betrag", align: "end" }, "Partner"],
                   rows: [
-                    ["01.04.", worst ? "Arbeitgeber-Gesellschaft-mit-beschränkter-Haftung-Nordhausen" : "Arbeitgeber GmbH", "2.640,00"],
-                    ["02.04.", "Vermieter", "−980,00"],
-                    ["05.04.", "Markt vor Ort", "−64,20"],
+                    ["01.04.", "2.640,00", worst ? "Arbeitgeber-Gesellschaft-mit-beschränkter-Haftung-Nordhausen" : "Arbeitgeber"],
+                    ["02.04.", "−980,00", "Vermieter"],
+                    ["05.04.", "−64,20", "Markt"],
                   ],
                 },
               },
@@ -59,11 +59,11 @@ render(
               href: "?new=inventory",
               preview: {
                 table: {
-                  columns: ["Name", "Kategorie", "Lagerort"],
+                  columns: ["Name", "Art", "Ort"],
                   rows: [
-                    ["Sony-A7-Gehäuse", "Kameras", "Studioregal"],
-                    ["Funkmikrofon-Set", "Audio", "Studioregal"],
-                    ["HDMI-Kabel, 5 m", "Kabel", "Lagerschrank"],
+                    ["Kamera", "Kameras", "Regal 2"],
+                    ["Mikrofon", "Audio", "Regal 1"],
+                    ["HDMI-Kabel", "Kabel", "Schrank"],
                   ],
                 },
               },

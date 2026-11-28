@@ -18,16 +18,16 @@ describe("a template's preview", () => {
     });
   });
 
-  test("Rechnungswesen: number, customer and amount of three invoices", () => {
+  test("Rechnungswesen: number, amount and customer of three invoices", () => {
     expect(preview("billing", "de")).toMatchObject({
-      columns: [{ name: "Nr." }, { name: "Kunde" }, { name: "Betrag", align: "end" }],
+      columns: [{ name: "Nr." }, { name: "Betrag", align: "end" }, { name: "Kunde" }],
       rows: [
-        ["RE-0001", "Nordlicht", "1.190,00"],
-        ["RE-0002", "Weber", "476,00"],
-        ["RE-0003", "Atelier K", "89,25"],
+        ["RE-0001", "1.190,00", "Nordlicht"],
+        ["RE-0002", "476,00", "Weber"],
+        ["RE-0003", "89,25", "Atelier K"],
       ],
     });
-    expect(preview("billing", "en")?.columns.map((column) => column.name)).toEqual(["No.", "Customer", "Amount"]);
+    expect(preview("billing", "en")?.columns.map((column) => column.name)).toEqual(["No.", "Amount", "Customer"]);
   });
 
   test("every start template brings three columns and three rows of short words, in English and German", () => {
@@ -36,6 +36,9 @@ describe("a template's preview", () => {
         const shown = preview(id, locale);
         expect(shown?.columns).toHaveLength(3);
         expect(shown?.rows).toHaveLength(3);
+        // the phone shows two columns: an amount stands second so it stays in view
+        for (const [index, column] of (shown?.columns ?? []).entries())
+          if (column.align === "end") expect({ id, amountColumn: index }).toEqual({ id, amountColumn: 1 });
         // a card's column holds about ten characters; a longer word would end in "…"
         for (const text of [...(shown?.columns.map((column) => column.name) ?? []), ...(shown?.rows.flat() ?? [])])
           expect({ id, locale, text, fits: text.length <= 10 }).toMatchObject({ fits: true });

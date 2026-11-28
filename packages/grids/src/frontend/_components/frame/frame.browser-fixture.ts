@@ -120,11 +120,11 @@ export const startFixture = (params: URLSearchParams): GridsStartProps => ({
       icon: "receipt",
       preview: {
         tables: 3,
-        columns: [{ name: "Nr." }, { name: "Kunde" }, { name: "Betrag", align: "end" }],
+        columns: [{ name: "Nr." }, { name: "Betrag", align: "end" }, { name: "Kunde" }],
         rows: [
-          ["RE-0001", "Nordlicht", "1.190,00"],
-          ["RE-0002", "Weber", "476,00"],
-          ["RE-0003", "Atelier K", "89,25"],
+          ["RE-0001", "1.190,00", "Nordlicht"],
+          ["RE-0002", "476,00", "Weber"],
+          ["RE-0003", "89,25", "Atelier K"],
         ],
       },
     },
