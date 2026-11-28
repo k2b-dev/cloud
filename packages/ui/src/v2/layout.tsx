@@ -32,7 +32,7 @@ import { useOverlayMessages } from "./overlay-messages";
 import { ConfirmDialog } from "./overlays";
 import { Empty, PlaceholderValue } from "./states";
 import { Toasts } from "./toast";
-import type { Action, OnNavigate, Person, Status, Width } from "./types";
+import { type Action, type ColumnWidth, columnPx, draggable, type OnNavigate, type Person, type Status, type Width } from "./types";
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -376,7 +376,7 @@ export const Workspace = (props: WorkspaceProps) => {
 // ── Pane and Pane.Split ──────────────────────────────────────────────────────────────────────────────────────────
 
 type SplitEntry = {
-  readonly width?: Width;
+  readonly width?: ColumnWidth;
   readonly label?: string;
   /** A context column (`side`): the split lets it give way to the end of the main column where it lacks the room. */
   readonly side?: PaneProps["side"];
@@ -404,8 +404,8 @@ export type PaneProps = {
    * the state of an open entry, such as "3 Nachrichten · Wartet auf Antwort · Tag" above a reader.
    */
   status?: JSX.Element;
-  /** A column that can be dragged wider: its minimum and default width. Only inside `Pane.Split`. */
-  width?: Width;
+  /** A column that can be dragged wider: its minimum and default width; `{ fixed }`: one width, no grip. Only inside `Pane.Split`. */
+  width?: ColumnWidth;
   /** The name of the column and of its grip, such as "List". */
   label?: string;
   /**
@@ -480,7 +480,9 @@ export const Pane = (props: PaneProps) => {
     setInner((list) => [...list, need]);
     onCleanup(() => setInner((list) => list.filter((other) => other !== need)));
   };
-  const need = () => Math.max(props.width?.min ?? flexibleMin, ...inner().map((each) => each()));
+  // a fixed column needs its one width; one that can be dragged, its minimum
+  const own = () => (props.width === undefined ? flexibleMin : draggable(props.width) ? props.width.min : columnPx(props.width));
+  const need = () => Math.max(own(), ...inner().map((each) => each()));
   const entry: SplitEntry = {
     get width() {
       return props.width;
@@ -549,8 +551,8 @@ export const Pane = (props: PaneProps) => {
       data-wide-back={props.wideBack && props.back ? "" : undefined}
       data-center={props.center ? "" : undefined}
       style={custom({
-        "--k2-pane-w": props.width ? `${size() ?? props.width.default}px` : undefined,
-        "--k2-pane-min": props.width ? `${props.width.min}px` : undefined,
+        "--k2-pane-w": props.width ? `${size() ?? columnPx(props.width)}px` : undefined,
+        "--k2-pane-min": props.width ? `${draggable(props.width) ? props.width.min : columnPx(props.width)}px` : undefined,
       })}
     >
       {/* the way back shows on the phone (with `wideBack` everywhere), above the head; a public part, so a shell can find it */}
@@ -661,7 +663,8 @@ const SplitBody = (props: {
     if (!right) return undefined;
     const moving = right.width ? right : left?.width ? left : undefined;
     const width = moving?.width;
-    if (!moving || !width) return undefined;
+    // a fixed width has no grip: it keeps its width
+    if (!moving || !draggable(width)) return undefined;
     return {
       label: moving.label ?? "Column",
       width,
@@ -689,7 +692,8 @@ const SplitBody = (props: {
   const room = () => {
     if (!props.contextual) return undefined;
     const [main, context] = props.entries;
-    const both = (main?.width?.default ?? flexibleMin) + (context?.width?.default ?? flexibleMin);
+    // a fixed column counts its one width
+    const both = (main?.width ? columnPx(main.width) : flexibleMin) + (context?.width ? columnPx(context.width) : flexibleMin);
     return typeof context?.side === "object" ? Math.max(context.side.from, both) : both;
   };
   // Below that room (from 768 px on; the phone stacks every split) the split wraps: the context column and the line

@@ -1890,6 +1890,13 @@
   padding-block: 8px;
   vertical-align: top;
 }
+/* a group's head row is one short line in every table, as high as the column heads, its words in the middle; it never
+   takes the height of two-line rows */
+.k2-ui .k2-table tr[data-group] > td {
+  height: var(--k2-h-columns);
+  padding-block: 0;
+  vertical-align: middle;
+}
 .k2-ui .k2-table th:first-child,
 .k2-ui .k2-table td:first-child {
   padding-left: var(--k2-edge);
@@ -2927,6 +2934,12 @@
   height: 100%;
   width: var(--k2-p);
   background: var(--k2-ok);
+}
+.k2-ui .k2-progress[data-status="warn"] .k2-progress-track > i {
+  background: var(--k2-warn-dot);
+}
+.k2-ui .k2-progress[data-status="bad"] .k2-progress-track > i {
+  background: var(--k2-bad-dot);
 }
 
 /* A range on a shared scale: a quiet track the width of its place, the range on it from its start to its end, in the

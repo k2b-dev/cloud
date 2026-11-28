@@ -59,6 +59,8 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   limits, Enter back to the default) move the width; a reload starts at the
   default again. The sidebar's grip works the same. A grip shows only under the
   pointer, on keyboard focus and while dragged (on touch screens it stays).
+  `width={{ fixed }}` keeps one width without a grip, for a page to read
+  rather than to arrange (a visitor page, a wall screen).
 - `detail`: the reader beside a list. What is open belongs in the address:
   render the detail only while the address names an entry. On the phone
   the detail is the page, and the title in its head is never cut: beside the
@@ -311,7 +313,7 @@ open row in the tint of the app it belongs to, a chosen row blue; rows part
 with the quiet line, the column head with the clear one). A column: `title`, `cell(row)`
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
-never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer or holds the focus, and while dragged; on touch screens it stays, and after a touch on the head it takes a 44 px target), `wrap` (one text column may take 3
+never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer or holds the focus, and while dragged; on touch screens it stays, and after a touch on the head it takes a 44 px target; `{ fixed }`: one width, no grip), `wrap` (one text column may take 3
 lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
@@ -420,7 +422,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   the state and the word in the ink of the text ("● Aktiv"), on the chip's
   height. Use it for a column of states in a dense table or list, where a
   chip on every line is too loud.
-- `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
+- `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22"), `status`
+  (`warn` almost full, `bad` full: the bar says it in colour too, beside the
+  chip or words that say why).
 - `Mark`: what a thing looks like. `icon` + `color` (its data colour, or
   the colour of its kind: table, form, PDF), `image` (a thumbnail over the
   symbol; while it loads and when it fails the symbol shows), `kind` (the
