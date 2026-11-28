@@ -87,7 +87,7 @@ export const GridsAccessScreen = () => (
         />
       }
     >
-      <Section form title="Personen und Gruppen" count={12} summary="Wer diese Base öffnen, bearbeiten oder verwalten darf.">
+      <Section title="Personen und Gruppen" count={12} summary="Wer diese Base öffnen, bearbeiten oder verwalten darf.">
         <Field.Row>
           <Field label="Einladen">
             <Input placeholder="Name, E-Mail-Adresse oder Gruppe" />
@@ -146,7 +146,7 @@ export const GridsAccessScreen = () => (
           />
         </List>
       </Section>
-      <Section form title="Zugriff per Link" summary="Wer die Base über ihren Link öffnen kann.">
+      <Section title="Zugriff per Link" summary="Wer die Base über ihren Link öffnen kann.">
         <Choice
           name="link"
           label="Zugriff per Link"
@@ -161,7 +161,7 @@ export const GridsAccessScreen = () => (
           <Input value="cloud.example.org/grids/b/werkstatt" end={<Button variant="ghost" icon="copy" label="Link kopieren" />} />
         </Field>
       </Section>
-      <Section form title="Vererbung" summary="Tabellen und Formulare übernehmen diesen Zugriff. Eigene Regeln gelten zusätzlich.">
+      <Section title="Vererbung" summary="Tabellen und Formulare übernehmen diesen Zugriff. Eigene Regeln gelten zusätzlich.">
         <List label="Eigene Regeln">
           <Row
             mark={{ icon: "table", color: grids }}

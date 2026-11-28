@@ -106,8 +106,7 @@ export const SettingsScreen = () => (
       >
         {shifts.map(([name, when]) => (
           <Row
-            icon="calendar-event"
-            color={shiftColor}
+            mark={{ icon: "calendar-event", color: shiftColor }}
             lines={[name, when]}
             end={<Menu label={`Schicht: ${name}`} items={[{ label: "Ändern", icon: "pencil" }]} />}
           />
