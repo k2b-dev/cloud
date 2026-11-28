@@ -219,6 +219,49 @@ describe("measureV2Layout", () => {
       TEST_TIMEOUT,
     );
 
+  // A section's own column: B (a pane of 960 px and more) measures what stands beside its head against its content
+  // column, and A with `measure` measures its rows against the reading measure. A line or a band that stops short of
+  // that column is still found; one that fills it is clean.
+  const section = (content: string, { width, measure = false }: { width: number; measure?: boolean }) =>
+    `<div class="k2-pane" data-k2-column style="width:${width}px;height:400px"><div class="k2-scroll"><section class="k2-sec"${measure ? " data-measure" : ""}>` +
+    `<div class="k2-sh"><div class="k2-sh-title"><h3>Abschnitt</h3></div></div>${content}</section></div></div>`;
+  for (const [what, options] of [
+    ["B, a pane of 1200 px", { width: 1200 }],
+    ["A with measure, a pane of 900 px", { width: 900, measure: true }],
+  ] as const) {
+    test(
+      `green: ${what}: a row and a band that fill the section's own column are clean`,
+      async () => {
+        const page = await open(section('<div class="row">Row</div><div class="tint"></div><div class="row">Row</div>', options));
+        try {
+          const result = await measureV2Layout(page);
+          expect(result.edge).toEqual([]);
+          expect(result.measured.bands).toBe(1);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+    test(
+      `red: ${what}: a short line and a short band in the section's own column are found`,
+      async () => {
+        const page = await open(
+          section('<div class="row" style="width:200px">Row</div><div class="tint" style="width:180px"></div>', options),
+        );
+        try {
+          const { edge } = await measureV2Layout(page);
+          expect(edge).toHaveLength(2);
+          expect(edge[0]).toMatch(/^line div\.row border-bottom at y \d+ stops 0 px short of the left and \d+ px short of the right edge/);
+          expect(edge[1]).toMatch(/^band div\.tint at y \d+ stops 0 px short of the left and \d+ px short of the right edge/);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+  }
+
   test(
     "red: a line in a padded wrapper stops short of its column edge (the flat build's 8 px)",
     async () => {
