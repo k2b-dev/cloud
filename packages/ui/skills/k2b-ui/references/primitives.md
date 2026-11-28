@@ -218,6 +218,17 @@ what is taller (its history) scrolls inside it, the composer stays in sight.
 No absolute positioning is needed. A fill `Canvas` holds one child, the
 drawing: a second child stands in a row of its own under it and is cut away.
 
+### Cover
+
+A picture across its place, such as a place's banner: `src`, `alt` (what
+it shows; `""` when it is decoration above the place's name), `slim`
+(above a task such as a form: 72 to 88 px instead of 120 to 180 px).
+Directly in a `Pane`, at the top of a page or a detail, from edge to edge,
+`object-fit: cover`. The height follows the place's width by CSS alone (a
+third, 120 to 180 px; slim a sixth), so the server's page holds the room
+and nothing moves when the picture comes; a quiet tint fills it while it
+loads and when it fails. No `src`: no cover, never an empty band.
+
 ## Structure
 
 ### Section

@@ -316,6 +316,28 @@ test("a RangeBar's colours are colours: stops sorted, held to the visible part, 
   );
 });
 
+test("a Cover is sent by the server with its picture and its words, and without a picture it is not there", async () => {
+  const { Cover } = await import("./marks");
+  const named = renderToString(() => createComponent(Cover, { src: "https://cover.example/hof.jpg", alt: "Der Innenhof im Sommer" }));
+  expect(named).toContain('data-k2-part="Cover"');
+  expect(named).toContain('src="https://cover.example/hof.jpg"');
+  // the cover is the picture and carries its words; the picture inside says nothing a second time
+  expect(named).toContain('role="img"');
+  expect(named).toContain('aria-label="Der Innenhof im Sommer"');
+  // (an empty attribute: `alt` alone, as the server writes it)
+  expect(named).toMatch(/<img [^>]*\balt(?:="")?[ >]/);
+  expect(named).not.toContain("data-slim");
+  // decoration says nothing to assistive technology
+  const decoration = renderToString(() => createComponent(Cover, { src: "https://cover.example/hof.jpg", alt: "", slim: true }));
+  expect(decoration).toContain('aria-hidden="true"');
+  expect(decoration).not.toContain("aria-label");
+  expect(decoration).not.toContain("role=");
+  expect(decoration).toContain("data-slim");
+  // no picture, no band: nothing stands in its place
+  expect(renderToString(() => createComponent(Cover, { alt: "" }))).not.toContain("<");
+  expect(renderToString(() => createComponent(Cover, { src: "", alt: "Hof" }))).not.toContain("<");
+});
+
 test("a RangeBar with several ranges draws each on the one track, in its own colours, under one label", async () => {
   const { RangeBar } = await import("./marks");
   const markup = renderToString(() =>
