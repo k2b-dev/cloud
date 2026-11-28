@@ -157,6 +157,9 @@ const message = (
   attachments,
 });
 
+const listErrors = ["invalid_search", "search_failed", "load_failed"] as const;
+const listError = (url: URL) => listErrors.find((code) => code === url.searchParams.get("listError")) ?? null;
+
 const savedViewNames: Record<string, string> = { "Priority view": "Wichtig", "Team view": "Team" };
 
 /**
@@ -240,9 +243,10 @@ export const mailV2Data = (url: URL, now: number): MailboxPageData => {
       })),
     scheduledCount: 1,
     viewCounts: { ...data.viewCounts, needs_action: 5, mine: 3, waiting: 4 },
-    listItems: items,
+    // `?listError=<code>`: the list as the server answers a failed load; a search that is not valid brings no rows
+    listItems: listError(url) === "invalid_search" ? [] : items,
     nextListCursor: null,
-    listError: null,
+    listError: listError(url),
     doneTodayCounts: { doneToday: 12, doneByAutomation: 5 },
     // as Mail's page: only a page that opens no mail brings the year of mail
     receivedPerDay: url.searchParams.has("conversation") ? null : mailV2ReceivedPerDay(url, now),

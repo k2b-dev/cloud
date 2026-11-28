@@ -97,6 +97,31 @@ describe("Mail on the v2 pilot", () => {
       }
     }, 60_000);
 
+  test("a failed list says what failed in words; a search that is not valid offers to clear it", async () => {
+    const failed = await open(`${MAIL_V2_PATH}?listError=load_failed`);
+    try {
+      const notice = failed.locator('[data-k2-part="Notice"][data-tone="bad"]');
+      await notice.waitFor({ state: "visible" });
+      expect(await notice.textContent()).toContain("Versuche es gleich noch einmal.");
+      expect(await notice.textContent()).not.toContain("load_failed");
+      expect(await notice.getByRole("button", { name: "Erneut versuchen" }).count()).toBe(1);
+    } finally {
+      await failed.close();
+    }
+    const invalid = await open(`${MAIL_V2_PATH}?listError=invalid_search&q=from%3A`);
+    try {
+      const notice = invalid.locator('[data-k2-part="Notice"][data-tone="bad"]');
+      await notice.waitFor({ state: "visible" });
+      expect(await notice.textContent()).toContain("Die Suche in diesem Link ist ungültig.");
+      expect(await invalid.getByText("invalid_search").count()).toBe(0);
+      const clear = notice.getByRole("link", { name: "Suche zurücksetzen" });
+      expect(await clear.getAttribute("href")).not.toContain("q=");
+      expect(await invalid.getByRole("button", { name: "Erneut versuchen" }).count()).toBe(0);
+    } finally {
+      await invalid.close();
+    }
+  });
+
   test("a row opens its conversation in place, and Escape returns to the row", async () => {
     const page = await open(MAIL_V2_PATH);
     try {
