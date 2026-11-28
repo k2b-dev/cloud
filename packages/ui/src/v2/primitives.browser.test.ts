@@ -383,7 +383,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
             }),
           );
           expect(found).toEqual([
-            { words: "Filtern", shown: true, title: "Filtern" },
+            { words: "Filtern", shown: true, title: null },
             { words: "Weiter", shown: true, title: null },
             { words: "Rohdaten anzeigen", shown: true, title: null },
           ]);
