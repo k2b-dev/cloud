@@ -68,6 +68,7 @@ export default function CalendarFixture(props: Props) {
           spaces: [{ id: props.spaceId, name: space.name, color: space.color, openItemCount: 0 }],
           pinnedSpaceIds: [],
           recentSpaceIds: [],
+          unlistedSpaceCount: 0,
           myWorkCount: 0,
         }}
         people={[]}

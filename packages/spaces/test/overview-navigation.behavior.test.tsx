@@ -22,6 +22,7 @@ describe("Spaces overview navigation", () => {
           initialView: "mine",
           initialPinnedSpaceIds: [],
           recentSpaceIds: [],
+          unlistedSpaceCount: 0,
           initialWork: { view: "mine", items: [], counts: { mine: 0, today: 0, upcoming: 0 } },
           initialActivity: { items: [], nextCursor: null },
           initialActivityError: null,

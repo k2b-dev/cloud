@@ -26,6 +26,7 @@ render(
         initialView={initialView}
         initialPinnedSpaceIds={["Space1"]}
         recentSpaceIds={[]}
+        unlistedSpaceCount={0}
         initialWork={overviewWorkFor(initialView, worst)}
         initialActivity={{ items: worst ? overviewWorstActivity : overviewActivity, nextCursor: "next" }}
         initialActivityError={null}

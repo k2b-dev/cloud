@@ -16,6 +16,7 @@ test.skipIf(isServer)("a New task that fails says why and offers Try again, whic
         initialWork: { view: "mine", counts: { mine: 0, today: 0, upcoming: 0 }, items: [] },
         initialPinnedSpaceIds: [],
         recentSpaceIds: [],
+        unlistedSpaceCount: 0,
         initialActivity: { items: [], nextCursor: null },
         initialActivityError: null,
         dateConfig: { locale: "en", timeZone: "UTC" },

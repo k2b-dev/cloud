@@ -1,12 +1,12 @@
 import { sql } from "@k2b/cloud";
-import { toPgUuidArray } from "@k2b/cloud/services";
+import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import type { DateContext } from "@k2b/stdlib";
 import { parsePinnedSpaceIds, parseRecentSpaceIds } from "../frontend/[id]/_components/settings/SpaceSettingsStore";
-import type { SpacesSidebarData } from "../frontend/[id]/_components/sidebar/spaces-navigation";
+import { SIDEBAR_SPACES, type SpacesSidebarData } from "../frontend/[id]/_components/sidebar/spaces-navigation";
 import type { OverviewView, OverviewWork, SpacePulse } from "../overview-contracts";
+import { buildSpacePrincipalCondition } from "./access";
 import { spacesService } from "./index";
 import { dashboardSnapshot, listMyTasks } from "./items";
-import { spacesPublicResources } from "./public-resources";
 
 /**
  * Both SSR and view navigation use the same permission-filtered reads and limits. `day` also reads what counts today
@@ -94,34 +94,72 @@ export async function loadSpaceOverviewStats(params: { spaceIds: string[] }): Pr
   return rows.map((row) => ({ spaceId: row.id, openItemCount: row.open_item_count }));
 }
 
-/** Authorized sidebar snapshot, shared by the overview and each Space. */
+type DbSidebarSpace = { short_id: string; name: string; color: string; open_item_count: number; reachable_count: number };
+
+/**
+ * The Spaces of the sidebar in one statement, with the access condition of `spacesService.space.list` for a person
+ * (a grant of theirs, of their groups or of every signed-in person, never `none`) and its order by name: the first
+ * `limit` of them (`null` reads all), and the `named` ones (pinned, recent, open) wherever they stand, each with its
+ * open tasks, and the count of every reachable Space for "+n more".
+ */
+async function readSidebarSpaces(params: { userId: string; named: string[]; limit: number | null }) {
+  const principalMatch = buildSpacePrincipalCondition({ type: "user", userId: params.userId });
+  const rows = await sql<DbSidebarSpace[]>`
+    WITH reachable AS MATERIALIZED (
+      SELECT DISTINCT s.id, s.short_id, s.name, s.color
+      FROM spaces.spaces s
+      JOIN spaces.space_access sa ON sa.space_id = s.id
+      JOIN auth.access a ON a.id = sa.access_id
+      WHERE a.permission <> 'none'::auth.permission_level
+        AND ${principalMatch}
+    ),
+    listed AS (
+      (SELECT * FROM reachable ORDER BY name, id LIMIT ${params.limit})
+      UNION
+      SELECT * FROM reachable WHERE short_id = ANY(${toPgTextArray(params.named)}::text[])
+    )
+    SELECT
+      l.short_id,
+      l.name,
+      l.color,
+      (
+        SELECT COUNT(*)::int FROM spaces.items i
+        JOIN spaces.columns c ON c.id = i.column_id
+        WHERE i.space_id = l.id AND i.completed_at IS NULL AND c.is_done = false
+      ) AS open_item_count,
+      (SELECT COUNT(*)::int FROM reachable) AS reachable_count
+    FROM listed l
+    ORDER BY l.name, l.id
+  `;
+  return {
+    spaces: rows.map((row) => ({ id: row.short_id, name: row.name, color: row.color, openItemCount: row.open_item_count })),
+    unlisted: Math.max(0, (rows[0]?.reachable_count ?? 0) - rows.length),
+  };
+}
+
+/**
+ * Authorized sidebar snapshot, shared by the overview and each Space: what the sidebar and the phone menu show before a
+ * search (the pinned, the recent and the open Space, and the first 20 by name) and how many reachable Spaces it left
+ * out. The PWA's switcher has no "+n more" and passes `complete` for every Space.
+ */
 export async function loadSpacesSidebar(params: {
   userId: string;
   cookieHeader?: string;
   dateConfig?: DateContext;
   myWorkCount?: number | Promise<number>;
+  /** The short ID of the open Space, listed wherever it stands. */
+  openSpaceId?: string;
+  complete?: boolean;
 }): Promise<SpacesSidebarData> {
-  const [page, myWorkCount] = await Promise.all([
-    spacesService.space.list({ subject: { type: "user", userId: params.userId } }),
+  const pinnedSpaceIds = parsePinnedSpaceIds(params.cookieHeader);
+  const recentSpaceIds = parseRecentSpaceIds(params.cookieHeader);
+  const named = [...pinnedSpaceIds, ...recentSpaceIds, ...(params.openSpaceId ? [params.openSpaceId] : [])];
+  const [listed, myWorkCount] = await Promise.all([
+    readSidebarSpaces({ userId: params.userId, named, limit: params.complete ? null : SIDEBAR_SPACES }),
     params.myWorkCount ??
       dashboardSnapshot({ userId: params.userId, dateConfig: params.dateConfig, view: "counts", todoLimit: 0 }).then(
         (snapshot) => snapshot.assignedToMeCount,
       ),
   ]);
-  const [projected, stats] = await Promise.all([
-    spacesPublicResources.projectSpaces(page.items),
-    loadSpaceOverviewStats({ spaceIds: page.items.map((space) => space.id) }),
-  ]);
-  const byId = new Map(stats.map((entry) => [entry.spaceId, entry.openItemCount]));
-  return {
-    spaces: projected.map((space, index) => ({
-      id: space.id,
-      name: space.name,
-      color: space.color,
-      openItemCount: byId.get(page.items[index]!.id) ?? 0,
-    })),
-    pinnedSpaceIds: parsePinnedSpaceIds(params.cookieHeader),
-    recentSpaceIds: parseRecentSpaceIds(params.cookieHeader),
-    myWorkCount,
-  };
+  return { spaces: listed.spaces, unlistedSpaceCount: listed.unlisted, pinnedSpaceIds, recentSpaceIds, myWorkCount };
 }

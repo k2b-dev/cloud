@@ -57,6 +57,8 @@ type Props = {
   initialPinnedSpaceIds: string[];
   /** The Spaces opened last, newest first, from the settings cookie. */
   recentSpaceIds: string[];
+  /** The reachable Spaces the server did not send; "+n more" counts them. */
+  unlistedSpaceCount: number;
   initialWork: OverviewWork;
   initialActivity: { items: ActivityItem[]; nextCursor: string | null };
   initialActivityError: string | null;
@@ -100,6 +102,7 @@ export default function SpacesOverview(props: Props) {
     spaces: props.spaces,
     pinnedSpaceIds: props.initialPinnedSpaceIds,
     recentSpaceIds: props.recentSpaceIds,
+    unlistedSpaceCount: props.unlistedSpaceCount,
     get myWorkCount() {
       return counts().mine;
     },

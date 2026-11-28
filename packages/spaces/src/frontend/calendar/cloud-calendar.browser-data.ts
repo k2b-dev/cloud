@@ -226,6 +226,7 @@ export const SIDEBAR = {
   ],
   pinnedSpaceIds: [],
   recentSpaceIds: [],
+  unlistedSpaceCount: 0,
   myWorkCount: 5,
 };
 
@@ -242,6 +243,7 @@ export const WORST_SIDEBAR = {
   ],
   pinnedSpaceIds: ["TeamLg"],
   recentSpaceIds: [],
+  unlistedSpaceCount: 0,
   myWorkCount: 1_284,
 };
 export const WORST_SOURCES: CalendarSourceView[] = SOURCES.map((source) =>

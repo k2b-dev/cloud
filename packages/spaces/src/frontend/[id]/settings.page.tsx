@@ -26,7 +26,7 @@ export default ssr<AuthContext>(async (c) => {
   const dateConfig = getDateConfig(c);
   const [context, sidebar] = await Promise.all([
     loadSpaceSettingsContext({ locale, user, spaceId, settings: parseSpaceSettings(cookie, spaceShortId) }),
-    loadSpacesSidebar({ userId: user.id, cookieHeader: cookie, dateConfig }),
+    loadSpacesSidebar({ userId: user.id, cookieHeader: cookie, dateConfig, openSpaceId: spaceShortId }),
   ]);
   if (!context.ok) return ssr.error(c, context.error.status === 403 ? 403 : 404, back);
   const tabs = visibleTabs(context.data.permission);

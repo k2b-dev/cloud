@@ -47,7 +47,7 @@ export default ssr<AuthContext>(async (c) => {
   const [state, mailIntegrationAvailable, sidebar, people, estimateSuggestions, pulse] = await Promise.all([
     statePromise,
     isMailInvitationIntegrationAvailable(appAccessAuthority(c)),
-    loadSpacesSidebar({ userId: user.id, cookieHeader: c.req.header("Cookie"), dateConfig }),
+    loadSpacesSidebar({ userId: user.id, cookieHeader: c.req.header("Cookie"), dateConfig, openSpaceId: spaceShortId }),
     peoplePromise,
     estimatePromise,
     // The Space's first band: one aggregate statement with the overview's access condition.

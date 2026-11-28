@@ -476,6 +476,7 @@ export const spaceScreenProps = (href: string, state: SpaceFixtureState = "usual
       ],
       pinnedSpaceIds: ["Space1"],
       recentSpaceIds: [],
+      unlistedSpaceCount: 0,
       myWorkCount: 4,
     },
     people:

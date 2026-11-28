@@ -70,6 +70,7 @@ export function useSpacesNav(props: SpacesNavProps) {
       currentId: props.current.kind === "space" ? props.current.id : undefined,
       query: search,
       locale: locale(),
+      unlisted: props.unlistedSpaceCount,
     });
     return [
       {
@@ -102,7 +103,9 @@ export function useSpacesNav(props: SpacesNavProps) {
   const groups = createMemo(() => groupsFor(query()));
   const menuGroups = createMemo(() => groupsFor(""));
   const search = (): NavSearch | undefined =>
-    props.spaces.length >= SIDEBAR_SEARCH_FROM ? { label: t().findSpace, value: query(), onInput: setQuery } : undefined;
+    props.spaces.length + props.unlistedSpaceCount >= SIDEBAR_SEARCH_FROM
+      ? { label: t().findSpace, value: query(), onInput: setQuery }
+      : undefined;
   return { groups, menuGroups, search, creating, setCreating };
 }
 

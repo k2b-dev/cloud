@@ -58,6 +58,7 @@ const render = (initialActivityError: string | null = null, locale = "en", extra
           initialView: extra.initialView ?? "mine",
           initialPinnedSpaceIds: ["Space1"],
           recentSpaceIds: [],
+          unlistedSpaceCount: 0,
           initialWork: {
             view: extra.initialView ?? "mine",
             items: [

@@ -176,6 +176,14 @@ testFor("database")("each overview view reads a pinned number of statements", as
     expect(cost).toEqual({ mine: 3, "mine with day": 5, today: 3, "today with day": 4, upcoming: 3, "upcoming with day": 5 });
     // A Space's pulse is that one aggregate statement, limited to the Space.
     expect((await meter.during(() => loadSpacePulse({ ...params, spaceId: space!.id }))).length).toBe(1);
+    // The sidebar is one statement: the shown Spaces with their open tasks and the count for "+n more" (before: the
+    // whole list, its short IDs and its open tasks, 3). "My work" adds its count unless the page read it already.
+    const sidebar = {
+      given: (await meter.during(() => loadSpacesSidebar({ ...params, myWorkCount: 1, openSpaceId: "Open01" }))).length,
+      counted: (await meter.during(() => loadSpacesSidebar(params))).length,
+      complete: (await meter.during(() => loadSpacesSidebar({ ...params, myWorkCount: 1, complete: true }))).length,
+    };
+    expect(sidebar).toEqual({ given: 1, counted: 2, complete: 1 });
   } finally {
     await meter.close();
     await sql`DELETE FROM spaces.spaces WHERE id = ${space!.id}::uuid`;

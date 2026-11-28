@@ -190,26 +190,27 @@ const paths = (fixture: Fixture) => ({
 /**
  * The pinned first-view cost of every page, the same for the usual and the worst fixture: no read per row, Space,
  * member or column. Every page pays the signed-in person and the shell's screen preferences; a Space page also its
- * sidebar (4), its pulse (1), its permission, detail, projections and the people it can assign. The board reads all
- * its columns in one batch: one count, one windowed page read and one hydration of 6, so 8 lists cost what 1 does
+ * sidebar (2: the shown Spaces with the count for "+n more", and "My work"; before 4, with every Space), its pulse
+ * (1), its permission, detail, projections and the people it can assign. The board reads all its columns in one
+ * batch: one count, one windowed page read and one hydration of 6, so 8 lists cost what 1 does
  * (before: 8 per column, up to twice that filtered). A filter that leaves a list empty skips its hydration.
  */
 const STATEMENTS = {
-  home: 11,
-  "home today": 10,
-  "home upcoming": 11,
-  list: 42,
-  table: 41,
-  kanban: 41,
-  "kanban filtered": 41,
-  "kanban one column": 38,
-  "kanban one column filtered": 29,
-  month: 37,
-  week: 37,
-  day: 49,
-  "list with item": 58,
-  settings: 28,
-  calendar: 20,
+  home: 9,
+  "home today": 8,
+  "home upcoming": 9,
+  list: 40,
+  table: 39,
+  kanban: 39,
+  "kanban filtered": 39,
+  "kanban one column": 36,
+  "kanban one column filtered": 27,
+  month: 35,
+  week: 35,
+  day: 47,
+  "list with item": 56,
+  settings: 26,
+  calendar: 18,
   admin: 16,
 };
 
@@ -299,7 +300,7 @@ suite("every Spaces page's first view (integration)", () => {
       const result = await measure(fixture, adminCookie);
       results[scale.name] = result;
       // A projection skips a lookup it has no IDs for: no task in the worst day's tray carries a tag.
-      expect(result.statements).toEqual({ ...STATEMENTS, day: scale === USUAL ? 49 : 48 });
+      expect(result.statements).toEqual({ ...STATEMENTS, day: scale === USUAL ? 47 : 46 });
       // The props the browser parses before it hydrates; the worst month carries 680 entries of one Space.
       expect(Math.max(...Object.values(result.bytes))).toBeLessThan(scale === USUAL ? 100_000 : 800_000);
       expect(Object.values(result.loading).every((count) => count === 0)).toBe(true);

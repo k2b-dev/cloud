@@ -32,7 +32,7 @@ const many = Array.from({ length: 30 }, (_, index) => {
 const ids = (list: { id: string }[]) => list.map((space) => space.id);
 
 test("thirty Spaces show twenty before a search, pinned and recent first, and count the ten others", () => {
-  const list = sidebarSpaceList(many, { pinned: ["Spc029"], recent: ["Spc030", "Spc029"], query: "", locale: "en" });
+  const list = sidebarSpaceList(many, { pinned: ["Spc029"], recent: ["Spc030", "Spc029"], query: "", locale: "en", unlisted: 0 });
   expect(list.shown).toHaveLength(20);
   expect(list.hidden).toBe(10);
   expect(ids(list.shown).slice(0, 3)).toEqual(["Spc029", "Spc030", "Spc001"]);
@@ -41,15 +41,15 @@ test("thirty Spaces show twenty before a search, pinned and recent first, and co
 });
 
 test("the open Space shows even beyond the first twenty", () => {
-  const list = sidebarSpaceList(many, { pinned: [], recent: [], currentId: "Spc025", query: "", locale: "en" });
+  const list = sidebarSpaceList(many, { pinned: [], recent: [], currentId: "Spc025", query: "", locale: "en", unlisted: 0 });
   expect(list.shown).toHaveLength(20);
   expect(ids(list.shown).at(-1)).toBe("Spc025");
   expect(list.hidden).toBe(10);
 });
 
 test("a search finds a Space beyond the first twenty by its name, in any case, pinned first", () => {
-  expect(ids(sidebarSpaceList(many, { pinned: [], recent: [], query: " space 25 ", locale: "en" }).shown)).toEqual(["Spc025"]);
-  const twos = sidebarSpaceList(many, { pinned: ["Spc029"], recent: [], query: "2", locale: "en" });
+  expect(ids(sidebarSpaceList(many, { pinned: [], recent: [], query: " space 25 ", locale: "en", unlisted: 0 }).shown)).toEqual(["Spc025"]);
+  const twos = sidebarSpaceList(many, { pinned: ["Spc029"], recent: [], query: "2", locale: "en", unlisted: 0 });
   // Every name with a 2, the pinned one first, then in the server's order.
   expect(ids(twos.shown)).toEqual([
     "Spc029",
@@ -66,5 +66,19 @@ test("a search finds a Space beyond the first twenty by its name, in any case, p
     "Spc028",
   ]);
   expect(twos.hidden).toBe(0);
-  expect(sidebarSpaceList(many, { pinned: [], recent: [], query: "Nothing", locale: "en" })).toEqual({ shown: [], hidden: 0 });
+  expect(sidebarSpaceList(many, { pinned: [], recent: [], query: "Nothing", locale: "en", unlisted: 0 })).toEqual({ shown: [], hidden: 0 });
+});
+
+// The server sends only what the sidebar shows before a search (#4197): the first twenty by name, the pinned, the
+// recent and the open Space. That list shows the same Spaces as the complete one and counts the same "+n more".
+test("the bounded list the server sends shows and counts what the complete list does", () => {
+  const options = { pinned: ["Spc029"], recent: ["Spc027"], currentId: "Spc025", query: "", locale: "en" };
+  const sent = many.filter((space, index) => index < 20 || ["Spc029", "Spc027", "Spc025"].includes(space.id));
+  const bounded = sidebarSpaceList(sent, { ...options, unlisted: many.length - sent.length });
+  expect(bounded).toEqual(sidebarSpaceList(many, { ...options, unlisted: 0 }));
+  expect(bounded.hidden).toBe(10);
+  // A search looks among the listed Spaces; "+n more" still counts the ones the server left out.
+  const search = sidebarSpaceList(sent, { ...options, query: "Space 1", unlisted: many.length - sent.length });
+  expect(ids(search.shown)).toEqual(["Spc010", "Spc011", "Spc012", "Spc013", "Spc014", "Spc015", "Spc016", "Spc017", "Spc018", "Spc019"]);
+  expect(search.hidden).toBe(7);
 });

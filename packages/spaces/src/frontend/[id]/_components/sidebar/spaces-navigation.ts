@@ -2,7 +2,17 @@ import { createSignal, onCleanup, onMount } from "solid-js";
 
 export type SidebarSpace = { id: string; name: string; color: string; openItemCount: number };
 export type SpacesSidebarCurrent = { kind: "overview" } | { kind: "calendar" } | { kind: "space"; id: string };
-export type SpacesSidebarData = { spaces: SidebarSpace[]; pinnedSpaceIds: string[]; recentSpaceIds: string[]; myWorkCount: number };
+/**
+ * The server sends the Spaces the sidebar shows before a search (the pinned, the recent and the open one, and the first
+ * 20 by name); `unlistedSpaceCount` counts the reachable Spaces it left out.
+ */
+export type SpacesSidebarData = {
+  spaces: SidebarSpace[];
+  unlistedSpaceCount: number;
+  pinnedSpaceIds: string[];
+  recentSpaceIds: string[];
+  myWorkCount: number;
+};
 
 const PINS_CHANGED_EVENT = "spaces-pins-changed";
 const PINS_REQUEST_EVENT = "spaces-pins-request";
@@ -64,20 +74,21 @@ export const SIDEBAR_SEARCH_FROM = 8;
 
 /**
  * The Spaces the sidebar shows, in `orderSidebarSpaces` order: before a search the first 20, the open Space always
- * among them; a search finds by name among all of them, at most 50. `hidden` counts the ones left out.
+ * among them; a search finds by name among the listed ones, at most 50. `hidden` counts the ones left out, with the
+ * `unlisted` ones the server did not send; "+n more" opens the search of all Spaces for them.
  */
 export const sidebarSpaceList = (
   spaces: SidebarSpace[],
-  options: { pinned: string[]; recent: string[]; currentId?: string; query: string; locale: string },
+  options: { pinned: string[]; recent: string[]; currentId?: string; query: string; locale: string; unlisted: number },
 ): { shown: SidebarSpace[]; hidden: number } => {
   const ordered = orderSidebarSpaces(spaces, options.pinned, options.recent);
   const needle = options.query.trim().toLocaleLowerCase(options.locale);
   if (needle) {
     const matches = ordered.filter((space) => space.name.toLocaleLowerCase(options.locale).includes(needle));
-    return { shown: matches.slice(0, SIDEBAR_MATCHES), hidden: Math.max(0, matches.length - SIDEBAR_MATCHES) };
+    return { shown: matches.slice(0, SIDEBAR_MATCHES), hidden: Math.max(0, matches.length - SIDEBAR_MATCHES) + options.unlisted };
   }
   let shown = ordered.slice(0, SIDEBAR_SPACES);
   const current = ordered.find((space) => space.id === options.currentId);
   if (current && !shown.includes(current)) shown = [...shown.slice(0, SIDEBAR_SPACES - 1), current];
-  return { shown, hidden: ordered.length - shown.length };
+  return { shown, hidden: ordered.length - shown.length + options.unlisted };
 };

@@ -18,6 +18,7 @@ const sidebar = {
   spaces: [{ id: "TeamLg", name: "Planning", color: "#6366f1", openItemCount: 9 }],
   pinnedSpaceIds: [],
   recentSpaceIds: [],
+  unlistedSpaceCount: 0,
   myWorkCount: 5,
 };
 const render = (href: string, options: { locale?: "en" | "de"; catalog?: boolean; pending?: string[] } = {}) => {
