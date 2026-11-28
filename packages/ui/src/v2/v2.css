@@ -4781,7 +4781,10 @@
   font: var(--k2-t-body);
   white-space: nowrap;
   min-width: 0;
-  overflow: hidden;
+  /* it cuts what does not fit, but the focus ring of a place or of "…" (3 px) still paints whole beyond its edges, in
+     every engine (WebKit has no `overflow-clip-margin`); a clip path is no scroll box, so no focus or jump scrolls it
+     (path-focus-ring.browser.test) */
+  clip-path: inset(-3px);
 }
 /* Beside other content of the start, such as a lead title, the path keeps its least (`--k2-path-least`, from its
    words, the same on the server's page and the live one; never more than the start): the title gives way first. */
