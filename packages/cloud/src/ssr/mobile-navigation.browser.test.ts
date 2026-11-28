@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { resolve } from "node:path";
+import { mkdirSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
 import { launchBrowser, settled } from "../../../ui/test/browser";
@@ -167,3 +169,55 @@ for (const own of [true, false])
       await page.close();
     }
   }, 20_000);
+
+// A v2 app's place switcher on the phone (`Nav` `switcher` through `V2WorkspaceNavigation`): the menu names the open
+// base with its sign above its entries; the switcher lists the others and the deeds. In real type and icons, so the
+// picture (CLOUD_SWITCHER_SHOTS) counts as evidence.
+test("in the phone menu the place switcher names the open base and lists the others with their signs", async () => {
+  const shots = process.env.CLOUD_SWITCHER_SHOTS;
+  if (shots) mkdirSync(shots, { recursive: true });
+  const iconCssUrl = import.meta.resolve("@k2b/ui/icons/tabler.css");
+  const iconCss = await Bun.file(fileURLToPath(iconCssUrl)).text();
+  const fontAsset = iconCss.match(/url\((\.\/[^)"']+\.woff2(?:[?#][^)"']*)?)\)/)?.[1];
+  if (!fontAsset) throw new Error("@k2b/ui Tabler preset does not reference a WOFF2 asset");
+  const plexCss = fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css"));
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  try {
+    const html =
+      `<!doctype html><html lang="de" data-places><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+      `<link rel="stylesheet" href="http://localhost/plex.css"><link rel="stylesheet" href="http://localhost/tabler-icons.css"><style>${css}</style></head>` +
+      '<body class="k2b-ui"><div id="workspace"></div></body></html>';
+    await page.route("http://localhost/**", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname === "/mobile-navigation") return route.fulfill({ contentType: "text/html", body: html });
+      if (url.pathname === "/tabler-icons.css")
+        return route.fulfill({ contentType: "text/css", body: iconCss.replace(fontAsset, "/tabler-icons.woff2") });
+      if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: fileURLToPath(new URL(fontAsset, iconCssUrl)) });
+      if (url.pathname === "/plex.css")
+        return route.fulfill({ contentType: "text/css", body: (await Bun.file(plexCss).text()).replaceAll("./fonts/", "/fonts/") });
+      if (url.pathname.startsWith("/fonts/"))
+        return route.fulfill({ path: join(plexCss, "..", "fonts", url.pathname.slice("/fonts/".length)) });
+      return route.fulfill({ status: 404, body: "" });
+    });
+    await page.goto("http://localhost/mobile-navigation");
+    await page.addScriptTag({ content: harness });
+    await page.getByRole("button", { name: "Open menu", exact: true }).tap();
+    const menu = page.locator("dialog .k2b-navigation");
+    await menu.waitFor({ state: "visible" });
+    await page.evaluate(() => document.fonts.ready);
+    await settled(page);
+    const trigger = page.locator("dialog button:has(.k2b-sidebar-switcher__icon)");
+    expect(await trigger.innerText()).toContain("Werkstatt");
+    if (shots) await page.screenshot({ path: join(shots, "switcher-phone-menu-light-390.png") });
+    await trigger.tap();
+    const panel = page.locator(".k2b-sidebar-switcher__panel:popover-open");
+    await panel.waitFor();
+    await settled(page);
+    const options = await panel.locator(".k2b-sidebar-switcher__option").allInnerTexts();
+    expect(options.slice(0, 3).map((option) => option.trim())).toEqual(["Werkstatt", "Lager Nord", "Kunden"]);
+    expect(await panel.getByText("Neue Base").count()).toBe(1);
+    if (shots) await page.screenshot({ path: join(shots, "switcher-phone-open-light-390.png") });
+  } finally {
+    await page.close();
+  }
+}, 30_000);
