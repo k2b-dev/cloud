@@ -2831,12 +2831,12 @@
   letter-spacing: 0.02em;
 }
 /* sidebar entry and sentence: 20 */
-.k2-ui :is(.k2-ni, .k2-row-l1, .k2-text, .k2-sh, .k2-nav-switch, .k2-switcher .k2-mi) .k2-mk {
+.k2-ui :is(.k2-ni, .k2-row-l1, .k2-text, .k2-sh, .k2-switcher .k2-mi) .k2-mk {
   width: 20px;
   height: 20px;
   border-radius: 5px;
 }
-.k2-ui :is(.k2-ni, .k2-row-l1, .k2-text, .k2-sh, .k2-nav-switch, .k2-switcher .k2-mi) .k2-mk > .k2-icon {
+.k2-ui :is(.k2-ni, .k2-row-l1, .k2-text, .k2-sh, .k2-switcher .k2-mi) .k2-mk > .k2-icon {
   font-size: 13px;
 }
 /* in the words of a sentence the mark sits on their middle, with a little room on each side */
