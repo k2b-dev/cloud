@@ -191,6 +191,7 @@ describe("the head's bar stays one box with the toolbar in it", () => {
         // where each control ends on the screen (an open search grows to the left over its place, its end stays)
         const places: { x: number; y: number; name: string }[] = [];
         for (let step = 0; step < 7; step++) {
+          await settled(page);
           places.push(
             await page.evaluate(() => {
               const active = document.activeElement!;
@@ -304,6 +305,7 @@ describe("the head's search is its symbol on every width", () => {
     await withPage(1440, "path", true, async (page) => {
       await page.locator("body").click({ position: { x: 600, y: 500 } });
       await page.keyboard.press("/");
+      await settled(page);
       expect(await page.evaluate(() => document.activeElement?.closest(".k2-input[data-search]") !== null)).toBe(true);
       expect((await sightOf(page)).width).toBe(184);
     });
@@ -352,6 +354,7 @@ describe("the head's search is its symbol on every width", () => {
           (document.querySelector(".k2-input[data-search] > input") as HTMLInputElement).value = "";
         });
         await page.keyboard.press("Tab");
+        await settled(page);
         expect((await boxOf(page, search))?.width).toBe(36);
       });
     });

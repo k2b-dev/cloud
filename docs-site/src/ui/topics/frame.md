@@ -55,7 +55,7 @@ One per screen: the sidebar, the head, the main action, and the columns; it turn
 
 A column that scrolls, with no padding: a head, a status that stays, a `width` inside a split, and `detail`, `back` and `side`.
 
-A pane's `head` and its toolbar (a `StatusRow` or `FilterBar` as its `status`) are one block: the head's `Bar` stands the toolbar between its start and its end, with no line between them, one line under the block, and the two rows close together. Where the pane is 1200 px or wider, they stand in one row: the path, then the filters and how the list shows, then the head's actions; the Tab key follows that order. A head of actions only (a `Bar` without `start`) always shares the toolbar's row. Any other status, such as the state of an open entry, keeps its own row under the head. A row keeps its height when it carries a deed: on one line the time stands at the end and the deed after it; on the phone the deed takes the row under the text.
+A pane's `head` and its toolbar (a `StatusRow` or `FilterBar` as its `status`) are one block: the head's `Bar` stands the toolbar between its start and its end, with no line between them, one line under the block, and the two rows close together. Where the pane is 1200 px or wider, they stand in one row: the path, then the filters and how the list shows, then the head's actions; the Tab key follows that order. A head of actions only (a `Bar` without `start`) always shares the toolbar's row. Any other status, such as the state of an open entry, keeps its own row under the head. So give the head of a list's pane to the pane (`Pane head`), not to the workspace, when the pane has a `status`. The head's search is `HeadSearch` in the head's `end`, with a `label`: it stands as its symbol, named by its label, and opens over its neighbours when pressed or with "/". Its words keep it open in the row, and Escape leaves it with its words. Its code comes with it, so a page whose heads have no search loads none of it. A row keeps its height when it carries a deed: on one line the time stands at the end and the deed after it; on the phone the deed takes the row under the text.
 
 <Props of="Pane" />
 
@@ -98,8 +98,6 @@ Until they are fixed, use the nearest part and write `// k2b-ui gap: …` at tha
 - Render the detail only while the address names an entry, and give its `back` the list's address.
 - Declare `detail` and `detailEmpty` on the workspace when a detail opens beside the list. While nothing is open, `detailEmpty` may carry a `hero`: a picture of the place as a whole, such as a [`Heat`](/en/ui/v2/content) of the mails received per day with a line that sums it up.
 - Give a long list a `scrollKey`, so back and forward return to where it was.
-- Give the head of a list's pane to the pane (`Pane head`), not to the workspace, when the pane has a `status`: then they stand as one block.
-- Put the search of a head in the head's `end` as `HeadSearch` with a `label`: it stands as its symbol, named by its label, and opens over its neighbours when pressed or with "/". Its words keep it open in the row, and Escape leaves it with its words. Its code comes with it, so a page whose heads have no search loads none of it.
 
 ### Don't
 

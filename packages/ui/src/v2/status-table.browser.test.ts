@@ -1013,6 +1013,7 @@ test("1440 px: the search of the head is its symbol, and its field of 184 px whe
       page.evaluate(() => Math.round(document.querySelector('[data-slot="head"] .k2-input[data-search]')!.getBoundingClientRect().width));
     expect(await width()).toBe(36);
     await page.locator('[data-slot="head"] .k2-input[data-search] > input').focus();
+    await settled(page);
     expect(await width()).toBe(184);
   });
 });
