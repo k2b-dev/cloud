@@ -152,8 +152,12 @@ tint, and its facts wrap with 20 px between them.
 - A, below 960 px and for full-width sections (R1): the button right of
   the title, the content under the head; on the phone two buttons stand
   under the description.
-- Facts inside a section stand as a grid: a 116 px label column (100 px
-  on the phone), 8 px between rows, 16 px between label and value.
+- Facts in a section (`Facts`) are a key-value grid, drawn by the
+  primitive: the label 13 px in n500 in a 116 px column, 16 px to its
+  value in ink, each pair 34 px high, space and no line between pairs.
+  Dense in a side column (`Pane side`): the label 12 px in a 96 px
+  column, 12 px to the value, pairs 28 px. On the phone the label (12 px)
+  stands over its value (13 px).
 
 ### R5. Actions are buttons
 
