@@ -86,7 +86,6 @@ const closed = (page: Page, selector: string) => page.waitForFunction((s) => !do
 test("server markup: the menu's button is named and says it opens a menu; no popup is sent", () => {
   expect(markup).toContain('aria-label="Weitere Aktionen"');
   expect(markup).toContain('aria-haspopup="menu"');
-  expect(markup).toContain("data-keep");
   expect(markup).not.toContain("k2-menu");
   expect(markup).not.toContain("k2-pop");
 });
@@ -422,7 +421,7 @@ test("popover: a panel of 280 px under the start of its button with a title; Esc
     await page.getByRole("checkbox", { name: "Nur eilige" }).click();
     await page.keyboard.press("Escape");
     await closed(page, ".k2-pop");
-    expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Filter");
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Filter");
   });
 });
 

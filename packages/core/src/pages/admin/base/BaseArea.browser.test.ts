@@ -72,7 +72,7 @@ test("the purpose stands apart from the head and the first section; logo and fav
   for (const field of await pictures.all()) {
     expect(await field.locator(".k2-image-preview").isVisible()).toBe(true);
     expect(await field.getByRole("button", { name: "Choose image" }).isVisible()).toBe(true);
-    expect(await field.innerText()).toContain("Default (no image of your own).");
+    expect(await field.innerText()).toContain("Default: the Cloud logo.");
   }
 });
 

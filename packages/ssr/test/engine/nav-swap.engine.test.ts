@@ -49,7 +49,7 @@ const slow = new Set<ReturnType<typeof Promise.withResolvers<Response>>>();
 /** Paths of frame requests, to see which URL a relative `src` in a swapped column resolved against. */
 const frames: string[] = [];
 const wrapper = (id: string, label: string) =>
-  `<solid-island data-id="${id}" data-props='${JSON.stringify(toJSON({ label }))}'>server ${label}</solid-island>`;
+  `<solid-island data-id="${id}"><!--ssr-props:${JSON.stringify(toJSON({ label }))}-->server ${label}</solid-island>`;
 const html = (
   label: string,
   options: {

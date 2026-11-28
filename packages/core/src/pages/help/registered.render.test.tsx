@@ -123,12 +123,11 @@ test("registered Help keeps the owning app's rail, canvas and localized way up",
           expect(html).toContain("Server fixture lead.");
           expect(html).toContain("Server fixture body.");
           // Only the serialized parts carry rendered HTML; Markdown and the DOM keep their own copy.
-          expect(html.split(String.raw`Server fixture body.\\x3C/li>`).length - 1).toBe(1);
+          expect(html.split(String.raw`Server fixture body.\\x3C/li\u003e`).length - 1).toBe(1);
           expect(html.split("Server fixture body.").length - 1).toBe(3);
-          const attribute = html.match(/data-props="([^"]*)" data-file="CoreLayoutHelp\.island\.tsx"/)?.[1];
-          expect(attribute).toBeDefined();
-          const decoded = attribute!.replaceAll("&quot;", '"').replaceAll("&amp;", "&");
-          const props = fromJSON<{ initialArticle: { payload: Record<string, unknown> } }>(JSON.parse(decoded));
+          const serialized = html.match(/data-file="CoreLayoutHelp\.island\.tsx"><!--ssr-props:([^>]*)-->/)?.[1];
+          expect(serialized).toBeDefined();
+          const props = fromJSON<{ initialArticle: { payload: Record<string, unknown> } }>(JSON.parse(serialized!));
           expect("html" in props.initialArticle.payload).toBe(false);
           if (locale === "en") expect(html).toContain("2 steps");
           expect(html).not.toContain('data-state="loading"');

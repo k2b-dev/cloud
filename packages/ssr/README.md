@@ -14,8 +14,15 @@ It uses file conventions:
 
 Islands are not hydrated. When an island's code loads, the client clears the
 island's server HTML and renders the component again from its props, which the
-server writes as Seroval JSON data. Props are never evaluated, so pages work
-under a Content Security Policy without `'unsafe-eval'`. Two consequences of
+server writes as Seroval JSON data into a comment, the wrapper's first child
+(`<!--ssr-props:{…}-->`). CSS selectors and `textContent` do not see the
+comment, so the server markup looks to them as it does after mounting. Props
+are never evaluated, so pages work under a Content Security Policy without
+`'unsafe-eval'`. Serve pages with their HTML comments: a proxy or optimizer
+that strips them (for example mod_pagespeed `remove_comments`) leaves every
+island without props: it shows its error fallback, and the browser console
+reports `[@k2b/ssr] Island props comment missing (<!--ssr-props:…-->): does a
+proxy or optimizer strip HTML comments from the page?`. Two consequences of
 re-rendering follow:
 
 - state that exists only in the server HTML inside an island, such as a scroll
@@ -139,6 +146,20 @@ import { routes } from "@valentinkolb/ssr/hono";
 import { createConfig } from "@k2b/ssr";
 import { routes } from "@k2b/ssr/hono";
 ```
+
+### Upgrading from 0.23
+
+Island props moved from the wrapper's `data-props` attribute into its first
+child, the comment `<!--ssr-props:…-->`. Pages rendered through the transform
+need no change.
+
+- Code that reads `data-props` (tests, scrapers, measurement scripts) reads the
+  comment instead. The text after `ssr-props:` is Seroval JSON in which `<` is
+  written as `\u003c` and `>` as `\u003e`; parse it with `JSON.parse`, then
+  Seroval's `fromJSON`.
+- Code that writes wrappers by hand puts `<!--ssr-props:` + that JSON + `-->`
+  first in the wrapper, with `<` and `>` escaped the same way, so the text can
+  never end the comment.
 
 ## Required TypeScript settings
 
@@ -563,8 +584,8 @@ Every island and client component instance is mounted inside its own error
 boundary. No setup is needed. If a component throws while it mounts, while its
 props are parsed, or later in a reactive update, only that instance is
 replaced with a fallback. Other instances and other islands keep working, also
-when they are updated by the same signal write. Malformed `data-props` also
-ends in the fallback.
+when they are updated by the same signal write. Missing or malformed props
+data also ends in the fallback.
 
 The default fallback is plain, unstyled markup:
 
@@ -574,8 +595,8 @@ The default fallback is plain, unstyled markup:
 </div>
 ```
 
-**Try again** remounts the component with fresh state from the same
-`data-props`. Style the fallback through `[data-ssr-error]`.
+**Try again** remounts the component with fresh state from the same props.
+Style the fallback through `[data-ssr-error]`.
 
 Each caught error dispatches a bubbling, cancelable `ssr:island-error` event on
 the `<solid-island>` or `<solid-client>` element. Its `detail` contains

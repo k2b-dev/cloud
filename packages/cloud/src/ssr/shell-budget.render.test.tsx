@@ -126,15 +126,7 @@ const server = new Hono<Environment>()
   )
   .get("/pwa", ...app.ssr<Environment>((c) => () => createComponent(PwaLayout, { c, title: "Projects", children: "Phone page" })));
 
-const decodedProps = (html: string) =>
-  [...html.matchAll(/\bdata-props="([^"]*)"/g)].map((match) =>
-    (match[1] ?? "")
-      .replace(/&quot;/g, '"')
-      .replace(/&#x27;|&#39;|&apos;/g, "'")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&amp;/g, "&"),
-  );
+const decodedProps = (html: string) => [...html.matchAll(/<!--ssr-props:([^>]*)-->/g)].map((match) => match[1] ?? "");
 
 for (const path of [
   "/admin/app-0?signed=true",

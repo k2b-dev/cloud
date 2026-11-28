@@ -100,7 +100,7 @@ export default function WorkshopOrders(props: Props) {
             />
           }
           end={
-            <Button variant="primary" icon="plus" href="#neu">
+            <Button variant="primary" floats icon="plus" href="#neu">
               Neuer Auftrag
             </Button>
           }
@@ -164,7 +164,7 @@ export default function WorkshopOrders(props: Props) {
                     <Button icon="pencil" href={`#${open.id}/bearbeiten`}>
                       Bearbeiten
                     </Button>
-                    <Button variant="ghost" icon="x" label="Schließen" href="#offen" />
+                    <Button variant="ghost" icon="x" label="Schließen" href="#offen" closes />
                   </>
                 }
               />
