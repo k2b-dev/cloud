@@ -45,7 +45,6 @@ export default function LegacySection(props: { items: LegacyRow[] }) {
 
   return (
     <Section
-      icon="database-off"
       title={t().legacySettings}
       count={items().length}
       summary={t().legacySettingsDescription}

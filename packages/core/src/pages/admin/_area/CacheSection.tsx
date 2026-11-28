@@ -52,7 +52,6 @@ export default function CacheSection(props: { area: "settings" | "announcements"
   };
   return (
     <Section
-      icon="database-cog"
       title={t()[props.area]}
       summary={props.area === "settings" ? t().settingsHint : t().announcementsHint}
       actions={[{ label: t().clear, icon: "eraser", onClick: () => void clear(), disabled: busy() }]}

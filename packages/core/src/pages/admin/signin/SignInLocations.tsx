@@ -375,7 +375,7 @@ export default function SignInLocations(props: {
   };
 
   return (
-    <Section icon="map-pin" title={t().title} summary={t().subtitle} actions={actions()}>
+    <Section title={t().title} summary={t().subtitle} actions={actions()}>
       <For each={databases()}>
         {(database) => (
           <Row

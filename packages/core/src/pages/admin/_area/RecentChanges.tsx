@@ -46,7 +46,7 @@ export default function RecentChanges(props: { items: readonly RecentChange[] })
   const locale = useLocale();
   const t = () => areaFormMessages.resolve([locale()]).t;
   return (
-    <Section icon="history" title={t().recentChanges}>
+    <Section title={t().recentChanges}>
       <List label={t().recentChanges}>
         <For each={props.items}>{(item) => <Row avatar={{ name: item.who }} lines={[item.label, item.who]} time={item.when} />}</For>
       </List>

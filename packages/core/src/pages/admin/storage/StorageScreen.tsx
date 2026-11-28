@@ -126,7 +126,6 @@ const Usage = (props: { t: StorageAreaMessages; id: string; onLoaded?: (usage: S
   };
   return (
     <Section
-      icon="folders"
       title={props.t.usage}
       summary={props.t.usageHelp}
       actions={state() === "idle" ? [{ label: props.t.usageShow, icon: "eye", onClick: () => void load() }] : undefined}
@@ -413,7 +412,7 @@ const BucketForm = (props: { t: StorageAreaMessages; bucket: AdminStorageBucket 
       <Show
         when={!removed()}
         fallback={
-          <Section icon="history" title={t().lastTarget} summary={base()?.access === "own" ? t().restoreKeys : t().restoreHelp}>
+          <Section title={t().lastTarget} summary={base()?.access === "own" ? t().restoreKeys : t().restoreHelp}>
             <Facts
               items={[
                 { label: t().id, value: base()?.id ?? "", mono: true, copy: base()?.id },
@@ -432,7 +431,7 @@ const BucketForm = (props: { t: StorageAreaMessages; bucket: AdminStorageBucket 
           </Section>
         }
       >
-        <Section icon="id" title={t().identity} summary={t().identityHelp}>
+        <Section title={t().identity} summary={t().identityHelp}>
           <Field name="name" label={t().name} hint={t().nameHelp} error={fieldErrors().name} required>
             <Input value={draft().name} placeholder={t().namePlaceholder} disabled={busy()} onInput={(name) => update({ name })} />
           </Field>
@@ -447,7 +446,7 @@ const BucketForm = (props: { t: StorageAreaMessages; bucket: AdminStorageBucket 
             {(bucket) => <Facts items={[{ label: t().id, value: bucket().id, mono: true, copy: bucket().id }]} />}
           </Show>
         </Section>
-        <Section icon="plug-connected" title={t().connection} summary={isNew() ? t().afterCreate : undefined}>
+        <Section title={t().connection} summary={isNew() ? t().afterCreate : undefined}>
           <Field name="access" label={t().access} hint={draft().access === "inherit" ? t().inheritHelp : t().ownHelp}>
             <Choice
               name="access"
@@ -545,7 +544,6 @@ const DefaultDetail = (props: {
         </Notice>
       </Show>
       <Section
-        icon="id"
         title={props.t.identity}
         summary={props.t.defaultIdentityHelp}
         actions={[

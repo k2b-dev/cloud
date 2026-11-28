@@ -212,7 +212,6 @@ export default function NavigationScreen(props: NavigationScreenProps) {
             ]}
           />
           <Section
-            icon="database-cog"
             title={t().cacheTitle}
             summary={t().cacheHint}
             actions={[{ label: t().clearCache, icon: "eraser", onClick: () => void clearCache(), disabled: cacheBusy() }]}

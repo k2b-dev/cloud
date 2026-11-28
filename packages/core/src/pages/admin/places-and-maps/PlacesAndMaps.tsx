@@ -360,7 +360,6 @@ export default function PlacesAndMaps(props: { nav: NavProps; documentationHref?
 
   const keySection = () => (
     <Section
-      icon="key"
       title={t().key}
       actions={
         status()?.key.state === "set" && !replacing()
@@ -444,7 +443,7 @@ export default function PlacesAndMaps(props: { nav: NavProps; documentationHref?
       : t().changedAt({ date: date(budget.changedAt) });
   };
   const budgetSection = () => (
-    <Section icon="coins" title={t().planAndBudget} summary={t().planAndBudgetLead}>
+    <Section title={t().planAndBudget} summary={t().planAndBudgetLead}>
       <Field.Row>
         <Field name="plan" label={t().plan}>
           {/* k2b-ui gap: Select takes no `disabled`; while the budget is locked a choice is ignored. */}
@@ -491,7 +490,7 @@ export default function PlacesAndMaps(props: { nav: NavProps; documentationHref?
   const shareLabel = (group: (typeof GEO_USAGE_GROUPS)[number]) =>
     group === "tiles" ? t().tiles : group === "places" ? t().places : group === "route" ? t().route : t().address;
   const usageSection = () => (
-    <Section icon="chart-bar" title={t().usage} summary={t().usageHint}>
+    <Section title={t().usage} summary={t().usageHint}>
       <Switch>
         <Match when={statusLoad() === "ready" && keyOff()}>
           <Text muted>{t().usageAfterKey}</Text>

@@ -336,7 +336,6 @@ export default function Keys(props: KeysProps) {
       />
       <Show when={showTokens()}>
         <Section
-          icon="certificate"
           title={t().tokensTitle}
           summary={t().tokensText}
           actions={[{ label: t().tokenCreate, icon: "plus", onClick: () => setCreatingToken(true) }]}
