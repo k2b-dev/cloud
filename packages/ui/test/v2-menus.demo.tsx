@@ -30,6 +30,7 @@ export function Demo() {
   const [openOnly, setOpenOnly] = createSignal(true);
   const [urgent, setUrgent] = createSignal(false);
   const [views, setViews] = createSignal(["Archiv", "Vorlagen"]);
+  const [area, setArea] = createSignal("Aufträge");
   if (typeof window !== "undefined") window.__moreViews = () => setViews([...views(), `Ansicht ${views().length + 1}`]);
   // the open reply of Mail: one choice for the kind of reply and one for the sender
   const [kind, setKind] = createSignal("reply");
@@ -74,10 +75,14 @@ export function Demo() {
             // the places of the app as tabs without a menu tab: what has no room goes into a tab "Mehr"
             <Tabs
               label="Bereiche"
-              items={["Aufträge", "Angebote", "Rechnungen", "Lieferscheine", "Reklamationen"].map((name, index) => ({
+              // the open place is the one picked last, from the line or from "Mehr"
+              items={["Aufträge", "Angebote", "Rechnungen", "Lieferscheine", "Reklamationen"].map((name) => ({
                 label: name,
-                current: index === 0,
-                onClick: did(`area:${name.toLowerCase()}`),
+                current: area() === name,
+                onClick: () => {
+                  did(`area:${name.toLowerCase()}`)();
+                  setArea(name);
+                },
               }))}
             />
           }

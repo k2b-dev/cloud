@@ -756,6 +756,37 @@ test("a tab that hides hands its focus to the menu tab, and a menu tab that goes
   });
 });
 
+// Review of #4210: the last place is the only one in "Mehr"; picked from there by keyboard it becomes the open tab,
+// which keeps its room, so "Mehr" goes while it holds the focus. The focus moves to the last tab, never to the page.
+test("a place picked from a 'Mehr' that then goes hands the focus to the last tab", async () => {
+  await withPage(async (page) => {
+    const areas = page.getByRole("navigation", { name: "Bereiche" });
+    const hidden = () => areas.locator(".k2-tab[data-overflow]").allTextContents();
+    // the widest window in which only the last place hides
+    let width = 1440;
+    for (; width > 390; width -= 10) {
+      await page.setViewportSize({ width, height: 900 });
+      await settled(page);
+      if ((await hidden()).length > 0) break;
+    }
+    expect((await hidden()).map((text) => text.trim())).toEqual(["Reklamationen"]);
+    await areas.getByRole("button", { name: /Mehr/ }).focus();
+    await page.keyboard.press("Enter");
+    await page.locator(menu).waitFor();
+    await page.getByRole("menuitem", { name: "Reklamationen" }).focus();
+    await page.keyboard.press("Enter");
+    await closed(page, menu);
+    await settled(page);
+    expect(await deeds(page)).toContain("area:reklamationen");
+    expect(await areas.getByRole("button", { name: /Mehr/ }).count()).toBe(0);
+    const held = await page.evaluate(() => ({
+      body: document.activeElement === document.body,
+      text: document.activeElement?.textContent?.replace(/\s+/g, "") ?? "",
+    }));
+    expect(held).toEqual({ body: false, text: "Reklamationen" });
+  });
+});
+
 // The menu tab's count grows by the tabs that hide, and a count that gains a digit ("+8" to "+12") makes the tab
 // wider, so fewer tabs fit. Tabs measure again in the next frame, never inside the observer's own turn: no
 // "ResizeObserver loop" error (WebKit reported one at 390 px in Mail), and the hidden ones still lead the menu.

@@ -1,4 +1,5 @@
 import {
+  batch,
   type ChildrenReturn,
   createComputed,
   createEffect,
@@ -428,10 +429,14 @@ export const Tabs = (props: TabsProps) => {
   let nav: HTMLElement | undefined;
   // A tab that holds the focus and hides for lack of room hands it to the menu tab ("Mehr" or the views' own), so it
   // never falls to the page; a "Mehr" that holds it and goes, as every tab has room again, hands it to the last tab.
-  const place = (next: number) => {
+  // The focus is read before either count changes: a kept open tab can empty "Mehr" as well (review of #4210).
+  const place = (next: number, keep?: { index: number; room: number }) => {
     const held = document.activeElement;
     const fromMore = held !== null && nav?.querySelector(":scope > .k2-tab[data-k2-more]")?.contains(held) === true;
-    setFit(next);
+    batch(() => {
+      setKept(keep);
+      setFit(next);
+    });
     if (!row || !nav || !held) return;
     if (row.contains(held) && held.closest(".k2-tab")?.hasAttribute("data-overflow"))
       [...nav.querySelectorAll<HTMLElement>(":scope > .k2-tab[data-menu]")].at(-1)?.focus();
@@ -456,7 +461,6 @@ export const Tabs = (props: TabsProps) => {
       if (more && until(tabs.length) > room + 0.5) {
         const navGap = Number.parseFloat(getComputedStyle(row.parentElement!).columnGap) || 0;
         if (until(tabs.length) <= room + navGap + more.getBoundingClientRect().width + 0.5) {
-          setKept(undefined);
           place(Number.POSITIVE_INFINITY);
           return;
         }
@@ -466,7 +470,6 @@ export const Tabs = (props: TabsProps) => {
       while (fits < tabs.length && until(fits + 1) <= room + 0.5) fits += 1;
       const open = plain().findIndex((tab) => tab.current);
       if (open < 0 || open < fits) {
-        setKept(undefined);
         place(fits >= tabs.length ? Number.POSITIVE_INFINITY : fits);
         return;
       }
@@ -477,13 +480,10 @@ export const Tabs = (props: TabsProps) => {
       const left = Math.floor(room - until(before) - (before > 0 ? gap : 0));
       // without room even for a short name the open tab hides like the others (a cut to nothing says nothing)
       if (left < least) {
-        setKept(undefined);
         place(fits);
         return;
       }
-      // the kept tab is set first, so `place` sees which tabs hide once the new count stands
-      setKept({ index: open, room: left });
-      place(before);
+      place(before, { index: open, room: left });
     };
     // What the measurement changes (the count of the menu tab, "+8" to "+12") can change the room of the tabs again.
     // So it runs in the next frame, once per frame, never inside the observer's own turn (WebKit reports that as a
