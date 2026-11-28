@@ -1,5 +1,5 @@
 import { sql } from "@k2b/cloud";
-import { createIndexIfMissing } from "@k2b/cloud/services/concurrent-index";
+import { createIndexes } from "@k2b/cloud/services/migration-ddl";
 import type { SQL } from "bun";
 
 /** Additive C8 evidence; executable versions remain immutable and pending versions never replace active_version_id. */
@@ -41,11 +41,9 @@ export async function migrate(db: SQL = sql): Promise<void> {
     END $$`.simple();
     // Administration › Code lists the latest decisions first.
     // One row per decided version, so the first deploy builds it once; later starts find it and take no lock.
-    await createIndexIfMissing(tx, {
-      name: "version_decisions_recent",
-      table: "code.version_decisions",
-      definition: "(decided_at DESC, version_id DESC)",
-    });
+    await createIndexes(tx, "code.version_decisions", [
+      { name: "version_decisions_recent", definition: "(decided_at DESC, version_id DESC)" },
+    ]);
     await tx`CREATE TABLE IF NOT EXISTS code.version_comments (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       version_id UUID NOT NULL REFERENCES code.version_submissions(version_id) ON DELETE CASCADE,
