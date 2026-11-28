@@ -23,7 +23,7 @@ import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { Input, MarkCheck } from "./controls";
 import { linkOr } from "./link";
-import { Avatar, Chip, custom, Dot, Icon, Mark, type MarkProps } from "./marks";
+import { Avatar, Chip, custom, Dot, Icon, Mark, type MarkProps, RecordMark } from "./marks";
 import { Menu, type MenuEntry, type MenuItem, MenuTab } from "./menu";
 import type { NavTreeGroup } from "./nav-tree";
 import { useOverlayMessages } from "./overlay-messages";
@@ -1187,8 +1187,12 @@ export type RecordHeadProps = {
 /** The identity of a record in its head: avatar or mark, name, kinds, identifiers. Put it in the start of the head `Bar`. */
 export const RecordHead = (props: RecordHeadProps) => (
   <>
+    {/* a name of two lines on the phone: the row keeps the avatar's height, also without one (see v2.css) */}
+    <Show when={props.wrap}>
+      <span class="k2-record-strut" aria-hidden="true" />
+    </Show>
     <Show when={props.avatar}>{(person) => <Avatar {...person()} decorative />}</Show>
-    <Show when={props.mark}>{(mark) => <Mark {...mark()} />}</Show>
+    <Show when={props.mark}>{(mark) => <RecordMark {...mark()} />}</Show>
     <h1 class="k2-record-name" data-k2-part="RecordHead" data-wrap={props.wrap ? "" : undefined}>
       {props.name}
     </h1>

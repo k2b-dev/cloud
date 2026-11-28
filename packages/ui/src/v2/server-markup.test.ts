@@ -434,4 +434,8 @@ test("a record head sends a place's mark or a person's avatar before its heading
   expect(person).not.toContain("data-wrap");
   const wrapped = renderToString(() => createComponent(RecordHead, { name: "Stadtteilcafé Lindenhof", wrap: true }));
   expect(wrapped.match(/<h1 class="k2-record-name"[^>]*>/)?.[0]).toContain('data-wrap=""');
+  // the head writes the places its stylesheet needs itself (no `:has()`): the strut of a two-line name, the mark's place
+  expect(wrapped).toContain('<span class="k2-record-strut" aria-hidden="true"');
+  expect(person).not.toContain("k2-record-strut");
+  expect(mark).toContain('data-record=""');
 });
