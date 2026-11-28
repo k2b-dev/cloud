@@ -3,11 +3,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser } from "playwright";
 import { launchBrowser } from "../../test/browser";
+import { PERSON_COLORS } from "./person-color";
 
 // Initials are small text on a tinted face, so every tint keeps 4.5:1 in both themes. Contrast is a result of the
 // shipped cascade, which only a real engine computes.
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
-const TINTS = 8;
+const TINTS = PERSON_COLORS.length;
 
 let browser: Browser;
 beforeAll(async () => {

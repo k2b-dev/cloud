@@ -62,7 +62,7 @@ describe("MessageRow", () => {
     expect(html).not.toContain("data-own");
     expect(html).toContain("data-group-start");
     // The name follows the avatar, so the avatar's own name would be read twice.
-    expect(html).toMatch(/class="k2b-message-row__avatar" aria-hidden="true"><span class="k2b-avatar ?" data-size="sm" data-tint="\d"/);
+    expect(html).toMatch(/class="k2b-message-row__avatar" aria-hidden="true"><span class="k2b-avatar ?" data-size="sm" data-tint="\d+"/);
     expect(html).toContain(">NB</span>");
     expect(textOf(html)).toBe("NB Nora Brandt Agent 09:31 Hello");
     expect(html).toContain('datetime="2026-10-06T07:31:00.000Z"');
@@ -94,7 +94,7 @@ describe("MessageRow", () => {
   });
 
   test("tints initials by the name, so a person has one color everywhere", () => {
-    const tint = (html: string) => html.match(/data-tint="(\d)"/)?.[1];
+    const tint = (html: string) => html.match(/data-tint="(\d+)"/)?.[1];
 
     expect(tint(row({ author: { name: " Nora Brandt " } }))).toBe(tint(row()));
     expect(new Set(["Ada", "Ben", "Cleo", "Dan", "Eve", "Finn"].map((name) => tint(row({ author: { name } })))).size).toBeGreaterThan(1);

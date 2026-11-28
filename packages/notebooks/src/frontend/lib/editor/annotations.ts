@@ -1,6 +1,6 @@
 import { type ChangeSet, type EditorState, type Extension, RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
-import { hexColor } from "../color";
+import { markColor } from "../color";
 
 /**
  * Inline comments in the note editor: the commented passages in each author's color, the dot of a comment whose
@@ -72,7 +72,7 @@ class OrphanDot extends WidgetType {
     dot.className = "cm-annotation-orphan";
     dot.dataset.annotation = this.id;
     if (this.strong) dot.dataset.strong = "";
-    dot.style.setProperty("--annotation-color", this.color);
+    dot.style.setProperty("--annotation-color", markColor(this.color));
     dot.setAttribute("role", "button");
     dot.setAttribute("aria-label", this.label);
     return dot;
@@ -124,7 +124,7 @@ const decorationsFor = ({ marks, focus, preview, draft, flash }: AnnotationState
           ...(mark.resolved ? { "data-resolved": "" } : {}),
           ...(strong ? { "data-strong": "" } : {}),
           ...(focus.active === mark.id ? { "data-active": "" } : {}),
-          style: `--annotation-color: ${hexColor(mark.color) ?? "transparent"}`,
+          style: `--annotation-color: ${markColor(mark.color)}`,
           "aria-description": mark.label,
         },
       }),
@@ -142,7 +142,7 @@ const decorationsFor = ({ marks, focus, preview, draft, flash }: AnnotationState
       to: draft.to,
       decoration: Decoration.mark({
         class: "cm-annotation-draft",
-        attributes: { style: `--annotation-color: ${hexColor(draft.color) ?? "transparent"}` },
+        attributes: { style: `--annotation-color: ${markColor(draft.color)}` },
       }),
     });
   if (flash && flash.length > 0 && flash.from < length)

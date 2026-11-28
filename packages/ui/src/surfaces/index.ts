@@ -33,7 +33,7 @@ export type { ProgressBarPart, ProgressBarProps, ProgressBarSegment, ProgressBar
 export { ProgressBar, progressBarParts } from "./ProgressBar";
 export type { ProgressRingProps, ProgressRingTone } from "./ProgressRing";
 export { ProgressRing } from "./ProgressRing";
-export { PERSON_COLORS, personColor } from "./person-color";
+export { PERSON_COLORS, PERSON_COLORS_DARK, personColor, personColorDark, personMarkColor, personMarkColorOf } from "./person-color";
 export type { ResourceCardColor, ResourceCardProps, ResourceCardState } from "./ResourceCard";
 export { ResourceCard } from "./ResourceCard";
 export type { SectionFrame, SectionPartProps, SectionProps, SectionSize, SectionState, SectionTone } from "./Section";
