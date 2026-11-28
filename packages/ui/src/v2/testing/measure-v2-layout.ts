@@ -419,29 +419,36 @@ function measureInPage(options: InPage): DomResult {
     //   section (at most 1040 px from the text edge), and the section's own line ends with the section;
     // - A with `measure` (a pane below 960 px): the rows standing directly in it end at the reading measure, 720 px of
     //   text between the text edges.
+    // The column is derived from the pane, never from the section's own box: a section narrower than its measure is
+    // found as well.
+    const px = (element: Element, name: string, fallback: number) =>
+      Number.parseFloat(getComputedStyle(element).getPropertyValue(name)) || fallback;
     const sectionColumn = (element: Element): { left: number; right: number } | undefined => {
       const section = element.closest(".k2-sec");
       if (!section) return undefined;
-      const box = section.getBoundingClientRect();
+      const pane = (section.closest(".k2-pane") ?? section.parentElement ?? section).getBoundingClientRect();
       const head = section.querySelector(":scope > .k2-sh");
       if (head && getComputedStyle(head).float === "left") {
-        if (element === section) return { left: box.left, right: box.right };
-        return head.contains(element) ? undefined : { left: box.left + 232 + 48, right: box.right };
+        if (head.contains(element)) return undefined;
+        const left = pane.left + px(section.closest(".k2-pane") ?? section, "--k2-edge", 0);
+        const right = Math.min(pane.right, left + 1040);
+        return element === section ? { left, right } : { left: left + 232 + 48, right };
       }
       if (!section.hasAttribute("data-measure") || element === section) return undefined;
-      const body = section.querySelector(":scope > .k2-sec-body");
-      const direct = [section, body].some((parent) => parent && (element.parentElement === parent || element.parentElement?.parentElement === parent));
-      if (!direct) return undefined;
-      const edge = Number.parseFloat(getComputedStyle(section).getPropertyValue("--k2-edge")) || 0;
-      return { left: box.left, right: box.left + Math.min(box.width, 720 + 2 * edge) };
+      const box = section.getBoundingClientRect();
+      return { left: box.left, right: box.left + Math.min(box.width, px(section, "--k2-measure", 720) + 2 * px(section, "--k2-edge", 0)) };
     };
     const gaps = (x0: number, x1: number, y: number, element?: Element) => {
       const own = element && sectionColumn(element);
-      const { lefts, rights } = own ? { lefts: [own.left], rights: [own.right] } : edgesAt(y);
+      if (own) return { left: x0 - own.left, right: own.right - x1, edgeLeft: own.left, edgeRight: own.right };
+      const { lefts, rights } = edgesAt(y);
       const left = Math.max(...lefts.filter((x) => x <= x0 + 1.5));
       const right = Math.min(...rights.filter((x) => x >= x1 - 1.5));
       return { left: x0 - left, right: right - x1, edgeLeft: left, edgeRight: right };
     };
+    // "8 px short of" a column edge, or "12 px past" it when the thing runs over
+    const side = (gap: number, where: string) =>
+      gap >= 0 ? `${round(gap)} px short of the ${where}` : `${round(-gap)} px past the ${where}`;
     const edge: string[] = [];
     // Collinear pieces of one line (the cells of a row) merge first.
     const dividers = hairlines(horizontal)
@@ -460,9 +467,9 @@ function measureInPage(options: InPage): DomResult {
     for (const line of merged) {
       if (line.along1 - line.along0 < 60) continue;
       const gap = gaps(line.along0, line.along1, line.across0, line.element);
-      if (gap.left > 1.5 || gap.right > 1.5)
+      if (Math.abs(gap.left) > 1.5 || Math.abs(gap.right) > 1.5)
         edge.push(
-          `line ${name(line.element)} ${line.how} at y ${round(line.across0)} stops ${round(gap.left)} px short of the left and ${round(gap.right)} px short of the right edge of its column (${round(gap.edgeLeft)}–${round(gap.edgeRight)})`,
+          `line ${name(line.element)} ${line.how} at y ${round(line.across0)} stops ${side(gap.left, "left")} and ${side(gap.right, "right")} edge of its column (${round(gap.edgeLeft)}–${round(gap.edgeRight)})`,
         );
     }
     // Tinted bands: a fill of its own, not a control, not rounded, at least 160 x 36.
@@ -501,9 +508,9 @@ function measureInPage(options: InPage): DomResult {
       if (r.right - r.left < 160 || r.bottom - r.top < 36) continue;
       bands += 1;
       const gap = gaps(r.left, r.right, (r.top + r.bottom) / 2, element);
-      if (gap.left > 1.5 || gap.right > 1.5)
+      if (Math.abs(gap.left) > 1.5 || Math.abs(gap.right) > 1.5)
         edge.push(
-          `band ${name(element)} at y ${round(r.top)} stops ${round(gap.left)} px short of the left and ${round(gap.right)} px short of the right edge of its column`,
+          `band ${name(element)} at y ${round(r.top)} stops ${side(gap.left, "left")} and ${side(gap.right, "right")} edge of its column`,
         );
     }
 
