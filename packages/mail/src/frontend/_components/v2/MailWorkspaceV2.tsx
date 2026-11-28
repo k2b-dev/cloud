@@ -19,7 +19,7 @@ import {
   Tabs,
   Workspace,
 } from "@k2b/ui/v2";
-import { type Accessor, createComputed, createEffect, createMemo, createSignal, on, Show } from "solid-js";
+import { type Accessor, createComputed, createEffect, createMemo, createSignal, Match, on, Show, Switch } from "solid-js";
 import { apiClient } from "../../../api/client";
 import { mailFolderNames } from "../../../folder-names";
 import type { MailReceivedPerDay } from "../../../service/received-per-day";
@@ -35,9 +35,11 @@ import { createMailboxManagement } from "../mail-mailbox-management";
 import type { MailboxPreferences } from "../mail-mailbox-preferences";
 import { orderMailboxes } from "../mail-mailbox-preferences";
 import { buildMailListHref, buildMailSearchHref, buildMailSelectionHref, mailRouteUrl } from "../mail-navigation";
+import MailDraftsListV2 from "./MailDraftsListV2";
 import MailListV2 from "./MailListV2";
 import MailReaderV2 from "./MailReaderV2";
 import type { MailV2Session } from "./MailReplyV2";
+import MailScheduledListV2 from "./MailScheduledListV2";
 import { mailV2MenuEntries } from "./mail-v2-menu";
 import { mailV2Messages } from "./mail-v2-messages";
 
@@ -491,7 +493,7 @@ export default function MailWorkspaceV2(props: {
             status={
               <StatusRow
                 select={
-                  c().canWrite() && items().some((item) => item.conversationId)
+                  c().canWrite() && !c().data.draftsMode && !c().data.scheduledMode && items().some((item) => item.conversationId)
                     ? {
                         label: c().t().selectAllConversations,
                         checked: selectionCount() === 0 ? false : selectionCount() >= items().length ? true : "mixed",
@@ -499,9 +501,20 @@ export default function MailWorkspaceV2(props: {
                       }
                     : undefined
                 }
-                lead={text().unread({ count: formatCount(unreadCount()) })}
+                lead={
+                  // Drafts and the Outbox count their own entries, as v1's list head does
+                  c().data.draftsMode
+                    ? c()
+                        .conversationText()
+                        .draftCount({ count: c().data.draftsPage?.total ?? 0 })
+                    : c().data.scheduledMode
+                      ? c()
+                          .conversationText()
+                          .waitingForDelivery({ count: c().data.scheduledPage?.total ?? c().data.scheduledCount })
+                      : text().unread({ count: formatCount(unreadCount()) })
+                }
                 facts={
-                  c().data.listMode === "conversations"
+                  c().data.listMode === "conversations" && !c().data.draftsMode && !c().data.scheduledMode
                     ? [
                         {
                           before: text().today,
@@ -527,29 +540,64 @@ export default function MailWorkspaceV2(props: {
               />
             }
           >
-            <MailListV2
-              items={items()}
-              requestPath={c().requestPath()}
-              selectedConversationId={c().data.selectedConversationId}
-              selectedMessageId={c().data.selectedMessageId}
-              dateConfig={props.dateConfig}
-              error={c().data.listError}
-              nextCursor={c().data.nextListCursor}
-              assigneeNames={c().assigneeNames}
-              text={text()}
-              label={c().t().conversationList}
-              onOpen={openRow}
-              selection={
-                selecting()
-                  ? {
-                      selected: (item) => Boolean(item.conversationId && c().selectedConversationIds().has(item.conversationId)),
-                      toggle: (item) => c().toggleConversationSelection(item, false),
-                    }
-                  : undefined
+            <Switch
+              fallback={
+                <MailListV2
+                  items={items()}
+                  requestPath={c().requestPath()}
+                  selectedConversationId={c().data.selectedConversationId}
+                  selectedMessageId={c().data.selectedMessageId}
+                  dateConfig={props.dateConfig}
+                  error={c().data.listError}
+                  nextCursor={c().data.nextListCursor}
+                  assigneeNames={c().assigneeNames}
+                  text={text()}
+                  label={c().t().conversationList}
+                  onOpen={openRow}
+                  selection={
+                    selecting()
+                      ? {
+                          selected: (item) => Boolean(item.conversationId && c().selectedConversationIds().has(item.conversationId)),
+                          toggle: (item) => c().toggleConversationSelection(item, false),
+                        }
+                      : undefined
+                  }
+                  onRetry={() => void c().refreshList()}
+                  onLoadMore={() => void c().loadMoreConversations(c().requestPath())}
+                />
               }
-              onRetry={() => void c().refreshList()}
-              onLoadMore={() => void c().loadMoreConversations(c().requestPath())}
-            />
+            >
+              <Match when={c().data.draftsMode}>
+                <MailDraftsListV2
+                  mailboxId={c().data.mailbox.id}
+                  canWrite={c().canWrite()}
+                  requestPath={c().requestPath()}
+                  page={c().data.draftsPage ?? { items: [], nextCursor: null, total: 0 }}
+                  error={c().data.draftsError}
+                  dateConfig={props.dateConfig}
+                  label={c().conversationText().draftListLabel({ title: c().data.listTitle })}
+                  text={text()}
+                  onOpenWindow={openView}
+                  onRefresh={c().requireWorkspaceReconcile}
+                  onRetry={() => void c().refreshList()}
+                  onLoadMore={() => void c().loadMoreConversations(c().requestPath())}
+                />
+              </Match>
+              <Match when={c().data.scheduledMode}>
+                <MailScheduledListV2
+                  mailboxId={c().data.mailbox.id}
+                  canWrite={c().canWrite()}
+                  page={c().data.scheduledPage ?? { items: [], nextCursor: null, total: c().data.scheduledCount }}
+                  error={c().data.scheduledError}
+                  dateConfig={props.dateConfig}
+                  label={c().conversationText().scheduled}
+                  text={text()}
+                  onRefresh={c().requireWorkspaceReconcile}
+                  onRetry={() => void c().refreshList()}
+                  onLoadMore={() => void c().loadMoreConversations(c().requestPath())}
+                />
+              </Match>
+            </Switch>
           </Pane>
           <Show when={c().readerOpen()}>
             <MailReaderV2 controller={c()} dateConfig={props.dateConfig} text={text()} session={props.session} />

@@ -1,5 +1,6 @@
 import { LocaleProvider } from "@k2b/ui";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
+import type { DraftFolderItem, DraftFolderPage, ScheduledSendPage } from "../contracts";
 import type { MailboxPageData, MailListItem, MailWorkspaceMessage } from "../service/workspace";
 import { mailTestRow } from "./_components/mail-list-test-fixtures";
 import { summaryState } from "./_components/mail-summary-fixtures";
@@ -194,6 +195,117 @@ export const mailV2ReceivedPerDay = (url: URL, now: number): NonNullable<Mailbox
 };
 
 /** The fixture's mailbox as the v2 mockup shows it: "Kontakt" with its folders, ten conversations, the first one open. */
+const address = (name: string, mail: string) => ({ name, address: mail });
+
+/** `?folder=Drafts1`: three drafts, a new message, a reply with a file to two people, and one a colleague began; `&empty=1` none. */
+const v2Drafts = (url: URL, now: number): DraftFolderPage => {
+  const items: DraftFolderItem[] = [
+    {
+      id: "DemoDrf1",
+      conversationId: null,
+      intent: "new",
+      subject: "Angebot Treppe Haus am Hang",
+      to: [address("Architekturbüro Winter", "info@winter-architektur.example")],
+      cc: [],
+      bcc: [],
+      revision: 2,
+      attachmentCount: 0,
+      bodyPreview: "Guten Tag Frau Winter, anbei unser Angebot für die Treppe aus Eiche …",
+      suggestion: false,
+      createdByDisplayName: "Mira Solberg",
+      updatedAt: minutesAgo(now, 25),
+    },
+    {
+      id: "DemoDrf2",
+      conversationId: "Demo01",
+      intent: "reply",
+      subject: "Re: Angebot Eichenplatten – Liefertermin",
+      to: [address("Holzwerk Brandt", "verkauf@holzwerk-brandt.example")],
+      cc: [address("Jonas Hartwig", "jonas@solberg-kramer.example")],
+      bcc: [],
+      revision: 5,
+      attachmentCount: 1,
+      bodyPreview: "Danke für das Angebot. Wir bestellen die 14 Platten, bitte mit geölten Kanten.",
+      suggestion: false,
+      createdByDisplayName: "Mira Solberg",
+      updatedAt: minutesAgo(now, 3 * 60),
+    },
+    {
+      id: "DemoDrf3",
+      conversationId: null,
+      intent: "new",
+      subject: "",
+      to: [],
+      cc: [],
+      bcc: [],
+      revision: 1,
+      attachmentCount: 0,
+      bodyPreview: "",
+      suggestion: false,
+      createdByDisplayName: "Jonas Hartwig",
+      updatedAt: minutesAgo(now, 2 * DAY),
+    },
+  ];
+  const shown = url.searchParams.has("empty") ? [] : items;
+  return { items: shown, nextCursor: null, total: shown.length };
+};
+
+/** `?scheduled=1`: three sends that wait, one for the mailbox's sign-in and one after a failed try; `&empty=1` none. */
+const v2Scheduled = (url: URL, now: number): ScheduledSendPage => {
+  const send = (index: number, overrides: Partial<ScheduledSendPage["items"][number]>): ScheduledSendPage["items"][number] => ({
+    id: `DemoSnd${index}`,
+    commandId: `00000000-0000-4000-8000-00000000000${index}`,
+    draftId: `DemoDrS${index}`,
+    conversationId: null,
+    intent: "new",
+    to: [],
+    cc: [],
+    bcc: [],
+    subject: "",
+    bodyPreview: "",
+    scheduledAt: minutesAgo(now, -90),
+    nextAttemptAt: null,
+    state: "scheduled",
+    attempt: 0,
+    lastErrorCode: null,
+    lastError: null,
+    scheduledBy: { kind: "user", displayName: "Mira Solberg" },
+    createdAt: minutesAgo(now, 60),
+    ...overrides,
+  });
+  const items = [
+    send(1, {
+      to: [address("Familie Oswald", "oswald@example.org")],
+      subject: "Ihr Angebot Einbauschrank",
+      bodyPreview: "Guten Morgen Familie Oswald, wie besprochen …",
+      scheduledAt: minutesAgo(now, -(DAY - 120)),
+    }),
+    send(2, {
+      to: [address("Stadtwerke Auental", "service@stadtwerke-auental.example"), address("Petra Lindqvist", "petra.lindqvist@example.org")],
+      subject: "Zählerstand Werkstatt",
+      bodyPreview: "Anbei der Zählerstand vom 30.11.",
+      scheduledAt: minutesAgo(now, 10),
+      lastErrorCode: "MAILBOX_AUTH_REQUIRED",
+      lastError: "Sign-in required",
+    }),
+    send(3, {
+      to: [address("Spedition Falk", "dispo@spedition-falk.example")],
+      subject: "Re: Lieferavis 4471",
+      bodyPreview: "Bitte liefern Sie nach 9 Uhr an die Werkstatt.",
+      conversationId: "Demo10",
+      intent: "reply",
+      scheduledAt: minutesAgo(now, 30),
+      nextAttemptAt: minutesAgo(now, -15),
+      attempt: 2,
+      lastErrorCode: "SMTP_TEMPORARY",
+      lastError: "451 Try again later",
+      scheduledBy: { kind: "user", displayName: "Jonas Hartwig" },
+    }),
+  ];
+  const shown = url.searchParams.has("empty") ? [] : items;
+  return { items: shown, nextCursor: null, total: shown.length };
+};
+
 export const mailV2Data = (url: URL, now: number): MailboxPageData => {
   // The mailbox sends as "Kontakt", so the reply names its sender.
   const source = new URL(url);
@@ -239,12 +351,15 @@ export const mailV2Data = (url: URL, now: number): MailboxPageData => {
         ...folder,
         name: folder.id === "Filed1" ? "Lieferanten" : folder.id === "Long01" ? "Reklamationen" : folder.name,
         unread: folder.id === "Inbox1" ? 7 : 0, // the mockup counts only the inbox
-        total: folder.id === "Drafts1" ? 2 : folder.total,
+        total: folder.id === "Drafts1" ? 3 : folder.total,
       })),
-    scheduledCount: 1,
+    scheduledCount: 3,
+    draftsPage: data.draftsMode ? v2Drafts(url, now) : data.draftsPage,
+    scheduledPage: data.scheduledMode ? v2Scheduled(url, now) : data.scheduledPage,
     viewCounts: { ...data.viewCounts, needs_action: 5, mine: 3, waiting: 4 },
     // `?listError=<code>`: the list as the server answers a failed load; a search that is not valid brings no rows
-    listItems: listError(url) === "invalid_search" ? [] : items,
+    // Drafts and the Outbox list their own entries, never conversations (as the server answers)
+    listItems: listError(url) === "invalid_search" || data.draftsMode || data.scheduledMode ? [] : items,
     nextListCursor: null,
     listError: listError(url),
     doneTodayCounts: { doneToday: 12, doneByAutomation: 5 },
