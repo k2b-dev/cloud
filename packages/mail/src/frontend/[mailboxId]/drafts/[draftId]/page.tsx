@@ -94,7 +94,7 @@ export default ssr<AuthContext>(async (c) => {
           facts={recipients}
           body={shown.body.trim() ? { format: shown.format === "markdown" ? "markdown" : "text", text: shown.body } : null}
           attachments={shown.attachments.map((attachment) => attachment.filename)}
-          text={{ attachments: ui.attachments, noMessageBody: ui.noMessageBody }}
+          text={{ attachments: ui.attachments, noMessageBody: ui.noMessageBody, text: t.draftText }}
         />
       </Layout>
     );

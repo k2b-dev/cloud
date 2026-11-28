@@ -1,4 +1,4 @@
-import { Band, Bar, Empty, Facts, Notice, Pane, Path, Prose, Workspace } from "@k2b/ui/v2";
+import { Band, Bar, Empty, Facts, Icon, Inline, Pane, Path, Prose, Section, Text, Workspace } from "@k2b/ui/v2";
 import { Show } from "solid-js";
 
 /** What the review page shows, read once on the server; the page has no island. */
@@ -10,7 +10,7 @@ export type MailDraftReviewData = {
   facts: { label: string; value: string }[];
   body: { format: "markdown" | "text"; text: string } | null;
   attachments: string[];
-  text: { attachments: string; noMessageBody: string };
+  text: { attachments: string; noMessageBody: string; text: string };
 };
 
 /** A review whose version is no longer the draft's: it says so and leads to the current draft. */
@@ -36,15 +36,16 @@ export function MailDraftReviewV2(props: MailDraftReviewData) {
   return (
     <Workspace head={head(props)}>
       <Pane label={props.subject}>
-        <Show when={props.note}>
-          {(note) => (
-            <Notice tone="note" icon="file-pencil">
-              {note()}
-            </Notice>
-          )}
-        </Show>
-        {/* the recipients and the attachments are one block of facts above the text, which ends the page */}
+        {/* why the draft is shown, quietly above its facts: no warning, no band of its own */}
         <Band>
+          <Show when={props.note}>
+            {(note) => (
+              <Inline>
+                <Icon name="file-pencil" />
+                <Text muted>{note()}</Text>
+              </Inline>
+            )}
+          </Show>
           <Facts
             items={[
               ...props.facts,
@@ -52,9 +53,12 @@ export function MailDraftReviewV2(props: MailDraftReviewData) {
             ]}
           />
         </Band>
-        <Show when={props.body} fallback={<Prose>{props.text.noMessageBody}</Prose>}>
-          {(body) => (body().format === "markdown" ? <Prose markdown={body().text} /> : <Prose>{body().text}</Prose>)}
-        </Show>
+        {/* the text at the reading measure, with the room a section gives what follows a block */}
+        <Section title={props.text.text} measure>
+          <Show when={props.body} fallback={<Prose>{props.text.noMessageBody}</Prose>}>
+            {(body) => (body().format === "markdown" ? <Prose markdown={body().text} /> : <Prose>{body().text}</Prose>)}
+          </Show>
+        </Section>
       </Pane>
     </Workspace>
   );

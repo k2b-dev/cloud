@@ -367,7 +367,7 @@ export default function MailV2Fixture(props: {
             text: "Hallo Herr Winter,\n\ndie Stufenhöhe beträgt **17,8 cm** bei 16 Stufen. Die Zeichnung mit den Maßen hängt an.\n\n- Lauflänge 3,40 m\n- Handlauf beidseitig\n\nViele Grüße\nJan Kroll",
           }}
           attachments={["Treppe-Hang-v3.pdf", "Stufenplan.png"]}
-          text={{ attachments: conversationText.attachments, noMessageBody: conversationText.noMessageBody }}
+          text={{ attachments: conversationText.attachments, noMessageBody: conversationText.noMessageBody, text: pages.draftText }}
         />
       </LocaleProvider>
     );
