@@ -784,11 +784,10 @@ test("a place picked from a 'Mehr' that then goes hands the focus to the last ta
     await hides(narrow);
     expect((await hidden()).map((text) => text.trim())).toEqual(["Reklamationen, Retouren und Garantie"]);
     expect(await fitsOpen()).toBe(true);
-    await areas.getByRole("button", { name: /Mehr/ }).focus();
-    await page.keyboard.press("Enter");
+    // the press waits for a "Mehr" that stands still (the tabs measure in the next frame)
+    await areas.getByRole("button", { name: /Mehr/ }).press("Enter");
     await page.locator(menu).waitFor();
-    await page.getByRole("menuitem", { name: "Reklamationen, Retouren und Garantie" }).focus();
-    await page.keyboard.press("Enter");
+    await page.getByRole("menuitem", { name: "Reklamationen, Retouren und Garantie" }).press("Enter");
     await closed(page, menu);
     await settled(page);
     expect(await deeds(page)).toContain("area:reklamationen, retouren und garantie");
