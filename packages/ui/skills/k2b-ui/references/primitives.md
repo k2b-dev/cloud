@@ -149,7 +149,8 @@ fields. A message in a thread is one `Band`.
 ### Cells and Cells.Cell
 
 2–4 equal cells with a line between; stacked on the phone. A cell:
-`icon`, `color` (data colour of its area), `label`, `value`, `meta`,
+`icon`, `color` (data colour of its area), `label` (12), `value` (the key
+figure, 18/600 in tabular numbers), `meta`,
 `href` (adds a chevron), `trend` (a `Spark` at the end of the value, such
 as orders per day this week), `loading` (a bar lies on value and `meta`;
 what is there keeps its room unseen under it, a value not there yet is one
@@ -546,7 +547,9 @@ name wraps in a small table and ends with "…" in one with column widths.
 - `Choice`: a few visible options, one chosen: `name`, `options`, `value`,
   `label`, `onChange`, `disabled` (every option dimmed). With a `label` and no `Field` around it, it shows
   that label as a field of its own; inside a `Field` the field's label is
-  its question.
+  its question. Options that carry a `hint` (and an `icon`) stand as one row
+  of connected cards on a wide screen, one column on the phone; the chosen
+  card is framed 2 px inside with a tick (a single choice only).
 
 ## Components
 
@@ -600,7 +603,7 @@ name wraps in a small table and ends with "…" in one with column widths.
   holds them. A tab that holds the focus and hides hands it to the menu tab,
   and a "Mehr" that goes hands it to the last tab. Known: while tabs hide, a
   gap of less than one tab may stand before the menu tab.
-- `StatusRow`: `lead` (the one statement, "7 ungelesen"; cut with "…"
+- `StatusRow`: `lead` (the one statement in 13/600, "7 ungelesen"; cut with "…"
   first where it does not fit, its whole words as a hint on hover),
   `loading` (results
   refresh in place: `true` turns a quiet mark after the lead; pass `false`
@@ -746,8 +749,10 @@ name wraps in a small table and ends with "…" in one with column widths.
 Each stands where the data will stand, without a box, so the head and the
 status row above it never move.
 
-- `Empty`: `icon`, `text` (one sentence that says what is the matter: "Noch
-  keine Einlieferung." is not "Keine Treffer mit diesem Filter."), `action`
+- `Empty`: in the middle of its place, sign 40, `icon`, `text` (one sentence
+  in 15/600 that says what is the matter: "Noch keine Einlieferung." is not
+  "Keine Treffer mit diesem Filter."), `hint` (one quieter sentence: why, or
+  where things come from), `action`
   (the one way out), `tone` (`bad` or `warn` for a place empty because
   something went wrong or waits and cannot be retried there, such as an error
   page; data to load again is `Failed`).
