@@ -64,6 +64,31 @@ databaseSuite()("startup migrations next to a dump or an index build", () => {
     }
   }, 60_000);
 
+  // A rewrite that fails must not leave its cause behind: the next start sees the change again and rewrites (#4515).
+  test("a search rewrite that fails is retried on the next start", async () => {
+    const shortId = `stale-${crypto.randomUUID()}`;
+    // An older function body, as before an upgrade: rows it wrote carry its stale search text.
+    await sql`CREATE OR REPLACE FUNCTION ai.refresh_conversation_search() RETURNS trigger AS $$
+      BEGIN NEW.search_text := 'stale'; RETURN NEW; END $$ LANGUAGE plpgsql`.simple();
+    await sql`INSERT INTO ai.conversations (short_id, title) VALUES (${shortId}, 'Fresh title')`;
+    const searchText = async () =>
+      (await sql<{ text: string }[]>`SELECT search_text AS text FROM ai.conversations WHERE short_id = ${shortId}`)[0]?.text;
+    expect(await searchText()).toBe("stale");
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    const rowWriter = new SQL({ url: database!.url, max: 1 });
+    try {
+      await rowWriter`BEGIN`.simple();
+      await rowWriter`SELECT 1 FROM ai.conversations WHERE short_id = ${shortId} FOR UPDATE`;
+      await expect(migrateCloudAi()).rejects.toThrow("could not lock ai.conversations");
+    } finally {
+      await rowWriter`ROLLBACK`.simple();
+      await rowWriter.close();
+      warn.mockRestore();
+    }
+    await migrateCloudAi();
+    expect(await searchText()).toContain("Fresh title");
+  }, 120_000);
+
   // Tables other processes write all the time: logs, audit, workflow runs and both outboxes.
   test("Core's migrations of the busiest tables take no lock once applied", async () => {
     const tables = [

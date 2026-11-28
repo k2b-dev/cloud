@@ -134,9 +134,9 @@ that table keep running, because setup waits at most two seconds per attempt.
 
 After about 40 seconds, setup fails with
 `Migration could not lock TABLE in 8 attempts` and the same sessions. When it
-names no session, another migration's advisory lock or a row lock was in the
-way. The next start tries again. Let the backup or the build finish, or end the long
-transaction, and start the application again.
+names no session, another migration's advisory lock was in the way, or the
+session ended meanwhile. The next start tries again. Let the backup or the
+build finish, or end the long transaction, and start the application again.
 
 Starts that change nothing take no table lock and do not wait.
 

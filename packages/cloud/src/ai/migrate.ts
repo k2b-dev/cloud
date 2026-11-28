@@ -230,43 +230,46 @@ export const migrateCloudAi = async (): Promise<void> => {
       END IF;
     END $$`.simple(),
   );
-  const addedSearchColumns = await addColumns(sql, "ai.conversations", {
-    search_text: "TEXT NOT NULL DEFAULT ''",
-    search_document: "TSVECTOR NOT NULL DEFAULT ''::tsvector",
-  });
-  const searchFunction = async () =>
-    (
-      await sql<{ source: string | null }[]>`SELECT md5(prosrc) AS source FROM pg_proc
-        WHERE oid = to_regprocedure('ai.refresh_conversation_search()')`
-    )[0]?.source ?? null;
-  const searchFunctionBefore = await searchFunction();
-  await sql`
-    CREATE OR REPLACE FUNCTION ai.refresh_conversation_search() RETURNS trigger AS $$
-    BEGIN
-      NEW.search_text := COALESCE(NEW.title, '') || ' ' || COALESCE(NEW.title, '') || ' ' ||
-        COALESCE(array_to_string(NEW.keywords, ' '), '') || ' ' || COALESCE(NEW.search_summary, '') || ' ' ||
-        COALESCE(NEW.description, '');
-      NEW.search_document :=
-        setweight(to_tsvector('simple', COALESCE(NEW.title, '')), 'A') ||
-        setweight(to_tsvector('simple', COALESCE(array_to_string(NEW.keywords, ' '), '')), 'A') ||
-        setweight(to_tsvector('simple', COALESCE(NEW.search_summary, '')), 'B') ||
-        setweight(to_tsvector('simple', COALESCE(NEW.description, '')), 'C');
-      RETURN NEW;
-    END
-    $$ LANGUAGE plpgsql
-  `.simple();
-  const searchTriggerReplaced = await replaceTrigger(
-    sql,
-    "ai.conversations",
-    "ai_conversations_search_refresh",
-    "CREATE TRIGGER ai_conversations_search_refresh BEFORE INSERT OR UPDATE OF title, description, keywords, search_summary " +
-      "ON ai.conversations FOR EACH ROW EXECUTE FUNCTION ai.refresh_conversation_search()",
-  );
   // Rewriting every conversation locks every row, so it runs only when the search columns, the function or the trigger
-  // changed, with a bounded lock wait (#4515).
-  if (addedSearchColumns.length > 0 || searchTriggerReplaced || (await searchFunction()) !== searchFunctionBefore) {
-    await withTableLock(sql, "ai.conversations", (tx) => tx`UPDATE ai.conversations SET search_summary = search_summary`.simple());
-  }
+  // changed (#4515). All of it is one transaction: a rewrite that fails also rolls back the change that asked for it,
+  // so the next start sees the change again and retries. Without a change it takes no table lock.
+  await withTableLock(sql, "ai.conversations", async (tx) => {
+    const addedSearchColumns = await addColumns(tx, "ai.conversations", {
+      search_text: "TEXT NOT NULL DEFAULT ''",
+      search_document: "TSVECTOR NOT NULL DEFAULT ''::tsvector",
+    });
+    const searchFunction = async () =>
+      (
+        await tx<{ source: string | null }[]>`SELECT md5(prosrc) AS source FROM pg_proc
+          WHERE oid = to_regprocedure('ai.refresh_conversation_search()')`
+      )[0]?.source ?? null;
+    const searchFunctionBefore = await searchFunction();
+    await tx`
+      CREATE OR REPLACE FUNCTION ai.refresh_conversation_search() RETURNS trigger AS $$
+      BEGIN
+        NEW.search_text := COALESCE(NEW.title, '') || ' ' || COALESCE(NEW.title, '') || ' ' ||
+          COALESCE(array_to_string(NEW.keywords, ' '), '') || ' ' || COALESCE(NEW.search_summary, '') || ' ' ||
+          COALESCE(NEW.description, '');
+        NEW.search_document :=
+          setweight(to_tsvector('simple', COALESCE(NEW.title, '')), 'A') ||
+          setweight(to_tsvector('simple', COALESCE(array_to_string(NEW.keywords, ' '), '')), 'A') ||
+          setweight(to_tsvector('simple', COALESCE(NEW.search_summary, '')), 'B') ||
+          setweight(to_tsvector('simple', COALESCE(NEW.description, '')), 'C');
+        RETURN NEW;
+      END
+      $$ LANGUAGE plpgsql
+    `.simple();
+    const searchTriggerReplaced = await replaceTrigger(
+      tx,
+      "ai.conversations",
+      "ai_conversations_search_refresh",
+      "CREATE TRIGGER ai_conversations_search_refresh BEFORE INSERT OR UPDATE OF title, description, keywords, search_summary " +
+        "ON ai.conversations FOR EACH ROW EXECUTE FUNCTION ai.refresh_conversation_search()",
+    );
+    if (addedSearchColumns.length > 0 || searchTriggerReplaced || (await searchFunction()) !== searchFunctionBefore) {
+      await tx`UPDATE ai.conversations SET search_summary = search_summary`.simple();
+    }
+  });
   await createIndexes(sql, "ai.conversations", [
     { name: "idx_ai_conversations_search_document", definition: "USING GIN(search_document)" },
   ]);

@@ -132,14 +132,14 @@ export const withTableLock = async (
       const holders = await lockHolders(db, tables);
       if (attempt >= ATTEMPTS) {
         throw new Error(
-          `Migration could not lock ${tables.join(", ")} in ${ATTEMPTS} attempts; held by ${holders.join(", ") || "no table lock holder (an advisory or row lock, or a session that ended meanwhile)"}`,
+          `Migration could not lock ${tables.join(", ")} in ${ATTEMPTS} attempts; held by ${holders.join(", ") || "no table lock holder (an advisory lock, or a session that ended meanwhile)"}`,
           { cause: error },
         );
       }
       log.warn("Migration waits for a lock and tries again", {
         table: tables.join(", "),
         attempt,
-        holders: holders.join(", ") || "no table lock holder (an advisory or row lock, or a session that ended meanwhile)",
+        holders: holders.join(", ") || "no table lock holder (an advisory lock, or a session that ended meanwhile)",
       });
       await Bun.sleep(pause(attempt));
     }
