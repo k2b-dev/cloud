@@ -35,7 +35,7 @@ const withPage = async (which: "form" | "narrow" | "detail" | "custom", width: n
     await page.setContent(
       `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
     );
-    await page.addScriptTag({ content: `window.__k2Case = ${JSON.stringify(which)};` });
+    await page.addScriptTag({ content: `window.__k2SectionCase = ${JSON.stringify(which)};` });
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
     await settled(page);
