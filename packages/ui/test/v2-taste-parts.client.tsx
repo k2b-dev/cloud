@@ -1,5 +1,5 @@
 import { render } from "solid-js/web";
-import { Chip, Choice, Empty, Pane, Section, Table, Workspace } from "../src/v2";
+import { Chip, Choice, Empty, Group, Pane, Section, Table, Workspace } from "../src/v2";
 
 // Parts that changed their default look: a choice whose options say what they mean (cards), states in a table (dot and
 // word), and an empty place (in the middle, its sentence a title).
@@ -52,6 +52,29 @@ render(
               { title: "Status", cell: (row) => <Chip status={row.state}>{row.word}</Chip> },
             ]}
           />
+        </Section>
+        {/* cards without a label, straight in the pane and in a group */}
+        <Choice
+          name="pane-cards"
+          value="a"
+          options={[
+            { value: "a", label: "Nur Eingeladene", hint: "Personen und Gruppen oben" },
+            { value: "b", label: "Alle in der Organisation", hint: "Nach Anmeldung" },
+            { value: "c", label: "Jeder mit dem Link", hint: "Ohne Anmeldung" },
+          ]}
+        />
+        <Section title="Gruppe">
+          <Group title="Werkstatt">
+            <Choice
+              name="group-cards"
+              value="a"
+              options={[
+                { value: "a", label: "Nur Eingeladene", hint: "Personen und Gruppen oben" },
+                { value: "b", label: "Alle in der Organisation", hint: "Nach Anmeldung" },
+                { value: "c", label: "Jeder mit dem Link", hint: "Ohne Anmeldung" },
+              ]}
+            />
+          </Group>
         </Section>
         <Empty
           icon="clipboard-list"

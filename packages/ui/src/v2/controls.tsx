@@ -1472,7 +1472,6 @@ export const MarkCheck = (
   </span>
 );
 
-/** An option of a `Choice`: words, or a value with its words and, for a person, their face before the words. */
 /**
  * An option of a choice: words, or a value with its words, a `person` whose face leads them, or a `hint` (and a symbol)
  * that says what the option means. A single choice whose options carry hints stands as connected cards, the chosen one

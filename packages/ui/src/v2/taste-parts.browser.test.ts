@@ -160,7 +160,7 @@ test("the keyboard moves the choice and its ring; a card's name is its words, it
     // the focus ring: the blue frame inside and the soft ring outside
     expect(found.ring.split("inset").length).toBeGreaterThan(1);
     expect(found.ring).toContain("0px 0px 0px 3px");
-    const radio = page.getByRole("radio", { name: "Alle in der Organisation", exact: true });
+    const radio = page.locator('[data-k2-part="Choice"]').first().getByRole("radio", { name: "Alle in der Organisation", exact: true });
     expect(await radio.count()).toBe(1);
     expect(await radio.evaluate((input) => document.getElementById(input.getAttribute("aria-describedby")!)?.textContent)).toBe(
       "Nach Anmeldung, nur ansehen",
@@ -186,13 +186,32 @@ test("disabled cards are dimmed and take no choice; in dark the chosen card keep
     async (page) => {
       const card = await page.evaluate(() => {
         const chosen = document.querySelector<HTMLElement>(".k2-choices[data-cards] > .k2-choice[data-on]")!;
-        const surface = getComputedStyle(document.body).getPropertyValue("--k2-surface").trim();
+        const probe = document.createElement("div");
+        probe.style.background = "var(--k2-surface)";
+        document.body.append(probe);
+        const surface = getComputedStyle(probe).backgroundColor;
+        probe.remove();
         return { background: getComputedStyle(chosen).backgroundColor, ring: getComputedStyle(chosen).boxShadow, surface };
       });
       expect(card.ring).toContain("inset");
+      // the tint of the chosen card stands apart from the dark surface
       expect(card.background).not.toBe("rgba(0, 0, 0, 0)");
-      expect(card.surface).toBe("#11151b");
+      expect(card.background).not.toBe(card.surface);
     },
     { dark: true },
   );
+});
+
+test("cards without a label, straight in a pane or a group, stack at 390 px", async () => {
+  await withPage(390, async (page) => {
+    const lefts = await page.evaluate(() =>
+      ["pane-cards", "group-cards"]
+        .map((name) => document.querySelector(`input[name="${name}"]`)!.closest('[data-k2-part="Choice"]')!)
+        .map(
+          (choice) =>
+            new Set([...choice.querySelectorAll(":scope > .k2-choice")].map((card) => Math.round(card.getBoundingClientRect().left))).size,
+        ),
+    );
+    expect(lefts).toEqual([1, 1]);
+  });
 });

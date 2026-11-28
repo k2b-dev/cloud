@@ -3385,10 +3385,12 @@
   border-radius: var(--k2-r-control);
   padding-inline: 0;
 }
-/* the place decides, not the window: a field or a section that holds cards is their container, so a narrow dialog
-   stacks them as the phone does */
-.k2-ui :is(.k2-field, .k2-sec, .k2-sec-body, .k2-dialog-body, .k2-band):has(> .k2-choices[data-cards]) {
+/* the place decides, not the window: the cards are their own container, wherever they stand (a field, a section, a
+   pane, a group, a dialog, a popover), and a card takes the whole line once the row is narrower than 560 px, so the
+   cards stack as on the phone */
+.k2-ui .k2-choices[data-cards] {
   container: k2-choice / inline-size;
+  flex-wrap: wrap;
 }
 .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-sec-body, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-choices[data-cards] {
   margin-inline: var(--k2-edge);
@@ -3444,8 +3446,8 @@
   box-shadow: inset 0 0 0 2px var(--k2-blue), 0 0 0 3px var(--k2-blue-ring);
 }
 @container k2-choice (max-width: 559px) {
-  .k2-ui .k2-choices[data-cards] {
-    flex-direction: column;
+  .k2-ui .k2-choices[data-cards] > .k2-choice {
+    flex-basis: 100%;
   }
   .k2-ui .k2-choices[data-cards] > .k2-choice + .k2-choice {
     box-shadow: 0 -1px 0 var(--k2-line-control);

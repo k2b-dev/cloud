@@ -550,7 +550,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   that label as a field of its own; inside a `Field` the field's label is
   its question. Options that carry a `hint` (and an `icon`) stand as one row
   of connected cards on a wide screen, one column on the phone; the chosen
-  card is framed 2 px inside with a tick (a single choice only).
+  card is framed 2 px inside with a tick (a single choice only). Without cards
+  (`multiple`) a `hint` is a quiet line under the option's words, its
+  description (`aria-describedby`); the option is named by its words alone.
 
 ## Components
 
