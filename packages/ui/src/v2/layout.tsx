@@ -21,6 +21,7 @@ import { type Fold, watchFold } from "./bar-fold";
 import { useDrawer } from "./behavior/overlays";
 import { type GripOptions, useGrip } from "./behavior/resize";
 import { ActionButton } from "./button";
+import { type Column, ColumnsContext, type DetailEmpty, InnerContext } from "./columns-context";
 import { RowOpen } from "./content";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Icon, Mark, Spark, type SparkProps } from "./marks";
@@ -160,7 +161,9 @@ export type WorkspaceProps = {
   /**
    * A detail opens beside the columns at times (a reader beside a list), and keeps at least this width (`true`:
    * 400 px). The workspace keeps its room also while it is closed: the sidebar never moves between column and drawer
-   * when it opens, and `detailEmpty` stands in its place, so the column beside it keeps its width.
+   * when it opens, and `detailEmpty` stands in its place, so the column beside it keeps its width. It is the room of a
+   * detail at any depth: also of one in a split inside a column (Files: a list beside its open file, under a status
+   * row), which counts nothing else for it.
    */
   detail?: true | number;
   /**
@@ -180,21 +183,6 @@ export type WorkspaceProps = {
 const sidebarDefault: Width = { min: 200, default: 248 };
 /** What a column without a width keeps at least: the concept's main column, 400 px (as in v2.css). */
 const flexibleMin = 400;
-
-/**
- * A column of the workspace and what it needs at least: its minimum, or 400 px for a column without a width; a detail
- * says so, since the workspace counts it once, open or closed. A context column beside a single main column (`away`)
- * needs no room: where there is none beside, it stands under the main column.
- */
-type Column = { readonly need: number; readonly detail: boolean; readonly away?: boolean };
-/**
- * The columns of a workspace register here: the panes at its top, alone or side by side in a `Pane.Split`. The split
- * at the top also learns what stands in the place of a declared detail while none is open.
- */
-/** What stands in a declared detail's place while none is open. */
-type DetailEmpty = { icon: string; text: string; hero?: JSX.Element };
-type Columns = { register: (column: Column) => void; empty: () => DetailEmpty | undefined };
-const ColumnsContext = createContext<Columns | undefined>();
 
 /**
  * The working surface of an app: a sidebar, a head and the columns below it, with one hairline between columns and
@@ -390,11 +378,17 @@ type SplitEntry = {
   readonly label?: string;
   /** A context column (`side`): the split lets it give way to the end of the main column where it lacks the room. */
   readonly side?: PaneProps["side"];
+  /** What the pane needs: its minimum, or what a split inside it needs beside each other, whichever is more. */
+  readonly need: number;
+  /** A detail (`Pane detail`): its room is the workspace's declared `detail`, open or closed. */
+  readonly detail: boolean;
   element?: HTMLElement;
   /** The pane's width in px while its grip has moved it. */
   size?: Accessor<number | undefined>;
   resize?: (px: number) => void;
 };
+/** The place of a declared detail while none is open: a pane without a width, which needs no room of its own. */
+const emptyDetail: SplitEntry = { need: 0, detail: true };
 /** A pane inside a split registers its width and name for the seam beside it, for as long as it exists. */
 const SplitContext = createContext<(entry: SplitEntry) => void>();
 /** Whether the split is a main column with one context column after it: then the context gives way where there is no room. */
@@ -416,16 +410,17 @@ export type PaneProps = {
    * The detail of a list (a reader): beside the list on a wide screen. On the phone, while it is there (something is
    * open), it is the page and the list gives way; render it only while something is open. What is open belongs in
    * the address, so reload, back and forward show the same. A detail that closes in place hands the focus back to
-   * what opened it, such as the row.
+   * what opened it, such as the row. Its room is the workspace's `detail`, also for a detail in a split inside a column:
+   * declare it there, so the sidebar does not jump when the detail opens.
    */
   detail?: boolean;
   /**
    * The way back to the list on the phone, where the detail is a page of its own, such as "Posteingang". Give it an
    * `href`: the address of the list without the open entry. While it is there, the head of the workspace gives way on
    * the phone, so the way back is the one bar above the detail; it is the part `Back`, which a shell may show in its
-   * own bar instead. With `back`, the close × of the detail's head needs no `keep`: like every head action without
-   * it, the × gives way on the phone, so the detail has one way back there. A pane without a `head` (an editor, whose
-   * name stood in the workspace's head) names itself after the way back by its `label`: "‹ Werkstatt  Notizen.md".
+   * own bar instead. Mark the close × of the detail's head `Button closes`: with `back` it gives way on the phone, so
+   * the detail has one way back there. A pane without a `head` (an editor, whose name stood in the workspace's head)
+   * names itself after the way back by its `label`: "‹ Werkstatt  Notizen.md".
    */
   back?: Action;
   /**
@@ -439,7 +434,10 @@ export type PaneProps = {
    * room of the workspace, so the sidebar never becomes a drawer for it. `{ from }` asks for more room, in px of the
    * split, for a main column that needs it, such as a table (`{ from: 1400 }`: a large screen); never less than the
    * defaults. The rule is a `<style>` beside the split, made from these widths on the server too; a page whose content
-   * security policy allows no inline style keeps the context column beside, as in any other split.
+   * security policy allows no inline style keeps the context column beside, as in any other split, and so does a split
+   * with no place above it that measures (`k2-host`: a Workspace's main column or a pane), such as one in a dialog or a
+   * sidebar. `side` belongs on the inner column only: an outer `Pane detail` with `side` becomes the context column of
+   * the list and moves under it.
    *
    * In any other split (a list, its reader and an info column) it stands beside as every column does and counts
    * toward the room of the workspace. Known: the split's rule asks for its panes as its own children, so a pane that
@@ -468,6 +466,14 @@ export type PaneProps = {
 export const Pane = (props: PaneProps) => {
   // the width the grip beside it gave it; its default until then
   const [size, setSize] = createSignal<number>();
+  // what a split inside this column needs beside each other (see `InnerContext`); the column needs the larger of that
+  // and its own minimum, and says so to the split it stands in or to the workspace, at any depth
+  const [inner, setInner] = createSignal<readonly Accessor<number>[]>([]);
+  const registerInner = (need: Accessor<number>) => {
+    setInner((list) => [...list, need]);
+    onCleanup(() => setInner((list) => list.filter((other) => other !== need)));
+  };
+  const need = () => Math.max(props.width?.min ?? flexibleMin, ...inner().map((each) => each()));
   const entry: SplitEntry = {
     get width() {
       return props.width;
@@ -478,16 +484,23 @@ export const Pane = (props: PaneProps) => {
     get side() {
       return props.side;
     },
+    get need() {
+      return need();
+    },
+    get detail() {
+      return props.detail === true;
+    },
     size,
     resize: setSize,
   };
   useContext(SplitContext)?.(entry);
   const contextual = useContext(ContextualContext);
-  // a column at the top of a workspace tells it what it needs; panes inside this one are not its columns. A context
-  // column beside a single main column needs nothing: where there is no room beside, it stands under the main column.
+  // a column at the top of a workspace tells it what it needs; panes inside this one are not its columns, but what a
+  // split inside it needs counts. A context column beside a single main column needs nothing: where there is no room
+  // beside, it stands under the main column.
   useContext(ColumnsContext)?.register({
     get need() {
-      return props.width?.min ?? flexibleMin;
+      return need();
     },
     get detail() {
       return props.detail === true;
@@ -561,7 +574,9 @@ export const Pane = (props: PaneProps) => {
         </div>
       </Show>
       <div class="k2-scroll" data-scroll-preserve={props.scrollKey}>
-        <ColumnsContext.Provider value={undefined}>{props.children}</ColumnsContext.Provider>
+        <ColumnsContext.Provider value={undefined}>
+          <InnerContext.Provider value={registerInner}>{props.children}</InnerContext.Provider>
+        </ColumnsContext.Provider>
       </div>
     </section>
   );
@@ -588,6 +603,16 @@ Pane.Split = (props: {
     const [main, context, ...rest] = entries();
     return rest.length === 0 && main !== undefined && !main.side && Boolean(context?.side) && !columns?.empty();
   };
+  // inside a column: what its panes need beside each other, each at its minimum (a column without a width at 400 px)
+  // with the lines between them; a context column that gives way needs nothing
+  // A context column that gives way asks nothing beyond its column's own minimum; a detail counts nothing either (the
+  // workspace's declared `detail` holds its room, open or closed, so the sidebar does not jump when it opens).
+  if (!columns)
+    useContext(InnerContext)?.(() => {
+      if (contextual()) return 0;
+      const beside = entries().filter((entry) => !entry.detail);
+      return beside.reduce((sum, entry) => sum + entry.need, 0) + Math.max(0, beside.length - 1);
+    });
   return (
     <SplitContext.Provider value={register}>
       <ContextualContext.Provider value={contextual}>
@@ -624,7 +649,7 @@ const SplitBody = (props: {
   // of a detail that is not open counts as a pane without a width, so the grip stays where it is when it opens.
   const grip = (index: number): SeamGrip | undefined => {
     const left = entryOf(index);
-    const right = entryOf(index + 1) ?? (props.empty && index === panes().length - 1 ? {} : undefined);
+    const right = entryOf(index + 1) ?? (props.empty && index === panes().length - 1 ? emptyDetail : undefined);
     if (!right) return undefined;
     const moving = right.width ? right : left?.width ? left : undefined;
     const width = moving?.width;

@@ -2,10 +2,101 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { CloudCliContext } from "@k2b/cloud/cli";
 import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
-import { buildSectionPatch } from "./cli";
+import venueCli, { buildSectionPatch } from "./cli";
 
 const none = { enabled: false, disabled: false };
+
+/** A CLI context that answers each request with the next prepared response and records the paths it was asked for. */
+const createContext = (args: string[], responses: Response[]) => {
+  const paths: string[] = [];
+  const lines: string[] = [];
+  const ctx: CloudCliContext = {
+    args,
+    flags: {},
+    options: { profile: "test", server: "http://cloud.test", token: "token", output: "json" },
+    getDefault: async () => undefined,
+    setDefault: async () => undefined,
+    createApiClient: (() => {
+      throw new Error("not needed");
+    }) as CloudCliContext["createApiClient"],
+    fetch: async (path) => {
+      paths.push(path);
+      const response = responses.shift();
+      if (!response) throw new Error(`Unexpected fetch: ${path}`);
+      return response;
+    },
+    readJson: async (response) => {
+      const value = await response.json();
+      if (!response.ok) throw new Error(`${response.status} ${typeof value?.message === "string" ? value.message : response.statusText}`);
+      return value;
+    },
+    print: (value = "") => lines.push(value),
+    write: async (value) => void lines.push(value),
+    error: (value) => lines.push(value),
+    json: (value) => lines.push(JSON.stringify(value)),
+    jsonLine: (value) => lines.push(JSON.stringify(value)),
+    table: () => {},
+  };
+  return { ctx, paths, lines };
+};
+
+const venueFixture = (id: string, name: string) => ({
+  id,
+  name,
+  slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+  permission: "read",
+  publicEnabled: false,
+  openMode: "combined",
+  signupMode: "both",
+});
+const venuePage = (prefix: string, from: number, count: number) =>
+  Response.json({
+    venues: Array.from({ length: count }, (_, index) =>
+      venueFixture(`${prefix}${String(from + index).padStart(5, "0")}`, `Venue ${from + index}`),
+    ),
+  });
+const listedNames = (lines: string[]) => (JSON.parse(lines[0]!) as { venues: { name: string }[] }).venues.map((venue) => venue.name);
+
+describe("cld venue reads the venue list page by page", () => {
+  test("lists every venue until a page is shorter than a full one, by name as before", async () => {
+    const { ctx, paths, lines } = createContext(["list"], [venuePage("V", 0, 100), venuePage("V", 100, 3)]);
+    await venueCli.run(ctx);
+    expect(paths).toEqual(["/api/venue/venues?limit=100&offset=0", "/api/venue/venues?limit=100&offset=100"]);
+    const names = listedNames(lines);
+    expect(names).toHaveLength(103);
+    expect(names.slice(0, 3)).toEqual(["Venue 0", "Venue 1", "Venue 10"]);
+  });
+
+  test("a list that answers the same page again ends instead of looping, and repeats no venue", async () => {
+    const { ctx, paths, lines } = createContext(["list"], [venuePage("R", 0, 100), venuePage("R", 0, 100)]);
+    await venueCli.run(ctx);
+    expect(paths).toEqual(["/api/venue/venues?limit=100&offset=0", "/api/venue/venues?limit=100&offset=100"]);
+    expect(listedNames(lines)).toHaveLength(100);
+  });
+
+  test("a venue named by its name is found among every page of the search, so a second venue of that name is not missed", async () => {
+    const { ctx, paths, lines } = createContext(
+      ["use", "Lager Nord"],
+      [venuePage("N", 0, 100), Response.json({ venues: [venueFixture("Lager1", "Lager Nord")] })],
+    );
+    await venueCli.run(ctx);
+    // the name is searched on the server, so a person with many venues never reads all of them
+    expect(paths).toEqual(["/api/venue/venues?limit=100&offset=0&q=Lager%20Nord", "/api/venue/venues?limit=100&offset=100&q=Lager%20Nord"]);
+    expect(lines).toEqual(["Default venue: Lager Nord"]);
+  });
+
+  test("a reference that can be an ID is searched by name and read directly, so an equal name makes it ambiguous", async () => {
+    const venue = venueFixture("Ven001", "Ven001");
+    const { ctx, paths } = createContext(
+      ["use", "Ven001"],
+      [Response.json({ venues: [{ ...venue, id: "Other1" }] }), Response.json({ venue, slots: [], assignments: [], myUpcomingShifts: [] })],
+    );
+    await expect(venueCli.run(ctx)).rejects.toThrow('Venue "Ven001" is ambiguous. Use one of: Other1, Ven001');
+    expect(paths).toEqual(["/api/venue/venues?limit=100&offset=0&q=Ven001", "/api/venue/venues/Ven001/dashboard"]);
+  });
+});
 
 describe("cld venue sections update", () => {
   test("sends only the fields that were passed", () => {

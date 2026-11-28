@@ -66,7 +66,7 @@ describe("GridsWorkspace", () => {
     try {
       const html = renderToString(() => createComponent(GridsWorkspace, { state: workspaceState() }));
       expect(html).toContain(now);
-      expect(html).toContain("&quot;now&quot;");
+      expect(html).toContain('"now"');
     } finally {
       setSystemTime();
     }
@@ -179,7 +179,7 @@ describe("GridsWorkspace", () => {
     };
 
     const html = renderToString(() => createComponent(GridsWorkspace, { state }));
-    const props = [...html.matchAll(/data-props="([^"]*)"/g)].map((match) => match[1]!);
+    const props = [...html.matchAll(/<!--ssr-props:([^>]*)-->/g)].map((match) => match[1]!);
     const carrying = props.filter((value) => value.includes("Row value REC001"));
     // Rows are the largest part of a table page; a second island with the whole state doubled the HTML (#3849).
     expect(carrying).toHaveLength(1);

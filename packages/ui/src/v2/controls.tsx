@@ -264,7 +264,10 @@ const sizesToText = () => typeof CSS !== "undefined" && CSS.supports("field-sizi
  * changes and when its width does (the way core's textarea does it). v2.css bounds it between `rows` and ten lines.
  */
 const followText = (area: HTMLTextAreaElement, value: () => string | undefined) => {
+  let disposed = false;
   const fit = () => {
+    // a fit queued before the field left (a dialog that closes on save) has nothing to measure any more
+    if (disposed || !area.isConnected) return;
     // For the moment of measuring, the field is at its least height, and a browser would pull every scroll above it
     // back to fit; each keeps where it was (the page too).
     const scrolls: [Element, number][] = [];
@@ -287,6 +290,7 @@ const followText = (area: HTMLTextAreaElement, value: () => string | undefined) 
   });
   sizes.observe(area);
   onCleanup(() => {
+    disposed = true;
     area.removeEventListener("input", fit);
     sizes.disconnect();
   });
@@ -1538,6 +1542,8 @@ const ChoiceGroup = (props: ChoiceProps) => {
     const inputs = group;
     if (props.onChange)
       setTimeout(() => {
+        // a group that left before the task (a dialog that closes on reset) has no inputs to set any more
+        if (!inputs.isConnected) return;
         for (const input of inputs.querySelectorAll<HTMLInputElement>("input.k2-mark-input"))
           input.checked = chosen().includes(input.value);
       });

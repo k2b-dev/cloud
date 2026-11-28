@@ -117,6 +117,7 @@ export default function MenusScreen() {
               <Menu label="Ansicht" icon="adjustments-horizontal" items={settings()} />
               <Menu
                 variant="primary"
+                floats
                 icon="plus"
                 items={[
                   { label: "Leerer Auftrag", icon: "file" },

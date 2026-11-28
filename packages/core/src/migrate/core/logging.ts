@@ -1,6 +1,18 @@
 import { sql } from "@k2b/cloud";
+import { logger } from "@k2b/cloud/services";
+import { buildConcurrentIndexesInBackground } from "@k2b/cloud/services/concurrent-index";
 import { createIndexes, withTableLock } from "@k2b/cloud/services/migration-ddl";
 import { migrateLogMetadataReader } from "./logging-metadata";
+
+/**
+ * A source's newest entries: the logs list and the runs list filter by source (one or several) and sort by created_at,
+ * id; the accounts overview reads a source's latest sync lines. Built next to live log writes after the migration.
+ */
+const SOURCE_INDEX = {
+  name: "idx_logging_entries_source_created",
+  table: "logging.entries",
+  definition: "(source, created_at DESC, id DESC)",
+};
 
 export const migrate = async (): Promise<void> => {
   await sql`CREATE SCHEMA IF NOT EXISTS logging`.simple();
@@ -114,4 +126,6 @@ export const migrate = async (): Promise<void> => {
     { name: "idx_logging_trace_events_span_occurred", definition: "(trace_id, span_id, occurred_at ASC)" },
   ]);
   console.log("  ✓ logging indexes");
+  // queries run without it until it is valid; startup never waits for the build
+  void buildConcurrentIndexesInBackground([SOURCE_INDEX], { log: logger("core:logging"), purpose: "log list by source" });
 };

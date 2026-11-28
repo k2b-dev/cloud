@@ -44,7 +44,7 @@ describe("production build asset accounting", () => {
       await writeFile(join(dist, "public", "fixture", "app.css"), '@import "./theme.css";body{color:red}');
       await writeFile(join(dist, "public", "fixture", "theme.css"), "body{margin:0}");
       const html =
-        '<html><solid-island data-id="entry" data-props="{}"></solid-island><script type="module">const p="/fixture/_ssr/123";document.querySelectorAll("solid-island,solid-client").forEach(e=>import(p+"/"+e.dataset.id+".js"));</script><link rel="stylesheet" href="/public/fixture/app.css"></html>';
+        '<html><solid-island data-id="entry"><!--ssr-props:{}--></solid-island><script type="module">const p="/fixture/_ssr/123";document.querySelectorAll("solid-island,solid-client").forEach(e=>import(p+"/"+e.dataset.id+".js"));</script><link rel="stylesheet" href="/public/fixture/app.css"></html>';
       const result = await measureStatic(html, "http://127.0.0.1:4100/fixture", directory, ["fixture"]);
       expect(result.js.eager.modules).toBe(2);
       expect(result.js.lazy.modules).toBe(1);

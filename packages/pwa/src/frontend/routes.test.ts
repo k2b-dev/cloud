@@ -212,7 +212,7 @@ describe("shell routes", () => {
   test("/pwa/?pwa=ended deletes drafts only with the launch's marker, and removes the marker", async () => {
     // The Welcome island's `clearDrafts` prop as the browser receives it (seroval: 2 is true, 3 false, 1 absent).
     const clearDrafts = (html: string) => {
-      const props = /data-props="([^"]*)" data-file="Welcome\.island\.tsx"/.exec(html)?.[1]?.replaceAll("&quot;", '"');
+      const props = /data-file="Welcome\.island\.tsx"><!--ssr-props:([^>]*)-->/.exec(html)?.[1];
       const tree = JSON.parse(props ?? "null") as { t: { p: { k: string[]; v: { s: number }[] } } };
       const index = tree.t.p.k.indexOf("clearDrafts");
       return index < 0 ? undefined : tree.t.p.v[index]?.s === 2;
@@ -251,7 +251,7 @@ describe("shell routes", () => {
     const html = await response.text();
     expect(html).toContain("Mia Muster");
     expect(html).toContain("mia.muster@example.test");
-    expect(html).toContain("&quot;iPhone&quot;");
+    expect(html).toContain('"iPhone"');
     expect(html).toMatch(/<input[^>]*disabled[^>]*maxlength="80"/);
     expect(html).toMatch(/Cloud \d+\.\d+\.\d+/);
     expect(html).toContain('href="/pwa/"');

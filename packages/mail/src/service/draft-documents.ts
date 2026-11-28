@@ -612,6 +612,16 @@ export const lockDraftDocumentInTransaction = async (
         WHERE draft_id = ${draftId}::uuid AND generation = ${input.generation}::bigint AND revision = ${input.expectedRevision}
       `;
       if (!base) return recovery("Authenticated draft revision base is unavailable");
+      // Background coverage (snapshot reconcile, unchanged saves) moves the current revision's
+      // durable cursor without recording a new base. Pruning may then remove the prefix behind the
+      // recorded cursor; the durable cursor still replays and holds exactly this revision's state.
+      const anchor =
+        input.expectedRevision === Number(row.revision) &&
+        row.doc_state &&
+        row.doc_cursor &&
+        Buffer.from(row.doc_state).equals(Buffer.from(base.state))
+          ? { state: base.state, cursor: row.doc_cursor }
+          : base;
       const signal = input.signal ?? params.signal;
       const remaining = input.deadline - Date.now();
       if (!Number.isFinite(remaining) || remaining <= 0) return recovery("Draft revision edit exceeded its request budget");
@@ -632,7 +642,7 @@ export const lockDraftDocumentInTransaction = async (
           expectedRevision: input.expectedRevision,
           events: replayDraftDocument({
             draftId,
-            after: base.cursor,
+            after: anchor.cursor,
             docSeq: row.doc_seq,
             historyComplete: row.doc_history_complete,
             until,
@@ -667,7 +677,10 @@ export const lockDraftDocumentInTransaction = async (
       } catch {
         return recovery("Draft revision edit could not be merged within its request budget");
       }
-      return acceptUpdate({ update, baseCursor: base.cursor, generation: input.generation, signal: requestSignal }, input.expectedRevision);
+      return acceptUpdate(
+        { update, baseCursor: anchor.cursor, generation: input.generation, signal: requestSignal },
+        input.expectedRevision,
+      );
     },
     async freeze(input) {
       const ready = await assertWritable(input.generation);
