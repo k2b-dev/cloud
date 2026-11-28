@@ -197,7 +197,12 @@ export default function OverviewScreen(props: OverviewScreenProps) {
             <List label={t().infrastructure}>
               <For each={props.services}>
                 {(service) => (
-                  <Row mark={{ icon: service.icon }} lines={[service.label]} end={stateOf(service.status, t().healthy)} href={service.href} />
+                  <Row
+                    mark={{ icon: service.icon }}
+                    lines={[service.label]}
+                    end={stateOf(service.status, t().healthy)}
+                    href={service.href}
+                  />
                 )}
               </For>
             </List>

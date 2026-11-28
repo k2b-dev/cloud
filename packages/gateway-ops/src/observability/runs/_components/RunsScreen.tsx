@@ -300,7 +300,7 @@ export default function RunsScreen(props: RunsScreenProps) {
     const jobCells = (all: boolean): KeyCell[] =>
       job
         ? [
-            { icon: "check", label: t().jobsSucceeded, value: number(job.succeeded), meta: t().countedPerMinute },
+            // k2b-ui gap: hero band (look.md rule 1); until it lands the failed runs, what a person acts on, lead the cells
             {
               icon: "alert-circle",
               label: t().jobsFailed,
@@ -308,6 +308,7 @@ export default function RunsScreen(props: RunsScreenProps) {
               tone: job.failed > 0 ? "bad" : undefined,
               meta: job.stuck > 0 ? t().stuckCount({ count: number(job.stuck) }) : t().noneStuck,
             },
+            { icon: "check", label: t().jobsSucceeded, value: number(job.succeeded), meta: t().countedPerMinute },
             ...(all
               ? [
                   { icon: "player-play", label: t().jobsRunning, value: number(job.running) },

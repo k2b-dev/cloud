@@ -5,7 +5,15 @@ import { For } from "solid-js";
  * One key number of a service page; `tone` marks a value that needs attention, `href` leads to where it is looked at,
  * `trend` is its real history as small bars.
  */
-export type KeyCell = { icon: string; label: string; value: string; meta?: string; tone?: "warn" | "bad"; href?: string; trend?: SparkProps };
+export type KeyCell = {
+  icon: string;
+  label: string;
+  value: string;
+  meta?: string;
+  tone?: "warn" | "bad";
+  href?: string;
+  trend?: SparkProps;
+};
 
 /** 2–4 key numbers side by side, stacked on the phone. */
 export function KeyCells(props: { cells: KeyCell[] }) {

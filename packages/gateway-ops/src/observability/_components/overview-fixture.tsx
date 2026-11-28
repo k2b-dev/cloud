@@ -159,7 +159,14 @@ export const OverviewScreenFixture = (props: { search: string; locale?: string; 
             ? { icon: "file-text", label: "Logeinträge", value: "—", meta: "nicht verfügbar" }
             : { icon: "file-text", label: "Logeinträge", value: quiet ? "1.204" : "9.120", meta: "letzte 24 Std." },
         ]}
-        logs={logChart && { chart: logChart, empty: "Keine Werte", href: "/admin/observability/logs?time=last-24h", linkLabel: "Protokolle öffnen" }}
+        logs={
+          logChart && {
+            chart: logChart,
+            empty: "Keine Werte",
+            href: "/admin/observability/logs?time=last-24h",
+            linkLabel: "Protokolle öffnen",
+          }
+        }
         routes={{
           rows: quiet ? [] : worst ? [WORST_ROUTE, ...ROUTES] : ROUTES,
           error: null,

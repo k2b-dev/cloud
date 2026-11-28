@@ -1095,7 +1095,8 @@ export const gatewayOpsMessages = i18n.define({
       logWarnings: "Protokollwarnungen",
       last24h: "letzte 24 Std.",
       shareOfRequests: ({ rate, requests }) => `${rate} von ${requests} Anfragen`,
-      serverErrorsTrend: ({ total, peak }) => `Serverfehler je Abschnitt des Zeitraums: ${total} insgesamt, höchstens ${peak} in einem Abschnitt`,
+      serverErrorsTrend: ({ total, peak }) =>
+        `Serverfehler je Abschnitt des Zeitraums: ${total} insgesamt, höchstens ${peak} in einem Abschnitt`,
       logEntries: "Logeinträge",
       appsOnlineOf: ({ online, total }) => `${online} von ${total} online`,
       online: "Online",
