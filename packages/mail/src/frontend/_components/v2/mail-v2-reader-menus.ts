@@ -208,7 +208,8 @@ export function createMailV2ReaderMenus(props: {
   const latest = () => data().detailMessages.at(-1);
   const emlItem = (): DropdownAction[] => {
     const message = latest();
-    return message?.sourceAvailable
+    // the exact source carries the attachments: closed for a message whose links a policy turns off
+    return message?.sourceAvailable && !message.security?.linksDisabled
       ? [{ label: t().downloadEml, icon: "ti ti-download", href: `/api/mail/mailboxes/${data().mailbox.id}/messages/${message.id}/source` }]
       : [];
   };

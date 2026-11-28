@@ -12,6 +12,7 @@ import type {
 import { requireMailboxPermission } from "./access";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext } from "./auth";
 import type { AttachmentDownload } from "./messages";
+import { attachmentsBlocked, messageLinksDisabled } from "./security";
 
 export const MAX_ATTACHMENT_LINK_FILE_BYTES = 100 * 1024 * 1024;
 
@@ -316,6 +317,13 @@ const sourceAttachment = async (
     : null;
 };
 
+/**
+ * Whether the message a link shares from has its links turned off by a policy: its attachments stay closed, so no new
+ * link shares them and an existing link stops serving them. A draft's own attachment has no such policy.
+ */
+const linkSourceBlocked = (source: { kind: AttachmentLink["sourceKind"]; id: string; mailboxId: string }) =>
+  source.kind === "message" ? messageLinksDisabled(source.mailboxId, source.id) : Promise.resolve(ok(false));
+
 export const createPublicAttachmentLink = async (params: {
   context: MailRequestContext;
   mailboxId: string;
@@ -328,6 +336,9 @@ export const createPublicAttachmentLink = async (params: {
   if (!allowed.ok) return allowed;
   const attachment = await sourceAttachment(params);
   if (!attachment) return fail(err.notFound("Attachment"));
+  const blocked = await linkSourceBlocked({ kind: params.sourceKind, id: params.sourceId, mailboxId: params.mailboxId });
+  if (!blocked.ok) return blocked;
+  if (blocked.data) return attachmentsBlocked();
   const now = new Date();
   const generated = await createAttachmentLink({
     fileSizeBytes: attachment.total,
@@ -549,10 +560,16 @@ export const inspectPublicAttachmentDownload = async (params: {
       chunk_size: number;
       chunk_count: number;
       content_hash: string;
+      source_kind: AttachmentLink["sourceKind"];
+      source_id: string;
+      mailbox_id: string;
     }[]
   >`
     SELECT
       link.id AS link_id,
+      link.source_kind,
+      link.source_id,
+      link.mailbox_id,
       link.blob_id,
       link.content_type,
       link.filename,
@@ -574,6 +591,9 @@ export const inspectPublicAttachmentDownload = async (params: {
       AND ${linkSourceAlive()}
   `;
   if (!row) return fail(err.notFound("Attachment link"));
+  // a link whose message a policy has closed since answers as a link that is gone: the visitor learns nothing more
+  const blocked = await linkSourceBlocked({ kind: row.source_kind, id: row.source_id, mailboxId: row.mailbox_id });
+  if (!blocked.ok || blocked.data) return fail(err.notFound("Attachment link"));
   return ok({
     linkId: row.link_id,
     blobId: row.blob_id,
@@ -586,10 +606,11 @@ export const inspectPublicAttachmentDownload = async (params: {
   });
 };
 
-export const assertPublicAttachmentDownloadAccess = async (linkId: string, grantToken: string): Promise<void> => {
+/** Before each chunk of a public download; `last` also checks the source message's policy, as the download did at its start. */
+export const assertPublicAttachmentDownloadAccess = async (linkId: string, grantToken: string, last = true): Promise<void> => {
   if (!PUBLIC_TOKEN_PATTERN.test(grantToken)) throw new Error("Attachment link access was revoked");
-  const [row] = await sql<{ available: boolean }[]>`
-    SELECT true AS available
+  const [row] = await sql<{ available: boolean; source_kind: AttachmentLink["sourceKind"]; source_id: string; mailbox_id: string }[]>`
+    SELECT true AS available, link.source_kind, link.source_id, link.mailbox_id
     FROM mail.attachment_links link
     JOIN mail.mailboxes mailbox ON mailbox.id = link.mailbox_id AND mailbox.deleted_at IS NULL
     JOIN mail.attachment_link_grants link_grant ON link_grant.link_id = link.id
@@ -601,6 +622,9 @@ export const assertPublicAttachmentDownloadAccess = async (linkId: string, grant
       AND ${linkSourceAlive()}
   `;
   if (!row?.available) throw new Error("Attachment link access was revoked");
+  if (!last) return;
+  const blocked = await linkSourceBlocked({ kind: row.source_kind, id: row.source_id, mailboxId: row.mailbox_id });
+  if (!blocked.ok || blocked.data) throw new Error("Attachment link access was revoked");
 };
 
 export const claimPublicAttachmentDownload = async (params: {

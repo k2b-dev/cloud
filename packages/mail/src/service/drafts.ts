@@ -85,6 +85,7 @@ import { enqueueDraftProjection, enqueueDraftProjectionSnapshot, queueDraftProje
 import { enqueueMailInvalidation, mailLive } from "./live";
 import { stripMailSubjectPrefixes } from "./message-threading";
 import type { AttachmentDownload } from "./messages";
+import { sourceMessageLinksDisabled } from "./security";
 
 const InternalIdSchema = z.string().uuid();
 /**
@@ -543,6 +544,10 @@ const copyForwardAttachments = async (params: {
   sourceMessageId: string;
   forwarded: boolean;
 }): Promise<Result<number>> => {
+  // The attachments of a message whose links a policy turns off stay closed: a forward or copy leaves them out.
+  const blocked = await sourceMessageLinksDisabled(params.sourceMessageId);
+  if (!blocked.ok) return blocked;
+  if (blocked.data) return ok(0);
   const [invalid] = await params.db<{ invalid: boolean }[]>`
     SELECT EXISTS (
       SELECT 1
@@ -592,6 +597,12 @@ const copyForwardAttachments = async (params: {
     );
   }
   return ok(source.length);
+};
+
+/** The copies of a source message's attachments into a draft, for tests of what they leave out. */
+export const __test = {
+  copyForwardAttachments: (params: Parameters<typeof copyForwardAttachments>[0]) => copyForwardAttachments(params),
+  prepareSourceAttachments: (db: typeof sql, sourceMessageId: string) => prepareSourceAttachments(db, sourceMessageId),
 };
 
 const storeRecoveryCopy = async (params: {
@@ -686,6 +697,10 @@ export const draftAttachmentCapacity = (totals: { count: number; bytes: number }
 
 const prepareSourceAttachments = async (db: typeof sql, sourceMessageId: string | null): Promise<Result<DraftAttachment[]>> => {
   if (!sourceMessageId) return ok([]);
+  // as copyForwardAttachments: a source whose links a policy turns off brings no attachments
+  const blocked = await sourceMessageLinksDisabled(sourceMessageId);
+  if (!blocked.ok) return blocked;
+  if (blocked.data) return ok([]);
   const [invalid] = await db<{ invalid: boolean }[]>`
     SELECT EXISTS (
       SELECT 1

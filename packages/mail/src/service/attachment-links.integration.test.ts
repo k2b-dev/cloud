@@ -11,9 +11,11 @@ import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { newShortId } from "../lib/short-id";
 import { grantMailboxAccess } from "./access";
 import {
+  assertPublicAttachmentDownloadAccess,
   claimPublicAttachmentDownload,
   createPublicAttachmentLink,
   hashAttachmentLinkToken,
+  inspectPublicAttachmentDownload,
   listPublicAttachmentLinks,
   revokePublicAttachmentLink,
   unlockPublicAttachmentLink,
@@ -21,6 +23,7 @@ import {
 import type { MailRequestContext } from "./auth";
 import { createMailbox } from "./mailboxes";
 import { storeReadableBlob } from "./message-blobs";
+import { createPolicy, deletePolicy } from "./security";
 
 const ssrRoot = mkdtempSync(resolve(tmpdir(), "mail-attachment-link-ssr-tests-"));
 registerSsrTestPlugin({ dev: true, rootDir: ssrRoot });
@@ -381,5 +384,60 @@ suite("public attachment links", () => {
     expect(
       (await claimPublicAttachmentDownload({ publicToken: tokenOf(orphaned.data.url), grantToken: orphanedGrant.data.grantToken })).ok,
     ).toBe(false);
+  });
+
+  test("a message a mailbox rule closes gets no new link, and its existing link stops serving", async () => {
+    // a message of its own: earlier tests here take the shared attachment away
+    const own = await storeReadableBlob(Readable.from([bytes]), bytes.byteLength);
+    blobIds.push(own.id);
+    const [message] = await sql<{ id: string }[]>`
+      INSERT INTO mail.message_contents (short_id, mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, ${`<closed-link-${suffix}@example.com>`}, 'Closed link', now(),
+        ${bytes.byteLength}, ${own.contentHash}, 'complete')
+      RETURNING id`;
+    const [part] = await sql<{ id: string }[]>`
+      INSERT INTO mail.message_parts (message_id, part_path, content_type, disposition, filename, size_bytes, blob_id, hydration_status)
+      VALUES (${message!.id}::uuid, '1', 'text/plain', 'attachment', 'plan.txt', ${bytes.byteLength}, ${own.id}::uuid, 'complete')
+      RETURNING id`;
+    const [attachment] = await sql<{ id: string }[]>`
+      INSERT INTO mail.attachments (short_id, message_id, part_id, filename, content_type, disposition, size_bytes, blob_id)
+      VALUES (${newShortId()}, ${message!.id}::uuid, ${part!.id}::uuid, 'plan.txt', 'text/plain', 'attachment', ${bytes.byteLength}, ${own.id}::uuid)
+      RETURNING id`;
+    const link = () =>
+      createPublicAttachmentLink({
+        context: adminContext,
+        mailboxId,
+        sourceKind: "message",
+        sourceId: message!.id,
+        attachmentId: attachment!.id,
+        input: {},
+      });
+    const created = await link();
+    if (!created.ok) throw new Error(created.error.message);
+    const publicToken = created.data.url.split("/").at(-1)!;
+    const grant = await unlockPublicAttachmentLink(publicToken);
+    if (!grant.ok) throw new Error(grant.error.message);
+    const open = await inspectPublicAttachmentDownload({ publicToken, grantToken: grant.data.grantToken });
+    if (!open.ok) throw new Error(open.error.message);
+    const domain = `closed-link-${suffix}.example`;
+    await sql`INSERT INTO mail.message_addresses (message_id, role, position, display_name, email, normalized_email)
+      VALUES (${message!.id}::uuid, 'from', 0, 'Sender', ${`sender@${domain}`}, ${`sender@${domain}`})`;
+    const policy = await createPolicy({
+      context: adminContext,
+      input: { disposition: "deny", target: "sender_domain", value: domain, enabled: true },
+    });
+    if (!policy.ok) throw new Error(policy.error.message);
+    try {
+      expect(await link()).toMatchObject({ ok: false, error: { code: "ATTACHMENTS_BLOCKED", status: 403 } });
+      expect(await inspectPublicAttachmentDownload({ publicToken, grantToken: grant.data.grantToken })).toMatchObject({
+        ok: false,
+        error: { status: 404 },
+      });
+      // between the first and the last chunk only the link is checked; before the last one the rule refuses it
+      await assertPublicAttachmentDownloadAccess(open.data.linkId, grant.data.grantToken, false);
+      await expect(assertPublicAttachmentDownloadAccess(open.data.linkId, grant.data.grantToken, true)).rejects.toThrow();
+    } finally {
+      await deletePolicy(adminContext, policy.data.id);
+    }
   });
 });

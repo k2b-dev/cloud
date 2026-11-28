@@ -68,7 +68,7 @@ const download = async (c: { req: Context<AuthContext>["req"] }, token: string, 
       chunkCount: claimed.data.chunkCount,
       start: selected.start,
       endExclusive: selected.endExclusive,
-      assertCurrentAccess: () => attachmentLinks.assertPublicAttachmentDownloadAccess(claimed.data.linkId, grantToken),
+      assertCurrentAccess: (last) => attachmentLinks.assertPublicAttachmentDownloadAccess(claimed.data.linkId, grantToken, last),
     }),
     { status: range ? 206 : 200, headers },
   );

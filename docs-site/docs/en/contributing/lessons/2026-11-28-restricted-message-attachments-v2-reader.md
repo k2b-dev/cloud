@@ -1,6 +1,16 @@
 ### A restricted message showed attachment links in the v2 reader
 
-- **What happened:** In the Mail v2 pilot, a message whose links a mailbox rule turns off still showed its attachments as links, without the notice that v1 shows above such a message.
-- **Root cause:** v1 hid the attachments and drew the notice in its message card; the v2 reader was written from the pilot mockup and did not carry these conditions over. The download itself had no check of its own, so hiding the links was the only thing that kept the files closed.
-- **Error class:** A rule that only the interface enforces: a second interface for the same data does not inherit it.
-- **Guard:** The attachment service (`messages.openAttachment`, used by the download, the thumbnail and the capabilities) now refuses attachments of a message whose links are turned off, as the remote-content service already did. `security.integration.test.ts` checks the refusal and that a clear message still opens its attachments; `mail-v2.browser.test.ts` checks the notice and the missing links in the v2 reader. Both readers share the wording of the findings through `mail-security-finding.ts`.
+- **What happened:** In the Mail v2 pilot, a message whose links a mailbox rule turns off still showed its attachments as links, without the notice v1 shows above such a message.
+- **Root cause:** v1 hid the attachments and drew the notice in its message card. The v2 reader was written from the pilot mockup and did not carry these conditions over. Only the interface kept the files closed: the services that hand out the bytes had no check of their own, except remote content.
+- **Error class:** A rule that only one interface enforces: a second interface, or any other way to the same bytes, does not inherit it.
+- **Guard:** The services refuse the bytes with the stable code `ATTACHMENTS_BLOCKED` (403). Each one reads the rule through `security.ts` (`messageLinksDisabled`):
+  - `messages.openAttachment`: the download, inline images, the thumbnail and the capability read. A stream checks the rule when it opens and before its last chunk; each chunk in between keeps only the access check.
+  - `message-inspector`: the source preview and the `.eml` download.
+  - `drafts`: a forward or "Use as new" leaves the attachments out of the draft.
+  - `attachment-links`: no new public link for such a message; an existing link answers as gone once its message is restricted.
+- **Intended:** The text extracted from attachments and the search snippets stay readable, like the message's own text.
+- **Tests:**
+  - `security.integration.test.ts` covers the refusals, the clear message, the copies into a draft, and the statement pin of a three-chunk download (two rule checks).
+  - `attachment-links.integration.test.ts` covers the public link.
+  - `mail-v2.browser.test.ts` covers the notice and the missing links in the v2 reader.
+- **Shared wording:** Both readers take the findings' words from `mail-security-finding.ts`. They hide "Download EML" and the "include attachments" choice for such a message.

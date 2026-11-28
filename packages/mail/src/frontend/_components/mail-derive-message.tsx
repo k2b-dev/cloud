@@ -100,7 +100,9 @@ export function createMailMessageDerive(props: {
     const choice = await prompts.dialog<DeriveChoice>(
       (close) => {
         const [senderIdentityId, setSenderIdentityId] = createSignal(defaultIdentity.id);
-        const [includeAttachments, setIncludeAttachments] = createSignal(message.attachments.length > 0);
+        // a message whose links a policy turns off brings no attachments; the server leaves them out as well
+        const attachable = message.security?.linksDisabled ? 0 : message.attachments.length;
+        const [includeAttachments, setIncludeAttachments] = createSignal(attachable > 0);
         return (
           <div class="flex flex-col gap-3">
             <p class="text-sm text-secondary">{t().deriveDescription}</p>
@@ -110,9 +112,9 @@ export function createMailMessageDerive(props: {
               onValueChange={setSenderIdentityId}
               options={identities.map((identity) => ({ id: identity.id, label: identity.label }))}
             />
-            <Show when={message.attachments.length > 0}>
+            <Show when={attachable > 0}>
               <CheckboxCard
-                label={t().includeAttachments({ count: message.attachments.length })}
+                label={t().includeAttachments({ count: attachable })}
                 value={includeAttachments}
                 onValueChange={setIncludeAttachments}
               />
