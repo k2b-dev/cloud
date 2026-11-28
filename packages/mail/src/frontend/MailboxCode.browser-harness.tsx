@@ -5,6 +5,7 @@ import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
 import type { MailFolderView } from "../service/messages";
 import type { MailboxCodePageData } from "../service/workspace";
 import MailboxCode from "./MailboxCode.island";
+import { type MailCodeHistoryState, mailCodeHistoryFixture } from "./MailCodeHistory.fixture";
 import { type MailCodeCatchUpFixtureState, mailCodeCatchUpFixture } from "./MailCodeTools.fixture";
 
 type State = Parameters<typeof codePageFixture>[0];
@@ -16,6 +17,8 @@ declare global {
       locale: "de" | "en";
       phone?: boolean;
       catchUp?: MailCodeCatchUpFixtureState;
+      /** The retired rules' history in one of its states. */
+      history?: MailCodeHistoryState;
       usesBoundChat?: boolean;
     }) => void;
   }
@@ -61,7 +64,7 @@ const mailbox = (locale: "de" | "en"): MailboxCodePageData => ({
   receivingAddress: "info@moebel-beispiel.de",
 });
 
-window.mountMailboxCode = ({ state, locale, phone, catchUp, usesBoundChat }) => {
+window.mountMailboxCode = ({ state, locale, phone, catchUp, history, usesBoundChat }) => {
   const host = document.getElementById("root");
   if (!host) throw new Error("Missing harness root");
   document.documentElement.lang = locale;
@@ -95,6 +98,7 @@ window.mountMailboxCode = ({ state, locale, phone, catchUp, usesBoundChat }) => 
           currentUserEmail="ben.schulz@moebel-beispiel.de"
           contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
           catchUp={catchUp ? mailCodeCatchUpFixture(catchUp, locale) : undefined}
+          history={history ? mailCodeHistoryFixture(history) : undefined}
         />
       </LocaleProvider>
     ),

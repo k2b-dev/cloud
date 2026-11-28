@@ -91,7 +91,9 @@ test("sources that cannot be read are named as signals and their figures say so,
 test("a quiet window says so; failing routes stand with their app and lead to their requests", async () => {
   const spies = [
     stubRailSnapshot(),
-    spyOn(health, "buildGatewayHealth").mockResolvedValue({ apps: [{ id: "mail", status: "ok" }] } as never),
+    spyOn(health, "buildGatewayHealth").mockResolvedValue({
+      apps: [{ id: "mail", name: "Mail", icon: "ti ti-mail", status: "ok", online: true }],
+    } as never),
     spyOn(telemetry, "getTelemetryOverview").mockResolvedValue({
       requests: 1200,
       slowRequests: 4,
@@ -102,9 +104,9 @@ test("a quiet window says so; failing routes stand with their app and lead to th
     spyOn(telemetry, "listTelemetryRoutes").mockResolvedValue([
       { appId: "mail", route: "/api/mail/send", requests: 40, errors: 2, slowRequests: 0, avgDurationMs: 80, maxDurationMs: 900 },
     ]),
-    spyOn(logging, "summary").mockResolvedValue({ errors24h: 0, warnings24h: 0 } as never),
+    spyOn(logging, "summary").mockResolvedValue({ errors24h: 0, warnings24h: 0, total24h: 1_204 } as never),
     spyOn(logging, "timeseries").mockResolvedValue([]),
-    spyOn(trace, "stats").mockResolvedValue({ failed: 0, stuck: 0 } as never),
+    spyOn(trace, "stats").mockResolvedValue({ runs: 3_482, failed: 0, stuck: 0 } as never),
   ];
   try {
     const html = await (await server().request("/admin/observability", { headers: { "Accept-Language": "de" } })).text();
@@ -112,6 +114,9 @@ test("a quiet window says so; failing routes stand with their app and lead to th
     expect(text).toContain("Keine aktiven Störungen");
     expect(text).toContain("keine aktiven Signale");
     expect(text).toContain("Apps online 1/1");
+    // the volumes of the window beside the hero, and every app with its state beside the page
+    expect(text).toContain("Läufe 3.482");
+    expect(text).toContain("1 von 1 online");
     expect(text).toContain("/api/mail/send");
     expect(text).toContain("5 %");
     expect(html).toContain('href="/admin/observability/telemetry?range=24h&amp;app=mail&amp;route=%2Fapi%2Fmail%2Fsend"');

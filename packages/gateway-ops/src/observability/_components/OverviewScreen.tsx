@@ -153,10 +153,10 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                   marks: row.bad ? <Chip status="bad">{row.rate}</Chip> : <Text type="meta">{row.rate}</Text>,
                 })}
                 columns={[
-                  { title: t().route, width: { min: 220, default: 360 }, cell: (row) => row.route },
+                  { title: t().route, width: { min: 160, default: 200 }, cell: (row) => row.route },
                   {
                     title: t().app,
-                    width: { min: 120, default: 160 },
+                    width: { min: 100, default: 130 },
                     // k2b-ui gap: a table cell has no mark (object symbol in its colour) beside text that may be cut
                     cell: (row) => (
                       <>
@@ -165,11 +165,11 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                     ),
                     drop: true,
                   },
-                  { title: t().errors, width: { min: 80, default: 100 }, align: "end", cell: (row) => row.errors },
-                  { title: t().requests, width: { min: 90, default: 110 }, align: "end", cell: (row) => row.requests },
+                  { title: t().errors, width: { min: 72, default: 80 }, align: "end", cell: (row) => row.errors },
+                  { title: t().requests, width: { min: 72, default: 80 }, align: "end", cell: (row) => row.requests },
                   {
                     title: t().errorRate,
-                    width: { min: 90, default: 100 },
+                    width: { min: 72, default: 80 },
                     align: "end",
                     cell: (row) => (row.bad ? <Text tone="bad">{row.rate}</Text> : row.rate),
                   },

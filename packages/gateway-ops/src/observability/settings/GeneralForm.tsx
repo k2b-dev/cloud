@@ -36,6 +36,10 @@ export default function GeneralForm(props: { values: GeneralValues; unreadable: 
   const [unreadable, setUnreadable] = createSignal<Partial<Record<Key, boolean>>>({ ...props.unreadable });
   const [replace, setReplace] = createSignal<Partial<Record<Key, boolean>>>({});
   const [refused, setRefused] = createSignal<Partial<Record<Key, string>>>({});
+  // the values a save wrote before it stopped, and those it did not reach; null while nothing was written in part
+  const [partial, setPartial] = createSignal<{ saved: string[]; open: string[] } | null>(null);
+  // the text of a days field while it holds no whole number, so a cleared field stays empty instead of showing 0
+  const [days, setDays] = createSignal<Partial<Record<(typeof RETENTION_KEYS)[number], string>>>({});
   const label = (key: Key) =>
     ({
       schedule: t().checkSchedule,
@@ -66,6 +70,8 @@ export default function GeneralForm(props: { values: GeneralValues; unreadable: 
       rollups: entries.find((entry) => entry.key === SETTING.rollups)?.unreadable ?? false,
     });
   };
+  // A refusal of a retention value stands at its field (400); an unreadable stored value asks first (409). Otherwise
+  // the platform's one-step rule holds: an answer with the owner's reason is a refusal, a bare server error is unclear.
   const retentionRejected = async (key: (typeof RETENTION_KEYS)[number], response: Pick<Response, "json" | "status">): Promise<never> => {
     const body = (await response.json().catch(() => null)) as { message?: string; code?: string } | null;
     const message = body?.message ?? g().saveFailed;
@@ -75,6 +81,11 @@ export default function GeneralForm(props: { values: GeneralValues; unreadable: 
       } catch (error) {
         throw new SaveRejected(`${message} ${error instanceof Error ? error.message : ""}`.trim());
       }
+      throw new SaveRejected(message);
+    }
+    if (response.status === 400) {
+      setRefused({ [key]: message });
+      throw new SaveRejected(t().checkMarkedField);
     }
     throw oneStepFailure(response.status, body, message);
   };
@@ -98,43 +109,58 @@ export default function GeneralForm(props: { values: GeneralValues; unreadable: 
     onDiscard: () => {
       setRefused({});
       setReplace({});
+      setPartial(null);
+      setDays({});
     },
     save: async (value, commit) => {
       setRefused({});
+      setPartial(null);
       const next = { ...value, schedule: value.schedule.trim() };
-      for (const key of CHECK_KEYS) {
-        if (JSON.stringify(next[key]) === JSON.stringify(stored[key]) && !confirmed(key)) continue;
-        const response = await apiClient.settings[":key{.+}"].$put({
-          param: { key: SETTING[key] },
-          json: confirmed(key) ? { value: next[key], replaceUnreadable: true } : { value: next[key] },
-        });
-        if (!response.ok) {
-          const message = await responseErrorMessage(response, g().saveFailed);
-          if (response.status === 409) setUnreadable({ ...unreadable(), [key]: true });
-          if (response.status !== 400) throw saveFailure(response.status, message);
-          setRefused({ [key]: message });
-          throw new SaveRejected(t().checkMarkedField);
+      const changed = (key: Key) => JSON.stringify(next[key]) !== JSON.stringify(stored[key]) || confirmed(key);
+      const steps = KEYS.filter(changed);
+      const done: Key[] = [];
+      try {
+        for (const key of CHECK_KEYS) {
+          if (!steps.includes(key)) continue;
+          const response = await apiClient.settings[":key{.+}"].$put({
+            param: { key: SETTING[key] },
+            json: confirmed(key) ? { value: next[key], replaceUnreadable: true } : { value: next[key] },
+          });
+          if (!response.ok) {
+            const message = await responseErrorMessage(response, g().saveFailed);
+            if (response.status === 409) setUnreadable({ ...unreadable(), [key]: true });
+            if (response.status !== 400) throw saveFailure(response.status, message);
+            setRefused({ [key]: message });
+            throw new SaveRejected(t().checkMarkedField);
+          }
+          written(key, next);
+          done.push(key);
+          commit(stored);
         }
-        written(key, next);
-        commit(stored);
-      }
-      if (next.logs !== stored.logs || confirmed("logs")) {
-        const response = await loggingClient.settings.retention.$put({
-          json: { retentionDays: next.logs, replaceUnreadable: confirmed("logs") },
-        });
-        if (!response.ok) await retentionRejected("logs", response);
-        written("logs", next);
-        commit(stored);
-      }
-      for (const key of ["events", "rollups"] as const) {
-        if (next[key] === stored[key] && !confirmed(key)) continue;
-        const response = await apiClient.settings[":key{.+}"].$put({
-          param: { key: SETTING[key] },
-          json: confirmed(key) ? { value: next[key], replaceUnreadable: true } : { value: next[key] },
-        });
-        if (!response.ok) await retentionRejected(key, response);
-        written(key, next);
-        commit(stored);
+        if (steps.includes("logs")) {
+          const response = await loggingClient.settings.retention.$put({
+            json: { retentionDays: next.logs, replaceUnreadable: confirmed("logs") },
+          });
+          if (!response.ok) await retentionRejected("logs", response);
+          written("logs", next);
+          done.push("logs");
+          commit(stored);
+        }
+        for (const key of ["events", "rollups"] as const) {
+          if (!steps.includes(key)) continue;
+          const response = await apiClient.settings[":key{.+}"].$put({
+            param: { key: SETTING[key] },
+            json: confirmed(key) ? { value: next[key], replaceUnreadable: true } : { value: next[key] },
+          });
+          if (!response.ok) await retentionRejected(key, response);
+          written(key, next);
+          done.push(key);
+          commit(stored);
+        }
+      } catch (error) {
+        // what this save already wrote stays written: the notice names it and the retry writes only the rest
+        if (done.length > 0) setPartial({ saved: done.map(label), open: steps.filter((key) => !done.includes(key)).map(label) });
+        throw error;
       }
       return stored;
     },
@@ -146,7 +172,7 @@ export default function GeneralForm(props: { values: GeneralValues; unreadable: 
   };
   return (
     <>
-      <SettingsOutcome outcome={form.outcome()} onRetry={() => void form.save()} />
+      <SettingsOutcome outcome={form.outcome()} partial={partial()} onRetry={() => void form.save()} />
       <UnreadableValues
         keys={KEYS.filter((key) => unreadable()[key])}
         label={label}
@@ -175,12 +201,17 @@ export default function GeneralForm(props: { values: GeneralValues; unreadable: 
       <Section icon="archive" title={t().retention} summary={t().retentionDescription}>
         <For each={RETENTION_KEYS}>
           {(key) => (
-            <Field label={label(key)} hint={help(key)} optional={t().days} error={form.errors()[key]}>
+            <Field label={label(key)} hint={help(key)} optional={t().days} error={form.errors()[key] ?? refused()[key]}>
               <Input
                 type="number"
                 min={1}
-                value={String(form.draft()[key])}
-                onInput={(text) => update({ [key]: text === "" ? 0 : Number(text) })}
+                value={days()[key] ?? String(form.draft()[key])}
+                onInput={(text) => {
+                  const value = text.trim() === "" ? Number.NaN : Number(text);
+                  // the field keeps what was typed until it is a whole number again
+                  setDays((current) => ({ ...current, [key]: Number.isInteger(value) ? undefined : text }));
+                  update({ [key]: value });
+                }}
                 disabled={disabled(key)}
               />
             </Field>

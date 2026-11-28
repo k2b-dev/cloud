@@ -108,6 +108,7 @@ export default ssr<AuthContext>(async (c) => {
         ? { values: errorSeries, label: t.serverErrorsTrend({ total: number(errorTotal), peak: number(Math.max(...errorSeries)) }) }
         : undefined,
   };
+  // three cells beside the context column: the hero and the two volumes a person reads it against
   const cells: KeyCell[] = [
     hero,
     {
@@ -121,12 +122,6 @@ export default ssr<AuthContext>(async (c) => {
       label: t.runs,
       value: jobStats.value ? number(jobStats.value.runs) : "—",
       meta: jobStats.value ? jobsWindow : t.unavailable,
-    },
-    {
-      icon: "file-text",
-      label: t.logEntries,
-      value: logSummary.value ? number(logSummary.value.total24h) : "—",
-      meta: logSummary.value ? t.last24h : t.unavailable,
     },
   ];
 

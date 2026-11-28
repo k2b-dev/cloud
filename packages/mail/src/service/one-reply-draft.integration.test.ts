@@ -352,7 +352,7 @@ suite("one reply draft per conversation", () => {
       expect(occupied).toMatchObject({ ok: false, error: { code: "DRAFT_REPLY_BOX_OCCUPIED", status: 409 } });
       if (!occupied.ok) {
         expect(occupied.error.message).toContain(first.id);
-        expect(occupied.error.message).toContain("mail.draft.intent");
+        expect(occupied.error.message).toContain(`mail.draft.patch at expectedRevision ${first.revision}`);
         expect(occupied.error.message).not.toContain("cld mail");
       }
       const contentConflict = await api.request(`/mailboxes/${mailboxShortId}/drafts`, {
@@ -366,6 +366,9 @@ suite("one reply draft per conversation", () => {
       expect(conflictBody).toMatchObject({
         code: "DRAFT_REPLY_BOX_OCCUPIED",
         draftId: first.id,
+        revision: first.revision,
+        intent: first.intent,
+        nextStep: "update",
         message: expect.stringContaining(first.id),
       });
       for (const supplied of [{ body: "New text" }, { subject: "New subject" }, { to: [{ address: "new@example.test" }] }]) {
@@ -378,7 +381,39 @@ suite("one reply draft per conversation", () => {
         body: JSON.stringify({ intent: "reply_all", expectedRevision: first.revision }),
       });
       expect(switched.status).toBe(200);
-      expect(draftSchema.parse(await switched.json()).intent).toBe("reply_all");
+      const current = draftSchema.parse(await switched.json());
+      expect(current.intent).toBe("reply_all");
+      // A refused update names the current revision, so a client can reread and retry.
+      const refused = await api.request(`/mailboxes/${mailboxShortId}/drafts/${first.id}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          expectedRevision: current.revision + 50,
+          draft: { senderIdentityId: identityShortId, subject: "Unknown base", body: "Kept as a recovery copy", format: "plain" },
+        }),
+      });
+      expect(refused.status).toBe(409);
+      expect(await refused.json()).toMatchObject({ code: "CONFLICT", revision: current.revision });
+      // Reply content against the reply-all draft switches its mode first; a scheduled draft takes neither step.
+      const occupy = () =>
+        api.request(`/mailboxes/${mailboxShortId}/drafts`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ ...body, body: "Reply text" }),
+        });
+      const otherMode = await occupy();
+      expect(otherMode.status).toBe(409);
+      expect(await otherMode.json()).toMatchObject({ intent: "reply_all", revision: current.revision, nextStep: "intent" });
+      await sql`UPDATE mail.drafts SET state = 'scheduled' WHERE short_id = ${first.id}`;
+      try {
+        const scheduled = await occupy();
+        expect(scheduled.status).toBe(409);
+        const scheduledBody = await scheduled.json();
+        expect(scheduledBody).toMatchObject({ code: "DRAFT_REPLY_BOX_OCCUPIED", draftId: first.id, revision: current.revision });
+        expect(scheduledBody).not.toHaveProperty("nextStep");
+      } finally {
+        await sql`UPDATE mail.drafts SET state = 'draft' WHERE short_id = ${first.id}`;
+      }
     } finally {
       token.mockRestore();
     }

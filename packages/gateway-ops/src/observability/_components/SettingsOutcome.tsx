@@ -4,6 +4,7 @@ import { useLocale } from "@k2b/ui";
 import { Band, Check, Notice } from "@k2b/ui/v2";
 import { For, Show } from "solid-js";
 import { gatewayOpsMessages } from "../../messages";
+import { areaMessages } from "./area-messages";
 
 const messages = i18n.define({
   baseLocale: "en",
@@ -33,16 +34,35 @@ export const checkSettingsOutcomeMessages = () => messages.check();
  * What became of the last save when it did not succeed: not saved with the reason and a retry, or an unclear outcome
  * with a way to check the current state instead of saving twice.
  */
-export function SettingsOutcome(props: { outcome: SettingsDraftOutcome | null; onRetry: () => void }) {
+export function SettingsOutcome(props: {
+  outcome: SettingsDraftOutcome | null;
+  onRetry: () => void;
+  /** A save of several steps that wrote some of them before it stopped: the labels written and those still open. */
+  partial?: { saved: string[]; open: string[] } | null;
+}) {
   const locale = useLocale();
   const t = () => messages.resolve([locale()]).t;
+  const a = () => areaMessages.resolve([locale()]).t;
+  const list = (labels: string[]) => new Intl.ListFormat(locale(), { type: "conjunction" }).format(labels);
   return (
     <Show when={props.outcome}>
       {(outcome) =>
         outcome().kind === "failed" ? (
-          <Notice tone="bad" title={t().notSaved} actions={[{ label: t().retry, icon: "refresh", onClick: props.onRetry }]}>
-            {outcome().message} {t().notSavedKeep}
-          </Notice>
+          <Show
+            when={props.partial}
+            fallback={
+              <Notice tone="bad" title={t().notSaved} actions={[{ label: t().retry, icon: "refresh", onClick: props.onRetry }]}>
+                {outcome().message} {t().notSavedKeep}
+              </Notice>
+            }
+          >
+            {(partial) => (
+              // some steps reached the server: the old values no longer all apply, and the retry writes only the rest
+              <Notice tone="bad" title={a().partlySaved} actions={[{ label: t().retry, icon: "refresh", onClick: props.onRetry }]}>
+                {outcome().message} {a().partlySavedDetail({ saved: list(partial().saved), open: list(partial().open) })}
+              </Notice>
+            )}
+          </Show>
         ) : (
           <Notice
             tone="warn"
@@ -50,6 +70,7 @@ export function SettingsOutcome(props: { outcome: SettingsDraftOutcome | null; o
             actions={[{ label: t().checkNow, icon: "refresh", onClick: () => location.reload() }]}
           >
             {t().unknownOutcomeKeep}
+            <Show when={props.partial}>{(partial) => ` ${a().savedBefore({ saved: list(partial().saved) })}`}</Show>
           </Notice>
         )
       }

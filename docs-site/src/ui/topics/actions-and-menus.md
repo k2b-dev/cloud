@@ -17,6 +17,10 @@ Offers of a workshop. The head holds the views, a hint on the refresh button, a 
 - A deed under way is `busy`: the button keeps its width, its look and the focus, and takes no second press.
 - A toggle is `pressed`: `true` on, `false` off. Never on a link or on the primary action.
 
+## On the phone
+
+Every control of a head stays on the phone, a `Popover` and a `Menu` alike. Only the twin of `Workspace primary` (`floats`) and a detail's close × beside its way back (`closes`) leave the head there.
+
 ## Menu or popover?
 
 ### Menu
@@ -63,7 +67,7 @@ A panel behind a button: Escape and a press outside close it, the focus moves in
 
 ## Not in v2 yet
 
-A `Popover` in the head has no `keep`: on the phone it leaves with the other head actions, while a `Menu` in the head stays. A filter the phone needs is a `Menu` with ticked entries. Write `// k2b-ui gap: popover keep on the phone` at that place.
+A head whose controls do not fit beside its title folds the last ones into "…" with #4392. Until then, write `// k2b-ui gap: #4392 (bar fold)` where a head has more controls than room.
 
 ## Do and don't
 

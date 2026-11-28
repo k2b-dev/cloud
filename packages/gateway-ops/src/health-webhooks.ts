@@ -118,12 +118,21 @@ export const normalizeHealthWebhookInput = (input: HealthWebhookInput): HealthWe
   };
 };
 
-export const listHealthWebhooks = async (): Promise<HealthWebhook[]> => {
-  const rows = await sql<DbWebhook[]>`
-    SELECT *
-    FROM gateway.health_webhooks
-    ORDER BY name ASC, created_at ASC
-  `;
+/** Every alert, or at most `limit` in name order for a page that shows them; delivery always reads them all. */
+export const listHealthWebhooks = async (options: { limit?: number } = {}): Promise<HealthWebhook[]> => {
+  const rows =
+    options.limit === undefined
+      ? await sql<DbWebhook[]>`
+          SELECT *
+          FROM gateway.health_webhooks
+          ORDER BY name ASC, created_at ASC
+        `
+      : await sql<DbWebhook[]>`
+          SELECT *
+          FROM gateway.health_webhooks
+          ORDER BY name ASC, created_at ASC
+          LIMIT ${options.limit}
+        `;
   return rows.map(mapWebhook);
 };
 

@@ -156,9 +156,6 @@ export const OverviewScreenFixture = (props: { search: string; locale?: string; 
           },
           { icon: "apps", label: "Apps online", value: quiet ? "12/12" : "11/12", meta: "registrierte Apps" },
           { icon: "player-play", label: "Läufe", value: worst ? "12.345.678" : "3.482", meta: "24h" },
-          worst
-            ? { icon: "file-text", label: "Logeinträge", value: "—", meta: "nicht verfügbar" }
-            : { icon: "file-text", label: "Logeinträge", value: quiet ? "1.204" : "9.120", meta: "letzte 24 Std." },
         ]}
         logs={
           logChart && {

@@ -71,7 +71,7 @@ export default function PlaceHome(props: Props) {
           end={
             <>
               <Input type="search" icon="search" label="In Werkstatt suchen" placeholder="In Werkstatt suchen" />
-              <Button variant="primary" icon="plus" menu>
+              <Button variant="primary" floats icon="plus" menu>
                 Neu
               </Button>
             </>
