@@ -43,6 +43,7 @@ import {
 } from "../service/contracts";
 import { messagePlainText } from "../system-messages";
 import { lightboxItem, rowAttachments } from "./attachment-views";
+import ChatDiscussionCard, { type ChatDiscussion } from "./ChatDiscussionCard";
 import ChatResourceCards, { type ResourceCards } from "./ChatResourceCards";
 import { createMessageDates } from "./chat-message-dates";
 import { EmojiPopover } from "./emoji-popover";
@@ -54,8 +55,13 @@ import type { Thread } from "./threads";
 export type ChatFeedItem = {
   /** The send's client ID for the reader's own messages sent from this tab, so a row keeps its key once stored. */
   key: string;
-  /** An event and a group of events are no messages: they never count as unread and never answer anything. */
-  kind: "text" | "system" | "event" | "eventGroup";
+  /**
+   * An event and a group of events are no messages: they never count as unread and never answer anything. Neither is
+   * a discussion about an item, which stands as a card in its place's stream (v2 only).
+   */
+  kind: "text" | "system" | "event" | "eventGroup" | "discussion";
+  /** A discussion's card: where it is now and the way to it. */
+  discussion?: ChatDiscussion;
   /** An event's icon. */
   icon?: string;
   /** Optional owning-app path to the passage or resource described by an event. */
@@ -220,6 +226,7 @@ const Lightbox = lazy(async () => (await importOnDemand(() => import("./chat-lig
 const ROW_ESTIMATE = 60;
 const SYSTEM_ESTIMATE = 36;
 const EVENT_ESTIMATE = 26;
+const DISCUSSION_ESTIMATE = 100;
 
 /** Header, history, and composer of one open chat. Below 48 rem it covers the visible part of the screen. */
 export default function ChatConversation(props: ChatConversationProps): JSX.Element {
@@ -609,7 +616,15 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
         class="chat-conversation__feed"
         items={props.items}
         getKey={(item) => item.key}
-        estimateSize={(item) => (item.kind === "system" ? SYSTEM_ESTIMATE : item.kind === "text" ? ROW_ESTIMATE : EVENT_ESTIMATE)}
+        estimateSize={(item) =>
+          item.kind === "system"
+            ? SYSTEM_ESTIMATE
+            : item.kind === "text"
+              ? ROW_ESTIMATE
+              : item.kind === "discussion"
+                ? DISCUSSION_ESTIMATE
+                : EVENT_ESTIMATE
+        }
         label={t().history({ title: props.title })}
         itemLabel={(item) =>
           item.kind === "text" ? `${item.own ? t().you : item.authorName}, ${messageDates().read(item).time}` : undefined
@@ -663,6 +678,8 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             <MessageSystemRow time={messageDates().read(item).time} dateTime={item.at}>
               {item.body}
             </MessageSystemRow>
+          ) : item.kind === "discussion" && item.discussion ? (
+            <ChatDiscussionCard {...item.discussion} time={messageDates().read(item).time} dateTime={item.at} />
           ) : (
             <MessageRow
               author={{ name: item.authorName }}
