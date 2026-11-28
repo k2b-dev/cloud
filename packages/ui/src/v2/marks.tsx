@@ -153,7 +153,7 @@ const AvatarStack = (props: AvatarStackProps) => {
 export const Avatar = /* @__PURE__ */ Object.assign((props: AvatarProps) => <Face {...props} />, { Stack: AvatarStack });
 
 export type MarkProps = {
-  /** A Tabler icon for the kind of thing, such as `table`, `folder-filled` or `tool`. */
+  /** A Tabler icon for the kind of thing, such as `table`, `folder` or `tool`. */
   icon: string;
   /**
    * The data colour of the thing: a base, a storage, a mailbox, or the colour of its type (a table, a form, a PDF).

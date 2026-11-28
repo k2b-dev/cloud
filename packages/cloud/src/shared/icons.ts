@@ -290,9 +290,7 @@ export const ICON_OPTIONS: IconOption[] = [
 
   // ── Symbols & Awards ─────────────────────────────────────────────
   E("star", "Star", ["star", "favorite", "rating"]),
-  E("star-filled", "Star Filled", ["star", "filled", "favorite"]),
   E("heart", "Heart", ["heart", "love", "favorite", "like"]),
-  E("heart-filled", "Heart Filled", ["heart", "filled", "love"]),
   E("diamond", "Diamond", ["diamond", "gem", "premium"]),
   E("crown", "Crown", ["crown", "king", "vip", "premium"]),
   E("trophy", "Trophy", ["trophy", "award", "winner", "champion"]),

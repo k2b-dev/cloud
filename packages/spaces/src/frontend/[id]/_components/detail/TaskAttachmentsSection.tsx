@@ -231,7 +231,7 @@ export default function TaskAttachmentsSection(props: {
                       tabIndex={-1}
                       aria-hidden="true"
                     />
-                    <i class="ti ti-player-play-filled spaces-attachment-video__play" aria-hidden="true" />
+                    <i class="ti ti-player-play spaces-attachment-video__play" aria-hidden="true" />
                   </span>
                 ) : (
                   <img src={contentUrl(attachment)} alt="" loading="lazy" decoding="async" />

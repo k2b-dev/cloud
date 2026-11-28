@@ -34,7 +34,7 @@ const note = (index: number): WidgetListItem => ({
   href: `/app/notebooks/n1/notes/m${index}`,
 });
 const place = (index: number): WidgetListItem => ({
-  icon: "ti ti-cloud-filled",
+  icon: "ti ti-cloud",
   iconTone: "blue",
   label: ["Hamburg", "Garmisch-Partenkirchen", "Berlin", "Köln", "Leipzig", "Freiburg im Breisgau", "Kiel"][index % 7]!,
   sub: "Teilweise bewölkt",
@@ -155,10 +155,10 @@ const weather = (size: DashboardWidgetSize): BuiltInWidgetFixture[] => {
       variant: "one place",
       response: {
         ...base,
-        icon: "ti ti-cloud-filled",
+        icon: "ti ti-cloud",
         meta: "1 von 3",
         blocks: [
-          { kind: "hero", icon: "ti ti-cloud-filled", tone: "blue", title: "14°C · Teilweise bewölkt", subtitle: "Garmisch-Partenkirchen" },
+          { kind: "hero", icon: "ti ti-cloud", tone: "blue", title: "14°C · Teilweise bewölkt", subtitle: "Garmisch-Partenkirchen" },
           ...(size === "large"
             ? ([
                 {

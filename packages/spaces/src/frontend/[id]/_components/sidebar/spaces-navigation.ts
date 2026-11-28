@@ -73,7 +73,7 @@ export const createSpacesNavigationItems = (props: {
     id: space.id,
     label: space.name,
     color: space.color,
-    icon: props.pinnedSpaceIds.includes(space.id) ? "ti ti-flag" : "ti ti-circle-filled",
+    icon: props.pinnedSpaceIds.includes(space.id) ? "ti ti-flag" : "ti ti-circle",
     href: `/app/spaces/${space.id}`,
     active: props.current.kind === "space" && props.current.id === space.id,
   })),

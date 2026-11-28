@@ -1,0 +1,6 @@
+### Tabler filled icons drew nothing, because Cloud ships only the outline font
+
+- **What happened:** A rating's star, a featured tool's star, a pinned conversation's pin, a video's play mark, a space's colour dot and the weather widget's "partly cloudy" stood as empty boxes (#4558).
+- **Root cause:** `@k2b/ui/icons/tabler.css` loads only Tabler's outline font. The `ti-*-filled` classes and names such as `star-filled` live in Tabler's separate filled font, which the preset never builds, so they have no glyph. Nothing checked shipped code against the font; only the `@k2b/ui` icon picker had a test that its own names exist.
+- **Error class:** An icon name that the shipped font cannot draw, which fails silently as an empty box instead of an error.
+- **Guard:** The `tabler-filled` rule (`scripts/checks/tabler-filled.ts`) refuses every `ti-*-filled` class and quoted `*-filled` icon name in shipped code of `packages/*/src` and `docs-site/src`; it was red with 13 findings before the fix. The uses now name outline icons; where the filled shape is the meaning (a rating star, a featured star), the code draws Tabler's star as an inline SVG, as `Rating` does (#4555). The icon catalog in `@k2b/cloud/shared` no longer offers `star-filled` and `heart-filled`.

@@ -344,8 +344,11 @@
   font-weight: 600;
 }
 
-.k2b-ui .cloud-blocks__rating i {
-  color: var(--k2b-warning-text);
+/* the star of a rating is drawn: the icon font has no filled glyphs */
+.k2b-ui .cloud-blocks__star {
+  width: 1em;
+  height: 1em;
+  fill: var(--k2b-warning-text);
 }
 
 .k2b-ui .cloud-blocks__card-image {

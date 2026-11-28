@@ -23,8 +23,9 @@ const LOCATION_LIMIT = { small: 1, medium: 2, large: 7 } as const;
 const ICON_MAP: Record<string, string> = {
   "clear-day": "ti ti-sun",
   "clear-night": "ti ti-moon",
-  "partly-cloudy-day": "ti ti-cloud-filled",
-  "partly-cloudy-night": "ti ti-cloud-filled",
+  // the condition says "partly cloudy" in words; Tabler has no outline cloud with a sun or moon
+  "partly-cloudy-day": "ti ti-cloud",
+  "partly-cloudy-night": "ti ti-cloud",
   cloudy: "ti ti-cloud",
   fog: "ti ti-mist",
   rain: "ti ti-cloud-rain",

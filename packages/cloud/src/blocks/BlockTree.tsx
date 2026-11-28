@@ -253,7 +253,9 @@ function CardsBlock(props: { block: Leaf<"Cards">; locale: string }) {
                     <Show when={text(at(item, props.block.card.rating))}>
                       {(rating) => (
                         <span class="cloud-blocks__rating">
-                          <i class="ti ti-star-filled" aria-hidden="true" />
+                          <svg class="cloud-blocks__star" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" />
+                          </svg>
                           {rating()}
                         </span>
                       )}
