@@ -32,6 +32,6 @@
     "playwright": "catalog:",
     "subset-font": "2.9.0",
     "typescript": "catalog:",
-    "web-push": "3.6.7"
+    "web-push": "4.0.0"
   }
 }
