@@ -30,6 +30,21 @@ The working surface of an app: one per screen.
   end, so the head lets it go on the phone (one primary per page).
 - children: a `Pane` or a `Pane.Split`, written as JSX inside the Workspace
   (a pane made before it, kept in a variable, is not counted).
+- `accent`: the page's own colour from data (`#rrggbb` or `#rgb`), such as
+  the colour a place chose for its visitor page. It replaces the app's
+  colour inside: the primary action, the open row's tint, `Text` and `Band`
+  `tone="app"`, and `RangeBar`s without `stops` (quiet tone, the open row's
+  bar in the ink). The tones are computed where the colour arrives, on the
+  server too: the primary's words are white or near-black, whichever keeps
+  4.5:1 (a colour where neither does is darkened until white does); as text
+  the colour is darkened (light) or lightened (dark) until it keeps 4.5:1 on
+  the surface and on its tint; bars keep 3:1, also on a chosen row's blue
+  tint; a primary that would vanish on the surface (a pale yellow on white)
+  gets an edge of its colour at 3:1. Focus rings and states keep
+  their colours. Any other value leaves the app's colour. Dialogs and menus
+  rendered outside the Workspace keep the app's colour. For an `Avatar` or
+  `Mark` in the accent, pass `color: "var(--k2-app-text)"` (the accent's ink
+  of the theme).
 - `detail` (`true` or the detail's minimum, default 400) when a detail opens
   beside the columns; `detailEmpty={{ icon, text }}` stands in its place while
   none is open, so nothing moves when it opens. Keep the list's `width`.
@@ -153,7 +168,8 @@ cuts, from its start, until the fold takes over.
 ### Band
 
 A block of free height with one line below. `tone`: `note`, `ai`, `yours`,
-`bad`, `warn` (meaning only). Holds `Text`, `Row`, `Prose`, `Tiles`,
+`bad`, `warn`, `app` (the app's tint, for the one statement that belongs to
+it, such as a hero without a picture above it) (meaning only). Holds `Text`, `Row`, `Prose`, `Tiles`,
 fields. A message in a thread is one `Band`.
 
 ### Cells and Cells.Cell
@@ -228,8 +244,10 @@ A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
 720 px of text, so a short list in a wide pane stays together; its line
 still reaches the column's edges), `more` (one link under the rows, its
 words on their text edge, never at the right: "All deliveries ›"; its
+`icon` replaces the chevron, `chevron-up` for "Show fewer"; its
 `meta` shows only in a
-`Pane side`, where the link becomes a row), children. No line under
+`Pane side`, where the link becomes a row), `id` (an anchor for a link
+such as `/me#screen`), children. No line under
 the head or between entries, one line at the end. A long title (a
 question, a name) wraps onto more lines and the head grows with it; no word
 is cut. Put `Row`s directly in a section, or a `Digest`, `Facts`, `Group`s.
@@ -379,7 +397,8 @@ one.
 
 `type`: `meta` 12/16, `row` 13/20 (default), `body` 14/20, `lead` 18/24.
 `weight` (`"strong"` 600, `"medium"` 500 for a state or amount that stands
-out a little), `muted`, `tone` (`ok`, `warn`, `bad`, `ai`, `draft`), `href`
+out a little), `muted`, `tone` (`ok`, `warn`, `bad`, `ai`, `draft`, and
+`app`: the app's ink at 4.5:1, such as the hero's state), `href`
 (underlined words that lead somewhere; blue is only for the main action).
 Without `type`, text takes the role of its place.
 `title` gives text its full words as a tooltip where its place may cut it:
@@ -406,7 +425,7 @@ lines instead of cutting a thing. In a table cell its `Text` gives way to
 the marks beside it (a symbol, an `Avatar`, a `Chip` keep their size): the
 name wraps in a small table and ends with "…" in one with column widths.
 
-### Icon, Avatar, Chip, Progress, Ticks, Heat
+### Icon, Avatar, Chip, Progress, Ticks, RangeBar, Heat
 
 - `Icon`: `name`, `label` (without one it is decoration), `tone`.
 - `Avatar`: a `Person`; the place sets the size. With `image` the picture
@@ -456,6 +475,11 @@ name wraps in a small table and ends with "…" in one with column widths.
   keeps the strip at its start). Ok is soft, a failure red and taller, a
   slot without data a low stub; 140 × 20 px in a table cell. The one column
   of a list that shows its data over time; never decoration.
+- `RangeBar`: `from` and `to`, or `ranges` (several on one track, such as
+  opening hours with a break; `[]` for a closed day), on the `domain` the
+  rows of a list share; `stops` (colours by meaning along the scale),
+  `label` (every range in words: "Di.: 08:00 bis 12:00 und 14:00 bis
+  18:00") or `decorative` when the values stand beside it as text.
 - `Heat`: `days` (`{ date, count }` per day, at most the 53 weeks shown, from
   one bounded aggregate), `today` (a date key from the server: the last day,
   marked), `label` ("Mails pro Tag"), `unit` (a count in the app's words),
@@ -572,6 +596,12 @@ name wraps in a small table and ends with "…" in one with column widths.
   `label`, `onChange`, `disabled` (every option dimmed). With a `label` and no `Field` around it, it shows
   that label as a field of its own; inside a `Field` the field's label is
   its question.
+- `Rating`: stars from 1 to 5 as one radio group: `value`, `onChange`,
+  `name`, `label` (as for `Choice`), `disabled`. One Tab stop, arrows move
+  and choose, Space and Enter choose; each star is named "3 von 5
+  Sternen", 56 px high and at least 44 px wide. `required`, hint and error
+  come from its `Field`. `readOnly` with `value` (an average such as 4.2
+  fills part of a star) shows a given rating as small stars in a line.
 
 ## Components
 

@@ -61,15 +61,20 @@ import type {
 } from "./contracts";
 import {
   FEEDBACK_PAGE_SIZE,
+  MAX_PUBLIC_MENU_ITEMS,
+  MAX_PUBLIC_SECTIONS,
+  MENU_ITEM_LIMIT,
   PUBLIC_EXCEPTION_DAYS,
+  PUBLIC_SECTION_LIMIT,
   PublicSectionInputSchema,
+  publicMenuItemCount,
   SCHEDULE_OUTLOOK_DAYS,
   ShiftTemplateInputSchema,
   VENUE_PAGE_MAX,
 } from "./contracts";
 import { withShortIdDb } from "./lib/short-id";
 import { venueMessages } from "./messages";
-import { filterPublicMenuSections } from "./public-menu";
+import { capPublicSections, filterPublicMenuSections } from "./public-menu";
 import * as publicProjection from "./service/public-projection";
 import { resolvePublicId, resolvePublicIds, resolveVenuePublicId } from "./service/public-resources";
 import { getVenueTemplate, listVenueTemplates as localizedVenueTemplates } from "./templates";
@@ -820,7 +825,46 @@ const stripSectionImages = (input: PublicSectionInput): PublicSectionInput => {
   };
 };
 
-const createSectionInTx = async (tx: SqlClient, venueId: string, input: PublicSectionInput): Promise<Result<PublicSection>> => {
+/**
+ * The Venue's stored sections and menu items, drafts included, without the section `exceptId`. Locks the Venue
+ * row first, so two saves at the same time count one after the other and never pass a limit together.
+ */
+const lockSectionTotals = async (tx: SqlClient, venueId: string, exceptId: string | null = null) => {
+  await tx`SELECT 1 FROM venue.venues WHERE id = ${venueId}::uuid FOR NO KEY UPDATE`;
+  const [row] = await tx<{ sections: number; items: number }[]>`
+    SELECT count(*)::int AS sections,
+           coalesce(sum(CASE WHEN kind = 'menu' AND jsonb_typeof(content->'items') = 'array'
+             THEN jsonb_array_length(content->'items') ELSE 0 END), 0)::int AS items
+    FROM venue.public_sections
+    WHERE venue_id = ${venueId}::uuid AND (${exceptId}::uuid IS NULL OR id <> ${exceptId}::uuid)
+  `;
+  return row ?? { sections: 0, items: 0 };
+};
+
+const sectionLimitReached = (locale?: string) =>
+  fail({
+    code: PUBLIC_SECTION_LIMIT,
+    status: 422 as const,
+    message: venueMessages.resolve(locale ? [locale] : []).t.sectionLimitReached({ max: MAX_PUBLIC_SECTIONS }),
+  });
+
+const menuItemLimitReached = (count: number, locale?: string) =>
+  fail({
+    code: MENU_ITEM_LIMIT,
+    status: 422 as const,
+    message: venueMessages.resolve(locale ? [locale] : []).t.menuItemLimitReached({ max: MAX_PUBLIC_MENU_ITEMS, count }),
+  });
+
+const createSectionInTx = async (
+  tx: SqlClient,
+  venueId: string,
+  input: PublicSectionInput,
+  locale?: string,
+): Promise<Result<PublicSection>> => {
+  const totals = await lockSectionTotals(tx, venueId);
+  if (totals.sections >= MAX_PUBLIC_SECTIONS) return sectionLimitReached(locale);
+  const items = totals.items + publicMenuItemCount(input);
+  if (items > MAX_PUBLIC_MENU_ITEMS && publicMenuItemCount(input) > 0) return menuItemLimitReached(items, locale);
   input = stripSectionImages(input);
   const rows = await withShortIdDb(
     tx,
@@ -1564,23 +1608,32 @@ const getPersonalAssignmentById = async (assignmentId: string, userId: string): 
   return row ? { ...mapAssignment(row), venueName: row.venue_name, venueTimezone: row.venue_timezone } : null;
 };
 
+/**
+ * Every section for the workspace, also past the limits of a page saved before them, so admins can edit it down;
+ * the public page reads only its first {@link MAX_PUBLIC_SECTIONS} visible ones.
+ */
 const listSections = async (venueId: string, onlyEnabled = false): Promise<PublicSection[]> => {
   const rows = await sql<DbPublicSection[]>`
     SELECT * FROM venue.public_sections
     WHERE venue_id = ${venueId}::uuid
       AND (${!onlyEnabled} OR enabled = true)
-    ORDER BY position, created_at
+    ORDER BY position, created_at, id
+    LIMIT ${onlyEnabled ? MAX_PUBLIC_SECTIONS : null}
   `;
   return rows.map(mapSection);
 };
 
-const createSection = async (venueId: string, input: PublicSectionInput): Promise<Result<PublicSection>> => {
-  return createSectionInTx(sql, venueId, input);
-};
+const createSection = async (venueId: string, input: PublicSectionInput, locale?: string): Promise<Result<PublicSection>> =>
+  sql.begin((tx) => createSectionInTx(tx, venueId, input, locale));
 
-/** Applies only the fields `patch` names; visibility and position stay as stored unless the patch sets them. */
-const updateSection = async (venueId: string, id: string, patch: PublicSectionPatch): Promise<Result<PublicSection>> =>
+/**
+ * Applies only the fields `patch` names; visibility and position stay as stored unless the patch sets them. A menu
+ * may gain items only within {@link MAX_PUBLIC_MENU_ITEMS}; a change that adds none always saves, so a page saved
+ * before the limits can still be edited down.
+ */
+const updateSection = async (venueId: string, id: string, patch: PublicSectionPatch, locale?: string): Promise<Result<PublicSection>> =>
   sql.begin(async (tx) => {
+    const others = await lockSectionTotals(tx, venueId, id);
     const [row] = await tx<DbPublicSection[]>`
       SELECT * FROM venue.public_sections WHERE venue_id = ${venueId}::uuid AND id = ${id}::uuid FOR UPDATE
     `;
@@ -1596,6 +1649,9 @@ const updateSection = async (venueId: string, id: string, patch: PublicSectionPa
     if (!merged.success) {
       return fail(err.badInput(merged.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join(", ")));
     }
+    const addedItems = publicMenuItemCount(merged.data) - publicMenuItemCount(current);
+    const items = others.items + publicMenuItemCount(merged.data);
+    if (addedItems > 0 && items > MAX_PUBLIC_MENU_ITEMS) return menuItemLimitReached(items, locale);
     const input = stripSectionImages(merged.data);
     const [updated] = await tx<DbPublicSection[]>`
       UPDATE venue.public_sections
@@ -1738,9 +1794,12 @@ const feedbackSummary = async (
  */
 const canSeeInternal = (venue: Venue): boolean => hasPermission(venue.permission ?? "none", "write");
 
-/** The sections the public page shows on the Venue-local date of `now`: enabled ones, with menus cut to available items. */
+/**
+ * The sections the public page shows on the Venue-local date of `now`: enabled ones, with menus cut to available
+ * items, within the page's limits.
+ */
 const publicSections = async (venue: Venue, now: Date): Promise<PublicSection[]> =>
-  filterPublicMenuSections(await listSections(venue.id, true), localDateKey(now, venue.timezone));
+  capPublicSections(filterPublicMenuSections(await listSections(venue.id, true), localDateKey(now, venue.timezone)));
 
 const statusForVenue = async (venue: Venue, now = new Date(), includeSections = true, locale?: string): Promise<PublicStatus> => {
   const { t } = venueMessages.resolve(locale ? [locale] : []);

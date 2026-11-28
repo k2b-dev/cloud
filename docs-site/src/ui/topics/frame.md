@@ -49,11 +49,15 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 One per screen: the sidebar, the head, the main action, and the columns; it turns the sidebar into a drawer where it does not fit.
 
+With `accent` the page speaks in a colour from data instead of the app's, such as the colour a place chose for its visitor page: the primary action, the open row's tint, `Text` and `Band` `tone="app"`, and the bars of a `RangeBar`. The readable tones are computed where the colour arrives, on the server too, so the first paint is final. The primary's words are white or near-black, whichever keeps 4.5:1 on the colour; a colour on which neither does is darkened until white does. As text the colour is darkened in light and lightened in dark until it keeps 4.5:1 on the surface and on its tint, and a bar's quiet tone keeps 3:1, also on the blue tint of a chosen row. A primary that would vanish on the surface, such as a pale yellow on white, gets an edge of its colour at 3:1. Focus rings and the colours of states stay, and dialogs and menus rendered outside the Workspace keep the app's colour. For an `Avatar` or a `Mark` in the accent, pass `color: "var(--k2-app-text)"`. Only `#rrggbb` or `#rgb` counts; any other value leaves the app's colour.
+
 <Props of="Workspace" />
 
 ### Pane
 
 A column that scrolls, with no padding: a head, a status that stays, a `width` inside a split, and `detail`, `back` (on a wide screen too with `wideBack`) and `side`.
+
+A pane's `head` and its toolbar (a `StatusRow` or `FilterBar` as its `status`) are one block: the head's `Bar` stands the toolbar between its start and its end, with no line between them, one line under the block, and the two rows close together. Where the pane is 1200 px or wider, they stand in one row: the path, then the filters and how the list shows, then the head's actions; the Tab key follows that order. A head of actions only (a `Bar` without `start`) always shares the toolbar's row. Any other status, such as the state of an open entry, keeps its own row under the head. So give the head of a list's pane to the pane (`Pane head`), not to the workspace, when the pane has a `status`. The head's search is `HeadSearch` in the head's `end`, with a `label`: it stands as its symbol, named by its label, and opens over its neighbours when pressed or with "/". Its words keep it open in the row, and Escape leaves it with its words. Its code comes with it, so a page whose heads have no search loads none of it. A row keeps its height when it carries a deed: on one line the time stands at the end and the deed after it; on the phone the deed takes the row under the text.
 
 <Props of="Pane" />
 

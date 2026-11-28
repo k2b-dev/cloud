@@ -50,19 +50,11 @@ export const codeReviewMessages = i18n.define({
   messages: {
     en: {
       // List
-      listTitle: "Approvals",
-      listOpenSub: ({ n }: N) =>
-        n === 1
-          ? "1 version waits for a decision. Until then nothing changes in what runs."
-          : `${n} versions wait for a decision. Until then nothing changes in what runs.`,
-      listNothingSub: "Nothing open.",
-      listDecidedSub: "Recently decided. Every decision applies to exactly one version.",
       tabOpen: "Open",
       tabDecided: "Decided",
       version: ({ n }: N) => `Version ${n}`,
       versionFirst: ({ n }: N) => `Version ${n} · first`,
       emptyTitle: "No version waits for you.",
-      emptySub: "New versions that need an approval under the policy show here.",
       emptyDecided: "Nothing decided yet.",
       loadMore: "Load more",
       approvedBy: ({ who }: Who) => `Approved by ${who}`,
@@ -73,7 +65,6 @@ export const codeReviewMessages = i18n.define({
       ownerPersonal: ({ who }: Who) => `${who}, personal`,
       ownerApp: ({ app }: { app: string }) => `App ${app}`,
       ownerHidden: ({ kind }: { kind: string }) => `a ${kind} you cannot open`,
-      ownerPlace: "a place",
       // Head
       headTitle: ({ title, n }: { title: string; n: number }) => `${title} · Version ${n}`,
       headSubChat: ({ who, when, owner }: { who: string; when: string; owner: string }) =>
@@ -88,11 +79,7 @@ export const codeReviewMessages = i18n.define({
       tabsLabel: "Views",
       tabOverview: "Overview",
       tabCode: "Code",
-      tabDiff: "Diff",
-      commentCount: ({ n }: N) => (n === 1 ? "1 comment" : `${n} comments`),
-      diffCount: ({ add, del }: { add: number; del: number }) =>
-        `${add === 1 ? "1 line" : `${add} lines`} added, ${del === 1 ? "1" : `${del}`} removed`,
-      diffFirst: "First version: there is no difference.",
+      tabDiff: "Changes",
       // Approval
       source: "Code",
       question: ({ n, title }: { n: number; title: string }) => `Approve [[Version ${n}]] of [[${title}]]?`,
@@ -100,12 +87,9 @@ export const codeReviewMessages = i18n.define({
       reasonNone: "No row of this version needs an admin under the current policy any more.",
       policyDefault: "the Default policy",
       policyGroups: ({ groups }: { groups: string }) => `the rule of group ${groups}`,
-      detailsFrom: ({ n }: N) => `Details from Code · compared with version ${n}`,
       detailsFirst: "Details from Code · first version, everything is new",
       sameMore: ({ n }: N) => (n === 1 ? "1 more stays the same." : `${n} more stay the same.`),
       show: "Show",
-      hide: "Hide",
-      boundTo: ({ n }: N) => `Applies exactly to version ${n}`,
       reject: "Reject …",
       rejectOrChange: "Reject or request changes …",
       rejectOrChangeShort: "Reject / change",
@@ -113,8 +97,6 @@ export const codeReviewMessages = i18n.define({
       changesFrom: ({ n }: N) => `What changes compared with version ${n}`,
       requestChanges: "Request changes …",
       approve: ({ n }: N) => `Approve version ${n}`,
-      commentsGo: ({ n }: N) =>
-        n === 0 ? "No comments on the code yet" : n === 1 ? "1 comment goes with your decision" : `${n} comments go with your decision`,
       // Decided states
       statusApproved: "Approved",
       statusChanges: "Changes requested",
@@ -156,7 +138,6 @@ export const codeReviewMessages = i18n.define({
       withdrawnTitle: ({ n }: N) => `Cloud refused your decision: version ${n} was withdrawn in the meantime.`,
       withdrawnSub: ({ keep }: { keep: string }) => `Nothing was decided. ${keep}`,
       previousTitle: ({ n }: N) => `You requested changes to version ${n}`,
-      previousComments: ({ n }: N) => (n === 1 ? "1 comment on it" : `${n} comments on it`),
       // Overview
       whatItDoes: "What it does",
       noDescription: "No description yet.",
@@ -169,9 +150,6 @@ export const codeReviewMessages = i18n.define({
       commentsFoot: ({ who }: Who) => `With your decision ${who} sees the comments as text. Gustav sees them at their place in the code.`,
       commentsFootCli: ({ who }: Who) => `With your decision ${who} gets the comments with their lines in the command line.`,
       mayDo: ({ n }: N) => `Everything version ${n} may do`,
-      mayRuns: "Runs",
-      mayAs: "As",
-      mayApps: "Apps",
       mayNothing: "nothing",
       examples: "Examples",
       // Code field
@@ -220,21 +198,20 @@ export const codeReviewMessages = i18n.define({
       // Common
       unknownAuthor: "unknown",
       rowReason: ({ row }: { row: CodePolicyRow }) => ROW_REASON_EN[row],
+      chooseApproval: "Choose an approval to review it.",
+      explaining: "Explaining …",
+      moreApprovals: "Other approvals",
+      toastApproved: ({ n }: N) => `Version ${n} approved`,
+      toastChanges: ({ n }: N) => `Changes to version ${n} requested`,
+      toastRejected: ({ n }: N) => `Version ${n} rejected`,
+      visibleToWho: ({ who }: Who) => `${who} reads it with your decision.`,
     },
     de: {
-      listTitle: "Freigaben",
-      listOpenSub: ({ n }) =>
-        n === 1
-          ? "1 Version wartet auf eine Entscheidung. Bis dahin ändert sich nichts an dem, was läuft."
-          : `${n} Versionen warten auf eine Entscheidung. Bis dahin ändert sich nichts an dem, was läuft.`,
-      listNothingSub: "Nichts offen.",
-      listDecidedSub: "Zuletzt entschieden. Jede Entscheidung gilt genau für eine Version.",
       tabOpen: "Offen",
       tabDecided: "Entschieden",
       version: ({ n }) => `Version ${n}`,
       versionFirst: ({ n }) => `Version ${n} · erste`,
       emptyTitle: "Keine Version wartet auf dich.",
-      emptySub: "Neue Versionen, die laut Richtlinie eine Freigabe brauchen, erscheinen hier.",
       emptyDecided: "Noch nichts entschieden.",
       loadMore: "Weitere laden",
       approvedBy: ({ who }) => `Freigegeben von ${who}`,
@@ -245,7 +222,6 @@ export const codeReviewMessages = i18n.define({
       ownerPersonal: ({ who }) => `${who}, persönlich`,
       ownerApp: ({ app }) => `App ${app}`,
       ownerHidden: ({ kind }) => `ein ${kind}, den du nicht öffnen darfst`,
-      ownerPlace: "ein Ort",
       headTitle: ({ title, n }) => `${title} · Version ${n}`,
       headSubChat: ({ who, when, owner }) => `${who} hat sie ${when} mit Gustav eingereicht · gehört zu: ${owner}`,
       headSubCli: ({ who, when, owner }) => `${who} hat sie ${when} über die Kommandozeile eingereicht · gehört zu: ${owner}`,
@@ -256,22 +232,16 @@ export const codeReviewMessages = i18n.define({
       tabsLabel: "Ansichten",
       tabOverview: "Übersicht",
       tabCode: "Code",
-      tabDiff: "Diff",
-      commentCount: ({ n }) => (n === 1 ? "1 Kommentar" : `${n} Kommentare`),
-      diffCount: ({ add, del }) => `${add === 1 ? "1 neue" : `${add} neue`}, ${del === 1 ? "1 entfernte" : `${del} entfernte`} Zeilen`,
-      diffFirst: "Erste Version: Es gibt keinen Unterschied.",
+      tabDiff: "Änderungen",
       source: "Code",
       question: ({ n, title }) => `[[Version ${n}]] von [[${title}]] freigeben?`,
       reason: ({ rows, policy }) => `${rows} Das gibt laut ${policy} ein Admin frei.`,
       reasonNone: "Keine Zeile dieser Version braucht laut aktueller Richtlinie noch einen Admin.",
       policyDefault: "Richtlinie Standard",
       policyGroups: ({ groups }) => `Regel der Gruppe ${groups}`,
-      detailsFrom: ({ n }) => `Details von Code · gegenüber Version ${n}`,
       detailsFirst: "Details von Code · erste Version, alles ist neu",
       sameMore: ({ n }) => (n === 1 ? "1 weitere bleibt gleich." : `${n} weitere bleiben gleich.`),
       show: "Anzeigen",
-      hide: "Ausblenden",
-      boundTo: ({ n }) => `Gilt genau für Version ${n}`,
       reject: "Ablehnen …",
       rejectOrChange: "Ablehnen oder ändern …",
       rejectOrChangeShort: "Ablehnen / ändern",
@@ -279,12 +249,6 @@ export const codeReviewMessages = i18n.define({
       changesFrom: ({ n }) => `Was sich gegenüber Version ${n} ändert`,
       requestChanges: "Änderungen anfordern …",
       approve: ({ n }) => `Version ${n} freigeben`,
-      commentsGo: ({ n }) =>
-        n === 0
-          ? "Noch keine Kommentare am Code"
-          : n === 1
-            ? "1 Kommentar geht mit deiner Entscheidung mit"
-            : `${n} Kommentare gehen mit deiner Entscheidung mit`,
       statusApproved: "Freigegeben",
       statusChanges: "Änderungen angefordert",
       statusRejected: "Abgelehnt",
@@ -324,7 +288,6 @@ export const codeReviewMessages = i18n.define({
       withdrawnTitle: ({ n }) => `Cloud hat deine Entscheidung abgelehnt: Version ${n} wurde inzwischen zurückgezogen.`,
       withdrawnSub: ({ keep }) => `Es wurde nichts entschieden. ${keep}`,
       previousTitle: ({ n }) => `Du hattest bei Version ${n} Änderungen angefordert`,
-      previousComments: ({ n }) => (n === 1 ? "1 Kommentar dazu" : `${n} Kommentare dazu`),
       whatItDoes: "Was sie damit tut",
       noDescription: "Noch keine Beschreibung.",
       aiMark: "KI-Erklärung, nicht von Cloud geprüft",
@@ -336,9 +299,6 @@ export const codeReviewMessages = i18n.define({
       commentsFoot: ({ who }) => `Mit deiner Entscheidung sieht ${who} die Kommentare als Text. Gustav sieht sie an der Stelle im Code.`,
       commentsFootCli: ({ who }) => `Mit deiner Entscheidung bekommt ${who} die Kommentare mit ihren Zeilen in der Kommandozeile.`,
       mayDo: ({ n }) => `Alles, was Version ${n} darf`,
-      mayRuns: "Läuft",
-      mayAs: "Als",
-      mayApps: "Apps",
       mayNothing: "nichts",
       examples: "Beispiele",
       codeLabel: "Code",
@@ -383,6 +343,13 @@ export const codeReviewMessages = i18n.define({
       dialogFailed: "Nicht entschieden. Dein Text bleibt hier. Versuch es noch einmal.",
       unknownAuthor: "unbekannt",
       rowReason: ({ row }) => ROW_REASON_DE[row],
+      chooseApproval: "Wähle eine Freigabe, um sie zu prüfen.",
+      explaining: "Wird erklärt …",
+      moreApprovals: "Weitere Freigaben",
+      toastApproved: ({ n }) => `Version ${n} freigegeben`,
+      toastChanges: ({ n }) => `Änderungen an Version ${n} angefordert`,
+      toastRejected: ({ n }) => `Version ${n} abgelehnt`,
+      visibleToWho: ({ who }) => `${who} liest es mit deiner Entscheidung.`,
     },
   },
 });

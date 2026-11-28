@@ -45,6 +45,9 @@ const linkEvidence = (html: string | null): { domains: Set<string>; misleading: 
   return { domains, misleading };
 };
 
+/** The http(s) link domains of a message body, as the assessment's `link_domain` rules match them. */
+export const messageLinkDomains = (html: string | null): string[] => [...linkEvidence(html).domains];
+
 const authenticationDomain = (clause: string, method: "dmarc" | "dkim" | "spf"): string | null => {
   const property = method === "dmarc" ? "header.from" : method === "dkim" ? "header.d" : "smtp.mailfrom";
   const escaped = property.replace(".", "\\.");

@@ -85,7 +85,7 @@ Ordinary administrator diagnostics and configuration work with the default
 
 ## Create personal API keys
 
-Create personal keys in the browser at `<server>/me/developer` after signing
+Create personal keys in the browser at `<server>/me/security` after signing
 in within the last ten minutes. `cld account api-keys create` cannot create a
 personal key using its OAuth login or another API key: Cloud returns
 `BROWSER_SIGN_IN_REQUIRED`, and the command prints the browser URL. With

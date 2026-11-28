@@ -6,6 +6,10 @@ import type { Context } from "hono";
 const publicRoot = resolve(process.cwd(), "public");
 const versions = new Map<string, { size: number; mtimeMs: number; version: string }>();
 
+/** Core's shared stylesheets below `/public/`, versioned by Core's release: served, precached and linked alike. */
+const SHARED_STYLESHEETS = ["fonts.css", "tabler-icons.css", "global.css", "v2.css"] as const;
+export const isSharedStylesheet = (file: string): boolean => (SHARED_STYLESHEETS as readonly string[]).includes(file);
+
 /**
  * Version of Core's shared stylesheets: the release, which names one build. `local` and `development` are the
  * defaults of unnamed builds and name many, so those sheets get no version and are revalidated instead.
@@ -126,7 +130,7 @@ export function servePublicAsset(isDevelopment: boolean, sharedVersion?: string)
     let cacheControl = isDevelopment ? "no-cache" : "public, max-age=31536000, immutable";
     if (!isDevelopment) {
       const pathname = decodePathname(url.pathname)!;
-      const shared = /^\/public\/(fonts|tabler-icons|global)\.css$/.test(pathname);
+      const shared = pathname.startsWith("/public/") && isSharedStylesheet(pathname.slice("/public/".length));
       const own = /^\/public\/[^/]+\/(app\.css|favicon\.svg)$/.test(pathname);
       if (shared || own) {
         const expected = shared ? sharedVersion : publicFileVersion(url.pathname);

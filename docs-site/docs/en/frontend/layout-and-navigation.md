@@ -302,9 +302,10 @@ brings its own head, so the shell's row of the way up stays hidden above it.
 
 On a signed-in phone the search of a v2 page's head sits in the phone bar, as
 in the approved Mail mockup: the bar's search button, named “Search”, opens the
-head's search field (`Input type="search"`), which opens over the head and
-brings the phone's keyboard; Escape folds it away with its words and returns
-the focus to the button, however the field got it. The Tab key reaches the
+head's search field (`HeadSearch`), which opens over the head and brings the
+phone's keyboard; Escape leaves it with its words and returns the focus to the
+button, however the field got it. Empty, the field folds away; its words keep
+it open over the head. The Tab key reaches the
 field only through that button. The head keeps its room for its views. The global
 search then leads the app menu (the ⠿ sheet) as its first entry, “Search
 everywhere”. Without such a field, or while an open detail hides the head, the
@@ -549,11 +550,17 @@ Set `ui="v2"` (provisional, like `@k2b/ui/v2`) when the page is built with
 `@k2b/ui/v2`, such as a venue's public programme, a public form, a share or a
 kiosk screen. The layout then puts the content in the `main` landmark as the
 v2 scope in the application's colours, as `Layout ui="v2"` does, with no Cloud
-chrome. The content fills the window above the footer: return one `Workspace`
+chrome. Such a page links Core's `/public/v2.css` in place of `global.css`: v2
+and Cloud's v2 additions without v1, Tailwind and the shell (about 17 KB instead
+of about 165 KB with Brotli). Its footer keeps the legal links, and the language
+and theme choices become v2 menus. The page still loads the fonts, the icons and
+the application's own `app.css`, for drawings inside a `Canvas`. The content fills the window above the footer: return one `Workspace`
 without a sidebar, with the brand and the one task in its head. With
 `preferences={false}`, a kiosk screen takes the whole window and its `Pane`
 scrolls inside. The k2b-ui recipe `public-page` shows such a page and its kiosk
-state.
+state. Beside a Core from before `v2.css` the page keeps that Core's
+`global.css` and the v1 footer, and its content stays v2; see
+[Upgrade Core before v2 visitor pages](/en/docs/operations/deployment-requirements#upgrade-core-before-v2-visitor-pages).
 
 ```tsx
 <MinimalLayout c={c} ui="v2">
@@ -605,7 +612,7 @@ The Core sign-in, password, and consent pages use the same class.
 Authenticated users change the theme or language from the profile menu and
 can open `/me` for the remaining profile settings. While the installation runs
 the Cloud app (the `pwa` application), the menu also shows **App**, which
-leads to `/me/app`, where people pair and remove devices. From 768 px the
+leads to `/me/security`, where people pair and remove devices. From 768 px the
 menu starts with **Hide sidebar** or **Show sidebar** and its shortcut. A
 section without a heading follows with **Privacy screen** and its shortcut
 (computers with a mouse or touchpad only) and the **Shared workstation**

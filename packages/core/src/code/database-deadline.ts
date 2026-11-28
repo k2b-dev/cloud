@@ -39,6 +39,23 @@ export async function refreshDatabaseDeadline(tx: SQL, codeId: string, now: Date
       unused_notice_key=NULL WHERE code_id=${codeId}`;
 }
 
+/**
+ * `refreshDatabaseDeadline` for one page of databases in one statement: the stale rows are locked in `code_id` order,
+ * as the sweeps lock them, and get the deadline `databaseDeletionDate` gives.
+ */
+export async function refreshDatabaseDeadlines(tx: SQL, codeIds: readonly string[], now: Date, policy: DatabaseRetentionPolicy) {
+  if (!codeIds.length) return;
+  await tx`UPDATE code.databases d SET unused_policy_revision=${policy.revision}::bigint, unused_days=${policy.days},
+      unused_shown_at=${policy.days ? now : null},
+      unused_delete_at=CASE WHEN ${policy.days}::int=0 THEN NULL ELSE GREATEST(d.unused_since+${policy.days}::int*interval '86400 seconds',
+        ${now}::timestamptz+${DATABASE_EXPIRY_NOTICE_MS}::bigint*interval '1 millisecond') END,
+      unused_notice_key=NULL
+    FROM (SELECT code_id FROM code.databases WHERE code_id=ANY(${tx.array([...codeIds], "text")}) AND unused_since IS NOT NULL
+      AND (unused_policy_revision IS DISTINCT FROM ${policy.revision}::bigint OR unused_days IS DISTINCT FROM ${policy.days}
+        OR (${policy.days}>0 AND unused_shown_at IS NULL)) ORDER BY code_id FOR UPDATE) stale
+    WHERE d.code_id=stale.code_id`;
+}
+
 export async function readDatabaseDeadline(codeId: string, now: Date = new Date()) {
   return sql.begin(async (tx) => {
     const policy = await lockDatabaseRetentionPolicy(tx);

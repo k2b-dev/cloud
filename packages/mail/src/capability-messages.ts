@@ -183,6 +183,11 @@ const catalog = i18n.define({
       folderDisplayInherited: ({ folder, parent }: { folder: string; parent: string }) =>
         `Saved for “${folder}”. Its parent “${parent}” keeps a stricter setting, which still applies.`,
       unnamedAttachment: "Unnamed attachment",
+      unknownSender: "Unknown sender",
+      attachmentMonth: ({ month }: { month: number }) =>
+        ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][
+          month - 1
+        ] ?? String(month),
       commentBy: ({ author }: { author: string }) => `Comment by ${author}`,
       conversationComment: "Conversation comment",
       personalReminder: "Personal reminder",
@@ -410,6 +415,11 @@ const catalog = i18n.define({
       folderDisplayInherited: ({ folder, parent }) =>
         `Für „${folder}“ gespeichert. Der übergeordnete Ordner „${parent}“ hat eine strengere Einstellung, die weiter gilt.`,
       unnamedAttachment: "Anhang ohne Namen",
+      unknownSender: "Unbekannter Absender",
+      attachmentMonth: ({ month }) =>
+        ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"][
+          month - 1
+        ] ?? String(month),
       commentBy: ({ author }) => `Kommentar von ${author}`,
       conversationComment: "Kommentar zur Unterhaltung",
       personalReminder: "Persönliche Erinnerung",

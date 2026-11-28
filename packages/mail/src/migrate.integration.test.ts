@@ -1017,7 +1017,8 @@ suite("mail baseline schema", () => {
     `;
     // Retained domain/retention functions and permanent retirement fences replace the old Undo invalidation hooks;
     // four access-hint functions and twelve narrowly scoped triggers revoke room writers without per-edit queries.
-    expect(shape).toEqual({ extensions: 3, functions: 18, triggers: 49, workflow_ai_table: true });
+    // One more trigger moves the attachment file index with a message's date (attachment-file-index.ts).
+    expect(shape).toEqual({ extensions: 3, functions: 18, triggers: 50, workflow_ai_table: true });
     const accessTriggers = await sql<{ table_name: string; trigger_name: string; enabled: string }[]>`
       SELECT pg_class.relname AS table_name, tgname AS trigger_name, tgenabled AS enabled
       FROM pg_trigger JOIN pg_class ON pg_class.oid = tgrelid

@@ -28,7 +28,8 @@ render(
             <Row icon="alert-circle" lines={["Zeitüberschreitung", "nach 30 s"]} time="gestern" />
             <Row icon="check" lines={["38 Ereignisse angenommen"]} time="Mo." />
           </Section>
-          <Section title="Notizen" more={{ label: "Alle Notizen", forward: true, onClick: () => undefined }}>
+          {/* a section a link leads to (`#notes`), whose way folds the list back: its symbol points up */}
+          <Section id="notes" title="Notizen" more={{ label: "Weniger Notizen", icon: "chevron-up", onClick: () => undefined }}>
             <Row lines={["Abholung nur samstags"]} />
           </Section>
         </Pane>

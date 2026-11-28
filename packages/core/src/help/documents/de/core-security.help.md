@@ -30,7 +30,7 @@ Ein bestehender Passkey funktioniert weiter, solange dein Kontotyp erlaubt ist. 
 
 ## Passwort ändern {icon="shield-lock"}
 
-Öffne für ein FreeIPA-Konto **Anmeldung** in deinem Konto, wähle **Passwort ändern** und gib dein aktuelles Passwort ein. Cloud meldet dich danach überall sonst ab: in anderen Browsern, in der Cloud-App, in der Kommandozeile und in verbundenen Apps. Verbinde die Kommandozeile danach mit `cld login` neu.
+Öffne für ein FreeIPA-Konto **Sicherheit & Geräte** in deinem Konto, wähle bei **Passwort** **Ändern** und gib dein aktuelles Passwort ein. Cloud meldet dich danach überall sonst ab: in anderen Browsern, in der Cloud-App, in der Kommandozeile und in verbundenen Apps. Verbinde die Kommandozeile danach mit `cld login` neu.
 
 In diesem Browser bleibst du angemeldet. Deine gekoppelten Anmeldegeräte bleiben gekoppelt. API Keys und Passkeys funktionieren weiter.
 
@@ -38,14 +38,14 @@ Legst du auf der Anmeldeseite ein neues Passwort fest, zum Beispiel mit einem Li
 
 ## Anmelde-App koppeln {icon="device-mobile"}
 
-Die Administration muss die App-Anmeldung zuerst aktivieren und einrichten. Zeigt **Anmeldung** den Status **Aktiviert — Einrichtung fehlt**, muss die Administration die App-Konfiguration noch abschließen. Nutze bis dahin deine bisherige Anmeldung.
+Die Administration muss die App-Anmeldung zuerst aktivieren und einrichten. Zeigt **Sicherheit & Geräte → Gekoppelte Geräte** den Status **Aktiviert — Einrichtung fehlt**, muss die Administration die App-Konfiguration noch abschließen. Nutze bis dahin deine bisherige Anmeldung.
 
 :::warning Gib den Kopplungslink nicht weiter
 Der Link gilt fünf Minuten. Teile ihn nicht außerhalb dieser Einrichtung.
 :::
 
 :::steps
-1. Öffne **Profileinstellungen → Anmeldung → Gerät koppeln**.
+1. Öffne **Profileinstellungen → Sicherheit & Geräte → Gerät koppeln**.
 2. Scanne den QR-Code oder kopiere den Kopplungslink in die App.
 3. Kehre zu Cloud zurück und vergleiche die sechsstelligen Codes.
 4. Wähle **Codes stimmen überein — Gerät koppeln** nur, wenn die Codes übereinstimmen.
@@ -99,7 +99,7 @@ Nach einer erfolgreichen Anmeldung sendet Cloud einmal pro neuem Browser **Neue 
 
 Sie zeigt Browser und Zeit. Die E-Mail zeigt zusätzlich den Anmeldeweg und den ungefähren Ort, wenn er bekannt ist.
 
-Warst du das nicht, prüfe deine gekoppelten Geräte unter **Profileinstellungen → Anmeldung**. Wende dich dann an die Administration.
+Warst du das nicht, prüfe deine gekoppelten Geräte unter **Profileinstellungen → Sicherheit & Geräte**. Wende dich dann an die Administration.
 
 Cloud sendet die Benachrichtigung standardmäßig per E-Mail. Ohne E-Mail-Adresse sendet Cloud eine Browser-Benachrichtigung. Zum Abschalten öffne **Profileinstellungen → Benachrichtigungen** und entferne bei **Neue Anmeldung aus einem neuen Browser** alle Haken.
 
@@ -110,15 +110,15 @@ Cloud sendet die Benachrichtigung standardmäßig per E-Mail. Ohne E-Mail-Adress
 Kannst du keines deiner gekoppelten Geräte nutzen, bitte die Administration, das alte Gerät zu widerrufen und dir beim Koppeln eines Ersatzgeräts zu helfen. Wende dich auch an die Administration, wenn ein Gerät, das du nicht kennst, deine Anfragen zum Widerrufen ablehnt. Dafür braucht die Administration keine Bestätigung auf einem gekoppelten Gerät.
 
 :::warning Das Zurücksetzen des Passworts widerruft auch deine gekoppelten Geräte
-Setzt du dein Passwort mit **Passwort zurücksetzen** auf der Anmeldeseite zurück, widerruft Cloud alle deine gekoppelten Geräte. Jede andere Abmeldung deines Kontos auf allen Geräten wirkt genauso. Kopple deine Geräte danach neu. Änderst du dein Passwort unter **Anmeldung**, bleiben deine gekoppelten Geräte erhalten.
+Setzt du dein Passwort mit **Passwort zurücksetzen** auf der Anmeldeseite zurück, widerruft Cloud alle deine gekoppelten Geräte. Jede andere Abmeldung deines Kontos auf allen Geräten wirkt genauso. Kopple deine Geräte danach neu. Änderst du dein Passwort unter **Sicherheit & Geräte**, bleiben deine gekoppelten Geräte erhalten.
 :::
 
 Koppeln, Umbenennen und Widerrufen können eine Bestätigung deiner Identität verlangen. Melde dich mit demselben Konto an, ohne dich vorher abzumelden. Die Kopplung öffnet sich danach automatisch wieder.
 
 ## Neuen Zugang bestätigen {icon="shield-lock"}
 
-Lege persönliche API Keys unter **Entwicklung → API Keys** und
-Passkeys unter **Anmeldung → Passkeys** im Browser an. Deine Browser-Anmeldung
+Lege persönliche API Keys unter **Sicherheit & Geräte → API Keys** und
+Passkeys unter **Sicherheit & Geräte → Passkeys** im Browser an. Deine Browser-Anmeldung
 muss aus den letzten zehn Minuten stammen. Bittet Cloud dich, deine Identität zu
 bestätigen, melde dich mit demselben Konto erneut an, ohne dich vorher
 abzumelden. Der Dialog öffnet sich danach wieder.

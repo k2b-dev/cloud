@@ -37,7 +37,7 @@ for (const locale of ["de", "en"]) {
         locale === "de"
           ? "Mail an Lea Berg <lea.berg@example.com> senden?\nIch frage, weil das Cloud verlässt."
           : "Send mail to Lea Berg <lea.berg@example.com>?\nI'm asking because this leaves Cloud.",
-      targetHref: "/me/approvals",
+      targetHref: "/me/activity",
     });
     const old = await AI_NOTIFICATIONS.approvalWaiting.render({ count: 3 }, { locale });
     expect(old.title).toBe(locale === "de" ? "3 Freigaben warten" : "3 approvals waiting");
@@ -59,7 +59,7 @@ for (const locale of ["de", "en"]) {
       // The delivered mail keeps the address: the question goes out as escaped HTML, not as HTML-read plain text.
       const delivered = await prepareNotificationEmail(email);
       expect(delivered.text).toBe(
-        `${rendered.body?.replaceAll("\n", " ")} ${locale === "de" ? "Öffne sie unter" : "Open it at"} https://cloud.example/me/approvals`,
+        `${rendered.body?.replaceAll("\n", " ")} ${locale === "de" ? "Öffne sie unter" : "Open it at"} https://cloud.example/me/activity`,
       );
       expect(delivered.html).toContain("Lea Berg &lt;lea.berg@example.com&gt;");
       for (const count of [2, 3]) {
@@ -70,12 +70,12 @@ for (const locale of ["de", "en"]) {
         const bundledEmail = await AI_NOTIFICATIONS.approvalWaiting.email!(data, { locale });
         expect(bundledEmail.rawHtml).toContain(`<p>${more}</p>`);
         expect((await prepareNotificationEmail(bundledEmail)).text).toBe(
-          `${rendered.body?.replaceAll("\n", " ")} ${more} ${locale === "de" ? "Öffne sie unter" : "Open it at"} https://cloud.example/me/approvals`,
+          `${rendered.body?.replaceAll("\n", " ")} ${more} ${locale === "de" ? "Öffne sie unter" : "Open it at"} https://cloud.example/me/activity`,
         );
         expect(bundledEmail.rawHtml).toContain("Lea Berg &lt;lea.berg@example.com&gt;");
       }
       const oldEmail = await AI_NOTIFICATIONS.approvalWaiting.email!({ count: 1 }, { locale });
-      expect(oldEmail.content).toBe(`${old.body} ${locale === "de" ? "Öffne sie unter" : "Open it at"} https://cloud.example/me/approvals`);
+      expect(oldEmail.content).toBe(`${old.body} ${locale === "de" ? "Öffne sie unter" : "Open it at"} https://cloud.example/me/activity`);
     } finally {
       setting.mockRestore();
       frame.mockRestore();

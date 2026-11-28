@@ -1,7 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { User } from "@k2b/cloud/contracts";
 import { DEFAULT_ACCOUNT_CATEGORY_POLICY } from "@k2b/cloud/contracts";
 import { defaultRailPreferences } from "@k2b/cloud/contracts/rail-preferences";
@@ -12,18 +13,17 @@ import { railPreferences } from "@k2b/cloud/services/rail-preferences";
 import { screenPreferences } from "@k2b/cloud/services/screen-preferences";
 import * as sharedWorkstation from "@k2b/cloud/services/session/shared-workstation";
 import { appAppearanceStyle } from "@k2b/cloud/ssr/app-appearance";
-import { derivePageTrail } from "@k2b/cloud/ssr/page-trail";
 import { LocaleProvider } from "@k2b/ui";
+import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 
-// Whether the account pages draw one frame or nested ones, and whether switching tabs moves
-// anything, is decided by the cascade of Tailwind, Cloud and @k2b/ui styles, which only a
-// real engine resolves.
+// The account pages on v2 as the server renders them, before any island hydrates: the v2 rules (outline and measured
+// layout), no loading state in the first picture, and what the address keeps. Only a real engine lays them out.
 const root = mkdtempSync(join(tmpdir(), "core-account-pages-browser-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 
@@ -40,13 +40,12 @@ const CORE_CANVAS = appAppearanceStyle({
 const pages = {
   "/me": (await import("./page")).default,
   "/me/security": (await import("./security.page")).default,
-  "/me/access": (await import("./access.page")).default,
   "/me/notifications": (await import("./notifications.page")).default,
-  "/me/notifications/history": (await import("./notification-history.page")).default,
-  "/me/developer": (await import("./developer.page")).default,
+  "/me/activity": (await import("./activity.page")).default,
 } as const;
+const { createPagesRouter } = await import("../create");
+const fixture = await import("./account-pages.test-fixture");
 type Path = keyof typeof pages;
-const tabs: Path[] = ["/me", "/me/security", "/me/access", "/me/notifications", "/me/developer"];
 const { buildFontAssets } = await import("../../../scripts/font-assets");
 const { buildTablerIconAssets } = await import("../../../scripts/tabler-assets");
 const publicDir = join(root, "public");
@@ -67,9 +66,18 @@ const localUser: User = {
   ipa: null,
   accountExpires: "2027-03-31T00:00:00.000Z",
   lastLoginLocal: null,
-  memberofGroup: ["team-design", "team-events", "summer-party-2026"],
+  memberofGroup: [
+    "team-design",
+    "team-events",
+    "summer-party-2026",
+    "projekt-umzug",
+    "redaktion",
+    "it-support",
+    "fachschaft-informatik",
+    "betriebsrat-wahl",
+  ],
   memberofGroupIds: [],
-  manages: ["team-events"],
+  manages: ["team-events", "projekt-umzug", "redaktion"],
   managesGroupIds: [],
 };
 const now = "2026-09-30T10:00:00.000Z";
@@ -98,22 +106,21 @@ const ipaUser: User = {
 let user: User = localUser;
 let freeIpaEnabled = false;
 let requestsEnabled = false;
+/** A FreeIPA account request that waits, or none. */
+let pending: { id: string; createdAt: Date } | null = null;
+/** The first page of the open approvals. */
+let approvalsPage = fixture.openApprovals;
 
 const spies: Array<{ mockRestore(): void }> = [];
-/** The title array the page last gave the shell's layout. */
-let layoutTitle: Parameters<typeof derivePageTrail>[0];
 beforeEach(() => {
   setSystemTime(new Date(now));
   user = localUser;
   freeIpaEnabled = false;
   requestsEnabled = false;
+  pending = null;
+  approvalsPage = fixture.openApprovals;
   spies.push(
-    spyOn(cloudSsr, "Layout").mockImplementation(((props: {
-      c: Parameters<typeof server.getLocale>[0];
-      title?: Parameters<typeof derivePageTrail>[0];
-      children: JSX.Element;
-    }) => {
-      layoutTitle = props.title;
+    spyOn(cloudSsr, "Layout").mockImplementation(((props: { c: Parameters<typeof server.getLocale>[0]; children: JSX.Element }) => {
       return createComponent(LocaleProvider, {
         locale: server.getLocale(props.c),
         get children() {
@@ -134,90 +141,32 @@ beforeEach(() => {
                 ? true
                 : undefined) as never,
     ),
-    spyOn(services.accountsAppService.accountRequest, "getPendingForUser").mockResolvedValue(null as never),
+    spyOn(services.accountsAppService.accountRequest, "getPendingForUser").mockImplementation(async () => pending as never),
     spyOn(services.accountsAppService.accountRequest, "isEnabled").mockImplementation(async () => requestsEnabled),
     spyOn(services.accountsAppService.user.group, "list").mockImplementation(async ({ recursive }) => {
       const direct = user.memberofGroup.filter((name) => name !== "internal-fixture-group");
       const items = recursive ? [...direct, "inherited-fixture-team"] : direct;
       return { items, total: items.length, page: 1, perPage: items.length, hasNext: false };
     }),
-    spyOn(services.serviceAccountCredentials, "listForDelegatedUser").mockResolvedValue([
-      {
-        id: "00000000-0000-4000-8000-000000000101",
-        serviceAccountId: "00000000-0000-4000-8000-000000000102",
-        name: "Laptop scripts",
-        kind: "api_token",
-        status: "active",
-        tokenPrefix: "cld_7f3a",
-        scopes: [],
-        expiresAt: "2026-12-31T00:00:00.000Z",
-        lastUsedAt: now,
-        createdBy: null,
-        createdAt: now,
-        revokedAt: null,
-        revokedBy: null,
-      },
-      {
-        id: "00000000-0000-4000-8000-000000000103",
-        serviceAccountId: "00000000-0000-4000-8000-000000000102",
-        name: "Dictation app",
-        kind: "api_token",
-        status: "active",
-        tokenPrefix: "cld_9b2c",
-        scopes: ["ai:inference"],
-        expiresAt: null,
-        lastUsedAt: null,
-        createdBy: null,
-        createdAt: now,
-        revokedAt: null,
-        revokedBy: null,
-      },
-    ] as never),
-    spyOn(services.webauthn, "listForUser").mockResolvedValue([
-      {
-        id: "00000000-0000-4000-8000-000000000201",
-        userId: localUser.id,
-        name: "Work laptop",
-        transports: ["internal"],
-        deviceType: "multiDevice",
-        backedUp: true,
-        createdAt: now,
-        lastUsedAt: now,
-      },
-    ]),
+    spyOn(services.serviceAccountCredentials, "listForDelegatedUser").mockResolvedValue(fixture.apiKeys),
+    spyOn(services.webauthn, "listForUser").mockResolvedValue(fixture.passkeys(localUser.id)),
     spyOn(services.audit, "listSelfServiceActivity").mockResolvedValue({
-      items: [
-        {
-          id: 1,
-          createdAt: now,
-          action: "webauthn_credential.authenticate",
-          label: "Signed in with a passkey",
-          outcome: "allowed",
-          context: null,
-        },
-        { id: 2, createdAt: now, action: "accounts.user.update", label: "Profile updated", outcome: "allowed", context: "Display name" },
-      ],
-    } as never),
-    spyOn(services.notifications.user.preferences, "list").mockResolvedValue({
-      availableChannels: ["inbox", "email"],
-      definitions: [
-        {
-          id: "core.account-expiry",
-          appId: "core",
-          kind: "account-expiry",
-          label: "Account expiry",
-          description: "Before your account expires.",
-          recommendedChannels: ["inbox", "email"],
-          requiredChannels: [],
-          excludedChannels: [],
-          excludedReason: null,
-          selectedChannels: ["inbox", "email"],
-          effectiveChannels: ["inbox", "email"],
-          customized: false,
-        },
-      ],
+      items: fixture.accountEvents,
+      page: 1,
+      perPage: 25,
+      total: fixture.accountEvents.length,
+      hasNext: false,
+      outcomes: {
+        denied: fixture.accountEvents.filter((entry) => entry.outcome === "denied").length,
+        failed: fixture.accountEvents.filter((entry) => entry.outcome === "failed").length,
+      },
     }),
-    spyOn(services.notifications.user.history, "list").mockResolvedValue({ items: [], total: 0, page: 1, perPage: 25, totalPages: 0 }),
+    spyOn(services.notifications.user.preferences, "list").mockResolvedValue(fixture.notificationPreferences),
+    // a page of the deliveries with the state the page asked for, as the service filters them
+    spyOn(services.notifications.user.history, "list").mockImplementation(async ({ status }) => {
+      const items = fixture.deliveries.filter((item) => status === undefined || item.status === status);
+      return { items, total: items.length, page: 1, perPage: 25, totalPages: 1 };
+    }),
     spyOn(services.notifications.user.quiet, "get").mockResolvedValue({
       doNotDisturbUntil: null,
       quietHours: { timeZone: "Europe/Berlin", periods: [{ days: [1, 2, 3, 4, 5], start: "22:00", end: "07:00" }] },
@@ -229,19 +178,8 @@ beforeEach(() => {
       enabled: true,
       adminPairing: false,
     }),
-    spyOn(services.appApproval, "listDevices").mockResolvedValue({
-      items: [
-        {
-          id: "00000000-0000-4000-8000-000000000301",
-          name: "Phone",
-          createdAt: now,
-          lastUsedAt: now,
-          revokedAt: null,
-          assisted: false,
-        },
-      ],
-      nextCursor: null,
-    }),
+    spyOn(server, "loadPendingApprovals").mockImplementation(async () => approvalsPage),
+    spyOn(services.appApproval, "listDevices").mockResolvedValue({ items: fixture.appDevices, nextCursor: null }),
     spyOn(server.auth.session, "getToken").mockReturnValue("demo-session" as never),
     spyOn(server.auth.session, "authenticateRequest").mockImplementation(async () => ({ user, data: { sid: "demo-session" } }) as never),
     // The page shell's own reads.
@@ -263,13 +201,18 @@ afterEach(() => {
 
 let browser: Browser;
 let css: string;
+/** The page template's two stylesheets, for pictures of the whole page in its shell. */
+let pageCss: { app: string; global: string; v2: string };
 beforeAll(async () => {
   // As the page template does: the layer order first, then Core's stylesheet, then the global one.
   const styles = [resolve(import.meta.dir, "../../styles/app.css"), resolve(import.meta.dir, "../../../../../styles.css")];
   const built = await Promise.all(styles.map((entry) => Bun.build({ entrypoints: [entry], plugins: [tailwind] })));
   for (const build of built) if (!build.success) throw new AggregateError(build.logs, "Could not compile the stylesheets.");
   const [appCss, globalCss] = await Promise.all(built.map((build) => build.outputs[0]!.text()));
-  css = ["@layer properties, theme, base, components, utilities;", appCss, globalCss].join("\n");
+  const v2Css = readFileSync(fileURLToPath(import.meta.resolve("@k2b/ui/v2.css")), "utf8");
+  css = ["@layer properties, theme, base, components, utilities;", appCss, globalCss, v2Css].join("\n");
+  pageCss = { app: appCss!, global: globalCss!, v2: v2Css };
+  if (shots) mkdirSync(shots, { recursive: true });
   await buildFontAssets(publicDir);
   await buildTablerIconAssets(publicDir);
   browser = await launchBrowser();
@@ -280,28 +223,33 @@ afterAll(async () => {
 
 /** The server-rendered content of one account page. */
 const content = async (path: Path, locale: "en" | "de", query = "") => {
-  const app = new Hono()
-    .use("*", async (c, next) => {
-      c.set("user" as never, user as never);
-      c.set("runtime" as never, { apps: [] } as never);
-      await next();
-    })
-    .get(path, ...pages[path]);
-  const response = await app.request(`${origin}${path}${query}`, { headers: { Cookie: `cloud.locale=${locale}` } });
+  const response = await request(path, locale, query);
   expect(response.status).toBe(200);
   return /<body[^>]*>([\s\S]*)<\/body>/.exec(await response.text())![1]!;
 };
+const request = (path: Path, locale: "en" | "de", query = "") =>
+  new Hono()
+    .use("*", async (c, next) => {
+      c.set("user" as never, user as never);
+      c.set("runtime" as never, { apps: fixture.runtimeApps } as never);
+      await next();
+    })
+    .get(path, ...(pages[path] as (typeof pages)["/me"]))
+    .request(`${origin}${path}${query}`, { headers: { Cookie: `cloud.locale=${locale}` } });
 
-type View = { width: number; height: number; touch: boolean };
-const desktop: View = { width: 1440, height: 900, touch: false };
-const phone: View = { width: 390, height: 844, touch: true };
-// The WCAG reflow width.
-const narrowPhone: View = { width: 320, height: 640, touch: true };
+type View = { width: number; height: number; touch: boolean; name: string };
+const desktop: View = { width: 1440, height: 900, touch: false, name: "1440" };
+const tablet: View = { width: 1024, height: 768, touch: false, name: "1024" };
+const phone: View = { width: 390, height: 844, touch: true, name: "390" };
+const shots = process.env.CLOUD_ACCOUNT_SHOTS;
 
-/** A tab with the server-rendered page on Core's canvas, before any island hydrates; the caller closes it. */
-const open = async (view: View, path: Path, locale: "en" | "de", dark = false) => {
+/**
+ * A tab with the server-rendered page in the v2 scope that `Layout ui="v2"` gives it, before any island hydrates:
+ * what a person sees first. The caller closes it.
+ */
+const open = async (view: View, path: Path, locale: "en" | "de", query = "") => {
   const tab = await browser.newPage({
-    javaScriptEnabled: false,
+    // JavaScript runs for the measurement only: the page has no island scripts, so it stays the server's picture.
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 1,
     isMobile: view.touch,
@@ -309,399 +257,402 @@ const open = async (view: View, path: Path, locale: "en" | "de", dark = false) =
   });
   await tab.route(`${origin}/public/**`, (route) => route.fulfill({ path: join(root, new URL(route.request().url()).pathname) }));
   await tab.setContent(
-    `<!doctype html><html lang="${locale}" class="${dark ? "dark" : "light"}"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
-      `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
-      `<body class="k2b-ui"><div class="cloud-app-canvas relative flex min-h-dvh w-full" style="${CORE_CANVAS}" data-app-id="core">` +
-      `<div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col"><main class="layout-content-main min-h-0 min-w-0 flex-1">` +
-      `${await content(path, locale)}</main></div></div></body></html>`,
+    `<!doctype html><html lang="${locale}" class="light"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
+      `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style>` +
+      `<style>html,body{height:100%;margin:0}main{position:fixed;inset:0;display:flex}</style></head>` +
+      `<body class="k2b-ui"><main class="layout-content-main k2-ui" style="${CORE_CANVAS}">${await content(path, locale, query)}</main></body></html>`,
   );
   await tab.evaluate(() => document.fonts.ready);
   return tab;
 };
 
-/** Where the avatar, the tabs and the content sit, which frames the page draws, and whether it overflows. */
-const measure = async (view: View, path: Path, locale: "en" | "de", dark = false) => {
-  const tab = await open(view, path, locale, dark);
-  try {
-    return await tab.evaluate(() => {
-      const main = document.querySelector("main")!;
-      const nav = main.querySelector("nav")!;
-      const panel = main.querySelector(".account-page")!;
-      const visible = (value: string) => value !== "none" && !/rgba\(.*,\s*0\)$/.test(value) && value !== "transparent";
-      // Every block that paints a border or a shadow: a frame. Controls and their field edge, tags,
-      // table cells and the notices' forced-colours border are content, not frames.
-      const frames = Array.from(main.querySelectorAll<HTMLElement>("section, article, div, ul, header, nav"))
-        .filter(
-          (element) =>
-            element.checkVisibility() &&
-            !element.closest("button, a, table, .tag, .k2b-input-shell, .k2b-multi-select-trigger, .k2b-notice-card"),
-        )
-        .filter((element) => {
-          const style = getComputedStyle(element);
-          const border = Number.parseFloat(style.borderTopWidth) > 0 && style.borderTopStyle !== "none" && visible(style.borderTopColor);
-          return border || visible(style.boxShadow);
-        })
-        .map((element) => element.className.toString().split(" ").slice(0, 3).join(" "));
-      // A list inside the frame is rows with hairlines, never a grey tub: no block of rows paints its own fill. Controls
-      // keep their own track, such as the privacy timer's segmented row.
-      const tubs = Array.from(panel.querySelectorAll<HTMLElement>("ul, ol, div"))
-        .filter(
-          (element) =>
-            element.checkVisibility() &&
-            element.children.length > 1 &&
-            !element.closest(
-              "button, a, table, .tag, .k2b-input-shell, .k2b-multi-select-trigger, .k2b-notice-card, .k2b-segmented-control",
-            ),
-        )
-        .filter((element) => visible(getComputedStyle(element).backgroundColor))
-        .map((element) => element.className.toString().split(" ").slice(0, 3).join(" "));
-      const heading = panel.querySelector("h2")!;
-      const headingBox = heading.getBoundingClientRect();
-      const avatar = main.querySelector("header .k2b-avatar")!.getBoundingClientRect();
-      return {
-        avatar: `${Math.round(avatar.left)},${Math.round(avatar.top)} ${Math.round(avatar.width)}x${Math.round(avatar.height)}`,
-        navTop: Math.round(nav.getBoundingClientRect().top),
-        panelTop: Math.round(panel.getBoundingClientRect().top),
-        identityInFrame: !!main.querySelector("h1")!.closest(".paper, .k2b-paper"),
-        // Account pages are settings: the one frame stands flat, with its edge and no shadow (a quiet area).
-        frameShadow: getComputedStyle(panel).boxShadow,
-        frames,
-        tubs,
-        current: nav.querySelector('[aria-current="page"]')?.getAttribute("href"),
-        pageHeading: { text: heading.textContent, width: headingBox.width, height: headingBox.height },
-        sectionFrames: Array.from(panel.querySelectorAll<HTMLElement>(".k2b-settings-section")).map((section) => {
-          const style = getComputedStyle(section);
-          return `${style.borderTopWidth} ${style.backgroundColor}`;
-        }),
-        // How far each section's first content sits below its header, or below the section's top where the header
-        // stands in its own column beside the content, and whether its actions stay inside the panel.
-        sectionSpacing: Array.from(panel.querySelectorAll<HTMLElement>(".k2b-settings-section")).flatMap((section): (number | string)[] => {
-          const header = section.querySelector(".k2b-settings-section__header")!.getBoundingClientRect();
-          const body = section.querySelector(".k2b-settings-section__body")!.getBoundingClientRect();
-          const first = Array.from(section.querySelectorAll<HTMLElement>(".k2b-settings-section__body *")).find(
-            (element) => element.checkVisibility() && element.getBoundingClientRect().height > 0,
-          );
-          if (!first) return [];
-          const top = first.getBoundingClientRect().top;
-          return header.right <= body.left
-            ? [`beside ${Math.round(top - section.getBoundingClientRect().top)}`]
-            : [Math.round(top - header.bottom)];
-        }),
-        actionsPastPanel: Math.max(
-          0,
-          ...Array.from(panel.querySelectorAll(".k2b-settings-section__actions")).map(
-            (actions) => actions.getBoundingClientRect().right - panel.getBoundingClientRect().right,
-          ),
-        ),
-        // The screen's width: Chromium's phone emulation widens `innerWidth` to wide content, as a page zoomed out.
-        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-      };
-    });
-  } finally {
-    await tab.close();
-  }
-};
+const screens: { path: Path; query?: string; name: string }[] = [
+  { path: "/me", name: "profile" },
+  { path: "/me/security", name: "security" },
+  { path: "/me", query: "?groups=all", name: "profile-all-groups" },
+  { path: "/me/notifications", name: "notifications" },
+  { path: "/me/activity", name: "activity-open" },
+  { path: "/me/activity", query: "?kind=deliveries", name: "activity-deliveries" },
+  { path: "/me/activity", query: "?kind=sign-ins", name: "activity-sign-ins" },
+];
 
-describe("account pages in a browser", () => {
-  test("access memberships omit internal groups from the session projection", async () => {
+describe("account pages on v2", () => {
+  test("every page keeps the v2 rules at 1440, 1024 and 390 px, with no loading state in its first picture", async () => {
+    const counts: string[] = [];
+    const findings: string[] = [];
+    for (const screen of screens)
+      for (const view of [desktop, tablet, phone]) {
+        const tab = await open(view, screen.path, "de", screen.query);
+        try {
+          const outline = await describeV2Page(tab, "main");
+          if (outline.includes("Problems ("))
+            findings.push(`${screen.name} ${view.name} outline:\n${outline.slice(outline.indexOf("Problems ("))}`);
+          const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
+          for (const problem of layout.problems) findings.push(`${screen.name} ${view.name} layout: ${problem}`);
+          // The server renders the data: the first picture has nothing that is still loading.
+          const loading = await tab.locator('[data-k2-part="Loading"], [aria-busy="true"]').count();
+          if (loading > 0) findings.push(`${screen.name} ${view.name}: ${loading} loading states in the first picture`);
+          if (view === desktop) counts.push(`${screen.path}\t${await tab.evaluate(() => document.querySelectorAll("main *").length)}`);
+          if (shots) await tab.screenshot({ path: join(shots, `${screen.name}-${view.name}.png`) });
+        } finally {
+          await tab.close();
+        }
+      }
+    if (process.env.CLOUD_ACCOUNT_METRICS) console.log(`DOMCOUNT\n${counts.join("\n")}`);
+    expect(findings).toEqual([]);
+  }, 240_000);
+
+  test("the profile's groups omit internal groups from the session projection", async () => {
     user = { ...localUser, memberofGroup: [...localUser.memberofGroup, "internal-fixture-group"] };
-    const html = await content("/me/access", "en");
+    const html = await content("/me", "en");
     expect(html).not.toContain(">internal-fixture-group<");
     expect(html).not.toContain("search=internal-fixture-group");
     expect(html).toContain("team-design");
-    expect(services.accountsAppService.user.group.list).toHaveBeenCalledWith({
-      userId: user.id,
-      recursive: false,
-    });
+    expect(services.accountsAppService.user.group.list).toHaveBeenCalledWith({ userId: user.id, recursive: false });
+  });
+
+  test("the profile shows the first six groups, and every one with the inherited ones on request", async () => {
+    // eight direct groups, of which the person manages three: those come first
+    const first = await content("/me", "en");
+    const shown = (html: string) => localUser.memberofGroup.concat("inherited-fixture-team").filter((name) => html.includes(`>${name}<`));
+    // the three managed ones, then the first three of the five others
+    expect(shown(first)).toEqual(["team-design", "team-events", "summer-party-2026", "projekt-umzug", "redaktion", "it-support"]);
+    expect(first.indexOf(">team-events<")).toBeLessThan(first.indexOf(">team-design<"));
+    expect(first).toContain('href="/me?groups=all#groups"');
+    // the old address `/me/access` and the figure of the first row lead here
+    expect(first).toContain('id="groups"');
+    const all = await content("/me", "en", "?groups=all");
+    expect(shown(all)).toHaveLength(9);
+    expect(all).toContain('href="/me#groups"');
+    // showing fewer folds the list: its chevron points up, not onwards
+    const fewer = /<a[^>]*href="\/me#groups"[^>]*>[\s\S]*?<\/a>/.exec(all)?.[0] ?? "";
+    expect(fewer).toContain("chevron-up");
+    expect(fewer).not.toContain("chevron-right");
+    expect(first).toMatch(/href="\/me\?groups=all#groups"[^>]*>[\s\S]*?chevron-right/);
+  });
+
+  test("the profile offers the FreeIPA request and shows a waiting one with its withdrawal", async () => {
+    // not offered while the installation takes no requests
+    expect(await content("/me", "en")).not.toContain('id="freeipa"');
+    freeIpaEnabled = true;
+    requestsEnabled = true;
+    const offered = await content("/me", "en");
+    expect(offered).toContain('id="freeipa"');
+    expect(offered).toContain(">Request FreeIPA account<");
+    // a waiting request stays withdrawable after new requests are turned off
+    requestsEnabled = false;
+    pending = { id: "00000000-0000-4000-8000-0000000000aa", createdAt: new Date("2026-09-28T08:00:00.000Z") };
+    const waiting = await content("/me", "en");
+    expect(waiting).toContain("Request pending since");
+    expect(waiting).toContain(">Withdraw request<");
+    expect(waiting).not.toContain(">Request FreeIPA account<");
   });
 
   test("inherited memberships remain reachable when all direct groups are internal", async () => {
     user = { ...localUser, memberofGroup: ["internal-fixture-group"] };
-    const direct = await content("/me/access", "en");
-    expect(direct).toContain('href="/me/access?groups=all"');
+    const direct = await content("/me", "en");
+    expect(direct).toContain('href="/me?groups=all#groups"');
     expect(direct).not.toContain(">internal-fixture-group<");
     expect(direct).not.toContain(">inherited-fixture-team<");
-
-    const inherited = await content("/me/access", "en", "?groups=all");
+    const inherited = await content("/me", "en", "?groups=all");
     expect(inherited).toContain(">inherited-fixture-team<");
     expect(inherited).not.toContain(">internal-fixture-group<");
-    expect(inherited).toContain('href="/me/access"');
+    expect(inherited).toContain('href="/me#groups"');
   });
 
-  test("mark the current account section with the selected edge and fill in Core's ink, in light and dark", async () => {
-    for (const dark of [false, true])
-      for (const path of tabs) {
-        const tab = await open(desktop, path, "en", dark);
-        try {
-          // The page renders without JavaScript and open() waits for its fonts; the current section is the condition.
-          await tab.locator('.account-tabs [aria-current="page"]').first().waitFor();
-          const colors = await tab.evaluate(() => {
-            const canvas = document.querySelector(".cloud-app-canvas")!;
-            const probe = document.createElement("span");
-            probe.style.cssText =
-              "position:absolute;visibility:hidden;background:color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));color:var(--ui-app-accent-text)";
-            canvas.append(probe);
-            const appFill = getComputedStyle(probe).backgroundColor;
-            const appInk = getComputedStyle(probe).color;
-            probe.style.background = "var(--ui-selected)";
-            const platformFill = getComputedStyle(probe).backgroundColor;
-            probe.style.background = "var(--k2b-tray)";
-            const tray = getComputedStyle(probe).backgroundColor;
-            probe.remove();
-            // The notification views are a segment: a grey track, the current view the selected thumb without a shadow.
-            const segment = canvas.querySelector(".account-tabs--segment");
-            const thumb = segment?.querySelector('[aria-current="page"]');
-            const current = canvas.querySelector('.account-tabs [aria-current="page"]')!;
-            return {
-              href: current.getAttribute("href"),
-              fill: getComputedStyle(current).backgroundColor,
-              ink: getComputedStyle(current).color,
-              appFill,
-              appInk,
-              platformFill,
-              segment: segment
-                ? {
-                    track: getComputedStyle(segment).backgroundColor,
-                    tray,
-                    thumb: thumb ? getComputedStyle(thumb).backgroundColor : null,
-                    shadow: thumb ? getComputedStyle(thumb).boxShadow : null,
-                  }
-                : null,
-              otherFills: Array.from(canvas.querySelectorAll('.account-tabs a:not([aria-current="page"])')).map(
-                (link) => getComputedStyle(link).backgroundColor,
-              ),
-            };
-          });
-          expect(colors.href).toBe(path);
-          expect(colors.fill).toBe(colors.appFill);
-          expect(colors.ink).toBe(colors.appInk);
-          expect(colors.fill).not.toBe(colors.platformFill);
-          if (path === "/me/notifications") {
-            expect(colors.segment?.track).toBe(colors.segment?.tray);
-            expect(colors.segment?.thumb).toBe(colors.appFill);
-            expect(colors.segment?.shadow?.split(/,(?![^(]*\))/).every((part) => part.includes("inset"))).toBe(true);
-          }
-          expect(colors.otherFills.length).toBeGreaterThan(0);
-          expect(colors.otherFills.every((fill) => fill === "rgba(0, 0, 0, 0)")).toBe(true);
-        } finally {
-          await tab.close();
-        }
-      }
-  }, 60_000);
+  test("every old address of the account leads to its new place with every parameter", async () => {
+    // through Core's real pages router, where the catch-all must not answer first
+    const app = createPagesRouter();
+    const target = async (address: string) => {
+      const response = await app.request(`${origin}${address}`);
+      expect(response.status).toBe(302);
+      return response.headers.get("Location");
+    };
+    expect(await target("/me/access?groups=all")).toBe("/me?groups=all#groups");
+    expect(await target("/me/developer?create=api-key&reauthenticate=1")).toBe("/me/security?create=api-key&reauthenticate=1");
+    expect(await target("/me/app?pair=1")).toBe("/me/security?pair=1");
+    expect(await target("/me/approvals?app=mail")).toBe("/me/activity?app=mail");
+    expect(await target("/me/notifications/history?status=failed&page=2")).toBe("/me/activity?status=failed&page=2&kind=deliveries");
+    expect(await target("/me/security/activity?activityDays=7")).toBe("/me/activity?activityDays=7&kind=sign-ins");
+    // the security page itself still takes the old range of its activity
+    const response = await request("/me/security", "en", "?activityDays=90&from=mail");
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/me/activity?activityDays=90&from=mail&kind=sign-ins");
+  });
 
-  test("draw one frame: the identity and tabs sit on the canvas, the sections inside it are flat", async () => {
-    for (const view of [desktop, phone])
-      for (const dark of [false, true])
-        for (const path of Object.keys(pages) as Path[]) {
-          const result = await measure(view, path, "en", dark);
-          const label = `${path} ${view.width}px ${dark ? "dark" : "light"}`;
-          expect({ label, identityInFrame: result.identityInFrame, frames: result.frames, tubs: result.tubs }).toEqual({
-            label,
-            identityInFrame: false,
-            frames: ["k2b-paper account-page flex"],
-            tubs: [],
-          });
-          for (const frame of result.sectionFrames) expect(frame).toBe("0px rgba(0, 0, 0, 0)");
-          expect(result.frameShadow, label).toBe("rgba(0, 0, 0, 0) 0px 0px 0px 0px");
-          expect(result.overflow).toBeLessThanOrEqual(0);
-        }
-  }, 120_000);
+  test("the activity reads only the kind the address names, open approvals by default", async () => {
+    await content("/me/activity", "en");
+    expect(server.loadPendingApprovals).toHaveBeenCalledTimes(1);
+    expect(services.notifications.user.history.list).not.toHaveBeenCalled();
+    await content("/me/activity", "en", "?kind=sign-ins&activityDays=90");
+    expect(services.audit.listSelfServiceActivity).toHaveBeenLastCalledWith(expect.objectContaining({ days: 90 }));
+    await content("/me/activity", "en", "?kind=deliveries&status=failed&page=2");
+    expect(services.notifications.user.history.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: "failed", page: 2 }));
+    expect(server.loadPendingApprovals).toHaveBeenCalledTimes(1);
+  });
 
-  test("keep the avatar, the tabs and the content in place when switching tabs, in English and German", async () => {
-    for (const view of [desktop, phone])
-      for (const locale of ["en", "de"] as const) {
-        const results = [];
-        for (const path of tabs) results.push({ path, ...(await measure(view, path, locale)) });
-        for (const result of results) {
-          expect(result.current).toBe(result.path);
-          expect({ path: result.path, avatar: result.avatar, navTop: result.navTop, panelTop: result.panelTop }).toEqual({
-            path: result.path,
-            avatar: results[0]!.avatar,
-            navTop: results[0]!.navTop,
-            panelTop: results[0]!.panelTop,
-          });
-          expect(result.overflow).toBeLessThanOrEqual(0);
-        }
-      }
-  }, 120_000);
+  test("21 open approvals: the bar counts none of one page's twenty, and the list names all 21 itself", async () => {
+    const [first] = fixture.openApprovals.items;
+    const items = Array.from({ length: 20 }, (_, index) => ({
+      ...first!,
+      id: `00000000-0000-4000-8000-${String(900 + index).padStart(12, "0")}`,
+    }));
+    approvalsPage = { items, nextCursor: "next", count: 21, elsewhere: 0 };
+    const html = await content("/me/activity", "en");
+    // the list keeps its count current while the person decides; a page of twenty never stands for all of them
+    expect(html).toContain("21 open");
+    expect(html).not.toMatch(/\b20 open/);
+  });
 
-  test("open every section's content at the same distance below its header, islands included", async () => {
-    requestsEnabled = true;
-    freeIpaEnabled = true;
-    for (const view of [desktop, phone])
-      for (const path of Object.keys(pages) as Path[]) {
-        const result = await measure(view, path, "en");
-        expect({ path, width: view.width, spacing: result.sectionSpacing.filter((gap) => gap !== 8 && gap !== "beside 8") }).toEqual({
-          path,
-          width: view.width,
-          spacing: [],
-        });
-      }
-    // The FreeIPA account request is offered on /me/access in this setup.
-    expect((await measure(phone, "/me/access", "en")).sectionSpacing.length).toBe(3);
-  }, 120_000);
+  test("the account's areas and its activity are entries of the sidebar, each with its own address", async () => {
+    const html = await content("/me/security", "en");
+    for (const href of ["/me", "/me/notifications", "/me/activity"]) expect(html).toContain(`href="${href}"`);
+    // groups and the FreeIPA request are part of the profile
+    expect(html).not.toContain(`href="/me/access"`);
+    // the phones of the mobile app stand there only while the installation offers the app
+    expect(html).not.toContain("Phones with the app");
+  });
 
-  test("keep a FreeIPA account's profile actions inside the panel down to 320px, in German", async () => {
-    user = ipaUser;
-    freeIpaEnabled = true;
-    for (const view of [phone, narrowPhone])
-      for (const path of tabs) {
-        const result = await measure(view, path, "de");
-        expect({ path, width: view.width, past: result.actionsPastPanel, overflow: result.overflow }).toEqual({
-          path,
-          width: view.width,
-          past: 0,
-          overflow: 0,
-        });
-      }
-  }, 120_000);
-
-  test("show registered excluded channels disabled and unchecked with the app reason", async () => {
-    const reason = "Nicht verfügbar: Jede Nachricht als E-Mail wäre zu viel.";
-    spies.unshift(
-      spyOn(services.notifications.user.preferences, "list").mockResolvedValue({
-        availableChannels: ["browser", "email"],
-        definitions: [
-          {
-            id: "demo.newUpdates",
-            appId: "demo",
-            kind: "newUpdates",
-            label: "Neue Meldungen",
-            description: "Wenn eine Meldung eingeht.",
-            recommendedChannels: ["browser"],
-            requiredChannels: [],
-            excludedChannels: ["email"],
-            excludedReason: reason,
-            selectedChannels: ["browser", "email"],
-            effectiveChannels: ["browser"],
-            customized: true,
-          },
-        ],
-      }),
-    );
-    for (const view of [desktop, phone]) {
-      for (const dark of [false, true]) {
-        const tab = await open(view, "/me/notifications", "de", dark);
-        try {
-          const email = tab.getByRole("checkbox", { name: "E-Mail", exact: true });
-          expect(await email.isDisabled()).toBe(true);
-          expect(await email.isChecked()).toBe(false);
-          expect(await tab.getByText(reason, { exact: true }).isVisible()).toBe(true);
-          const reasonId = await email.getAttribute("aria-describedby");
-          expect(reasonId).toBeTruthy();
-          expect(await tab.locator(`[id="${reasonId}"]`).textContent()).toBe(reason);
-          expect(await tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-          const shots = process.env.CORE_ACCOUNT_SHOTS;
-          if (shots)
-            await tab.screenshot({ path: `${shots}/notification-excluded-${dark ? "dark" : "light"}-${view.width}.png`, fullPage: true });
-        } finally {
-          await tab.close();
-        }
-      }
-    }
-  }, 60_000);
-
-  test("reserve the browser notification button's height before the island hydrates", async () => {
-    const tab = await open(phone, "/me/notifications", "en");
+  test("the shared workstation switch is named by its setting, not by its state", async () => {
+    const tab = await open(desktop, "/me", "de");
     try {
-      const heights = await tab.evaluate(() => {
-        const section = Array.from(document.querySelectorAll(".k2b-settings-section")).find((candidate) =>
-          candidate.querySelector("h2")?.textContent?.includes("Browser notifications"),
-        )!;
-        const row = section.querySelector<HTMLElement>(".k2b-settings-section__actions > span")!;
-        const before = section.getBoundingClientRect().height;
-        // What hydration adds: a small button beside the status.
-        row.insertAdjacentHTML(
-          "beforeend",
-          '<button type="button" class="k2b-button" data-size="sm" data-variant="primary"><i class="ti ti-bell-plus"></i>Enable</button>',
-        );
-        return { before, after: section.getBoundingClientRect().height };
-      });
-      expect(heights.after).toBe(heights.before);
+      const named = tab.getByRole("switch", { name: "Gemeinsam genutzter Arbeitsplatz", exact: true });
+      expect(await named.count()).toBe(1);
+      expect(await tab.getByRole("switch", { name: /^(An|Aus)$/ }).count()).toBe(0);
     } finally {
       await tab.close();
     }
   }, 30_000);
 
-  test("keep the quiet time section still when its status or a period's error changes", async () => {
-    // What the island shows later: a long status instead of "Off", and the error of a period without days. The
-    // description shares its lines with whatever stands beside the heading, so the widths that move differ.
-    const change = () =>
-      Array.from(document.querySelectorAll(".k2b-settings-section"))
-        .filter((section) => section.querySelector("h2")?.textContent?.includes("Do not disturb"))
-        .map((section) => {
-          const field = (label: string) =>
-            Array.from(section.querySelectorAll(".k2b-field")).find(
-              (candidate) => candidate.querySelector(".k2b-field__label")?.textContent?.trim() === label,
-            )!;
-          const top = (element: Element) => Math.round(element.getBoundingClientRect().top);
-          const measure = () => ({
-            body: top(section.querySelector(".k2b-settings-section__body")!),
-            from: top(field("From")),
-            remove: top(section.querySelector('[aria-label="Remove quiet hours"]')!),
-          });
-          const label = section.querySelector(".k2b-status-badge__label")!;
-          const before = measure();
-          const off = label.textContent;
-          label.textContent = "Quiet hours until 10/12/2026, 11:30 PM";
-          field("Days").insertAdjacentHTML("beforeend", '<p class="k2b-field__error" data-test-error>Choose at least one day.</p>');
-          const after = measure();
-          label.textContent = off;
-          section.querySelector("[data-test-error]")!.remove();
-          return { before, after };
-        })[0]!;
-    for (const view of [desktop, phone]) {
-      const tab = await open(view, "/me/notifications", "en");
-      try {
-        // On a phone the times sit below the days, so the error moves them like any field below it.
-        const widths = view === phone ? [phone.width, narrowPhone.width] : [1440, 1280, 1152, 1024, 900, 768];
-        const still = view === phone ? ["body"] : ["body", "from", "remove"];
-        const pick = (at: Record<string, number>) => Object.fromEntries(still.map((key) => [key, at[key]]));
-        for (const width of widths) {
-          await tab.setViewportSize({ width, height: view.height });
-          const { before, after } = await tab.evaluate(change);
-          expect({ width, ...pick(after) }).toEqual({ width, ...pick(before) });
-        }
-      } finally {
-        await tab.close();
-      }
-    }
-  }, 60_000);
-
-  test("let a long name wrap instead of cutting it off on a phone", async () => {
-    user = ipaUser;
-    const tab = await open(phone, "/me", "en");
-    try {
-      const name = await tab.evaluate(() => {
-        const heading = document.querySelector("main h1")!;
-        return { clipped: heading.scrollWidth > heading.clientWidth, lines: Math.round(heading.getBoundingClientRect().height / 25) };
-      });
-      expect(name).toEqual({ clipped: false, lines: 2 });
-    } finally {
-      await tab.close();
-    }
-  }, 30_000);
-
-  test("the delivery history shows no way up above the account tabs, which lead back to the notification preferences", async () => {
-    const html = await content("/me/notifications/history", "en");
-    expect(derivePageTrail(layoutTitle, "/me", "Cloud", "/me/notifications/history")).toEqual({ title: "Delivery history", ancestors: [] });
-    expect(html).toMatch(/<a [^>]*href="\/me\/notifications"/);
-  }, 30_000);
-
-  test("warn about the account expiry only when it is close", async () => {
+  test("warn about the account expiry only when it is close; a far one is a fact of the first row", async () => {
     const tone = async (days: number) => {
       user = { ...localUser, accountExpires: new Date(Date.now() + days * 86_400_000).toISOString() };
-      return /class="k2b-notice-card[^"]*"[^>]*data-tone="(\w+)"/.exec(await content("/me", "en"))?.[1];
+      return /data-k2-part="Notice" data-tone="(\w+)"/.exec(await content("/me", "en"))?.[1];
     };
-    expect(await tone(120)).toBe("info");
-    expect(await tone(10)).toBe("warning");
-    expect(await tone(-1)).toBe("danger");
+    expect(await tone(120)).toBeUndefined();
+    expect(await content("/me", "en")).toContain("Account valid until");
+    expect(await tone(10)).toBe("warn");
+    expect(await tone(-1)).toBe("bad");
   }, 30_000);
 
-  test("announce the section heading the tabs already show only to assistive technology", async () => {
-    const result = await measure(desktop, "/me/access", "de");
-    expect(result.pageHeading.text).toBe("Gruppen und Zugriff");
-    expect(result.pageHeading.width).toBeLessThanOrEqual(1);
-    expect(result.pageHeading.height).toBeLessThanOrEqual(1);
+  test("a FreeIPA account with a long name keeps its deeds inside the column at 320 px, in German", async () => {
+    user = ipaUser;
+    freeIpaEnabled = true;
+    const tab = await open({ width: 320, height: 640, touch: true, name: "320" }, "/me", "de");
+    try {
+      expect(await describeV2Page(tab, "main")).not.toContain("Problems (");
+      expect(await tab.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+    } finally {
+      await tab.close();
+    }
   }, 30_000);
+});
+
+// break-ui: the realistic worst case of every value the account record and the activity render, through the same
+// boundary as the sample data (the services), never a switch in the product.
+const worstUser: User = {
+  ...localUser,
+  uid: "aleksandra.wisniewska-kowalczyk",
+  givenname: "Aleksandra Maria",
+  sn: "Wiśniewska-Kowalczyk von Hohenzollern-Sigmaringen",
+  displayName: "Aleksandra Maria Wiśniewska-Kowalczyk von Hohenzollern-Sigmaringen",
+  mail: "aleksandra.wisniewska-kowalczyk@northwind-industries-holdings.example.com",
+  memberofGroup: Array.from({ length: 48 }, (_, index) => `fachschaft-informatik-arbeitsgruppe-barrierefreiheit-${index + 1}`),
+  manages: ["fachschaft-informatik-arbeitsgruppe-barrierefreiheit-1", "j"],
+  accountExpires: new Date(Date.parse(now) + 3 * 86_400_000).toISOString(),
+};
+const worstCase = () => {
+  user = worstUser;
+  spies.push(
+    spyOn(services.webauthn, "listForUser").mockResolvedValue(
+      Array.from({ length: 6 }, (_, index) => ({
+        id: `00000000-0000-4000-8000-0000000002${String(index).padStart(2, "0")}`,
+        userId: worstUser.id,
+        name:
+          index === 0
+            ? "MacBook Pro 16″ (M3 Max) – Büro Raum 2.0.41, Schreibtisch am Fenster"
+            : index === 1
+              ? "J"
+              : `YubiKey 5C NFC #${index}`,
+        transports: ["usb", "nfc", "ble", "hybrid", "internal"],
+        deviceType: "multiDevice" as const,
+        backedUp: index % 2 === 0,
+        createdAt: now,
+        lastUsedAt: index === 1 ? null : now,
+      })),
+    ),
+    spyOn(services.serviceAccountCredentials, "listForDelegatedUser").mockResolvedValue(
+      Array.from({ length: 12 }, (_, index) => ({
+        id: `00000000-0000-4000-8000-0000000001${String(index).padStart(2, "0")}`,
+        serviceAccountId: "00000000-0000-4000-8000-000000000102",
+        name: index === 0 ? "Nightly export of the Fachschaft budget spreadsheet to the archive server (do not delete)" : `Skript ${index}`,
+        kind: "api_token",
+        status: "active",
+        tokenPrefix: "cld_7f3a9c21",
+        scopes: index % 2 ? ["ai:inference"] : [],
+        expiresAt: index % 3 ? null : now,
+        lastUsedAt: now,
+        createdBy: null,
+        createdAt: now,
+        revokedAt: null,
+        revokedBy: null,
+      })) as never,
+    ),
+    spyOn(services.notifications.user.history, "list").mockResolvedValue({
+      items: Array.from({ length: 25 }, (_, index) => ({
+        id: `00000000-0000-4000-8000-0000000004${String(index).padStart(2, "0")}`,
+        eventId: `00000000-0000-4000-8000-0000000005${String(index).padStart(2, "0")}`,
+        definitionId: "core.account-expiry",
+        appId: index % 2 ? "core" : "an-app-that-is-not-installed-any-more",
+        label: "Ablauf des Kontos",
+        title:
+          index === 0
+            ? "Dein Konto „aleksandra.wisniewska-kowalczyk“ läuft in 3 Tagen ab – verlängere es jetzt, damit du nichts verlierst"
+            : "Erinnerung",
+        targetHref: index % 3 ? "/me" : null,
+        channel: index % 2 ? "email" : "browser",
+        destinationLabel: "aleksandra.wisniewska-kowalczyk@northwind-industries-holdings.example.com",
+        required: false,
+        status: (["failed", "delivered", "suppressed", "deferred"] as const)[index % 4]!,
+        attemptCount: 3,
+        errorCode: index % 4 === 0 ? "provider_error" : null,
+        errorMessage: index % 4 === 0 ? "550 5.1.1 The email account that you tried to reach does not exist." : null,
+        createdAt: now,
+        deliveredAt: null,
+      })),
+      total: 1284,
+      page: 1,
+      perPage: 25,
+      totalPages: 52,
+    }),
+  );
+};
+
+describe("account pages with the worst case of their data", () => {
+  test("long names, many groups, keys and deliveries keep the v2 rules at 1440 and 390 px", async () => {
+    worstCase();
+    const findings: string[] = [];
+    for (const screen of [
+      { path: "/me" as const, name: "worst-profile" },
+      { path: "/me/security" as const, name: "worst-security" },
+      { path: "/me" as const, query: "?groups=all", name: "worst-profile-all-groups" },
+      { path: "/me/activity" as const, query: "?kind=deliveries", name: "worst-deliveries" },
+    ])
+      for (const view of [desktop, phone]) {
+        const tab = await open(view, screen.path, "de", screen.query);
+        try {
+          const outline = await describeV2Page(tab, "main");
+          if (outline.includes("Problems ("))
+            findings.push(`${screen.name} ${view.name} outline:\n${outline.slice(outline.indexOf("Problems ("))}`);
+          const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
+          for (const problem of layout.problems) findings.push(`${screen.name} ${view.name} layout: ${problem}`);
+          const overflow = await tab.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+          if (overflow > 0) findings.push(`${screen.name} ${view.name}: the page scrolls sideways by ${overflow} px`);
+          if (shots) await tab.screenshot({ path: join(shots, `${screen.name}-${view.name}.png`) });
+        } finally {
+          await tab.close();
+        }
+      }
+    expect(findings).toEqual([]);
+  }, 120_000);
+});
+
+/** A stand-in for the installation's logo in the rail. */
+const BRAND_MARK =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#0f172a"/><text x="16" y="21" font-family="sans-serif" font-size="14" font-weight="700" fill="#fff" text-anchor="middle">C</text></svg>';
+
+// Pictures for the design review: the whole page as the server sends it, in the Cloud shell (rail, header, tinted
+// canvas), with the template's stylesheets and fonts and no island scripts. Only with CLOUD_ACCOUNT_SHOTS.
+describe.if(Boolean(shots))("account pages in the Cloud shell", () => {
+  test("pictures at 1440, 1024 and 390 px", async () => {
+    // the real page template: the stand-in shell is the first spy of every test
+    spies.shift()?.mockRestore();
+    for (const screen of screens)
+      for (const view of [desktop, tablet, phone]) {
+        const response = await request(screen.path, "de", screen.query);
+        const html = (await response.text()).replace("</head>", `<style>${pageCss.v2}</style></head>`);
+        const tab = await browser.newPage({
+          viewport: { width: view.width, height: view.height },
+          deviceScaleFactor: 1,
+          isMobile: view.touch,
+          hasTouch: view.touch,
+        });
+        try {
+          await tab.route(`${origin}/**`, (route) => {
+            const path = new URL(route.request().url()).pathname;
+            if (path === screen.path) return route.fulfill({ contentType: "text/html; charset=utf-8", body: html });
+            if (path === "/public/core/app.css") return route.fulfill({ contentType: "text/css", body: pageCss.app });
+            if (path === "/public/global.css") return route.fulfill({ contentType: "text/css", body: pageCss.global });
+            if (path.startsWith("/branding/")) return route.fulfill({ contentType: "image/svg+xml", body: BRAND_MARK });
+            if (path.startsWith("/public/")) return route.fulfill({ path: join(root, path) }).catch(() => route.fulfill({ status: 404 }));
+            return route.fulfill({ status: 404, body: "" });
+          });
+          await tab.goto(`${origin}${screen.path}${screen.query ?? ""}`);
+          await tab.evaluate(() => document.fonts.ready);
+          await tab.screenshot({ path: join(shots!, `shell-${screen.name}-${view.name}.png`) });
+        } finally {
+          await tab.close();
+        }
+      }
+  }, 240_000);
+
+  test("review pictures of the profile's groups and FreeIPA request at 1440 and 390 px, scrolled to their section", async () => {
+    spies.shift()?.mockRestore();
+    // the old address of the groups leads to the profile's section, all groups shown
+    const moved = await createPagesRouter().request(`${origin}/me/access?groups=all`);
+    expect(moved.headers.get("Location")).toBe("/me?groups=all#groups");
+    const scenes: { name: string; query?: string; hash: string; setup?: () => void }[] = [
+      { name: "groups", hash: "#groups" },
+      { name: "groups-all-from-access", query: "?groups=all", hash: "#groups" },
+      {
+        name: "freeipa-request",
+        hash: "#freeipa",
+        setup: () => {
+          freeIpaEnabled = requestsEnabled = true;
+        },
+      },
+      {
+        name: "freeipa-pending",
+        hash: "#freeipa",
+        setup: () => {
+          freeIpaEnabled = true;
+          pending = { id: "00000000-0000-4000-8000-0000000000aa", createdAt: new Date("2026-09-28T08:00:00.000Z") };
+        },
+      },
+    ];
+    for (const scene of scenes)
+      for (const view of [desktop, phone]) {
+        freeIpaEnabled = requestsEnabled = false;
+        pending = null;
+        scene.setup?.();
+        const response = await request("/me", "de", scene.query);
+        const html = (await response.text()).replace("</head>", `<style>${pageCss.v2}</style></head>`);
+        const tab = await browser.newPage({
+          viewport: { width: view.width, height: view.height },
+          deviceScaleFactor: 1,
+          isMobile: view.touch,
+          hasTouch: view.touch,
+        });
+        try {
+          await tab.route(`${origin}/**`, (route) => {
+            const path = new URL(route.request().url()).pathname;
+            if (path === "/me") return route.fulfill({ contentType: "text/html; charset=utf-8", body: html });
+            if (path === "/public/core/app.css") return route.fulfill({ contentType: "text/css", body: pageCss.app });
+            if (path === "/public/global.css") return route.fulfill({ contentType: "text/css", body: pageCss.global });
+            if (path.startsWith("/branding/")) return route.fulfill({ contentType: "image/svg+xml", body: BRAND_MARK });
+            if (path.startsWith("/public/")) return route.fulfill({ path: join(root, path) }).catch(() => route.fulfill({ status: 404 }));
+            return route.fulfill({ status: 404, body: "" });
+          });
+          await tab.goto(`${origin}/me${scene.query ?? ""}${scene.hash}`);
+          await settled(tab);
+          // the address alone leads to the section: its head stands in view without scrolling by hand
+          const top = (await tab.locator(scene.hash).boundingBox())?.y ?? -1;
+          expect(top).toBeGreaterThanOrEqual(0);
+          expect(top).toBeLessThan(view.height / 2);
+          await tab.screenshot({ path: join(shots!, `review-${scene.name}-${view.name}.png`) });
+        } finally {
+          await tab.close();
+        }
+      }
+  }, 240_000);
 });

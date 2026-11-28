@@ -47,9 +47,12 @@ export type SectionProps = {
   measure?: boolean;
   /**
    * The way to all of it ("All deliveries ›"): under the rows, its words on their text edge (after the symbol where the
-   * section has one), never at the right. In a side column it is a row of its own.
+   * section has one), never at the right. In a side column it is a row of its own. An `icon` replaces the chevron,
+   * such as `chevron-up` for "Show fewer".
    */
   more?: Action;
+  /** An anchor for a link to this section, such as `screen` for `/me#screen`; unique on the page. */
+  id?: string;
   /** `Row`s, a `Digest`, `Facts` or `Group`s. */
   children?: JSX.Element;
   /**
@@ -87,7 +90,7 @@ export const Section = (props: SectionProps) => {
     </>
   );
   return (
-    <section class="k2-sec" data-k2-part="Section" aria-label={props.title} data-measure={props.measure ? "" : undefined}>
+    <section class="k2-sec" data-k2-part="Section" id={props.id} aria-label={props.title} data-measure={props.measure ? "" : undefined}>
       <div class="k2-sh">
         <Show when={props.icon}>
           {(name) => (
@@ -148,7 +151,7 @@ const SectionMore = (props: { more?: Action }) => (
         <Show when={more().meta}>
           <span class="k2-sec-link-meta">{more().meta}</span>
         </Show>
-        <Icon name="chevron-right" />
+        <Icon name={more().icon ?? "chevron-right"} />
       </Dynamic>
     )}
   </Show>

@@ -65,8 +65,8 @@ A person can decide the same request in these places:
   is open. If its count reaches zero before navigation, it shows a muted `0`.
 - [Cloud Login](/en/docs/operations/cloud-login), on a paired device.
   It shows the request, then asks for an explicit approve or reject choice.
-- **My account → Approvals** at `/me/approvals`, for all apps.
-  Use `/me/approvals?app=mail` to filter by app.
+- **My account → Activity** at `/me/activity`, for all apps; open approvals
+  are its default view. Use `/me/activity?app=mail` to filter by app.
 
 The approvals page uses the same card as the chat: a sentence with typed chips,
 Cloud's reason line, the preview, two answers, and one outcome line. The reason
@@ -286,7 +286,7 @@ requests, a last line says how many more wait. The whole
 notification uses the question's language: the language of the turn that
 asked, or the app's base language when the app lacks that one. Email adds the link after those lines. Older events
 and failures to load the question keep the general approval notice.
-The notification opens `/me/approvals`. It has no decision buttons.
+The notification opens `/me/activity`. It has no decision buttons.
 A browser push shows only the title: the question names people and their
 addresses, so it stays off lock screens and paired devices. Browser delivery
 is recommended. Users can change delivery in their

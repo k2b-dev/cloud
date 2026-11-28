@@ -8,8 +8,10 @@ import type { Headers } from "@zone-eu/mailsplit";
 import type { TransactionSQL } from "bun";
 import { type AttachmentStream, MailParser, type MessageText } from "mailparser";
 import sanitizeHtml from "sanitize-html";
+import { bodyReferencedContentIds } from "../content-ids";
 import { withShortIdDb } from "../lib/short-id";
 import { enqueueAttachmentExtractionsForMessage, logAttachmentExtractionEnqueueFailure } from "./attachment-extraction";
+import { indexMessageAttachments } from "./attachment-file-index";
 import { MAX_IMAP_LITERAL_BYTES } from "./connectors";
 import { isMailReceivedSinceSend, isTimelineMessage, refreshConversationTimeline } from "./conversation-timeline";
 import { deriveConversationWorkState, isAutomaticSubmission } from "./conversation-work-state";
@@ -23,6 +25,7 @@ import { parseMessageReceiptSource, recordMessageReceipt } from "./message-recei
 import { assessMessageSourceSize } from "./message-source-size";
 import { estimateHydrationWorkingSet, withProcessingMemory } from "./processing-memory-budget";
 import { splitSearchText } from "./search-chunks";
+import { messageLinkDomains } from "./security-evidence";
 
 type HydratedPart = {
   partPath: string;
@@ -1116,6 +1119,14 @@ export const hydrateMessageFromSource = async (params: {
           hydrated_at = now()
         WHERE id = ${params.messageId}::uuid AND hydration_claim_id = ${claimId}::uuid
       `;
+            if (parts.some((part) => part.attachment)) {
+              // Which parts the stored body shows in place, by the reader's rule.
+              const shown = bodyReferencedContentIds(
+                sanitizedHtml,
+                parts.filter((part) => part.attachment).map((part) => part.contentId),
+              );
+              await indexMessageAttachments(tx, params.messageId, { contentIds: shown, linkDomains: messageLinkDomains(sanitizedHtml) });
+            }
             if (!duplicate.duplicateFound) {
               collaborationEvent = await applyVerifiedConversationTransition({ db: tx, messageId: params.messageId });
               if (receipt) {

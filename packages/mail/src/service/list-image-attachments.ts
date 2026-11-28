@@ -1,12 +1,15 @@
 import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { attachmentPreviewKind, IMAGE_PREVIEW_CONTENT_TYPES, MAX_IMAGE_PREVIEW_BYTES } from "../attachment-preview-policy";
+import {
+  attachmentPreviewKind,
+  IMAGE_PREVIEW_CONTENT_TYPES,
+  MAX_IMAGE_PREVIEW_BYTES,
+  MIN_LIST_IMAGE_BYTES,
+} from "../attachment-preview-policy";
 import { messageVisibleTo } from "./access";
 import { attachmentMimeOrder } from "./attachment-order";
 import type { MailRequestContext } from "./auth";
 import { resolveMailExecution } from "./execution";
-
-const MIN_LIST_IMAGE_BYTES = 4096;
 
 /** SQL below applies the same rule before ranking, deduplication and counting. */
 export const isListImageAttachment = (attachment: {
