@@ -12,24 +12,8 @@ import { threadHref } from "./threads";
 type Page = z.infer<typeof ForYouPageSchema>;
 export type ForYouItem = z.infer<typeof ForYouItemSchema>;
 
-/**
- * Mentions of and replies to the reader in every chat they may read, resource discussions included, newest first.
- * A row opens its thread at the message; reading it there clears its unread state, and the page reads again.
- */
-export default function ForYou(props: {
-  /** The server's first page; `null` when it could not be read, absent when the page opened in the browser. */
-  initial?: Page | null;
-  /** Changes when a mention or reply arrives or is read. */
-  revision: number;
-  basePath: string;
-  dateConfig: DateContext;
-  now: () => Date;
-  /** Opens the item's thread at its message in place; a modified click opens the link as usual. */
-  onOpen: (item: ForYouItem) => Promise<void> | void;
-  onBack: (navigation: LinkNavigateEvent) => Promise<void>;
-}): JSX.Element {
-  const locale = useLocale();
-  const t = () => chatMessages.resolve([locale()]).t;
+/** The list of "For you": the server's first page, live refreshes at the depth already read, and further pages. */
+export function createForYouList(props: { initial?: Page | null; revision: number }) {
   const api = createForYouApi();
   // Read once: the workspace hands the server's page over only to the first mount.
   const initial = props.initial;
@@ -83,12 +67,38 @@ export default function ForYou(props: {
       { defer: initial !== undefined },
     ),
   );
+  return { items, incomplete, cursor, status, loadingMore, load };
+}
+
+/** Who wrote to the reader, as a row's title says it: "Nora mentioned you". */
+export const forYouTitle = (item: ForYouItem, t: ReturnType<typeof chatMessages.resolve>["t"]) =>
+  item.kind === "mention" ? t.mentionedYou({ name: firstName(item) }) : t.repliedToYou({ name: firstName(item) });
+/** A message in General names only its chat; one in a thread names the thread first, as the chat list does. */
+export const forYouPlace = (item: ForYouItem) =>
+  item.thread.id === "general" ? item.conversation.title : `${item.thread.name} · ${item.conversation.title}`;
+
+/**
+ * Mentions of and replies to the reader in every chat they may read, resource discussions included, newest first.
+ * A row opens its thread at the message; reading it there clears its unread state, and the page reads again.
+ */
+export default function ForYou(props: {
+  /** The server's first page; `null` when it could not be read, absent when the page opened in the browser. */
+  initial?: Page | null;
+  /** Changes when a mention or reply arrives or is read. */
+  revision: number;
+  basePath: string;
+  dateConfig: DateContext;
+  now: () => Date;
+  /** Opens the item's thread at its message in place; a modified click opens the link as usual. */
+  onOpen: (item: ForYouItem) => Promise<void> | void;
+  onBack: (navigation: LinkNavigateEvent) => Promise<void>;
+}): JSX.Element {
+  const locale = useLocale();
+  const t = () => chatMessages.resolve([locale()]).t;
+  const { items, incomplete, cursor, status, loadingMore, load } = createForYouList(props);
   const config = () => ({ ...props.dateConfig, locale: locale() });
-  const title = (item: ForYouItem) =>
-    item.kind === "mention" ? t().mentionedYou({ name: firstName(item) }) : t().repliedToYou({ name: firstName(item) });
-  // A message in General names only its chat; one in a thread names the thread first, as the chat list does.
-  const place = (item: ForYouItem) =>
-    item.thread.id === "general" ? item.conversation.title : `${item.thread.name} · ${item.conversation.title}`;
+  const title = (item: ForYouItem) => forYouTitle(item, t());
+  const place = forYouPlace;
 
   return (
     <section class="chat-discover chat-for-you" aria-label={t().forYou}>
