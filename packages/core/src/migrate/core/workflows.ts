@@ -204,6 +204,8 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
   `.simple();
   // Set after retention empties data/context/authorization_snapshot. Readers
   // can say "expired", and the retention scan skips already expired payloads.
+  // The retention sweep builds indexes on this table and on runs next to live writes (`ensureConcurrentIndexes`), so
+  // every column and index here takes a lock only when the catalog lacks it.
   await addColumns(db, "workflows.event", { payload_expired_at: "TIMESTAMPTZ" });
   await createIndexes(db, "workflows.event", [
     { name: "idx_workflows_event_dedupe", definition: "(app_id, scope_id, type, dedupe_key) WHERE dedupe_key IS NOT NULL", unique: true },

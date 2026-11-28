@@ -1,9 +1,7 @@
-import { markHintSeen } from "@k2b/cloud/browser/hints";
-import { AppWorkspace, IconButton, MovedHint, useLocale } from "@k2b/ui";
+import { AppWorkspace, IconButton, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { hexColor } from "@/frontend/lib/color";
 import { overviewMessages } from "../../../overview-messages";
-import { useSpaceMessages } from "../../messages";
 import { setPinnedSpaceIds } from "../settings/SpaceSettingsStore";
 import {
   createNewSpace,
@@ -18,28 +16,15 @@ export type { SidebarSpace, SpacesSidebarData } from "./spaces-navigation";
 export type SpacesSidebarProps = SpacesSidebarData & {
   current: SpacesSidebarCurrent;
   canCreate: boolean;
-  hint?: { id: "spaces.sidebar-switch" | "spaces.overview-sidebar"; open: boolean };
 };
 
 export default function SpacesSidebarList(props: SpacesSidebarProps) {
   const locale = useLocale();
   const { t } = overviewMessages.resolve([locale()]);
-  const messages = useSpaceMessages();
   const [pinned, setPinned] = createPinnedSpaces(props.pinnedSpaceIds);
   const [announcement, setAnnouncement] = createSignal("");
-  const [hintOpen, setHintOpen] = createSignal(Boolean(props.hint?.open));
   const spaces = createMemo(() => orderSidebarSpaces(props.spaces, pinned()));
   const create = createNewSpace(t);
-  let body: HTMLDivElement | undefined;
-  const dismissHint = () => {
-    if (props.hint) markHintSeen(props.hint.id);
-    setHintOpen(false);
-  };
-  const visitSpace = () => {
-    markHintSeen("spaces.sidebar-switch");
-    markHintSeen("spaces.overview-sidebar");
-    setHintOpen(false);
-  };
   const togglePin = (space: SidebarSpace) => {
     const wasPinned = pinned().includes(space.id);
     const next = wasPinned ? pinned().filter((id) => id !== space.id) : [space.id, ...pinned()];
@@ -54,7 +39,7 @@ export default function SpacesSidebarList(props: SpacesSidebarProps) {
     </span>
   );
   return (
-    <div ref={body} class="spaces-sidebar-list flex min-h-0 flex-1 flex-col">
+    <div class="spaces-sidebar-list flex min-h-0 flex-1 flex-col">
       <AppWorkspace.SidebarBody scrollPreserveKey="spaces-sidebar">
         <AppWorkspace.SidebarSection title="Spaces">
           <AppWorkspace.SidebarItem
@@ -76,17 +61,6 @@ export default function SpacesSidebarList(props: SpacesSidebarProps) {
             <AppWorkspace.SidebarItemLabel marquee={false}>{t.calendar}</AppWorkspace.SidebarItemLabel>
           </AppWorkspace.SidebarItem>
         </AppWorkspace.SidebarSection>
-        <Show when={props.hint?.id === "spaces.overview-sidebar"}>
-          <MovedHint
-            open={hintOpen()}
-            placement="right"
-            target={() => body?.querySelector<HTMLElement>("h2") ?? undefined}
-            onDismiss={dismissHint}
-            action={{ label: t.newSpace, onClick: () => void create() }}
-          >
-            {messages.sidebarHintOverview}
-          </MovedHint>
-        </Show>
         <AppWorkspace.SidebarSection>
           <For each={spaces()}>
             {(space) => {
@@ -112,7 +86,6 @@ export default function SpacesSidebarList(props: SpacesSidebarProps) {
                     active={active()}
                     class="spaces-overview-space"
                     data={{ pinned: isPinned() ? "true" : undefined, "space-id": space.id }}
-                    onClick={visitSpace}
                     actions={
                       <AppWorkspace.SidebarItemActions visibility="hover">
                         <IconButton
@@ -134,29 +107,10 @@ export default function SpacesSidebarList(props: SpacesSidebarProps) {
                   </AppWorkspace.SidebarItem>
                   {/* The collapsed rail hides labels and row actions. A row with a pin action names its wrapper, not its
                       link, so the rail gets a plain row whose link carries the name. */}
-                  <AppWorkspace.SidebarItem
-                    sidebarMode="collapsed"
-                    href={`/app/spaces/${space.id}`}
-                    title={title}
-                    active={active()}
-                    onClick={visitSpace}
-                  >
+                  <AppWorkspace.SidebarItem sidebarMode="collapsed" href={`/app/spaces/${space.id}`} title={title} active={active()}>
                     {icon()}
                     <AppWorkspace.SidebarItemLabel marquee={false}>{space.name}</AppWorkspace.SidebarItemLabel>
                   </AppWorkspace.SidebarItem>
-                  <Show
-                    when={props.hint?.id === "spaces.sidebar-switch" && props.current.kind === "space" && props.current.id === space.id}
-                  >
-                    <MovedHint
-                      open={hintOpen()}
-                      placement="right"
-                      target={() => body?.querySelector<HTMLElement>("[aria-current=page][href]") ?? undefined}
-                      onDismiss={dismissHint}
-                      action={{ label: t.myWork, href: "/app/spaces" }}
-                    >
-                      {messages.sidebarHintSwitch}
-                    </MovedHint>
-                  </Show>
                 </>
               );
             }}

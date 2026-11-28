@@ -8,9 +8,9 @@
 2 packages/cloud/src/ai/capability-targets-migrate.ts
 1 packages/cloud/src/ai/map-store.ts
 22 packages/cloud/src/ai/message-queue.ts
-162 packages/cloud/src/ai/migrate.ts
+159 packages/cloud/src/ai/migrate.ts
 3 packages/cloud/src/ai/next-message-store.ts
-18 packages/cloud/src/ai/quotas-migrate.ts
+1 packages/cloud/src/ai/quotas-migrate.ts
 13 packages/cloud/src/ai/tasks/store.ts
 3 packages/cloud/src/ai/wakeup-store.ts
 3 packages/cloud/src/app-pwa/schema.ts

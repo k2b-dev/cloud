@@ -73,8 +73,9 @@ export const readCatchUpAddress = (url: URL) => {
   };
 };
 
+/** The step's address on the mailbox's Code page (`codeHref`): `?catchUp=1` and the step's own state. */
 const catchUpAddress = (
-  base: string,
+  codeHref: string,
   state: {
     pick: MailCodeCatchUpPick;
     page: MailCodeCatchUpPage | null;
@@ -83,7 +84,7 @@ const catchUpAddress = (
     next: MailCodeCatchUpPage | null;
   },
 ) => {
-  const query = new URLSearchParams();
+  const query = new URLSearchParams({ catchUp: "1" });
   if (state.pick.folder) query.set("folder", state.pick.folder);
   if (state.pick.from) query.set("from", state.pick.from);
   if (state.pick.to) query.set("to", state.pick.to);
@@ -94,8 +95,7 @@ const catchUpAddress = (
     query.set("preview", state.previewVersionId);
     if (state.page) query.set("page", encodeCatchUpPage(state.page));
   }
-  const suffix = query.size ? `?${query}` : "";
-  return `${base}${suffix}`;
+  return `${codeHref}?${query}`;
 };
 
 /**
@@ -109,8 +109,8 @@ export const mailCodeCatchUpAvailable = (code: CodePageData, mailbox: { access: 
   !!code.state.code.activeVersionId &&
   mailbox.access.scope === "mailbox";
 
-/** The catch-up flow's own address beside the mailbox's Code page. */
-export const mailCodeCatchUpHref = (codeHref: string) => `${codeHref}/catch-up`;
+/** The catch-up flow is a step of the mailbox's Code page, with an address of its own there. */
+export const mailCodeCatchUpHref = (codeHref: string) => `${codeHref}?catchUp=1`;
 
 /** The input of Mail's selection query. "To" is inclusive: the selection ends before the next day. */
 export const mailCodeSelectionInput = (pick: MailCodeCatchUpPick, page: MailCodeCatchUpPage | null) => {
@@ -215,7 +215,6 @@ export default function MailCodeCatchUp(props: { data: MailCodeCatchUpData }): J
   const version = () => data.version?.number ?? 0;
   const pick = (): MailCodeCatchUpPick => ({ folder: folder(), from: from(), to: to() });
   const target = () => ({ type: "core.code", id: data.codeId ?? "" });
-  const href = () => mailCodeCatchUpHref(data.codeHref);
   const runsHref = () => `${data.codeHref}?tab=runs`;
   const storageKey = () => `mail.code.catchup:${data.codeId}`;
   const remember = () => {
@@ -230,7 +229,7 @@ export default function MailCodeCatchUp(props: { data: MailCodeCatchUpData }): J
   };
   // The address follows the state, so reload and the back button return to the same step.
   createEffect(() => {
-    const address = catchUpAddress(href(), {
+    const address = catchUpAddress(data.codeHref, {
       pick: pick(),
       page: page(),
       previewVersionId: selection() ? previewVersionId() : null,
@@ -270,7 +269,7 @@ export default function MailCodeCatchUp(props: { data: MailCodeCatchUpData }): J
     );
     return read.ok && (read.data.data.code.state !== "active" || read.data.data.code.activeVersionId !== data.version?.id);
   };
-  const reloadAt = (state: Parameters<typeof catchUpAddress>[1]) => location.assign(catchUpAddress(href(), state));
+  const reloadAt = (state: Parameters<typeof catchUpAddress>[1]) => location.assign(catchUpAddress(data.codeHref, state));
 
   const refresh = async () => {
     const id = operationId();

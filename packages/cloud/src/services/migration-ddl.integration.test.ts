@@ -180,5 +180,6 @@ databaseSuite()("migration DDL helpers", () => {
     await expect(addColumns(sql, "ddl_probe.items; DROP TABLE x", { a: "TEXT" })).rejects.toThrow("schema-qualified");
     await expect(addColumns(sql, table, { "a; DROP TABLE x": "TEXT" })).rejects.toThrow("plain lowercase");
     await expect(createIndexes(sql, table, [{ name: "Bad Name", definition: "(id)" }])).rejects.toThrow("plain lowercase");
+    await expect(addColumns(sql, table, { a: "TEXT; DROP TABLE x" })).rejects.toThrow("without");
   });
 });

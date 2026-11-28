@@ -43,6 +43,11 @@ const assertTable = (table: string) => {
   if (!TABLE.test(table)) throw new Error(`Migration table must be a schema-qualified plain identifier: ${table}`);
 };
 
+// Definitions are code constants that reach SQL as written; a `;` would end the statement.
+const assertDefinition = (definition: string) => {
+  if (definition.includes(";")) throw new Error(`Migration definition must be one clause without ";": ${definition}`);
+};
+
 const assertIdentifier = (name: string) => {
   if (!IDENTIFIER.test(name)) throw new Error(`Migration identifier must be a plain lowercase Postgres identifier: ${name}`);
 };
@@ -152,6 +157,7 @@ export const addColumns = async (db: SQL, table: string, columns: MigrationColum
   assertTable(table);
   const names = Object.keys(columns);
   for (const name of names) assertIdentifier(name);
+  for (const definition of Object.values(columns)) assertDefinition(definition);
   if (names.length === 0 || (await missingColumns(db, table, names)).length === 0) return [];
   let added: string[] = [];
   await withTableLock(db, table, async (tx) => {
@@ -179,6 +185,7 @@ const triggerDefinition = async (db: SQL, table: string, name: string) => {
 export const replaceTrigger = async (db: SQL, table: string, name: string, definition: string): Promise<boolean> => {
   assertTable(table);
   assertIdentifier(name);
+  assertDefinition(definition);
   if ((await triggerDefinition(db, table, name)) === definition) return false;
   let replaced = false;
   await withTableLock(db, table, async (tx) => {
@@ -214,7 +221,10 @@ const missingIndexes = async (db: SQL, table: string, indexes: readonly Migratio
  */
 export const createIndexes = async (db: SQL, table: string, indexes: readonly MigrationIndex[]): Promise<string[]> => {
   assertTable(table);
-  for (const index of indexes) assertIdentifier(index.name);
+  for (const index of indexes) {
+    assertIdentifier(index.name);
+    assertDefinition(index.definition);
+  }
   if (indexes.length === 0 || (await missingIndexes(db, table, indexes)).length === 0) return [];
   let created: string[] = [];
   await withTableLock(db, table, async (tx) => {

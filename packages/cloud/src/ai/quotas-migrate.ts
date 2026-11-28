@@ -1,57 +1,28 @@
 import type { SQL } from "bun";
 import { sql } from "../runtime/clients";
+import { type ConcurrentIndex, ensureConcurrentIndexes } from "../services/concurrent-index";
 import { logger } from "../services/logging";
+import { addColumns, createIndexes, withTableLock } from "../services/migration-ddl";
 
 const log = logger("ai:quotas");
 
-const readTurnIndex = async (db: SQL) => {
-  const [state] = await db<{ present: boolean; valid: boolean; building: boolean }[]>`
-    SELECT to_regclass('ai.inference_calls_all_turn') IS NOT NULL AS present,
-      EXISTS (SELECT 1 FROM pg_catalog.pg_index WHERE indexrelid = to_regclass('ai.inference_calls_all_turn')
-        AND indisvalid AND indisready AND indislive) AS valid,
-      EXISTS (SELECT 1 FROM pg_catalog.pg_stat_progress_create_index progress
-        WHERE progress.datname = pg_catalog.current_database()
-          AND (progress.relid = to_regclass('ai.inference_calls') OR progress.relid IS NULL)) AS building`;
-  return state ?? { present: false, valid: false, building: false };
+/** Turn lookups on inference calls; built in the background after the AI migration (`migrateCloudAi`). */
+export const AI_INFERENCE_TURN_INDEX: ConcurrentIndex = {
+  name: "inference_calls_all_turn",
+  table: "ai.inference_calls",
+  definition: "(turn_id)",
 };
 
-const dropTurnIndex = (db: SQL) => db`DROP INDEX CONCURRENTLY IF EXISTS ai.inference_calls_all_turn`.simple();
-
-/** Outside transactions, on a reserved connection so snapshot waits cannot trap
- * ordinary pool queries. Interrupted builds are replaced; active builds are
- * left alone. Failure is logged and retried at the next migration, never thrown. */
-export async function ensureAiInferenceTurnIndex(db: SQL = sql): Promise<boolean> {
-  try {
-    const build = await db.reserve();
-    try {
-      const before = await readTurnIndex(build);
-      if (before.valid) return true;
-      if (before.building) return false;
-      if (before.present) await dropTurnIndex(build);
-      try {
-        await build`CREATE INDEX CONCURRENTLY IF NOT EXISTS inference_calls_all_turn ON ai.inference_calls(turn_id)`.simple();
-      } catch (error) {
-        const after = await readTurnIndex(build);
-        log.warn("Inference turn index build failed; retrying at the next migration", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        if (after.present && !after.valid && !after.building) await dropTurnIndex(build);
-        return after.valid;
-      }
-      return (await readTurnIndex(build)).valid;
-    } finally {
-      build.release();
-    }
-  } catch (error) {
-    log.warn("Inference turn index unavailable; retrying at the next migration", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return false;
-  }
-}
+/** Builds the turn index now; true once it is valid. Startup never awaits it (`buildConcurrentIndexesInBackground`). */
+export const ensureAiInferenceTurnIndex = async (db: SQL = sql): Promise<boolean> => {
+  const outcome = await ensureConcurrentIndexes([AI_INFERENCE_TURN_INDEX], { db, log, purpose: "inference turn" });
+  return outcome === "ready" || outcome === "built";
+};
 
 export async function migrateAiQuotas() {
-  await sql.begin(async (db) => {
+  // One transaction; withTableLock bounds its lock waits and retries it as a whole.
+  const tables = ["ai.cost_config", "ai.cost_alerts", "ai.inference_calls", "ai.cost_resets", "ai.cost_changes"];
+  await withTableLock(sql, tables, async (db) => {
     await db`CREATE TABLE IF NOT EXISTS ai.cost_config (
       singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK(singleton), enabled BOOLEAN NOT NULL DEFAULT false,
       revision INTEGER NOT NULL DEFAULT 0, rules JSONB NOT NULL DEFAULT '[]',
@@ -81,24 +52,29 @@ export async function migrateAiQuotas() {
         ALTER TABLE ai.inference_calls ADD CONSTRAINT inference_calls_kind_check CHECK(kind IN ('chat','background','live-transcription'));
       END IF;
     END $$`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS audio_ms INTEGER`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS credential_id UUID`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS estimated BOOLEAN NOT NULL DEFAULT false`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS cache_read BIGINT CHECK(cache_read IS NULL OR (cache_read>=0 AND cache_read<=input))`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS error TEXT`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS cancelled BOOLEAN NOT NULL DEFAULT false`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS request_started_at TIMESTAMPTZ`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS headers_ms INTEGER`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS first_byte_ms INTEGER`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS first_block_ms INTEGER`;
-    // Stable Code attribution survives chat, turn and Code deletion; no Code schema dependency.
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS code_id TEXT`;
-    await db`CREATE INDEX IF NOT EXISTS inference_calls_workflow ON ai.inference_calls(workflow_run_id,started_at)`;
-    await db`CREATE INDEX IF NOT EXISTS inference_calls_started ON ai.inference_calls(started_at)`;
-    await db`CREATE INDEX IF NOT EXISTS inference_calls_turn ON ai.inference_calls(turn_id,started_at,id) WHERE kind='chat'`;
-    await db`CREATE INDEX IF NOT EXISTS inference_calls_compaction_turn ON ai.inference_calls(turn_id) WHERE task='chat-compaction'`;
-    await db`CREATE INDEX IF NOT EXISTS inference_calls_user ON ai.inference_calls(user_id,started_at)`;
-    await db`CREATE INDEX IF NOT EXISTS inference_calls_service ON ai.inference_calls(service_account_id,started_at)`;
+    // A background build may hold this table (`AI_INFERENCE_TURN_INDEX`); only what is missing takes a lock.
+    await addColumns(db, "ai.inference_calls", {
+      audio_ms: "INTEGER",
+      credential_id: "UUID",
+      estimated: "BOOLEAN NOT NULL DEFAULT false",
+      cache_read: "BIGINT CHECK(cache_read IS NULL OR (cache_read>=0 AND cache_read<=input))",
+      error: "TEXT",
+      cancelled: "BOOLEAN NOT NULL DEFAULT false",
+      request_started_at: "TIMESTAMPTZ",
+      headers_ms: "INTEGER",
+      first_byte_ms: "INTEGER",
+      first_block_ms: "INTEGER",
+      // Stable Code attribution survives chat, turn and Code deletion; no Code schema dependency.
+      code_id: "TEXT",
+    });
+    await createIndexes(db, "ai.inference_calls", [
+      { name: "inference_calls_workflow", definition: "(workflow_run_id,started_at)" },
+      { name: "inference_calls_started", definition: "(started_at)" },
+      { name: "inference_calls_turn", definition: "(turn_id,started_at,id) WHERE kind='chat'" },
+      { name: "inference_calls_compaction_turn", definition: "(turn_id) WHERE task='chat-compaction'" },
+      { name: "inference_calls_user", definition: "(user_id,started_at)" },
+      { name: "inference_calls_service", definition: "(service_account_id,started_at)" },
+    ]);
     await db`CREATE TABLE IF NOT EXISTS ai.cost_resets (
       request_id UUID PRIMARY KEY, user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
       service_account_id UUID REFERENCES auth.service_accounts(id) ON DELETE CASCADE,
@@ -112,5 +88,4 @@ export async function migrateAiQuotas() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(), config JSONB NOT NULL
     )`;
   });
-  await ensureAiInferenceTurnIndex();
 }

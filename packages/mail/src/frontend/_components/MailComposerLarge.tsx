@@ -89,7 +89,6 @@ export default function MailComposerLarge(props: {
   previewError: Accessor<string | undefined>;
   previewPending: Accessor<boolean>;
   onRetryPreview: () => void;
-  arrangeHint?: { open: boolean; onDismiss: () => void };
   /** A phone's full-screen sheet: one row of tabs in the order Draft, Preview, History; the stored layout stays. */
   sheet?: Accessor<boolean>;
 }) {
@@ -121,7 +120,6 @@ export default function MailComposerLarge(props: {
       layout={props.sheet?.() ? sheetLayout() : props.layout()}
       onLayoutChange={props.onLayoutChange}
       defaultLayout={props.defaultLayout()}
-      arrangeHint={props.arrangeHint}
       items={items()}
       class="mail-large-panes"
       ariaLabel={t().editorPanes}
