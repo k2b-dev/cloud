@@ -80,7 +80,10 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   it. `side={{ from: 1400 }}` asks for more room, in px of the split, for a
   main column that needs it (a table: beside only on a large screen). In
   any other split (a list, its reader and an info column) it stands beside
-  as every column does.
+  as every column does. Put `side` on the inner column only: an outer
+  `Pane detail` with `side` becomes the list's context column and moves
+  under the list. A split with no measuring place above it (in a dialog, a
+  sidebar, outside a `Workspace`) never gives way.
 - A detail that grows on a large screen is the same part: under the
   detail's one `head` (and what spans both, such as a hero band), a
   `Pane.Split` of what it is (a `Pane`) and who and what happened (a `Pane
@@ -411,7 +414,9 @@ name wraps in a small table and ends with "…" in one with column widths.
 - `Spark`: `values` (oldest first), `label`: what the bars say as one
   sentence ("Werkstatt: in 7 Tagen von 12 auf 41 Änderungen gestiegen"),
   never only the title of the data. A few bars of a short history, the
-  last strongest; beside a number, never instead of it.
+  last strongest; beside a number, never instead of it. Sparks side by
+  side that compare should share `max`: the same value then has the same
+  height, and a value above it stands at the top.
 - Data colours (`color` of `Mark`, `Avatar`, `Chip tag`, `Nav`, `Tiles`,
   `Section`, `Cells.Cell`, `Digest`) are validated: a hex colour, an
   `oklch()` or `var(--…)`; anything else renders neutral. For a hex colour
