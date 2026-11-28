@@ -292,6 +292,7 @@ test("a Cover is sent by the server with its picture and its words, and without 
   const decoration = renderToString(() => createComponent(Cover, { src: "https://cover.example/hof.jpg", alt: "", slim: true }));
   expect(decoration).toContain('aria-hidden="true"');
   expect(decoration).not.toContain("aria-label");
+  expect(decoration).not.toContain("role=");
   expect(decoration).toContain("data-slim");
   // no picture, no band: nothing stands in its place
   expect(renderToString(() => createComponent(Cover, { alt: "" }))).not.toContain("<");

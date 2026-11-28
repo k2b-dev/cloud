@@ -226,17 +226,34 @@ export const Cover = (props: CoverProps) => {
   const picture = createPicture(() => props.src);
   return (
     <Show when={props.src}>
-      <div
-        class="k2-cover"
-        data-k2-part="Cover"
-        data-slim={props.slim ? "" : undefined}
-        data-image={picture.state() ?? ""}
-        role="img"
-        aria-label={props.alt || undefined}
-        aria-hidden={props.alt ? undefined : "true"}
+      {/* with words the cover is one picture named by them; as decoration it is hidden and has no role */}
+      <Show
+        when={props.alt}
+        fallback={
+          <div
+            class="k2-cover"
+            data-k2-part="Cover"
+            data-slim={props.slim ? "" : undefined}
+            data-image={picture.state() ?? ""}
+            aria-hidden="true"
+          >
+            <picture.Picture />
+          </div>
+        }
       >
-        <picture.Picture />
-      </div>
+        {(alt) => (
+          <div
+            class="k2-cover"
+            data-k2-part="Cover"
+            data-slim={props.slim ? "" : undefined}
+            data-image={picture.state() ?? ""}
+            role="img"
+            aria-label={alt()}
+          >
+            <picture.Picture />
+          </div>
+        )}
+      </Show>
     </Show>
   );
 };

@@ -125,11 +125,11 @@ for (const [width, wide, slim] of [
           return { fit: style.objectFit, same: box.width === room.width && box.height === room.height };
         });
       expect(fit).toEqual({ fit: "cover", same: true });
-      // decoration says nothing; a cover with words is one picture with them
+      // decoration says nothing and has no role; a cover with words is one picture with them
       expect(after.map((cover) => [cover.role, cover.label, cover.hidden])).toEqual([
-        ["img", null, "true"],
+        [null, null, "true"],
         ["img", "Der Hof der Werkstatt von oben", null],
-        ["img", null, "true"],
+        [null, null, "true"],
       ]);
       expect((await measureV2Layout(page)).problems).toEqual([]);
     });
