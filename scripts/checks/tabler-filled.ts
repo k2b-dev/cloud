@@ -32,6 +32,8 @@ export const rule: Rule = {
     for (const root of roots)
       for (const path of listFiles(root, /\.(?:ts|tsx|css)$/)) {
         if (isTestFile(path) || !/\/src\//.test(path) || path.includes("/node_modules/")) continue;
+        // the icon preset maps the two filled names that records may still hold to their outline glyphs
+        if (relative(workspaceRoot, path) === "packages/ui/src/icons/tabler.css") continue;
         for (const hit of findFilledIcons(readFileSync(path, "utf8")))
           findings.push({
             file: relative(workspaceRoot, path),
