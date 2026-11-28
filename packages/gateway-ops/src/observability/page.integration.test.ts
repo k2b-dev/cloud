@@ -92,3 +92,66 @@ dbTest(
   },
   60_000,
 );
+
+/**
+ * The statements of one warm SSR load of the gateway routes. The area's health answers from its cache, the router's
+ * table comes from NATS and the shell's rail is stubbed. What stays: three telemetry reads in one `Promise.all` (totals
+ * by app, totals by prefix, the time series of the hero), each in a read-only transaction of six framing statements,
+ * plus the layout's screen preference: 3 × 6 + 4 = 22. Nothing repeats per prefix or app; adding a read changes it on
+ * purpose.
+ */
+const ROUTES_STATEMENTS = 22;
+const ROUTES_QUERIES = 4;
+
+dbTest(
+  "one warm load of the gateway routes costs a fixed number of statements, none per prefix or app",
+  async () => {
+    const { default: handler } = await import("./gateway/page");
+    const area = await import("./_components/ObservabilityArea");
+    const services = await import("@k2b/cloud/services");
+    const shared = [
+      spyOn(area, "readHealth").mockResolvedValue({ status: "ok", apps: [] } as never),
+      // the router's table lives in NATS, not in SQL: a fixed table of two prefixes
+      spyOn(services, "latestGatewayRouteSnapshot").mockResolvedValue({
+        startedAt: Date.now() - 3_600_000,
+        tableVersion: 7,
+        routeCount: 2,
+        routeWarnings: [],
+        routes: [
+          { prefix: "/api/mail", appId: "mail" },
+          { prefix: "/api/files", appId: "files" },
+        ],
+      } as never),
+    ];
+    const rail = stubRailSnapshot();
+    const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
+    app.use("*", async (c, next) => {
+      c.set("actor", { kind: "user", user });
+      c.set("user", user);
+      c.set("runtime", { apps: [] });
+      await next();
+    });
+    app.get("/admin/observability/gateway/routes", ...handler);
+    const load = async () => {
+      const response = await app.request("/admin/observability/gateway/routes", { headers: { "Accept-Language": "de" } });
+      expect(response.status).toBe(200);
+      await response.text();
+    };
+    const meter = await meterSql();
+    try {
+      await load();
+      const statements = await meter.during(load);
+      const queries = statements.filter((statement) => !FRAMING.test(statement));
+      expect({ count: statements.length, queries: queries.length, statements: queries }).toEqual({
+        count: ROUTES_STATEMENTS,
+        queries: ROUTES_QUERIES,
+        statements: expect.any(Array),
+      });
+    } finally {
+      await meter.close();
+      rail.mockRestore();
+      for (const spy of shared) spy.mockRestore();
+    }
+  },
+  60_000,
+);

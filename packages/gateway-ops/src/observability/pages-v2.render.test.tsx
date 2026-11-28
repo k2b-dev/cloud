@@ -91,6 +91,7 @@ test("gateway routes: the router's table with each prefix's traffic, filtered by
         ["/api/mail/send", totals(34_567, 3)],
       ]),
     ),
+    spyOn(telemetry, "getTelemetryTimeseries").mockResolvedValue([]),
   ];
   try {
     const all = await app().request("/admin/observability/gateway/routes", { headers: { "Accept-Language": "de" } });
@@ -108,6 +109,132 @@ test("gateway routes: the router's table with each prefix's traffic, filtered by
     );
     expect(narrowed).toContain("1 von 3 Routen");
     expect(narrowed).not.toContain("/api/files Dateien");
+  } finally {
+    for (const spy of spies) spy.mockRestore();
+  }
+});
+
+/** The router's table of two apps, for the cases below. */
+const SNAPSHOT = {
+  startedAt: Date.parse("2026-11-24T05:00:00Z"),
+  tableVersion: 42,
+  routeCount: 2,
+  routeWarnings: [],
+  routes: [
+    { prefix: "/api/mail", appId: "mail" },
+    { prefix: "/api/files", appId: "files" },
+  ],
+} as never;
+
+const routes = async (search = "") => {
+  const response = await app().request(`/admin/observability/gateway/routes${search}`, { headers: { "Accept-Language": "de" } });
+  const html = await response.text();
+  return { status: response.status, html, text: read(html) };
+};
+
+test("an app that had traffic but is no longer registered stands by its id and filters like the others", async () => {
+  const spies = [
+    stubRailSnapshot(),
+    spyOn(cloud, "listApps").mockResolvedValue(APPS),
+    spyOn(services, "latestGatewayRouteSnapshot").mockResolvedValue(SNAPSHOT),
+    spyOn(telemetry, "getTelemetryAppTotals").mockResolvedValue(
+      new Map([
+        ["mail", totals(900, 1)],
+        ["retired-app", totals(120, 0)],
+      ]),
+    ),
+    spyOn(telemetry, "getTelemetryPrefixTotals").mockResolvedValue(new Map([["/api/mail", totals(900, 1)]])),
+    spyOn(telemetry, "getTelemetryTimeseries").mockResolvedValue([]),
+  ];
+  try {
+    const page = await routes();
+    expect(page.status, page.html).toBe(200);
+    expect(page.text).toContain("retired-app");
+    expect(page.html).toContain("app=retired-app");
+    expect((await routes("?app=retired-app")).status).toBe(200);
+  } finally {
+    for (const spy of spies) spy.mockRestore();
+  }
+});
+
+test("without the registry every app of the traffic still stands, by its id", async () => {
+  const spies = [
+    stubRailSnapshot(),
+    spyOn(cloud, "listApps").mockRejectedValue(new Error("registry unavailable")),
+    spyOn(services, "latestGatewayRouteSnapshot").mockResolvedValue(SNAPSHOT),
+    spyOn(telemetry, "getTelemetryAppTotals").mockResolvedValue(new Map([["mail", totals(900, 1)]])),
+    spyOn(telemetry, "getTelemetryPrefixTotals").mockResolvedValue(new Map([["/api/mail", totals(900, 1)]])),
+    spyOn(telemetry, "getTelemetryTimeseries").mockResolvedValue([]),
+  ];
+  try {
+    const page = await routes();
+    expect(page.status, page.html).toBe(200);
+    expect(page.text).toContain("/api/mail");
+    expect(page.html).toContain("app=mail");
+  } finally {
+    for (const spy of spies) spy.mockRestore();
+  }
+});
+
+test("no router snapshot: the cells say so and the table offers no rows", async () => {
+  const spies = [
+    stubRailSnapshot(),
+    spyOn(cloud, "listApps").mockResolvedValue(APPS),
+    spyOn(services, "latestGatewayRouteSnapshot").mockResolvedValue(null as never),
+    spyOn(telemetry, "getTelemetryAppTotals").mockResolvedValue(new Map()),
+    spyOn(telemetry, "getTelemetryPrefixTotals").mockResolvedValue(new Map()),
+    spyOn(telemetry, "getTelemetryTimeseries").mockResolvedValue([]),
+  ];
+  try {
+    const page = await routes();
+    expect(page.status, page.html).toBe(200);
+    expect(page.text).toContain("0 Routen");
+  } finally {
+    for (const spy of spies) spy.mockRestore();
+  }
+});
+
+test("traffic that cannot be read leaves the router's table standing and says so in its place", async () => {
+  const spies = [
+    stubRailSnapshot(),
+    spyOn(cloud, "listApps").mockResolvedValue(APPS),
+    spyOn(services, "latestGatewayRouteSnapshot").mockResolvedValue(SNAPSHOT),
+    spyOn(telemetry, "getTelemetryAppTotals").mockRejectedValue(new Error("Telemetry rollups unreadable")),
+    spyOn(telemetry, "getTelemetryPrefixTotals").mockResolvedValue(new Map()),
+    spyOn(telemetry, "getTelemetryTimeseries").mockRejectedValue(new Error("Telemetry rollups unreadable")),
+  ];
+  try {
+    const page = await routes();
+    expect(page.status, page.html).toBe(200);
+    expect(page.text).toContain("/api/mail");
+    expect(page.text).toContain("/api/files");
+    expect(page.text).toContain("Der Verkehr des Zeitraums war nicht lesbar");
+    expect(page.text).toContain("Telemetry rollups unreadable");
+    expect(page.text).toContain("Erneut versuchen");
+  } finally {
+    for (const spy of spies) spy.mockRestore();
+  }
+});
+
+test("the context column lists the twelve apps with the most requests, most first", async () => {
+  const many = new Map(
+    Array.from({ length: 15 }, (_, index) => [`app-${String(index).padStart(2, "0")}`, totals(1_000 - index * 10, 0)] as const),
+  );
+  const spies = [
+    stubRailSnapshot(),
+    spyOn(cloud, "listApps").mockResolvedValue(APPS),
+    spyOn(services, "latestGatewayRouteSnapshot").mockResolvedValue(SNAPSHOT),
+    spyOn(telemetry, "getTelemetryAppTotals").mockResolvedValue(many),
+    spyOn(telemetry, "getTelemetryPrefixTotals").mockResolvedValue(new Map()),
+    spyOn(telemetry, "getTelemetryTimeseries").mockResolvedValue([]),
+  ];
+  try {
+    const page = await routes();
+    expect(page.status, page.html).toBe(200);
+    const list = page.html.slice(page.html.indexOf('aria-label="Anfragen nach App"'));
+    expect(list).toContain("app-00");
+    expect(list).toContain("app-11");
+    expect(list).not.toContain("app-12");
   } finally {
     for (const spy of spies) spy.mockRestore();
   }

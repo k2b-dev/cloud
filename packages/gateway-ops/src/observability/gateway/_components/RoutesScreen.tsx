@@ -4,6 +4,7 @@ import {
   Bar,
   Button,
   Chip,
+  Failed,
   FilterBar,
   Input,
   List,
@@ -18,7 +19,7 @@ import {
   Table,
   Text,
 } from "@k2b/ui/v2";
-import { createMemo, For } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
 import { gatewayOpsMessages } from "../../../messages";
 import { type KeyCell, KeyCells } from "../../_components/KeyCells";
 import { type RoutesState, routesHref, routesQuery } from "../query";
@@ -43,6 +44,8 @@ export type RoutesScreenProps = {
   rows: RouteRow[];
   /** All prefixes of the table, before the filters. */
   total: number;
+  /** The traffic of the window could not be read; the router's table still stands. */
+  trafficError: string | null;
   /** The apps with the most requests in the window, most first. */
   byApp: { id: string; label: string; icon: string; color?: string; requests: number }[];
 };
@@ -103,6 +106,13 @@ export default function RoutesScreen(props: RoutesScreenProps) {
           }
         >
           <KeyCells cells={props.cells} />
+          <Show when={props.trafficError}>
+            {(error) => (
+              <Notice tone="bad" title={t().trafficUnavailable}>
+                {error()}
+              </Notice>
+            )}
+          </Show>
           <For each={props.warnings}>{(warning) => <Notice tone="warn">{warning}</Notice>}</For>
           <Table
             label={t().gatewayRoutesTitle}
@@ -146,7 +156,7 @@ export default function RoutesScreen(props: RoutesScreenProps) {
               },
             ]}
           />
-          {/* k2b-ui gap: where the context column gives way under a table that ends its column, the table's last row and the
+          {/* k2b-ui gap (#4470, a pane's last part draws no line): where the context column gives way under a table that ends its column, the table's last row and the
               seam draw two lines; the source line ends the column instead until the primitive drops the row's line */}
           <Text type="meta" muted>
             {t().routesSource}
@@ -155,18 +165,20 @@ export default function RoutesScreen(props: RoutesScreenProps) {
         {/* a context column beside the table on a large screen: where the traffic of the window goes */}
         <Pane side={{ from: 1100 }} label={t().requestsByApp}>
           <Section icon="chart-bar" title={t().requestsByApp}>
-            <List label={t().requestsByApp}>
-              <For each={props.byApp}>
-                {(app) => (
-                  <Row
-                    mark={{ icon: app.icon, color: app.color }}
-                    lines={[app.label]}
-                    end={<Progress value={app.requests} of={props.byApp[0]?.requests ?? 0} label={number(app.requests)} />}
-                    href={routesHref(query(), { ...props.state, filters: { ...props.state.filters, app: app.id } })}
-                  />
-                )}
-              </For>
-            </List>
+            <Show when={!props.trafficError} fallback={<Failed text={t().trafficUnavailable} onRetry={() => location.reload()} />}>
+              <List label={t().requestsByApp}>
+                <For each={props.byApp}>
+                  {(app) => (
+                    <Row
+                      mark={{ icon: app.icon, color: app.color }}
+                      lines={[app.label]}
+                      end={<Progress value={app.requests} of={props.byApp[0]?.requests ?? 0} label={number(app.requests)} />}
+                      href={routesHref(query(), { ...props.state, filters: { ...props.state.filters, app: app.id } })}
+                    />
+                  )}
+                </For>
+              </List>
+            </Show>
           </Section>
         </Pane>
       </Pane.Split>

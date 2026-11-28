@@ -117,6 +117,7 @@ export const PagesFixture = (props: { screen: PagesFixtureScreen; search: string
           warnings={worst ? [`${LONG} · werkstatt: shadowed (a longer prefix of another app answers first)`] : []}
           rows={routes(worst)}
           total={routes(worst).length}
+          trafficError={null}
           byApp={APPS.map((app, index) => ({ ...app, requests: worst ? 12_345_678_901 / (index + 1) : 14_210 - index * 3_100 }))}
         />
       );

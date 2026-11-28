@@ -7,7 +7,7 @@ import { gatewayOpsMessages } from "../../messages";
 import { observabilityAdminNav } from "../_components/admin-nav";
 import type { KeyCell } from "../_components/KeyCells";
 import { areaText, readAttention } from "../_components/ObservabilityArea";
-import { getTelemetryAppTotals, getTelemetryPrefixTotals, getTelemetryTimeseries } from "../telemetry/service";
+import { getTelemetryAppTotals, getTelemetryPrefixTotals, getTelemetryTimeseries, type TelemetryTotals } from "../telemetry/service";
 import RoutesScreen from "./_components/RoutesScreen.island";
 import { ROUTES_SEARCH_MAX, routesQuery } from "./query";
 
@@ -38,27 +38,46 @@ export default ssr<AuthContext>(async (c) => {
   const { t } = gatewayOpsMessages.resolve([locale]);
   const dateConfig = getDateConfig(c);
   const params = new URL(c.req.url).searchParams;
-  const registered = await listApps().catch(() => []);
-  const apps = registered.map((app) => ({
+  // The address needs no app list to be read: an app it names stands as an option of its own.
+  const parsed = routesQuery(locale, [], params.get("app") ?? undefined).parse(params);
+  const state =
+    parsed.state.search && parsed.state.search.length > ROUTES_SEARCH_MAX ? { ...parsed.state, search: undefined } : parsed.state;
+  const range = state.filters.range.kind === "preset" ? state.filters.range.preset : "24h";
+
+  // Traffic that cannot be read leaves the router's table standing and says so in its place.
+  const traffic = Promise.all([getTelemetryAppTotals(range), getTelemetryPrefixTotals(range)]).then(
+    ([apps, prefixes]) => ({ apps, prefixes, error: null as string | null }),
+    (error: unknown) => ({
+      apps: new Map<string, TelemetryTotals>(),
+      prefixes: new Map<string, TelemetryTotals>(),
+      error: error instanceof Error ? error.message : String(error),
+    }),
+  );
+  const [registered, snapshot, totals, timeseries, attention] = await Promise.all([
+    listApps().catch(() => []),
+    // a router snapshot that cannot be read shows as none, as before the first one
+    latestGatewayRouteSnapshot().catch(() => null),
+    traffic,
+    // the requests per interval of the window, for the hero's history; the same rollup read as the overview's
+    getTelemetryTimeseries({ range }).catch(() => []),
+    readAttention(),
+  ]);
+  const appTotals = totals.apps;
+  const prefixTotals = totals.prefixes;
+  const registeredApps = registered.map((app) => ({
     id: app.id,
     label: app.name || app.id,
     icon: app.icon?.replace(/^ti\s+(ti-)?/, "") || "apps",
     color: app.appearance?.accent,
   }));
-  const query = routesQuery(locale, apps, params.get("app") ?? undefined);
-  const parsed = query.parse(params);
-  const state =
-    parsed.state.search && parsed.state.search.length > ROUTES_SEARCH_MAX ? { ...parsed.state, search: undefined } : parsed.state;
-  const range = state.filters.range.kind === "preset" ? state.filters.range.preset : "24h";
-
-  const [snapshot, appTotals, prefixTotals, timeseries, attention] = await Promise.all([
-    latestGatewayRouteSnapshot(),
-    getTelemetryAppTotals(range),
-    getTelemetryPrefixTotals(range),
-    // the requests per interval of the window, for the hero's history; the same rollup read as the overview's
-    getTelemetryTimeseries({ range }).catch(() => []),
-    readAttention(),
-  ]);
+  // Every app the window or the table names is a filter option: one that stopped or left the registry stands by its id.
+  const seen = new Set(registeredApps.map((app) => app.id));
+  const apps = [
+    ...registeredApps,
+    ...[...appTotals.keys(), ...(snapshot?.routes ?? []).map((route) => route.appId)]
+      .filter((id) => id !== "gateway" && !seen.has(id) && (seen.add(id), true))
+      .map((id) => ({ id, label: id, icon: "apps", color: undefined as string | undefined })),
+  ];
   const number = (value: number) => value.toLocaleString(locale);
   const appOf = (id: string) => apps.find((app) => app.id === id) ?? { id, label: id, icon: "apps", color: undefined };
   const needle = state.search?.toLowerCase();
@@ -86,8 +105,8 @@ export default ssr<AuthContext>(async (c) => {
     {
       icon: "arrows-exchange",
       label: t.requests,
-      value: number(windowRequests),
-      meta: unmatched > 0 ? t.unmatchedRequests({ count: number(unmatched), range }) : range,
+      value: totals.error ? "—" : number(windowRequests),
+      meta: totals.error ? t.unavailable : unmatched > 0 ? t.unmatchedRequests({ count: number(unmatched), range }) : range,
       tone: unmatched > 0 ? "warn" : undefined,
       trend:
         requestSeries.length > 1
@@ -132,6 +151,7 @@ export default ssr<AuthContext>(async (c) => {
         )}
         rows={rows}
         total={all.length}
+        trafficError={totals.error}
         // the apps by their requests in the window, from the totals already read; the gateway's own unmatched ones stay out
         byApp={[...appTotals.entries()]
           .filter(([id, totals]) => id !== "gateway" && totals.requests > 0)

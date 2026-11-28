@@ -123,7 +123,7 @@ describe("gateway routes, notifications and capabilities on v2", () => {
     const cases: [string, string, string, View][] = [];
     for (const screen of Object.keys(ADDRESS)) {
       for (const view of [desktop, tablet, phone]) cases.push([screen, ADDRESS[screen]!, "normal", view]);
-      for (const view of [desktop, phone]) cases.push([screen, ADDRESS[screen]!, "worst", view]);
+      for (const view of [desktop, tablet, phone]) cases.push([screen, ADDRESS[screen]!, "worst", view]);
     }
     cases.push(["capabilities", "/admin/observability/capabilities?request=request-0", "normal", desktop]);
     cases.push(["capabilities", "/admin/observability/capabilities?request=request-0", "normal", phone]);
