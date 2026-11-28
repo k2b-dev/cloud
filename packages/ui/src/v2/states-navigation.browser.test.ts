@@ -176,7 +176,7 @@ describe("states: loading, empty and failed stand where the data will stand", ()
       );
     });
 
-  test("empty: a round sign, one sentence on the text edge, one way out; a table without rows shows its own", async () => {
+  test("empty: a round sign, one sentence as a title in the middle of its place, one way out; a table without rows shows its own", async () => {
     await withPage(async (page) => {
       await setState(page, "empty");
       const shape = await page.evaluate(() => {
@@ -187,8 +187,9 @@ describe("states: loading, empty and failed stand where the data will stand", ()
         const button = state.querySelector(".k2-btn")!;
         return {
           sign: [sign.getBoundingClientRect().width, sign.getBoundingClientRect().height, getComputedStyle(sign).borderRadius],
-          signLeft: sign.getBoundingClientRect().left - pane.left,
-          textLeft: text.getBoundingClientRect().left - pane.left,
+          // the middle of the sign and of the sentence against the middle of the pane
+          signMiddle: Math.round(sign.getBoundingClientRect().left + sign.getBoundingClientRect().width / 2 - (pane.left + pane.width / 2)),
+          textMiddle: Math.round(text.getBoundingClientRect().left + text.getBoundingClientRect().width / 2 - (pane.left + pane.width / 2)),
           font: getComputedStyle(text).font,
           button: button.getBoundingClientRect().height,
           box: [getComputedStyle(state).borderTopWidth, getComputedStyle(state).backgroundColor],
@@ -196,8 +197,8 @@ describe("states: loading, empty and failed stand where the data will stand", ()
       });
       expect(shape.sign.slice(0, 2)).toEqual([40, 40]);
       expect(shape.sign[2]).toBe("999px");
-      expect([shape.signLeft, shape.textLeft]).toEqual([textEdge.wide, textEdge.wide]);
-      expect(shape.font).toContain("13px / 20px");
+      expect([Math.abs(shape.signMiddle) <= 1, Math.abs(shape.textMiddle) <= 1]).toEqual([true, true]);
+      expect(shape.font).toContain("15px / 22px");
       expect(shape.button).toBe(heights.controlSmall);
       // no box: no edge, no surface of its own
       expect(shape.box).toEqual(["0px", "rgba(0, 0, 0, 0)"]);

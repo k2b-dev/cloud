@@ -3559,6 +3559,21 @@
   padding: 0 var(--k2-edge);
   min-width: 0;
 }
+/* fields with their one deed: the fields share the room, the button keeps its words and stands on the line of their
+   controls, under their 20 px label line */
+.k2-ui .k2-frow[data-action] {
+  display: flex;
+  align-items: flex-start;
+}
+.k2-ui .k2-frow[data-action] > :not(.k2-frow-end) {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.k2-ui .k2-frow-end {
+  flex: none;
+  margin-top: 20px;
+  display: flex;
+}
 .k2-ui .k2-field {
   display: grid;
   grid-template-rows: 20px auto auto;
@@ -6144,6 +6159,13 @@
   }
   .k2-ui .k2-frow {
     grid-auto-flow: row;
+  }
+  .k2-ui .k2-frow[data-action] {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .k2-ui .k2-frow-end {
+    margin-top: 0;
   }
   .k2-ui .k2-steps {
     grid-template-columns: minmax(0, 1fr);

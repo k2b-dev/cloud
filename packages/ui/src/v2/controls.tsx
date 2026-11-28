@@ -180,9 +180,21 @@ export const Field = (props: FieldProps) => {
 Field.Row = (props: {
   /** The `Field`s side by side. */
   children: JSX.Element;
+  /**
+   * The one deed of these fields at the end of the row, on the line of their controls, such as "Einladen" after an
+   * address and a role. `primary` fills it when it is the page's one main action.
+   */
+  action?: Action & { primary?: boolean };
 }) => (
-  <div class="k2-frow" data-k2-part="Field.Row">
+  <div class="k2-frow" data-k2-part="Field.Row" data-action={props.action ? "" : undefined}>
     {props.children}
+    <Show when={props.action}>
+      {(action) => (
+        <span class="k2-frow-end">
+          <ActionButton action={action()} variant={action().primary ? "primary" : undefined} />
+        </span>
+      )}
+    </Show>
   </div>
 );
 
