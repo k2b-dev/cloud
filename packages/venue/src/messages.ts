@@ -135,6 +135,7 @@ export const venueMessages = i18n.define({
       }) =>
         `This page was saved before its limits: its visible sections are ${sections} with ${items} menu items, of at most ${maxSections} and ${maxItems}. Visitors and the preview see the first ${maxSections} sections and the first ${maxItems} menu items. Delete sections or remove menu items to bring the page within its limits.`,
       copyMenuItemsTooMany: ({ count, max }: { count: number; max: number }) => `A copy would make ${count} of ${max} menu items.`,
+      copyExternalImages: "Upload the external images again first",
       menuImageInvalid: ({ position }: { position: number }) => `Item ${position}: use a WebP, PNG, JPEG, or GIF image.`,
       menuImageTooLarge: ({ position, maxKilobytes }: { position: number; maxKilobytes: number }) =>
         `Item ${position}: the image is larger than ${maxKilobytes} kB. Choose a smaller image.`,
@@ -725,6 +726,7 @@ export const venueMessages = i18n.define({
       pageOverLimits: ({ sections, items, maxSections, maxItems }) =>
         `Diese Seite wurde vor ihren Grenzen gespeichert: Sichtbar sind ${sections} Abschnitte mit ${items} Speisekarteneinträgen, bei höchstens ${maxSections} und ${maxItems}. Besucher und die Vorschau sehen die ersten ${maxSections} Abschnitte und die ersten ${maxItems} Einträge. Lösche Abschnitte oder entferne Einträge, bis die Seite in ihren Grenzen liegt.`,
       copyMenuItemsTooMany: ({ count, max }) => `Eine Kopie ergäbe ${count} von ${max} Speisekarteneinträgen.`,
+      copyExternalImages: "Erst die externen Bilder neu hochladen",
       menuImageInvalid: ({ position }) => `Eintrag ${position}: Verwende ein WebP-, PNG-, JPEG- oder GIF-Bild.`,
       menuImageTooLarge: ({ position, maxKilobytes }) =>
         `Eintrag ${position}: Das Bild ist größer als ${maxKilobytes} kB. Wähle ein kleineres Bild.`,
