@@ -32,6 +32,9 @@
  *   cells of a table with column widths) never wraps, it ends with "…"; a box that clips its text shows every line
  *   whole and cuts a line at its end only with "…"; text never runs out of a box that does not clip it, where it would
  *   run under what stands beside it and look cut mid-word.
+ * - **out:** a control stays inside every bar and pane around it (`frames`); one that sticks out (the actions of a
+ *   head squeezed by a long subject) is a finding. A scroller or a layer of its own (a menu, a popover, a dialog)
+ *   between them ends the search.
  *
  * ```ts
  * import { measureV2Layout } from "@k2b/ui/v2/testing";
@@ -64,11 +67,13 @@ export type V2LayoutOptions = {
   unbroken?: string;
   /** Controls whose label must never be cut: a text that leaves the control's box or is clipped by it. */
   controls?: string;
+  /** Bars and panes a control must stay inside; a scroller or a layer of its own (a menu, a popover) between them ends the search. */
+  frames?: string;
   /** Text that stays on one line and ends with "…" when it is too long; wrapping to a second line is a finding. */
   oneLine?: string;
   /** Drawn marks whose lines are no dividers, such as the track of steps; their text is still measured. */
   figure?: string;
-  /** Text that has no type role, such as initials in an avatar. */
+  /** Text that has no type role, such as initials in an avatar or the type on a mark ("PDF"): a glyph, not words. */
   untyped?: string;
 };
 
@@ -89,6 +94,8 @@ export type V2Layout = {
   inside: string[];
   /** Cut control labels and one-line texts that wrap. */
   cut: string[];
+  /** Controls that stick out of a bar or pane around them, such as a head's actions squeezed by a long subject. */
+  out: string[];
   type: string[];
   grip: string[];
   grips: V2GripMeasure[];
@@ -119,6 +126,7 @@ type DomResult = {
   double: string[];
   inside: string[];
   cut: string[];
+  out: string[];
   type: string[];
   grip: string[];
   grips: { grip: string; dom: number; rect: Rect; line: { x0: number; x1: number } | null }[];
@@ -133,6 +141,7 @@ function measureInPage(options: InPage): DomResult {
     double: [],
     inside: [],
     cut: [],
+    out: [],
     type: [],
     grip: [],
     grips: [],
@@ -586,7 +595,8 @@ function measureInPage(options: InPage): DomResult {
       // A button the end of a bar cuts before the page is alive folds into its "…" once the bar measures (`Bar`): on the
       // server's page the end cuts what it has no room for, from its start, so the parts at its end stay whole.
       const folds =
-        control.closest('.k2-bar[data-k2-part="Bar"]:not([data-k2-fitted]) > .k2-bar-end') !== null && control.matches(options.folds);
+        control.closest('.k2-bar:is([data-k2-part="Bar"], [data-status-row]):not([data-k2-fitted]) > .k2-bar-end') !== null &&
+        control.matches(options.folds);
       if (clipped && !folds)
         cut.push(`control ${name(control)} cuts its label "${labelOf(control)}"; it needs the room of its whole label`);
     }
@@ -613,6 +623,29 @@ function measureInPage(options: InPage): DomResult {
       const holdsControl = Array.from(element.children).some((child) => child.matches(options.controls));
       if (clipsX && !holdsControl && element.scrollWidth > element.clientWidth + 1 && style.textOverflow !== "ellipsis")
         cut.push(`${name(element)} "${labelOf(element)}" cuts its line without "…"`);
+    }
+    // 4d. Controls that stick out: a control reaches past the side of a bar or pane around it (the actions of a head
+    // squeezed by a long subject run over the card's edge). A scroller between them lets a person scroll to it, and a
+    // layer of its own (a menu, a popover, a dialog) stands above the page, so the search stops at either.
+    const sticksOut: string[] = [];
+    for (const control of Array.from(root.querySelectorAll(options.controls))) {
+      if (!visible(control) || control.parentElement?.closest(options.skip)) continue;
+      const box = control.getBoundingClientRect();
+      for (let node = control.parentElement; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (["auto", "scroll"].includes(style.overflowX) || style.position === "fixed" || node.matches("[popover], dialog")) break;
+        if (node.matches(options.frames) && style.display !== "contents") {
+          const frame = node.getBoundingClientRect();
+          const over = Math.max(frame.left - box.left, box.right - frame.right);
+          if (over > 0.5) {
+            sticksOut.push(
+              `control ${name(control)} "${labelOf(control)}" sticks ${round(over)} px out of ${name(node)}; the bar gives it its room`,
+            );
+            break;
+          }
+        }
+        if (node === root) break;
+      }
     }
     // Text that runs out of the box it stands in, where that box does not clip, runs under what stands beside it: a
     // person sees it cut mid-word with no "…" (a lead under the chips at the end of its row). It belongs cut with "…"
@@ -734,6 +767,7 @@ function measureInPage(options: InPage): DomResult {
       double,
       inside,
       cut,
+      out: sticksOut,
       type: [...type].map(([key, count]) => `text outside the type roles: ${key}${count > 1 ? ` (${count}×)` : ""}`),
       grip,
       grips,
@@ -815,9 +849,10 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     prose: options.prose ?? "[data-k2-prose]",
     skip: options.skip ?? "[data-k2-canvas]",
     figure: options.figure ?? "[data-k2-figure]",
-    untyped: options.untyped ?? "[data-k2-avatar]",
+    untyped: options.untyped ?? "[data-k2-avatar], [data-k2-glyph]",
     unbroken: options.unbroken ?? "[data-k2-part='Band'], [data-k2-part='Group']",
     controls: options.controls ?? ".k2-btn, .k2-chip, .k2-tab",
+    frames: options.frames ?? ".k2-bar, .k2-pane",
     // A row of three lines cuts each line; in a row of one or two lines the title may wrap (it is what the row is about).
     oneLine:
       options.oneLine ??
@@ -886,12 +921,13 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
       if (JSON.stringify(now) !== JSON.stringify(then))
         grip.push("the grips moved between the DOM measurement and the screenshots; measure a page that holds still");
     }
-    const problems = [...dom.pseudo, ...dom.edge, ...dom.double, ...dom.inside, ...dom.cut, ...dom.type, ...grip];
+    const problems = [...dom.pseudo, ...dom.edge, ...dom.double, ...dom.inside, ...dom.cut, ...dom.out, ...dom.type, ...grip];
     return {
       edge: dom.edge,
       double: dom.double,
       inside: dom.inside,
       cut: dom.cut,
+      out: dom.out,
       type: dom.type,
       grip,
       grips,

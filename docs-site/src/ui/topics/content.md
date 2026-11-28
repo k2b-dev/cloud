@@ -38,7 +38,7 @@ Words in one of the four type roles (meta, row, body, lead); emphasis is a weigh
 
 ### Prose
 
-Reading text, 14/22 with a measure of 720 px; Markdown is rendered safely, without raw HTML or images. A Markdown table reads like a small table: cells 12 px apart on the text edge, the head as a Table head, a line between rows; a column aligned right (`--:`) holds numbers in tabular figures.
+Reading text, 14/22 with a measure of 720 px; Markdown is rendered safely, without raw HTML or images. A Markdown table reads like a small table: cells 12 px apart on the text edge, the head as a Table head, a line between rows; a column aligned right (`--:`) holds numbers in tabular figures. With `compact`, for short text a person wrote such as a comment, a table shows its rows as lines of text instead and a heading is no larger than the text; links and inline code stay.
 
 <Props of="Prose" />
 
@@ -65,6 +65,16 @@ The one place for a drawing of its own: a plan, a map, a chart. Inside it CSS is
 One tick per time slot, such as the scrapes of the last 30 minutes: ok in the soft colour of what it belongs to, a failure red and taller, a slot without data a low stub. The slots read in the writing direction, oldest first. It is the one column of a list that shows its data over time, 140 × 20 px in a cell, for at most 60 slots; with `stretch` in a detail its slots stand 2 px apart and grow up to 12 px, and a wider place keeps the strip at its start. Its `label` always says what, over which time, and what happened, such as "postgres-haupt, letzte 30 Minuten: 3 von 30 Abrufen fehlgeschlagen".
 
 <Props of="Ticks" />
+
+### RangeBar
+
+A range on the one scale its list shares, such as each day of a week from its low to its high on the week's lowest low and highest high: the rows read at a glance, a cold day at the start, a warm one at the end. It reads in the writing direction, as `Ticks` do. It takes the width of its place on a quiet track, a range of one value still shows as a short bar, a range past the scale stops at its end, and a range that is no number leaves the track empty.
+
+`stops` colour the bar by meaning along the scale, such as cold to warm. A stop's colour is a hex colour, an `oklch()`, a custom property of the page or `light-dark()` of two of them; anything else is dropped. The owner keeps the colours at 3:1 on the surface in light and dark, and text never takes them. Without `stops` the bar is neutral.
+
+Its `label` says the range in words, such as "2,9° bis 9,1°": assistive technology reads it instead of the bar. When the low and the high stand as text beside the bar, the bar is `decorative` and says nothing a second time. In forced colours the range draws in the text colour on an outlined track.
+
+<Props of="RangeBar" />
 
 ### Heat
 

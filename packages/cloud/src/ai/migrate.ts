@@ -2486,10 +2486,7 @@ export const migrateCloudAi = async (): Promise<void> => {
   console.log("  ✓ ai conversation tables");
   await migrateAiNextMessages();
   // Built next to live writes after the migration; startup never waits for them, and queries run without them meanwhile.
-  void buildConcurrentIndexesInBackground([AI_INFERENCE_TURN_INDEX], {
-    log: logger("ai:migrate"),
-    purpose: "AI",
-  });
+  void buildConcurrentIndexesInBackground([AI_INFERENCE_TURN_INDEX], { log: logger("ai:migrate"), purpose: "AI" });
 };
 
 const backfillApprovalRequests = async (): Promise<void> => {

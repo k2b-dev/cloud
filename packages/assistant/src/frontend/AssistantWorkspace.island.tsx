@@ -264,8 +264,6 @@ type Props = {
   initialWakeupLines?: Record<string, AssistantWakeupLineText>;
   /** The open tabs of the initial chat as the person left them, from the server. */
   initialTabs?: { chatId: string; snapshot: ChatWorkspaceSnapshot } | null;
-  /** The hint that tabs can be arranged was dismissed. */
-  arrangeHintSeen?: boolean;
   projects: AiProject[];
   initialProject: AiProject | null;
   initialProjectChats: AiConversationPage | null;
@@ -3711,7 +3709,6 @@ export default function AssistantWorkspace(props: Props) {
                     onAsk={askAboutTab}
                     onAdd={() => openContextOverview("files", sidebarCopy().title)}
                     webReader={webReader() === true}
-                    arrangeHintSeen={props.arrangeHintSeen === true}
                   />
                 </Suspense>
               </Show>
