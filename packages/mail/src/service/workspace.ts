@@ -1063,7 +1063,8 @@ export const loadMailboxCodePageData = async (context: MailRequestContext, mailb
   const [mailbox, folders, viewCounts, scheduledCount, receivingAddress] = await Promise.all([
     mailboxes.getMailbox(context, mailboxId),
     messages.listFolders(context, mailboxId),
-    messages.getConversationViewCounts({ context, mailboxId }),
+    // the workspace's cached snapshot: every step of the Code page (history day, entry, run) is a page load of its own
+    messages.getConversationViewCounts({ context, mailboxId, cached: true }),
     scheduledSends.countScheduledSends({ context, mailboxId }),
     mailboxes.getMailboxReceivingAddress(mailboxId),
   ]);
