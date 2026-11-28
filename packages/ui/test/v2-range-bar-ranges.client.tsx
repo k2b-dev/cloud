@@ -2,8 +2,8 @@ import { render } from "solid-js/web";
 import { Bar, Pane, RangeBar, Table, Text, Workspace } from "../src/v2";
 
 // A week of opening hours on one scale from 6 to 24: some days with a break (two ranges in one row), one closed day
-// (no range), today as the table's open row. The times stand as text in their own column, so the words of a bar list
-// every range of its day. The test reads the bars' places, the open row's tint and the layout at 1440 and 390 px, where
+// (no range), today as the table's open row. The times stand as text in their own column, so each bar is decoration
+// beside them. The test reads the bars' places, the open row's tint and the layout at 1440 and 390 px, where
 // the three columns still stand side by side.
 
 declare global {
@@ -39,8 +39,6 @@ const week: Day[] = [
 const time = (hour: number) => `${String(Math.floor(hour)).padStart(2, "0")}:${String(Math.round((hour % 1) * 60)).padStart(2, "0")}`;
 const times = (day: Day) =>
   day.hours.length === 0 ? "Geschlossen" : day.hours.map((range) => `${time(range.from)}–${time(range.to)}`).join(", ");
-const words = (day: Day) =>
-  `${day.name}: ${day.hours.length === 0 ? "geschlossen" : day.hours.map((range) => `${time(range.from)} bis ${time(range.to)}`).join(" und ")}`;
 
 const root = document.getElementById("root");
 if (!root) throw new Error("range bar ranges: #root is missing");
@@ -55,7 +53,7 @@ render(
           current="sa"
           columns={[
             { title: "Tag", width: { min: 56, default: 64 }, cell: (row) => row.name },
-            { title: "Verlauf", cell: (row) => <RangeBar ranges={row.hours} domain={[6, 24]} label={words(row)} /> },
+            { title: "Verlauf", cell: (row) => <RangeBar ranges={row.hours} domain={[6, 24]} decorative /> },
             { title: "Zeiten", width: { min: 120, default: 140 }, align: "end", cell: (row) => times(row) },
           ]}
         />

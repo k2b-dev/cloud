@@ -172,14 +172,19 @@ test("in forced colours the range draws in the text colour on an outlined track"
   });
 }, 30_000);
 
-/** Each day of the opening hours: its words, its row's state and tint, and every range on its track in px. */
+/** Each day of the opening hours: its day and times as text, what the bar says, its row's state and tint, and every
+ * range on its track in px. */
 const readHours = (page: Page) =>
   page.evaluate(() =>
     [...document.querySelectorAll<HTMLElement>('[data-k2-part="RangeBar"]')].map((track) => {
       const outer = track.getBoundingClientRect();
       const row = track.closest("tr")!;
+      const cells = [...row.querySelectorAll("td")];
       return {
+        day: cells[0]?.textContent,
+        times: cells.at(-1)?.textContent,
         label: track.getAttribute("aria-label"),
+        hidden: track.getAttribute("aria-hidden"),
         current: row.getAttribute("aria-current"),
         tint: getComputedStyle(row.querySelector("td")!).backgroundColor,
         track: outer.width,
@@ -200,15 +205,17 @@ for (const width of [1440, 390]) {
   test(`several ranges in one row stand at their places on the one track at ${width} px, today's row keeps its tint`, async () => {
     await withPage({ width, hours: true }, async (page) => {
       const days = await readHours(page);
-      expect(days.map((day) => [day.label, day.ranges.length])).toEqual([
-        ["Mo.: 08:00 bis 15:00", 1],
-        ["Di.: 08:00 bis 12:00 und 14:00 bis 18:00", 2],
-        ["Mi.: 08:00 bis 15:00", 1],
-        ["Do.: 11:30 bis 14:00 und 17:00 bis 22:00", 2],
-        ["Fr.: 08:00 bis 23:00", 1],
-        ["Sa.: 10:00 bis 15:00", 1],
-        ["So.: geschlossen", 0],
+      expect(days.map((day) => [day.day, day.times, day.ranges.length])).toEqual([
+        ["Mo.", "08:00–15:00", 1],
+        ["Di.", "08:00–12:00, 14:00–18:00", 2],
+        ["Mi.", "08:00–15:00", 1],
+        ["Do.", "11:30–14:00, 17:00–22:00", 2],
+        ["Fr.", "08:00–23:00", 1],
+        ["Sa.", "10:00–15:00", 1],
+        ["So.", "Geschlossen", 0],
       ]);
+      // the times stand beside the bars as text: each bar is decoration and says nothing a second time
+      for (const day of days) expect([day.label, day.hidden]).toEqual([null, "true"]);
       // 6…24: Tuesday's 8–12 and 14–18 lie 2/18 and 8/18 in from the start, 12/18 and 6/18 short of the end
       const tuesday = days[1]!;
       // (to the pixel: the browser rounds a percentage of the track to its own grid)
@@ -230,7 +237,7 @@ for (const width of [1440, 390]) {
       }
       // today is the table's open row and keeps its tint; the other rows have none
       const today = days.find((day) => day.current === "true");
-      expect(today?.label).toBe("Sa.: 10:00 bis 15:00");
+      expect(today?.day).toBe("Sa.");
       expect(today?.tint).not.toBe("rgba(0, 0, 0, 0)");
       expect(days.filter((day) => day.current === null).every((day) => day.tint === "rgba(0, 0, 0, 0)")).toBe(true);
       expect((await measureV2Layout(page)).problems).toEqual([]);
