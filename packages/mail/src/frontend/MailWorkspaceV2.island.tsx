@@ -1,6 +1,10 @@
-import { mergeProps } from "solid-js";
+import { createSignal, mergeProps, Show } from "solid-js";
+import type { MailDraft } from "../contracts";
 import { MailCloudIdProvider } from "./_components/mail-cloud-id";
+import { openInMailbox } from "./_components/mail-compose-intent-state";
+import { openDraftWindow } from "./_components/mail-compose-windows";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
+import { MailComposeDialogV2 } from "./_components/v2/MailComposeDialogV2";
 import MailWorkspaceV2, { createMailV2Dom } from "./_components/v2/MailWorkspaceV2";
 import { createMailboxSessions, MailboxComposeWindows, type MailWorkspaceProps, useMailboxController } from "./mail-workspace";
 
@@ -25,6 +29,18 @@ export default function MailWorkspacePilot(props: MailWorkspaceProps) {
   };
   // mergeProps keeps the session a getter, so a mailbox switch reaches the controller.
   const controller = useMailboxController(mergeProps(props, workspace));
+  // New message's dialog, which the URL asked for (`?compose=1`): closing it leaves the mailbox as it is
+  const [compose, setCompose] = createSignal(props.compose);
+  const closeCompose = () => {
+    setCompose(undefined);
+    controller().closeCompose();
+  };
+  // a draft of this mailbox opens as its window here, as New message in the mailbox; one of another mailbox opens there
+  const openComposed = (draft: MailDraft) => {
+    if (draft.mailboxId !== controller().data.mailbox.id) return openInMailbox(draft);
+    closeCompose();
+    openDraftWindow(draft.id, { mailboxId: draft.mailboxId, initialDraft: draft, fresh: draft.creationOutcome === "created" });
+  };
 
   return (
     <MailContactDirectoryProvider value={props.contactDirectory}>
@@ -46,6 +62,7 @@ export default function MailWorkspacePilot(props: MailWorkspaceProps) {
           }}
         />
         <MailboxComposeWindows {...props} {...workspace} controller={controller} area="[data-k2-workspace]" />
+        <Show when={compose()}>{(intent) => <MailComposeDialogV2 {...intent()} open={openComposed} onClose={closeCompose} />}</Show>
       </MailCloudIdProvider>
     </MailContactDirectoryProvider>
   );

@@ -12,6 +12,7 @@ import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { selectHtml } from "../../../../tests/fixtures/select-html";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
+import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
 import { resolveMailSearchRoute } from "../search-state";
 import { mailboxes, mailboxPreferences } from "../service";
 import * as access from "../service/access";
@@ -20,6 +21,7 @@ import * as publicResources from "../service/public-resources";
 import { CountRefreshBusy } from "../service/view-count-cache";
 import type { MailboxPageData } from "../service/workspace";
 import * as workspace from "../service/workspace";
+import * as composeData from "./compose-intent-data";
 import * as sidebarData from "./mail-sidebar-data";
 import * as pilot from "./mail-v2-pilot";
 
@@ -405,4 +407,38 @@ test("only a person in the v2 pilot gets the mailbox on @k2b/ui v2; everyone els
     expect({ list, v1: (await selectHtml(html, ".mail-workspace")).length }).toEqual({ list, v1: v2 ? 0 : 1 });
     expect({ list, v2: (await selectHtml(html, "main.k2-ui [data-k2-workspace]")).length }).toEqual({ list, v2: v2 ? 1 : 0 });
   }
+});
+
+test("on UI v2 `?compose=1` reads what New message's dialog starts from, with this mailbox under it; nothing else does", async () => {
+  spies.push(
+    spyOn(publicResources, "resolveActiveMailboxId").mockResolvedValue(mailboxId),
+    spyOn(publicResources, "publicIds").mockResolvedValue(new Map([[mailboxId, mailboxShortId]])),
+    spyOn(workspace, "loadMailboxPageData").mockResolvedValue({ ok: true, data: mailboxSnapshot() }),
+    spyOn(integrations, "getSpacesMailIntegrationAvailability").mockResolvedValue({
+      invitations: false,
+      settings: false,
+      composer: false,
+      context: false,
+    }),
+  );
+  const compose = spyOn(composeData, "loadMailComposeIntent").mockResolvedValue({
+    mailboxes: [{ id: mailboxShortId, name: "Support", description: null, canManage: false }],
+    initialMailboxId: mailboxShortId,
+    autoStart: false,
+    mailto: null,
+    returnHref: null,
+    contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
+    currentUserEmail: user.mail,
+    currentUserId: user.id,
+  });
+  const listed = spyOn(pilot, "readMailV2Pilot");
+  spies.push(compose, listed);
+  listed.mockReturnValue(["*"]);
+  expect((await request("?compose=1")).status).toBe(200);
+  expect(compose).toHaveBeenCalledTimes(1);
+  expect(compose.mock.calls[0]!.slice(2)).toEqual([expect.objectContaining({ id: user.id }), mailboxShortId]);
+  expect((await request()).status).toBe(200);
+  listed.mockReturnValue([]);
+  expect((await request("?compose=1")).status).toBe(200);
+  expect(compose).toHaveBeenCalledTimes(1);
 });

@@ -1,6 +1,7 @@
 import { liveConnection } from "@k2b/cloud/browser/live";
 import { publishPageContext } from "@k2b/cloud/browser/panel";
 import { importOnDemand, reloadOnce } from "@k2b/cloud/browser/reload";
+import { clearCommand } from "@k2b/cloud/contracts/commands";
 import type { CloudTheme } from "@k2b/cloud/shared";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import {
@@ -60,6 +61,8 @@ import { chooseMailAssignee, type MailAssigneeChoice } from "./_components/mail-
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
 import { type MailBulkAssignmentHost, runMailBulkAssignment } from "./_components/mail-bulk-assignment";
 import { mailCodeEntry } from "./_components/mail-code-entry";
+import type { MailComposeIntentProps } from "./_components/mail-compose-intent-state";
+import { MAIL_COMPOSE_PARAMETERS } from "./_components/mail-compose-route";
 import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
 import { openDraftWindow } from "./_components/mail-compose-windows";
 import { preloadMailComposer } from "./_components/mail-composer-preload";
@@ -200,6 +203,8 @@ export type MailWorkspaceProps = {
     /** The one-time notice that Focus is gone; the page leaves it out once the person closed it. */
     focusNoticeOpen?: boolean;
   };
+  /** UI v2: New message's dialog over the mailbox, which `?compose=1` asks for, with what it starts from. */
+  compose?: MailComposeIntentProps;
 };
 
 export type MailboxSession = Pick<MailWorkspaceProps, "data" | "requestPath" | "initialPreferences" | "initialUserPreferences">;
@@ -599,6 +604,9 @@ export function createMailboxController(props: MailboxControllerProps) {
     url.searchParams.delete("conversation");
     url.searchParams.delete("mailingList");
     url.searchParams.delete("draft");
+    // New message's dialog and a Command link only start something over the list
+    for (const name of MAIL_COMPOSE_PARAMETERS) url.searchParams.delete(name);
+    clearCommand(url);
     return JSON.stringify({ list: `${url.pathname}${url.search}`, listMode });
   };
   const sameRouteList = (left: string, right: string) => left === right || routeListKey(left) === routeListKey(right);
@@ -1281,18 +1289,24 @@ export function createMailboxController(props: MailboxControllerProps) {
       const current = new URL(window.location.href);
       const currentListKey = current.searchParams.get("mailingList")?.trim().toLowerCase().slice(0, 4096) || null;
       if (currentListKey !== initialListKey) return;
-      current.searchParams.delete("mailingList");
-      window.history.replaceState(window.history.state, "", `${current.pathname}${current.search}${current.hash}`);
-      const path = `${current.pathname}${current.search}`;
-      // Later reloads of this list must not bring the closed dialog's parameter back.
-      const source = encodeRouteSource(path, data.listMode);
-      if (!workspaceTransition && sameRouteList(source, committedRouteSource)) {
-        committedRouteSource = source;
-        setRouteSource(source);
-      }
-      setRequestPath(path);
+      dropRouteParameters(["mailingList"]);
     }
   };
+  /** A dialog the URL opened is closed: its parameters leave the URL, and later reloads of this list do not bring them back. */
+  const dropRouteParameters = (names: readonly string[]) => {
+    const current = new URL(window.location.href);
+    for (const name of names) current.searchParams.delete(name);
+    window.history.replaceState(window.history.state, "", `${current.pathname}${current.search}${current.hash}`);
+    const path = `${current.pathname}${current.search}`;
+    const source = encodeRouteSource(path, data.listMode);
+    if (!workspaceTransition && sameRouteList(source, committedRouteSource)) {
+      committedRouteSource = source;
+      setRouteSource(source);
+    }
+    setRequestPath(path);
+  };
+  /** New message's dialog (UI v2) is closed: the mailbox stays as it is, without the dialog's parameters. */
+  const closeCompose = () => dropRouteParameters(MAIL_COMPOSE_PARAMETERS);
 
   let openedMailingListKey: string | null = null;
   createEffect(() => {
@@ -3315,6 +3329,7 @@ export function createMailboxController(props: MailboxControllerProps) {
     sidebarText,
     splitMessage,
     startCompose,
+    closeCompose,
     structureMutationLoading,
     structurePending,
     t,

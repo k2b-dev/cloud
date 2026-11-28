@@ -197,9 +197,11 @@ document.documentElement.dataset.mailV2Ready='true';
         ]);
       if (url.pathname.endsWith("/compose-signature") && request.method === "POST")
         return Response.json({ html: null, text: MAIL_V2_SIGNATURE.text, mailHtml: null });
-      // the senders of a mailbox, for New message's choice: Kontakt has two, Personal none that is verified
+      // the senders of a mailbox, for New message's choice: Kontakt has two, Personal none that is verified, and those of
+      // Archiv 2024 do not load
       if (url.pathname.endsWith("/sender-identities")) {
         const owner = url.pathname.split("/").at(-2);
+        if (owner === "Box005") return new Response(null, { status: 503 });
         const sender = (id: string, label: string, fromAddress: string, isDefault: boolean) => ({
           id,
           label,

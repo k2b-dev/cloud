@@ -37,12 +37,16 @@ export type MailComposeIntentProps = {
   currentUserId?: string;
 };
 
+/** Mail opens with `?draft=` in the draft's mailbox, which opens the draft as a window there. */
+export const openInMailbox = (draft: MailDraft) =>
+  window.location.replace(`/app/mail/${encodeURIComponent(draft.mailboxId)}?${new URLSearchParams({ draft: draft.id })}`);
+
 /**
- * "New message" before its window opens, for the v1 page and the v2 page alike: the mailbox and sender choice, a
- * `mailto:` link or a Command's recipient, and the draft it creates (seed and materialize), after which Mail opens
- * with `?draft=`. The views only draw it.
+ * "New message" before its window opens, for the v1 page and the v2 dialog alike: the mailbox and sender choice, a
+ * `mailto:` link or a Command's recipient, and the draft it creates (seed and materialize), which `open` then shows.
+ * The views only draw it.
  */
-export function createMailComposeIntent(props: MailComposeIntentProps) {
+export function createMailComposeIntent(props: MailComposeIntentProps, open: (draft: MailDraft) => void = openInMailbox) {
   const locale = useLocale();
   // A seed whose materialization has no answer yet: the next try materializes it again, so no second draft appears.
   let pendingSeed: { key: string; seed: MailDraftSeed } | null = null;
@@ -204,10 +208,7 @@ export function createMailComposeIntent(props: MailComposeIntentProps) {
     }
   };
   const selectedIdentity = createMemo(() => identities().find((identity) => identity.id === identityId()) ?? null);
-  /**
-   * The message opens as a window in its mailbox: the draft is created here (seed and materialize, as Compose in the
-   * mailbox does), then Mail opens with `?draft=`, which opens the window.
-   */
+  /** The message opens as a window in its mailbox: the draft is created here (seed and materialize, as Compose in the mailbox does). */
   const draftCreation = mutations.create<{ draft: MailDraft; identityId: string }, { mailboxId: string; identityId: string }>({
     mutation: async ({ mailboxId: selectedMailboxId, identityId }, { abortSignal }) => {
       const parsed = parsedIntent();
@@ -235,7 +236,7 @@ export function createMailComposeIntent(props: MailComposeIntentProps) {
     },
     onSuccess: ({ draft, identityId }) => {
       writeMailSenderPreference(localStorage, draft.mailboxId, identityId);
-      window.location.replace(`/app/mail/${encodeURIComponent(draft.mailboxId)}?${new URLSearchParams({ draft: draft.id })}`);
+      open(draft);
     },
     onError: (error) => {
       setAutoStartFailed(true);

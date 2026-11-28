@@ -13,6 +13,9 @@ import { composeSafetyConfigSchema, type SenderIdentity } from "../contracts";
 import * as mailboxes from "../service/mailboxes";
 import * as publicResources from "../service/public-resources";
 import * as senderIdentities from "../service/sender-identities";
+import { loadMailComposeIntent } from "./compose-intent-data";
+import * as sidebarData from "./mail-sidebar-data";
+import * as pilot from "./mail-v2-pilot";
 
 const root = mkdtempSync(join(tmpdir(), "mail-compose-intent-page-tests-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
@@ -129,7 +132,7 @@ beforeEach(() => {
   spies.push(listMailboxes, listIdentities);
 });
 
-const render = async (query = "") => {
+const composeApp = () => {
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
   app.use("*", async (c, next) => {
     c.set("actor", { kind: "user", user });
@@ -140,10 +143,25 @@ const render = async (query = "") => {
     c.set("runtime", { apps: [] });
     await next();
   });
+  return app;
+};
+
+const render = async (query = "") => {
+  const app = composeApp();
   app.get("/app/mail/compose", ...composePage);
   const response = await app.request(`https://cloud.example.test/app/mail/compose${query}`);
   expect(response.status).toBe(200);
   return response.text();
+};
+
+/** Where `/app/mail/compose` sends a person in the v2 pilot. */
+const redirect = async (query = "") => {
+  spies.push(spyOn(pilot, "readMailV2Pilot").mockReturnValue(["*"]));
+  const app = composeApp();
+  app.get("/app/mail/compose", ...composePage);
+  const response = await app.request(`https://cloud.example.test/app/mail/compose${query}`);
+  expect(response.status).toBe(302);
+  return response.headers.get("location");
 };
 
 // The page hands the browser a sender only for the direct start, so any sender id in the page is that one.
@@ -199,4 +217,38 @@ test("a Command link prepares the direct start, which waits in the browser for t
   const html = await render("?command=mail.compose");
   expect(directIdentity(html)).toBe("Snd001");
   expect(html).toContain("Preparing message...");
+});
+
+test("on UI v2 an email link opens the mailbox Mail opens, with New message's dialog over it", async () => {
+  const landing = spyOn(sidebarData, "loadMailLanding").mockResolvedValue(ok("Box007"));
+  spies.push(landing);
+  const mailto = encodeURIComponent("mailto:ada@example.test?subject=Hello");
+  expect(await redirect(`?mailto=${mailto}`)).toBe(`/app/mail/Box007?mailto=${mailto}&compose=1`);
+  // the mailbox page reads what the dialog starts from; this answer reads nothing more
+  expect(listMailboxes).not.toHaveBeenCalled();
+});
+
+test("on UI v2 an asked mailbox takes the dialog, and without any mailbox Mail's own page says so", async () => {
+  const landing = spyOn(sidebarData, "loadMailLanding").mockResolvedValue(ok(null));
+  spies.push(landing);
+  expect(await redirect("?mailbox=Box002&autostart=1")).toBe("/app/mail/Box002?mailbox=Box002&autostart=1&compose=1");
+  expect(landing).not.toHaveBeenCalled();
+  expect(await redirect("?command=mail.compose")).toBe("/app/mail");
+});
+
+test("the dialog over a mailbox starts there when it can send from it; an asked mailbox comes first, a read-only one never", async () => {
+  listMailboxes.mockResolvedValue(ok([mailbox(1), mailbox(2), mailbox(3, "read")]));
+  const start = async (query: string, current: string) => {
+    const app = composeApp();
+    app.get("/", async (c) =>
+      c.json(
+        await loadMailComposeIntent(c, { actor: c.get("actor"), accessSubject: c.get("accessSubject"), requestId: null }, user, current),
+      ),
+    );
+    const intent: { initialMailboxId: string } = await (await app.request(`https://cloud.example.test/${query}`)).json();
+    return intent.initialMailboxId;
+  };
+  expect(await start("", "Box002")).toBe("Box002");
+  expect(await start("?mailbox=Box001", "Box002")).toBe("Box001");
+  expect(await start("", "Box003")).toBe("");
 });
