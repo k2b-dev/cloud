@@ -82,7 +82,17 @@ export type FieldProps = {
  * A field: a label line of 20 px, the control of 36 px, a hint or the error under it. The label line has a fixed
  * height, so fields in a row stand on one line (rule K5).
  */
-export const Field = (props: FieldProps) => <FieldFrame field={props} />;
+export const Field = /* @__PURE__ */ Object.assign((props: FieldProps) => <FieldFrame field={props} />, {
+  /** Fields side by side on one grid; one column on the phone. */
+  Row: (props: {
+    /** The `Field`s side by side. */
+    children: JSX.Element;
+  }) => (
+    <div class="k2-frow" data-k2-part="Field.Row">
+      {props.children}
+    </div>
+  ),
+});
 
 export type SettingProps = Omit<FieldProps, "optional" | "required"> & {
   /**
@@ -246,16 +256,6 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
     </div>
   );
 };
-
-/** Fields side by side on one grid; one column on the phone. */
-Field.Row = (props: {
-  /** The `Field`s side by side. */
-  children: JSX.Element;
-}) => (
-  <div class="k2-frow" data-k2-part="Field.Row">
-    {props.children}
-  </div>
-);
 
 const useField = () => useContext(FieldContext);
 
