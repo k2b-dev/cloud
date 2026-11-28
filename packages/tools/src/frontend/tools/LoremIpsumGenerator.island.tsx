@@ -203,7 +203,7 @@ export default function LoremIpsumGenerator() {
           <Button icon="refresh" onClick={() => setNonce((value) => value + 1)}>
             {t().regenerate}
           </Button>
-          <Button variant="primary" icon="copy" onClick={copyAction.onClick}>
+          <Button variant="primary" icon="copy" floats onClick={copyAction.onClick}>
             {t().copyText}
           </Button>
         </>

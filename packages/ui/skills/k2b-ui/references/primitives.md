@@ -26,7 +26,8 @@ The working surface of an app: one per screen.
   (name of its grip).
 - `head`: a `Bar` across the main column (56 px).
 - `primary`: the main `Action`. It floats bottom right on the phone only;
-  also put the same action as `Button variant="primary"` in the head end.
+  also put the same action as `Button variant="primary" floats` in the head
+  end, so the head lets it go on the phone (one primary per page).
 - children: a `Pane` or a `Pane.Split`, written as JSX inside the Workspace
   (a pane made before it, kept in a variable, is not counted).
 - `detail` (`true` or the detail's minimum, default 400) when a detail opens
@@ -36,7 +37,8 @@ The working surface of an app: one per screen.
   whole, such as a `Heat` with a line that sums it up.
 - Tablet: where the sidebar at its default does not fit beside every column
   at its minimum, it becomes a drawer with a button at the start of the head.
-- Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`.
+- Phone (< 768 px): the sidebar leaves, every head action stays; only the
+  `floats` twin of `primary` leaves the head.
   A search in the head (`Input type="search"`) stays as its symbol; a tap
   goes into the field, which opens over the head while it has the focus
   and folds back, its words kept, on blur or Escape. A host that offers the
@@ -63,8 +65,8 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   actions the head keeps it takes a second line.
 - `back` (an `Action` with `href`: the list's address without the open
   entry, such as "Posteingang"): the way back on the phone, one bar above
-  the detail (the part `Back`). With `back`, the head's close × needs no
-  `keep`: it gives way on the phone like the other head actions. A long name (a search) is cut with "…" on
+  the detail (the part `Back`). Mark the head's close × `closes`: with
+  `back` it gives way on the phone, so the detail has one way back. A long name (a search) is cut with "…" on
   one line; the whole name stays its accessible name and its hint. A detail
   that closes in place returns the focus to the row that opened it.
 - `scrollKey` (such as "mail-list"): back and forward bring the column
@@ -474,8 +476,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   width, the look and the focus stay, a second press and a second sending
   of the form do nothing), `pressed` (a toggle such as a favourite star:
   `true` is on, its symbol and words in the one colour of pressed, `false`
-  is off; not for links or the primary action), `type`, `keep` (stays
-  in a head on the phone), `title` (a hint under the pointer, for a button
+  is off; not for links or the primary action), `type`, `keep`
+  (deprecated: head actions stay on the phone by default), `floats` (the head's twin of `Workspace primary`:
+  it leaves the head on the phone, where the floating button stands for it), `title` (a hint under the pointer, for a button
   whose words give way to its symbol in a narrow place). Without children
   it needs `label`. With children, `label` is its name only where the
   words alone do not say enough, and it begins with the words.

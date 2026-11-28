@@ -88,8 +88,7 @@ test("PanelLayout names its provider when the app declares its route with a trai
   expect(await response.text()).toMatch(/data-panel-provider="fixture"/);
 });
 
-const runtimeProps = (html: string): unknown =>
-  fromJSON(JSON.parse(html.match(/data-props="([^"]*)"/)?.[1]?.replace(/&quot;/g, '"') ?? ""));
+const runtimeProps = (html: string): unknown => fromJSON(JSON.parse(html.match(/<!--ssr-props:([^>]*)-->/)?.[1] ?? ""));
 
 test("a provider panel document takes its own app's primary colour", async () => {
   for (const primary of [undefined, "ai"]) {

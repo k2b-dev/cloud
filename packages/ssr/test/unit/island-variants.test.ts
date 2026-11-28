@@ -83,7 +83,7 @@ test("production builds each island variant once, and pages load the variant the
       const manifest = ${JSON.stringify(manifest)};
       const id = ${JSON.stringify(id)};
       const { config, html } = createConfig({ variants: ${variants} });
-      const page = async (options) => (await (await html(() => ssr('<solid-island data-id="' + id + '" data-props="{}"></solid-island>'), options)).text()).match(/const p="([^"]+)"/)[1];
+      const page = async (options) => (await (await html(() => ssr('<solid-island data-id="' + id + '"><!--ssr-props:{}--></solid-island>'), options)).text()).match(/const p="([^"]+)"/)[1];
       assert.equal(await page({ lang: "de" }), "/_ssr/" + manifest.variants.de.version);
       // The default name, an unknown name, and no choice all load the default build.
       for (const options of [{ lang: "en" }, { lang: "fr" }, { lang: "constructor" }, { lang: "toString" }, { lang: "__proto__" }, {}])

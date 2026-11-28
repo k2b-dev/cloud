@@ -49,8 +49,22 @@ type ButtonBase = {
   pressed?: boolean;
   /** `submit` sends the form the button stands in; `button` by default. */
   type?: "button" | "submit";
-  /** Stays in a head on the phone, where the other actions move into the menu. */
+  /**
+   * @deprecated Every control of a head stays on the phone now; only `floats` leaves it. `keep` changes nothing and
+   * goes with the next breaking release.
+   */
   keep?: boolean;
+  /**
+   * The page's main action in its head that `Workspace`'s `primary` repeats: on the phone the floating button stands
+   * for it, so the head lets it go there (one primary per page). A head left with nothing but its path and search
+   * then gives way to the host's bar; any other control keeps the head.
+   */
+  floats?: boolean;
+  /**
+   * The close x of a detail's head. On the phone the detail is a page with its way back (`Pane back`) above it, which
+   * stands for the x there, so the head lets it go: the detail has one way back.
+   */
+  closes?: boolean;
   /**
    * A hint under the pointer, for a button whose words give way to its symbol in a narrow place (the bar of a
    * selection). An icon button shows its label as the hint by itself.
@@ -122,6 +136,8 @@ export const Button = (props: ButtonProps) => {
       data-icon-only={iconOnly() ? "" : undefined}
       data-menu={props.menu ? "" : undefined}
       data-keep={props.keep ? "" : undefined}
+      data-floats={props.floats ? "" : undefined}
+      data-closes={props.closes ? "" : undefined}
     >
       <>
         <Show when={props.avatar} fallback={<Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>}>

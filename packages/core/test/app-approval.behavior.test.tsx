@@ -39,6 +39,8 @@ const changeStatus = mock(async () => Response.json({ changeId, endSessions: tru
 const changeCancel = mock(async () => new Response(null, { status: 204 }));
 const list = mock(async () => Response.json({ items: [], nextCursor: null }));
 const logout = mock(async () => new Response(null, { status: 204 }));
+/** What a stubbed toast hands back: a handle that dismisses or changes nothing. */
+const toastHandle = { dismiss: () => {}, update: () => {} };
 const passwordLogin = mock(async () => new Response(null, { status: 204 }));
 if (!isServer)
   mock.module("@k2b/cloud/clients/core", () => ({
@@ -151,7 +153,7 @@ describe("Cloud app approval UI", () => {
     const dom = createDomTestHarness();
     const { default: InstallApp } = await import("../src/pages/app-approval/InstallApp");
     const { dialogCore, toast } = await import("@k2b/ui");
-    spyOn(toast, "success").mockImplementation(() => "test");
+    spyOn(toast, "success").mockImplementation(() => toastHandle);
     const origin = "http://localhost:4178";
     const copied = spyOn(navigator.clipboard, "writeText").mockResolvedValue();
     const opened = spyOn(window, "open").mockReturnValue(null);
@@ -678,7 +680,7 @@ describe("Cloud app approval UI", () => {
   test("a cancellation that Cloud does not confirm keeps the saved pairing, so opening the dialog again can cancel it", async () => {
     const dom = createDomTestHarness();
     const { toast } = await import("@k2b/ui");
-    const failed = spyOn(toast, "error").mockImplementation(() => "test");
+    const failed = spyOn(toast, "error").mockImplementation(() => toastHandle);
     const { default: Pairing } = await import("../src/pages/app-approval/Pairing");
     const key = `cloud.app-pairing:${id}:${id}`;
     const saved = JSON.stringify({ pairingId: id, expiresAt: pairing().expiresAt });
@@ -712,7 +714,7 @@ describe("Cloud app approval UI", () => {
   test("a late cancellation answer keeps the saved reference of a newer pairing", async () => {
     const dom = createDomTestHarness();
     const { toast } = await import("@k2b/ui");
-    const failed = spyOn(toast, "error").mockImplementation(() => "test");
+    const failed = spyOn(toast, "error").mockImplementation(() => toastHandle);
     const { default: Pairing } = await import("../src/pages/app-approval/Pairing");
     const key = `cloud.app-pairing:${id}:${id}`;
     const newer = JSON.stringify({ pairingId: deviceId, expiresAt: pairing().expiresAt });
@@ -752,7 +754,7 @@ describe("Cloud app approval UI", () => {
   test("assisted pairing starts with the app installation and creates the pairing only after Next", async () => {
     const dom = createDomTestHarness();
     const { toast } = await import("@k2b/ui");
-    const success = spyOn(toast, "success").mockImplementation(() => "test");
+    const success = spyOn(toast, "success").mockImplementation(() => toastHandle);
     const copied = spyOn(navigator.clipboard, "writeText").mockResolvedValue();
     const { default: Pairing } = await import("../src/pages/app-approval/Pairing.island");
     const dispose = render(
@@ -885,7 +887,7 @@ describe("Cloud app approval UI", () => {
   test("pairing transfers no secrets into storage and never confirms before explicit comparison", async () => {
     const dom = createDomTestHarness();
     const { toast } = await import("@k2b/ui");
-    spyOn(toast, "success").mockImplementation(() => "test");
+    spyOn(toast, "success").mockImplementation(() => toastHandle);
     const { default: Pairing } = await import("../src/pages/app-approval/Pairing.island");
     let dispose = render(
       () =>
@@ -993,7 +995,7 @@ describe("Cloud app approval UI", () => {
   test("device errors never report success or hide a still-active device", async () => {
     const dom = createDomTestHarness();
     const { toast } = await import("@k2b/ui");
-    const success = spyOn(toast, "success").mockImplementation(() => "test");
+    const success = spyOn(toast, "success").mockImplementation(() => toastHandle);
     update.mockImplementationOnce(async () => Response.json({ code: "REAUTHENTICATE" }, { status: 403 }));
     const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
     const dispose = render(
@@ -1092,7 +1094,7 @@ describe("Cloud app approval UI", () => {
   test("a revocation sent while the dialog closes is withdrawn, and a failed withdrawal keeps the request for a reload", async () => {
     const dom = createDomTestHarness();
     const { toast } = await import("@k2b/ui");
-    const failed = spyOn(toast, "error").mockImplementation(() => "test");
+    const failed = spyOn(toast, "error").mockImplementation(() => toastHandle);
     const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
     const props = {
       availability: "configured" as const,
@@ -1369,7 +1371,7 @@ describe("Cloud app approval UI", () => {
   test("a pairing on an account with a paired device waits for its approval in the place of the code and shows a denial", async () => {
     const dom = createDomTestHarness();
     const { toast } = await import("@k2b/ui");
-    const success = spyOn(toast, "success").mockImplementation(() => "test");
+    const success = spyOn(toast, "success").mockImplementation(() => toastHandle);
     const { default: Pairing } = await import("../src/pages/app-approval/Pairing.island");
     dom.window.sessionStorage.setItem(`cloud.app-pairing:${id}:${id}`, JSON.stringify({ pairingId: id, expiresAt: pairing().expiresAt }));
     const dispose = render(
@@ -1486,7 +1488,7 @@ describe("Cloud app approval UI", () => {
       navigatedAt = Date.now() - t0;
     });
     const forms: Node[] = [];
-    const observer = new dom.window.MutationObserver((records) => {
+    const observer = new MutationObserver((records) => {
       for (const record of records)
         for (const node of record.addedNodes)
           if (node.nodeName === "FORM" || (node as unknown as Element).querySelector?.("form")) forms.push(node as unknown as Node);
