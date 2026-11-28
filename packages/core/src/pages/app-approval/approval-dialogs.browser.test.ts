@@ -155,6 +155,8 @@ describe("approval on a paired device in a browser", () => {
         };
         const steps: Record<string, number> = {};
         await page.getByRole("button", { name: t.deviceActions({ name: "Jonas' iPhone 15 Pro" }) }).click();
+        // on the phone the menu is a sheet that slides in; a tap waits until it stands, as a person's finger does
+        await settled(page);
         await page.getByRole("menuitem", { name: t.revoke }).click();
         const dialog = page.locator('[data-k2-part="Dialog"]');
         await dialog.getByText(t.endSessions).waitFor();
