@@ -70,6 +70,7 @@ export const createPreferenceController = (initialTheme: CloudThemePreference, l
   const languageItem = (): DropdownAction => ({ action: toggleLanguage, icon: "ti ti-language", label: languageLabel() });
 
   return {
+    setTheme,
     appearanceItem,
     languageItem,
     themeOption,

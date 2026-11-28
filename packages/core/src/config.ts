@@ -201,6 +201,7 @@ export const app = defineApp({
     "/public/tabler-icons.css",
     "/public/tabler-icons.woff2",
     "/public/global.css",
+    "/public/v2.css",
     "/public/logo.svg",
     "/public/core",
   ],

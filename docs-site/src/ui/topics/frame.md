@@ -50,6 +50,8 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 One per screen: the sidebar, the head, the main action, and the columns; it turns the sidebar into a drawer where it does not fit.
 
+With `accent` the page speaks in a colour from data instead of the app's, such as the colour a place chose for its visitor page: the primary action, the open row's tint, `Text` and `Band` `tone="app"`, and the bars of a `RangeBar`. The readable tones are computed where the colour arrives, on the server too, so the first paint is final. The primary's words are white or near-black, whichever keeps 4.5:1 on the colour; a colour on which neither does is darkened until white does. As text the colour is darkened in light and lightened in dark until it keeps 4.5:1 on the surface and on its tint, and a bar's quiet tone keeps 3:1, also on the blue tint of a chosen row. A primary that would vanish on the surface, such as a pale yellow on white, gets an edge of its colour at 3:1. Focus rings and the colours of states stay, and dialogs and menus rendered outside the Workspace keep the app's colour. For an `Avatar` or a `Mark` in the accent, pass `color: "var(--k2-app-text)"`. Only `#rrggbb` or `#rgb` counts; any other value leaves the app's colour.
+
 <Props of="Workspace" />
 
 ### Pane

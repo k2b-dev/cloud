@@ -78,7 +78,7 @@ A range on the one scale its list shares, such as each day of a week from its lo
 
 `ranges` puts several ranges on one track in place of `from` and `to`, such as a day's opening hours with a break (8 to 12 and 14 to 18) on a week's scale from 6 to 24. Each range stands at its place, so the break shows as the gap between them; an empty list leaves the track empty, such as a closed day. The row's `label` then names every range ("Di.: 08:00 bis 12:00 und 14:00 bis 18:00"). A table's open row, such as today, keeps its tint around the bars.
 
-`stops` colour the bar by meaning along the scale, such as cold to warm. A stop's colour is a hex colour, an `oklch()`, a custom property of the page or `light-dark()` of two of them; anything else is dropped. The owner keeps the colours at 3:1 on the surface in light and dark, and text never takes them. Without `stops` the bar is neutral.
+`stops` colour the bar by meaning along the scale, such as cold to warm. A stop's colour is a hex colour, an `oklch()`, a custom property of the page or `light-dark()` of two of them; anything else is dropped. The owner keeps the colours at 3:1 on the surface in light and dark, and text never takes them. Without `stops` the bar is neutral; inside a `Workspace accent` it takes the page's colour instead, in a quiet tone at 3:1 on the surface, and in the open row of its table (today in a week) in the colour's ink, the strongest.
 
 Its `label` says the range in words, such as "2,9° bis 9,1°": assistive technology reads it instead of the bar. When the low and the high stand as text beside the bar, the bar is `decorative` and says nothing a second time. In forced colours the range draws in the text colour on an outlined track.
 

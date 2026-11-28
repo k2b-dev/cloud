@@ -22,6 +22,8 @@ export type LayoutContext = {
     appAccent?: string;
     /** The page's content is built with `@k2b/ui/v2`: the body carries the app's v2 inks beside its accent. */
     appUi?: "v2";
+    /** A v2 page without the Cloud shell: the page links Core's `v2.css` in place of `global.css`. */
+    stylesheets?: "v2";
     appPrimary?: AppAppearance["primary"];
     /** Signed-in pages: the person's screen preferences, read with the page. */
     screen?: ScreenPreferences;

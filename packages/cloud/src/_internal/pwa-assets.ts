@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Glob } from "bun";
 import { isPwaStaticAsset, type PwaStaticAsset } from "../contracts/pwa-assets";
 import { CATALOG_LOCALES } from "../shared/locale";
-import { sharedStylesheetVersion, versionedPublicHref } from "./static-assets";
+import { isSharedStylesheet, sharedStylesheetVersion, versionedPublicHref } from "./static-assets";
 
 /** Hash the final (post-rewrite, uncompressed) output, not Bun's chunk names or island IDs. */
 export async function readPwaStaticAssets(root: string, appId: string, ssrPath: string, release: string): Promise<PwaStaticAsset[]> {
@@ -43,7 +43,7 @@ export async function readPwaStaticAssets(root: string, appId: string, ssrPath: 
           .digest("hex")
           .slice(0, 16);
         await add(path, versionedPublicHref(url, version), "text/css");
-      } else if (appId === "core" && /^(fonts|tabler-icons|global)\.css$/.test(file)) {
+      } else if (appId === "core" && isSharedStylesheet(file)) {
         const version = sharedStylesheetVersion(release);
         if (version) await add(path, versionedPublicHref(url, version), "text/css");
       } else {

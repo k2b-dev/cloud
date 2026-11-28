@@ -142,7 +142,8 @@ test("the namespace guard catches a tag beside a primitive and a tag after a pse
 // on-screen keyboard, on the toast region, so a toast stays above the keyboard); the page or the platform sets the one
 // colour of its app, and the platform may set its readable ink; core's tree writes the level of each item
 // (`--tree-level`). v2.css may read them, never define them.
-// the ui-sdk core writes the colour of a colour picker and the gradients of its surface and slider on their parts
+// the ui-sdk core writes the colour of a colour picker and the gradients of its surface and slider on their parts, and
+// the share of a star a rating covers (`--rating-fill`, 0 to 1) on each star
 const foreignVariables = new Set([
   "--anchor-width",
   "--available-height",
@@ -153,6 +154,7 @@ const foreignVariables = new Set([
   "--color-area-background",
   "--color-slider-background",
   "--tree-level",
+  "--rating-fill",
 ]);
 
 test("v2.css stays in its namespace below .k2-ui, beside v1", () => {
