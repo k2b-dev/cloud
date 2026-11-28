@@ -13,6 +13,8 @@ export type EmptyProps = {
   icon: string;
   /** One sentence that says what is the matter: "Noch keine Einlieferung." is not "Keine Treffer mit diesem Filter." */
   text: string;
+  /** One more sentence under it, quieter: why, or where the things come from ("Aufträge kommen über das Formular …"). */
+  hint?: string;
   /** The one way out, such as "Einlieferung erfassen" or "Filter zurücksetzen". */
   action?: Action;
   /**
@@ -23,13 +25,19 @@ export type EmptyProps = {
   tone?: "bad" | "warn";
 };
 
-/** Nothing here: a round sign, one sentence, one way out, without a box (mockup: Notice · Empty). */
+/**
+ * Nothing here: a round sign of 40 px, the sentence in 15/600, one quieter sentence and one way out, in the middle of
+ * the place it stands for, without a box (taste rule 12).
+ */
 export const Empty = (props: EmptyProps) => (
   <div class="k2-state" data-k2-part="Empty">
     <span class="k2-sign" data-tone={props.tone}>
       <Icon name={props.icon} />
     </span>
     <span class="k2-state-text">{props.text}</span>
+    <Show when={props.hint}>
+      <span class="k2-state-hint">{props.hint}</span>
+    </Show>
     <Show when={props.action}>{(action) => <ActionButton action={action()} />}</Show>
   </div>
 );

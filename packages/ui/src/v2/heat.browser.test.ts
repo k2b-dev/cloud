@@ -200,6 +200,17 @@ test("the pointer on a day shows the same one tip; the summary sums the days sho
   });
 });
 
+test("under the hero the empty detail's sentence stays small and quiet, not the title of an empty place", async () => {
+  await withPage({ width: 1440 }, async (page) => {
+    const font = await page.evaluate(() => {
+      const text = document.querySelector(".k2-detail-hero + .k2-state > .k2-state-text")!;
+      const style = getComputedStyle(text);
+      return `${style.fontSize}/${style.lineHeight} ${style.fontWeight}`;
+    });
+    expect(font).toBe("12px/16px 400");
+  });
+});
+
 test("a new mailbox without mail: every day quiet, nothing cut; a huge one: every tone of the scale is used", async () => {
   await withPage({ width: 1440, data: "none" }, async (page) => {
     expect(await page.locator("[data-heat-day]:not([data-tone='0'])").count()).toBe(0);

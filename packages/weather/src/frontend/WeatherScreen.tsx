@@ -148,11 +148,8 @@ export default function WeatherScreen(props: WeatherScreenProps) {
             <Pane label={t().appName}>
               <Empty
                 icon={props.missing ? "map-pin-off" : "map-pin"}
-                text={
-                  props.missing
-                    ? `${t().locationNotFound}. ${t().locationNotFoundDescription}`
-                    : `${t().noLocationsTitle}. ${t().noLocationsDescription}`
-                }
+                text={props.missing ? t().locationNotFound : t().noLocationsTitle}
+                hint={props.missing ? t().locationNotFoundDescription : t().noLocationsDescription}
               />
             </Pane>
           }

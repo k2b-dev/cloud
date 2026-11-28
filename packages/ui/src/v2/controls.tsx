@@ -180,9 +180,21 @@ export const Field = (props: FieldProps) => {
 Field.Row = (props: {
   /** The `Field`s side by side. */
   children: JSX.Element;
+  /**
+   * The one deed of these fields at the end of the row, on the line of their controls, such as "Einladen" after an
+   * address and a role. `primary` fills it when it is the page's one main action.
+   */
+  action?: Action & { primary?: boolean };
 }) => (
-  <div class="k2-frow" data-k2-part="Field.Row">
+  <div class="k2-frow" data-k2-part="Field.Row" data-action={props.action ? "" : undefined}>
     {props.children}
+    <Show when={props.action}>
+      {(action) => (
+        <span class="k2-frow-end">
+          <ActionButton action={action()} variant={action().primary ? "primary" : undefined} />
+        </span>
+      )}
+    </Show>
   </div>
 );
 
@@ -1476,8 +1488,12 @@ export const MarkCheck = (
   </span>
 );
 
-/** An option of a `Choice`: words, or a value with its words and, for a person, their face before the words. */
-export type ChoiceOption = string | { value: string; label: string; person?: Person };
+/**
+ * An option of a choice: words, or a value with its words, a `person` whose face leads them, or a `hint` (and a symbol)
+ * that says what the option means. A single choice whose options carry hints stands as connected cards, the chosen one
+ * framed, as the access of a link or a plan to pick.
+ */
+export type ChoiceOption = string | { value: string; label: string; person?: Person; hint?: string; icon?: string };
 
 export type ChoiceProps = {
   /** The name the choice is sent under in a form. */
@@ -1526,7 +1542,10 @@ const ChoiceGroup = (props: ChoiceProps) => {
   const field = useField();
   field?.group();
   const t = useControlMessages();
-  const options = () => props.options.map((option) => (typeof option === "string" ? { value: option, label: option } : option));
+  const options = () =>
+    props.options.map((option): Exclude<ChoiceOption, string> => (typeof option === "string" ? { value: option, label: option } : option));
+  // options that say what they mean stand as cards: one row of them on a wide pane, one column on the phone
+  const cards = () => !props.multiple && options().some((option) => option.hint !== undefined);
   const given = (): readonly string[] => (props.multiple ? (props.value ?? []) : props.value === undefined ? [] : [props.value]);
   // the values the choice started with: a form's reset puts them back (the inputs' default, and what the choice holds)
   const initial = untrack(given);
@@ -1569,6 +1588,7 @@ const ChoiceGroup = (props: ChoiceProps) => {
     <div
       ref={group}
       class="k2-choices"
+      data-cards={cards() ? "" : undefined}
       data-k2-part="Choice"
       role={props.multiple ? "group" : "radiogroup"}
       aria-label={field ? undefined : props.label}
@@ -1579,8 +1599,11 @@ const ChoiceGroup = (props: ChoiceProps) => {
       <For each={options()}>
         {(option, index) => {
           const on = () => chosen().includes(option.value);
+          // an option with a hint takes its name from its words alone; the hint describes it, as a `Check`'s line does
+          const words = createUniqueId();
+          const hint = `${words}-hint`;
           return (
-            <label class="k2-choice" data-disabled={props.disabled ? "" : undefined}>
+            <label class="k2-choice" data-disabled={props.disabled ? "" : undefined} data-on={cards() && on() ? "" : undefined}>
               <span class="k2-mark">
                 <input
                   class="k2-mark-input"
@@ -1600,6 +1623,8 @@ const ChoiceGroup = (props: ChoiceProps) => {
                       );
                   }}
                   disabled={props.disabled}
+                  aria-labelledby={option.hint ? words : undefined}
+                  aria-describedby={option.hint ? hint : undefined}
                   onChange={(event) => choose(option.value, event.currentTarget.checked)}
                 />
                 <Show when={props.multiple} fallback={<span class="k2-radio" data-checked={on() ? "" : undefined} data-k2-mark="" />}>
@@ -1610,8 +1635,22 @@ const ChoiceGroup = (props: ChoiceProps) => {
                   </span>
                 </Show>
               </span>
-              <Show when={"person" in option && option.person}>{(person) => <Avatar {...person()} decorative />}</Show>
-              <span class="k2-choice-text">{option.label}</span>
+              <Show when={option.person}>{(person) => <Avatar {...person()} decorative />}</Show>
+              <Show when={cards() && option.icon}>{(name) => <Icon name={name()} />}</Show>
+              <span class="k2-choice-text">
+                <span id={words}>{option.label}</span>
+                <Show when={option.hint}>
+                  <span class="k2-choice-description" id={hint}>
+                    {option.hint}
+                  </span>
+                </Show>
+              </span>
+              {/* the tick keeps its room on every card, so choosing one never rewraps the words */}
+              <Show when={cards()}>
+                <span class="k2-choice-tick" data-on={on() ? "" : undefined} aria-hidden="true">
+                  <Icon name="check" />
+                </span>
+              </Show>
             </label>
           );
         }}

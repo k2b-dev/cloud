@@ -1062,13 +1062,15 @@
 .k2-ui .k2-cell-label {
   font: var(--k2-t-meta);
   line-height: 20px;
-  color: var(--k2-subtle);
+  color: var(--k2-n500);
   min-width: 0;
 }
+/* a key figure in the object's step, 18/600 in tabular numbers; its label and its
+   note stay 12, so the figure leads */
 .k2-ui .k2-cell-value {
   grid-column: 2 / -1;
-  font: var(--k2-t-body);
-  font-weight: 600;
+  font: var(--k2-t-lead);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2840,6 +2842,24 @@
   color: var(--k2-text);
   font-weight: 400;
 }
+/* In a table cell a state is always its dot and its word: no tinted
+   round in a column of states. A good state reads in the ink of the text; only a waiting or a wrong one keeps its
+   colour in its word, 500, so the exceptions stand out of the column. */
+.k2-ui .k2-table td .k2-chip[data-status] {
+  gap: 7px;
+  padding: 0;
+  background: none;
+  color: var(--k2-text);
+  font: var(--k2-t-row);
+}
+.k2-ui .k2-table td .k2-chip[data-status="warn"] {
+  color: var(--k2-warn-ink);
+  font-weight: 500;
+}
+.k2-ui .k2-table td .k2-chip[data-status="bad"] {
+  color: var(--k2-bad);
+  font-weight: 500;
+}
 .k2-ui .k2-chip[data-kind="ai"] {
   background: var(--k2-ai-tint);
   color: var(--k2-ai);
@@ -3694,6 +3714,84 @@
 .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-sec-body, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > :is(.k2-choice, .k2-choices) {
   padding-inline: var(--k2-edge);
 }
+/* Choice cards: options that say what they mean stand as one connected row of
+   cards with one edge, 1 px apart; the chosen card is framed 2 px inside in the primary colour on its tint, with a tick
+   at its end. The point itself leaves the picture; the input stays for the keyboard and assistive technology, and its
+   focus rings the card. On the phone the cards stand one under the other. */
+.k2-ui .k2-choices[data-cards] {
+  flex-direction: row;
+  border: 1px solid var(--k2-line-control);
+  border-radius: var(--k2-r-control);
+  padding-inline: 0;
+}
+/* the place decides, not the window: the cards are their own container, wherever they stand (a field, a section, a
+   pane, a group, a dialog, a popover), and a card takes the whole line once the row is narrower than 560 px, so the
+   cards stack as on the phone */
+.k2-ui .k2-choices[data-cards] {
+  container: k2-choice / inline-size;
+  flex-wrap: wrap;
+}
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-sec-body, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-choices[data-cards] {
+  margin-inline: var(--k2-edge);
+  padding-inline: 0;
+}
+.k2-ui .k2-choices[data-cards] > .k2-choice {
+  flex: 1 1 0;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--k2-r-control);
+}
+.k2-ui .k2-choices[data-cards] > .k2-choice + .k2-choice {
+  box-shadow: -1px 0 0 var(--k2-line-control);
+}
+.k2-ui .k2-choices[data-cards] > .k2-choice > .k2-mark {
+  position: absolute;
+  inset: 0;
+  height: auto;
+  opacity: 0;
+}
+.k2-ui .k2-choices[data-cards] > .k2-choice > .k2-icon {
+  flex: none;
+  margin-top: 2px;
+  font-size: 16px;
+  color: var(--k2-n500);
+}
+.k2-ui .k2-choices[data-cards] .k2-choice-text {
+  flex: 1;
+  font-weight: 500;
+}
+.k2-ui .k2-choices[data-cards] .k2-choice-description {
+  margin-top: 2px;
+  font-weight: 400;
+  color: var(--k2-n500);
+}
+.k2-ui .k2-choices[data-cards] > .k2-choice[data-on] {
+  background: color-mix(in srgb, var(--k2-primary) 6%, var(--k2-surface));
+  box-shadow: inset 0 0 0 2px var(--k2-primary);
+}
+.k2-ui .k2-choices[data-cards] > .k2-choice[data-on] > .k2-icon,
+.k2-ui .k2-choice-tick {
+  color: var(--k2-blue-ink);
+}
+.k2-ui .k2-choice-tick {
+  flex: none;
+  font-size: 16px;
+  line-height: 20px;
+}
+.k2-ui .k2-choice-tick:not([data-on]) {
+  visibility: hidden;
+}
+.k2-ui .k2-choices[data-cards] > .k2-choice:has(> .k2-mark > .k2-mark-input:focus-visible) {
+  box-shadow: inset 0 0 0 2px var(--k2-blue), 0 0 0 3px var(--k2-blue-ring);
+}
+@container k2-choice (max-width: 559px) {
+  .k2-ui .k2-choices[data-cards] > .k2-choice {
+    flex-basis: 100%;
+  }
+  .k2-ui .k2-choices[data-cards] > .k2-choice + .k2-choice {
+    box-shadow: 0 -1px 0 var(--k2-line-control);
+  }
+}
 .k2-ui .k2-input {
   height: var(--k2-h-control);
   border: 1px solid var(--k2-line-control);
@@ -3809,6 +3907,21 @@
   gap: 12px;
   padding: 0 var(--k2-edge);
   min-width: 0;
+}
+/* fields with their one deed: the fields share the room, the button keeps its words and stands on the line of their
+   controls, under their 20 px label line */
+.k2-ui .k2-frow[data-action] {
+  display: flex;
+  align-items: flex-start;
+}
+.k2-ui .k2-frow[data-action] > :not(.k2-frow-end) {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.k2-ui .k2-frow-end {
+  flex: none;
+  margin-top: 20px;
+  display: flex;
 }
 .k2-ui .k2-field {
   display: grid;
@@ -4945,8 +5058,11 @@
 /* StatusRow: one lead statement, key figures; filters on the right. The start takes the room up to the filters; in
    it the lead comes first and the figures take only what the lead leaves (#4149). A lead longer than that room is cut
    with "…", so it never runs under a control; the controls keep their words until the row is too narrow (#4166). */
+/* The lead is a statement in the row's words, 13/600: a count or a statement never shouts above the list it sums up
+   (counters stay small; 18 belongs to the open object's name). */
 .k2-ui .k2-status-lead {
-  font: var(--k2-t-lead);
+  font: var(--k2-t-row);
+  font-weight: 600;
   white-space: nowrap;
 }
 .k2-ui .k2-bar[data-status-row] > .k2-bar-start {
@@ -6547,6 +6663,13 @@
   .k2-ui .k2-frow {
     grid-auto-flow: row;
   }
+  .k2-ui .k2-frow[data-action] {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .k2-ui .k2-frow-end {
+    margin-top: 0;
+  }
   .k2-ui .k2-steps {
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
@@ -6611,6 +6734,35 @@
   font-size: 16px;
 }
 .k2-ui .k2-state-text {
+  overflow-wrap: anywhere;
+}
+/* Empty: in the middle of the place it stands for, its sentence a title, the second sentence quiet. Under a detail's
+   hero (a heat map) the sentence stays small and quiet on purpose (above). `Failed` stays on the text edge: it is a
+   message with its retry, read like a notice, not a place to start from. */
+.k2-ui .k2-state[data-k2-part="Empty"] {
+  align-items: center;
+  align-self: center;
+  margin-inline: auto;
+  text-align: center;
+  padding-block: 48px;
+}
+.k2-ui .k2-state[data-k2-part="Empty"] > .k2-sign {
+  margin-bottom: 4px;
+}
+.k2-ui .k2-state[data-k2-part="Empty"] > .k2-state-text {
+  font: var(--k2-t-title);
+}
+/* under a detail's hero the empty sentence keeps its small, quiet words and the hero's room */
+.k2-ui .k2-detail-hero + .k2-state[data-k2-part="Empty"] {
+  padding-block: 32px;
+}
+.k2-ui .k2-detail-hero + .k2-state[data-k2-part="Empty"] > .k2-state-text {
+  font: inherit;
+}
+.k2-ui .k2-state-hint {
+  margin-top: -4px;
+  max-width: 44ch;
+  color: var(--k2-n600);
   overflow-wrap: anywhere;
 }
 .k2-ui .k2-state > .k2-btn {
@@ -7207,15 +7359,25 @@
   color: var(--k2-subtle);
   white-space: nowrap;
 }
-.k2-ui .k2-order .k2-btn {
+/* sort, group and "+ Filter" read as words with their symbol: no frame, the
+   quiet grey of a control under the pointer; the words keep their 28 px target */
+.k2-ui :is(.k2-order, .k2-fbar-add) .k2-btn {
   height: var(--k2-h-control-small);
-  padding: 0 8px 0 10px;
-  gap: 4px;
+  padding: 0 8px;
+  gap: 5px;
+  border-color: transparent;
+  background: transparent;
   font: var(--k2-t-meta);
   font-weight: 500;
+  color: var(--k2-text-2);
 }
-.k2-ui .k2-order .k2-btn > .k2-icon {
+.k2-ui :is(.k2-order, .k2-fbar-add) .k2-btn:hover,
+.k2-ui :is(.k2-order, .k2-fbar-add) .k2-btn[aria-expanded="true"] {
+  background: var(--k2-n100);
+}
+.k2-ui :is(.k2-order, .k2-fbar-add) .k2-btn > .k2-icon {
   font-size: 14px;
+  color: var(--k2-n500);
 }
 /* A narrow status row (below 600 px): every control at its end that has a symbol keeps only the symbol, as the
    head's controls on the phone, sort and group included; the words stay its name. A menu keeps its chevron. A control

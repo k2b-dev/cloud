@@ -39,24 +39,24 @@ const GridsNav = () => (
       {
         label: "Annahme",
         items: [
-          { label: "Aufträge", icon: "table", count: 128 },
-          { label: "Auftrag annehmen", icon: "forms" },
-          { label: "Kunden", icon: "table", count: 342 },
+          { label: "Aufträge", icon: "table", color: grids, count: 128 },
+          { label: "Auftrag annehmen", icon: "forms", color: "#db2777" },
+          { label: "Kunden", icon: "table", color: grids, count: 342 },
         ],
       },
       {
         label: "Lager",
         items: [
-          { label: "Ersatzteile", icon: "table", count: 642 },
-          { label: "Lieferanten", icon: "table", count: 38 },
+          { label: "Ersatzteile", icon: "table", color: grids, count: 642 },
+          { label: "Lieferanten", icon: "table", color: grids, count: 38 },
         ],
       },
       {
         label: "Auswertung",
         items: [
-          { label: "Offene Aufträge", icon: "filter", count: 17 },
-          { label: "Diese Woche", icon: "calendar", count: 9 },
-          { label: "Rechnung", icon: "file-invoice" },
+          { label: "Offene Aufträge", icon: "filter", color: "#7c3aed", count: 17 },
+          { label: "Diese Woche", icon: "calendar", color: "#7c3aed", count: 9 },
+          { label: "Rechnung", icon: "file-invoice", color: "#7c3aed" },
         ],
       },
     ]}
@@ -88,7 +88,7 @@ export const GridsAccessScreen = () => (
       }
     >
       <Section title="Personen und Gruppen" count={12} summary="Wer diese Base öffnen, bearbeiten oder verwalten darf.">
-        <Field.Row>
+        <Field.Row action={{ label: "Einladen", primary: true }}>
           <Field label="Einladen">
             <Input placeholder="Name, E-Mail-Adresse oder Gruppe" />
           </Field>
@@ -152,9 +152,9 @@ export const GridsAccessScreen = () => (
           label="Zugriff per Link"
           value="invited"
           options={[
-            { value: "invited", label: "Nur Eingeladene" },
-            { value: "org", label: "Alle in der Organisation" },
-            { value: "public", label: "Jeder mit dem Link" },
+            { value: "invited", label: "Nur Eingeladene", hint: "Personen und Gruppen oben", icon: "lock" },
+            { value: "org", label: "Alle in der Organisation", hint: "Nach Anmeldung, nur ansehen", icon: "building" },
+            { value: "public", label: "Jeder mit dem Link", hint: "Ohne Anmeldung, nur ansehen", icon: "world" },
           ]}
         />
         <Field label="Link">
