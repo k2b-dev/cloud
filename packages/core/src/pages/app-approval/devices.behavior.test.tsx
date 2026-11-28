@@ -999,8 +999,8 @@ describe("Cloud app approval UI", () => {
     await flush();
     expect(dom.document.body.textContent).toContain("Pairing resumed");
     expect(dom.document.body.querySelector('a[target="_blank"]')).toBeNull();
-    await Bun.sleep(5100);
-    await flush();
+    // the next status read on the five-second poll brings the code to compare
+    await eventually(() => dom.document.body.textContent?.includes("654321") ?? false);
     expect(dom.document.body.textContent).toContain("654321");
     expect(confirm).not.toHaveBeenCalled();
     expect(dom.document.body.querySelector('a[target="_blank"]')).toBeNull();
@@ -1070,8 +1070,8 @@ describe("Cloud app approval UI", () => {
       await dialogsSettled();
       dom.cleanup();
     };
-    await Bun.sleep(5100);
-    await flush();
+    // the next status read shows the codes to compare and the deed that confirms them
+    await eventually(() => button(dom.document.body, "The codes match — pair device") !== undefined);
     confirm.mockImplementationOnce(async () => {
       throw new Error("lost response");
     });
@@ -1081,8 +1081,8 @@ describe("Cloud app approval UI", () => {
     button(dom.document.body, "The codes match — pair device").click();
     await flush();
     expect(dom.document.body.querySelector('[role="alert"]')).not.toBeNull();
-    await Bun.sleep(5100);
-    await flush();
+    // the next status read finds the pairing confirmed after all
+    await eventually(() => dom.document.body.textContent?.includes("The device can now approve Cloud sign-ins") ?? false);
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(dom.document.body.querySelector('[role="alert"]')).toBeNull();
     expect(dom.document.body.textContent).toContain("The device can now approve Cloud sign-ins");

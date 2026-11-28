@@ -19,7 +19,7 @@ import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 
 // The account pages on v2 as the server renders them, before any island hydrates: the v2 rules (outline and measured
@@ -644,7 +644,7 @@ describe.if(Boolean(shots))("account pages in the Cloud shell", () => {
             return route.fulfill({ status: 404, body: "" });
           });
           await tab.goto(`${origin}/me${scene.query ?? ""}${scene.hash}`);
-          await tab.evaluate(() => document.fonts.ready);
+          await settled(tab);
           // the address alone leads to the section: its head stands in view without scrolling by hand
           const top = (await tab.locator(scene.hash).boundingBox())?.y ?? -1;
           expect(top).toBeGreaterThanOrEqual(0);
