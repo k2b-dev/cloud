@@ -1,5 +1,5 @@
 import { render } from "solid-js/web";
-import { Facts, Pane, Section, Workspace } from "../src/v2";
+import { Chip, Facts, Inline, Menu, Pane, Section, Workspace } from "../src/v2";
 
 // Facts as the key-value detail: contact data with kinds in the main column, bank data in a side
 // column, and the worst case in the same places (a label of six words, an address that cannot break, six lines of an
@@ -59,6 +59,18 @@ render(
                 { label: "Strichpunkt", kind: "email", value: "anna@example.org;mallory@example.org" },
                 { label: "Prozent", kind: "email", value: "anna%2Cmallory@example.org" },
                 { label: "Zeilenumbruch", kind: "email", value: "anna@example.org%0D%0Abcc:mallory@example.org" },
+                {
+                  label: "Tags",
+                  value: (
+                    <Menu variant="text" label="Tags ändern" items={[{ label: "Lager" }, { label: "Einkauf" }]}>
+                      <Inline>
+                        <Chip tag>WarehousePurchasingRoutesAndReturnsWithoutAnyBreakForTheWholeNorthernRegionAndItsSuppliers</Chip>
+                        <Chip tag>Lager</Chip>
+                        <Chip tag>Einkauf Nord</Chip>
+                      </Inline>
+                    </Menu>
+                  ),
+                },
                 { label: "Steuer-ID", value: undefined },
                 { label: "Fax", kind: "phone", value: "" },
                 {

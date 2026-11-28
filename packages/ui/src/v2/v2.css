@@ -2385,6 +2385,36 @@
 .k2-ui .k2-fact-empty {
   color: var(--k2-n400);
 }
+/* A control in a value (a menu of tags, a link to change it) keeps to the value column: its words wrap, a line of
+   chips in it wraps, and a chip longer than the column is cut with "…", so nothing sticks out beside the column. */
+.k2-ui .k2-fact-value .k2-btn {
+  max-width: 100%;
+  height: auto;
+  min-height: var(--k2-h-control-small);
+  white-space: normal;
+  text-align: start;
+}
+.k2-ui .k2-fact-value .k2-btn > .k2-btn-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.k2-ui .k2-fact-value .k2-inline {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  padding-block: 2px;
+}
+.k2-ui .k2-fact-value .k2-inline > .k2-chip {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+.k2-ui .k2-fact-value .k2-chip {
+  display: inline-block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 24px;
+}
 .k2-ui .k2-fact-value {
   flex: 1;
   min-width: 0;

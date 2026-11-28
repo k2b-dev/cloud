@@ -5,6 +5,7 @@ import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-facts.client";
+import { measureV2Layout } from "./testing";
 
 // Facts as the key-value detail: the label in a column of 116 px and 16 px
 // to its value, pairs of 34 px in the main column and of 28 px in a side column, the label over its value on the
@@ -216,4 +217,24 @@ for (const answer of ["ok", "refused"] as const)
       },
       { clipboard: answer },
     );
+  });
+
+for (const width of [1024, 390])
+  test(`${width} px: a menu of tags in a value keeps to the value column; its chips wrap and a long one is cut`, async () => {
+    await withPage(width, async (page) => {
+      const found = await page.evaluate(() => {
+        const pair = [...document.querySelectorAll(".k2-fact-pair")].find((each) => each.querySelector("dt")?.textContent === "Tags")!;
+        const dd = pair.querySelector("dd")!.getBoundingClientRect();
+        const chips = [...pair.querySelectorAll<HTMLElement>(".k2-chip")];
+        return {
+          inside: [pair.querySelector(".k2-btn")!, ...chips].every((element) => element.getBoundingClientRect().right <= dd.right + 0.5),
+          cut: chips[0]!.scrollWidth > chips[0]!.clientWidth,
+          lines: new Set(chips.map((chip) => Math.round(chip.getBoundingClientRect().top))).size,
+        };
+      });
+      expect(found.inside).toBe(true);
+      expect(found.cut).toBe(true);
+      expect(found.lines).toBeGreaterThan(1);
+      expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
+    });
   });
