@@ -42,3 +42,23 @@ export const selectPhases = <T extends { name: string }>(phases: T[], options: {
   }
   return selected;
 };
+
+type Run = (command: string[]) => { exitCode: number; stdout: { toString(): string } };
+
+/**
+ * The source a verification ran on: the checkout's commit and whether it had changes. A copy without `.git` (a run on
+ * the test machine) names it with `CLOUD_SOURCE_COMMIT` and `CLOUD_SOURCE_DIRTY` (`0`/`false` for a clean copy; a copy
+ * that does not say counts as changed). Without either, the run refuses: a report must name its source.
+ */
+export const verificationSource = (
+  root: string,
+  env: Record<string, string | undefined> = process.env,
+  run: Run = (command) => Bun.spawnSync(command, { cwd: root }),
+): { commit: string; dirty: boolean } => {
+  const head = run(["git", "rev-parse", "HEAD"]);
+  if (head.exitCode === 0)
+    return { commit: head.stdout.toString().trim(), dirty: run(["git", "status", "--porcelain"]).stdout.toString().trim() !== "" };
+  const commit = env.CLOUD_SOURCE_COMMIT?.trim();
+  if (!commit) throw new Error("Cannot record verification commit: no git checkout and no CLOUD_SOURCE_COMMIT");
+  return { commit, dirty: !["0", "false"].includes(env.CLOUD_SOURCE_DIRTY?.trim() ?? "") };
+};
