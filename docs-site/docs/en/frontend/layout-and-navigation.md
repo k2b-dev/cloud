@@ -612,7 +612,7 @@ The Core sign-in, password, and consent pages use the same class.
 Authenticated users change the theme or language from the profile menu and
 can open `/me` for the remaining profile settings. While the installation runs
 the Cloud app (the `pwa` application), the menu also shows **App**, which
-leads to `/me/app`, where people pair and remove devices. From 768 px the
+leads to `/me/security`, where people pair and remove devices. From 768 px the
 menu starts with **Hide sidebar** or **Show sidebar** and its shortcut. A
 section without a heading follows with **Privacy screen** and its shortcut
 (computers with a mouse or touchpad only) and the **Shared workstation**

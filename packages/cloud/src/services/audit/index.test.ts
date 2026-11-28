@@ -84,6 +84,14 @@ describe("sanitizeAuditMetadata", () => {
         target: { type: "service_account_credential", id: crypto.randomUUID(), label: "Other key" },
         requestId,
       });
+      // a refused sign-in of the person counts as denied for the whole range
+      await audit.record({
+        action: "webauthn_credential.authenticate",
+        outcome: "denied",
+        actor: { userId, uid: "current-user", provider: "local" },
+        target: { type: "webauthn_credential", id: crypto.randomUUID(), label: "Unknown key" },
+        requestId,
+      });
       await audit.record({
         action: "accounts.user.set_expiry",
         outcome: "allowed",
@@ -94,8 +102,9 @@ describe("sanitizeAuditMetadata", () => {
 
       const page = await audit.listSelfServiceActivity({ userId, days: 30, pagination: { page: 1, perPage: 20 } });
 
-      expect(page.total).toBe(1);
-      expect(page.items[0]).toMatchObject({
+      expect(page.total).toBe(2);
+      expect(page.outcomes).toEqual({ denied: 1, failed: 0 });
+      expect(page.items[1]).toMatchObject({
         action: "service_account_credential.create",
         label: "API key created",
         context: "Test key",

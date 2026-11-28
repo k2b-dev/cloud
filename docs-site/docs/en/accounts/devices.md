@@ -16,7 +16,7 @@ Cloud lists two kinds of paired devices separately:
   authenticator such as Cloud Login. Most of this page covers them.
 - **App devices** are devices paired with the Cloud app (preview). Each one
   holds its own app session. You pair and remove your own devices under **App**
-  in your profile menu (`/me/app`); for administrators, see
+  in your profile menu, which opens **Security & devices** (`/me/security`); for administrators, see
   [Pair the Cloud app for someone](#pair-the-cloud-app-for-someone) and
   [Remove an app device for someone](#remove-an-app-device-for-someone).
 
@@ -143,7 +143,7 @@ recovery. A synced passkey is not a backup of the authenticator's local vault.
 
 > **Preview:** the Cloud app is not released yet.
 
-Open **App** in your profile menu (`/me/app`). The page lists your paired
+Open **App** in your profile menu (**Security & devices**, `/me/security`). The section lists your paired
 devices with their platform and last use, and marks the device you are using.
 
 1. Choose **Pair a device**. A dialog opens with a QR code and shows how long

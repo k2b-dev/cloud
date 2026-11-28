@@ -241,7 +241,7 @@ export default function Layout(props: LayoutProps) {
   // The app bar and the app's navigation hidden with Cmd/Ctrl+\ or the sidebar buttons; phones ignore it in CSS.
   const shellFocus = showRail && readShellFocusCookie(cookie);
   // The profile menu offers the mobile app only while the installation runs it.
-  const appHref = user && isPwaShellAvailable(displayApps) ? "/me/app" : undefined;
+  const appHref = user && isPwaShellAvailable(displayApps) ? "/me/security" : undefined;
   const privacyTimerSeconds = (c.get("page").screen ?? defaultScreenPreferences()).privacyTimerSeconds;
   // Browser sessions only: the mobile app's phone is never a shared workstation.
   const browserSession = !!user && !isAppSessionActor(c.get("actor"));

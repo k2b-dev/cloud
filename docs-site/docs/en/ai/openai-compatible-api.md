@@ -22,7 +22,7 @@ An administrator must enable **OpenAI-compatible API** in AI settings
 (`ai.openai_api_enabled`, off by default). You also need
 [access to a chat model](/en/docs/ai/models-and-providers#add-models-and-variants).
 
-In your profile under **Developer → API keys**, create a key with the access
+In your account under **Security & devices → API keys**, create a key with the access
 **AI models only**, or run:
 
 ```bash
