@@ -8,7 +8,9 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false"
+    "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false",
+    "test:part:workspace": "bun test --preload ../../scripts/fixtures/test-infra.ts --path-ignore-patterns '**/*.behavior.test.*' src/frontend/ChatWorkspace src/frontend/ChatPanel",
+    "test:part:rest": "bun test --preload ../../scripts/fixtures/test-infra.ts --path-ignore-patterns '**/*.behavior.test.*' --path-ignore-patterns 'src/frontend/ChatWorkspace*' --path-ignore-patterns 'src/frontend/ChatPanel*'"
   },
   "dependencies": {
     "@k2b/cloud": "workspace:*",

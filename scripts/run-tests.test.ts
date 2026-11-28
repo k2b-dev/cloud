@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { existsSync, statSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
 import { join } from "node:path";
 import { z } from "zod";
@@ -561,6 +562,7 @@ test("a shard's time asks for fresh weights before it fails", () => {
 
 test("a package's test parts run every file: the rest part excludes exactly what the other parts name", async () => {
   for (const [workspace, name] of [
+    ["packages/chat", "@k2b/cloud-app-chat"],
     ["packages/cloud", "@k2b/cloud"],
     ["packages/mail", "@k2b/cloud-app-mail"],
     ["packages/notebooks", "@k2b/cloud-app-notebooks"],
@@ -573,8 +575,16 @@ test("a package's test parts run every file: the rest part excludes exactly what
       (part) => /test [^&]*'\*\*\/\*\.behavior\.test\.\*' ([^&]+?)\s*$/.exec(scripts[part]!)?.[1]?.split(" ") ?? [],
     );
     expect(directories.length).toBeGreaterThanOrEqual(parts.length);
-    for (const directory of directories)
-      expect(scripts["test:part:rest"]).toContain(`--path-ignore-patterns '${directory.replace(/^\.\//, "")}/**'`);
+    // A part names directories, or file prefixes where one directory holds suites of very different sizes (Chat's
+    // workspace and panel suites beside its other frontend suites); the rest ignores each, a prefix with its own "*".
+    for (const directory of directories) {
+      const path = directory.replace(/^\.\//, "");
+      // relative to the package, or to the workspace root for a part that runs from there (`--cwd=../..`)
+      const folder = [join(workspaceRoot, workspace, path), join(workspaceRoot, path)].some(
+        (candidate) => existsSync(candidate) && statSync(candidate).isDirectory(),
+      );
+      expect(scripts["test:part:rest"]).toContain(`--path-ignore-patterns '${path}${folder ? "/**" : "*"}'`);
+    }
     // Every other ignore pattern of the rest part is the behavior-test pattern that all parts share.
     expect(scripts["test:part:rest"]!.match(/--path-ignore-patterns '/g)?.length).toBe(directories.length + 1);
     const suites = await discoverTestSuites(workspaceRoot, { integration: false, filters: [workspace] });
