@@ -165,7 +165,10 @@ Never nested. With `color` the symbol becomes the thing's `Mark`.
 never gets narrower than 240 px for it. Where n do not fit, a row holds
 half of them (four as 2 × 2, never 3 + 1), and below that one under the
 other. On the phone a row always holds half of them, even below 240 px,
-and a card's name there takes a second line before it is cut.
+and a card's name there takes a second line before it is cut; it breaks
+between words only, and a name of one word that does not fit ends in
+"…". A card with a `preview` (a way to start) names itself in medium
+weight, as the approved first start.
 
 `variant="card"`: each thing a card in a grid (at least 240 px a card) for
 an overview of things with a face, such as the bases of Grids. A card
