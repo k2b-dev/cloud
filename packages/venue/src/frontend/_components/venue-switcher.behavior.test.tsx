@@ -14,10 +14,11 @@ describe("venue container switcher loader", () => {
       { id: "Desk01", name: "Service desk", icon: "ti ti-building", accentColor: "#6366f1" },
     ],
   };
-  const success = () => ({ ok: true, json: async () => payload });
+  const success = (body: typeof payload = payload) => ({ ok: true, json: async () => body });
   type Reply = ReturnType<typeof success>;
-  let reply: () => Promise<Reply> = async () => success();
-  const get = mock(() => reply());
+  type Request = { query: { limit: string; offset: string } };
+  let reply: (request: Request) => Promise<Reply> = async () => success();
+  const get = mock((request: Request) => reply(request));
   mock.module("../../api/client", () => ({ apiClient: { venues: { $get: get } } }));
   const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
   const mount = async (canCreate = false) => {
@@ -99,6 +100,32 @@ describe("venue container switcher loader", () => {
       view.dispose();
     }
   });
+  test("loads every venue page by page and lists them by name", async () => {
+    const venuePage = (from: number, count: number) => ({
+      venues: Array.from({ length: count }, (_, index) => ({
+        id: `V${String(from + index).padStart(5, "0")}`,
+        name: `Venue ${String(999 - from - index).padStart(3, "0")}`,
+        icon: "ti ti-building",
+        accentColor: "#2563eb",
+      })),
+    });
+    reply = async ({ query }) => success(query.offset === "0" ? venuePage(0, 100) : venuePage(100, 3));
+    const view = await mount();
+    try {
+      view.switcher().onLoad?.();
+      await settle();
+      expect(get.mock.calls.map(([request]) => request.query)).toEqual([
+        { limit: "100", offset: "0" },
+        { limit: "100", offset: "100" },
+      ]);
+      const options = view.switcher().options ?? [];
+      expect(options).toHaveLength(103);
+      expect(options.slice(0, 2).map((option) => option.label)).toEqual(["Venue 897", "Venue 898"]);
+    } finally {
+      view.dispose();
+    }
+  });
+
   test("offers New venue only with known permission to create", async () => {
     const { createVenueSwitcher } = await import("./venue-switcher");
     const current = () => ({ id: "Cafe01", name: "Corner Café", icon: "ti ti-coffee", accentColor: "#2563eb" });
