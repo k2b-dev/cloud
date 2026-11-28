@@ -6,7 +6,17 @@ import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { selectHtml } from "../../../../../tests/fixtures/select-html";
-import type { PublicSection, PublicStatus, ShiftAssignment, ShiftTemplate, UpcomingSlot, Venue, VenueDashboard } from "../../contracts";
+import {
+  MAX_PUBLIC_MENU_ITEMS,
+  MAX_PUBLIC_SECTIONS,
+  type PublicSection,
+  type PublicStatus,
+  type ShiftAssignment,
+  type ShiftTemplate,
+  type UpcomingSlot,
+  type Venue,
+  type VenueDashboard,
+} from "../../contracts";
 import { venueMessages } from "../../messages";
 import "../ssr-test-plugin";
 
@@ -328,6 +338,30 @@ describe("Venue public page view", () => {
     expect(html).toMatch(/data-section-row="Menu01" data-selected=""/);
     expect(html).toMatch(/data-public-section="Menu01" data-selected=""/);
     expect(html).not.toMatch(/data-section-row="Draft1" data-selected/);
+  });
+
+  test("counts the sections toward the page limit and stops adding at it", () => {
+    const below = render("admin", [published, draft], on);
+    expect(text(below)).toContain(`2 of ${MAX_PUBLIC_SECTIONS} sections.`);
+    expect(below).not.toContain("data-page-over-limits");
+    const addButton = (html: string) => html.slice(html.lastIndexOf("<button", html.indexOf("Add section")), html.indexOf("Add section"));
+    expect(addButton(below)).not.toContain("disabled");
+
+    const full = Array.from({ length: MAX_PUBLIC_SECTIONS }, (_, index) => ({ ...draft, id: `Note${String(index).padStart(2, "0")}` }));
+    const atLimit = render("admin", full, on);
+    expect(text(atLimit)).toContain(`${MAX_PUBLIC_SECTIONS} of ${MAX_PUBLIC_SECTIONS} sections: delete one to add another.`);
+    expect(addButton(atLimit)).toContain("disabled");
+    expect(atLimit).not.toContain("data-page-over-limits");
+  });
+
+  test("shows every section of a page saved before the limits and says what visitors miss", () => {
+    const items = Array.from({ length: MAX_PUBLIC_MENU_ITEMS + 1 }, (_, index) => ({ name: `Dish ${index}` }));
+    const html = render("admin", [{ ...published, content: { items } }, draft], on);
+    const notice = html.slice(html.indexOf("data-page-over-limits"), html.indexOf("data-public-preview"));
+    expect(text(notice)).toContain(
+      `2 sections and ${MAX_PUBLIC_MENU_ITEMS + 1} menu items, of at most ${MAX_PUBLIC_SECTIONS} and ${MAX_PUBLIC_MENU_ITEMS}.`,
+    );
+    expect(text(notice)).toContain("Winter hours");
   });
 
   test("shows nothing of the editor to staff, whom the server sends to the schedule", () => {

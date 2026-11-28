@@ -113,6 +113,27 @@ export const venueMessages = i18n.define({
       updateSectionFailed: "Failed to update public section.",
       duplicateSectionFailed: "Failed to duplicate public section.",
       deleteSectionFailed: "Failed to delete public section.",
+      sectionLimitReached: ({ max }: { max: number }) =>
+        `A public page holds at most ${max} sections, drafts included. Delete a section before you add another.`,
+      menuItemLimitReached: ({ max, count }: { max: number; count: number }) =>
+        `A public page holds at most ${max} menu items in all its menus, drafts included. This change would make ${count}; remove items first.`,
+      sectionCount: ({ count, max }: { count: number; max: number }) => `${count} of ${max} sections.`,
+      sectionLimitHint: ({ count, max }: { count: number; max: number }) => `${count} of ${max} sections: delete one to add another.`,
+      menuItemCount: ({ count, max }: { count: number; max: number }) => `${count} of ${max} menu items on this page.`,
+      menuItemLimitHint: ({ count, max }: { count: number; max: number }) =>
+        `${count} of ${max} menu items on this page: remove one to add another.`,
+      pageOverLimits: ({
+        sections,
+        items,
+        maxSections,
+        maxItems,
+      }: {
+        sections: number;
+        items: number;
+        maxSections: number;
+        maxItems: number;
+      }) =>
+        `This page was saved before its limits: ${sections} sections and ${items} menu items, of at most ${maxSections} and ${maxItems}. Visitors and the preview see the first ${maxSections} sections and the first ${maxItems} menu items. Delete sections or remove menu items to bring the page within its limits.`,
       editPublicSection: "Edit public section",
       deletePublicSection: "Delete public section",
       deletePublicSectionQuestion: ({ title }: { title: string }) => `Delete “${title}”?`,
@@ -683,6 +704,17 @@ export const venueMessages = i18n.define({
       updateSectionFailed: "Der öffentliche Abschnitt konnte nicht aktualisiert werden.",
       duplicateSectionFailed: "Der öffentliche Abschnitt konnte nicht dupliziert werden.",
       deleteSectionFailed: "Der öffentliche Abschnitt konnte nicht gelöscht werden.",
+      sectionLimitReached: ({ max }) =>
+        `Eine öffentliche Seite hat höchstens ${max} Abschnitte, Entwürfe eingeschlossen. Lösche einen Abschnitt, bevor du einen weiteren hinzufügst.`,
+      menuItemLimitReached: ({ max, count }) =>
+        `Eine öffentliche Seite hat in allen Speisekarten zusammen höchstens ${max} Einträge, Entwürfe eingeschlossen. Mit dieser Änderung wären es ${count}; entferne zuerst Einträge.`,
+      sectionCount: ({ count, max }) => `${count} von ${max} Abschnitten.`,
+      sectionLimitHint: ({ count, max }) => `${count} von ${max} Abschnitten: Lösche einen, um einen weiteren hinzuzufügen.`,
+      menuItemCount: ({ count, max }) => `${count} von ${max} Speisekarteneinträgen auf dieser Seite.`,
+      menuItemLimitHint: ({ count, max }) =>
+        `${count} von ${max} Speisekarteneinträgen auf dieser Seite: Entferne einen, um einen weiteren hinzuzufügen.`,
+      pageOverLimits: ({ sections, items, maxSections, maxItems }) =>
+        `Diese Seite wurde vor ihren Grenzen gespeichert: ${sections} Abschnitte und ${items} Speisekarteneinträge, bei höchstens ${maxSections} und ${maxItems}. Besucher und die Vorschau sehen die ersten ${maxSections} Abschnitte und die ersten ${maxItems} Einträge. Lösche Abschnitte oder entferne Einträge, bis die Seite in ihren Grenzen liegt.`,
       editPublicSection: "Öffentlichen Abschnitt bearbeiten",
       deletePublicSection: "Öffentlichen Abschnitt löschen",
       deletePublicSectionQuestion: ({ title }) => `„${title}“ löschen?`,
