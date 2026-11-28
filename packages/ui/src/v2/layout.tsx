@@ -198,11 +198,18 @@ type DetailEmpty = { icon: string; text: string; hero?: JSX.Element };
 type Columns = { register: (column: Column) => void; empty: () => DetailEmpty | undefined };
 const ColumnsContext = createContext<Columns | undefined>();
 /**
- * The pane whose head a bar is learns whether the bar has a start of its own (a path, a title): a head of actions
- * only shares its row with the pane's status row. Told while the parts are made, so the server and the first render
- * agree.
+ * A pane's head and its toolbar as one block (look rule 30): the pane hands its toolbar to its head's `Bar`, which
+ * stands it between its start and its end, so the bar stays one box (it measures what it folds) and the order of the
+ * Tab key is the order on the screen. The bar tells the pane that it took the toolbar and whether it has a start of its
+ * own. Told while the parts are made, so the server and the first render agree.
  */
-const HeadStartContext = createContext<((bare: boolean) => void) | undefined>();
+type HeadBlock = {
+  /** The pane's toolbar, while its status is one. */
+  toolbar: () => JSX.Element | undefined;
+  /** The head bar took the toolbar (`true`) and has no start of its own (`bare`). */
+  tell: (took: boolean, bare: boolean) => void;
+};
+const HeadBlockContext = createContext<HeadBlock | undefined>();
 
 /**
  * The working surface of an app: a sidebar, a head and the columns below it, with one hairline between columns and
@@ -497,16 +504,31 @@ export const Pane = (props: PaneProps) => {
       return Boolean(props.side) && (contextual?.() ?? false);
     },
   });
-  // whether the head is a bar without a start (actions only): then it shares one row with the status row
-  const [bare, setBare] = createSignal(false);
-  const head = resolveChildren(() => <HeadStartContext.Provider value={setBare}>{props.head}</HeadStartContext.Provider>);
   // whether the status is a toolbar of the list (StatusRow, FilterBar): only a toolbar joins the head as one block
-  const [toolbar, setToolbar] = createSignal(false);
+  const [toolbars, setToolbars] = createSignal(0);
   const status = resolveChildren(() => (
-    <StatusToolbarContext.Provider value={() => setToolbar(true)}>{props.status}</StatusToolbarContext.Provider>
+    <StatusToolbarContext.Provider value={{ add: () => setToolbars((n) => n + 1), remove: () => setToolbars((n) => n - 1) }}>
+      {props.status}
+    </StatusToolbarContext.Provider>
   ));
-  // a head with a toolbar under it is one block; any other status keeps its own place under the head
-  const block = () => !!head() && !!status() && toolbar();
+  // the head's bar takes the toolbar between its start and its end; it says whether it took it and has a start
+  const [took, setTook] = createSignal(false);
+  const [bare, setBare] = createSignal(false);
+  const head = resolveChildren(() => (
+    <HeadBlockContext.Provider
+      value={{
+        toolbar: () => (toolbars() > 0 ? status() : undefined),
+        tell: (took, bare) => {
+          setTook(took);
+          setBare(bare);
+        },
+      }}
+    >
+      {props.head}
+    </HeadBlockContext.Provider>
+  ));
+  // a head with a toolbar in its bar is one block; any other status keeps its own place under the head
+  const block = () => !!head() && took();
   let section: HTMLElement | undefined;
   // A detail appears because something opened it, which then has the focus (the row). When the detail goes while the
   // focus is in it (its way back, its close button), the focus returns there instead of falling to the page.
@@ -564,11 +586,6 @@ export const Pane = (props: PaneProps) => {
       <Show when={head()}>
         <div class="k2-slot" data-slot="head" data-block={block() ? (bare() ? "row" : "") : undefined}>
           {head()}
-          <Show when={block()}>
-            <div class="k2-slot" data-slot="status">
-              {status()}
-            </div>
-          </Show>
         </div>
       </Show>
       <Show when={status() && !block()}>
@@ -785,15 +802,17 @@ export const Bar = (props: BarProps) => {
       waiting.delete(trigger);
     };
   };
-  const tellStart = useContext(HeadStartContext);
+  const headBlock = useContext(HeadBlockContext);
   // the parts inside the bar are no head bars of their own
-  const start = resolveChildren(() => <HeadStartContext.Provider value={undefined}>{props.start}</HeadStartContext.Provider>);
-  createRenderEffect(() => tellStart?.(start() === undefined));
+  const start = resolveChildren(() => <HeadBlockContext.Provider value={undefined}>{props.start}</HeadBlockContext.Provider>);
+  // the pane's toolbar, which this head bar stands between its start and its end (one block, one box, one Tab order)
+  const toolbar = () => headBlock?.toolbar();
+  createRenderEffect(() => headBlock?.tell(toolbar() !== undefined, start() === undefined));
   // the end is made inside the fold's context, so a menu "…" in it can offer itself to take the folded buttons
   const end = resolveChildren(() => (
-    <HeadStartContext.Provider value={undefined}>
+    <HeadBlockContext.Provider value={undefined}>
       <BarFold.Provider value={{ offer, host, entries: folded }}>{props.end}</BarFold.Provider>
-    </HeadStartContext.Provider>
+    </HeadBlockContext.Provider>
   ));
   const hasEnd = createMemo(() => end() !== undefined);
   createEffect(() => {
@@ -820,6 +839,13 @@ export const Bar = (props: BarProps) => {
     <div ref={bar} class="k2-bar" data-k2-part="Bar">
       <Show when={start() !== undefined}>
         <div class="k2-bar-start">{start()}</div>
+      </Show>
+      <Show when={toolbar()}>
+        {(part) => (
+          <div class="k2-slot" data-slot="status">
+            {part()}
+          </div>
+        )}
       </Show>
       <Show when={hasEnd()}>
         <div class="k2-bar-end">

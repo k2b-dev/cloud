@@ -1,13 +1,18 @@
 import { LocaleProvider } from "../src/intl/locale";
 import { Bar, Button, Input, List, Pane, Path, Row, StatusRow, Text, Workspace } from "../src/v2";
 
-// A pane's head and its status row as one block, and a row's time beside its deed, as the test sets them up:
-// - `path`: a head with a path, a search and "+", above a status row with a filter and how the list shows: two rows
+// A pane's head and its toolbar as one block, the head's search as its symbol, and a row's time beside its deed, as the
+// test sets them up:
+// - `path`: a head with a path, a search, two ghost buttons with words and "+", above a toolbar (a StatusRow): two rows
 //   close together without a line between them, one line under the block; one row where the pane is wide;
-// - `actions`: a head of actions only (a search), above the same status row: one row on every width;
+// - `filled`: `path` with words in the search from the address, as the server sends them;
+// - `withEnd`: `path` whose search has a filter at its end, as Mail's: it keeps its field;
+// - `actions`: a head of actions only (a search), above the same toolbar: one row on every width;
+// - `state`: a head above a plain `Bar` that says the state of an open entry: no toolbar, so no block; it keeps its line;
+// - `workspace`: a workspace head of actions only (a search) above a pane with a toolbar and no head of its own, the
+//   case DR's #4470 moves into the pane's first row;
 // - `rows`: a list whose rows of one line carry a time, a deed, or both: every row keeps one height.
-// - `state`: a head above a plain `Bar` that says the state of an open entry: no toolbar, so no block; it keeps its line.
-export type Kind = "path" | "actions" | "rows" | "state";
+export type Kind = "path" | "filled" | "withEnd" | "actions" | "state" | "workspace" | "rows";
 
 const Status = () => (
   <StatusRow
@@ -23,47 +28,68 @@ const Status = () => (
 
 const files = ["Angebote", "Aufmaß", "Fotos", "Budget 2027.xlsx", "Lieferplan.pdf", "Notizen.md"];
 
-export const Fixture = (props: { kind: Kind }) => (
-  <LocaleProvider locale="de">
-    <Workspace>
-      <Pane
-        label="Dateien"
-        head={
-          props.kind === "rows" ? undefined : (
-            <Bar
-              start={
-                props.kind === "path" || props.kind === "state" ? (
-                  <Path label="Ort" items={[{ label: "Alle Ablagen", href: "#alle" }, { label: "Werkstatt" }]} />
-                ) : undefined
-              }
-              end={
-                <>
-                  <Input type="search" icon="search" label="Suchen" placeholder="Suchen" />
-                  {props.kind === "path" ? <Button variant="ghost" icon="plus" label="Neu" /> : undefined}
-                </>
-              }
-            />
-          )
-        }
-        status={
-          props.kind === "rows" ? undefined : props.kind === "state" ? (
-            <Bar start={<Text>3 Nachrichten · Wartet auf Antwort</Text>} />
-          ) : (
-            <Status />
-          )
-        }
-      >
-        <List label="Einträge">
-          {files.map((name, index) => (
-            <Row
-              icon="file"
-              lines={[name]}
-              time={index === 1 ? undefined : `heute, 0${index}:40`}
-              action={index < 2 ? { label: "Wiederherstellen", icon: "arrow-back-up", onClick: () => {} } : undefined}
-            />
-          ))}
-        </List>
-      </Pane>
-    </Workspace>
-  </LocaleProvider>
+const Search = (props: { kind: Kind }) => (
+  <Input
+    type="search"
+    icon="search"
+    label="Suchen"
+    value={props.kind === "filled" ? "Angebot" : undefined}
+    end={props.kind === "withEnd" ? <Button variant="ghost" icon="filter" label="Filter der Suche" /> : undefined}
+  />
 );
+
+export const Fixture = (props: { kind: Kind }) => {
+  const withPath = () => ["path", "filled", "withEnd", "state"].includes(props.kind);
+  return (
+    <LocaleProvider locale="de">
+      <Workspace head={props.kind === "workspace" ? <Bar end={<Search kind={props.kind} />} /> : undefined}>
+        <Pane
+          label="Dateien"
+          head={
+            props.kind === "rows" || props.kind === "workspace" ? undefined : (
+              <Bar
+                start={
+                  withPath() ? <Path label="Ort" items={[{ label: "Alle Ablagen", href: "#alle" }, { label: "Werkstatt" }]} /> : undefined
+                }
+                end={
+                  <>
+                    <Search kind={props.kind} />
+                    {withPath() && props.kind !== "state" ? (
+                      <>
+                        <Button variant="ghost" icon="share">
+                          Teilen
+                        </Button>
+                        <Button variant="ghost" icon="download">
+                          Laden
+                        </Button>
+                        <Button variant="ghost" icon="plus" label="Neu" />
+                      </>
+                    ) : undefined}
+                  </>
+                }
+              />
+            )
+          }
+          status={
+            props.kind === "rows" ? undefined : props.kind === "state" ? (
+              <Bar start={<Text>3 Nachrichten · Wartet auf Antwort</Text>} />
+            ) : (
+              <Status />
+            )
+          }
+        >
+          <List label="Einträge">
+            {files.map((name, index) => (
+              <Row
+                icon="file"
+                lines={[name]}
+                time={index === 1 ? undefined : `heute, 0${index}:40`}
+                action={index < 2 ? { label: "Wiederherstellen", icon: "arrow-back-up", onClick: () => {} } : undefined}
+              />
+            ))}
+          </List>
+        </Pane>
+      </Workspace>
+    </LocaleProvider>
+  );
+};

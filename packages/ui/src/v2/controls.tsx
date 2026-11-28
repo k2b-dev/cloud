@@ -359,6 +359,57 @@ const useHostedHeadSearch = (input: () => HTMLInputElement | undefined, search: 
   return hosted;
 };
 
+/** Typing goes on here: a field, a text that can be edited, or a widget that takes keys itself. */
+const typingIn = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable || target.closest("input, textarea, select, [role='textbox'], [role='combobox']") !== null);
+
+/**
+ * "/" opens the search of a head, as in most apps (after Z2's #4290): where the person is not typing, and not in a
+ * dialog, a menu or a list (nor while a modal dialog is open, whose own search may take "/"), the first head search on
+ * the page takes the focus. "/" with Shift counts (German: Shift+7); a handler that took the key first wins. Known in
+ * the browser only.
+ */
+const useSlashToHeadSearch = (input: () => HTMLInputElement | undefined, search: () => boolean) => {
+  onMount(() => {
+    const field = input();
+    if (!search() || !field?.parentElement?.parentElement?.matches('[data-slot="head"] > .k2-bar > .k2-bar-end')) return;
+    const open = (event: KeyboardEvent) => {
+      if (event.key !== "/" || event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (typingIn(event.target) || field.getClientRects().length === 0) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest("dialog, [role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox']")
+      )
+        return;
+      if (document.querySelector("dialog[open]:modal, [aria-modal='true']")) return;
+      // the first head search of the page takes it, once
+      if (document.querySelector('[data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search] > input') !== field) return;
+      event.preventDefault();
+      field.focus();
+    };
+    document.addEventListener("keydown", open);
+    onCleanup(() => document.removeEventListener("keydown", open));
+  });
+};
+
+/**
+ * A head search stays open while a menu at its end is open (a filter): the focus is in that menu then, not in the
+ * field. The field marks itself (`data-held`), so the head's rules need no `:has()` (after Z2's #4290). Known in the
+ * browser only.
+ */
+const useHeldOpen = (box: () => HTMLElement | undefined, search: () => boolean) => {
+  onMount(() => {
+    const element = box();
+    const end = element?.querySelector(":scope > .k2-input-end");
+    if (!search() || !element || !end) return;
+    const update = () => element.toggleAttribute("data-held", end.querySelector('[aria-expanded="true"]') !== null);
+    const watch = new MutationObserver(update);
+    watch.observe(end, { subtree: true, attributes: true, attributeFilter: ["aria-expanded"] });
+    onCleanup(() => watch.disconnect());
+  });
+};
+
 /** A round text field: 36 px, 1 px edge, a blue ring on focus. In a field it takes its name and error. */
 export const Input = (props: InputProps) => {
   const field = useField();
@@ -369,14 +420,30 @@ export const Input = (props: InputProps) => {
   );
   // the end is made once, here (reading the prop twice would make its JSX twice)
   const end = resolveChildren(() => props.end);
-  // whether a search holds words, from its value and from typing: a head's search folds to its symbol only while it is
-  // empty and has no focus (look rule 31); an attribute its owner sets, so no `:has()` restyles the page
-  const [text, setText] = createSignal(props.value ?? "");
-  createRenderEffect(() => setText(props.value ?? ""));
+  // Whether a search holds words (`data-filled`): a head's search folds to its symbol only while it is empty and has
+  // no focus (look rule 31), an attribute its owner sets, so no `:has()` restyles the page. Its value comes from the
+  // server's first page; the field itself is read again on mount (a value the browser restored, or one typed before the
+  // script ran), on typing and when the focus leaves (a caller that set `input.value` itself).
+  const [filled, setFilled] = createSignal(Boolean(props.value));
+  createRenderEffect(() => setFilled(Boolean(props.value)));
+  const readFilled = () => {
+    if (input) setFilled(input.value !== "");
+  };
+  onMount(readFilled);
+  useSlashToHeadSearch(
+    () => input,
+    () => props.type === "search",
+  );
+  let box: HTMLElement | undefined;
+  useHeldOpen(
+    () => box,
+    () => props.type === "search",
+  );
   const shared = () => ({
     id: field?.control,
     name: props.name ?? field?.name,
-    placeholder: props.placeholder,
+    // a search without an example says its name, as its symbol's hint does
+    placeholder: props.placeholder ?? (props.type === "search" ? props.label : undefined),
     value: props.value ?? "",
     "aria-label": field ? undefined : props.label,
     "aria-invalid": field?.invalid ? ("true" as const) : undefined,
@@ -398,6 +465,9 @@ export const Input = (props: InputProps) => {
   };
   return (
     <Dynamic
+      ref={(element: HTMLElement) => {
+        box = element;
+      }}
       component={send() ? "form" : "span"}
       method={send() ? "get" : undefined}
       action={send()?.action}
@@ -416,7 +486,8 @@ export const Input = (props: InputProps) => {
       data-disabled={props.disabled ? "" : undefined}
       data-multiline={props.multiline ? "" : undefined}
       data-search={props.type === "search" ? "" : undefined}
-      data-empty={props.type === "search" && !text() ? "" : undefined}
+      data-filled={props.type === "search" && filled() ? "" : undefined}
+      onFocusOut={props.type === "search" ? readFilled : undefined}
       // a search that carries more at its end (a filter) is more than a search: it keeps its field in a head
       data-with-end={end() !== undefined ? "" : undefined}
       style={props.multiline && props.rows !== undefined ? custom({ "--k2-rows": String(props.rows) }) : undefined}
@@ -436,8 +507,10 @@ export const Input = (props: InputProps) => {
             type={props.type ?? "text"}
             min={props.min}
             max={props.max}
+            // a folded search names itself under the pointer
+            title={props.type === "search" ? props.label : undefined}
             onInput={(event) => {
-              setText(event.currentTarget.value);
+              setFilled(event.currentTarget.value !== "");
               props.onInput?.(event.currentTarget.value);
             }}
             onKeyDown={(event) => {

@@ -126,13 +126,47 @@ describe("a line of state under a head is no toolbar", () => {
     });
 });
 
+describe("the head's bar stays one box with the toolbar in it", () => {
+  for (const width of [1440, 1920])
+    test(`with room, nothing folds into "…" at ${width}px`, async () => {
+      await withPage(width, "path", true, async (page) => {
+        for (const name of ["Teilen", "Laden"])
+          expect(await page.locator('.k2-pane > [data-slot="head"] .k2-bar-end').getByRole("button", { name }).isVisible()).toBe(true);
+        expect(await page.locator('.k2-pane > [data-slot="head"] .k2-bar-fold').count()).toBe(0);
+      });
+    });
+
+  test("the Tab key goes as the eye does: path, toolbar, then the head's actions", async () => {
+    await withPage(1920, "path", true, async (page) => {
+      await page.locator('.k2-pane > [data-slot="head"] [data-k2-part="Path"] a').first().focus();
+      const lefts: number[] = [];
+      for (let step = 0; step < 6; step++) {
+        lefts.push(await page.evaluate(() => Math.round(document.activeElement!.getBoundingClientRect().left)));
+        await page.keyboard.press("Tab");
+      }
+      expect(lefts).toEqual([...lefts].sort((a, b) => a - b));
+      expect(new Set(lefts).size).toBe(lefts.length);
+    });
+  });
+});
+
 describe("the head's search is its symbol on every width", () => {
-  test("it opens in place when pressed, keeps its words, and folds back when empty", async () => {
+  test("it opens over its place when pressed, keeps its words, and folds back when empty", async () => {
     await withPage(1440, "path", true, async (page) => {
       const field = page.locator(`${search} > input`);
       expect((await boxOf(page, search))?.width).toBe(36);
+      expect(await field.getAttribute("title")).toBe("Suchen");
+      // nothing beside it moves or folds while it opens: it grows to the left over its place
+      const neighbours = () =>
+        Promise.all([
+          boxOf(page, '.k2-pane > [data-slot="head"] .k2-bar-end > .k2-btn:nth-of-type(1)'),
+          boxOf(page, '.k2-pane > [data-slot="head"] .k2-bar-end > .k2-btn:nth-of-type(3)'),
+          boxOf(page, filter),
+        ]);
+      const before = await neighbours();
       await field.click();
       expect((await boxOf(page, search))?.width).toBeGreaterThan(100);
+      expect(await neighbours()).toEqual(before);
       await field.fill("Angebot");
       await page.keyboard.press("Tab");
       // its words keep it open
@@ -142,6 +176,50 @@ describe("the head's search is its symbol on every width", () => {
       expect((await boxOf(page, search))?.width).toBe(36);
     });
   });
+
+  test('"/" opens it where nobody types', async () => {
+    await withPage(1440, "path", true, async (page) => {
+      await page.locator("body").click({ position: { x: 600, y: 500 } });
+      await page.keyboard.press("/");
+      expect(await page.evaluate(() => document.activeElement?.closest(".k2-input[data-search]") !== null)).toBe(true);
+      expect((await boxOf(page, search))?.width).toBeGreaterThan(100);
+    });
+  });
+
+  for (const live of [false, true])
+    test(`words from the address keep it open on the server's page alone and after it (${live ? "hydrated" : "server"})`, async () => {
+      await withPage(1440, "filled", live, async (page) => {
+        expect((await boxOf(page, search))?.width).toBeGreaterThan(100);
+        expect(await page.locator(`${search} > input`).inputValue()).toBe("Angebot");
+        if (!live) return;
+        // a caller that empties the field itself: it folds once the focus leaves
+        await page.locator(`${search} > input`).focus();
+        await page.evaluate(() => {
+          (document.querySelector(".k2-input[data-search] > input") as HTMLInputElement).value = "";
+        });
+        await page.keyboard.press("Tab");
+        expect((await boxOf(page, search))?.width).toBe(36);
+      });
+    });
+
+  test("a search with more at its end (a filter, as Mail's) keeps its field from 768 px", async () => {
+    await withPage(1440, "withEnd", true, async (page) => {
+      expect((await boxOf(page, search))?.width).toBe(184);
+      expect(await page.getByRole("button", { name: "Filter der Suche" }).isVisible()).toBe(true);
+    });
+  });
+});
+
+// The case DR's #4470 moves into the pane's first row: shared here so both pull requests check the same page.
+describe("a workspace head of actions only above a pane's toolbar", () => {
+  for (const width of [390, 1024, 1440])
+    test(`keeps the page whole at ${width}px`, async () => {
+      await withPage(width, "workspace", true, async (page) => {
+        expect(await page.locator(".k2-status-lead").isVisible()).toBe(true);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        if (width > 390) expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
+      });
+    });
 });
 
 describe("a row of one line keeps its height beside its deed", () => {

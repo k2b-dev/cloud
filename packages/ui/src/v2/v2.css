@@ -785,63 +785,60 @@
 .k2-ui .k2-bar[data-status-row] {
   height: var(--k2-h-status);
 }
-/* A pane's head and its status row are one block (look rule 30, Valentin 27.11.: "diese Border weg und die Gap
-   bissle weniger groß"): the head draws no line, the status row's line is the block's one line, and the two rows
-   stand close together. Where the pane is wide, or the head has no start of its own, the status row joins the head's
-   row: path, filters and how the list shows, then the head's actions. */
+/* A pane's head and its toolbar are one block (look rule 30, Valentin 27.11.: "diese Border weg und die Gap bissle
+   weniger groß"). The pane hands its toolbar (StatusRow, FilterBar) to its head's bar, which stands it between its
+   start and its end: the bar stays one box with one line under it, and the order of the Tab key is the order on the
+   screen. Two rows close together: the head's start and end (48 px), then the toolbar. Where the pane is 1200 px wide,
+   all stand in one row, the toolbar between the start and the end; a head without a start shares the toolbar's row
+   always. */
 .k2-ui [data-slot="head"][data-block] > .k2-bar {
-  height: var(--k2-h-block);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: var(--k2-h-block) auto;
+  grid-template-areas: "start end" "status status";
+  row-gap: 0;
+  height: auto;
+}
+.k2-ui [data-slot="head"][data-block] > .k2-bar > .k2-bar-start {
+  grid-area: start;
+}
+.k2-ui [data-slot="head"][data-block] > .k2-bar > .k2-bar-end {
+  grid-area: end;
+}
+/* the toolbar keeps its own edge and draws no line: the bar's line is the block's one line */
+.k2-ui [data-slot="head"][data-block] > .k2-bar > [data-slot="status"] > :is(.k2-fbar, .k2-bar) {
+  grid-area: status;
+  margin-inline: calc(-1 * var(--k2-edge));
   border-bottom: 0;
 }
-.k2-ui [data-slot="head"][data-block] > [data-slot="status"] > .k2-bar[data-status-row] {
+.k2-ui [data-slot="head"][data-block] > .k2-bar > [data-slot="status"] > .k2-bar[data-status-row] {
   height: calc(var(--k2-h-status) - 8px);
   padding-bottom: 8px;
 }
-.k2-ui [data-slot="head"][data-block] > [data-slot="status"] > .k2-fbar {
+.k2-ui [data-slot="head"][data-block] > .k2-bar > [data-slot="status"] > .k2-fbar {
   padding-top: 0;
 }
-.k2-ui [data-slot="head"][data-block="row"] {
-  display: flex;
-  align-items: flex-start;
-  border-bottom: var(--k2-hairline);
-}
 .k2-ui [data-slot="head"][data-block="row"] > .k2-bar {
-  order: 2;
-  height: var(--k2-h-status);
-  padding-left: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto;
+  grid-template-areas: "status end";
 }
-.k2-ui [data-slot="head"][data-block="row"] > [data-slot="status"] > :is(.k2-fbar, .k2-bar) {
-  flex: 1;
-  border-bottom: 0;
+.k2-ui [data-slot="head"][data-block="row"] > .k2-bar > [data-slot="status"] > :is(.k2-fbar, .k2-bar) {
+  margin-inline-end: 0;
   padding-top: 6px;
 }
 @container k2-pane (min-width: 1200px) {
-  .k2-ui [data-slot="head"][data-block=""] {
-    display: flex;
-    align-items: center;
-    min-height: var(--k2-h-status);
-    border-bottom: var(--k2-hairline);
-  }
   .k2-ui [data-slot="head"][data-block=""] > .k2-bar {
-    display: contents;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-rows: var(--k2-h-status);
+    grid-template-areas: "start status end";
   }
-  .k2-ui [data-slot="head"][data-block=""] > .k2-bar > .k2-bar-start {
-    order: 1;
-    flex: 0 1 auto;
-    padding-left: var(--k2-edge);
-    align-self: center;
-  }
-  .k2-ui [data-slot="head"][data-block=""] > [data-slot="status"] > :is(.k2-fbar, .k2-bar) {
-    order: 2;
-    flex: 1;
+  .k2-ui [data-slot="head"][data-block=""] > .k2-bar > [data-slot="status"] > :is(.k2-fbar, .k2-bar) {
     min-width: 0;
-    border-bottom: 0;
+    margin-inline: 0;
+    padding-inline: 12px;
     padding-block: 6px;
-  }
-  .k2-ui [data-slot="head"][data-block=""] > .k2-bar > .k2-bar-end {
-    order: 3;
-    padding-right: var(--k2-edge);
-    align-self: center;
+    height: auto;
   }
 }
 .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar {
@@ -1368,8 +1365,9 @@
 .k2-ui .k2-row[data-lines="1"] > .k2-row-end {
   grid-area: time;
 }
-/* A row of one line with a time and a deed or an end keeps its height: the time stands at the end of the line and the
-   deed after it, in a column of its own (Valentin 27.11.: no row taller than its neighbours for its deed). On the phone
+/* A row of one line with a time and a deed or an end keeps the row's height (`--k2-h-row`): the time stands at the end
+   of the line and the deed after it, in a column of its own (Valentin 27.11.: no row taller than its neighbours for its
+   deed). On the phone
    the deed takes the row under the text (the phone's rules below). */
 .k2-ui .k2-row[data-lines="1"][data-time][data-end] {
   grid-template-columns: auto minmax(0, 1fr) auto auto;
@@ -1378,8 +1376,8 @@
 .k2-ui .k2-row[data-lines="1"][data-time][data-end] > .k2-row-end {
   grid-area: end;
 }
-/* the deed's 28 px button stands in the row's 40 px (its padding and its line included): it reaches into the row's
-   padding instead of growing the row */
+/* the deed's button (`--k2-h-control-small`) stands in the row's height (`--k2-h-row`, its padding and its line
+   included): it reaches into the row's padding instead of growing the row */
 .k2-ui .k2-row[data-lines="1"][data-end] > .k2-row-end {
   margin-block: calc((var(--k2-h-row) - 16px - var(--k2-h-control-small)) / 2 - 1px);
 }
@@ -5043,10 +5041,11 @@
 
 /* ── Phone: below 768 px. Columns become pages; rows ≥ 60; the main action floats ───────────────────────────── */
 /* The search of a head is its symbol on every width (look rule 31, Valentin 27.11.: "die Suchleiste könnte auch
-   einfach nur ein Icon sein"): 36 px like an icon button, the same part as on the phone. A press goes into the field,
-   which then stands at its width; it folds back when the focus leaves while it is empty, and keeps its words open. A
-   search with more at its end (a filter) keeps its field from 768 px. */
-.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search][data-empty]:not([data-with-end], :focus-within) {
+   einfach nur ein Icon sein"): 36 px like an icon button, the same part as on the phone. A press, a tap or "/" goes
+   into the field. From 768 px the open field grows to the left over its 36 px place, so nothing beside it moves or
+   folds; it folds back when it is empty and the focus leaves. Its words keep it open, also on the server's page, and
+   so does an open menu at its end (`data-held`). A search with more at its end (a filter) keeps its field. */
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not([data-filled], [data-held], [data-with-end], :focus-within) {
   position: relative;
   width: var(--k2-h-control);
   padding: 0;
@@ -5054,17 +5053,27 @@
   border-color: transparent;
   background: transparent;
 }
-.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search][data-empty]:not([data-with-end], :focus-within) > .k2-icon {
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not([data-filled], [data-held], [data-with-end], :focus-within) > .k2-icon {
   color: var(--k2-muted);
 }
-.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search][data-empty]:not([data-with-end], :focus-within) > input {
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not([data-filled], [data-held], [data-with-end], :focus-within):hover > .k2-icon {
+  color: var(--k2-text);
+}
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not([data-filled], [data-held], [data-with-end], :focus-within) > input {
   position: absolute;
   inset: 0;
   opacity: 0;
   cursor: pointer;
 }
-.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search][data-empty]:not([data-with-end], :focus-within) > .k2-input-end {
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not([data-filled], [data-held], [data-with-end], :focus-within) > .k2-input-end {
   display: none;
+}
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:is([data-filled], [data-held], :focus-within):not([data-with-end]) {
+  position: relative;
+  z-index: 2;
+  width: 184px;
+  margin-left: calc(var(--k2-h-control) - 184px);
+  background: var(--k2-surface);
 }
 @media not all and (min-width: 768px) {
   .k2-ui .k2-ws {
@@ -5212,19 +5221,19 @@
     border-color: transparent;
     background: transparent;
   }
-  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within) > .k2-icon {
+  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within, [data-filled], [data-held]) > .k2-icon {
     color: var(--k2-muted);
   }
-  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within) > input {
+  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within, [data-filled], [data-held]) > input {
     position: absolute;
     inset: 0;
     opacity: 0;
   }
-  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within) > .k2-input-end {
+  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within, [data-filled], [data-held]) > .k2-input-end {
     display: none;
   }
   /* the field covers the head's views; the cover draws no line of its own, the bar's line stays the one line */
-  .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-end > .k2-input[data-search]:focus-within)::after {
+  .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-end > .k2-input[data-search]:is(:focus-within, [data-filled], [data-held]))::after {
     content: "";
     position: absolute;
     inset: 0;
@@ -5232,12 +5241,19 @@
     background: var(--k2-surface);
   }
   /* the mark of the current view stands on the head's own line, below the cover: it gives way, the line stays one */
-  .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-end > .k2-input[data-search]:focus-within) .k2-tab[aria-current] {
+  .k2-ui [data-slot="head"][data-block] > .k2-bar:has(> .k2-bar-end > .k2-input[data-search]:is(:focus-within, [data-filled], [data-held]))::after {
+    bottom: auto;
+    height: var(--k2-h-block);
+  }
+  .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-end > .k2-input[data-search]:is(:focus-within, [data-filled], [data-held])) .k2-tab[aria-current] {
     border-bottom-color: transparent;
   }
-  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:focus-within {
+  /* as heavy as the wide screen's open field, and after it: on the phone the field stands over the head */
+  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:is(:focus-within, [data-filled], [data-held]):not([data-with-end]),
+  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search][data-with-end]:is(:focus-within, [data-filled], [data-held]) {
     position: absolute;
     z-index: 2;
+    margin-left: 0;
     top: calc((100% - var(--k2-h-control)) / 2);
     left: var(--k2-edge);
     right: var(--k2-edge);
@@ -5247,12 +5263,15 @@
     border-color: var(--k2-blue);
     background: var(--k2-surface);
   }
+  .k2-ui [data-slot="head"][data-block] > .k2-bar > .k2-bar-end > .k2-input[data-search]:is(:focus-within, [data-filled], [data-held]) {
+    top: calc((var(--k2-h-block) - var(--k2-h-control)) / 2);
+  }
   /* A host that offers the page's search in a bar of its own (the Cloud shell's phone bar) marks the v2 scope with
      `data-k2-host-search` and focuses the field from there. The folded search then leaves the head, so its tabs keep
      the room, but stays in reach of the focus; it opens over the head as above. A head with a path and a search gives
      way as a head with only a path does, also while its search is open: the field then lies over the content's first
      row, so nothing below moves. */
-  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within) {
+  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within, [data-filled], [data-held]) {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -5262,18 +5281,25 @@
     overflow: hidden;
     clip-path: inset(50%);
   }
-  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path) {
+  .k2-ui[data-k2-host-search] [data-slot="head"]:not([data-block]) > .k2-bar:has(> .k2-bar-start > .k2-path) {
     height: 0;
     padding-block: 0;
     border-bottom: 0;
   }
-  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path):not(:focus-within) {
+  .k2-ui[data-k2-host-search] [data-slot="head"]:not([data-block]) > .k2-bar:has(> .k2-bar-start > .k2-path):not(:focus-within) {
+    overflow: hidden;
+  }
+  .k2-ui[data-k2-host-search] [data-slot="head"][data-block=""] > .k2-bar:has(> .k2-bar-start > .k2-path) {
+    grid-template-rows: 0 auto;
+  }
+  .k2-ui[data-k2-host-search] [data-slot="head"][data-block=""] > .k2-bar:has(> .k2-bar-start > .k2-path):not(:focus-within) > :is(.k2-bar-start, .k2-bar-end) {
+    min-height: 0;
     overflow: hidden;
   }
   .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path):has(> .k2-bar-end > .k2-input[data-search])::after {
     content: none;
   }
-  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path) > .k2-bar-end > .k2-input[data-search]:focus-within {
+  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path) > .k2-bar-end > .k2-input[data-search]:is(:focus-within, [data-filled], [data-held]) {
     top: calc((var(--k2-h-status) - var(--k2-h-control)) / 2);
   }
   .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-tabs-nav) {
