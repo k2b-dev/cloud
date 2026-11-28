@@ -43,7 +43,8 @@ This page is the reference. When it and an older picture disagree, this page win
 
 - **Do:** title 15/600 with a quiet count, one or two lines of summary in 13, no symbol. In a wide pane the head is a column of 232 px with its button under the summary (B); in a narrow pane the button stands beside the title (A).
 - **Don't:** add a symbol, a grey band or a second line under the head.
-- **Why:** a calm head lets the content lead; the column keeps long titles on one line.
+- **Why:** a calm head lets the content lead.
+- **Long titles:** a long title wraps in the 232 px column; it never drops to a smaller size to fit.
 - **In v2:** `Section` does this by the width of its pane. There is no prop to choose.
 
 ### 5. Actions are buttons
