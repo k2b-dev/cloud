@@ -56,7 +56,7 @@ export function Demo() {
             options: options(),
             search: "Base suchen",
             noMatch: "Keine Base passt",
-            more: (hidden) => `+${hidden} weitere über die Suche`,
+            more: (hidden, searching) => (searching ? `${hidden} weitere Treffer – genauer suchen` : `+${hidden} weitere über die Suche`),
             actions: [
               { label: "Neue Base", icon: "plus", onClick: did("new") },
               { label: "Aus Vorlage", icon: "template", onClick: did("template") },

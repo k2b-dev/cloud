@@ -1,6 +1,6 @@
-import { documentNavigate } from "@k2b/ssr/nav";
+import { documentNavigate, Link, type LinkNavigateEvent } from "@k2b/ssr/nav";
 import { createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, Show } from "solid-js";
-import { isServer } from "solid-js/web";
+import { Dynamic, isServer } from "solid-js/web";
 import { dropdownPosition } from "../actions/Dropdown";
 import { cssColor } from "../internal/color";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
@@ -24,6 +24,10 @@ export type AppWorkspaceSwitcherOption = {
   /** Tints the icon; without it the app accent does. */
   color?: string;
   href: string;
+  /** With `href`: opens the page in place on a plain click, as the app's sidebar does; a modified click opens a tab. */
+  onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
+  /** Options one after another with the same group stand under its quiet heading, such as "Zuletzt geöffnet". */
+  group?: string;
 };
 
 /** A row below the containers, such as "New notebook" or "All notebooks". */
@@ -32,7 +36,10 @@ export type AppWorkspaceSwitcherAction = {
   label: string;
   icon: string;
   disabled?: boolean;
-} & ({ href: string; action?: never } | { action: () => void; href?: never });
+} & (
+  | { href: string; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>; action?: never }
+  | { action: () => void; href?: never; onNavigate?: never }
+);
 
 export type AppWorkspaceSidebarSwitcherProps = {
   /** The current container's ID among `options`. */
@@ -58,6 +65,11 @@ export type AppWorkspaceSidebarSwitcherProps = {
   onLoad?: () => void;
   actions?: readonly AppWorkspaceSwitcherAction[];
   /**
+   * The quiet line under a list cut short: `hidden` containers are not listed, `searching` whether a search narrowed
+   * them. Without it the line says so in the page's language.
+   */
+  more?: (hidden: number, searching: boolean) => string;
+  /**
    * A host menu around the switcher, such as the phone menu, finishes dismissing itself before a chosen container
    * opens or an action runs; `false` cancels the choice. Navigation passes its own.
    */
@@ -68,6 +80,12 @@ export type AppWorkspaceSidebarSwitcherProps = {
 
 /** From this many containers the panel scrolls, so it offers a search field. */
 export const APP_WORKSPACE_SWITCHER_SEARCH_FROM = 8;
+/**
+ * The most containers the panel lists before a search, and the most matches of a search: the panel stays a short list
+ * however many an app holds (a base among 500), and the search reaches the others. The v2 `Nav` switcher lists as many.
+ */
+export const APP_WORKSPACE_SWITCHER_SHOWN = 20;
+export const APP_WORKSPACE_SWITCHER_MATCHES = 50;
 
 /** The space between trigger and panel, and the panel's distance from the viewport edges, as for every dropdown. */
 const SWITCHER_GAP = 4;
@@ -105,6 +123,12 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
     if (!needle) return options;
     return options.filter((option) => [option.label, option.description].some((part) => part?.toLocaleLowerCase().includes(needle)));
   });
+  const searching = () => query().trim() !== "";
+  // a short list however many there are: the first 20 (the app's order), at most 50 matches of a search
+  const shown = createMemo(() => visible().slice(0, searching() ? APP_WORKSPACE_SWITCHER_MATCHES : APP_WORKSPACE_SWITCHER_SHOWN));
+  const hidden = () => visible().length - shown().length;
+  const moreLine = () =>
+    props.more ? props.more(hidden(), searching()) : messages().switcherMore({ count: hidden(), searching: searching() });
   const load = () => {
     if (props.options === undefined) props.onLoad?.();
   };
@@ -199,6 +223,12 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
     void Promise.resolve(props.beforeSelect()).then((allowed) => {
       if (allowed !== false) run();
     });
+  };
+  /** A row the app opens in place: the panel and the host's menu close first, then the app opens it, unless cancelled. */
+  const inPlace = async (event: LinkNavigateEvent, open: ((event: LinkNavigateEvent) => void | Promise<void>) | undefined) => {
+    hide(false);
+    if (props.beforeSelect && (await props.beforeSelect()) === false) return;
+    await open?.(event);
   };
   const follow = (event: MouseEvent & { currentTarget: HTMLAnchorElement }) => {
     if (!plainClick(event)) return;
@@ -377,29 +407,35 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
             }
           >
             <For
-              each={visible()}
+              each={shown()}
               fallback={
                 <li class="k2b-choice-status" role="status">
                   {messages().noResults}
                 </li>
               }
             >
-              {(option) => {
+              {(option, index) => {
                 const current = () => option.id === props.currentId;
+                // the first of a run of one group carries its heading
+                const heading = () => (option.group && option.group !== shown()[index() - 1]?.group ? option.group : undefined);
                 return (
                   <li>
-                    <a
+                    <Show when={heading()}>{(group) => <div class="k2b-dropdown__label">{group()}</div>}</Show>
+                    <Dynamic
+                      component={option.onNavigate ? Link : "a"}
                       href={option.href}
                       class="k2b-dropdown__item k2b-sidebar-switcher__option"
                       data-switcher-row
                       data-switcher-option
                       aria-current={current() ? "true" : undefined}
-                      onClick={(event) => {
+                      // an option the app opens in place: the host's menu closes first, then the app opens it
+                      onNavigate={option.onNavigate ? (event: LinkNavigateEvent) => inPlace(event, option.onNavigate) : undefined}
+                      onClick={(event: MouseEvent & { currentTarget: HTMLAnchorElement }) => {
                         // The open container is already here: choosing it only closes the panel.
                         if (current() && plainClick(event)) {
                           event.preventDefault();
                           hide(true);
-                        } else follow(event);
+                        } else if (!option.onNavigate) follow(event);
                       }}
                     >
                       <span class="k2b-sidebar-switcher__option-icon" style={tint(option.color ?? props.color)} aria-hidden="true">
@@ -410,11 +446,16 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
                         {optionDescription(option)}
                       </span>
                       <i class="ti ti-check k2b-dropdown__check" data-hidden={current() ? undefined : "true"} aria-hidden="true" />
-                    </a>
+                    </Dynamic>
                   </li>
                 );
               }}
             </For>
+            <Show when={hidden() > 0}>
+              <li class="k2b-choice-status" role="status">
+                {moreLine()}
+              </li>
+            </Show>
           </Show>
         </ul>
         <Show when={props.actions?.length}>
@@ -441,18 +482,22 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
                     }
                   >
                     {(href) => (
-                      <a
+                      <Dynamic
+                        component={item.onNavigate && !item.disabled ? Link : "a"}
                         href={item.disabled ? undefined : href()}
                         class="k2b-dropdown__item"
                         data-switcher-row
                         aria-disabled={item.disabled ? "true" : undefined}
-                        onClick={(event) => item.disabled || follow(event)}
+                        onNavigate={item.onNavigate ? (event: LinkNavigateEvent) => inPlace(event, item.onNavigate) : undefined}
+                        onClick={(event: MouseEvent & { currentTarget: HTMLAnchorElement }) =>
+                          item.disabled || item.onNavigate || follow(event)
+                        }
                       >
                         <i class={iconClass(item.icon)} aria-hidden="true" />
                         <span class="k2b-dropdown__copy">
                           <span>{item.label}</span>
                         </span>
-                      </a>
+                      </Dynamic>
                     )}
                   </Show>
                 </li>

@@ -130,16 +130,23 @@ const toSwitcher = (switcher: NavSwitcher): AppWorkspaceSidebarSwitcherProps => 
     icon: `ti ti-${switcher.current?.icon ?? current?.icon ?? "selector"}`,
     ...(switcher.current?.color ? { color: switcher.current.color } : {}),
     switchLabel: switcher.label,
+    // the same groups, quiet words and in-place opening as the sidebar's switcher, and its words for a list cut short
     options: switcher.options.map((option) => ({
       id: option.href,
       label: option.label,
       icon: `ti ti-${option.icon}`,
       ...(option.color ? { color: option.color } : {}),
+      ...(option.meta ? { description: option.meta } : {}),
+      ...(option.group ? { group: option.group } : {}),
+      ...(option.onNavigate ? { onNavigate: option.onNavigate } : {}),
       href: option.href,
     })),
+    more: switcher.more,
     actions: (switcher.actions ?? []).map((action, index) => {
       const common = { id: `switcher:${index}`, label: action.label, icon: `ti ti-${action.icon ?? "plus"}`, disabled: action.disabled };
-      return action.href !== undefined ? { ...common, href: action.href } : { ...common, action: () => action.onClick?.() };
+      return action.href !== undefined
+        ? { ...common, href: action.href, ...(action.onNavigate ? { onNavigate: action.onNavigate } : {}) }
+        : { ...common, action: () => action.onClick?.() };
     }),
   };
 };

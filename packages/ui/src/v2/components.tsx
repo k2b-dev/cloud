@@ -20,7 +20,7 @@ import { Dynamic } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { watchFold } from "./bar-fold";
-import { usePopover } from "./behavior/overlays";
+import { quietFocus, usePopover } from "./behavior/overlays";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { Input, MarkCheck } from "./controls";
@@ -157,8 +157,11 @@ export type NavSwitcher = {
   search: string;
   /** What the list says when the search finds nothing. */
   noMatch: string;
-  /** The quiet line under a list cut short, such as "+480 weitere – über die Suche". */
-  more: (hidden: number) => string;
+  /**
+   * The quiet line under a list cut short: `hidden` options are not listed, `searching` whether a search narrowed them,
+   * such as "480 weitere Bases über die Suche" or "12 weitere Treffer – genauer suchen".
+   */
+  more: (hidden: number, searching: boolean) => string;
   /** Deeds after the options, such as "Neue Base" and "Aus Vorlage". */
   actions?: readonly Action[];
 };
@@ -311,10 +314,6 @@ const NavFold = (props: { item: NavItem; items: readonly NavItem[]; level: numbe
 const groupMenu = (action: NavGroup["action"]) => (action && "items" in action ? action : undefined);
 const groupDeed = (action: NavGroup["action"]) => (action && !("items" in action) ? action : undefined);
 
-/**
- * The sidebar of an app: its name, its search and main action, groups of round entries with counts, its own rows, and
- * entries at the foot.
- */
 /** From this many options the switcher shows its search. */
 const SWITCHER_SEARCH_FROM = 8;
 /**
@@ -327,11 +326,12 @@ const SWITCHER_MATCHES = 50;
 /**
  * The open thing as a button across the column (its mark, its name, ↕); behind it a panel of the others in their
  * groups, the search from 8, and the deeds. Arrow keys move between the entries, from the search into the list; choosing
- * one closes the panel. On the phone the sidebar leaves, and the shell's menu shows the switcher there
+ * one closes the panel; Home and End go to the ends; Enter in the search opens the first match. On the phone the sidebar leaves, and the shell's menu shows the switcher there
  * (`V2WorkspaceNavigation` `switcher`).
  */
 const NavSwitch = (props: { switcher: NavSwitcher }) => {
   const locale = useLocale();
+  const purpose = `k2-switch-${createUniqueId()}`;
   const [open, setOpen] = createSignal(false);
   const [query, setQuery] = createSignal("");
   const popover = usePopover(() => ({
@@ -342,13 +342,14 @@ const NavSwitch = (props: { switcher: NavSwitcher }) => {
     },
   }));
   const searchable = () => props.switcher.options.length >= SWITCHER_SEARCH_FROM;
+  const searching = () => query().trim() !== "";
   const found = createMemo(() => {
     const needle = query().trim().toLocaleLowerCase(locale());
     return needle
       ? props.switcher.options.filter((option) => option.label.toLocaleLowerCase(locale()).includes(needle))
       : props.switcher.options;
   });
-  const shown = createMemo(() => found().slice(0, query().trim() ? SWITCHER_MATCHES : SWITCHER_SHOWN));
+  const shown = createMemo(() => found().slice(0, searching() ? SWITCHER_MATCHES : SWITCHER_SHOWN));
   // options one after another with the same group form one section under its heading
   const sections = createMemo(() => {
     const out: { group?: string; options: NavSwitcherOption[] }[] = [];
@@ -359,27 +360,72 @@ const NavSwitch = (props: { switcher: NavSwitcher }) => {
     }
     return out;
   });
+  // one quiet line in one place: nothing found, or how many the list leaves out; it stays where it is, so nothing moves
+  const status = () =>
+    !shown().length
+      ? props.switcher.noMatch
+      : found().length > shown().length
+        ? props.switcher.more(found().length - shown().length, searching())
+        : "";
   let panel: HTMLElement | undefined;
-  const move = (event: KeyboardEvent) => {
+  const entries = () => [...(panel?.querySelectorAll<HTMLElement>(".k2-mi") ?? [])];
+  const searchField = () => panel?.querySelector<HTMLInputElement>("input[type=search]") ?? undefined;
+  const keys = (event: KeyboardEvent) => {
+    const all = entries();
+    const inSearch = event.target === searchField();
+    if (event.key === "Enter" && inSearch) {
+      // Enter in the search opens the first match
+      event.preventDefault();
+      panel?.querySelector<HTMLElement>(".k2-mi[data-option]")?.click();
+      return;
+    }
+    if (!all.length) return;
+    if ((event.key === "Home" || event.key === "End") && !inSearch) {
+      event.preventDefault();
+      (event.key === "Home" ? all[0] : all.at(-1))?.focus();
+      return;
+    }
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-    const entries = [...(panel?.querySelectorAll<HTMLElement>(".k2-mi") ?? [])];
-    if (!entries.length) return;
     event.preventDefault();
-    const at = entries.indexOf(document.activeElement as HTMLElement);
-    const next = event.key === "ArrowDown" ? (at + 1) % entries.length : at <= 0 ? -1 : at - 1;
+    const at = all.findIndex((entry) => entry === document.activeElement);
+    const next = event.key === "ArrowDown" ? (at + 1) % all.length : at <= 0 ? -1 : at - 1;
     // up from the first entry goes back into the search, where there is one
-    if (next === -1) (panel?.querySelector<HTMLElement>("input") ?? entries.at(-1))?.focus();
-    else entries[next]?.focus();
+    if (next === -1) (searchField() ?? all.at(-1))?.focus();
+    else all[next]?.focus();
   };
+  // the first focus: the search where there is one (not on a touch screen, where its keyboard would cover the list),
+  // else the open thing, as the shell's switcher has it
+  const firstFocus = () =>
+    queueMicrotask(() => {
+      const search = searchField();
+      const target =
+        search && !matchMedia("(pointer: coarse)").matches
+          ? search
+          : (panel?.querySelector<HTMLElement>('.k2-mi[aria-current="page"]') ?? entries()[0]);
+      if (!target) return;
+      // without a ring after a press; after a key the ring shows where the focus stands
+      quietFocus(target);
+      if (document.activeElement !== target) target.focus({ preventScroll: true });
+    });
   const close = () => setOpen(false);
+  const plainClick = (event: MouseEvent) => event.button === 0 && !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey);
   return (
     <>
-      <popover.Trigger class="k2-nav-switch" data-k2-part="NavSwitcher" aria-label={props.switcher.label}>
+      <popover.Trigger
+        class="k2-nav-switch"
+        data-k2-part="NavSwitcher"
+        // the button is called what it shows, the open thing; what it does is its description
+        aria-label={props.switcher.current ? undefined : props.switcher.label}
+        aria-describedby={props.switcher.current ? purpose : undefined}
+      >
         <Show when={props.switcher.current} fallback={<span class="k2-nav-switch-name">{props.switcher.label}</span>}>
           {(current) => (
             <>
               <Mark icon={current().icon} color={current().color} />
               <span class="k2-nav-switch-name">{current().label}</span>
+              <span id={purpose} hidden>
+                {props.switcher.label}
+              </span>
             </>
           )}
         </Show>
@@ -388,13 +434,14 @@ const NavSwitch = (props: { switcher: NavSwitcher }) => {
       <popover.Popup
         ref={(element: HTMLElement) => {
           panel = element;
+          firstFocus();
         }}
         class="k2-menu k2-switcher"
         side="bottom"
         align="start"
         sideOffset={4}
         collisionPadding={8}
-        onKeyDown={move}
+        onKeyDown={keys}
       >
         <Show when={searchable()}>
           <div class="k2-switcher-search">
@@ -408,38 +455,42 @@ const NavSwitch = (props: { switcher: NavSwitcher }) => {
             />
           </div>
         </Show>
-        <Show when={shown().length} fallback={<div class="k2-switcher-none">{props.switcher.noMatch}</div>}>
-          <For each={sections()}>
-            {(section) => (
-              <div class="k2-mgroup" role="group" aria-label={section.group}>
-                <Show when={section.group}>{(group) => <div class="k2-mh">{group()}</div>}</Show>
-                <For each={section.options}>
-                  {(option) => (
-                    <Link
-                      class="k2-mi"
-                      href={option.href}
-                      onNavigate={option.onNavigate}
-                      aria-current={option.current ? "page" : undefined}
-                      onClick={close}
-                    >
-                      <span class="k2-mi-lead">
-                        <Mark icon={option.icon} color={option.color} />
-                      </span>
-                      <span class="k2-mi-label">{option.label}</span>
-                      <Show when={option.meta}>{(meta) => <span class="k2-mi-meta">{meta()}</span>}</Show>
-                      <Show when={option.current}>
-                        <Icon name="check" />
-                      </Show>
-                    </Link>
-                  )}
-                </For>
-              </div>
-            )}
-          </For>
-          <Show when={found().length > shown().length}>
-            <div class="k2-switcher-none">{props.switcher.more(found().length - shown().length)}</div>
-          </Show>
-        </Show>
+        <For each={sections()}>
+          {(section) => (
+            // a named run of options is a group; an unnamed run is only a run
+            <div class="k2-mgroup" {...(section.group ? { role: "group", "aria-label": section.group } : {})}>
+              <Show when={section.group}>{(group) => <div class="k2-mh">{group()}</div>}</Show>
+              <For each={section.options}>
+                {(option) => (
+                  <Link
+                    class="k2-mi"
+                    data-option=""
+                    href={option.href}
+                    onNavigate={option.onNavigate}
+                    aria-current={option.current ? "page" : undefined}
+                    onClick={(event: MouseEvent) => {
+                      // the open thing is here already: choosing it only closes the panel
+                      if (option.current && plainClick(event)) event.preventDefault();
+                      close();
+                    }}
+                  >
+                    <span class="k2-mi-lead">
+                      <Mark icon={option.icon} color={option.color} />
+                    </span>
+                    <span class="k2-mi-label">{option.label}</span>
+                    <Show when={option.meta}>{(meta) => <span class="k2-mi-meta">{meta()}</span>}</Show>
+                    <Show when={option.current}>
+                      <Icon name="check" />
+                    </Show>
+                  </Link>
+                )}
+              </For>
+            </div>
+          )}
+        </For>
+        <div class="k2-switcher-none" role="status" data-said={status() ? "" : undefined}>
+          {status()}
+        </div>
         <Show when={props.switcher.actions?.length}>
           <div class="k2-msep" />
           <For each={props.switcher.actions}>
@@ -468,6 +519,10 @@ const NavSwitch = (props: { switcher: NavSwitcher }) => {
   );
 };
 
+/**
+ * The sidebar of an app: its name, its search and main action, groups of round entries with counts, its own rows, and
+ * entries at the foot.
+ */
 export const Nav = (props: NavProps) => {
   // A part passed as JSX is made once, here, and read from here (as `Workspace` does with its parts).
   const list = resolveChildren(() => props.list);

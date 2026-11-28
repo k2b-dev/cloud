@@ -32,7 +32,11 @@ const places = {
   icon: "ti ti-tool",
   color: "#c2410c",
   switchLabel: "Base wechseln",
-  options: bases.map(([label, icon, color], index) => ({
+  // `<html data-places data-many>`: 500 bases, so the phone's list is bounded as the sidebar's is
+  options: (document.documentElement.dataset.many === undefined
+    ? bases
+    : Array.from({ length: 500 }, (_, index): [string, string, string] => bases[index] ?? [`Base ${index}`, "database", "#0369a1"])
+  ).map(([label, icon, color], index) => ({
     id: `/app/grids/B${index}`,
     label,
     icon: `ti ti-${icon}`,

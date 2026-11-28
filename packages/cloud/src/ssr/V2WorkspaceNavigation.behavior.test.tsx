@@ -87,6 +87,7 @@ test("the sidebar's switcher stands in the menu: the same things in the same ord
   const { default: V2WorkspaceNavigation } = await import("./V2WorkspaceNavigation");
   const { readWorkspaceNavigation } = await import("./workspace-navigation");
   const made: string[] = [];
+  const openInPlace = () => void made.push("in place");
   const page = render(
     () => (
       <V2WorkspaceNavigation
@@ -96,14 +97,22 @@ test("the sidebar's switcher stands in the menu: the same things in the same ord
           label: "Base wechseln",
           current: { label: "Werkstatt", icon: "database", color: "#0369a1" },
           options: [
-            { label: "Werkstatt", href: "/app/grids/B1", icon: "database", color: "#0369a1", group: "Zuletzt geöffnet", current: true },
-            { label: "Lager", href: "/app/grids/B2", icon: "database", group: "Alle Basen" },
+            {
+              label: "Werkstatt",
+              href: "/app/grids/B1",
+              icon: "database",
+              color: "#0369a1",
+              group: "Zuletzt geöffnet",
+              meta: "vor 1 Std.",
+              current: true,
+            },
+            { label: "Lager", href: "/app/grids/B2", icon: "database", group: "Alle Basen", onNavigate: openInPlace },
           ],
           search: "Base suchen",
           noMatch: "Keine Base passt",
-          more: (hidden) => `+${hidden} weitere`,
+          more: (hidden, searching) => (searching ? `${hidden} weitere Treffer` : `+${hidden} weitere`),
           actions: [
-            { label: "Neue Base", icon: "plus", href: "/app/grids/B1?new=blank" },
+            { label: "Neue Base", icon: "plus", href: "/app/grids/B1?new=blank", onNavigate: openInPlace },
             { label: "Aus Vorlage", icon: "template", onClick: () => void made.push("template") },
           ],
         }}
@@ -119,14 +128,32 @@ test("the sidebar's switcher stands in the menu: the same things in the same ord
       icon: "ti ti-database",
       color: "#0369a1",
       switchLabel: "Base wechseln",
+      // the groups, the quiet words and the in-place opening reach the menu too
       options: [
-        { id: "/app/grids/B1", label: "Werkstatt", icon: "ti ti-database", color: "#0369a1", href: "/app/grids/B1" },
-        { id: "/app/grids/B2", label: "Lager", icon: "ti ti-database", href: "/app/grids/B2" },
+        {
+          id: "/app/grids/B1",
+          label: "Werkstatt",
+          icon: "ti ti-database",
+          color: "#0369a1",
+          href: "/app/grids/B1",
+          group: "Zuletzt geöffnet",
+          description: "vor 1 Std.",
+        },
+        {
+          id: "/app/grids/B2",
+          label: "Lager",
+          icon: "ti ti-database",
+          href: "/app/grids/B2",
+          group: "Alle Basen",
+          onNavigate: openInPlace,
+        },
       ],
     });
-    expect(switcher?.actions?.map((action) => [action.label, action.icon, action.href])).toEqual([
-      ["Neue Base", "ti ti-plus", "/app/grids/B1?new=blank"],
-      ["Aus Vorlage", "ti ti-template", undefined],
+    expect(switcher?.more?.(480, false)).toBe("+480 weitere");
+    expect(switcher?.more?.(12, true)).toBe("12 weitere Treffer");
+    expect(switcher?.actions?.map((action) => [action.label, action.icon, action.href, action.onNavigate])).toEqual([
+      ["Neue Base", "ti ti-plus", "/app/grids/B1?new=blank", openInPlace],
+      ["Aus Vorlage", "ti ti-template", undefined, undefined],
     ]);
     const fromTemplate = switcher?.actions?.[1];
     if (fromTemplate && "action" in fromTemplate) fromTemplate.action?.();

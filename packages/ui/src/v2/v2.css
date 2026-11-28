@@ -4108,6 +4108,10 @@
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
 }
+/* the status line stays in the panel, so a screen reader hears what it comes to say; silent it takes no room */
+.k2-ui .k2-switcher-none:not([data-said]) {
+  padding: 0;
+}
 .k2-ui .k2-switcher .k2-mi {
   cursor: pointer;
 }

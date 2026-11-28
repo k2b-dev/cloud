@@ -58,11 +58,21 @@ const panel = (page: Page) =>
     };
   });
 
-const button = (page: Page) => page.getByRole("button", { name: "Base wechseln" });
+// the button is called what it shows (WCAG 2.5.3: the visible words are its name); what it does is its description
+const button = (page: Page) => page.getByRole("button", { name: "Werkstatt", exact: true });
+const description = (page: Page) =>
+  button(page).evaluate((element) =>
+    (element.getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" "),
+  );
+const focused = (page: Page) => page.evaluate(() => document.activeElement?.textContent?.trim() ?? document.activeElement?.tagName);
 
-test("server markup: the open base stands on the switcher's button before the island, the panel is closed", () => {
+test("server markup: the open base names the switcher's button before the island, its purpose describes it", () => {
   expect(markup).toContain('data-k2-part="NavSwitcher"');
-  expect(markup).toContain('aria-label="Base wechseln"');
+  expect(markup).toContain("aria-describedby=");
+  expect(markup).not.toContain('aria-label="Base wechseln"');
   expect(markup).toContain("Werkstatt");
   expect(markup).not.toContain("k2-switcher");
 });
@@ -77,8 +87,11 @@ test("the panel holds the bases in their groups, the search from 8, and the deed
         .locator(".k2-mk")
         .evaluate((mark) => mark.getBoundingClientRect().width),
     ).toBe(24);
+    expect(await description(page)).toBe("Base wechseln");
     await button(page).click();
     await page.locator(".k2-switcher").waitFor();
+    // with a search the first focus stands in it, as in the shell's switcher
+    await page.waitForFunction(() => document.activeElement?.getAttribute("type") === "search");
     const shown = await panel(page);
     expect(shown.search).toBe(true);
     expect(shown.headings).toEqual(["Zuletzt geöffnet", "Alle Basen"]);
@@ -107,8 +120,41 @@ test("the search narrows both groups; nothing found says so; arrows go from the 
     expect(await page.evaluate(() => document.activeElement?.getAttribute("type"))).toBe("search");
     await search.fill("zzz");
     shown = await panel(page);
-    expect(await page.locator(".k2-switcher-none").textContent()).toBe("Keine Base passt");
+    // the quiet line is a status in a slot of its own: a screen reader hears it, and it stands where it stood
+    const status = page.locator('.k2-switcher-none[role="status"]');
+    expect(await status.textContent()).toBe("Keine Base passt");
     expect(shown.entries).toEqual(["Neue Base", "Aus Vorlage"]);
+    await search.fill("");
+    expect(await status.count()).toBe(1);
+    expect(await status.textContent()).toBe("");
+  });
+});
+
+test("Home and End go to the ends; Enter in the search opens the first match; the open base only closes", async () => {
+  await withPage(1440, async (page) => {
+    await button(page).click();
+    const search = page.getByRole("searchbox", { name: "Base suchen" });
+    await search.press("ArrowDown");
+    await page.keyboard.press("End");
+    expect(await focused(page)).toContain("Aus Vorlage");
+    await page.keyboard.press("Home");
+    expect(await focused(page)).toContain("Werkstatt");
+    // the first match of "werk" is the open base: choosing it closes the panel and the page stays
+    await search.fill("werk");
+    const before = page.url();
+    await search.press("Enter");
+    await page.locator(".k2-switcher").waitFor({ state: "detached" });
+    expect(page.url()).toBe(before);
+  });
+});
+
+test("without a search the first focus stands on the open base", async () => {
+  await withPage(1440, async (page) => {
+    await page.evaluate(() => window.__switcherFew?.());
+    await button(page).click();
+    await page.locator(".k2-switcher").waitFor();
+    await page.waitForFunction(() => document.activeElement?.getAttribute("aria-current") === "page");
+    expect(await focused(page)).toContain("Werkstatt");
   });
 });
 
@@ -118,7 +164,7 @@ test("Escape closes the panel and gives the focus back; a deed runs and closes i
     await page.locator(".k2-switcher").waitFor();
     await page.keyboard.press("Escape");
     await page.locator(".k2-switcher").waitFor({ state: "detached" });
-    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Base wechseln");
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-k2-part"))).toBe("NavSwitcher");
     await button(page).click();
     await page.locator(".k2-switcher").getByText("Aus Vorlage").click();
     await page.locator(".k2-switcher").waitFor({ state: "detached" });
@@ -137,7 +183,7 @@ test("500 bases: the panel lists 20 and says how many the search reaches; a sear
     await page.getByRole("searchbox", { name: "Base suchen" }).fill("base 4");
     // "Base 4", "Base 40" … "Base 49" and "Base 400" … "Base 495": 107 matches, 50 listed
     expect((await panel(page)).entries).toHaveLength(52);
-    expect(await page.locator(".k2-switcher-none").textContent()).toBe("+57 weitere über die Suche");
+    expect(await page.locator(".k2-switcher-none").textContent()).toBe("57 weitere Treffer – genauer suchen");
   });
 });
 
