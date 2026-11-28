@@ -1,23 +1,21 @@
-import type { AuthContext } from "@k2b/cloud/server";
-import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import { pulseMessages } from "../messages";
-import { pulseService } from "../service";
-import { projectBases } from "../service/public-resources";
-import OverviewScreen from "./screens/OverviewScreen.island";
+import StartScreen from "./screens/StartScreen.island";
+import { loadPulseStart } from "./start-data";
 
+/**
+ * Pulse has no list of bases: the sidebar's switcher and search reach every base. `/app/pulse` (old `?q=` links too)
+ * opens the base worked in last, else the newest; only before the first base it shows the start.
+ */
 export default ssr<AuthContext>(async (c) => {
-  const user = expectUserBackedActor(c);
-  const url = new URL(c.req.raw.url);
-  const [basesResult, deletingResult] = await Promise.all([pulseService.base.list(user), pulseService.base.listDeleting(user)]);
-  const bases = basesResult.ok ? await projectBases(basesResult.data) : [];
-  const deletingBases = deletingResult.ok ? await projectBases(deletingResult.data) : [];
+  const start = await loadPulseStart(c);
+  if (start.kind === "open") return c.redirect(start.href, 302);
   const { t } = pulseMessages.resolve([getLocale(c)]);
-
   return () => (
     <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.appName }]}>
-      <OverviewScreen bases={bases} deletingBases={deletingBases} initialQuery={url.searchParams.get("q")?.trim() ?? ""} />
+      <StartScreen deleting={start.deleting} />
     </Layout>
   );
 });

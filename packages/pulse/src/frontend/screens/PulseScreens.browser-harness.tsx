@@ -5,6 +5,7 @@ import AdminScreen, { ADMIN_VIEWS } from "../admin/AdminScreen";
 import { fixtureAdminBases, fixtureAdminNav, fixturePolicy, fixtureTargets } from "../admin/admin-fixtures";
 import { PULSE_SETTINGS_TABS, readWorkspacePathState } from "../workspace/routes";
 import { sqlTestLimits } from "../workspace/sql-test-fixtures";
+import DeletingScreen from "./DeletingScreen";
 import {
   fixtureAccess,
   fixtureAuthors,
@@ -17,22 +18,30 @@ import {
   manySources,
   sourcesProps,
   worstBases,
+  worstDeletingBases,
   worstSources,
 } from "./fixtures";
-import OverviewScreen from "./OverviewScreen";
 import QueriesScreen from "./QueriesScreen";
 import SettingsScreen from "./SettingsScreen";
 import SourcesScreen from "./SourcesScreen";
 import SqlScreen from "./SqlScreen";
+import StartScreen from "./StartScreen";
 
 /**
  * Every Pulse page for the browser tests, rendered from the address as the server would: `data-variant` on the
- * document picks the data (`normal`, `worst` for break-ui, `huge` for the scale check). The test answers the APIs.
+ * document picks the data (`normal`, `worst` for break-ui, `huge` for the scale check, `deleting` for a start with
+ * bases in deletion). The test answers the APIs.
  */
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing harness root");
 const variant = document.documentElement.dataset.variant ?? "normal";
-const bases = variant === "huge" ? manyBases(1000) : variant === "worst" ? [...worstBases, ...fixtureBases] : fixtureBases;
+// the sidebar as the server sends it: the first bases of the variant, and the bases in deletion for their admin
+const nav =
+  variant === "huge"
+    ? fixtureNav(manyBases(1000))
+    : variant === "worst"
+      ? fixtureNav([...worstBases, ...fixtureBases], [...worstDeletingBases, ...fixtureDeletingBases])
+      : fixtureNav();
 const sources =
   variant === "huge"
     ? manySources(1000)
@@ -59,18 +68,20 @@ const screen = (): JSX.Element => {
       />
     );
   }
-  if (path === "/app/pulse")
-    return <OverviewScreen bases={bases} deletingBases={fixtureDeletingBases} initialQuery={params.get("q") ?? ""} />;
-  const [, , , , view, id] = path.split("/");
+  // `/app/pulse` stands only before the first base; the server opens a base otherwise
+  if (path === "/app/pulse") return <StartScreen deleting={variant === "normal" ? [] : nav.deleting} />;
+  const [, , , id, view, item] = path.split("/");
+  const deleting = nav.deleting.find((base) => base.id === id);
+  if (deleting) return <DeletingScreen nav={nav} base={deleting} />;
   const frame = {
-    nav: fixtureNav(),
+    nav,
     baseId,
     baseName: fixtureBases.find((base) => base.id === baseId)?.name ?? "",
     sourceCount: sources.length,
   };
   if (view === "sql") {
     const route = readWorkspacePathState(`${path}${location.search}`, baseId);
-    const query = id ? (fixtureQueries.find((entry) => entry.id === id) ?? null) : null;
+    const query = item ? (fixtureQueries.find((entry) => entry.id === item) ?? null) : null;
     if (query) route.sql = undefined;
     return <SqlScreen {...frame} route={route} snapshot={{ limits: sqlTestLimits, query, error: null }} canWrite />;
   }
@@ -85,10 +96,10 @@ const screen = (): JSX.Element => {
       />
     );
   if (view === "settings") {
-    const tab = PULSE_SETTINGS_TABS.find((entry) => entry === id) ?? "general";
+    const tab = PULSE_SETTINGS_TABS.find((entry) => entry === item) ?? "general";
     return (
       <SettingsScreen
-        nav={fixtureNav()}
+        nav={nav}
         base={fixtureBases[0]!}
         tab={tab}
         canAdmin={variant !== "member"}
@@ -99,7 +110,13 @@ const screen = (): JSX.Element => {
       />
     );
   }
-  return <SourcesScreen {...sourcesProps({ open: view === "sources" ? (id ?? "") : "", sources })} initialSearch={params.get("q") ?? ""} />;
+  return (
+    <SourcesScreen
+      {...sourcesProps({ open: view === "sources" ? (item ?? "") : "", sources })}
+      initialNav={nav}
+      initialSearch={params.get("q") ?? ""}
+    />
+  );
 };
 
 render(() => <LocaleProvider locale="de">{screen()}</LocaleProvider>, host);

@@ -234,10 +234,8 @@ export const pulseMessages = i18n.define({
       tokenIngestEndpoint: "Token ingest endpoint",
       ingestCounts: ({ metrics, events, states }: { metrics: number; events: number; states: number }) =>
         `${metrics} ${i18n.plural(metrics, "en", { one: "metric", other: "metrics" })}, ${events} ${i18n.plural(events, "en", { one: "event", other: "events" })}, ${states} ${i18n.plural(states, "en", { one: "state", other: "states" })}`,
-      searchBases: "Search Pulse bases",
       searchBasesPlaceholder: "Search bases...",
       searchSourcesPlaceholder: "Search sources...",
-      yourBases: "Your Pulse bases",
       createBasePrompt: "New Pulse base",
       newBase: "New base",
       createBaseFailed: "Failed to create Pulse base",
@@ -672,10 +670,8 @@ export const pulseMessages = i18n.define({
       tokenIngestEndpoint: "Endpunkt für Token-Datenaufnahme",
       ingestCounts: ({ metrics, events, states }) =>
         `${metrics} ${i18n.plural(metrics, "de", { one: "Metrik", other: "Metriken" })}, ${events} ${i18n.plural(events, "de", { one: "Ereignis", other: "Ereignisse" })}, ${states} ${i18n.plural(states, "de", { one: "Zustand", other: "Zustände" })}`,
-      searchBases: "Pulse-Basen durchsuchen",
       searchBasesPlaceholder: "Basen durchsuchen…",
       searchSourcesPlaceholder: "Quellen durchsuchen…",
-      yourBases: "Deine Pulse-Basen",
       createBasePrompt: "Neue Pulse-Basis",
       newBase: "Neue Basis",
       createBaseFailed: "Die Pulse-Basis konnte nicht erstellt werden",

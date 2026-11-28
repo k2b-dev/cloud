@@ -43,7 +43,7 @@ export default function BaseFrame(props: Props) {
       <V2WorkspaceNavigation label={t().appName} groups={nav.groups()} />
       {nav.dialog()}
       <Workspace
-        sidebar={<Nav title={t().appName} icon="activity-heartbeat" groups={nav.groups()} />}
+        sidebar={<Nav title={t().appName} icon="activity-heartbeat" search={nav.search()} groups={nav.groups()} />}
         sidebarLabel={words().bases}
         detail={props.detail}
         detailEmpty={props.detailEmpty}

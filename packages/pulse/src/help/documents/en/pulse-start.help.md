@@ -10,9 +10,13 @@ Pulse collects metrics, events, and states in bases. Open a base to set up sourc
 
 Open **Pulse** from the app menu. It is hidden from the app bar by default. If you have chosen to show or pin Pulse there, your choice stays in place.
 
+Pulse opens the base you used last. If you can no longer open it, Pulse opens the base that changed most recently. Before your first base, Pulse shows **New base**.
+
 ## Read a base
 
-A base opens on **Sources**. The sidebar holds **Sources**, **SQL**, and **Settings**.
+The sidebar lists your bases. Choose a base to open it. **Search bases...** above the list finds every base you can open, also bases that the list does not show. The **+** next to **Bases** creates a new base.
+
+A base opens on **Sources**. The tabs in the head hold **Sources**, **SQL**, and **Saved queries**. **Settings** is in the **...** menu.
 
 **Sources** lists all sources with their state and newest data. The list refreshes every 5 seconds; focus and scroll position stay. Select a row to open its details on the right. **Source** creates a new source; you need edit access for it.
 

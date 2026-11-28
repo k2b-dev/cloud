@@ -1,5 +1,5 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
-import { type AuthContext, ok } from "@k2b/cloud/server";
+import { type AuthContext, err, fail, ok } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import { type Context, Hono } from "hono";
 import { pulseService } from "../../service";
@@ -26,15 +26,16 @@ afterEach(() => {
 const stubBase = () => {
   const list = spyOn(pulseService.source, "list").mockResolvedValue(ok([]));
   const count = spyOn(pulseService.source, "count").mockResolvedValue(ok(4));
+  const get = spyOn(pulseService.base, "get").mockResolvedValue(ok(fixtureBase({ id: baseId, name: "Werkstatt" })));
+  const grant = spyOn(access, "requireBaseAccess").mockResolvedValue(ok("admin"));
   spies.push(spyOn(pulseService.source, "figures").mockResolvedValue(ok(figuresOf([]))));
   spies.push(
     list,
     count,
+    get,
+    grant,
     spyOn(resources, "resolvePublicId").mockResolvedValue(baseId),
     spyOn(baseNavModule, "baseNav").mockResolvedValue(fixtureNav()),
-    spyOn(pulseService.base, "get").mockResolvedValue(ok(fixtureBase({ id: baseId, name: "Werkstatt" }))),
-
-    spyOn(access, "requireBaseAccess").mockResolvedValue(ok("admin")),
     spyOn(savedQueries, "list").mockResolvedValue(ok({ items: [], total: 0, nextOffset: null })),
     spyOn(sqlService, "baseSqlLimits").mockResolvedValue(ok(sqlTestLimits)),
     spyOn(attention, "readBaseAttention").mockResolvedValue(
@@ -42,7 +43,7 @@ const stubBase = () => {
     ),
     spyOn(services, "get").mockResolvedValue("https://cloud.example.test"),
   );
-  return { list, count };
+  return { list, count, get, grant };
 };
 
 /** Runs one loader inside a request for `path`, as the page does. */
@@ -77,4 +78,22 @@ test("the sources view reads one page of sources, and its tab still counts them 
   expect(list.mock.calls[0]?.[2]).toMatchObject({ limit: SOURCES_PAGE });
   expect(count).toHaveBeenCalledTimes(1);
   expect(data).toMatchObject({ kind: "ok", sourceCount: 4 });
+});
+
+test("every page of a base in deletion is its admin's deletion page, reads no sources, and is gone for others", async () => {
+  const { list, get, grant } = stubBase();
+  get.mockResolvedValue(
+    ok(fixtureBase({ id: baseId, shortId: "Base01", name: "Altes Lager", deletionStartedAt: "2026-11-25T08:00:00.000Z" })),
+  );
+  const pages = [
+    () => load("/app/pulse/:baseId", "/app/pulse/Base01", (c) => loadPulseWorkspacePageData(c)),
+    () => load("/app/pulse/:baseId/queries", "/app/pulse/Base01/queries", (c) => loadPulseQueriesPageData(c, 50)),
+    () => load("/app/pulse/:baseId/settings", "/app/pulse/Base01/settings", (c) => loadPulseSettingsPageData(c, "general")),
+  ];
+  for (const page of pages)
+    expect(await page()).toMatchObject({ kind: "deleting", base: { id: "Base01", name: "Altes Lager", state: "deleting" } });
+  expect(list).not.toHaveBeenCalled();
+  // someone who only reads the base: no page
+  grant.mockImplementation(async (_base, _scope, required) => (required === "admin" ? fail(err.forbidden("Access denied")) : ok("read")));
+  for (const page of pages) expect(await page()).toEqual({ kind: "error", status: 404 });
 });

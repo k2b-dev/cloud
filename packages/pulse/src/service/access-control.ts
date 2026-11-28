@@ -67,7 +67,8 @@ const boundBaseShortId = (scope: AccessScope): string | null => {
 const missingBinding = (scope: AccessScope, bound: string | null): boolean =>
   isResourceScope(scope) && !bound && !serviceAccountUsesOwnGrants(scope.serviceAccount.kind);
 
-const canRequestPermission = (scope: AccessScope, required: PermissionLevel): boolean =>
+/** Whether the scope's own cap (a token's scopes) allows `required` at all, before any grant is read. */
+export const canRequestPermission = (scope: AccessScope, required: PermissionLevel): boolean =>
   PERMISSION_RANK[scopedPermission(scope)] >= PERMISSION_RANK[required];
 
 export const readableScopeFilter = (scope: AccessScope): { subject: AccessSubject; boundBaseShortId: string | null } | null => {

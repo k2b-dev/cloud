@@ -14,7 +14,7 @@ import { loadPulseQueriesPageData, loadPulseSettingsPageData, loadPulseWorkspace
  * receives. The counts are pinned, so a new query per row or a second read of the same thing shows up here.
  */
 suiteFor("database", "valkey")("Pulse page loads", () => {
-  let memberId: string, baseId: string, accessId: string;
+  let memberId: string, baseId: string, accessId: string, deletingId: string;
   const base = newShortId();
   const server = newShortId();
   const shop = newShortId();
@@ -30,6 +30,12 @@ suiteFor("database", "valkey")("Pulse page loads", () => {
       INSERT INTO auth.access(user_id, permission) VALUES (${memberId}::uuid, 'admin') RETURNING id`;
     accessId = grant!.id;
     await sql`INSERT INTO pulse.base_access(base_id, access_id) VALUES (${baseId}::uuid, ${accessId}::uuid)`;
+    // a base of the member's in deletion: the sidebar names it in the same one statement
+    const [gone] = await sql<{ id: string }[]>`
+      INSERT INTO pulse.bases(short_id, name, timezone, deletion_started_at)
+      VALUES (${newShortId()}, 'Altes Lager', 'Europe/Berlin', now()) RETURNING id`;
+    deletingId = gone!.id;
+    await sql`INSERT INTO pulse.base_access(base_id, access_id) VALUES (${deletingId}::uuid, ${accessId}::uuid)`;
     await seedActiveBaseStore(baseId);
     const sources = await sql<{ id: string }[]>`
       INSERT INTO pulse.sources(short_id, base_id, kind, name, endpoint_url)
@@ -47,6 +53,7 @@ suiteFor("database", "valkey")("Pulse page loads", () => {
   });
   afterAll(async () => {
     if (baseId) await sql`DELETE FROM pulse.bases WHERE id=${baseId}::uuid`;
+    if (deletingId) await sql`DELETE FROM pulse.bases WHERE id=${deletingId}::uuid`;
     if (accessId) await sql`DELETE FROM auth.access WHERE id=${accessId}::uuid`;
     if (memberId) await sql`DELETE FROM auth.users WHERE id=${memberId}::uuid`;
   });
@@ -105,6 +112,10 @@ suiteFor("database", "valkey")("Pulse page loads", () => {
       });
     }
     expect(Object.fromEntries(Object.entries(pages).map(([name, page]) => [name, page.statements.length]))).toEqual(pinned);
+    // the sidebar names the member's base in deletion beside the open one
+    const sidebar = (pages.sources.result as { workspaceProps: { initialNav: { deleting: { name: string }[] } } }).workspaceProps
+      .initialNav;
+    expect(sidebar.deleting.map((entry) => entry.name)).toEqual(["Altes Lager"]);
   }, 60_000);
 
   test("the sources page costs the same statements with ten sources as with three", async () => {

@@ -5,7 +5,7 @@ section: Operations
 order: 420
 description: Collect telemetry and query each base with read-only SQL.
 tags: [pulse, telemetry, metrics]
-updated: 2026-11-06
+updated: 2026-11-28
 ---
 
 # Pulse
@@ -27,13 +27,28 @@ Cloud administrators open **Administration → App administration → Pulse** to
 manage the data store, bases, and internal targets. **Data store** opens first.
 Pulse uses the shared app administration list, with no separate sidebar section.
 
+## Open a base
+
+Pulse has no list of bases. `/app/pulse` opens the base used last, while the
+person may still read it and it is not being deleted; otherwise it opens the
+readable base that changed most recently. Every base page remembers its base in
+the cookie `pulse_base` (path `/app/pulse`, one year, `HttpOnly`). Old
+`/app/pulse?q=` links lead the same way. Before the first base, `/app/pulse`
+shows a start page with **New base**; it lists the bases in deletion that the
+person administers.
+
+The sidebar lists the first 50 readable bases, newest change first, and always
+the open one. **Search bases...** filters them as you type and, after a short
+pause, asks `GET /api/pulse/nav?q=` for the first 50 bases whose name matches,
+so it also finds bases beyond the first 50. **+** next to **Bases** creates a
+base. Base administrators see up to 20 bases in deletion under **Being
+deleted**. The phone menu lists the same entries without the search.
+
 ## See what needs attention
 
-The base switcher shows the number of configured members. Each person, group
-or agent counts once; general access rules do not count as individual members.
-
-A base opens on **Sources**, `/app/pulse/:baseId`. The sidebar holds
-**Sources** and **SQL** (`/sql[/:queryId]`) and opens the base **Settings**.
+A base opens on **Sources**, `/app/pulse/:baseId`. Its head holds the tabs
+**Sources**, **SQL** (`/sql[/:queryId]`) and **Saved queries** (`/queries`);
+**...** opens the base **Settings**.
 
 - **Sources** lists every source with its state and newest data and refreshes
   every 5 seconds; focus and scroll position stay. A row opens the source
@@ -150,13 +165,16 @@ cannot create bases.
 A new base moves from `provisioning` to `active`. Changes require an active
 base. Clearing (`clearing`) discards measurements and keeps sources, tokens,
 settings, and access. Deleting (`deleting`) revokes source tokens and database
-read access before removing the database. The overview keeps a deleting base
-visible to its administrators until deletion finishes. After five failed
-attempts the operation is `failed`. A base administrator chooses **Retry** in
-the base settings or overview; a Cloud administrator can retry from **Bases**.
-Open pages check a running operation every five seconds. If that check fails,
-the overview card and the **Bases** row say the status is unknown, keep
-checking, and offer **Retry** to check again at once.
+read access before removing the database. A deleting base stays in its
+administrators' sidebar under **Being deleted** until deletion finishes; its
+page `/app/pulse/:baseId` then shows the deletion's state instead of the base,
+and answers `404` to everyone else. After five failed attempts the operation is
+`failed`. A base administrator chooses **Retry** on that page or in the base
+settings; a Cloud administrator can retry from **Bases**. Open pages check a
+running operation every five seconds. If that check fails, the deletion's row
+and the **Bases** row say the status is unknown, keep checking, and offer
+**Retry** to check again at once. When the deletion is done, the row says so
+and leads back to Pulse.
 
 | Per-base setting | Default or fixed profile |
 | --- | --- |

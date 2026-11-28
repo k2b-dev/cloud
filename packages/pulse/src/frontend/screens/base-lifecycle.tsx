@@ -1,35 +1,44 @@
 import { useLocale } from "@k2b/ui";
 import { Button, Chip, Dialog, Field, Input, Row, useToast } from "@k2b/ui/v2";
 import { createSignal, onCleanup } from "solid-js";
-import type { PulseBase } from "../../contracts";
+import type { PulseBase, PulseBaseNav } from "../../contracts";
 import { jsonFetch } from "../http";
 import { usePulseMessages } from "../use-messages";
 import { baseStoreMessages } from "../workspace/base-store-messages";
 import { installPeriodicRefresh } from "../workspace/periodic-refresh";
 import { useScreenMessages } from "./messages";
 
-/** A base admin follows a running deletion here, since the base left the list, and resumes a failed one. */
-export function DeletingBase(props: { base: PulseBase }) {
+/**
+ * A base admin follows a running deletion here, since the base is no place any more, and resumes a failed one. Once
+ * the deletion finished the row says so and leads back to Pulse.
+ */
+export function DeletingBase(props: { base: PulseBaseNav }) {
   const locale = useLocale();
   const t = () => baseStoreMessages.resolve([locale()]).t;
+  const pulse = usePulseMessages();
   const toast = useToast();
-  const [base, setBase] = createSignal(props.base);
+  const [name, setName] = createSignal(props.base.name);
+  const [storeFailed, setStoreFailed] = createSignal(props.base.state === "deletion-failed");
   // Gone once the deletion finished; the row stays in place until a reload.
   const [deleted, setDeleted] = createSignal(false);
   const [retrying, setRetrying] = createSignal(false);
-  const failed = () => !deleted() && base().store.state === "failed";
+  const failed = () => !deleted() && storeFailed();
+  const take = (base: PulseBase) => {
+    setName(base.name);
+    setStoreFailed(base.store.state === "failed");
+  };
   const followed = installPeriodicRefresh({
     active: () => !deleted() && !failed() && !retrying(),
     refresh: async () => {
       const gone = new Error("PULSE_BASE_GONE");
-      const next = await jsonFetch<PulseBase>(`/api/pulse/bases/${base().id}`, undefined, t().retryFailed, (status) =>
+      const next = await jsonFetch<PulseBase>(`/api/pulse/bases/${props.base.id}`, undefined, t().retryFailed, (status) =>
         status === 404 || status === 403 ? gone : new Error(t().retryFailed),
       ).catch((error: unknown) => {
         if (error !== gone) throw error;
         setDeleted(true);
         return null;
       });
-      if (next) setBase(next);
+      if (next) take(next);
     },
   });
   const controller = new AbortController();
@@ -38,8 +47,12 @@ export function DeletingBase(props: { base: PulseBase }) {
     if (!failed()) return followed.retry();
     setRetrying(true);
     try {
-      setBase(
-        await jsonFetch<PulseBase>(`/api/pulse/bases/${base().id}/retry`, { method: "POST", signal: controller.signal }, t().retryFailed),
+      take(
+        await jsonFetch<PulseBase>(
+          `/api/pulse/bases/${props.base.id}/retry`,
+          { method: "POST", signal: controller.signal },
+          t().retryFailed,
+        ),
       );
       toast(t().retryStarted, { status: "ok" });
     } catch {
@@ -60,14 +73,17 @@ export function DeletingBase(props: { base: PulseBase }) {
             ? { icon: "check", color: "#059669" }
             : { icon: "trash", color: "#d97706" }
       }
-      lines={[base().name, text()]}
-      // under "Wird gelöscht" a running deletion needs no word of its own; a failed or finished one does
+      lines={[name(), text()]}
+      // a running deletion says so in its line; a failed or finished one has its word
       meta={failed() || deleted() ? <Chip status={failed() ? "bad" : "ok"}>{state()}</Chip> : undefined}
-      // retrying is offered where it can help: a failed deletion, or a follow-up that stopped answering
+      // retrying is offered where it can help: a failed deletion, or a follow-up that stopped answering; once the
+      // base is gone the way leads back to Pulse
       action={
-        failed() || followed.failed() || retrying()
-          ? { label: t().retry, icon: "refresh", disabled: retrying(), onClick: () => void retry() }
-          : undefined
+        deleted()
+          ? { label: pulse().backToPulse, icon: "arrow-left", href: "/app/pulse" }
+          : failed() || followed.failed() || retrying()
+            ? { label: t().retry, icon: "refresh", disabled: retrying(), onClick: () => void retry() }
+            : undefined
       }
     />
   );

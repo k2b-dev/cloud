@@ -10,9 +10,13 @@ Pulse sammelt Metriken, Ereignisse und Zustände in Bases. Öffne eine Base, um 
 
 Öffne **Pulse** über das App-Menü. In der App-Leiste ist Pulse standardmäßig ausgeblendet. Wenn du Pulse dort eingeblendet oder angeheftet hast, bleibt deine Auswahl erhalten.
 
+Pulse öffnet die Base, die du zuletzt benutzt hast. Wenn du sie nicht mehr öffnen kannst, öffnet Pulse die zuletzt geänderte Base. Vor deiner ersten Base zeigt Pulse **Neue Basis**.
+
 ## Lies eine Base
 
-Eine Base öffnet **Quellen**. Die Seitenleiste enthält **Quellen**, **SQL** und **Einstellungen**.
+Die Seitenleiste zeigt deine Bases. Wähle eine Base, um sie zu öffnen. **Basen durchsuchen…** über der Liste findet jede Base, die du öffnen kannst, auch Bases, die die Liste nicht zeigt. Das **+** neben **Basen** legt eine neue Base an.
+
+Eine Base öffnet **Quellen**. Die Tabs im Kopf enthalten **Quellen**, **SQL** und **Gespeicherte Abfragen**. **Einstellungen** steht im Menü **…**.
 
 **Quellen** zeigt alle Quellen mit Zustand und neuesten Daten. Die Liste aktualisiert sich alle 5 Sekunden; Fokus und Scrollposition bleiben. Wähle eine Zeile, um ihre Details rechts zu öffnen. **Quelle** legt eine neue Quelle an; dafür brauchst du Zugriff **Bearbeiten**.
 

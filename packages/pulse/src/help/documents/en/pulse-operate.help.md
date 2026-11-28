@@ -70,5 +70,5 @@ Clearing keeps sources, tokens, settings, and access. A Cloud administrator's **
 Deleting revokes tokens, prevents database reads, and then removes the base. These operations cannot be undone in Pulse.
 :::
 
-A deleting base remains in its administrators' base list until deletion finishes.
+Until deletion finishes, a deleting base stays in its administrators' sidebar under **Being deleted**. Its page shows the state of the deletion, and **Retry** if the deletion failed.
 Check the operation's state before treating an accepted request as completed work.

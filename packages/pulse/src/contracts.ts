@@ -8,17 +8,25 @@ export type MetricType = (typeof METRIC_TYPES)[number];
 
 /** How many bases the sidebar lists before its search reaches further; the open one always stands among them. */
 export const NAV_BASES = 50;
+/** How many bases in deletion the sidebar names for their admins (the open one always among them). */
+export const NAV_DELETING_BASES = 20;
 /** A base as the sidebar names it: its public id, sign and state, nothing the sidebar does not show. */
 export type PulseBaseNav = {
   id: string;
   name: string;
   icon: string;
   color: string;
-  /** `failed`: its store needs attention. */
-  state: "ok" | "failed";
+  /**
+   * `failed`: its store needs attention. `deleting`: its deletion runs; `deletion-failed`: its deletion stopped and
+   * waits for "Erneut versuchen".
+   */
+  state: "ok" | "failed" | "deleting" | "deletion-failed";
 };
-/** The sidebar's bases: the first NAV_BASES, and the open one even beyond them. */
-export type PulseNav = { bases: PulseBaseNav[] };
+/**
+ * The sidebar's bases: the first NAV_BASES (or the first matches of a search), the open one even beyond them, and for
+ * their admins the first NAV_DELETING_BASES whose deletion runs or failed.
+ */
+export type PulseNav = { bases: PulseBaseNav[]; deleting: PulseBaseNav[] };
 
 export type PulseBase = {
   memberCount: number;

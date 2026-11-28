@@ -15,11 +15,12 @@ import {
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
-import { BASE_PAGE_MAX } from "../../contracts";
+import { BASE_PAGE_MAX, NAV_BASES, NAV_DELETING_BASES } from "../../contracts";
 import { BaseSchemaReadSchema, SchemaReadInputSchema } from "../../schema-contracts";
 import { pulseService } from "../../service";
 import { retryBase } from "../../service/base-admin";
 import { readStoreOutage } from "../../service/base-attention";
+import { baseNav } from "../../service/base-nav";
 import { readBaseSchema } from "../../service/base-schema-read";
 import { projectBases } from "../../service/public-resources";
 import { RetentionStoreUnavailable } from "../../store/retention";
@@ -30,6 +31,8 @@ import {
   CreateBaseSchema,
   GrantBaseAccessSchema,
   MessageSchema,
+  NavQuerySchema,
+  NavSchema,
   UpdateBaseAccessSchema,
   UpdateBaseSchema,
 } from "../schemas";
@@ -71,6 +74,20 @@ const routes = new Hono<AuthContext>()
         ),
       );
     },
+  )
+  .get(
+    "/nav",
+    describeRoute({
+      tags: ["Pulse"],
+      summary: "List the bases of the Pulse sidebar",
+      description: `The bases the caller can read as the sidebar names them, newest change first: the first ${NAV_BASES} (with \`q\` the first ${NAV_BASES} whose name contains it), and for their admins the first ${NAV_DELETING_BASES} whose deletion runs or failed. One statement; for every field of a base, page through \`GET /bases\`.`,
+      responses: {
+        200: jsonResponse(NavSchema, "The sidebar's bases"),
+        400: jsonResponse(z.object({ code: z.string(), message: z.string() }), "A search longer than 200 characters"),
+      },
+    }),
+    v("query", NavQuerySchema),
+    async (c) => c.json(await baseNav(requestAccessScope(c), { query: c.req.valid("query").q ?? null })),
   )
   .post(
     "/bases",

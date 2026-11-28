@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
+import { NAV_BASES, NAV_DELETING_BASES, type PulseBase } from "../../contracts";
 import { SOURCES_PAGE } from "../workspace/source-page";
 import { sqlTestLimits, sqlTestResult } from "../workspace/sql-test-fixtures";
 import {
@@ -13,15 +14,19 @@ import {
   fixtureApiKeys,
   fixtureBase,
   fixtureBases,
+  fixtureDeletingBases,
   fixtureHistoryFor,
   fixtureMinutesFor,
   fixtureScrapesFor,
   fixtureSources,
+  manyBases,
   manySources,
+  navEntryOf,
 } from "./fixtures";
 import { type Crumb, renderPulseShell } from "./pulse-shell.browser-fixture";
 
-// The main paths of Pulse on v2 in Chromium (WebKit through the shared launcher): find and create a base, open,
+// The main paths of Pulse on v2 in Chromium (WebKit through the shared launcher): start with a first base, find a
+// base in the sidebar, follow and resume a deletion, open,
 // add, edit and remove a source, run SQL, open a saved query, save settings, plus the layout rules at 1440 and
 // 390 px and the worst-case and 1,000-row states. The harness renders each page from its address; this test
 // answers the APIs with invented data.
@@ -105,8 +110,9 @@ const pageTitle = (address: string): Crumb[] => {
     { title: "Pulse", href: "/app/pulse" },
   ];
   if (app === "admin") return [{ title: "Verwaltung", href: "/admin" }, { title: "Pulse" }];
-  const base = fixtureBases.find((entry) => entry.id === id);
-  if (!base) return crumbs;
+  const base = [...fixtureBases, ...fixtureDeletingBases].find((entry) => entry.id === id);
+  // the start before the first base names only Pulse, as its page does
+  if (!base) return id ? crumbs : [crumbs[0]!, { title: "Pulse" }];
   crumbs.push({ title: base.name, href: `/app/pulse/${base.id}` });
   return view === "settings" ? [...crumbs, { title: "Einstellungen" }] : crumbs;
 };
@@ -170,6 +176,22 @@ const answer = async (route: Route, calls: Call[], override?: (call: Call) => { 
       json: fixtureBase({ id: "z9Yx8Wv7", name: String((call.body as { name?: string })?.name ?? "") }),
     });
   if (call.path === "/api/pulse/bases") return route.fulfill({ json: fixtureBases });
+  // the sidebar's search as the server answers it: the first NAV_BASES whose name holds the words, among all bases
+  if (call.path === "/api/pulse/nav") {
+    const words = url.searchParams.get("q")?.toLowerCase() ?? "";
+    const named = (bases: PulseBase[]) => bases.filter((base) => base.name.toLowerCase().includes(words));
+    return route.fulfill({
+      json: {
+        bases: named(variant === "huge" ? manyBases(1000) : fixtureBases)
+          .slice(0, NAV_BASES)
+          .map(navEntryOf),
+        deleting: named(fixtureDeletingBases).map(navEntryOf),
+      },
+    });
+  }
+  // a failed deletion runs again
+  if (call.method === "POST" && call.path === "/api/pulse/bases/g6Ts3vL8/retry")
+    return route.fulfill({ json: { ...fixtureDeletingBases[1]!, store: { ...fixtureDeletingBases[1]!.store, state: "deleting" } } });
   if (call.path === base && call.method === "GET")
     return route.fulfill({ json: { ...fixtureBases[0], outage: { unavailable: false, since: null } } });
   if (call.path === base && call.method === "PATCH") return route.fulfill({ json: { ...fixtureBases[0], ...(call.body as object) } });
@@ -315,14 +337,13 @@ describe("Pulse on v2", () => {
     }
   });
 
-  test("the base list filters as it is typed, keeps the words in the address and creates a base", async () => {
+  test("before the first base the start creates one with Neue Basis and opens it", async () => {
     const { context, tab, errors, calls } = await open(desktop, "/app/pulse");
     try {
-      await tab.getByRole("searchbox", { name: "Pulse-Basen durchsuchen" }).fill("web");
-      await tab.waitForFunction(() => location.search === "?q=web");
-      expect(await tab.getByText("1 von 7").isVisible()).toBe(true);
-      expect(await tab.locator('[data-k2-part="Table"]').getByText("Betrieb Werkstatt Nord").count()).toBe(0);
-      await tab.getByRole("button", { name: "Neue Basis" }).first().click();
+      expect(await tab.getByText("Leg deine erste Basis an").isVisible()).toBe(true);
+      // no sidebar before the first base: the start is the whole page
+      expect(await tab.locator('[data-k2-part="Nav"]').count()).toBe(0);
+      await tab.getByRole("button", { name: "Neue Basis" }).click();
       const dialog = tab.getByRole("dialog");
       await dialog.getByRole("button", { name: "Erstellen" }).click();
       expect(await dialog.getByText("Pflichtfeld.").isVisible()).toBe(true);
@@ -331,6 +352,79 @@ describe("Pulse on v2", () => {
       await dialog.getByRole("button", { name: "Erstellen" }).click();
       await tab.waitForURL(`${origin}/app/pulse/z9Yx8Wv7`);
       expect(writes(calls)).toEqual([{ method: "POST", path: "/api/pulse/bases", body: { name: "Kühlhaus", description: null } }]);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("the sidebar's search finds a base beyond the first 50 through the server, once per pause in typing", async () => {
+    const { context, tab, errors, calls } = await open(desktop, `/app/pulse/${baseId}`, { variant: "huge" });
+    try {
+      const sidebar = tab.locator('[data-k2-part="Nav"]');
+      // the sidebar lists the first NAV_BASES of the 1,000; base 777 is not among them
+      expect(await sidebar.getByRole("link", { name: "Basis 777", exact: true }).count()).toBe(0);
+      const words = "Basis 777";
+      await sidebar.getByRole("searchbox", { name: "Basen durchsuchen…" }).pressSequentially(words);
+      await sidebar.getByRole("link", { name: words, exact: true }).waitFor();
+      const asked = () => calls.filter((call) => call.path === "/api/pulse/nav").map((call) => call.query?.get("q"));
+      // the server answers the whole words; a pause in typing asks, not every key
+      expect(asked().at(-1)).toBe(words);
+      expect(asked().length).toBeLessThan(words.length);
+      expect(await sidebar.getByRole("link", { name: "Basis 1", exact: true }).count()).toBe(0);
+      // Escape clears the search and the first bases stand again, without asking the server
+      const before = asked().length;
+      await sidebar.getByRole("searchbox", { name: "Basen durchsuchen…" }).press("Escape");
+      await sidebar.getByRole("link", { name: "Basis 1", exact: true }).waitFor();
+      expect(asked()).toHaveLength(before);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("the sidebar's search filters bases and deletions in place, says when nothing matches and clears from there", async () => {
+    for (const view of [wide, desktop]) {
+      const { context, tab, errors } = await open(view, `/app/pulse/${baseId}`);
+      try {
+        const sidebar = tab.locator('[data-k2-part="Nav"]');
+        const answered = tab.waitForResponse((response) => response.url().includes("/api/pulse/nav"));
+        await sidebar.getByRole("searchbox", { name: "Basen durchsuchen…" }).fill("lager");
+        // at once from the loaded bases, then from the server's answer: the base and the deletion that match
+        await sidebar.getByRole("link", { name: /Solaranlage Lager/ }).waitFor();
+        expect(await sidebar.getByRole("link", { name: /Altes Lager/ }).isVisible()).toBe(true);
+        expect(await sidebar.getByRole("link", { name: /Webshop/ }).count()).toBe(0);
+        await answered;
+        await settled(tab);
+        await shoot(tab, `sidebar-search-${view.width}`);
+        expect((await measureV2Layout(tab, { root: "#root" })).problems).toEqual([]);
+        await sidebar.getByRole("searchbox", { name: "Basen durchsuchen…" }).fill("zzz");
+        await sidebar.getByRole("button", { name: "Keine passenden Basen" }).click();
+        await sidebar.getByRole("link", { name: /Webshop/ }).waitFor();
+        expect(await sidebar.getByRole("searchbox", { name: "Basen durchsuchen…" }).inputValue()).toBe("");
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }
+  }, 60_000);
+
+  test("a base in deletion stands under Wird gelöscht; its page resumes a failed deletion and says when it is done", async () => {
+    const { context, tab, errors, calls } = await open(desktop, "/app/pulse/g6Ts3vL8");
+    try {
+      const sidebar = tab.locator('[data-k2-part="Nav"]');
+      expect(await sidebar.getByText("Wird gelöscht").isVisible()).toBe(true);
+      expect(await sidebar.getByRole("link", { name: /Testbasis Herbst/ }).getAttribute("href")).toBe("/app/pulse/f2Qr7uK4");
+      expect(await sidebar.getByRole("link", { name: /Altes Lager/ }).getAttribute("aria-current")).toBe("page");
+      await shoot(tab, "deleting-failed-1440");
+      await tab.getByRole("button", { name: "Erneut versuchen" }).click();
+      await tab.getByText("Pulse macht dort weiter, wo es aufgehört hat.").first().waitFor();
+      expect(writes(calls)).toEqual([{ method: "POST", path: "/api/pulse/bases/g6Ts3vL8/retry", body: null }]);
+      // the deletion runs again and is followed; once the base is gone the row says so and leads back to Pulse
+      const back = tab.getByRole("link", { name: "Zurück zu Pulse" });
+      await back.waitFor({ timeout: 15_000 });
+      expect(await back.getAttribute("href")).toBe("/app/pulse");
+      await shoot(tab, "deleting-done-1440");
       expect(errors).toEqual([]);
     } finally {
       await context.close();
@@ -522,7 +616,9 @@ describe("Pulse on v2", () => {
 
   test("every page keeps the layout rules at 1920, 1440, 1024 and 390 px", async () => {
     const addresses = [
+      // the start before the first base, and the page of a base whose deletion stopped
       "/app/pulse",
+      "/app/pulse/g6Ts3vL8",
       `/app/pulse/${baseId}`,
       `/app/pulse/${baseId}/sources/s4Cc5Dd6`,
       // the failing source open: its cause, hour and fetches at every width
@@ -542,7 +638,7 @@ describe("Pulse on v2", () => {
       for (const address of addresses) {
         const { context, tab, errors } = await open(view, address);
         try {
-          const name = `${address.replace(/^\/(app|admin)\/pulse\/?/, "").replace(/[^a-z0-9]+/gi, "-") || "bases"}-${view.width}`;
+          const name = `${address.replace(/^\/(app|admin)\/pulse\/?/, "").replace(/[^a-z0-9]+/gi, "-") || "start"}-${view.width}`;
           // the console is measured as it is used: with a query that ran, its rows and its chart
           if (address.includes("/sql/")) {
             await tab.getByRole("button", { name: "Ausführen" }).click();
@@ -564,7 +660,10 @@ describe("Pulse on v2", () => {
     // the worst names and counts, and a base without any source
     for (const view of [desktop, phone])
       for (const [variant, address] of [
+        // the start with the worst bases in deletion, and the page of the longest of them
         ["worst", "/app/pulse"],
+        ["deleting", "/app/pulse"],
+        ["worst", "/app/pulse/n3Pa8bR6"],
         ["worst", `/app/pulse/${baseId}`],
         ["worst", `/app/pulse/${baseId}/sources/w1Aa2Bb3`],
         ["empty", `/app/pulse/${baseId}`],
@@ -585,20 +684,21 @@ describe("Pulse on v2", () => {
   }, 180_000);
 
   test("1,000 bases and 1,000 sources are ready in time and scroll", async () => {
-    for (const address of ["/app/pulse", `/app/pulse/${baseId}`]) {
-      const { context, tab, errors, ready } = await open(desktop, address, { variant: "huge" });
-      try {
-        const nodes = await tab.evaluate(() => document.querySelectorAll("*").length);
-        // k2b-ui gap: v2 Table does not virtualize yet (lane MW), so the DOM grows with the rows; the time budget holds.
-        console.log(`[scale] ${address}: ready ${ready} ms, ${nodes} elements`);
-        expect(ready).toBeLessThan(1500);
-        await tab.mouse.move(700, 500);
-        await tab.mouse.wheel(0, 20_000);
-        await settled(tab);
-        expect(errors).toEqual([]);
-      } finally {
-        await context.close();
-      }
+    const { context, tab, errors, ready } = await open(desktop, `/app/pulse/${baseId}`, { variant: "huge" });
+    try {
+      const nodes = await tab.evaluate(() => document.querySelectorAll("*").length);
+      // k2b-ui gap: v2 Table does not virtualize yet (lane MW), so the DOM grows with the rows; the time budget holds.
+      console.log(`[scale] /app/pulse/${baseId}: ready ${ready} ms, ${nodes} elements`);
+      expect(ready).toBeLessThan(1500);
+      // the sidebar stays bounded however many bases there are: the first ones and the deletions, the rest by search
+      const entries = await tab.locator('[data-k2-part="Nav"] [data-k2-part="Nav.Item"]').count();
+      expect(entries).toBeLessThanOrEqual(NAV_BASES + NAV_DELETING_BASES);
+      await tab.mouse.move(700, 500);
+      await tab.mouse.wheel(0, 20_000);
+      await settled(tab);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
     }
   }, 120_000);
 });

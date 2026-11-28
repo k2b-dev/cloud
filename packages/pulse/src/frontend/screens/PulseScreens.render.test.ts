@@ -11,16 +11,15 @@ import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 const root = mkdtempSync(resolve(tmpdir(), "pulse-screens-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { default: OverviewScreen } = await import("./OverviewScreen");
+const { default: StartScreen } = await import("./StartScreen");
+const { default: DeletingScreen } = await import("./DeletingScreen");
 const { default: SourcesScreen } = await import("./SourcesScreen");
 const { default: SqlScreen } = await import("./SqlScreen");
 const { default: QueriesScreen } = await import("./QueriesScreen");
 const { default: SettingsScreen } = await import("./SettingsScreen");
 const { default: AdminScreen } = await import("../admin/AdminScreen");
 const { fixtureAdminBases, fixtureAdminNav, fixturePolicy, fixtureTargets } = await import("../admin/admin-fixtures");
-const { fixtureAuthors, fixtureBases, fixtureDeletingBases, fixtureNav, fixtureQueries, sourcesProps, worstBases } = await import(
-  "./fixtures"
-);
+const { fixtureAuthors, fixtureBases, fixtureNav, fixtureQueries, sourcesProps } = await import("./fixtures");
 const { sqlTestLimits } = await import("../workspace/sql-test-fixtures");
 
 const dom = createDomTestHarness();
@@ -40,30 +39,44 @@ const render = (screen: () => JSX.Element) => {
   const body = parser.parseFromString(html, "text/html").body;
   const loading = body.querySelectorAll('[data-k2-part="Loading"]').length;
   for (const element of body.querySelectorAll("*")) element.after(" ");
-  return { text: body.textContent?.replace(/\s+/g, " ") ?? "", loading };
+  // the fields by their names, which are no text of the page
+  const fields = [...body.querySelectorAll("input")].map((input) => input.getAttribute("aria-label") ?? input.getAttribute("placeholder"));
+  return { text: body.textContent?.replace(/\s+/g, " ") ?? "", loading, fields };
 };
 const baseId = fixtureBases[0]!.id;
 const frame = { nav: fixtureNav(), baseId, baseName: fixtureBases[0]!.name, sourceCount: 4 };
 
 describe("Pulse pages on the server", () => {
-  test("the base list shows every base, its store and the deletions, without a loading state", () => {
-    const page = render(() =>
-      createComponent(OverviewScreen, { bases: fixtureBases, deletingBases: fixtureDeletingBases, initialQuery: "" }),
-    );
-    expect(page.text).toContain("Speicher prüfen · Solaranlage Lager +1");
-    expect(page.text).toContain("Betrieb Werkstatt Nord");
-    expect(page.text).toContain("Schreiben gesperrt");
-    expect(page.text).toContain("Wird gelöscht");
-    expect(page.loading).toBe(0);
+  test("the start before the first base offers Neue Basis and names the deletions its admin follows", () => {
+    const first = render(() => createComponent(StartScreen, { deleting: [] }));
+    expect(first.text).toContain("Leg deine erste Basis an");
+    expect(first.text).toContain("Neue Basis");
+    expect(first.text).not.toContain("Testbasis Herbst");
+    expect(first.loading).toBe(0);
+    const admin = render(() => createComponent(StartScreen, { deleting: fixtureNav().deleting }));
+    expect(admin.text).toContain("Wird gelöscht");
+    expect(admin.text).toContain("Testbasis Herbst");
+    // the stopped deletion has its word and its retry from the first picture on
+    expect(admin.text).toContain("Fehlgeschlagen");
+    expect(admin.text).toContain("Erneut versuchen");
   });
 
-  test("a search from the address filters the first picture already", () => {
-    const page = render(() =>
-      createComponent(OverviewScreen, { bases: [...worstBases, ...fixtureBases], deletingBases: [], initialQuery: "webshop" }),
-    );
-    expect(page.text).toContain("1 von 11");
-    // Archiv 2025 stays a place in the sidebar, but its row (with its blocked store) is filtered out
-    expect(page.text).not.toContain("Schreiben gesperrt");
+  test("the sidebar of a base lists the bases with their search and the deletions under Wird gelöscht", () => {
+    const page = render(() => createComponent(SourcesScreen, sourcesProps()));
+    expect(page.fields).toContain("Basen durchsuchen…");
+    expect(page.text).toContain("Wird gelöscht");
+    expect(page.text).toContain("Altes Lager");
+    expect(page.text).not.toContain("Alle Basen");
+  });
+
+  test("a base in deletion renders its page in the frame, with its state and the way to resume", () => {
+    const nav = fixtureNav();
+    const page = render(() => createComponent(DeletingScreen, { nav, base: nav.deleting[1]! }));
+    expect(page.text).toContain("Altes Lager");
+    expect(page.text).toContain("Die Basis konnte nicht gelöscht werden.");
+    expect(page.text).toContain("Erneut versuchen");
+    expect(page.text).toContain("Webshop");
+    expect(page.loading).toBe(0);
   });
 
   test("sources lead with the hero and its exceptions, the table and the open source with its cause and hour", () => {

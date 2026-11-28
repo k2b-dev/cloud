@@ -122,7 +122,7 @@ export default function SettingsScreen(props: SettingsScreenProps) {
       <V2WorkspaceNavigation label={t().appName} groups={groups()} />
       {nav.dialog()}
       <Workspace
-        sidebar={<Nav title={t().appName} icon="activity-heartbeat" groups={groups()} />}
+        sidebar={<Nav title={t().appName} icon="activity-heartbeat" search={nav.search()} groups={groups()} />}
         sidebarLabel={words().bases}
         // on the phone the head gives way, so saving stands as the floating main action while the form has changes
         primary={
