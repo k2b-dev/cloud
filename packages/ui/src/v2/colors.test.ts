@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
-import { accentStyle, appTint, colorStyle, contrast, safeColor } from "./colors";
+import { accentStyle, appTint, colorStyle, contrast, safeColor, selectedTint } from "./colors";
 
 // Data colours reach a style only when they are colours, and their foregrounds stay readable whatever the colour is.
 const root = mkdtempSync(resolve(tmpdir(), "k2-v2-colors-"));
@@ -194,8 +194,13 @@ describe("a page's accent", () => {
       expect(contrast(inkLight, mix(own, appTint.light, white))).toBeGreaterThanOrEqual(4.5);
       expect(contrast(inkDark, dark)).toBeGreaterThanOrEqual(4.5);
       expect(contrast(inkDark, mix(own, appTint.dark, dark))).toBeGreaterThanOrEqual(4.5);
-      expect(contrast(rgb(style["--k2-accent-soft-light"]!), white)).toBeGreaterThanOrEqual(3);
-      expect(contrast(rgb(style["--k2-accent-soft-dark"]!), dark)).toBeGreaterThanOrEqual(3);
+      // a quiet bar keeps 3:1 on every ground it stands on: the surface, the app's tint and a chosen row's blue tint
+      const softLight = rgb(style["--k2-accent-soft-light"]!);
+      const softDark = rgb(style["--k2-accent-soft-dark"]!);
+      for (const ground of [white, mix(own, appTint.light, white), selectedTint.light])
+        expect(contrast(softLight, ground)).toBeGreaterThanOrEqual(3);
+      for (const ground of [dark, mix(own, appTint.dark, dark), selectedTint.dark])
+        expect(contrast(softDark, ground)).toBeGreaterThanOrEqual(3);
       // the quiet bars stay apart from the strongest one
       expect(style["--k2-accent-soft-light"]).not.toBe(style["--k2-accent-ink-light"]);
     }
@@ -226,8 +231,28 @@ describe("a page's accent", () => {
     expect(accentStyle("#fc0")!["--k2-app"]).toBe("#ffcc00");
   });
 
-  test("the tint the ink is checked against is the one the stylesheet mixes", () => {
+  test("a primary that would vanish on the surface gets an edge of its own colour at 3:1, per theme", () => {
+    const pale = accentStyle("#fff3a0")!;
+    expect(contrast(rgb("#fff3a0"), white)).toBeLessThan(3);
+    expect(pale["--k2-accent-edge-light"]).not.toBe("#fff3a0");
+    expect(contrast(rgb(pale["--k2-accent-edge-light"]!), white)).toBeGreaterThanOrEqual(3);
+    // on the dark surface the pale fill shows by itself, and navy needs a lighter edge there
+    expect(pale["--k2-accent-edge-dark"]).toBe("#fff3a0");
+    const navy = accentStyle("#1e3a8a")!;
+    expect(navy["--k2-accent-edge-light"]).toBe("#1e3a8a");
+    expect(contrast(rgb(navy["--k2-accent-edge-dark"]!), dark)).toBeGreaterThanOrEqual(3);
+    for (const [colour] of choices) {
+      const style = accentStyle(colour)!;
+      expect(contrast(rgb(style["--k2-accent-edge-light"]!), white)).toBeGreaterThanOrEqual(3);
+      expect(contrast(rgb(style["--k2-accent-edge-dark"]!), dark)).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  test("the tints the tones are checked against are the ones the stylesheet paints", () => {
     const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
+    const hexOf = (channels: readonly number[]) => `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+    expect(css).toContain(`--k2-blue-tint: ${hexOf(selectedTint.light)};`);
+    expect(css).toContain(`--k2-blue-tint: ${hexOf(selectedTint.dark)};`);
     expect(css).toContain(`--k2-app-tint-mix: color-mix(in srgb, var(--k2-app) ${Math.round(appTint.light * 100)}%, var(--k2-surface));`);
     expect(css).toContain(`--k2-app-tint-mix: color-mix(in srgb, var(--k2-app) ${Math.round(appTint.dark * 100)}%, var(--k2-surface));`);
   });

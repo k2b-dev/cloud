@@ -182,8 +182,10 @@ export type WorkspaceProps = {
    * `tone="app"`, and the bars of a `RangeBar` (the open row's the strongest). Its readable tones are worked out where
    * the colour arrives, on the server too, so the first paint is final: the primary's words are white or near-black,
    * whichever keeps 4.5:1 on it (a colour on which neither does is darkened until white does), and the colour as text
-   * is darkened in light and lightened in dark until it keeps 4.5:1 on the surface and on its tint. Focus rings and
-   * the colours of states stay. Any other value (an `oklch()`, a custom property, no colour) leaves the app's colour.
+   * is darkened in light and lightened in dark until it keeps 4.5:1 on the surface and on its tint. A bar's quiet tone
+   * keeps 3:1 also on a chosen row's tint, and a primary that would vanish on the surface gets an edge of its colour at
+   * 3:1. Focus rings and the colours of states stay; dialogs and menus rendered outside the Workspace keep the app's
+   * colour. Any other value (an `oklch()`, a custom property, no colour) leaves the app's colour.
    */
   accent?: string;
   /**

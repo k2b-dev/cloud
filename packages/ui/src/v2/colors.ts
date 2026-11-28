@@ -131,6 +131,8 @@ export const colorStyle = (value: string | undefined): Record<string, string> | 
 const NEAR_BLACK: Rgb = [9, 9, 11];
 /** The shares of the app's tint (`--k2-app-tint-mix` in v2.css), light and dark; a test pins them to the stylesheet. */
 export const appTint = { light: 0.07, dark: 0.18 } as const;
+/** The blue tint of a chosen row (`--k2-blue-tint`), light and dark; a test pins them to the stylesheet. */
+export const selectedTint = { light: [239, 246, 255], dark: [23, 37, 84] } as const;
 /** WCAG 1.4.3: type keeps 4.5:1; WCAG 1.4.11: a bar or a symbol keeps 3:1. */
 const TEXT = 4.5;
 const GRAPHIC = 3;
@@ -150,12 +152,15 @@ const readableStep = (color: Rgb, target: Rgb, grounds: readonly Rgb[], ratio: n
   return target;
 };
 
-/** The lightest tone of `color` (towards the surface) that still keeps `ratio` against it; darker first if it does not yet. */
-const quietTone = (color: Rgb, surface: Rgb, away: Rgb, ratio: number): Rgb => {
-  let quiet = readableStep(color, away, [surface], ratio);
+/**
+ * The lightest tone of `color` (towards the surface, the first ground) that still keeps `ratio` against every ground;
+ * moved away from them first if it does not yet.
+ */
+const quietTone = (color: Rgb, grounds: readonly [Rgb, ...Rgb[]], away: Rgb, ratio: number): Rgb => {
+  let quiet = readableStep(color, away, grounds, ratio);
   for (let step = 1; step <= 100; step++) {
-    const moved = painted(mix(surface, step / 100, quiet));
-    if (contrast(moved, surface) < ratio) break;
+    const moved = painted(mix(grounds[0], step / 100, quiet));
+    if (grounds.some((ground) => contrast(moved, ground) < ratio)) break;
     quiet = moved;
   }
   return quiet;
@@ -178,9 +183,11 @@ const OPAQUE_HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
  * The style values of a page's own accent (`Workspace accent`), a colour from data: the colour as the app's colour
  * (`--k2-app`, from which the stylesheet mixes the tint), the primary's fill and words (`--k2-primary`,
  * `--k2-primary-ink`, see `primaryOn`), and for each theme the colour as text (`--k2-accent-ink-light` / `-dark`:
- * darkened in light, lightened in dark, until it keeps 4.5:1 on the surface and on the tint) and the quiet tone of a
- * bar (`--k2-accent-soft-light` / `-dark`: as light as 3:1 on the surface allows). Only an opaque hex colour that
- * passes `safeColor` counts; anything else gives nothing, and the app's colour stands.
+ * darkened in light, lightened in dark, until it keeps 4.5:1 on the surface and on the tint), the quiet tone of a bar
+ * (`--k2-accent-soft-light` / `-dark`: as light as 3:1 allows on every ground a bar stands on: the surface, the app's
+ * tint and the blue tint of a chosen row), and the primary's edge (`--k2-accent-edge-light` / `-dark`: the fill where
+ * it keeps 3:1 on the surface, else the mildest step of it that does, so a pale colour still shows its button). Only
+ * an opaque hex colour that passes `safeColor` counts; anything else gives nothing, and the app's colour stands.
  */
 export const accentStyle = (value: string | undefined): Record<string, string> | undefined => {
   const color = safeColor(value);
@@ -189,14 +196,18 @@ export const accentStyle = (value: string | undefined): Record<string, string> |
   const { fill, ink } = primaryOn(rgb);
   const tintLight = mix(rgb, appTint.light, SURFACE_LIGHT);
   const tintDark = mix(rgb, appTint.dark, SURFACE_DARK);
+  const groundsLight = [SURFACE_LIGHT, tintLight, painted(tintLight), selectedTint.light] as const;
+  const groundsDark = [SURFACE_DARK, tintDark, painted(tintDark), selectedTint.dark] as const;
   return {
     "--k2-app": hexOf(rgb),
     "--k2-primary": hexOf(fill),
     "--k2-primary-ink": hexOf(ink),
+    "--k2-accent-edge-light": hexOf(readableStep(fill, BLACK, [SURFACE_LIGHT], GRAPHIC)),
+    "--k2-accent-edge-dark": hexOf(readableStep(fill, WHITE, [SURFACE_DARK], GRAPHIC)),
     "--k2-accent-ink-light": hexOf(readableStep(rgb, BLACK, [SURFACE_LIGHT, tintLight, painted(tintLight)], TEXT)),
     "--k2-accent-ink-dark": hexOf(readableStep(rgb, WHITE, [SURFACE_DARK, tintDark, painted(tintDark)], TEXT)),
-    "--k2-accent-soft-light": hexOf(quietTone(rgb, SURFACE_LIGHT, BLACK, GRAPHIC)),
-    "--k2-accent-soft-dark": hexOf(quietTone(rgb, SURFACE_DARK, WHITE, GRAPHIC)),
+    "--k2-accent-soft-light": hexOf(quietTone(rgb, groundsLight, BLACK, GRAPHIC)),
+    "--k2-accent-soft-dark": hexOf(quietTone(rgb, groundsDark, WHITE, GRAPHIC)),
   };
 };
 

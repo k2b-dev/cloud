@@ -38,8 +38,13 @@ The working surface of an app: one per screen.
   server too: the primary's words are white or near-black, whichever keeps
   4.5:1 (a colour where neither does is darkened until white does); as text
   the colour is darkened (light) or lightened (dark) until it keeps 4.5:1 on
-  the surface and on its tint; bars keep 3:1. Focus rings and states keep
-  their colours. Any other value leaves the app's colour.
+  the surface and on its tint; bars keep 3:1, also on a chosen row's blue
+  tint; a primary that would vanish on the surface (a pale yellow on white)
+  gets an edge of its colour at 3:1. Focus rings and states keep
+  their colours. Any other value leaves the app's colour. Dialogs and menus
+  rendered outside the Workspace keep the app's colour. For an `Avatar` or
+  `Mark` in the accent, pass `color: "var(--k2-app-text)"` (the accent's ink
+  of the theme).
 - `detail` (`true` or the detail's minimum, default 400) when a detail opens
   beside the columns; `detailEmpty={{ icon, text }}` stands in its place while
   none is open, so nothing moves when it opens. Keep the list's `width`.

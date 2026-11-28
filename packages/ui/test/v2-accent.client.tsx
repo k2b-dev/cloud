@@ -10,6 +10,8 @@ declare global {
   interface Window {
     __k2Mounted?: boolean;
     __k2Accent?: string;
+    /** Days chosen in a selection (blue tint), set by the test before the script; without it the week has no boxes. */
+    __k2Selected?: string[];
   }
 }
 
@@ -70,6 +72,11 @@ render(
                 rows={week}
                 rowKey={(row) => row.day}
                 current="Samstag"
+                select={
+                  window.__k2Selected
+                    ? { selected: window.__k2Selected, onChange: () => {}, all: "Alle Tage", row: (row) => row.day }
+                    : undefined
+                }
                 columns={[
                   { title: "Tag", width: { fixed: 112 }, cell: (row) => row.day },
                   { title: "6–24 Uhr", cell: (row) => <RangeBar from={row.from} to={row.to} domain={[6, 24]} decorative /> },

@@ -26,7 +26,7 @@ afterAll(async () => {
 });
 
 const withPage = async (
-  options: { accent: string; dark?: boolean; forced?: boolean; width?: number },
+  options: { accent: string; dark?: boolean; forced?: boolean; width?: number; selected?: string[] },
   run: (page: Page) => Promise<void>,
 ) => {
   const page = await browser.newPage({ viewport: { width: options.width ?? 1440, height: 900 } });
@@ -37,7 +37,9 @@ const withPage = async (
     await page.setContent(
       `<!doctype html><html lang="de"${options.dark ? ' style="color-scheme: dark"' : ""}><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"${options.dark ? ' data-theme="dark"' : ""}><div id="root"></div></body></html>`,
     );
-    await page.addScriptTag({ content: `window.__k2Accent = ${JSON.stringify(options.accent)};` });
+    await page.addScriptTag({
+      content: `window.__k2Accent = ${JSON.stringify(options.accent)}; window.__k2Selected = ${JSON.stringify(options.selected ?? null)} ?? undefined;`,
+    });
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
     await settled(page);
@@ -65,11 +67,14 @@ const read = (page: Page) =>
     const button = style('[data-k2-part="Button"][data-variant="primary"]');
     const bars = [...document.querySelectorAll<HTMLElement>('[data-k2-part="RangeBar"] > i')].map((bar) => ({
       current: bar.closest("tr")?.hasAttribute("aria-current") ?? false,
+      selected: bar.closest("tr")?.hasAttribute("data-selected") ?? false,
+      ground: channels(getComputedStyle(bar.closest("td") ?? bar).backgroundColor),
       fill: channels(getComputedStyle(bar).backgroundColor),
     }));
     return {
       fill: channels(button.backgroundColor),
       words: channels(button.color),
+      edge: channels(button.borderTopColor),
       state: channels(style('.k2-band[data-tone="app"] .k2-text[data-tone="app"]').color),
       band: channels(style('.k2-band[data-tone="app"]').backgroundColor),
       today: channels(style(".k2-table tbody tr[aria-current] > td").backgroundColor),
@@ -150,3 +155,29 @@ test("in forced colours the bars keep the text colour, today's too, and the prim
     if (browserName === "chromium") expect(look.fill).not.toEqual(hex("#c2410c"));
   });
 }, 30_000);
+
+for (const dark of [false, true])
+  test(`${dark ? "dark" : "light"}: on a chosen row's blue tint the quiet bars keep 3:1`, async () => {
+    for (const accent of accents)
+      await withPage({ accent, dark, selected: ["Dienstag", "Mittwoch"] }, async (page) => {
+        const chosen = (await read(page)).bars.filter((bar) => bar.selected);
+        expect(chosen.length).toBe(2);
+        for (const bar of chosen) {
+          expect(bar.current).toBe(false);
+          expect(bar.ground).not.toEqual([0, 0, 0]);
+          expect(contrast(bar.fill, bar.ground)).toBeGreaterThanOrEqual(3);
+        }
+      });
+  }, 60_000);
+
+for (const dark of [false, true])
+  test(`${dark ? "dark" : "light"}: a primary that would vanish on the surface shows an edge at 3:1`, async () => {
+    // a pale yellow vanishes on white, navy on the dark surface; orange shows by itself and keeps its own edge
+    for (const accent of ["#fff3a0", "#1e3a8a", "#c2410c"])
+      await withPage({ accent, dark }, async (page) => {
+        const look = await read(page);
+        expect(contrast(look.edge, look.surface)).toBeGreaterThanOrEqual(3);
+        if (contrast(look.fill, look.surface) >= 3) expect(look.edge).toEqual(look.fill);
+        else expect(look.edge).not.toEqual(look.fill);
+      });
+  }, 60_000);

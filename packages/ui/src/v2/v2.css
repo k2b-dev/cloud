@@ -265,6 +265,8 @@
   --k2-accent-ink-dark: initial;
   --k2-accent-soft-light: initial;
   --k2-accent-soft-dark: initial;
+  --k2-accent-edge-light: initial;
+  --k2-accent-edge-dark: initial;
   --k2-pane-w: initial;
   --k2-pane-min: initial;
   --k2-ws-side: initial;
@@ -1531,7 +1533,8 @@
    another app's rows drop it.
    A page with an accent of its own (`Workspace accent`, a colour from data) is a third such place: `accentStyle` sets
    the colour as `--k2-app`, the primary's fill and words, and for each theme its ink as text (4.5:1 on the surface and
-   the tint) and the quiet tone of a bar (3:1), worked out where the colour arrives, so the first paint is final. */
+   the tint), the quiet tone of a bar (3:1 on the surface and both tints) and the primary's edge (3:1 on the surface, so a
+   pale colour still shows its button), worked out where the colour arrives, so the first paint is final. */
 .k2-ui,
 .k2-ui :is([data-k2-owner], [data-k2-accent]) {
   --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 80%, #000000);
@@ -1554,12 +1557,14 @@
 .k2-ui [data-k2-accent] {
   --k2-app-ink: var(--k2-accent-ink-light);
   --k2-accent-soft: var(--k2-accent-soft-light);
+  --k2-primary-edge: var(--k2-accent-edge-light);
 }
 .dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) [data-k2-accent],
 .k2-ui.dark [data-k2-accent],
 .k2-ui[data-theme="dark"] [data-k2-accent] {
   --k2-app-ink: var(--k2-accent-ink-dark);
   --k2-accent-soft: var(--k2-accent-soft-dark);
+  --k2-primary-edge: var(--k2-accent-edge-dark);
 }
 
 /* ── Row: 40 · 52 · 72 by its lines; roles by line; square, also when it opens something ────────────────────── */
@@ -3285,7 +3290,7 @@
 }
 .k2-ui .k2-btn[data-variant="primary"] {
   background: var(--k2-primary);
-  border-color: var(--k2-primary);
+  border-color: var(--k2-primary-edge, var(--k2-primary));
   color: var(--k2-primary-ink);
 }
 /* An app whose main colour is the assistant's (appearance.primary "ai", which the platform puts on the page as
