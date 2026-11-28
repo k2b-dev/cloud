@@ -100,6 +100,9 @@ test("prefers the focused duplicate, then the last opened duplicate, then the fi
   expect(step(-1, "Duplicate")).toBe(between);
   first.focus();
   expect(step(1, "Between")).toBe(second);
+  // A step from a link of the view takes the focus with it, as on main.
+  expect(document.activeElement).toBe(second);
+  first.focus();
   expect(step(-1, "Duplicate")).toBeUndefined();
 });
 
