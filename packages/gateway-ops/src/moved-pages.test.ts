@@ -8,9 +8,13 @@ export const MOVED_PAGES: [old: string, moved: string][] = [
   ["/admin/observability/valkey?depth=2", "/admin/observability/infrastructure/valkey?depth=2"],
   ["/admin/observability/nats?stream=MAIL_DLQ&offset=50", "/admin/observability/infrastructure/nats?stream=MAIL_DLQ&offset=50"],
   ["/admin/observability/nats/access", "/admin/observability/infrastructure/nats-access"],
+  ["/admin/observability/infrastructure?schema=mail", "/admin/observability/infrastructure/postgres?schema=mail"],
   ["/admin/observability/alerts?webhook=hw_1", "/admin/observability/settings?webhook=hw_1"],
-  ["/admin/observability/health-check", "/admin/observability/settings/health-check"],
-  ["/admin/observability/retention", "/admin/observability/settings/retention"],
+  ["/admin/observability/health-check", "/admin/observability/settings/general"],
+  ["/admin/observability/retention?state=unreadable", "/admin/observability/settings/general?state=unreadable"],
+  // The health check and retention share one form in the second area of the settings record.
+  ["/admin/observability/settings/health-check", "/admin/observability/settings/general"],
+  ["/admin/observability/settings/retention?x=1", "/admin/observability/settings/general?x=1"],
   // The runs of one workflow and a run's children are listed in Läufe, with the same filters.
   [
     "/admin/observability/workflows?workflow=6f1c2d3e-0000-4000-8000-000000000002&app=mail&state=needs_attention&window=7d",

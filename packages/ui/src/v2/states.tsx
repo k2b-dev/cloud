@@ -1,6 +1,6 @@
-import { For, Index, Show } from "solid-js";
+import { For, Index, type JSX, children as resolveChildren, Show } from "solid-js";
 import { useUiMessages } from "../intl/messages";
-import { ActionButton, Button } from "./button";
+import { ActionButton } from "./button";
 import { Icon } from "./marks";
 import type { Action } from "./types";
 
@@ -15,12 +15,18 @@ export type EmptyProps = {
   text: string;
   /** The one way out, such as "Einlieferung erfassen" or "Filter zurücksetzen". */
   action?: Action;
+  /**
+   * The sign in the colour of a state, for a place that holds nothing because something went wrong or waits and the
+   * person cannot retry it here, such as a server's error page: `bad` for wrong, `warn` for waiting. Without it the
+   * sign is neutral. Data that failed to load once and can be loaded again is `Failed`, with its retry.
+   */
+  tone?: "bad" | "warn";
 };
 
 /** Nothing here: a round sign, one sentence, one way out, without a box (mockup: Notice · Empty). */
 export const Empty = (props: EmptyProps) => (
   <div class="k2-state" data-k2-part="Empty">
-    <span class="k2-sign">
+    <span class="k2-sign" data-tone={props.tone}>
       <Icon name={props.icon} />
     </span>
     <span class="k2-state-text">{props.text}</span>
@@ -28,81 +34,8 @@ export const Empty = (props: EmptyProps) => (
   </div>
 );
 
-export type FailedProps = {
-  /**
-   * What could not be loaded and what stays as it is, in one or two sentences. Example: "Unterhaltungen konnten nicht
-   * geladen werden. Deine Ansicht und Auswahl bleiben erhalten."
-   */
-  text: string;
-  /** Loads again; the button says "Erneut versuchen" in the language of the page. */
-  onRetry: () => void;
-};
-
-/**
- * Loading failed: the shape of `Empty` with a sign in the tone of wrong, the sentence, and "Erneut versuchen". It
- * replaces only the data; the selection and the view around it stay. (A connection that retries on its own shows in
- * the status row instead, without a button; something a person must fix is a `Notice` that names the deed.)
- */
-export const Failed = (props: FailedProps) => {
-  const t = useUiMessages();
-  let root: HTMLDivElement | undefined;
-  return (
-    <div ref={root} class="k2-state" data-k2-part="Failed" role="alert">
-      <span class="k2-sign" data-tone="bad">
-        <Icon name="alert-circle" />
-      </span>
-      <span class="k2-state-text">{props.text}</span>
-      <Button
-        icon="refresh"
-        onClick={() => {
-          // the focus is on the button, which leaves with this state: it goes on to what comes in its place
-          if (root?.contains(document.activeElement)) focusWhatComes(root);
-          props.onRetry();
-        }}
-      >
-        {t().retry}
-      </Button>
-    </div>
-  );
-};
-
-const focusable = "a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]";
-
-/**
- * Gives the focus to the first visible thing that can take it among what replaces `state` in its place, such as the
- * first row of the list that loaded. It waits while placeholders stand there, and stops once it has placed the
- * focus, once the person focuses something themselves, or once the content has come without anything to focus.
- */
-const focusWhatComes = (state: HTMLElement) => {
-  const place = state.parentElement;
-  if (!place || typeof MutationObserver === "undefined") return;
-  const before = state.previousSibling;
-  const after = state.nextSibling;
-  const follows = (node: Node, anchor: Node | null) =>
-    !anchor?.isConnected || !!(anchor.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING);
-  const precedes = (node: Node, anchor: Node | null) =>
-    !anchor?.isConnected || !!(anchor.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_PRECEDING);
-  const inPlace = (node: Node) => follows(node, before) && precedes(node, after) && !state.contains(node);
-  const stop = () => {
-    observer.disconnect();
-    document.removeEventListener("focusin", stop);
-  };
-  const settle = () => {
-    const target = [...place.querySelectorAll<HTMLElement>(focusable)].find(
-      (element) => inPlace(element) && element.tabIndex >= 0 && element.getClientRects().length > 0,
-    );
-    if (target) {
-      stop();
-      target.focus();
-      return;
-    }
-    const waiting = [...place.querySelectorAll('[data-k2-part="Loading"], [aria-busy="true"]')].some(inPlace);
-    if (!state.isConnected && !waiting) stop();
-  };
-  const observer = new MutationObserver(settle);
-  observer.observe(place, { childList: true, subtree: true });
-  document.addEventListener("focusin", stop);
-};
+// `Failed` has a module of its own (see failed.tsx); it stays one of the three states here.
+export { Failed, type FailedProps } from "./failed";
 
 export type LoadingProps = {
   /** How many rows hold the place; 3 when not set. Give as many as usually come, so nothing moves when they arrive. */
@@ -132,6 +65,38 @@ export const LoadingStatus = () => {
     <span class="k2-hidden-text" role="status">
       {t().loading}
     </span>
+  );
+};
+
+/**
+ * A value still on its way (internal: a loading `Facts` and `Cells.Cell`): a quiet bar exactly one line of the value
+ * high, so nothing moves when the value comes; assistive technology hears "loading" at its place.
+ */
+export const PlaceholderValue = (props: {
+  /** The value the place holds while a newer one comes (a refresh): it keeps its room, unseen, under the bar. */
+  children?: JSX.Element;
+  /** `false`: no words for assistive technology, for a second line of the same value (a cell's meta). */
+  said?: boolean;
+}) => {
+  const t = useUiMessages();
+  const held = resolveChildren(() => props.children);
+  const holds = () => {
+    const value = held();
+    return value !== undefined && value !== null && value !== false && value !== "" && !(Array.isArray(value) && value.length === 0);
+  };
+  return (
+    <>
+      {/* a value that is there keeps its exact room (lines, chips, wrapping); only a value not yet there is one line */}
+      <Show when={holds()} fallback={<span class="k2-skel" aria-hidden="true" />}>
+        <span class="k2-held" aria-hidden="true">
+          {held()}
+        </span>
+        <span class="k2-skel" data-over="" aria-hidden="true" />
+      </Show>
+      <Show when={props.said !== false}>
+        <span class="k2-hidden-text">{t().loading}</span>
+      </Show>
+    </>
   );
 };
 

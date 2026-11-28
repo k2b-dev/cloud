@@ -112,10 +112,8 @@ const open = async (view: View, screen: string, address: string, options: { wors
 const SCREENS = [
   ["alerts", "/admin/observability/settings?webhook=hw_bereitschaft"],
   ["alerts", "/admin/observability/settings?webhook=new"],
-  ["health", "/admin/observability/settings/health-check"],
-  ["retention", "/admin/observability/settings/retention?state=unreadable"],
-  ["infrastructure", "/admin/observability/infrastructure"],
-  ["infrastructure", "/admin/observability/infrastructure?failed"],
+  ["general", "/admin/observability/settings/general"],
+  ["general", "/admin/observability/settings/general?state=unreadable"],
   ["nats", "/admin/observability/nats?state=problems&stream=MAIL_DLQ"],
   ["access", "/admin/observability/nats/access"],
   ["sync", "/admin/observability/nats/sync?storeApp=mail&store=outbox&kind=queue&message=m-1"],
@@ -301,7 +299,7 @@ describe("the service pages of Observability on v2", () => {
   }, 60_000);
 
   test("an empty schedule blocks Save; an unreadable value is replaced only after the box", async () => {
-    const empty = await open(desktop, "health", "/admin/observability/settings/health-check");
+    const empty = await open(desktop, "general", "/admin/observability/settings/general");
     try {
       await empty.tab.getByRole("textbox", { name: /^Prüfplan/ }).fill("");
       expect(await empty.tab.getByRole("button", { name: "Speichern" }).isDisabled()).toBe(true);
@@ -310,7 +308,7 @@ describe("the service pages of Observability on v2", () => {
     } finally {
       await empty.context.close();
     }
-    const stored = await open(desktop, "health", "/admin/observability/settings/health-check?state=unreadable");
+    const stored = await open(desktop, "general", "/admin/observability/settings/general?state=unreadable");
     try {
       const { tab } = stored;
       expect(await tab.getByRole("textbox", { name: /^Prüfplan/ }).isDisabled()).toBe(true);
@@ -326,7 +324,7 @@ describe("the service pages of Observability on v2", () => {
   }, 60_000);
 
   test("a webhook target the server refuses stays marked at its field", async () => {
-    const { context, tab, errors } = await open(desktop, "health", "/admin/observability/settings/health-check", {
+    const { context, tab, errors } = await open(desktop, "general", "/admin/observability/settings/general", {
       api: (route) => {
         const body = route.request().postDataJSON() as { value: string[] };
         if (body.value.includes("0.0.0.0/0")) return route.fulfill({ status: 400, json: { message: "0.0.0.0/0 is forbidden" } });
@@ -334,8 +332,10 @@ describe("the service pages of Observability on v2", () => {
       },
     });
     try {
-      const targets = tab.getByRole("textbox", { name: /^Erlaubte Health-Webhook-Ziele/ });
-      await targets.fill("alerts.internal\n10.20.0.0/16\n0.0.0.0/0");
+      // the targets are chips: the new one is typed and taken with Enter
+      const targets = tab.getByRole("combobox", { name: /^Erlaubte Health-Webhook-Ziele/ });
+      await targets.fill("0.0.0.0/0");
+      await targets.press("Enter");
       await tab.getByRole("button", { name: "Speichern" }).click();
       await tab
         .getByText(/0\.0\.0\.0\/0 is forbidden/)

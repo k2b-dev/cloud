@@ -300,6 +300,17 @@ nothing for this. A banner between the bar and the content keeps the bar whole,
 and the way back keeps its own row below. Like a v1 workspace, a v2 workspace
 brings its own head, so the shell's row of the way up stays hidden above it.
 
+On a signed-in phone the search of a v2 page's head sits in the phone bar, as
+in the approved Mail mockup: the bar's search button, named “Search”, opens the
+head's search field (`Input type="search"`), which opens over the head and
+brings the phone's keyboard; Escape folds it away with its words and returns
+the focus to the button, however the field got it. The Tab key reaches the
+field only through that button. The head keeps its room for its views. The global
+search then leads the app menu (the ⠿ sheet) as its first entry, “Search
+everywhere”. Without such a field, or while an open detail hides the head, the
+button opens the global search, and the app menu has no such entry. The app changes nothing for this: Layout marks the v2 content with
+`data-k2-host-search`, and `@k2b/ui/v2` folds the head's search away there.
+
 Use `fullWidth` for a multi-column workspace. Use `fullPage` for a fill-height
 surface without the footer. Full-page and focus-mode surfaces contain viewport
 overscroll: their inner content, including embedded editors, owns scrolling
@@ -481,7 +492,7 @@ Anonymous pages do not render the authenticated application rail, global
 search, notifications, or profile actions.
 
 Use this default for public pages that should still look and navigate like a
-Cloud application, such as a utility catalog or public FAQ. The presence of
+Cloud application, such as a utility catalog or public reference. The presence of
 `Layout` does not authorize the route or its data. Follow
 [Public and anonymous access](/en/docs/identity/public-and-anonymous-access)
 for route and resource policy.
@@ -765,7 +776,8 @@ authorized registry.
 
 ## Provide global app bar shortcuts
 
-Administrators open **Administration → App bar** (`/admin/rail`) to create,
+Administrators open **Administration → Apps → Navigation** (`/admin/apps/navigation`;
+the old address `/admin/rail` leads there) to create,
 edit, reorder, or remove global shortcuts. Each shortcut points to an available
 app or a link with a title and icon.
 
@@ -865,7 +877,7 @@ data:
 </AdminLayout>
 
 // StorageScreen.tsx (island)
-<AdminWorkspace nav={props.nav} head={<Bar start={<Text type="body">{t().storage}</Text>} />}>
+<AdminWorkspace nav={props.nav} head={<Bar end={<Button variant="primary" icon="plus" label={t().add} href="?bucket=new" />} />}>
   <Pane label={t().storage}>…</Pane>
 </AdminWorkspace>
 ```
@@ -880,8 +892,8 @@ the shell's menu, from the first render. `scroll`, `contentClass` and `ownMain`
 do not apply to a v2 admin page.
 
 The admin sidebar shows the overview, then **Set up** (base settings, storage,
-sign-in, outgoing mail, email templates, announcements, AI), then
-**Operations** (apps, app bar, maintenance mode, Observability, People), then
+sign-in, outgoing mail with its email templates, announcements, AI), then
+**Operations** (apps with their navigation, maintenance mode, Observability, People), then
 app-owned groups, and last **Settings per app** with one entry per app's
 `adminHref`.
 

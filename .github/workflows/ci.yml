@@ -1,9 +1,10 @@
 name: CI
 
 # One workflow gates every change. `gate` is the only required status check:
-# it needs every other job and passes only when each one succeeded or, for a
-# path-filtered job, was skipped by its own `if:`. Any other result, such as
-# failure, cancelled, timed_out, or abandoned during an Actions outage, fails it.
+# full runs need every other job and pass only when each one succeeded or
+# was skipped by its path filter. Failure, cancelled, timed_out, or abandoned
+# during an Actions outage fails the gate. Draft gates deliberately fail:
+# only `check` reports light-check success, which must never satisfy the gate.
 
 # No job installs dependencies directly: .github/actions/install restores the Bun
 # install cache that main.yml writes for the current bun.lock, then runs
@@ -29,6 +30,7 @@ name: CI
 # never re-verified here: main.yml starts straight from the push.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
   workflow_dispatch:
 
@@ -36,7 +38,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # PRs share a group; other events have a unique group so even pending merge
+  # queue runs cannot supersede one another.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -121,7 +125,10 @@ jobs:
           } | tee -a "$GITHUB_OUTPUT"
 
   # Copies listed images that the mirror lacks; every job that pulls a Docker Hub image needs it.
+  # Drafts run only changes, setup, check, and gate. Keep the full-CI condition
+  # on every other job; ci-gate checks it. The draft gate deliberately fails.
   mirror:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft != true
     uses: ./.github/workflows/mirror-images.yml
     permissions:
       contents: read
@@ -180,6 +187,7 @@ jobs:
       - run: bun run check
 
   unit:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft != true
     needs: [setup, mirror]
     runs-on: ${{ vars.CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
@@ -189,19 +197,22 @@ jobs:
       # longest first; unknown suites use the median. Choose the smallest count
       # with a predicted slowest shard <= 15 min for unit/integration;
       # WebKit reserves more headroom as described below.
-      # Unit timings are maxima from runs 45486435794 (main merge queue) and
-      # 45498231860 (#4105, slow), with @k2b/cloud SSR, AI and code split into
-      # test:part:* suites. The code and rest weights come from the file-group
-      # times of @k2b/cloud rest in run 45486435794 (src/code 262.9 s of
-      # 983.6 s, plus 1 s process overhead for the new part). Thirteen shards
-      # need at most 14.65 min (@k2b/cloud-app-notebooks alone; the others
-      # <= 13.80 min); twelve need 15.14 min and miss the 15-min target.
+      # Unit timings are maxima from the merge-group runs 45984038239 (stopped
+      # in @k2b/ui rest) and 45984035848 and from this split's own run
+      # 45955041359 (#4386, #4404). Split by file times: @k2b/ui v2 out of
+      # @k2b/ui rest, @k2b/ui layout and content out of layout-content,
+      # @k2b/cloud access-browser-approvals out of @k2b/cloud rest, and
+      # @k2b/cloud-app-notebooks frontend-lib out of the package. The two rests
+      # keep the larger of their measured time (531.7 s, 450.3 s) and their file
+      # times (632.1 s, 566.0 s); the main runs measured them before the split.
+      # Fourteen shards need at most 13.90 min; thirteen need 14.96 min and
+      # leave no room under the 15-min target.
       # --max-minutes 20 fails above 2/3 of the job limit. The last third covers
       # setup and GitHub finalization, which counts against timeout-minutes and
       # took up to about 5 min during the Actions incident of 19 October 2026.
       # strategy.job-total keeps the --shard divisor in sync with the matrix.
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
     # API-level unit tests go through the rate limiter, whose Bun redis client
     # waits for a server; a throwaway Valkey keeps them honest and fast.
     services:
@@ -239,11 +250,13 @@ jobs:
   # The browser tests again in WebKit, the engine of Safari and of every
   # browser on iOS. The Playwright image of the catalog's version serves it
   # through `playwright run-server`; contributing/testing.md runs the same
-  # locally. Refreshed from runs 45486435794 and 45498231860, including a
-  # failed run. The table covers all 514 files. Twenty-two shards need 626.1 s
-  # (10.44 min), leaving 33.9 s below the 11-min target; twenty-one need
-  # 655.9 s, leaving too little room, and nineteen need 724.8 s and fail it.
-  # Ten extra unmeasured files (median 11.6 s) still fit at 631.3 s.
+  # locally. Refreshed from the merge-group runs 46029392449, 46029216532,
+  # 46028824752, 46028520019, 46028016333, 46026406738, 46026059471,
+  # 46025915797, 46019629749 and 46013063442 (failed groups included), the
+  # maximum of each file. The table covers all 577 files. Twenty-six shards
+  # need 625.7 s (10.43 min), 34.3 s below the 11-min target, room for the WebKit
+  # tests the next pull requests add; twenty-five need 650.9 s (9.1 s of room),
+  # twenty-four 677.9 s and miss the target, twenty-two (before) 739.5 s.
   # The 11-min target reserves the full 2-min warm-up plus the measured p95
   # 1.61x slowdown:
   # 11 * 1.61 + 2 < 20. The runner tests enforce this 55%-of-budget guard.
@@ -251,13 +264,13 @@ jobs:
   # strategy.job-total is the divisor.
   webkit:
     needs: [changes, setup]
-    if: needs.changes.outputs.webkit == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.webkit == 'true')
     runs-on: ${{ vars.CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]
     env:
       TEST_BROWSER: webkit
       TEST_BROWSER_ENDPOINT: ws://127.0.0.1:3333/
@@ -284,6 +297,7 @@ jobs:
           docker rm --force playwright
 
   integration:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft != true
     needs: [setup, mirror]
     runs-on: ${{ vars.CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
@@ -471,7 +485,7 @@ jobs:
 
   grids:
     needs: [changes, setup, mirror]
-    if: needs.changes.outputs.grids == 'true' || needs.changes.outputs.cloud == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.grids == 'true' || needs.changes.outputs.cloud == 'true')
     runs-on: ${{ vars.CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 40
     strategy:
@@ -555,7 +569,7 @@ jobs:
   # The runner image ships Java and Python; the scripts download and verify their pinned inputs.
   stdlib:
     needs: [changes, setup]
-    if: needs.changes.outputs.stdlib == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.stdlib == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -570,7 +584,7 @@ jobs:
 
   ui:
     needs: [changes, setup]
-    if: needs.changes.outputs.ui == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.ui == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -586,7 +600,7 @@ jobs:
 
   docs:
     needs: [changes, setup, mirror]
-    if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.ui == 'true' || needs.changes.outputs.cloud == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.docs == 'true' || needs.changes.outputs.ui == 'true' || needs.changes.outputs.cloud == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -643,7 +657,7 @@ jobs:
   # Normal PRs use workspace tarballs because their changes get version bumps in the release PR.
   packed:
     needs: [changes, setup, mirror]
-    if: needs.changes.outputs.packed == 'true' || needs.changes.outputs.cloud == 'true' || needs.changes.outputs.release == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.packed == 'true' || needs.changes.outputs.cloud == 'true' || needs.changes.outputs.release == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
@@ -699,7 +713,7 @@ jobs:
   # HTML-like release notes can swallow another release section (#1298).
   release-body:
     needs: changes
-    if: needs.changes.outputs.release == 'true' || needs.changes.outputs.releasebody == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.release == 'true' || needs.changes.outputs.releasebody == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -723,7 +737,7 @@ jobs:
   # application's image, without Docker.
   bundles:
     needs: [changes, setup]
-    if: needs.changes.outputs.bundles != ''
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.bundles != '')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -752,7 +766,7 @@ jobs:
 
   images:
     needs: [changes, mirror]
-    if: needs.changes.outputs.images == 'true' || needs.changes.outputs.cloud == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.images == 'true' || needs.changes.outputs.cloud == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -870,7 +884,7 @@ jobs:
           for locale in de en; do
             curl -fsS -D /tmp/speedtest-page-headers "http://127.0.0.1:18080/$locale" -o /tmp/speedtest-page.html
             grep -q "<html lang=\"$locale\"" /tmp/speedtest-page.html
-            grep -q 'tools-speedtest-terminal' /tmp/speedtest-page.html
+            grep -q 'data-k2-part="Cells"' /tmp/speedtest-page.html
             ! grep -qi '^set-cookie:' /tmp/speedtest-page-headers
           done
           test "$(curl -sS -o /dev/null -w '%{http_code}' 'http://127.0.0.1:18080/download?size=1')" = 401
@@ -972,7 +986,7 @@ jobs:
 
   runner-attacks:
     needs: [changes, setup, mirror]
-    if: needs.changes.outputs.runner == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.runner == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -1058,11 +1072,16 @@ jobs:
     steps:
       - env:
           RESULTS: ${{ toJSON(needs) }}
+          IS_DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == true }}
           # The path-filtered jobs, whose `if:` reads the `changes` outputs.
-          # Only they may be skipped; every other job must succeed (`ci-gate` check).
+          # Ready PRs and merge groups allow only these skips (`ci-gate` check).
           MAY_SKIP: webkit grids stdlib ui docs packed release-body bundles images runner-attacks
         run: |
           set -euo pipefail
+          if [[ "$IS_DRAFT" == true ]]; then
+            echo "Draft: light checks only - the full gate runs after ready for review" >&2
+            exit 1
+          fi
           jq -e 'type == "object" and length > 0' <<<"$RESULTS" >/dev/null || { echo "The gate got no job results" >&2; exit 1; }
           echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
           failed=$(echo "$RESULTS" | jq -r --arg maySkip "$MAY_SKIP" '

@@ -1,6 +1,23 @@
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Chip, confirm, Empty, Failed, List, Menu, type NavProps, Pane, Row, Text, useToast } from "@k2b/ui/v2";
+import {
+  Bar,
+  Button,
+  Chip,
+  confirm,
+  Empty,
+  Facts,
+  Failed,
+  List,
+  Menu,
+  type NavProps,
+  Notice,
+  Pane,
+  RecordHead,
+  Row,
+  Text,
+  useToast,
+} from "@k2b/ui/v2";
 import { For, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import { type HealthApp, type HealthWebhook, responseErrorMessage } from "../../../frontend/health-webhook-queries";
@@ -22,6 +39,15 @@ export type SettingsScreenProps = {
 
 const statusOf = (webhook: HealthWebhook) =>
   !webhook.enabled ? null : webhook.lastError ? ("bad" as const) : webhook.lastStatus === "warn" ? ("warn" as const) : ("ok" as const);
+
+/** The host of a webhook's address, as its short identifier; the address itself when it does not parse. */
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).host || url;
+  } catch {
+    return url;
+  }
+};
 
 /** Alerts on v2: the list of health webhooks, the open one (or a new one) beside it. */
 export default function SettingsScreen(props: SettingsScreenProps) {
@@ -47,6 +73,14 @@ export default function SettingsScreen(props: SettingsScreenProps) {
     }
     location.assign(ALERTS_PATH);
   };
+  const appsOf = (webhook: HealthWebhook) =>
+    webhook.scopeKind === "include"
+      ? t().appsSelected({ count: webhook.scopeAppIds.length })
+      : webhook.scopeKind === "exclude"
+        ? t().appsExcept({ count: webhook.scopeAppIds.length })
+        : g().allApps;
+  const minimumOf = (webhook: HealthWebhook) =>
+    webhook.minStatus === "ok" ? g().ok : webhook.minStatus === "warn" ? g().warning : g().error;
   const statusWord = (webhook: HealthWebhook) => {
     const status = statusOf(webhook);
     return status === null ? g().disabled : status === "bad" ? g().error : status === "warn" ? g().warning : g().ok;
@@ -102,7 +136,12 @@ export default function SettingsScreen(props: SettingsScreenProps) {
             back={{ label: t().alerts, href: ALERTS_PATH }}
             head={
               <Bar
-                start={<Text type="lead">{selected()?.name ?? t().addWebhook}</Text>}
+                start={
+                  // k2b-ui gap: tinted object head (look.md rule 5); until it lands the open alert names itself and its host
+                  <Show when={selected()} fallback={<Text type="lead">{t().addWebhook}</Text>}>
+                    {(webhook) => <RecordHead name={webhook().name} ids={[{ value: hostOf(webhook().url), icon: "link" }]} />}
+                  </Show>
+                }
                 end={
                   <>
                     <Show when={props.open === "new" || selected()}>
@@ -132,6 +171,28 @@ export default function SettingsScreen(props: SettingsScreenProps) {
                 />
               }
             >
+              <Show when={selected()}>
+                {(webhook) => (
+                  <>
+                    {/* a problem stands first, in red, with the reason the target gave */}
+                    <Show when={webhook().enabled && webhook().lastError}>
+                      {(error) => (
+                        <Notice tone="bad" title={t().alertFailing}>
+                          {error()}
+                        </Notice>
+                      )}
+                    </Show>
+                    <Facts
+                      inline
+                      items={[
+                        { label: g().apps, value: appsOf(webhook()) },
+                        { label: g().minimumStatus, value: minimumOf(webhook()) },
+                        { label: g().method, value: webhook().method },
+                      ]}
+                    />
+                  </>
+                )}
+              </Show>
               <WebhookForm webhook={selected()} apps={props.apps} timeZone={props.timeZone} />
             </Show>
           </Pane>

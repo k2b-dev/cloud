@@ -4,6 +4,7 @@ import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
 import type { MapViewport } from "../charts/core";
 import { calendarLayout } from "../charts/core/calendar-layout";
+import { lineScaleTones } from "../charts/core/line-extras";
 import { lineDetailsEnabled, lineLegendX } from "../charts/core/line-options";
 import type { ChartDrawingOptions } from "../charts/core/render";
 import { chartRenderHeight, preservesAspectRatio } from "../charts/core/render-size";
@@ -33,7 +34,7 @@ import {
   zoomStateTimelineViewport,
 } from "./chart-state-timeline";
 import { selectedChartSvg } from "./chart-svg";
-import { stretchedTickRoomsSvg } from "./chart-tick-room";
+import { stretchedAxisCornerSvg, stretchedTickRoomsSvg } from "./chart-tick-room";
 import { useViewportMessages } from "./viewport-messages";
 
 /**
@@ -171,7 +172,19 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     // Pareto's labels name its two measures; other kinds use labels only for host controls.
     if (props.kind === "pareto") return props;
     const [, drawing] = splitProps(props, ["class", "style", "labels", "interactive", "selected", "onSelect", "tooltip", "cursor"]);
-    return drawing;
+    // A state timeline names its states in the HTML legend below the drawing, and its definitions get the ids of this
+    // instance (unique per page, on the server and in the browser).
+    // Its words ("Jetzt", "geplant") come in the page's language.
+    if (drawing.kind === "stateTimeline")
+      return {
+        ...drawing,
+        legend: false,
+        idPrefix: `${chartTooltipId}-drawing`,
+        nowLabel: chartMessages().chartNow,
+        plannedLabel: chartMessages().chartPlanned,
+      };
+    // A line's colour scale defines gradients: their ids are this instance's too, so two charts never share one.
+    return drawing.kind === "line" ? { ...drawing, idPrefix: `${chartTooltipId}-drawing` } : drawing;
   };
   const messages = useUiMessages();
   const chartMessages = useChartMessages();
@@ -186,13 +199,29 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     props.kind === "heatmap" && props.layout === "calendar" ? calendarLayout({ ...props, locale: props.locale ?? locale() }) : undefined;
   const size = () => ({
     width: calendar()?.width ?? 480,
-    height: calendar()?.height ?? chartRenderHeight(props),
+    // A state timeline names its states in the HTML legend below the drawing, so the drawing has no room for one.
+    height:
+      calendar()?.height ?? (props.kind === "stateTimeline" ? stateTimelineHeight(props.rows.length, false) : chartRenderHeight(props)),
   });
   const topLegend = () =>
     props.kind === "area"
       ? props.legend !== false
       : props.kind === "line" && props.legend === true && (props.legendPlacement === "top-start" || lineDetailsEnabled(props));
   const legendSeries = () => (props.kind === "line" || props.kind === "area" ? props.series : []);
+  // Whether the states' legend has more lines than room (it scrolls then); measured in the browser only.
+  const [legendScrolls, setLegendScrolls] = createSignal(false);
+  const watchLegend = (legend: HTMLDivElement) => {
+    if (typeof ResizeObserver === "undefined") return;
+    const sizes = new ResizeObserver(() => setLegendScrolls(legend.scrollHeight > legend.clientHeight + 1));
+    sizes.observe(legend);
+    onCleanup(() => sizes.disconnect());
+  };
+  const stateLegend = () => (props.kind === "stateTimeline" && props.legend !== false ? (props.states ?? []) : []);
+  // a timeline with planned starts names their outline in its legend
+  const plannedInLegend = () =>
+    stateLegend().length > 0 &&
+    props.kind === "stateTimeline" &&
+    props.rows.some((row) => row.intervals.some((interval) => interval.planned));
   const legendValue = (index: number) => {
     if (props.kind === "line") {
       const defaultX = lineLegendX(props);
@@ -558,7 +587,10 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
         props.kind === "pareto" ||
         (props.kind === "heatmap" && props.layout === "calendar")
         ? { ...props, locale: props.locale ?? locale() }
-        : { ...drawingProps(), ...(props.kind === "bar" || props.kind === "hbar" || props.kind === "funnel" ? { locale: locale() } : {}) },
+        : {
+            ...drawingProps(),
+            ...(props.kind === "bar" || props.kind === "hbar" || props.kind === "funnel" ? { locale: locale() } : {}),
+          },
       size().width,
       size().height,
       interactiveMap() ? mapViewport() : undefined,
@@ -567,7 +599,9 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     ),
   );
   // A stretched line's dates give way in a narrow box instead of drawing over each other.
-  const svgMarkup = createMemo(() => (props.kind === "line" && props.timeAxis ? stretchedTickRoomsSvg(drawnSvg()) : drawnSvg()));
+  // A stretched line's or scatter's first X label begins at its tick, so it never meets the lowest Y label.
+  const cornered = () => (props.kind === "line" || props.kind === "scatter" ? stretchedAxisCornerSvg(drawnSvg()) : drawnSvg());
+  const svgMarkup = createMemo(() => (props.kind === "line" && props.timeAxis ? stretchedTickRoomsSvg(cornered()) : cornered()));
   createEffect(() => {
     svgMarkup();
     inspection.invalidate();
@@ -601,7 +635,8 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     props.style ??
     (props.kind === "stateTimeline"
       ? {
-          height: `${stateTimelineHeight(props.rows.length, props.legend !== false)}px`,
+          // the drawing and one line of the HTML legend (30 px with its air)
+          height: `${stateTimelineHeight(props.rows.length, false) + (stateLegend().length > 0 ? 30 : 0)}px`,
         }
       : undefined);
 
@@ -627,7 +662,7 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
         id={calendar() ? `${chartTooltipId}-scroll` : undefined}
         class={`k2b-chart ${props.class ?? ""}`}
         data-chart-kind={props.kind}
-        data-legend-placement={topLegend() ? "top-start" : undefined}
+        data-legend-placement={topLegend() ? "top-start" : stateLegend().length > 0 ? "bottom-start" : undefined}
         data-drag={draggable() ? (dragging() ? "active" : "idle") : undefined}
         data-crosshair={!draggable() && props.kind === "line" ? "true" : undefined}
         data-interactive="true"
@@ -660,6 +695,19 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
                     height="10"
                     aria-hidden="true"
                   >
+                    {/* a line with a colour scale shows its scale, first stop to last; the series class outranks an
+                        attribute, so its gradient is the swatch's style */}
+                    <Show when={"colorScale" in series && series.colorScale}>
+                      {(stops) => (
+                        <defs>
+                          <linearGradient id={`${chartTooltipId}-legend-${index()}`}>
+                            <For each={stops()}>
+                              {(stop, at) => <stop offset={at() / (stops().length - 1)} stop-color={lineScaleTones[stop.tone]} />}
+                            </For>
+                          </linearGradient>
+                        </defs>
+                      )}
+                    </Show>
                     <rect
                       x="1"
                       y="1"
@@ -667,6 +715,9 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
                       height="8"
                       rx="2"
                       class={`stdlib-chart-series-${index() % 8}`}
+                      style={
+                        "colorScale" in series && series.colorScale ? { fill: `url(#${chartTooltipId}-legend-${index()})` } : undefined
+                      }
                       fill={`var(--stdlib-chart-c${(index() % 8) + 1}, ${
                         (props.kind === "line" && lineDetailsEnabled(props)
                           ? ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16", "#f97316"]
@@ -703,6 +754,45 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
           }}
           innerHTML={isServer ? selectedChartSvg(svgMarkup(), props.selected) : svgMarkup()}
         />
+        <Show when={stateLegend().length > 0}>
+          {/* HTML wraps the states at any width; inside the stretched drawing the legend could only run off its side. */}
+          {/* it takes the focus only while it scrolls, so the keyboard reaches the states it hides */}
+          <div
+            ref={watchLegend}
+            class="k2b-chart__legend"
+            role="group"
+            aria-label={chartMessages().chartLegend}
+            tabIndex={legendScrolls() ? 0 : undefined}
+          >
+            <For each={stateLegend()}>
+              {(state, index) => (
+                <span class="k2b-chart__legend-item">
+                  <svg class="stdlib-chart k2b-chart__legend-swatch" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+                    <rect
+                      x="1"
+                      y="1"
+                      width="8"
+                      height="8"
+                      rx="2"
+                      class={state.color ? undefined : `stdlib-chart-series-${index() % 8}`}
+                      fill={state.color ?? `var(--stdlib-chart-c${(index() % 8) + 1})`}
+                      stroke="none"
+                    />
+                  </svg>
+                  <span>{state.label ?? state.state}</span>
+                </span>
+              )}
+            </For>
+            <Show when={plannedInLegend()}>
+              <span class="k2b-chart__legend-item" data-planned="">
+                <svg class="stdlib-chart k2b-chart__legend-swatch" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+                  <rect x="1.5" y="1.5" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-dasharray="2 1.5" />
+                </svg>
+                <span>{chartMessages().chartPlannedLegend}</span>
+              </span>
+            </Show>
+          </div>
+        </Show>
         <span ref={lineAnchorRef} class="k2b-chart__anchor" aria-hidden="true" />
         <span
           id={chartTooltipId}

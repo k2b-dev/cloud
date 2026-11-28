@@ -2,6 +2,7 @@ import { createEffect, createSignal, type JSX, onCleanup, onMount, Show } from "
 import { isServer, render } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { createQuestion, type Question, quietFocus, useDialog } from "./behavior/overlays";
+import { OverPage } from "./columns-context";
 import { Icon } from "./marks";
 
 // The overlays of v2: the behaviour (focus, Escape, placement, keys, the sheet on the phone) comes from the behaviour
@@ -37,10 +38,11 @@ const focusable =
 const phoneQuery = "not all and (min-width: 768px)";
 
 /**
- * Whether the window is the v2 phone; false on the server, where a dialog is closed anyway. In the browser it is known
- * from the start, so a dialog on the phone is a sheet from its first render on (and core prepares the sheet early).
+ * Whether the window is the v2 phone; false on the server, where a dialog or panel is closed anyway. In the browser it
+ * is known from the start, so a dialog or a popover's panel on the phone is a sheet from its first render on (and core
+ * prepares the sheet early). Internal: `Dialog` and `Popover`.
  */
-const usePhone = () => {
+export const usePhone = () => {
   const [phone, setPhone] = createSignal(!isServer && matchMedia(phoneQuery).matches);
   onMount(() => {
     const media = matchMedia(phoneQuery);
@@ -132,20 +134,24 @@ export const Dialog = (props: DialogProps) => {
       // the first field takes the focus, not the close button; without one the first action of the foot
       initialFocus={firstFocus}
     >
+      {/* on the phone's sheet: the grip that says it can be swiped down (the swipe itself is core's) */}
+      <div class="k2-dialog-grip" aria-hidden="true" />
       <div class="k2-slot" data-slot="head">
         <div class="k2-bar">
           <div class="k2-bar-start">
             <dialog.Title class="k2-dialog-title">{props.title}</dialog.Title>
           </div>
           <div class="k2-bar-end">
-            <dialog.Close class="k2-btn" data-variant="ghost" data-icon-only="" aria-label={t().close} title={t().close}>
+            {/* it stays on the phone, where other buttons of a head give way: the sheet's one visible way out */}
+            <dialog.Close class="k2-btn" data-variant="ghost" data-icon-only="" data-keep="" aria-label={t().close} title={t().close}>
               <Icon name="x" />
             </dialog.Close>
           </div>
         </div>
       </div>
       <div class="k2-dialog-body" ref={watch} onScroll={(event) => measure(event.currentTarget)}>
-        {props.children}
+        {/* over the page: a pane or a split in it asks the workspace behind it for no room */}
+        <OverPage>{props.children}</OverPage>
       </div>
       <div class="k2-slot" data-slot="foot" ref={foot}>
         <div class="k2-bar">

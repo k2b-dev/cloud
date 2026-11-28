@@ -139,8 +139,20 @@ test("the namespace guard catches a tag beside a primitive and a tag after a pse
 
 // The positioning of the behaviour layer writes these on an open popup (and `--keyboard-inset`, the height of an open
 // on-screen keyboard, on the toast region, so a toast stays above the keyboard); the page or the platform sets the one
-// colour of its app, and the platform may set its readable ink. v2.css may read them, never define them.
-const foreignVariables = new Set(["--anchor-width", "--available-height", "--keyboard-inset", "--k2-app", "--k2-app-ink"]);
+// colour of its app, and the platform may set its readable ink; core's tree writes the level of each item
+// (`--tree-level`). v2.css may read them, never define them.
+// the ui-sdk core writes the colour of a colour picker and the gradients of its surface and slider on their parts
+const foreignVariables = new Set([
+  "--anchor-width",
+  "--available-height",
+  "--keyboard-inset",
+  "--k2-app",
+  "--k2-app-ink",
+  "--color-picker-color",
+  "--color-area-background",
+  "--color-slider-background",
+  "--tree-level",
+]);
 
 test("v2.css stays in its namespace below .k2-ui, beside v1", () => {
   const problems: string[] = [];
@@ -157,6 +169,54 @@ test("v2.css stays in its namespace below .k2-ui, beside v1", () => {
   expect(problems).toEqual([]);
 });
 
+// A person who asks for less motion gets none that runs over time: every animation and transition of v2.css has a rule
+// in `@media (prefers-reduced-motion: reduce)` that stops it. An animation on a scroll timeline follows the person's own
+// scroll and is no motion of its own. (Core's sheet moves are pinned in menus and overlays browser tests.)
+test("every animation and transition in v2.css stops under prefers-reduced-motion", () => {
+  const reduced = (rule: postcss.Rule): boolean => {
+    const parent = rule.parent;
+    if (parent?.type !== "atrule") return false;
+    return (parent as postcss.AtRule).params.includes("prefers-reduced-motion: reduce");
+  };
+  // The chain of classes and tags a selector names, without its attributes and simple pseudo-classes: a stop for
+  // `.a > .b` also stops `.a[data-x] > .b:first-child`, so a rule is stopped when its chain ends in a stop's chain.
+  const chain = (selector: string) =>
+    selector
+      .replace(/^\.k2-ui\s+/, "")
+      .replace(/\[[^\]]*\]/g, "")
+      .replace(/:[a-z-]+(?!\()/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  const stops: { chain: string; prop: string }[] = [];
+  root.walkRules((rule) => {
+    if (!reduced(rule)) return;
+    // `.k2-ui :is(a, b)` stops both a and b
+    const parts = rule.selectors.flatMap((selector) => {
+      const inner = selector.match(/^\.k2-ui :is\((.*)\)$/)?.[1];
+      return inner ? inner.split(/,\s*(?![^()]*\))/) : [selector];
+    });
+    rule.walkDecls((declaration) => {
+      if (declaration.value.startsWith("none")) for (const part of parts) stops.push({ chain: chain(part), prop: declaration.prop });
+    });
+  });
+  const running: string[] = [];
+  root.walkRules((rule) => {
+    if (reduced(rule) || (rule.parent?.type === "atrule" && (rule.parent as postcss.AtRule).name === "keyframes")) return;
+    const onScroll = rule.nodes.some(
+      (node) => node.type === "decl" && node.prop === "animation-timeline" && /scroll\(|view\(/.test(node.value),
+    );
+    rule.walkDecls((declaration) => {
+      if (!["animation", "transition"].includes(declaration.prop) || declaration.value === "none") return;
+      if (declaration.prop === "animation" && onScroll) return;
+      const covered = rule.selectors.every((selector) =>
+        stops.some((stop) => stop.prop === declaration.prop && chain(selector).endsWith(stop.chain)),
+      );
+      if (!covered) running.push(`${rule.selector} { ${declaration.prop}: ${declaration.value} }`);
+    });
+  });
+  expect(running).toEqual([]);
+});
+
 test("every custom property v2.css reads is one it defines", () => {
   const defined = new Set<string>();
   root.walkDecls((declaration) => {
@@ -168,4 +228,9 @@ test("every custom property v2.css reads is one it defines", () => {
       if (!defined.has(match[1]!) && !foreignVariables.has(match[1]!)) missing.push(match[1]!);
   });
   expect(missing).toEqual([]);
+});
+
+test("an empty state's sign has a tone for wrong and for waiting, in the tints of those states", () => {
+  expect(css).toMatch(/\.k2-sign\[data-tone="bad"\]\s*\{[^}]*--k2-bad-tint[^}]*--k2-bad\b/);
+  expect(css).toMatch(/\.k2-sign\[data-tone="warn"\]\s*\{[^}]*--k2-warn-tint[^}]*--k2-warn-ink/);
 });

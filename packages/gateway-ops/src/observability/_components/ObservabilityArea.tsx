@@ -37,7 +37,7 @@ export const OBSERVABILITY_SECTION_HREF: Record<ObservabilitySection, string> = 
   metrics: "/admin/observability/metrics",
   deliveries: "/admin/observability/deliveries",
   gateway: "/admin/observability/gateway/routes",
-  infrastructure: "/admin/observability/infrastructure",
+  infrastructure: "/admin/observability/infrastructure/postgres",
   settings: "/admin/observability/settings",
 };
 

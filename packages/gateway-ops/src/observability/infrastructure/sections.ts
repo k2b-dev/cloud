@@ -209,3 +209,31 @@ export const readInfraSectionWithin = async (
     clearTimeout(timer);
   }
 };
+
+/** The state of each backend in one word, or none when it did not answer within the first picture's budget. */
+export type InfraStates = Record<InfrastructureBackend, InfraSection["status"] | undefined>;
+
+// The tabs of the infrastructure record and the Ops overview show these states on every call; each read probes the
+// backend, so the pages share one result for a short time instead of probing three backends on each call.
+const STATES_TTL_MS = 30_000;
+let statesCache: { at: number; value: Promise<InfraStates> } | null = null;
+
+/** One backend's state; the state does not depend on the page's language, so the words of its cells are not used. */
+const stateOf = async (backend: InfrastructureBackend): Promise<InfraSection["status"] | undefined> => {
+  const result = await readInfraSectionWithin(backend, "en");
+  return result.state === "ready" ? result.section.status : result.state === "failed" ? "bad" : undefined;
+};
+
+/** The three backends' states, shared by the pages of the area for 30 s; a backend that fails to answer reads `bad`. */
+export const readInfraStates = (): Promise<InfraStates> => {
+  const now = Date.now();
+  if (!statesCache || now - statesCache.at > STATES_TTL_MS) {
+    const value = Promise.all([stateOf("postgres"), stateOf("valkey"), stateOf("nats")]).then(([postgres, valkey, nats]) => ({
+      postgres,
+      valkey,
+      nats,
+    }));
+    statesCache = { at: now, value };
+  }
+  return statesCache.value;
+};

@@ -62,6 +62,7 @@ describe("duplicate a note", () => {
         taskProgress: { done: 0, total: 0 },
         attachments: [],
         backlinks: [],
+        backlinksTotal: 0,
         relations: { outgoing: [], tags: [] },
         accessVisible: false,
         canManageAccess: false,

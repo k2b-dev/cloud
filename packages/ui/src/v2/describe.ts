@@ -43,6 +43,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "Canvas",
     "Field.Row",
     "Field",
+    "Disclosure",
     "Toast",
     "Empty",
     "Loading",
@@ -58,8 +59,29 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "k2-split": "Pane.Split",
     "k2-list": "List",
     "k2-group": "Group",
+    "k2-group-body": "Group",
+    "k2-disc-body": "Disclosure",
     "k2-sec": "Section",
     "k2-band": "Band",
+  };
+  // An island of @k2b/ssr (`<solid-island>`, `<solid-client>`) is a wrapper of `display: contents` with no meaning of
+  // its own, and v2.css looks through it: so does the outline. Parents, children and siblings skip it.
+  const wrapper = (element: Element | null | undefined) => !!element && /^solid-(?:island|client)$/.test(element.localName);
+  const parentOf = (element: Element) => {
+    let parent = element.parentElement;
+    while (parent && wrapper(parent)) parent = parent.parentElement;
+    return parent;
+  };
+  const kids = (element: Element): Element[] => [...element.children].flatMap((child) => (wrapper(child) ? kids(child) : [child]));
+  const kidNodes = (element: Element): ChildNode[] =>
+    [...element.childNodes].flatMap((node) => (node.nodeType === 1 && wrapper(node as Element) ? kidNodes(node as Element) : [node]));
+  const kidsMatching = (element: Element | null | undefined, selector: string) =>
+    element ? kids(element).filter((child) => child.matches(selector)) : [];
+  const kid = (element: Element | null | undefined, selector: string) => kidsMatching(element, selector)[0] ?? null;
+  const nextOf = (element: Element) => {
+    const parent = parentOf(element);
+    const siblings = parent ? kids(parent) : [];
+    return siblings[siblings.indexOf(element) + 1] ?? null;
   };
   const ownedChild = (child: Element) =>
     child.hasAttribute("data-k2-part") ||
@@ -80,9 +102,11 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
   const textOf = (element: Element | null | undefined) => clip(element?.textContent ?? "");
   /** Stands directly in the flow of a column, not in a head, a bar or a row. */
   const inFlow = (element: Element) => {
-    const parent = element.parentElement;
+    const parent = parentOf(element);
     if (!parent) return false;
     if (parent.classList.contains("k2-scroll") || parent.classList.contains("k2-ws-main") || parent.hasAttribute("data-slot")) return true;
+    // the content of an open folded group, and of an open disclosure, stands in their flow
+    if (parent.classList.contains("k2-group-body") || parent.classList.contains("k2-disc-body")) return true;
     return flow.has(part(parent));
   };
   const isLine = (element: Element) => {
@@ -116,9 +140,15 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     }
     if (name === "Chip") {
       const kind = element.getAttribute("data-status") ?? element.getAttribute("data-kind");
-      return `(${clip(element.textContent ?? "", 30)}${kind && kind !== "plain" ? ` · ${kind}` : ""})`;
+      return `(${clip(element.textContent ?? "", 30)}${kind && kind !== "plain" ? ` · ${kind}` : ""}${element.hasAttribute("data-quiet") ? " quiet" : ""})`;
     }
     if (name === "Avatar") return `@${element.getAttribute("aria-label") ?? ""}${element.hasAttribute("data-image") ? " picture" : ""}`;
+    if (name === "Avatar.Stack") return `@{${element.getAttribute("aria-label") ?? ""}}`;
+    if (name === "Mark") {
+      const kind = element.querySelector(".k2-mk-kind")?.textContent;
+      return `[${element.querySelector("[data-name]")?.getAttribute("data-name") ?? "mark"}${kind ? ` ${kind}` : ""}${element.hasAttribute("data-image") ? " picture" : ""}]`;
+    }
+    if (name === "Spark") return `spark ${quote(element.getAttribute("aria-label"))}`;
     if (name === "Icon") return element.getAttribute("aria-label") ? `icon ${quote(element.getAttribute("aria-label"))}` : "";
     if (name === "Text") {
       const type = element.getAttribute("data-type");
@@ -134,9 +164,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     }
     if (name === "RecordHead") {
       // The identifiers stand beside the name, in the same place (its kinds are chips and name themselves).
-      const ids = [...(element.parentElement?.querySelectorAll(":scope > .k2-record-id") ?? [])].map((id) =>
-        clip(id.textContent ?? "", 30),
-      );
+      const ids = kidsMatching(parentOf(element), ".k2-record-id").map((id) => clip(id.textContent ?? "", 30));
       return `RecordHead ${quote(element.textContent)}${ids.length ? ` ids: ${ids.join(" · ")}` : ""}`;
     }
     if (name === "Path")
@@ -158,6 +186,31 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
           : ((control as HTMLInputElement | null)?.value ?? control?.getAttribute("value"));
       const placeholder = name === "Select" ? shownValue?.textContent : control?.getAttribute("placeholder");
       return `${name}${value ? ` ${quote(value, 40)}` : placeholder ? ` placeholder ${quote(placeholder, 40)}` : " empty"}${element.hasAttribute("data-invalid") ? " invalid" : ""}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
+    }
+    if (name === "CodeInput") {
+      const control = element.querySelector("input") as HTMLInputElement | null;
+      const value = control?.value ?? control?.getAttribute("value") ?? "";
+      return `CodeInput ${value.length}/${control?.getAttribute("maxlength") ?? "?"}${element.hasAttribute("data-invalid") ? " invalid" : ""}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
+    }
+    if (name === "TagsInput") {
+      const tags = [...element.querySelectorAll(":scope > .k2-chip")].map((chip) => clip(chip.textContent ?? "", 24));
+      const placeholder = element.querySelector("input")?.getAttribute("placeholder");
+      return `TagsInput${tags.length ? `: ${tags.join(", ")}` : placeholder ? ` placeholder ${quote(placeholder, 40)}` : " empty"}${element.hasAttribute("data-invalid") ? " invalid" : ""}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
+    }
+    if (name === "Slider") {
+      const value =
+        element.querySelector(".k2-slider-value")?.textContent ||
+        (element.querySelector("input[type=range]") as HTMLInputElement | null)?.value;
+      return `Slider ${quote(value ?? "", 20)}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
+    }
+    if (name === "ColorInput") {
+      const code = element.querySelector(".k2-color-head input") as HTMLInputElement | null;
+      const swatches = element.querySelectorAll(".k2-color-preset").length;
+      return `ColorInput ${quote(code?.value ?? code?.getAttribute("value") ?? "", 20)}${swatches ? ` · ${swatches} swatches` : ""}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
+    }
+    if (name === "ImageInput") {
+      const button = element.querySelector(".k2-image-end > .k2-btn .k2-btn-label");
+      return `ImageInput ${element.querySelector(".k2-image-preview > img") ? "picture" : "empty"} [${clip(button?.textContent ?? "", 30)}]`;
     }
     if (name === "Progress")
       return `Progress ${element.getAttribute("aria-valuenow")}/${element.getAttribute("aria-valuemax")}${element.getAttribute("aria-label") ? ` ${quote(element.getAttribute("aria-label"))}` : ""}`;
@@ -213,10 +266,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     switch (name) {
       case "Workspace": {
         const slots = [
-          element.querySelector(":scope > .k2-ws-side") ? "sidebar" : "",
-          element.querySelector(":scope > .k2-ws-main > [data-slot=head]") ? "head" : "",
+          kid(element, ".k2-ws-side") ? "sidebar" : "",
+          kid(kid(element, ".k2-ws-main"), "[data-slot=head]") ? "head" : "",
         ].filter(Boolean);
-        const fab = element.querySelector(":scope > .k2-fab");
+        const fab = kid(element, ".k2-fab");
         return `Workspace${slots.length ? ` (${slots.join(", ")})` : ""}${fab ? ` primary ${quote(fab.textContent)}` : ""}`;
       }
       case "Pane": {
@@ -229,7 +282,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       case "Back": {
         // the way back of a detail on the phone: its words, and whether it leads by its address
         const button = element.querySelector("[data-k2-part='Button']");
-        return `Back ${quote(button?.getAttribute("aria-label") ?? button?.textContent)}${button?.tagName === "A" ? " link" : ""}`;
+        const name = element.querySelector(":scope > .k2-pane-back-name")?.textContent;
+        return `Back ${quote(button?.getAttribute("aria-label") ?? button?.textContent)}${button?.tagName === "A" ? " link" : ""}${
+          name ? ` · names ${quote(name)}` : ""
+        }`;
       }
       case "FilterBar": {
         // the statements as they read, whether the state differs from its view, and whether views can be saved
@@ -242,14 +298,31 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Bar":
       case "StatusRow": {
-        const start = element.querySelector(":scope > .k2-bar-start");
-        const end = element.querySelector(":scope > .k2-bar-end");
+        const start = kid(element, ".k2-bar-start");
+        const end = kid(element, ".k2-bar-end");
         if (name === "StatusRow") {
           const lead = element.querySelector(".k2-status-lead")?.textContent;
           const facts = [...element.querySelectorAll(".k2-fact")].map((fact) => clip(fact.textContent ?? "", 30));
+          // chips of the statement, such as an exception: [bad "1 ohne Zugriff"]; with layout only the ones in sight
+          // (a chip that gave way wraps out of its one line)
+          const group = element.querySelector(".k2-status-marks")?.getBoundingClientRect();
+          const inSight = (chip: Element) => {
+            if (!options.layout || !group) return true;
+            const box = chip.getBoundingClientRect();
+            return (
+              box.width > 0 &&
+              box.top >= group.top - 0.5 &&
+              box.bottom <= group.bottom + 0.5 &&
+              box.left >= group.left - 0.5 &&
+              box.right <= group.right + 0.5
+            );
+          };
+          const marks = [...element.querySelectorAll(".k2-status-marks .k2-chip")]
+            .filter(inSight)
+            .map((chip) => `[${chip.getAttribute("data-status") ? `${chip.getAttribute("data-status")} ` : ""}${quote(chip.textContent)}]`);
           const select = element.querySelector(".k2-mark, [data-k2-mark]") ? " select-all" : "";
-          if (element.hasAttribute("data-selecting")) return `StatusRow selecting ${quote(lead)}: ${start ? words(start).join(" ") : ""}`;
-          return `StatusRow ${quote(lead)}${facts.length ? ` · ${facts.join(" · ")}` : ""}${select}${end ? ` | ${words(end).join(" ")}` : ""}`;
+          if (element.hasAttribute("data-selecting")) return `StatusRow selecting ${quote(lead)}: ${end ? words(end).join(" ") : ""}`;
+          return `StatusRow ${quote(lead)}${marks.length ? ` ${marks.join(" ")}` : ""}${facts.length ? ` · ${facts.join(" · ")}` : ""}${select}${end ? ` | ${words(end).join(" ")}` : ""}`;
         }
         const startWords = start ? words(start) : [];
         const endWords = end ? words(end) : [];
@@ -257,8 +330,15 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Nav": {
         const items = [...element.querySelectorAll("[data-k2-part='Nav.Item']")];
-        const current = items.find((item) => item.getAttribute("aria-current"));
-        return `Nav ${quote(label)}: ${items.length} entries${current ? `, current ${quote(current.querySelector(".k2-ni-name")?.textContent)}` : ""}`;
+        // a tree marks its open place on the tree item around the row
+        const current =
+          items.find((item) => item.getAttribute("aria-current")) ??
+          element.querySelector("[role='treeitem'][aria-current] > [data-k2-part='Nav.Item']");
+        const trees = [...element.querySelectorAll("[data-k2-part='Nav.Tree']")].map((tree) => {
+          const open = tree.querySelectorAll("[role='treeitem'][aria-expanded='true']").length;
+          return `tree ${quote(tree.getAttribute("aria-label"))} (${tree.querySelectorAll("[role='treeitem']").length} shown, ${open} open)`;
+        });
+        return `Nav ${quote(label)}: ${items.length} entries${trees.length ? `, ${trees.join(", ")}` : ""}${current ? `, current ${quote(current.querySelector(".k2-ni-name")?.textContent)}` : ""}`;
       }
       case "Band": {
         const tone = element.getAttribute("data-tone");
@@ -273,35 +353,42 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Tiles": {
         const tiles = [...element.querySelectorAll(".k2-tile-title")].map((tile) => clip(tile.textContent ?? "", 30));
-        return `Tiles ${tiles.length}: ${tiles.join(", ")}${rest().length ? ` ${rest().join(" ")}` : ""}`;
+        const variant = element.getAttribute("data-variant");
+        return `Tiles${variant ? ` ${variant}` : ""} ${tiles.length}: ${tiles.join(", ")}${rest().length ? ` ${rest().join(" ")}` : ""}`;
       }
       case "Section":
       case "Group": {
-        const head = element.querySelector(name === "Section" ? ":scope > .k2-sh" : ":scope > .k2-gh");
+        const head = kid(element, name === "Section" ? ".k2-sh" : ".k2-gh");
         const title = head?.querySelector(name === "Section" ? "h3" : ".k2-gh-title")?.childNodes[0]?.textContent;
         const count = head?.querySelector(".k2-sh-count, .k2-gh-count")?.textContent;
         const meta = head?.querySelector(".k2-gh-meta")?.textContent;
-        const summary = element.querySelector(":scope > .k2-sec-summary")?.textContent;
-        const more = mainText(element.querySelector(":scope > .k2-sec-link"));
+        const summary = kid(element, ".k2-sec-summary")?.textContent;
+        const more = mainText(kid(element, ".k2-sec-link"));
         const headWords = head ? words(head) : [];
         return `${name} ${quote(title)}${count ? ` (${count})` : ""}${element.hasAttribute("data-folded") ? " folded" : ""}${meta ? ` · ${clip(meta, 40)}` : ""}${headWords.length ? ` ${headWords.join(" ")}` : ""}${summary ? ` — ${quote(summary)}` : ""}${more ? ` → ${quote(more, 40)}` : ""}`;
       }
       case "List":
       case "Digest":
-        return `${name}${label ? ` ${quote(label)}` : ""}: ${element.querySelectorAll(name === "List" ? ":scope > [data-k2-part='Row']" : ":scope > [data-k2-part]").length} entries`;
+        return `${name}${label ? ` ${quote(label)}` : ""}: ${kidsMatching(element, name === "List" ? "[data-k2-part='Row']" : "[data-k2-part]").length} entries`;
       case "Row": {
         const lineTexts = [".k2-row-title", ".k2-row-l2", ".k2-row-l3"]
-          .map((selector) => element.querySelector(`:scope > .k2-row-l1 > ${selector}, :scope > ${selector}`)?.textContent)
+          .map((selector) => (kid(kid(element, ".k2-row-l1"), selector) ?? kid(element, selector))?.textContent)
           .filter((text): text is string => !!text?.trim())
           .map((text) => quote(text, 44));
-        const time = element.querySelector(":scope > .k2-row-time")?.textContent;
+        const time = kid(element, ".k2-row-time")?.textContent;
         const meta = element.querySelector(".k2-row-meta")?.textContent;
-        const lead = element.querySelector(":scope > .k2-row-lead [data-k2-part]");
-        const leadWord = lead && part(lead) === "Avatar" ? ` @${lead.getAttribute("aria-label")}` : "";
+        const lead = kid(element, ".k2-row-lead")?.querySelector("[data-k2-part]");
+        const leadWord =
+          lead && part(lead) === "Avatar"
+            ? ` @${lead.getAttribute("aria-label")}`
+            : lead && part(lead) === "Mark"
+              ? ` [${lead.querySelector("[data-name]")?.getAttribute("data-name") ?? "mark"}${lead.hasAttribute("data-image") ? " picture" : ""}]`
+              : "";
         const state = flags(element, ["unread", "current", "selected", "yours", "strong"]);
         const opens = element.tagName === "A" ? " opens link" : element.tagName === "BUTTON" ? " opens" : "";
-        const tail = [...element.querySelectorAll(":scope > .k2-row-end, :scope > .k2-row-marks")].flatMap(words);
-        return `Row${leadWord} ${lineTexts.join(" / ")}${meta ? ` (${clip(meta, 20)})` : ""}${time ? ` · ${clip(time, 20)}` : ""}${state.length ? ` [${state.join(", ")}]` : ""}${opens}${tail.length ? ` ${tail.join(" ")}` : ""}`;
+        const tail = kidsMatching(element, ".k2-row-end, .k2-row-marks").flatMap(words);
+        const level = element.getAttribute("data-level");
+        return `Row${level ? ` L${level}` : ""}${leadWord} ${lineTexts.join(" / ")}${meta ? ` (${clip(meta, 20)})` : ""}${time ? ` · ${clip(time, 20)}` : ""}${state.length ? ` [${state.join(", ")}]` : ""}${opens}${tail.length ? ` ${tail.join(" ")}` : ""}`;
       }
       case "Table": {
         const table = element.querySelector("table");
@@ -311,7 +398,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
           element.querySelector("thead th[data-select]") ? "select" : "",
           groups ? `${groups} groups` : "",
           element.querySelector("[data-sticky]") ? "sticky" : "",
-          element.nextElementSibling?.classList.contains("k2-table-phone") ? "phone rows" : "",
+          table?.getAttribute("role") === "treegrid"
+            ? `tree, ${element.querySelectorAll("tbody > tr[aria-expanded='true']").length} open`
+            : "",
+          nextOf(element)?.classList.contains("k2-table-phone") ? "phone rows" : "",
         ].filter(Boolean);
         const columns = heads.map((th) => {
           const sorted = th.getAttribute("aria-sort");
@@ -335,8 +425,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         const labels = [...element.querySelectorAll("dt")].map(
           (dt) => `${clip(dt.textContent ?? "", 20)}: ${clip(mainText(dt.nextElementSibling), 28)}`,
         );
-        const end = element.querySelector(":scope > .k2-facts-end");
-        return `Facts${element.hasAttribute("data-inline") ? " inline" : ""}: ${labels.join(" · ")}${element.querySelector(":scope > .k2-btn") ? " (copy)" : ""}${end ? ` ${words(end).join(" ")}` : ""}`;
+        const end = kid(element, ".k2-facts-end");
+        return `Facts${element.hasAttribute("data-inline") ? " inline" : ""}: ${labels.join(" · ")}${kid(element, ".k2-btn") ? " (copy)" : ""}${end ? ` ${words(end).join(" ")}` : ""}`;
       }
       case "Notice": {
         const title = element.querySelector(".k2-notice-title")?.textContent;
@@ -350,17 +440,23 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         return `Prose ${quote(text, 50)}${paragraphs.length > 1 ? ` (${paragraphs.length} blocks)` : ""}`;
       }
       case "Canvas": {
-        const height = (element as HTMLElement).style?.getPropertyValue?.("--k2-canvas-h");
+        const height = element.hasAttribute("data-fill")
+          ? "fills its pane"
+          : (element as HTMLElement).style?.getPropertyValue?.("--k2-canvas-h");
         return `Canvas ${quote(label)}${height ? ` ${height}` : ""} (free drawing, not measured)`;
       }
       case "Field": {
-        const fieldLabel = element.querySelector(":scope > .k2-field-label")?.childNodes[0]?.textContent;
-        const message = element.querySelector(":scope > .k2-field-message");
+        const fieldLabel = kid(element, ".k2-field-label")?.childNodes[0]?.textContent;
+        const message = kid(element, ".k2-field-message");
         const control = words(element).join(" ");
         return `Field ${quote(fieldLabel)}: ${control || "no control"}${message ? ` — ${message.hasAttribute("data-error") ? "error" : "hint"} ${quote(message.textContent)}` : ""}`;
       }
       case "Field.Row":
         return "Field.Row";
+      case "Disclosure": {
+        const head = element.querySelector(":scope > .k2-disc-head");
+        return `Disclosure ${quote(head?.textContent)} ${head?.getAttribute("aria-expanded") === "true" ? "open" : "closed"}`;
+      }
       // The three states of a place that shows data, where the data will stand.
       case "Empty":
       case "Failed": {
@@ -369,11 +465,13 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         return `${name} ${quote(text)}${button ? ` ${word(button)}` : ""}`;
       }
       case "Loading": {
-        const rows = element.querySelectorAll(":scope > .k2-row");
+        const rows = kidsMatching(element, ".k2-row");
         return `Loading ${rows.length} placeholder rows of ${rows[0]?.getAttribute("data-lines") ?? "1"} lines`;
       }
       case "Digest.Entry": {
         const text = (selector: string) => clip(element.querySelector(selector)?.textContent ?? "", 50);
+        if (element.hasAttribute("data-activity"))
+          return `Entry @${kid(kid(element, ".k2-row-lead"), ".k2-av")?.getAttribute("aria-label") ?? ""} ${quote(text(".k2-row-l1"))} · ${text(".k2-row-l2")}`;
         return `Entry ${text(".k2-digest-date")} ${quote(text(".k2-row-l1"))} (${text(".k2-digest-state")}): ${quote(text(".k2-digest-text"))}${element.tagName === "A" ? " opens link" : ""}`;
       }
       default:
@@ -387,14 +485,15 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     if (!owner) return;
     const where =
       owner === "Pane" ? `Pane ${quote(element.closest("[data-k2-part='Pane']")?.getAttribute("aria-label")) || ""}`.trim() : owner;
-    for (const node of element.childNodes) {
+    for (const node of kidNodes(element)) {
       if (node.nodeType === 3 && node.textContent?.trim() && owner !== "Band")
         problems.push(`loose text ${quote(node.textContent, 30)} in ${where}: put it in <Text> or <Notice>`);
       if (node.nodeType === 3 && node.textContent?.trim() && owner === "Band")
         problems.push(`loose text ${quote(node.textContent, 30)} in Band: put it in <Text>`);
       if (node.nodeType !== 1) continue;
       const child = node as Element;
-      if (ownedChild(child)) continue;
+      // the rule a primitive makes for itself (a split's context column): part of that primitive, not the screen's
+      if (ownedChild(child) || child.matches("style[data-k2-rule]")) continue;
       problems.push(
         `plain <${child.tagName.toLowerCase()}> in ${where} ${quote(child.textContent, 30)}: no primitive owns it; use Band, Section, Group, List, Table, Notice or Text`,
       );
@@ -410,7 +509,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     let next = depth;
     if (element.hasAttribute("data-k2-part") && isLine(element)) {
       const name = part(element);
-      const slot = element.parentElement?.getAttribute("data-slot");
+      const slot = parentOf(element)?.getAttribute("data-slot");
       if (hidden(element)) {
         lines.push(`${"  ".repeat(depth)}${slot ? `${slot}: ` : ""}${name} (hidden at this width)`);
         return;
@@ -437,10 +536,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         );
       // Rows of a long list: the first three, then a count.
       if (name === "List" || name === "Digest") {
-        const entries = [...element.children].filter((child) => child.hasAttribute("data-k2-part"));
+        const entries = kids(element).filter((child) => child.hasAttribute("data-k2-part"));
         entries.slice(0, 3).forEach((entry) => visit(entry, next));
         if (entries.length > 3) lines.push(`${"  ".repeat(next)}… ${entries.length - 3} more`);
-        for (const child of element.children) if (!child.hasAttribute("data-k2-part")) visit(child, next);
+        for (const child of kids(element)) if (!child.hasAttribute("data-k2-part")) visit(child, next);
         return;
       }
       // "Erneut versuchen" stands only in place of data that failed to load once; a connection that retries on its
@@ -506,7 +605,20 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       if (hidden(control)) continue;
       const box = control.getBoundingClientRect();
       const label = control.querySelector(".k2-btn-label") ?? control;
-      if (label.scrollWidth > label.clientWidth + 1 || label.getBoundingClientRect().right > box.right + 0.5)
+      // the way back beside the name of what is open gives it the room and is cut on purpose; its whole name is its hint
+      if (control.parentElement?.querySelector(":scope > .k2-pane-back-name") && control.getAttribute("title")) continue;
+      // words kept only as the name of a control that gave way to its symbol are not cut: they are not in sight at all.
+      // Only a label hidden that way counts (at most 1 px, taken out of the flow and clipped away, as sr-only text);
+      // a label squeezed to 1 px in a broken layout is still cut.
+      const shown = label.getBoundingClientRect();
+      const labelStyle = getComputedStyle(label);
+      const visuallyHidden =
+        label !== control &&
+        (shown.width <= 1 || shown.height <= 1) &&
+        labelStyle.position === "absolute" &&
+        (labelStyle.clipPath !== "none" || labelStyle.clip !== "auto");
+      if (visuallyHidden) continue;
+      if (label.scrollWidth > label.clientWidth + 1 || shown.right > box.right + 0.5)
         problems.push(
           `${part(control) || "control"} ${quote(control.getAttribute("aria-label") ?? control.textContent, 30)} cuts its label: give it the room of its whole label`,
         );
@@ -527,7 +639,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     const covered = [...root.querySelectorAll(".k2-btn, input:not(.k2-mark-input), select, textarea")].filter((control) => {
       if (control === fab || fab.contains(control) || hidden(control)) return false;
       const bar = control.closest("[data-k2-part='Bar'], [data-k2-part='Field']");
-      if (control.classList.contains("k2-btn") && (part(bar) !== "Bar" || bar?.parentElement?.hasAttribute("data-slot"))) return false;
+      if (control.classList.contains("k2-btn") && (part(bar) !== "Bar" || (bar && parentOf(bar)?.hasAttribute("data-slot")))) return false;
       const other = control.getBoundingClientRect();
       return other.right > box.left && other.left < box.right && other.bottom > box.top && other.top < box.bottom;
     });
@@ -536,6 +648,16 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         `the floating main action ${quote(fab.textContent, 24)} covers ${covered.map((control) => quote(control.getAttribute("aria-label") ?? control.textContent, 24) || `<${control.tagName.toLowerCase()}>`).join(", ")} at this width: a form or dialog belongs on its own page (route) on the phone`,
       );
   }
+  // Forms never nest: markup drops an inner form, and the search in it with it. A search sends itself (`Input send`)
+  // and stands in no form of the page.
+  for (const inner of root.querySelectorAll("form form"))
+    problems.push(
+      `a <form> ${quote(inner.getAttribute("aria-label"), 24)} stands inside another <form>: forms never nest, and the browser drops the inner one`,
+    );
+  for (const search of root.querySelectorAll("form .k2-input[data-search]:not(form)"))
+    problems.push(
+      `a search ${quote(search.querySelector("input")?.getAttribute("aria-label"), 24)} stands inside a <form>: give its Input \`send\` instead of a form around it`,
+    );
   if (!lines.length) problems.push("no v2 part found: render the screen inside an element with the class k2-ui");
   if (problems.length) lines.push("", `Problems (${problems.length}):`, ...problems.map((problem) => `- ${problem}`));
   return lines.join("\n");

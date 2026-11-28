@@ -43,31 +43,13 @@ export const alertsPage = ssr<AuthContext>(async (c) => {
   );
 });
 
-/** The health check schedule and the targets health webhooks may reach. */
-export const healthCheckPage = ssr<AuthContext>(async (c) => {
+/** The health check and the retention of operational data, in one form. */
+export const generalPage = ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
-  const [attention, schedule, targets] = await Promise.all([
+  const [attention, schedule, targets, logs, events, rollups] = await Promise.all([
     readAttention(),
     read("gateway.health_check_schedule"),
     read("gateway.webhook_allowed_targets"),
-  ]);
-  return () => (
-    <AdminLayout c={c} ui="v2" title={areaText(locale).settings}>
-      <SettingsFormScreen
-        nav={observabilityAdminNav(c, locale, attention, "settings")}
-        area="health"
-        values={{ schedule: String(schedule.value), targets: Array.isArray(targets.value) ? targets.value.map(String) : [] }}
-        unreadable={{ schedule: schedule.stored === "unreadable", targets: targets.stored === "unreadable" }}
-      />
-    </AdminLayout>
-  );
-});
-
-/** How long logs and request data stay. */
-export const retentionPage = ssr<AuthContext>(async (c) => {
-  const locale = getLocale(c);
-  const [attention, logs, events, rollups] = await Promise.all([
-    readAttention(),
     read("logs.retention_days"),
     read("gateway.telemetry_event_retention_days"),
     read("gateway.telemetry_rollup_retention_days"),
@@ -76,9 +58,16 @@ export const retentionPage = ssr<AuthContext>(async (c) => {
     <AdminLayout c={c} ui="v2" title={areaText(locale).settings}>
       <SettingsFormScreen
         nav={observabilityAdminNav(c, locale, attention, "settings")}
-        area="retention"
-        values={{ logs: Number(logs.value), events: Number(events.value), rollups: Number(rollups.value) }}
+        values={{
+          schedule: String(schedule.value),
+          targets: Array.isArray(targets.value) ? targets.value.map(String) : [],
+          logs: Number(logs.value),
+          events: Number(events.value),
+          rollups: Number(rollups.value),
+        }}
         unreadable={{
+          schedule: schedule.stored === "unreadable",
+          targets: targets.stored === "unreadable",
           logs: logs.stored === "unreadable",
           events: events.stored === "unreadable",
           rollups: rollups.stored === "unreadable",

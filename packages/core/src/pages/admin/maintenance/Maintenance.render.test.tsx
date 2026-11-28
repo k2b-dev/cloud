@@ -17,12 +17,14 @@ const [{ LocaleProvider }, { default: Maintenance }] = await Promise.all([import
 beforeAll(() => setSystemTime(new Date("2026-11-16T13:10:00.000Z")));
 afterAll(() => setSystemTime());
 
+const { adminNavFixture } = await import("../admin-v2.fixture");
 const html = (initial: MaintenanceStatus, locale = "de") =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
       get children() {
         return createComponent(Maintenance, {
+          nav: adminNavFixture("/admin/settings/maintenance"),
           initial,
           appNames: { files: "Dateien", mail: "Mail" },
           dateConfig: { timeZone: "Europe/Berlin", locale },
@@ -59,7 +61,7 @@ test("off: the switch with its note, a suggested end with its date and the cld w
     "Freiwillig. Steht auf der Wartungsseite.",
     "Voraussichtlich fertig um",
     "Freiwillig. Die Wartung endet nie von selbst; du schaltest sie aus.",
-    "Ausschalten geht auch mit cld admin maintenance off .",
+    "Ausschalten geht auch mit cld admin maintenance off.",
     "Wartung starten",
   ])
     expect(page).toContain(words);
@@ -127,7 +129,8 @@ test("English wording and a start on another day with its date", () => {
       "en",
     ),
   );
-  expect(page).toContain("Maintenance mode");
+  // the open admin entry names the page; the head carries only the state
+  expect(page).toContain("Active");
   expect(page).toContain("Everyone except you sees the maintenance page right now.");
   expect(page).toContain("22:00, started by Lea Muster");
   expect(page).toMatch(/Nov.*15|15.*Nov/);

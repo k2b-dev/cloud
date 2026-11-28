@@ -1,5 +1,6 @@
-import { BottomSheet, Navigation, SegmentedControl, useLocale } from "@k2b/ui";
+import { BottomSheet, Button, Navigation, SegmentedControl, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
+import { pageOwnsSearch } from "../browser/page-search";
 import { type AppLaunchpadContext, AppLaunchpadPanel } from "./AppLaunchpadPanel";
 import { appAccentStyle } from "./app-appearance";
 import { anyAppBadge } from "./app-badges";
@@ -41,6 +42,14 @@ function MobileNavigation(props: {
   const t = () => platformMessages.resolve([locale()]).t;
   const [workspace, setWorkspace] = createSignal(readWorkspaceNavigation());
   const [tab, setTab] = createSignal<"app" | "apps">("app");
+  // A page whose head has its own search takes the phone bar's search button; the global search waits here instead.
+  // The shell's global search, as the phone bar's button offers it (`window.cloud.openGlobalSearch`); the sheet keeps
+  // no search code of its own, so every island that can open the sheet stays as small as before.
+  const openSearch = window.cloud?.openGlobalSearch;
+  const ownSearch = pageOwnsSearch() && openSearch !== undefined;
+  const searchEverywhere = async () => {
+    if (await props.beforeSelect()) openSearch?.();
+  };
   // A new wrapper signal version propagates in-place updates of the owner snapshot.
   onCleanup(
     observeWorkspaceNavigation(() =>
@@ -62,6 +71,7 @@ function MobileNavigation(props: {
             <SegmentedControl
               class="cloud-mobile-menu__switch"
               size="md"
+              stretch
               ariaLabel={t().navigation}
               value={tab}
               onValueChange={setTab}
@@ -78,6 +88,12 @@ function MobileNavigation(props: {
         />
       </Show>
       <BottomSheet.Body>
+        <Show when={ownSearch}>
+          <Button variant="input" align="start" class="cloud-mobile-menu__search" onClick={() => void searchEverywhere()}>
+            <i class="ti ti-search" aria-hidden="true" />
+            {t().searchEverywhere}
+          </Button>
+        </Show>
         <Show
           when={workspace() && tab() === "app"}
           fallback={<AppLaunchpadPanel surface="sheet" {...props.apps} close={props.close} beforeSelect={props.beforeSelect} />}
