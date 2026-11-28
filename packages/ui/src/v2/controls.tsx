@@ -1628,6 +1628,11 @@ export type RatingProps =
     };
 
 const STARS = [1, 2, 3, 4, 5] as const;
+/**
+ * The star of Tabler's `star` icon (MIT), drawn by the rating itself: the icon font carries outline glyphs only, so a
+ * filled star is this same path with a fill, never a font glyph that may be missing.
+ */
+const STAR_PATH = "M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z";
 
 /**
  * Stars from 1 to 5 to rate something, such as a visit: five large stars as one radio group (one Tab stop, the arrows
@@ -1682,8 +1687,12 @@ const RatingStars = (props: RatingProps) => {
         {(index) => (
           // the stars up to the choice, whatever a pointer previews (core's own fill follows the preview)
           <rating.Item class="k2-star" index={index} data-chosen={index <= (rating.chosen() ?? 0) ? "" : undefined}>
-            <Icon name="star" />
-            <Icon name="star-filled" />
+            <svg class="k2-star-line" viewBox="0 0 24 24" aria-hidden="true">
+              <path d={STAR_PATH} />
+            </svg>
+            <svg class="k2-star-fill" viewBox="0 0 24 24" aria-hidden="true">
+              <path d={STAR_PATH} />
+            </svg>
             <Show when={!props.readOnly}>
               <rating.Radio class="k2-star-hit" value={String(index)} />
               <rating.Input value={String(index)} />

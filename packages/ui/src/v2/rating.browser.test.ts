@@ -150,9 +150,23 @@ test("read-only: a line of small stars as one picture with its words, part of a 
     const cut = await average
       .locator(".k2-star")
       .nth(4)
-      .locator('[data-name="star-filled"]')
+      .locator(".k2-star-fill")
       .evaluate((icon) => getComputedStyle(icon).clipPath);
     expect(cut).toContain("80%");
+    // the filled star is drawn by the rating, never a font glyph: the icon font holds outline glyphs only
+    const drawn = await page.locator(".k2-rating").evaluateAll((roots) =>
+      roots.map((root) => ({
+        glyphs: root.querySelectorAll(".ti").length,
+        fills: [...root.querySelectorAll<SVGSVGElement>(".k2-star-fill")].map((sign) => {
+          const box = sign.querySelector("path")!.getBBox();
+          return box.width > 0 && box.height > 0 && getComputedStyle(sign).fill !== "none";
+        }),
+      })),
+    );
+    for (const { glyphs, fills } of drawn) {
+      expect(glyphs).toBe(0);
+      expect(fills).toEqual([true, true, true, true, true]);
+    }
     const box = await average.boundingBox();
     expect(box?.height).toBeLessThanOrEqual(20);
     expect(await page.getByRole("img", { name: "0 von 5 Sternen" }).count()).toBe(1);
@@ -206,7 +220,7 @@ const look = (page: Page) =>
       return value.startsWith("color(") ? channels.map((channel) => Math.round(channel * 255)) : channels;
     };
     return [...root.querySelectorAll<HTMLElement>(".k2-star")].map((star) => {
-      const sign = getComputedStyle(star.querySelector('[data-name="star-filled"]')!);
+      const sign = getComputedStyle(star.querySelector(".k2-star-fill")!);
       const box = getComputedStyle(star);
       return {
         shown: sign.visibility === "visible",

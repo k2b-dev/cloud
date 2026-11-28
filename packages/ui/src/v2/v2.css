@@ -3662,17 +3662,28 @@
   background: var(--k2-surface);
   color: var(--k2-subtle);
 }
-.k2-ui .k2-star > .k2-icon {
+/* the star is drawn (STAR_PATH in controls.tsx) on Tabler's grid with its 2-unit stroke: an outline, and the same star
+   filled above it */
+.k2-ui .k2-star > svg {
   grid-area: 1 / 1;
-  font-size: 24px;
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.k2-ui .k2-star > .k2-star-fill {
+  fill: currentColor;
 }
 /* the filled star lies over the outline: shown on the chosen stars (`data-chosen`, never core's fill, which follows
    the pointer) */
-.k2-ui .k2-star > .k2-icon[data-name="star-filled"] {
+.k2-ui .k2-star > .k2-star-fill {
   visibility: hidden;
   color: var(--k2-pressed);
 }
-.k2-ui .k2-star[data-chosen] > .k2-icon[data-name="star-filled"] {
+.k2-ui .k2-star[data-chosen] > .k2-star-fill {
   visibility: visible;
 }
 .k2-ui .k2-star[data-chosen] {
@@ -3684,7 +3695,7 @@
 .k2-ui .k2-rating[data-preview] > .k2-star[data-highlighted] {
   border-color: var(--k2-muted);
 }
-.k2-ui .k2-rating[data-preview] > .k2-star[data-highlighted]:not([data-chosen]) > .k2-icon[data-name="star-filled"] {
+.k2-ui .k2-rating[data-preview] > .k2-star[data-highlighted]:not([data-chosen]) > .k2-star-fill {
   visibility: visible;
   color: var(--k2-muted);
 }
@@ -3719,19 +3730,20 @@
   border: 0;
   background: none;
 }
-.k2-ui .k2-rating[data-readonly] > .k2-star > .k2-icon {
-  font-size: 16px;
+.k2-ui .k2-rating[data-readonly] > .k2-star > svg {
+  width: 16px;
+  height: 16px;
 }
 /* read-only, the filled star is cut to the share of the star the rating covers (core's --rating-fill) */
-.k2-ui .k2-rating[data-readonly] > .k2-star > .k2-icon[data-name="star-filled"] {
+.k2-ui .k2-rating[data-readonly] > .k2-star > .k2-star-fill {
   visibility: visible;
   clip-path: inset(0 calc(100% - var(--rating-fill, 0) * 100%) 0 0);
 }
-.k2-ui .k2-rating[data-readonly] > .k2-star:dir(rtl) > .k2-icon[data-name="star-filled"] {
+.k2-ui .k2-rating[data-readonly] > .k2-star:dir(rtl) > .k2-star-fill {
   clip-path: inset(0 0 0 calc(100% - var(--rating-fill, 0) * 100%));
 }
 @media (forced-colors: active) {
-  .k2-ui .k2-star > .k2-icon[data-name="star-filled"] {
+  .k2-ui .k2-star > .k2-star-fill {
     color: Highlight;
   }
   .k2-ui .k2-star:has(> .k2-star-hit:focus-visible) {
