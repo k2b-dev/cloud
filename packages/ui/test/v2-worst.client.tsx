@@ -72,6 +72,39 @@ if (scenario === "rows")
     ),
     root,
   );
+// `<body data-case="deeds">`: rows with a deed of their own, marks and a "…", of three lines and of two (Core's
+// domains, merge of #4210 with #4174): on the phone the deed moves under the lines, and line 3 and the marks keep theirs
+else if (scenario === "deeds")
+  render(
+    () => (
+      <Workspace>
+        <Pane label="Spalte">
+          <List label="Domains">
+            <Row
+              icon="world"
+              lines={["lager.example.test", "Hauptdomain", "certificate has expired for lager.example.test since yesterday"]}
+              marks={
+                <>
+                  <Chip status="bad">DNS</Chip>
+                  <Chip status="bad">Zertifikat</Chip>
+                </>
+              }
+              action={{ label: "Prüfen", icon: "refresh", onClick: () => undefined }}
+              end={<Menu label="Aktionen für lager.example.test" items={[{ label: "Entfernen", onClick: () => undefined }]} />}
+            />
+            <Row
+              icon="world"
+              lines={["shop.example.test", "geprüft vor 12 Minuten, alle drei Schritte ohne Befund"]}
+              marks={<Chip status="ok">Erreichbar</Chip>}
+              action={{ label: "Prüfen", icon: "refresh", onClick: () => undefined }}
+              end={<Menu label="Aktionen für shop.example.test" items={[{ label: "Entfernen", onClick: () => undefined }]} />}
+            />
+          </List>
+        </Pane>
+      </Workspace>
+    ),
+    root,
+  );
 else if (scenario === "table" || scenario === "head" || scenario === "headmenu" || scenario === "headicon" || scenario === "headtwo")
   render(
     () => (

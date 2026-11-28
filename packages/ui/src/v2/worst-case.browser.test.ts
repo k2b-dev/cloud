@@ -230,6 +230,37 @@ for (const width of [1024, 390])
     );
   });
 
+// Merge of #4210 with #4174 (Core's domains): on the phone a row with a deed of its own lays out its lines, marks and
+// deed anew; line 3 and the marks kept no place there and fell on top of each other.
+for (const width of [1024, 390])
+  test(`a row with a deed, marks and three or two lines keeps each part in its place at ${width} px`, async () => {
+    await withPage(
+      width,
+      async (page) => {
+        const parts = await page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>(".k2-row")].map((row) => {
+            const box = (selector: string) => row.querySelector(`:scope > ${selector}`)?.getBoundingClientRect();
+            const marks = box(".k2-row-marks")!;
+            const lines = [box(".k2-row-l2"), box(".k2-row-l3")].filter((line) => line !== undefined);
+            const meets = (a: DOMRect, b: DOMRect) =>
+              Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 4;
+            const outer = row.getBoundingClientRect();
+            return {
+              marksShow: marks.width > 0 && marks.right <= outer.right + 0.5,
+              underMarks: lines.some((line) => meets(line, marks)),
+            };
+          }),
+        );
+        expect(parts).toEqual([
+          { marksShow: true, underMarks: false },
+          { marksShow: true, underMarks: false },
+        ]);
+        expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
+      },
+      "deeds",
+    );
+  });
+
 test("a phone row of a large table cuts its second line before its marks", async () => {
   await withPage(
     390,

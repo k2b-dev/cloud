@@ -5971,13 +5971,32 @@
   .k2-ui .k2-row {
     min-height: 60px;
   }
+  /* a row with a deed of its own puts the deed under its lines; line 3 and the marks keep their places beside each
+     other, and the marks of a row of two lines stand beside line 2 (Core's domains, merge of #4210 with #4174) */
   .k2-ui .k2-row[data-action] {
-    grid-template-areas: "lead l1" "lead l2" "lead time";
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "lead l1 l1" "lead l2 l2" "lead l3 marks" "lead time time";
+    grid-template-columns: auto minmax(0, 1fr) var(--k2-row-side);
   }
   .k2-ui .k2-row[data-action]:not(:has(> .k2-row-lead > *)):not(.k2-list:has(> .k2-row > .k2-row-lead > *) > .k2-row) {
-    grid-template-areas: "l1" "l2" "time";
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "l1 l1" "l2 l2" "l3 marks" "time time";
+    grid-template-columns: minmax(0, 1fr) var(--k2-row-side);
+  }
+  .k2-ui .k2-row[data-action][data-lines="2"]:has(> .k2-row-marks) {
+    grid-template-areas: "lead l1 l1" "lead l2 marks" "lead time time";
+  }
+  .k2-ui .k2-row[data-action][data-lines="2"]:has(> .k2-row-marks):not(:has(> .k2-row-lead > *)):not(
+      .k2-list:has(> .k2-row > .k2-row-lead > *) > .k2-row
+    ) {
+    grid-template-areas: "l1 l1" "l2 marks" "time time";
+  }
+  .k2-ui .k2-row[data-action] > .k2-row-marks {
+    grid-area: marks;
+  }
+  .k2-ui .k2-row[data-action]:not([data-lines="2"]:has(> .k2-row-marks)) > .k2-row-l2 {
+    grid-column-end: -1;
+  }
+  .k2-ui .k2-row[data-action][data-lines="2"]:has(> .k2-row-marks) > .k2-row-l2 {
+    grid-column-end: auto;
   }
   .k2-ui .k2-row[data-action] > .k2-row-end {
     grid-area: time;
