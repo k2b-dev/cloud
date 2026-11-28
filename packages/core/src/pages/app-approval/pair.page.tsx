@@ -1,14 +1,13 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
-import { accounts, appApproval, readAccountCategoryPolicy } from "@k2b/cloud/services";
+import { accounts, appApproval } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
-import { ButtonLink } from "@k2b/ui";
 import { z } from "zod";
 import { ssr } from "../../config";
-import AccountHub from "../me/AccountHub";
-import ApprovalStatus from "./ApprovalStatus";
+import { accountUserView } from "../me/account-view";
+import { accountMessages } from "../me/messages";
 import { approvalAvailability } from "./availability";
 import { appApprovalMessages } from "./messages";
-import Pairing from "./Pairing.island";
+import PairScreen from "./PairScreen.island";
 
 export default ssr<AuthContext>(async (c) => {
   const actor = c.get("user");
@@ -19,46 +18,25 @@ export default ssr<AuthContext>(async (c) => {
   if (id !== actor.id && !config?.adminPairing) return ssr.error(c, 403);
   const user = id === actor.id ? actor : await accounts.users.get({ id });
   if (!user) return ssr.error(c, 404);
-  const policy = await readAccountCategoryPolicy();
-  const { t } = appApprovalMessages.resolve([getLocale(c)]);
+  const locale = getLocale(c);
+  const { t } = appApprovalMessages.resolve([locale]);
   c.header("Referrer-Policy", "no-referrer");
   const returnTo = id === actor.id ? "/me/security" : `/app/accounts/users/${id}`;
   // Returning from identity confirmation continues after the install step.
   const continuing = c.req.query("pairDevice") === id;
-  return () => {
-    const content = () =>
-      config?.enabled && config.appOrigin ? (
-        <Pairing
-          userId={id}
-          actorId={actor.id}
-          name={`${user.displayName || user.uid} (${user.uid})`}
-          appOrigin={config.appOrigin}
-          returnTo={returnTo}
-          install={!continuing}
-        />
-      ) : (
-        <div class="flex flex-col items-start gap-3">
-          <ApprovalStatus
-            state={approvalAvailability(config)}
-            admin={actor.roles.includes("admin")}
-            settingsLink={actor.roles.includes("admin")}
-          />
-          <ButtonLink href={returnTo} variant="secondary">
-            {t.back}
-          </ButtonLink>
-        </div>
-      );
-    return (
-      // The pairing dialog's close returns to `returnTo`, so the shell draws no way up above it.
-      <Layout c={c} title={t.pair}>
-        {id === actor.id ? (
-          <AccountHub user={actor} active="security" loginLabel={policy.login.label}>
-            {content()}
-          </AccountHub>
-        ) : (
-          content()
-        )}
-      </Layout>
-    );
-  };
+  return () => (
+    // The pairing dialog's close returns to `returnTo`, so the shell draws no way up above it.
+    <Layout c={c} fullWidth ui="v2" title={t.pair}>
+      <PairScreen
+        self={id === actor.id ? { user: accountUserView(actor, accountMessages.resolve([locale]).t) } : null}
+        userId={id}
+        actorId={actor.id}
+        name={`${user.displayName || user.uid} (${user.uid})`}
+        pairing={config?.enabled && config.appOrigin ? { appOrigin: config.appOrigin, install: !continuing } : null}
+        availability={approvalAvailability(config)}
+        admin={actor.roles.includes("admin")}
+        returnTo={returnTo}
+      />
+    </Layout>
+  );
 });

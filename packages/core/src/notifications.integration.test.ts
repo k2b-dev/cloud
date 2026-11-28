@@ -27,14 +27,14 @@ suite("Core notice for a newly paired phone", () => {
     while (base.endsWith("/")) base = base.slice(0, -1);
 
     const en = await notice.render(data, { locale: "en" });
-    expect(en).toMatchObject({ title: "New device paired", targetHref: "/me/app" });
+    expect(en).toMatchObject({ title: "New device paired", targetHref: "/me/security" });
     expect(en.body).toContain("“Ada's iPhone” (iOS)");
     expect(en.body).toContain(`(${timeZone})`);
     expect(en.body).toContain("under App in your profile menu");
 
     const email = await notice.email!(data, { locale: "en" });
     expect(email.subject).toBe("New device paired");
-    expect(email.content).toContain(`${base}/me/app`);
+    expect(email.content).toContain(`${base}/me/security`);
     expect(email.rawHtml).toBeUndefined();
 
     const de = await notice.email!({ ...data, platform: "android" }, { locale: "de" });
@@ -77,7 +77,7 @@ suite("Core notice for a newly paired phone", () => {
         WHERE definition_id = ${definition.id} AND recipient_user_id = ${userId}::uuid
       `;
       expect(events).toEqual([
-        { title: "Neues Gerät gekoppelt", target_href: "/me/app", idempotency_key: `pwa-device-paired:${deviceId}` },
+        { title: "Neues Gerät gekoppelt", target_href: "/me/security", idempotency_key: `pwa-device-paired:${deviceId}` },
       ]);
       const deliveries = await sql<{ channel: string; error_code: string | null }[]>`
         SELECT d.channel, d.error_code FROM notifications.deliveries d

@@ -22,9 +22,9 @@ const openMobileMenu = async (profile: { name: string; theme: "light"; appHref?:
 };
 
 test("the mobile profile actions offer the App item only while the Cloud app runs", async () => {
-  let close = await openMobileMenu({ name: "Test user", theme: "light", appHref: "/me/app" });
+  let close = await openMobileMenu({ name: "Test user", theme: "light", appHref: "/me/security" });
   try {
-    const item = document.querySelector<HTMLAnchorElement>('dialog .cloud-mobile-profile a[href="/me/app"]');
+    const item = document.querySelector<HTMLAnchorElement>('dialog .cloud-mobile-profile a[href="/me/security"]');
     expect(item?.textContent).toContain("App");
     expect(item?.querySelector(".ti-device-mobile")).not.toBeNull();
   } finally {
@@ -32,7 +32,7 @@ test("the mobile profile actions offer the App item only while the Cloud app run
   }
   close = await openMobileMenu({ name: "Test user", theme: "light" });
   try {
-    expect(document.querySelector('dialog a[href="/me/app"]')).toBeNull();
+    expect(document.querySelector('dialog a[href="/me/security"]')).toBeNull();
   } finally {
     await close();
   }

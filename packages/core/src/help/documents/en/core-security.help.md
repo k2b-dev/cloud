@@ -30,7 +30,7 @@ An existing passkey keeps working while your account type is allowed. If your ac
 
 ## Change your password {icon="shield-lock"}
 
-For a FreeIPA account, open **Sign-in** in your account, choose **Change password**, and enter your current password. Cloud then signs you out everywhere else: in other browsers, in the Cloud app, in the command line, and in connected apps. Run `cld login` again to reconnect the command line.
+For a FreeIPA account, open **Security & devices** in your account, choose **Change** beside **Password**, and enter your current password. Cloud then signs you out everywhere else: in other browsers, in the Cloud app, in the command line, and in connected apps. Run `cld login` again to reconnect the command line.
 
 This browser stays signed in. Your paired sign-in devices stay paired. API keys and passkeys keep working.
 
@@ -38,14 +38,14 @@ Setting a new password on the sign-in page, for example with a reset link or aft
 
 ## Pair a sign-in app {icon="device-mobile"}
 
-Your administrator must enable and configure app sign-in first. If **Sign-in** shows **Enabled — setup required**, the administrator still has to finish the app configuration. Use your existing sign-in method until then.
+Your administrator must enable and configure app sign-in first. If **Security & devices → Paired devices** shows **Enabled — setup required**, the administrator still has to finish the app configuration. Use your existing sign-in method until then.
 
 :::warning Keep the pairing link to yourself
 The link expires after five minutes. Do not share it outside this setup.
 :::
 
 :::steps
-1. Open **Profile settings → Sign-in → Pair a device**.
+1. Open **Profile settings → Security & devices → Pair a device**.
 2. Scan the QR code, or copy the pairing link into the app.
 3. Return to Cloud and compare the six-digit codes.
 4. Only if the codes match, choose **The codes match — pair device**.
@@ -99,7 +99,7 @@ After a successful sign-in, Cloud sends **New sign-in from a new browser** once 
 
 The notice shows the browser and time. The email also shows the sign-in method and the approximate place, when available.
 
-If this was not you, check your paired devices under **Profile settings → Sign-in**. Then contact your administrator.
+If this was not you, check your paired devices under **Profile settings → Security & devices**. Then contact your administrator.
 
 By default, Cloud sends the notice by email. Without an email address, it sends a browser notification. To turn it off, open **Profile settings → Notifications** and clear every channel under **New sign-in from a new browser**.
 
@@ -110,15 +110,15 @@ By default, Cloud sends the notice by email. Without an email address, it sends 
 If you cannot use any paired device, ask an administrator to revoke the old device and help pair a replacement. Ask an administrator as well when a device you do not recognize denies your removal requests. Administrator-assisted pairing and removal do not need approval on a paired device.
 
 :::warning A password reset also revokes your paired devices
-When you reset your password with **Reset password** on the sign-in page, Cloud revokes all your paired devices. Any other sign-out from all sessions of your account does the same. Pair your devices again afterwards. Changing your password under **Sign-in** keeps your paired devices.
+When you reset your password with **Reset password** on the sign-in page, Cloud revokes all your paired devices. Any other sign-out from all sessions of your account does the same. Pair your devices again afterwards. Changing your password under **Security & devices** keeps your paired devices.
 :::
 
 Pairing, renaming, and revoking can ask you to confirm your identity. Sign in with the same account, without signing out first. Pairing then opens again automatically.
 
 ## Confirm new access {icon="shield-lock"}
 
-Create personal API keys under **Developer → API keys** and passkeys under
-**Sign-in → Passkeys** in a browser. Your browser sign-in must be from the last
+Create personal API keys under **Security & devices → API keys** and passkeys
+under **Security & devices → Passkeys** in a browser. Your browser sign-in must be from the last
 ten minutes. If Cloud asks you to confirm your identity, sign in again with the
 same account, without signing out first. The dialog then opens again.
 

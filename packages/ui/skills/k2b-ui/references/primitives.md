@@ -244,8 +244,10 @@ A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
 720 px of text, so a short list in a wide pane stays together; its line
 still reaches the column's edges), `more` (one link under the rows, its
 words on their text edge, never at the right: "All deliveries ›"; its
+`icon` replaces the chevron, `chevron-up` for "Show fewer"; its
 `meta` shows only in a
-`Pane side`, where the link becomes a row), children. No line under
+`Pane side`, where the link becomes a row), `id` (an anchor for a link
+such as `/me#screen`), children. No line under
 the head or between entries, one line at the end. A long title (a
 question, a name) wraps onto more lines and the head grows with it; no word
 is cut. Put `Row`s directly in a section, or a `Digest`, `Facts`, `Group`s.

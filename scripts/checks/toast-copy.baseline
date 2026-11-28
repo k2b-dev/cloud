@@ -113,21 +113,6 @@ packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx |
 packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | untitled | summary ? t().enrichmentSummary(summary) : t().enrichmentDone
 packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | untitled | t().freeIpaReachable
 packages/core/src/pages/admin/settings/_components/LegacySettingsSection.tsx | untitled | t().legacyDeleted({ count: result.deleted.length })
-packages/core/src/pages/app-approval/Devices.island.tsx | untitled | t().revokeCheckFailed
-packages/core/src/pages/app-approval/InstallApp.tsx | untitled | t().failure
-packages/core/src/pages/app-approval/Pairing.tsx | untitled | saved && !settled ? t().pairCancelFailed : t().failure
-packages/core/src/pages/app-approval/RevokeDevice.tsx | untitled | t().cancelFailed
-packages/core/src/pages/app-approval/RevokeDevice.tsx | untitled | t().cancelFailed
-packages/core/src/pages/me/AppDevices.island.tsx | untitled | t().pwaCopyFailed
-packages/core/src/pages/me/AppDevices.island.tsx | untitled | t().pwaFailed
-packages/core/src/pages/me/AppDevices.island.tsx | untitled | t().pwaFailed
-packages/core/src/pages/me/AppDevices.island.tsx | untitled | t().pwaFailed
-packages/core/src/pages/me/BrowserNotificationSetup.island.tsx | untitled | t().browserNotificationsDisabled
-packages/core/src/pages/me/BrowserNotificationSetup.island.tsx | untitled | t().browserNotificationsEnabled
-packages/core/src/pages/me/NotificationPreferences.island.tsx | untitled | t().notificationPreferenceSaved
-packages/core/src/pages/me/QuietTimeSettings.island.tsx | untitled | kind === "pause" ? t().pauseSaveFailed : t().quietHoursSaveFailed
-packages/core/src/pages/me/QuietTimeSettings.island.tsx | untitled | t().pauseInPast
-packages/core/src/pages/me/QuietTimeSettings.island.tsx | untitled | t().pauseTooFar
 packages/dashboard/src/frontend/dashboard-home.tsx | untitled | t().boardFull({ max: DASHBOARD_MAX_ITEMS })
 packages/dashboard/src/frontend/dashboard-home.tsx | untitled | t().saveFailed
 packages/dashboard/src/frontend/dashboard-home.tsx | untitled | t().shortcutsFull({ max: DASHBOARD_MAX_SHORTCUTS })

@@ -9,6 +9,9 @@ const pages = new Hono<AuthContext>().use("*", middleware.runtime()).use("*", mi
 
 describe("Core compression boundaries", () => {
   for (const path of [
+    // the account activity holds what the two old addresses below held; they redirect to it
+    "/me/activity",
+    "/me/activity/__new_route__",
     "/me/notifications/history",
     "/me/notifications/history/__new_route__",
     "/me/approvals",
@@ -36,8 +39,8 @@ describe("Core compression boundaries", () => {
   }
 });
 
-test("profile, access and notification settings pages stay eligible for compression", async () => {
-  for (const path of ["/me", "/me/access", "/me/security", "/me/notifications"]) {
+test("profile, security and notification settings pages stay eligible for compression", async () => {
+  for (const path of ["/me", "/me/security", "/me/notifications"]) {
     const response = await pages.request(path);
     expect(response.status).toBeLessThan(500);
     expect(response.headers.get("Cache-Control") ?? "").not.toContain("no-transform");

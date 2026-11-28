@@ -74,6 +74,22 @@ for (const width of [1440, 390])
     });
   });
 
+// Review of #4173: a section takes an anchor for a link to it, and a way that folds the list points up, not onwards.
+test("a section carries its anchor, and its way shows its own symbol instead of the chevron", async () => {
+  await withPage(1440, async (page) => {
+    const ways = await page.evaluate(() =>
+      Array.from(document.querySelectorAll(".k2-pane:not([data-side]) .k2-sec")).map((section) => ({
+        id: section.id,
+        icon: Array.from(section.querySelectorAll(".k2-sec-link [data-k2-part='Icon']")).at(-1)?.getAttribute("data-name"),
+      })),
+    );
+    expect(ways).toEqual([
+      { id: "", icon: "chevron-right" },
+      { id: "notes", icon: "chevron-up" },
+    ]);
+  });
+});
+
 // Review of #4337: in a page written right to left the way stands at the right, its words on the rows' text edge there.
 test("in a page written right to left the way's words start on the rows' text edge at the right", async () => {
   await withPage(

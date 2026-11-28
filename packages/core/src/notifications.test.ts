@@ -84,22 +84,22 @@ test("pending approval notifications are browser-recommended, localized, and ope
   expect(await notice.render({ count: 1 }, { locale: "en" })).toEqual({
     title: "Approval waiting",
     body: "An Action waits for your approval. Nothing happens until you decide.",
-    targetHref: "/me/approvals",
+    targetHref: "/me/activity",
   });
   expect((await notice.render({ count: 2 }, { locale: "en" })).title).toBe("2 approvals waiting");
   expect(await notice.render({ count: 1 }, { locale: "de" })).toEqual({
     title: "Freigabe wartet",
     body: "Eine Aktion wartet auf deine Freigabe. Bis du entscheidest, passiert nichts.",
-    targetHref: "/me/approvals",
+    targetHref: "/me/activity",
   });
   expect((await notice.render({ count: 2 }, { locale: "de" })).title).toBe("2 Freigaben warten");
   const url = spyOn(coreSettings, "get").mockResolvedValue("https://cloud.example.test/");
   try {
     const email = await notice.email!({ count: 2 }, { locale: "de" });
     expect(email.subject).toBe("2 Freigaben warten");
-    expect(email.content).toContain("https://cloud.example.test/me/approvals");
+    expect(email.content).toContain("https://cloud.example.test/me/activity");
     url.mockResolvedValue("cloud.example.test///");
-    expect((await notice.email!({ count: 2 }, { locale: "en" })).content).toContain("https://cloud.example.test/me/approvals");
+    expect((await notice.email!({ count: 2 }, { locale: "en" })).content).toContain("https://cloud.example.test/me/activity");
   } finally {
     url.mockRestore();
   }

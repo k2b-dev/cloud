@@ -30,7 +30,7 @@ const readEmbeddedContext = (): AppLaunchpadContext | undefined => {
           userId: data.profile.userId,
           name: data.profile.name,
           theme: data.theme,
-          ...(data.profile.appHref === "/me/app" ? { appHref: data.profile.appHref } : {}),
+          ...(data.profile.appHref === "/me/security" ? { appHref: data.profile.appHref } : {}),
         }
       : undefined,
     legalLinks: data.legalLinks,

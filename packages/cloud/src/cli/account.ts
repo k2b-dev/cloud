@@ -380,7 +380,7 @@ export default defineCliCommands({
             .json()
             .catch(() => null);
           const code = body && typeof body === "object" && "code" in body ? body.code : null;
-          const href = new URL("/me/developer", ctx.options.server).href;
+          const href = new URL("/me/security", ctx.options.server).href;
           if (code === "BROWSER_SIGN_IN_REQUIRED") throw new Error(`Create API keys in the browser: ${href}`);
           if (code === "REAUTHENTICATE") throw new Error(`Sign in again in the browser, then create the API key: ${href}`);
         }
