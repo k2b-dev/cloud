@@ -36,10 +36,11 @@ import type { Action, OnNavigate, Person, Status } from "./types";
 
 export type TextProps = {
   /**
-   * One of the four type roles. Without one, text takes the role of its place (13/20 in a pane, the role of the
-   * sentence it stands in). (Named `type`, not `role`, so it never reads as an ARIA role.)
+   * One of the four type roles of text. Without one, text takes the role of its place (13/20 in a pane, the role of
+   * the sentence it stands in). (Named `type`, not `role`, so it never reads as an ARIA role.) The role `title` is the
+   * `Section`'s own.
    */
-  type?: TypeRole;
+  type?: Exclude<TypeRole, "title">;
   /**
    * Emphasis is a weight, never a size: `strong` (600) stresses a word, `medium` (500) lets a state or an amount stand
    * out a little, such as "Quittung offen".

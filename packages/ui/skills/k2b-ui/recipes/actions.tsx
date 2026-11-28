@@ -200,7 +200,7 @@ export default function OfferActions(props: Props) {
               <Notice tone="warn" title="Freigabe fehlt" actions={[{ label: "Freigeben", icon: "check", disabled: true }]}>
                 Angebote über 5.000 € gibt Jana Petersen frei. Sie ist bis Donnerstag im Urlaub.
               </Notice>
-              <Section icon="list-details" title="Angaben">
+              <Section title="Angaben">
                 <Facts
                   items={[
                     { label: "Nummer", value: offer().id, copy: offer().id },

@@ -214,7 +214,7 @@ export default function LoremIpsumGenerator() {
         scrollKey="tools-lorem"
         label={w().result}
         input={
-          <Section icon="adjustments-horizontal" title={w().settings} measure>
+          <Section title={w().settings} measure>
             <Field label={w().kind}>
               <Choice
                 name="lorem-mode"
@@ -234,7 +234,7 @@ export default function LoremIpsumGenerator() {
         }
         result={
           // a text to read, in paragraphs: it keeps the reading measure, as the options above it
-          <Section icon="align-left" title={w().result} measure>
+          <Section title={w().result} measure>
             <Prose>
               <For each={paragraphs()}>{(paragraph) => <p>{paragraph}</p>}</For>
             </Prose>

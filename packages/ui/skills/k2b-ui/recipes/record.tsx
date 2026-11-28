@@ -101,13 +101,7 @@ export default function CustomerOverview(props: Props) {
         </Cells>
         <Pane.Split>
           <Pane label="Überblick">
-            <Section
-              icon="checklist"
-              color={area.todo}
-              title="Anstehend"
-              count={props.empty ? undefined : 2}
-              actions={[{ label: "Todo anlegen", icon: "plus" }]}
-            >
+            <Section title="Anstehend" count={props.empty ? undefined : 2} actions={[{ label: "Todo anlegen", icon: "plus" }]}>
               {props.empty ? (
                 <Empty icon="checks" text="Für diesen Kunden steht nichts an." />
               ) : (
@@ -129,12 +123,7 @@ export default function CustomerOverview(props: Props) {
               )}
             </Section>
             {/* The history loads on its own: its states stand in this section, the rest of the record stays. */}
-            <Section
-              icon="list-details"
-              color={area.deliveries}
-              title="Vorgänge"
-              more={props.empty || props.failed ? undefined : { label: "Alle Einlieferungen", forward: true }}
-            >
+            <Section title="Vorgänge" more={props.empty || props.failed ? undefined : { label: "Alle Einlieferungen", forward: true }}>
               {props.failed ? (
                 <Failed
                   text="Die Vorgänge konnten nicht geladen werden. Die übrige Akte bleibt, wie sie ist."
@@ -176,12 +165,7 @@ export default function CustomerOverview(props: Props) {
             <Canvas label="Karte mit der Adresse" height={176}>
               <span />
             </Canvas>
-            <Section
-              icon="phone"
-              title="Kontakt"
-              actions={[{ label: "Ändern", icon: "pencil" }]}
-              more={{ label: "Alle Angaben", meta: "Bank, Person" }}
-            >
+            <Section title="Kontakt" actions={[{ label: "Ändern", icon: "pencil" }]} more={{ label: "Alle Angaben", meta: "Bank, Person" }}>
               <Facts
                 items={[
                   { label: "Telefon", value: "+49 30 5550 142", hint: "Standard", copy: "+49 30 5550 142" },

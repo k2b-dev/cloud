@@ -23,11 +23,10 @@ render(
   () => (
     <Workspace>
       <Pane label="Fragen">
-        <Section icon="help" title="Kurz" count={2}>
+        <Section title="Kurz" count={2}>
           <Row lines={["Eine Antwort"]} />
         </Section>
         <Section
-          icon="help"
           title="Wie lange dauert es, bis eine Einlieferung nach der Auktion ausgezahlt wird, und wer bekommt dazu eine Nachricht?"
           count={3}
           actions={[{ label: "Bearbeiten", icon: "pencil" }]}

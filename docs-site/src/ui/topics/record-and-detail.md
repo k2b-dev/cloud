@@ -23,8 +23,10 @@ The deliveries of the same customer. A `Band` in a tone carries the one statemen
 ### Section
 
 - A titled part of the page: "Anstehend", "Vorgänge", "Kontakt". A long title, such as a question, wraps.
+- Its head is calm and has no symbol: the title, a quiet count beside it, the summary as the quiet line right under it, at most two framed buttons with their verb.
+- Where the pane is 960 px and wider, its head stands in a column of 232 px and the content 48 px beside it, and the section ends at 1040 px, so its deeds stay near what they act on. A section that holds a large table (with selection or a sticky column), tiles, groups or a drawing keeps its full width. There is nothing to choose: the pane decides.
 - Rows, `Facts`, a `Digest` or groups stand directly in it.
-- One line at its end, none under its head or between its entries.
+- One clear line at its end, none under its head and none under the last section of the page; its rows stand apart by the hair.
 
 ### Group
 
@@ -50,7 +52,7 @@ Two to four key statements side by side, with the area's colour; one under the o
 
 ### Section
 
-A titled part with a count, at most two text buttons, a summary and one link to all of it at the end.
+A titled part with a count, at most two framed buttons, a summary and one link to all of it at the end.
 
 <Props of="Section" />
 

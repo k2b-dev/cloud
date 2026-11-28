@@ -67,7 +67,7 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       tabs: ['[data-slot="head"] > .k2-tabs-nav', "250,57 1125x44"],
       notice: [".k2-notice", "250,101 1125x65"],
       cells: [".k2-cells", "250,166 1125x117"],
-      section: [".k2-sec", "250,283 765x181"],
+      section: [".k2-sec", "250,283 765x182"],
       todo: [".k2-sec .k2-row", "250,335 765x60"],
       // the mockup's facts and two rows more: the kinds of the head ("Kundentyp", "Art") also stand in the facts, since
       // on the phone they give way to the name (decision of 27.11., #4465); in the side column the pairs are dense (28 px,
@@ -82,32 +82,37 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       tabs: ['[data-slot="head"] > .k2-tabs-nav', "0,57 390x44"],
       notice: [".k2-notice", "0,101 390x137"],
       cells: [".k2-cells", "0,238 390x279"],
-      section: [".k2-sec", "0,517 390x245"],
+      section: [".k2-sec", "0,517 390x246"],
       todo: [".k2-sec .k2-row", "0,569 390x92"],
     },
   },
   // akte-einlieferungen.html
   deliveries: {
+    // The section head of 27.11. (Valentin, settings-headings-study A): its summary stands right under the title, so the
+    // head is 14 px lower than in the mockup and all below it moves 14 px up; its framed buttons of 30 px (taste rule 5)
+    // add 2 px (section 945 → 933, group 185 → 173).
     1440: {
-      section: [".k2-sec", "250,101 1125x945"],
-      group: [".k2-group", "270,185 1085x254"],
-      groupHead: [".k2-gh", "271,186 1083x56"],
-      steps: [".k2-steps", "271,286 1083x72"],
-      table: [".k2-group .k2-table", "271,636 1083x124"],
+      section: [".k2-sec", "250,101 1125x933"],
+      group: [".k2-group", "270,173 1085x254"],
+      groupHead: [".k2-gh", "271,174 1083x56"],
+      steps: [".k2-steps", "271,274 1083x72"],
+      table: [".k2-group .k2-table", "271,624 1083x124"],
       // the inline facts with their end: the part is the line around the list
-      facts: ['[data-k2-part="Facts"]', "271,836 1083x32"],
-      folded: [".k2-group[data-folded]", "270,897 1085x58"],
+      facts: ['[data-k2-part="Facts"]', "271,824 1083x32"],
+      folded: [".k2-group[data-folded]", "270,885 1085x58"],
       railApp: [".ui-v2-rail__app[data-current]", "-48,92 40x36"],
     },
     390: {
-      // mockup v17: the steps stand 12 px apart on the phone, so all below them moves 16 px down
-      section: [".k2-sec", "0,101 390x1421"],
-      group: [".k2-group", "16,205 358x382"],
-      groupHead: [".k2-gh", "17,206 356x84"],
-      steps: [".k2-steps", "17,354 356x148"],
-      table: [".k2-group .k2-table", "17,908 356x204"],
-      facts: ['[data-k2-part="Facts"]', "17,1192 356x64"],
-      folded: [".k2-group[data-folded]", "16,1285 358x102"],
+      // mockup v17: the steps stand 12 px apart on the phone, so all below them moves 16 px down; the section head of
+      // 27.11. is 14 px lower (its summary right under the title), so all below it moves 14 px up; its two framed buttons
+      // with their words stand under the summary on the phone (taste rule 5), 42 px
+      section: [".k2-sec", "0,101 390x1449"],
+      group: [".k2-group", "16,233 358x382"],
+      groupHead: [".k2-gh", "17,234 356x84"],
+      steps: [".k2-steps", "17,382 356x148"],
+      table: [".k2-group .k2-table", "17,936 356x204"],
+      facts: ['[data-k2-part="Facts"]', "17,1220 356x64"],
+      folded: [".k2-group[data-folded]", "16,1313 358x102"],
     },
   },
   keys: { 1440: {}, 390: {} },
@@ -116,18 +121,18 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
     1440: {
       head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "250,1 1125x56"],
       status: ['[data-k2-part="StatusRow"]', "250,57 1125x52"],
-      firstHead: ["thead th:nth-child(2)", "294,109 260x36"],
-      group: ["tbody tr[data-group]", "250,145 1724x36"],
-      row: ["tbody tr:nth-child(2)", "250,181 1724x40"],
-      personCell: ["tbody tr:nth-child(2) td:nth-child(5)", "806,181 176x40"],
+      firstHead: ["thead th:nth-child(2)", "294,109 260x34"],
+      group: ["tbody tr[data-group]", "250,143 1724x34"],
+      row: ["tbody tr:nth-child(2)", "250,177 1724x44"],
+      personCell: ["tbody tr:nth-child(2) td:nth-child(5)", "806,177 176x44"],
     },
     // The mockup has no head here (its path gives way to the phone bar). The head keeps its bar for the table's own
     // search as a symbol (#4139), so everything under it starts 56 px lower than in the mockup.
     390: {
       head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x56"],
       status: ['[data-k2-part="StatusRow"]', "0,56 390x52"],
-      phoneGroup: [".k2-table-phone .k2-bar", "0,108 390x36"],
-      phoneRow: [".k2-table-phone .k2-row", "0,144 390x53"],
+      phoneGroup: [".k2-table-phone .k2-bar", "0,108 390x34"],
+      phoneRow: [".k2-table-phone .k2-row", "0,142 390x53"],
     },
   },
 };

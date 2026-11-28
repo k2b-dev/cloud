@@ -112,7 +112,7 @@ function SourceDetail(props: { source: Source }) {
       <Notice tone="bad" title="Antwortet nicht" actions={[{ label: "Erneut prüfen", icon: "refresh" }]}>
         Seit gestern, 17:20 kommen keine Ereignisse an. Prüfe die Adresse oder den Schlüssel.
       </Notice>
-      <Section icon="settings" title="Angaben">
+      <Section title="Angaben">
         <Facts
           items={[
             { label: "Art", value: open.kind },
@@ -121,7 +121,7 @@ function SourceDetail(props: { source: Source }) {
           ]}
         />
       </Section>
-      <Section icon="list" title="Letzte Ereignisse" count={2} more={{ label: "Alle Ereignisse", forward: true }}>
+      <Section title="Letzte Ereignisse" count={2} more={{ label: "Alle Ereignisse", forward: true }}>
         <Row icon="alert-circle" lines={["Zeitüberschreitung", "nach 30 s"]} time="gestern" />
         <Row icon="check" lines={["38 Ereignisse angenommen"]} time="Mo." />
       </Section>

@@ -82,7 +82,7 @@ export default function ToolCatalog(props: { search?: string }) {
         status={needle() && matches().length > 0 ? <StatusRow lead={t().matchingTools({ count: matches().length })} /> : undefined}
       >
         <Show when={!needle()}>
-          <Section icon="star" title={t().quickTools}>
+          <Section title={t().quickTools}>
             <Tiles
               label={t().quickTools}
               items={registry()
@@ -117,12 +117,7 @@ export default function ToolCatalog(props: { search?: string }) {
               const inCategory = () => matches().filter((tool) => tool.category === category);
               return (
                 <Show when={inCategory().length > 0}>
-                  <Section
-                    icon={toolIcon(registry().categories[category].icon)}
-                    color={categoryColor[category]}
-                    title={registry().categories[category].label}
-                    count={inCategory().length}
-                  >
+                  <Section title={registry().categories[category].label} count={inCategory().length}>
                     <List label={registry().categories[category].label}>
                       <For each={inCategory()}>
                         {(tool) => (

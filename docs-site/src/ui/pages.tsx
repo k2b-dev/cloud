@@ -12,6 +12,7 @@ import { showcaseDashboards } from "./demo-sections/charts/dashboards";
 import { chartShowcaseKinds } from "./demo-sections/charts/examples";
 import PrimaryScopeDemo from "./PrimaryScopeDemo.island";
 import v2GettingStartedMarkdown from "./topics/getting-started.md" with { type: "text" };
+import lookMarkdown from "./topics/look.md" with { type: "text" };
 import { OverviewPage, overviewMarkdown } from "./topics/OverviewPage";
 import screensMarkdown from "./topics/screens.md" with { type: "text" };
 import { MarkdownArticle, TopicPage } from "./topics/TopicPage";
@@ -26,6 +27,7 @@ import { V2DemoScreens } from "./v2/V2DemoPage";
 export const v1Section = "v1 (existing)";
 const screens = parseTopic(screensMarkdown);
 const gettingStarted = parseTopic(v2GettingStartedMarkdown);
+const look = parseTopic(lookMarkdown);
 
 export const uiPages = [
   solidPage({
@@ -93,6 +95,20 @@ export const uiPages = [
     layout: "full",
     content: v2GettingStartedMarkdown,
     component: (context) => <MarkdownArticle parsed={gettingStarted} context={context} eyebrow={<>@k2b/ui/v2 · provisional</>} />,
+  }),
+  solidPage({
+    html: fibelHtml,
+    collection: "ui",
+    path: "/look",
+    title: look.title,
+    navTitle: "The look",
+    description:
+      "The thirteen rules of the v2 look as do and don't with the reason, the workflow from mockup to build, and the tokens for custom parts.",
+    section: "Start",
+    order: 3,
+    layout: "full",
+    content: lookMarkdown,
+    component: (context) => <MarkdownArticle parsed={look} context={context} eyebrow={<>@k2b/ui/v2</>} />,
   }),
   solidPage({
     html: fibelHtml,
@@ -207,7 +223,7 @@ export const uiPages = [
     description:
       "The layout rules of @k2b/ui v2, each with an excerpt of the approved mockup and the check that holds it. Provisional until the maintainer approves v2.",
     section: "Start",
-    order: 3,
+    order: 4,
     layout: "full",
     component: ({ page }) => <V2RulesPage title={page.meta.title} description={page.meta.description} />,
   }),
@@ -240,7 +256,9 @@ export const uiPages = [
     content: topicMarkdown(screensMarkdown),
     component: (context) => (
       <MarkdownArticle parsed={screens} context={context} eyebrow={<>@k2b/ui/v2 · provisional</>}>
-        <V2DemoScreens names={["mail", "record", "deliveries", "table", "form", "keys", "menus", "articles", "logs", "people"]} />
+        <V2DemoScreens
+          names={["mail", "record", "deliveries", "settings", "table", "form", "keys", "menus", "articles", "logs", "people"]}
+        />
       </MarkdownArticle>
     ),
   }),

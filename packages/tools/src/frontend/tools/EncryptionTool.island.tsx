@@ -166,7 +166,7 @@ export default function EncryptionTool() {
         input={
           <>
             <Show when={tab() === "symmetric"}>
-              <Section icon="cursor-text" title={w().input} measure>
+              <Section title={w().input} measure>
                 <Text type="body">{t().symIntro}</Text>
                 <Field label={t().payloadLabel} hint={t().symPayloadDescription}>
                   <Input multiline placeholder={t().symPayloadPlaceholder} value={symPayload()} onInput={setSymPayload} />
@@ -219,7 +219,7 @@ export default function EncryptionTool() {
               </Section>
             </Show>
             <Show when={tab() === "asymmetric"}>
-              <Section icon="keys" title={t().keyPair} measure>
+              <Section title={t().keyPair} measure>
                 <Text type="body">{t().asymIntro}</Text>
                 <Text type="meta" muted>
                   {`${t().exampleLabel} ${t().exampleAlice} ${t().exampleKeyPair} ${t().exampleEncrypt} ${t().exampleDecrypt} ${t().exampleNobody}`}
@@ -253,7 +253,7 @@ export default function EncryptionTool() {
                   }
                 />
               </Section>
-              <Section icon="lock" title={t().encryptDecrypt} measure>
+              <Section title={t().encryptDecrypt} measure>
                 <Field label={t().payloadLabel} hint={t().asymHint}>
                   <Input multiline placeholder={t().asymPayloadPlaceholder} value={asymPayload()} onInput={setAsymPayload} />
                 </Field>
@@ -305,7 +305,7 @@ export default function EncryptionTool() {
                 {error()}
               </Notice>
             </Show>
-            <Section icon="file-code" title={t().output} summary={output() ? undefined : w().nothingYet} measure>
+            <Section title={t().output} summary={output() ? undefined : w().nothingYet} measure>
               <Facts items={[{ label: t().output, value: output(), mono: true, copy: output() || undefined }]} />
             </Section>
           </>

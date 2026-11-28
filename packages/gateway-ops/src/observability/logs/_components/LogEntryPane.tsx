@@ -91,7 +91,6 @@ export default function LogEntryPane(props: Props) {
               <Text type="body">{open().message}</Text>
             </Band>
             <Section
-              icon="info-circle"
               title={t().detail}
               actions={(() => {
                 const id = requestIdOf(open().metadata);
@@ -135,11 +134,7 @@ export default function LogEntryPane(props: Props) {
             </Section>
             <Show when={open().metadata}>
               {(metadata) => (
-                <Section
-                  icon="braces"
-                  title={t().metadata}
-                  actions={[{ label: raw() ? t().viewFormatted : t().viewRaw, onClick: () => setRaw(!raw()) }]}
-                >
+                <Section title={t().metadata} actions={[{ label: raw() ? t().viewFormatted : t().viewRaw, onClick: () => setRaw(!raw()) }]}>
                   <Show
                     when={raw()}
                     fallback={

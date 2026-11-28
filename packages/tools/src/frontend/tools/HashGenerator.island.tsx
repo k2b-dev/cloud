@@ -46,14 +46,14 @@ export default function HashGenerator() {
         scrollKey="tools-hash"
         label={w().result}
         input={
-          <Section icon="cursor-text" title={w().input} measure>
+          <Section title={w().input} measure>
             <Field label={t().inputLabel} hint={t().inputDescription}>
               <Input multiline placeholder={t().inputPlaceholder} value={input()} onInput={setInput} />
             </Field>
           </Section>
         }
         result={
-          <Section icon="hash" title={w().result} summary={input() ? undefined : w().nothingYet} measure>
+          <Section title={w().result} summary={input() ? undefined : w().nothingYet} measure>
             {/* before any text, one quiet line where the result will stand */}
             <Facts
               items={[

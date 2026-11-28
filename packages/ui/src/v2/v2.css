@@ -30,13 +30,17 @@
   --k2-muted: #4b4b55;
   --k2-subtle: #6b6b74;
 
-  /* Two line weights (identity B). The clear line separates two things: a head and its content, a list and its
-     detail, one section and the next, a frame. The quiet line only parts the rows and cells of one thing. */
+  /* Lines in two weights, all 1 px: the clear line (#e4e4e7) separates what must be told apart: a
+     head block from its content, one section from the next, a table's head from its rows, panes, frames. The hair
+     (#f0f0f2) stands between the rows of a list or a table and is barely there; between a table's columns it is
+     quieter still (#f5f5f6). Nothing under the last, never two lines at one edge. A control's edge is its own grey. */
   --k2-line: var(--k2-n200);
   --k2-hairline: 1px solid var(--k2-line);
-  --k2-line-subtle: var(--k2-n100);
+  --k2-hairline-section: var(--k2-hairline);
+  --k2-line-subtle: #f0f0f2;
   --k2-hairline-subtle: 1px solid var(--k2-line-subtle);
-  --k2-line-control: var(--k2-n300);
+  --k2-line-column: #f5f5f6;
+  --k2-line-control: #dadade;
   --k2-grip: #8a8a94;
 
   /* action and selection */
@@ -85,8 +89,9 @@
   --k2-h-status: 52px;
   --k2-h-tabs: 44px;
   --k2-h-bar: 40px;
-  --k2-h-columns: 36px;
-  --k2-h-row: 40px;
+  --k2-h-columns: 34px;
+  --k2-h-row: 46px;
+  --k2-h-cell: 44px;
   --k2-h-row2: 52px;
   --k2-h-row3: 72px;
   --k2-h-dense: 32px;
@@ -125,6 +130,7 @@
   --k2-t-meta: 400 12px/16px var(--k2-font);
   --k2-t-row: 400 13px/20px var(--k2-font);
   --k2-t-body: 400 14px/20px var(--k2-font);
+  --k2-t-title: 600 15px/22px var(--k2-font);
   --k2-t-lead: 600 18px/24px var(--k2-font);
 
   font: var(--k2-t-row);
@@ -148,6 +154,11 @@
   --k2-n600: #bdbdc6;
   --k2-n800: #f1f1f3;
   --k2-n950: #fafafa;
+
+  /* the hair and the quieter column line a step and a half step off the surface; a control keeps a clear edge */
+  --k2-line-subtle: #1d2228;
+  --k2-line-column: #181d23;
+  --k2-line-control: #3a4552;
 
   --k2-canvas: #090d12;
   --k2-surface: #11151b;
@@ -205,6 +216,9 @@
 }
 .k2-ui .k2-t-body {
   font: var(--k2-t-body);
+}
+.k2-ui .k2-t-title {
+  font: var(--k2-t-title);
 }
 .k2-ui .k2-t-lead {
   font: var(--k2-t-lead);
@@ -296,7 +310,7 @@
 .k2-ui :where(.k2-table th, .k2-table td, .k2-fact-pair > dt, .k2-fact-pair > dd, .k2-path > b, .k2-tile > span) {
   box-sizing: border-box;
 }
-.k2-ui :where(.k2-record-name, .k2-sh > h3, .k2-sec-summary, .k2-facts, .k2-fact-pair > dt, .k2-fact-pair > dd) {
+.k2-ui :where(.k2-record-name, .k2-sh-title > h3, .k2-sec-summary, .k2-facts, .k2-fact-pair > dt, .k2-fact-pair > dd) {
   margin: 0;
   padding: 0;
 }
@@ -901,6 +915,16 @@
 .k2-ui .k2-band > :is(.k2-bar, .k2-notice, .k2-cells, .k2-sec, .k2-facts-line, .k2-table-scroll) {
   border-block: 0;
 }
+/* The last part of a pane draws no line under itself: below it ends the column, there is nothing to separate. The
+   line keeps its pixel (transparent), so nothing moves. */
+.k2-ui .k2-pane > .k2-scroll > :is(.k2-sec, .k2-row, .k2-band, .k2-bar):last-child,
+.k2-ui .k2-pane > .k2-scroll > .k2-list:last-child > .k2-row:last-child,
+.k2-ui .k2-pane > .k2-scroll > .k2-table-phone:last-child > .k2-list > .k2-row:last-child {
+  border-bottom-color: transparent;
+}
+.k2-ui .k2-pane > .k2-scroll > .k2-table-scroll:nth-last-child(1 of :not(.k2-table-phone)) {
+  --k2-table-end: 1px solid transparent;
+}
 
 /* ── Cells: two to four equal cells with a line between them ────────────────────────────────────────────────── */
 .k2-ui .k2-cells {
@@ -1160,7 +1184,7 @@
 
 /* ── Section: head with symbol, title, count, at most two text buttons; rule 9 inside ───────────────────────── */
 .k2-ui .k2-sec {
-  border-bottom: var(--k2-hairline);
+  border-bottom: var(--k2-hairline-section);
   padding-bottom: 8px;
   display: flex;
   flex-direction: column;
@@ -1176,36 +1200,81 @@
 .k2-ui .k2-sec-body > * {
   flex: none;
 }
-/* The head of a section is 52 px; a long title (a question, a name) wraps onto more lines and the head grows with it,
-   so no word is cut. */
+/* The head of a section (A): no symbol; a calm title of 15 px, the count quiet beside it, the summary
+   as the quiet line right under the title, at most two text buttons at the end of the title's row. Without a summary
+   the head is 52 px; a long title (a question, a name) wraps onto more lines and the head grows with it, so no word is
+   cut. */
 .k2-ui .k2-sh {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: minmax(min(14ch, 100%), 1fr) auto;
+  grid-template-areas: "title end" "summary .";
+  align-content: center;
+  column-gap: 8px;
   min-height: var(--k2-h-status);
   padding: 8px var(--k2-edge) 0;
   min-width: 0;
 }
-.k2-ui .k2-sh > h3 {
-  font: var(--k2-t-body);
-  font-weight: 600;
+.k2-ui .k2-sh:has(> .k2-sec-summary) {
+  padding-block: 16px 12px;
+}
+/* title and count are one line of text: where the title wraps, the count follows its last word */
+.k2-ui .k2-sh-title {
+  grid-area: title;
   min-width: 0;
+  font: var(--k2-t-title);
   overflow-wrap: anywhere;
 }
-/* the symbol, the count and the deeds keep their size; only the title wraps */
-.k2-ui .k2-sh > :not(h3) {
-  flex: none;
+.k2-ui .k2-sh-title > h3 {
+  display: inline;
+  font: var(--k2-t-title);
+  color: var(--k2-text);
 }
-.k2-ui .k2-sh > .k2-sh-count {
-  color: var(--k2-subtle);
+.k2-ui .k2-sh-title > .k2-sh-count {
+  margin-left: 6px;
+  font: var(--k2-t-row);
+  color: var(--k2-n500);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
+/* the buttons stand on the title's line and do not make it higher, so the summary stays right under the title */
 .k2-ui .k2-sh > .k2-sh-end {
-  margin-left: auto;
+  grid-area: end;
+  align-self: center;
+  height: 22px;
   display: flex;
-  gap: 4px;
+  gap: 8px;
   align-items: center;
+}
+/* Actions are buttons: a framed button of 30 px with its symbol and its verb, never a bare text link.
+   Only the fold's chevron stays a quiet symbol. */
+.k2-ui .k2-sh > .k2-sh-end > .k2-btn:not([data-fold]) {
+  height: 30px;
+  padding: 0 11px;
+  gap: 6px;
+  font: var(--k2-t-row);
+  font-weight: 500;
+  color: var(--k2-text);
+}
+.k2-ui .k2-sh > .k2-sh-end > .k2-btn:not([data-fold]) > .k2-icon {
+  font-size: 15px;
+  color: var(--k2-n600);
+}
+.k2-ui .k2-sh > .k2-sh-end > .k2-btn[data-fold] {
   margin-right: -8px;
+}
+/* on the phone two buttons with their words leave the title's line and stand under the summary, so the title keeps
+   its line whole; one button stays beside the title */
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-sh[data-actions="2"] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "title" "summary" "end";
+  }
+  .k2-ui .k2-sh[data-actions="2"] > .k2-sh-end {
+    justify-self: start;
+    flex-wrap: wrap;
+    height: auto;
+    margin-top: 10px;
+  }
 }
 /* A section that can fold: its content stands in a body without a box of its own, so its rhythm and lines are those of
    any section; folded, the body is out of the page and the head stands alone above the section's line. The chevron
@@ -1215,6 +1284,49 @@
 }
 .k2-ui .k2-sh .k2-btn[data-fold]:not([data-open]) > .k2-icon {
   transform: rotate(-90deg);
+}
+.k2-ui .k2-sh > .k2-sec-summary {
+  grid-area: summary;
+  margin-top: 2px;
+  font: var(--k2-t-row);
+  color: var(--k2-n600);
+  overflow-wrap: anywhere;
+}
+/* Measure, not canvas: in a pane of 960 px and more every section is B. Its title, summary and
+   buttons stand in a column of 232 px at the start, its content 48 px beside it, and the whole section, its line too,
+   ends at 1040 px, so the deeds stand at the end of what they act on, never at the far edge of a wide window. A
+   section that holds a table, tiles, groups or a drawing keeps A and its full width: lists and tables use the room. A narrower
+   pane is A; the pane decides, not the window. The head floats, so the content keeps its own children as they are. */
+@container k2-pane (min-width: 960px) {
+  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) {
+    display: flow-root;
+    max-width: 1040px;
+    margin-inline: var(--k2-edge) 0;
+    padding-block: 28px 26px;
+  }
+  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) > .k2-sh {
+    float: left;
+    box-sizing: border-box;
+    width: 232px;
+    min-height: 0;
+    padding: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "title" "summary" "end";
+    align-content: start;
+  }
+  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) > .k2-sh > .k2-sh-end {
+    justify-self: start;
+    height: auto;
+    margin-top: 14px;
+  }
+  /* the content is a column of its own 48 px after the head column, up to the section's end: its rows, fields and
+     notices start and end on it, so their hair and their tint stay inside the measure */
+  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) > :not(.k2-sh, .k2-sec-body),
+  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) > .k2-sec-body > * {
+    --k2-edge: 0px;
+    --k2-edge-icon: 24px;
+    margin-left: calc(232px + 48px);
+  }
 }
 .k2-ui .k2-stile {
   width: 20px;
@@ -1229,21 +1341,17 @@
 .k2-ui .k2-stile > .k2-icon {
   font-size: 14px;
 }
-/* the 20 px tile stands on the symbol axis; the title after it keeps the one text edge of 44 px */
-/* one primitive: the symbol and the title of a Section head */
-.k2-ui .k2-sh > .k2-stile + h3 {
-  margin-left: -4px;
-}
-/* Rule 9: lines separate groups, not the items of a group. No line under the head, none between its rows. */
+/* Rule 9 with two line weights: no line under the head; the rows of a section stand apart by the hair, which is barely
+   there, and nothing stands under the last row (the section's own line follows). */
 .k2-ui :is(.k2-sec, .k2-sec-body) > .k2-row,
 .k2-ui :is(.k2-sec, .k2-sec-body) > .k2-list > .k2-row {
   border-bottom: 0;
 }
-.k2-ui .k2-sec-summary {
-  padding: 0 var(--k2-edge) 12px;
-  overflow-wrap: anywhere;
+.k2-ui :is(.k2-sec, .k2-sec-body) > .k2-row + .k2-row,
+.k2-ui :is(.k2-sec, .k2-sec-body) > .k2-list > .k2-row + .k2-row {
+  border-top: var(--k2-hairline-subtle);
 }
-/* in a side column (the info column of a record) a section is quieter: plain symbol, row title, 28 px head */
+/* in a side column (the info column of a record) a section is quieter: a row title, 28 px head */
 .k2-ui .k2-pane[data-side] .k2-sec {
   border-bottom: 0;
   padding: 12px 0 4px;
@@ -1252,12 +1360,10 @@
   min-height: var(--k2-h-control-small);
   padding: 0 var(--k2-edge);
 }
-.k2-ui .k2-pane[data-side] .k2-sh > h3 {
+.k2-ui .k2-pane[data-side] .k2-sh-title,
+.k2-ui .k2-pane[data-side] .k2-sh-title > h3 {
   font: var(--k2-t-row);
   font-weight: 600;
-}
-.k2-ui .k2-pane[data-side] .k2-sh > .k2-icon {
-  color: var(--k2-subtle);
 }
 .k2-ui .k2-pane[data-side] :is(.k2-sec, .k2-sec-body) > .k2-facts {
   padding-top: 4px;
@@ -1598,6 +1704,49 @@
 .k2-ui .k2-row[data-avatar] {
   column-gap: 12px;
 }
+/* Row anatomy: a row of one or two lines names its thing in 13/500, so the name stands above its quiet
+   note; a row of three lines (a message) keeps 400 and turns 600 while unread. A row of one line leads with its sign
+   of 28 px (a person, a mark), and a control at its end (the role of a person) is 30 px. */
+.k2-ui .k2-row:not([data-lines="3"]) .k2-row-title {
+  font-weight: 500;
+}
+.k2-ui .k2-row[data-avatar][data-lines="1"] > .k2-row-lead {
+  width: 28px;
+}
+.k2-ui .k2-row[data-avatar][data-lines="1"] > .k2-row-lead > .k2-av {
+  width: 28px;
+  height: 28px;
+  font-size: 10.5px;
+}
+.k2-ui .k2-row-end > .k2-input {
+  height: 30px;
+  min-width: 124px;
+  padding: 0 8px 0 10px;
+}
+/* people at a row's end keep their room beside its control on a wide screen; on the phone, where the name, its note
+   and the control need the row, the stack leaves (the note says how many they are) */
+.k2-ui .k2-row-end > .k2-avs {
+  flex-shrink: 0;
+}
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-row-end:has(> .k2-input) > .k2-avs {
+    display: none;
+  }
+}
+/* on the phone a row's quiet note leaves the name's line and stands under it: two lines of at least 52 px, the name
+   whole, its control still at the end */
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-row[data-lines="1"]:has(> .k2-row-l1 > .k2-row-meta) {
+    min-height: var(--k2-h-row2);
+  }
+  .k2-ui .k2-row[data-lines="1"] > .k2-row-l1:has(> .k2-row-meta) {
+    grid-auto-flow: row;
+    row-gap: 1px;
+  }
+  .k2-ui .k2-row-end > .k2-input {
+    min-width: 0;
+  }
+}
 .k2-ui .k2-row[data-avatar] > .k2-row-lead {
   width: 32px;
 }
@@ -1684,21 +1833,27 @@
   border-spacing: 0;
   table-layout: fixed;
 }
+/* The table's head: a quiet band of 34 px in n50, its words 12/500 in n500, the clear line under it;
+   the rows below stand apart by the hair, and the columns by a line quieter still. */
 .k2-ui .k2-table th {
   position: relative;
   height: var(--k2-h-columns);
   text-align: left;
   font: var(--k2-t-meta);
   font-weight: 500;
-  color: var(--k2-subtle);
+  color: var(--k2-n500);
+  background: var(--k2-n50);
   padding: 0 12px;
   border-bottom: var(--k2-hairline);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.k2-ui .k2-table :is(td + td, th + th) {
+  box-shadow: inset 1px 0 0 var(--k2-line-column);
+}
 .k2-ui .k2-table td {
-  height: var(--k2-h-row);
+  height: var(--k2-h-cell);
   padding: 0 12px;
   border-bottom: var(--k2-hairline-subtle);
   vertical-align: middle;
@@ -1778,7 +1933,7 @@
   margin-right: -8px;
 }
 .k2-ui .k2-group .k2-table:not([data-lines="2"]) td {
-  height: var(--k2-h-row);
+  height: var(--k2-h-cell);
 }
 /* a table in a group starts at the group's text edge */
 .k2-ui .k2-group .k2-table th:first-child,
@@ -1801,13 +1956,13 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  background: var(--k2-surface);
+  background: var(--k2-n50);
   overflow: visible;
 }
 /* the cells keep the side padding of every table, so the first and the last start and end on the text edge of the
    head and the group rows */
 .k2-ui .k2-table[data-grid] td {
-  height: var(--k2-h-row);
+  height: var(--k2-h-cell);
   padding-block: 0;
   vertical-align: middle;
   white-space: nowrap;
@@ -1916,9 +2071,10 @@
   outline-offset: 2px;
   border-radius: 2px;
 }
+/* a group's head is a quiet line of text over its rows, never a grey band */
 .k2-ui .k2-table[data-grid] tr[data-group] > td {
   height: var(--k2-h-columns);
-  background: var(--k2-n50);
+  background: var(--k2-surface);
   padding: 0;
 }
 .k2-ui .k2-table[data-grid] tr[data-group] > td > .k2-group-row {
@@ -2031,7 +2187,7 @@
   display: none;
 }
 .k2-ui .k2-table-phone .k2-bar {
-  background: var(--k2-n50);
+  background: var(--k2-surface);
   height: var(--k2-h-columns);
 }
 /* a person leads a row of the phone form as a small mark, like in the cell */
@@ -2340,7 +2496,7 @@
 }
 .k2-ui .k2-prose :where(th, td) {
   padding: 8px 12px;
-  border-bottom: var(--k2-hairline);
+  border-bottom: var(--k2-hairline-subtle);
   text-align: start;
   vertical-align: top;
 }
@@ -2928,6 +3084,15 @@
 }
 .k2-ui .k2-row[data-mark] {
   column-gap: 12px;
+}
+/* leading a row of one line: 28 */
+.k2-ui .k2-row[data-mark][data-lines="1"] > .k2-row-lead > .k2-mk {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+.k2-ui .k2-row[data-mark][data-lines="1"] > .k2-row-lead > .k2-mk > .k2-icon {
+  font-size: 16px;
 }
 /* on a tile: 36 */
 .k2-ui .k2-tiles[data-variant="card"] .k2-mk {
@@ -4819,7 +4984,9 @@
   font-weight: 500;
   color: var(--k2-muted);
 }
-.k2-ui .k2-pane:not([data-side]) .k2-sec:has(> .k2-sh > :is(.k2-icon, .k2-stile)) > .k2-sec-link {
+/* under rows with a symbol the words of the way stand on the rows' text edge */
+.k2-ui .k2-pane:not([data-side]) .k2-sec:has(> .k2-row > .k2-row-lead > *) > .k2-sec-link,
+.k2-ui .k2-pane:not([data-side]) .k2-sec:has(> .k2-list > .k2-row > .k2-row-lead > *) > .k2-sec-link {
   margin-inline-start: calc(var(--k2-edge-icon) - 8px);
 }
 .k2-ui .k2-sec-link > b {
@@ -5931,16 +6098,6 @@
     padding: 4px 0 0;
     flex-wrap: wrap;
   }
-  /* a head action with a leading symbol keeps only the symbol; its words stay its title and name (not `display: none`,
-     which took them). One without a leading symbol keeps its words, also with a trailing chevron (forward, menu) */
-  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn:has(> .k2-icon:first-child) > .k2-btn-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
   /* the label over its value, 12 over 13 */
   .k2-ui .k2-facts,
   .k2-ui .k2-pane[data-side] .k2-facts:not([data-inline]) {
@@ -5955,7 +6112,6 @@
   .k2-ui .k2-pane[data-side] .k2-facts:not([data-inline]) > .k2-fact-pair > dd {
     padding: 2px 0 9px;
   }
-
   .k2-ui .k2-fact-pair > dd > .k2-btn {
     margin: 2px -6px -6px 0;
   }

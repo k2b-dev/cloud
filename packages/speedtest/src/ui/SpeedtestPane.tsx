@@ -70,7 +70,7 @@ export default function SpeedtestPane(props: SpeedtestProps & { label?: string; 
           first, so the start is on the first screen. */}
       <Pane.Split>
         <Pane label={t().measurement} width={{ min: 300, default: 340 }}>
-          <Section icon="gauge" title={t().measurement} summary={props.intro}>
+          <Section title={t().measurement} summary={props.intro}>
             <Field label={t().duration} hint={s.mode() === "quick" ? t().quickDescription : t().accurateDescription}>
               <Choice
                 name="speedtest-mode"
@@ -146,7 +146,7 @@ export default function SpeedtestPane(props: SpeedtestProps & { label?: string; 
               meta={t().loadedNote}
             />
           </Cells>
-          <Section icon="chart-line" title={t().throughput} summary={t().rampup}>
+          <Section title={t().throughput} summary={t().rampup}>
             <Canvas label={t().throughput} height={240}>
               <Show when={s.phaseStarts().length > 0} fallback={<Empty icon="chart-line" text={t().pending} />}>
                 <Chart.Line
@@ -170,7 +170,6 @@ export default function SpeedtestPane(props: SpeedtestProps & { label?: string; 
             </Canvas>
           </Section>
           <Section
-            icon="terminal-2"
             title={t().terminalTitle}
             summary={t().terminalHint}
             actions={[
@@ -210,7 +209,7 @@ export default function SpeedtestPane(props: SpeedtestProps & { label?: string; 
             </Field>
             <Facts items={[{ label: t().command, value: s.snippet(), mono: true, copy: s.snippet() }]} />
           </Section>
-          <Section icon="info-circle" title={t().about}>
+          <Section title={t().about}>
             <Text type="meta" muted>
               {t().dataNotice}
             </Text>

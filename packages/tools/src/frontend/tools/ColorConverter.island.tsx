@@ -226,7 +226,7 @@ export default function ColorConverter() {
         scrollKey="tools-color"
         label={w().result}
         result={
-          <Section icon="palette" title={t().colorPicker} summary={t().hint} measure>
+          <Section title={t().colorPicker} summary={t().hint} measure>
             {/* the colour itself, large: the page's hero; it is picked with the colour field beside it */}
             <Canvas label={t().colorPicker} height={240}>
               <span
@@ -251,7 +251,7 @@ export default function ColorConverter() {
         }
         input={
           // k2b-ui gap: a v2 Input for technical values in monospace (HEX, RGB, HSL); the fields stay proportional
-          <Section icon="adjustments-horizontal" title={w().input} measure>
+          <Section title={w().input} measure>
             <Field label={t().colorPicker}>
               <ColorInput
                 value={pickerColor()}

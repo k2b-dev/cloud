@@ -9,7 +9,9 @@ import MailTabletScreen from "./MailTabletScreen.island";
 import MenusScreen from "./MenusScreen.island";
 import { MailScreen } from "./mail-screen";
 import { DeliveriesScreen, RecordScreen } from "./record-screen";
+import { SettingsScreen } from "./settings-screen";
 import TableScreen from "./TableScreen.island";
+import { GridsAccessScreen } from "./taste-screens";
 import V2Inspect from "./V2Inspect.island";
 import V2InspectSwitch from "./V2InspectSwitch.island";
 
@@ -93,6 +95,16 @@ export const v2Screens = {
     phone: { back: "Kunden" },
     rail: kundenRail,
     render: () => <DeliveriesScreen />,
+  },
+  settings: {
+    title: "Einstellungen · Zeiten und Schichten",
+    description:
+      "The settings of a place in Standorte. On a wide pane each section's title, its one sentence and its button stand in a column at the left and its content beside it, up to the measure of 1040 px; on the phone they stand above it. The clear line stands between sections, the hair between rows, and the last section draws none.",
+    mockup: "settings-headings-study v2 (A, B)",
+    app: "#2563eb",
+    phone: { app: "Standorte" },
+    rail: { apps: ["world", "book", "message", "coffee", "leaf"], current: "coffee" },
+    render: () => <SettingsScreen />,
   },
   table: {
     title: "Große Tabelle",
@@ -179,6 +191,16 @@ export const v2Screens = {
     phone: { back: "Kunden" },
     rail: kundenRail,
     render: () => <ContactScreen worst />,
+  },
+  "grids-access": {
+    title: "Einstellungen · Zugriff einer Base",
+    description:
+      "Who may open a base in Grids: wide settings sections with their head in a column of its own, rows with their sign and the control that changes them, a choice of three as connected cards, and the exceptions of what inherits.",
+    mockup: "v2-taste-study v2 (a · Grids › Zugriff)",
+    app: "#16a34a",
+    phone: { app: "Grids" },
+    rail: { apps: ["home", "mail", "folder", "table", "notebook", "coffee"], current: "table" },
+    render: () => <GridsAccessScreen />,
   },
 } satisfies Record<string, V2Screen>;
 
