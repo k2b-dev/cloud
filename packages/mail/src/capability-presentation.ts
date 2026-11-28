@@ -29,6 +29,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
     "attachment.read": "Read message attachment",
     "attachment.text.read": "Read attachment text",
     "attachment.content.read": "Read attachment file",
+    "attachment.files.list": "Listed mail attachments",
     "draft.list": "Listed drafts",
     "draft.read": "Read draft",
     "draft.send.check": "Checked draft send outcome",
@@ -192,6 +193,18 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Öffnet den Originalanhang als begrenzten Binärstream. Code erhält eine FileRef für eine Schreib-Capability einer anderen App; attachment.text.read liefert extrahierten Text.",
           input: { id: "Stabile Anhang-ID." },
+        },
+        "attachment.files.list": {
+          title: "Mail-Anhänge durchsuchen",
+          doneTitle: "Mail-Anhänge aufgelistet",
+          description:
+            "Eine Seite der Mail-Dateiquelle: Postfächer, dann Jahr-, Monats- und Absenderordner, dann Dateien. Mit next weiterlesen, bis es null ist; Dateien mit attachment.content.read öffnen.",
+          input: {
+            parent: "Ordner-ID aus dieser Quelle; weglassen für die Postfächer.",
+            query: "Optionaler Namensfilter im Ordner.",
+            cursor: "Cursor der vorigen Seite; parent, query und limit unverändert lassen.",
+            limit: "Höchstzahl der Einträge.",
+          },
         },
         "attachment.text.read": {
           title: "Anhangtext lesen",
