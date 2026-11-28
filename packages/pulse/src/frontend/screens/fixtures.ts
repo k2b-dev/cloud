@@ -7,7 +7,9 @@ import {
   type FetchMinute,
   type FetchSlot,
   NAV_BASES,
+  NAV_DELETING_BASES,
   type PulseBase,
+  type PulseBaseNav,
   type PulseNav,
   type PulseSource,
   type PulseSourceScrape,
@@ -159,8 +161,21 @@ export const fixtureDeletingBases: PulseBase[] = [
     id: "g6Ts3vL8",
     name: "Altes Lager",
     store: store({ state: "failed", errorCode: "STORE_UNREACHABLE", errorAt: "2026-11-25T08:10:00.000Z" }),
+    deletionStartedAt: "2026-11-25T08:00:00.000Z",
     deletionFailedAt: "2026-11-25T08:10:00.000Z",
   }),
+];
+
+/** Bases in deletion for break-ui: a long unbreakable name whose deletion stopped, and non-Latin text. */
+export const worstDeletingBases: PulseBase[] = [
+  fixtureBase({
+    id: "n3Pa8bR6",
+    name: "Archiv-der-Messwerte-aller-Produktionsstraßen-Nord-Ost-einschließlich-Nebengebäude-und-Außenstellen",
+    store: store({ state: "failed", errorCode: "STORE_UNREACHABLE", errorAt: "2026-11-25T08:10:00.000Z" }),
+    deletionStartedAt: "2026-11-25T08:00:00.000Z",
+    deletionFailedAt: "2026-11-25T08:10:00.000Z",
+  }),
+  fixtureBase({ id: "o5Qb1cS9", name: "旧倉庫 🗑️", store: store({ state: "deleting" }), deletionStartedAt: "2026-11-25T09:00:00.000Z" }),
 ];
 
 /** Worst cases for break-ui: long and unbreakable names, non-Latin text, emoji, huge counts, a one-letter name. */
@@ -449,15 +464,25 @@ const fetchesTodayOf = (sources: PulseSource[]): FetchesToday => {
 };
 
 /** The sidebar's bases as the server sends them: lean, the first NAV_BASES. */
-export const fixtureNav = (bases: readonly PulseBase[] = fixtureBases): PulseNav => ({
-  bases: bases.slice(0, NAV_BASES).map((base) => ({
+export const fixtureNav = (
+  bases: readonly PulseBase[] = fixtureBases,
+  deleting: readonly PulseBase[] = fixtureDeletingBases,
+): PulseNav => ({
+  bases: bases.slice(0, NAV_BASES).map(navEntryOf),
+  deleting: deleting.slice(0, NAV_DELETING_BASES).map(navEntryOf),
+});
+
+/** A base as the sidebar names it; a base in deletion by how its deletion stands. */
+export const navEntryOf = (base: PulseBase): PulseBaseNav => {
+  const failed = base.store.state === "failed";
+  return {
     id: base.id,
     name: base.name,
     icon: base.icon,
     color: base.color,
-    state: base.store.state === "failed" ? "failed" : "ok",
-  })),
-});
+    state: base.deletionStartedAt || base.deletionFailedAt ? (failed ? "deletion-failed" : "deleting") : failed ? "failed" : "ok",
+  };
+};
 
 export const sourcesProps = (
   options: { open?: string; sources?: PulseSource[]; alerts?: BaseAttention["alerts"]; storeDown?: boolean } = {},

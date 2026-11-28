@@ -2,8 +2,10 @@ import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { pulseMessages } from "../../messages";
+import { rememberBase } from "../base-cookie";
 import { QUERIES_PER_PAGE } from "../screens/QueriesScreen";
 import QueriesScreen from "../screens/QueriesScreen.island";
+import { deletingPage } from "./deleting-page";
 import { loadPulseQueriesPageData } from "./page-data";
 
 /** The saved queries of a base, rendered on the server with their first page. */
@@ -11,6 +13,8 @@ export default ssr<AuthContext>(async (c) => {
   const data = await loadPulseQueriesPageData(c, QUERIES_PER_PAGE);
   const { t } = pulseMessages.resolve([getLocale(c)]);
   if (data.kind === "error") return ssr.error(c, data.status, { action: { label: t.backToPulse, href: "/app/pulse" } });
+  if (data.kind === "deleting") return deletingPage(c, data);
+  rememberBase(c, data.publicBaseId);
   return () => (
     <Layout
       c={c}

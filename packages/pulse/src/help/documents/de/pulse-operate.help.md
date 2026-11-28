@@ -70,5 +70,5 @@ Leeren behält Quellen, Tokens, Einstellungen und Zugriff. **Leer neu anlegen** 
 Löschen widerruft Tokens und Datenbank-Lesezugriff und entfernt dann die Base. Du kannst diese Vorgänge in Pulse nicht rückgängig machen.
 :::
 
-Eine Base bleibt während der Löschung in der Base-Liste ihrer Administration, bis die Löschung abgeschlossen ist.
+Bis die Löschung abgeschlossen ist, steht eine Base in der Seitenleiste ihrer Administration unter **Wird gelöscht**. Ihre Seite zeigt den Stand der Löschung und **Erneut versuchen**, wenn die Löschung fehlgeschlagen ist.
 Prüfe den Vorgangszustand, bevor du eine angenommene Anfrage als abgeschlossene Arbeit behandelst.

@@ -2,9 +2,11 @@ import { type AuthContext, getLocale, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTi
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { pulseMessages } from "../../messages";
+import { rememberBase } from "../base-cookie";
 import SourcesScreen from "../screens/SourcesScreen.island";
 import SqlScreen from "../screens/SqlScreen.island";
 import { PULSE_SETTINGS_TABS } from "../workspace/routes";
+import { deletingPage } from "./deleting-page";
 import { loadPulseWorkspacePageData } from "./page-data";
 
 /** Where an old `?settings=<tab>` link of a base view leads: the settings page and that tab. */
@@ -27,8 +29,10 @@ export default ssr<AuthContext>(async (c) => {
   }
   const { t } = pulseMessages.resolve([getLocale(c)]);
   if (data.kind === "error") return ssr.error(c, data.status, { action: { label: t.backToPulse, href: "/app/pulse" } });
+  if (data.kind === "deleting") return deletingPage(c, data);
 
   const props = data.workspaceProps;
+  rememberBase(c, props.initialBaseId);
   return () => (
     <Layout
       c={c}

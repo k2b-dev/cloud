@@ -6,6 +6,8 @@ import {
   FETCH_TICKS,
   FETCHES_TODAY_SLOTS,
   METRIC_TYPES,
+  NAV_BASES,
+  NAV_DELETING_BASES,
   SOURCE_HOUR_MINUTES,
   SOURCE_KINDS,
   SOURCE_PAGE_MAX,
@@ -259,6 +261,23 @@ export const BasePageQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(BASE_PAGE_MAX).optional().describe(`Bases per page, ${BASE_PAGE_MAX} at most and by default`),
   offset: z.coerce.number().int().min(0).optional().describe("Bases to skip, for the next page"),
   q: z.string().trim().max(200).optional().describe("Only bases whose name or description contains these words"),
+});
+export const NavQuerySchema = z.object({
+  q: z.string().trim().max(200).optional().describe("Only bases whose name contains these words"),
+});
+const NavBaseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  icon: BaseIconSchema,
+  color: BaseColorSchema,
+  state: z
+    .enum(["ok", "failed", "deleting", "deletion-failed"])
+    .describe("`failed`: the store needs attention; `deleting` / `deletion-failed`: the deletion runs or waits for a retry"),
+});
+/** The sidebar's bases: lean entries, bounded like the sidebar itself. */
+export const NavSchema = z.object({
+  bases: z.array(NavBaseSchema).max(NAV_BASES),
+  deleting: z.array(NavBaseSchema).max(NAV_DELETING_BASES).describe("Bases in deletion the caller administers"),
 });
 export const SourcePageQuerySchema = z.object({
   limit: z.coerce

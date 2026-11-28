@@ -2,8 +2,10 @@ import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { pulseMessages } from "../../messages";
+import { rememberBase } from "../base-cookie";
 import SettingsScreen from "../screens/SettingsScreen.island";
 import { PULSE_SETTINGS_TABS } from "../workspace/routes";
+import { deletingPage } from "./deleting-page";
 import { loadPulseSettingsPageData } from "./page-data";
 
 /** A base's settings as a page: `/settings` is the general tab, `/settings/<tab>` the others. */
@@ -15,6 +17,8 @@ export default ssr<AuthContext>(async (c) => {
   const data = await loadPulseSettingsPageData(c, tab ?? "general");
   const { t } = pulseMessages.resolve([getLocale(c)]);
   if (data.kind === "error") return ssr.error(c, data.status, { action: { label: t.backToPulse, href: "/app/pulse" } });
+  if (data.kind === "deleting") return deletingPage(c, data);
+  rememberBase(c, data.publicBaseId);
   return () => (
     <Layout
       c={c}

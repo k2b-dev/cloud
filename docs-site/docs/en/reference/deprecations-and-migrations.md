@@ -5,13 +5,25 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-27
+updated: 2026-11-28
 ---
 
 # Deprecations and migrations
 
 Studio entries below describe older releases. Studio apps, their APIs and app data
 are now retired without transfer; follow [Studio retirement](/en/docs/operations/studio-retirement).
+
+## Pulse opens a base instead of its base list
+
+`/app/pulse` no longer lists bases. It opens the base used last, else the
+readable base that changed most recently. Only before the first base does it
+show a page of its own, with **New base**.
+
+- Old `/app/pulse?q=` links open a base the same way; to find a base, use
+  **Search bases...** in the sidebar. It asks `GET /api/pulse/nav?q=`.
+- A base in deletion stays in its administrators' sidebar under **Being
+  deleted**. Its page shows the deletion's state and **Retry**.
+- Scripts that read all bases keep using `GET /api/pulse/bases`.
 
 ## The Pulse base list returns one page
 

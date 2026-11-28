@@ -3,7 +3,7 @@ import { type AuthContext, expectUserBackedActor, getDateConfig, resolveDisplayN
 import { get as getSetting } from "@k2b/cloud/services";
 import type { ServiceError } from "@k2b/stdlib";
 import type { Context } from "hono";
-import type { PulseSource } from "../../contracts";
+import type { PulseBase, PulseBaseNav, PulseNav, PulseSource } from "../../contracts";
 import { SHORT_ID_REGEX } from "../../lib/short-id";
 import { pulseService } from "../../service";
 import { accessScopeFor, requireBaseAccess, withPageAccess } from "../../service/access-control";
@@ -36,8 +36,38 @@ const publicOrigin = (rawAppUrl: string | null | undefined, requestOrigin: strin
 
 const noSources: PulseSource[] = [];
 
+/** A base whose deletion runs or failed: its admins follow or resume it on its page, beside the other bases. */
+export type DeletingPageData = { kind: "deleting"; nav: PulseNav; base: PulseBaseNav };
+
+/**
+ * A base whose deletion started is a place only for its admins (the sidebar names it for them under "Wird gelöscht");
+ * for everyone else it is gone. The admin check reads the grant this page load already read.
+ */
+const deletingPage = async <T extends AuthContext>(
+  c: Context<T>,
+  baseId: string,
+  base: PulseBase,
+  nav: PulseNav,
+): Promise<DeletingPageData | { kind: "error"; status: 404 }> => {
+  const scope = accessScopeFor(c.get("actor"), c.get("accessSubject"));
+  const admin = scope.ok ? await requireBaseAccess(baseId, scope.data, "admin") : null;
+  if (!admin?.ok) return { kind: "error", status: 404 };
+  return {
+    kind: "deleting",
+    nav,
+    base: {
+      id: base.shortId,
+      name: base.name,
+      icon: base.icon,
+      color: base.color,
+      state: base.store.state === "failed" ? "deletion-failed" : "deleting",
+    },
+  };
+};
+
 type PageData =
   | { kind: "error"; status: ServiceError["status"] }
+  | DeletingPageData
   | { kind: "ok"; baseName: string; sourceCount: number; workspaceProps: PulseWorkspaceProps };
 async function loadWorkspace<T extends AuthContext>(c: Context<T>): Promise<PageData> {
   const user = expectUserBackedActor(c);
@@ -54,6 +84,7 @@ async function loadWorkspace<T extends AuthContext>(c: Context<T>): Promise<Page
     getSetting<string>("app.url").catch(() => ""),
   ]);
   if (!base.ok) return { kind: "error", status: base.error.status };
+  if (base.data.deletionStartedAt) return deletingPage(c, baseId, base.data, nav);
   // The sources view lists the sources with their store figures; every other view needs only their number for its tab.
   const sources =
     route.view === "sources"
@@ -156,6 +187,7 @@ const loadBaseShell = async <T extends AuthContext>(c: Context<T>) => {
     pulseService.source.count(baseId, user),
   ]);
   if (!base.ok) return { kind: "error" as const, status: base.error.status };
+  if (base.data.deletionStartedAt) return deletingPage(c, baseId, base.data, nav);
   return {
     kind: "ok" as const,
     baseId,
@@ -170,7 +202,7 @@ const loadBaseShell = async <T extends AuthContext>(c: Context<T>) => {
 /** The saved queries of a base, one page of `QUERIES_PER_PAGE` from `?offset=`; a failed read becomes the page's Failed state. */
 async function loadQueries<T extends AuthContext>(c: Context<T>, perPage: number) {
   const shell = await loadBaseShell(c);
-  if (shell.kind === "error") return shell;
+  if (shell.kind !== "ok") return shell;
   const raw = Number(c.req.query("offset") ?? 0);
   const offset = Number.isSafeInteger(raw) && raw > 0 ? raw : 0;
   const page = await savedQueries.list({ ...shell.identity, limit: perPage, offset });
@@ -199,7 +231,7 @@ const authorNames = async (ids: (string | null)[]): Promise<Record<string, Query
 /** A base's settings: who may change them and who administers it, plus what the open tab shows on its first picture. */
 async function loadSettings<T extends AuthContext>(c: Context<T>, tab: string) {
   const shell = await loadBaseShell(c);
-  if (shell.kind === "error") return shell;
+  if (shell.kind !== "ok") return shell;
   const scope = accessScopeFor(c.get("actor"), c.get("accessSubject"));
   const admin = scope.ok ? await requireBaseAccess(shell.baseId, scope.data, "admin") : null;
   const canAdmin = admin?.ok ?? false;
