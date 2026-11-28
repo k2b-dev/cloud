@@ -5,7 +5,8 @@ import { Bar, Button, HeadCreates, HeadSearch, List, Nav, Pane, Path, Row, Text,
 // What a workspace's head knows of its place, as the test sets it up:
 // - `creates`: a head with two main actions ("Hochladen", "Neuer Ordner") as `HeadCreates` beside a ghost one
 //   ("Teilen"), and the same two as the workspace's `primary`: one "+ Neu" menu at the head's end, and the phone's
-//   round button offers them both;
+//   round button offers them both; `createsOne` and `createsNone`: the workspace's list of main actions holds one or
+//   none (the person's rights left only that), so its round button is a plain button, or none;
 // - `repeats`: the sidebar's current entry is "Einstellungen", and the head's title says the same beside an action
 //   (`Text sidebarEntry`): the title gives way while the sidebar shows; `repeatsOnly`: the head holds that title
 //   alone and gives way whole;
@@ -15,7 +16,17 @@ import { Bar, Button, HeadCreates, HeadSearch, List, Nav, Pane, Path, Row, Text,
 // - `detail`: a list beside an open entry whose head names it after a path (small, in the path's row), with its way
 //   back: on the phone the path gives way and the name stays;
 // - `path`: a head whose path ends in a long file name: cut in its middle where it has no room, its end kept.
-export type Kind = "creates" | "repeats" | "repeatsOnly" | "hollow" | "hollowIsland" | "hollowSearch" | "detail" | "path";
+export type Kind =
+  | "creates"
+  | "createsOne"
+  | "createsNone"
+  | "repeats"
+  | "repeatsOnly"
+  | "hollow"
+  | "hollowIsland"
+  | "hollowSearch"
+  | "detail"
+  | "path";
 
 declare global {
   interface Window {
@@ -151,7 +162,15 @@ export const Fixture = (props: { kind: Kind }) => (
     <Workspace
       sidebar={<Sidebar />}
       head={<Head kind={props.kind} />}
-      primary={props.kind === "creates" ? creates : { label: "Neu", icon: "plus" }}
+      primary={
+        props.kind === "creates"
+          ? creates
+          : props.kind === "createsOne"
+            ? creates.slice(0, 1)
+            : props.kind === "createsNone"
+              ? []
+              : { label: "Neu", icon: "plus" }
+      }
       detail={props.kind === "detail" ? true : undefined}
     >
       {props.kind === "detail" ? (

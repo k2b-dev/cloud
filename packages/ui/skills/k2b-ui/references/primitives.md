@@ -30,7 +30,8 @@ The working surface of an app: one per screen.
   end, so the head lets it go on the phone (one primary per page). Several
   main actions: `HeadCreates actions` in the head end (one "+ Neu" menu, a
   part of its own) and the same list as `primary`, so the phone's round
-  button is that menu.
+  button is that menu; a list of one stays a plain button, an empty list
+  shows none (rights may leave either).
 - `Text sidebarEntry` in the head's start: the title has the words of the
   sidebar's current entry and gives way while the sidebar shows (it stays the
   page's name for assistive technology); the drawer and the phone show it.

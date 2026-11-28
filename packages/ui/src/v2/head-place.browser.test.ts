@@ -121,6 +121,24 @@ describe("several main actions in a workspace's head", () => {
   }, 30_000);
 });
 
+describe("the round button of a list of main actions", () => {
+  test("390 px: one action left is a plain round button, none leaves it out", async () => {
+    await withPage(390, "createsOne", { live: true }, async (page) => {
+      expect(await page.locator(".k2-fab-menu").count()).toBe(0);
+      expect(await shows(page, ".k2-fab")).toBe(true);
+      expect(await page.locator(".k2-fab").innerText()).toContain("Hochladen");
+      await page.locator(".k2-fab").click();
+      await page.waitForFunction(() => window.__k2Created === "upload");
+    });
+    await withPage(390, "createsNone", { live: true }, async (page) => {
+      expect(await page.locator(".k2-fab, .k2-fab-menu").count()).toBe(0);
+    });
+    // and the server's page says the same
+    expect(server("createsOne").html).not.toContain("k2-fab-menu");
+    expect(server("createsNone").html).not.toMatch(/k2-fab/);
+  }, 30_000);
+});
+
 describe("a head title that repeats the sidebar's current entry", () => {
   test("the server's page marks it, and only it", () => {
     expect(server("repeats").html).toMatch(/class="k2-text[^"]*"[^>]*data-names-place=""/);

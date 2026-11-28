@@ -5,8 +5,6 @@ import type { Action } from "./types";
 export type HeadCreatesProps = {
   /** The main actions, such as "Hochladen" and "Neuer Ordner": each an entry with its words and its deed or address. */
   actions: readonly Action[];
-  /** The words of the "+" menu; "Neu" in the language of the page when not set. */
-  label?: string;
 };
 
 /**
@@ -22,16 +20,10 @@ export const HeadCreates = (props: HeadCreatesProps) => {
       variant="primary"
       icon="plus"
       floats
-      items={props.actions.map((action) => ({
-        label: action.label,
-        icon: action.icon,
-        href: action.href,
-        onNavigate: action.onNavigate,
-        onClick: action.onClick,
-        disabled: action.disabled,
-      }))}
+      // the same entries as the round button's, field by field
+      items={props.actions}
     >
-      {props.label ?? t().create}
+      {t().create}
     </Menu>
   );
 };

@@ -188,8 +188,13 @@ export type WorkspaceProps = {
 };
 
 const sidebarDefault: Width = { min: 200, default: 248 };
-/** Whether the workspace has several main actions (a head with `HeadCreates`), which its round button offers as one "+". */
-const several = (primary: Action | readonly Action[] | undefined): primary is readonly Action[] => Array.isArray(primary);
+/**
+ * The workspace's main actions as a list: one, several (a head with `HeadCreates`), or none (a list the person's rights
+ * left empty). Several make the round button one "+", one keeps it a plain button, none leaves it out.
+ */
+const mainActions = (primary: Action | readonly Action[] | undefined): readonly Action[] =>
+  primary === undefined ? [] : isList(primary) ? primary : [primary];
+const isList = (primary: Action | readonly Action[]): primary is readonly Action[] => Array.isArray(primary);
 /** What a column without a width keeps at least: the concept's main column, 400 px (as in v2.css). */
 const flexibleMin = 400;
 
@@ -369,7 +374,7 @@ export const Workspace = (props: WorkspaceProps) => {
           {props.sidebar}
         </drawer.Popup>
       </Show>
-      <Show when={several(props.primary) ? props.primary : undefined}>
+      <Show when={mainActions(props.primary).length > 1 ? mainActions(props.primary) : undefined}>
         {(actions) => (
           // several main actions: the round button is their one "+"
           <span class="k2-fab-menu">
@@ -379,7 +384,7 @@ export const Workspace = (props: WorkspaceProps) => {
           </span>
         )}
       </Show>
-      <Show when={several(props.primary) ? undefined : props.primary}>
+      <Show when={mainActions(props.primary).length === 1 ? mainActions(props.primary)[0] : undefined}>
         {(action) => (
           // a disabled link is an anchor without an address, as in `Button`
           <Dynamic
