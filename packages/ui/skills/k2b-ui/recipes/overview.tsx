@@ -100,7 +100,7 @@ export default function BasesOverview(props: Props) {
           end={
             <>
               <Input type="search" icon="search" label="Bases und Tabellen" placeholder="Bases und Tabellen" />
-              <Button variant="primary" icon="plus">
+              <Button variant="primary" floats icon="plus">
                 Neue Base
               </Button>
             </>

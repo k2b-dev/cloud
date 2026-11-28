@@ -84,7 +84,7 @@ const Frame = (props: {
           <>
             <HeadSearch label={props.search} placeholder={props.search} />
             {props.primary ? (
-              <Button variant="primary" icon="plus">
+              <Button variant="primary" floats icon="plus">
                 {props.primary}
               </Button>
             ) : undefined}

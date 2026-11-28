@@ -127,7 +127,7 @@ export default function GroupsScreen(props: GroupsScreenProps) {
                 }}
               />
               <Show when={props.isAdmin}>
-                <Button variant="primary" icon="plus" onClick={() => setCreating(true)}>
+                <Button variant="primary" floats icon="plus" onClick={() => setCreating(true)}>
                   {t().newGroup}
                 </Button>
               </Show>
