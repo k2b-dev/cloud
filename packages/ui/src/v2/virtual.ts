@@ -282,7 +282,9 @@ export const createVirtualWindow = <T>(options: {
       const height = scroller ? scroller.clientHeight : window.innerHeight;
       const from = offsetOf(index);
       const to = offsetOf(index + 1);
-      const moved = from < top ? from - top : to > top + height ? to - (top + height) : 0;
+      // rounded away from the row, so it stands whole also where the browser scrolls by whole pixels only (WebKit)
+      const exact = from < top ? from - top : to > top + height ? to - (top + height) : 0;
+      const moved = exact > 0 ? Math.ceil(exact) : Math.floor(exact);
       if (moved !== 0) {
         if (scroller) scroller.scrollTop += moved;
         else window.scrollBy(0, moved);
