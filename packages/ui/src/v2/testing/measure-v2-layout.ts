@@ -413,25 +413,39 @@ function measureInPage(options: InPage): DomResult {
         }
       return { lefts, rights };
     };
-    const gaps = (x0: number, x1: number, y: number) => {
-      const { lefts, rights } = edgesAt(y);
+    // A section has a column of its own where its content keeps a measure; what stands in it must reach that column's
+    // edges, not the pane's:
+    // - B (its head floats as a column of 232 px): the content column starts 48 px after the head and ends with the
+    //   section (at most 1040 px from the text edge), and the section's own line ends with the section;
+    // - A with `measure` (a pane below 960 px): the rows standing directly in it end at the reading measure, 720 px of
+    //   text between the text edges.
+    const sectionColumn = (element: Element): { left: number; right: number } | undefined => {
+      const section = element.closest(".k2-sec");
+      if (!section) return undefined;
+      const box = section.getBoundingClientRect();
+      const head = section.querySelector(":scope > .k2-sh");
+      if (head && getComputedStyle(head).float === "left") {
+        if (element === section) return { left: box.left, right: box.right };
+        return head.contains(element) ? undefined : { left: box.left + 232 + 48, right: box.right };
+      }
+      if (!section.hasAttribute("data-measure") || element === section) return undefined;
+      const body = section.querySelector(":scope > .k2-sec-body");
+      const direct = [section, body].some((parent) => parent && (element.parentElement === parent || element.parentElement?.parentElement === parent));
+      if (!direct) return undefined;
+      const edge = Number.parseFloat(getComputedStyle(section).getPropertyValue("--k2-edge")) || 0;
+      return { left: box.left, right: box.left + Math.min(box.width, 720 + 2 * edge) };
+    };
+    const gaps = (x0: number, x1: number, y: number, element?: Element) => {
+      const own = element && sectionColumn(element);
+      const { lefts, rights } = own ? { lefts: [own.left], rights: [own.right] } : edgesAt(y);
       const left = Math.max(...lefts.filter((x) => x <= x0 + 1.5));
       const right = Math.min(...rights.filter((x) => x >= x1 - 1.5));
       return { left: x0 - left, right: right - x1, edgeLeft: left, edgeRight: right };
     };
     const edge: string[] = [];
     // Collinear pieces of one line (the cells of a row) merge first.
-    // A section that stands beside its head column (B, a pane of 960 px and more) has its own measure: its rows' lines
-    // start at its content column and its own line ends at 1040 px, where its content ends.
-    const besideHead = (element: Element) => {
-      const section = element.closest(".k2-sec");
-      const head = section?.querySelector(":scope > .k2-sh");
-      if (!!head && !head.contains(element) && getComputedStyle(head).float === "left") return true;
-      // the hair between the rows of a section at the reading measure ends with its rows, where their content ends
-      return !!section && element !== section && section.hasAttribute("data-measure");
-    };
     const dividers = hairlines(horizontal)
-      .filter((line) => !line.frame && !besideHead(line.element))
+      .filter((line) => !line.frame)
       .sort((a, b) => a.across0 - b.across0 || a.along0 - b.along0);
     const merged: Line[] = [];
     for (const line of dividers) {
@@ -445,7 +459,7 @@ function measureInPage(options: InPage): DomResult {
     }
     for (const line of merged) {
       if (line.along1 - line.along0 < 60) continue;
-      const gap = gaps(line.along0, line.along1, line.across0);
+      const gap = gaps(line.along0, line.along1, line.across0, line.element);
       if (gap.left > 1.5 || gap.right > 1.5)
         edge.push(
           `line ${name(line.element)} ${line.how} at y ${round(line.across0)} stops ${round(gap.left)} px short of the left and ${round(gap.right)} px short of the right edge of its column (${round(gap.edgeLeft)}–${round(gap.edgeRight)})`,
@@ -468,8 +482,6 @@ function measureInPage(options: InPage): DomResult {
       const style = getComputedStyle(element);
       const color = style.backgroundColor;
       if (clear(color) || color === fillBelow(element) || control(element) || Number.parseFloat(style.borderTopLeftRadius) > 0) continue;
-      // a tinted row in a section's own column (B, or at the reading measure) ends with that column
-      if (besideHead(element)) continue;
       let box = element.getBoundingClientRect();
       // A table row is tinted cell by cell (a sticky cell must be opaque), so a tinted row is measured as the band of
       // all its cells, once; a single tinted cell (an error, the cell under edit) is a state of that cell, no band.
@@ -488,7 +500,7 @@ function measureInPage(options: InPage): DomResult {
       };
       if (r.right - r.left < 160 || r.bottom - r.top < 36) continue;
       bands += 1;
-      const gap = gaps(r.left, r.right, (r.top + r.bottom) / 2);
+      const gap = gaps(r.left, r.right, (r.top + r.bottom) / 2, element);
       if (gap.left > 1.5 || gap.right > 1.5)
         edge.push(
           `band ${name(element)} at y ${round(r.top)} stops ${round(gap.left)} px short of the left and ${round(gap.right)} px short of the right edge of its column`,
