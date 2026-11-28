@@ -5,6 +5,7 @@ import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-section-head.client";
+import { measureV2Layout } from "./testing";
 import { typeRoles } from "./tokens";
 
 // The section head as Valentin chose it on 27.11. (settings-headings-study v2, taste study v2 rules 1, 4, 5 and 8): A
@@ -26,7 +27,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (which: "form" | "narrow" | "detail", width: number, run: (page: Page) => Promise<void>) => {
+const withPage = async (which: "form" | "narrow" | "detail" | "custom", width: number, run: (page: Page) => Promise<void>) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
@@ -194,5 +195,23 @@ test("the last section of a pane draws no line under itself (its pixel stays, so
       return [section === section.parentElement?.lastElementChild, style.borderBottomWidth, style.borderBottomColor];
     });
     expect(last).toEqual([true, "1px", "rgba(0, 0, 0, 0)"]);
+  });
+});
+
+test("1440 px, B: an app's own plain part, in a section and in a folding one, stands in the content column", async () => {
+  await withPage("custom", 1440, async (page) => {
+    const found = await page.evaluate(() =>
+      ["custom", "custom-folded"].map((probe) => {
+        const element = document.querySelector(`[data-probe="${probe}"]`)!;
+        const section = element.closest('[data-k2-part="Section"]')!.getBoundingClientRect();
+        const box = element.getBoundingClientRect();
+        return { left: Math.round(box.left - section.left), right: Math.round(section.right - box.right) };
+      }),
+    );
+    expect(found).toEqual([
+      { left: 232 + 48, right: 0 },
+      { left: 232 + 48, right: 0 },
+    ]);
+    expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
   });
 });
