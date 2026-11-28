@@ -254,7 +254,7 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
         </Notice>
       </Show>
       <Show when={!props.groupId}>
-        <Section icon="adjustments" title={t().appliesToAll}>
+        <Section title={t().appliesToAll}>
           {/* slot for #4208/#4223 (DP): this field becomes a Setting row with `was`; until then the unsaved change's old value stands in the hint */}
           <Field
             label={t().presets}
@@ -313,7 +313,7 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
         )}
       </For>
       <Show when={!props.groupId}>
-        <Section icon="lock" title={t().alwaysHuman} count={askRows().length} summary={t().alwaysHumanSub}>
+        <Section title={t().alwaysHuman} count={askRows().length} summary={t().alwaysHumanSub}>
           <For each={askRows()}>{(row) => <Row icon="lock" lines={[t().rowLabel({ row }), t().rowExample({ row })]} />}</For>
         </Section>
       </Show>

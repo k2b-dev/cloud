@@ -273,7 +273,7 @@ export default function OperationsScreen(props: OperationsScreenProps) {
                     meta={t().longestWait}
                   />
                 </Cells>
-                <Section icon="server-2" title={t().runners} count={current().runners.length}>
+                <Section title={t().runners} count={current().runners.length}>
                   <Show when={current().runners.length} fallback={<Empty icon="plug-off" text={t().noRunnersList} />}>
                     <Table
                       label={t().runners}

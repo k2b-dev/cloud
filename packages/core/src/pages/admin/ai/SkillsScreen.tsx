@@ -256,7 +256,7 @@ export default function SkillsScreen(props: { nav: NavProps; data: AiSkillsData 
       <Show when={skill.description}>
         <Text>{skill.description}</Text>
       </Show>
-      <Section icon="info-circle" title={t().details}>
+      <Section title={t().details}>
         <Facts
           items={[
             { label: s().skillSource, value: sourceText(skill) },
@@ -346,7 +346,6 @@ function AppSkillIssues(props: { issues: AiAppSkillIssue[]; appName: (issue: AiA
     );
   return (
     <Section
-      icon="plug-x"
       title={s().appSkillsNotInstalled}
       count={t().issuesCount({ count: props.issues.length })}
       summary={s().appSkillsNotInstalledDescription}

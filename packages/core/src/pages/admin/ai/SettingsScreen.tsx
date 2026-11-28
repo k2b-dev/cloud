@@ -65,7 +65,6 @@ function EnrichmentState(props: { t: Messages; locale: string; enrichment: AiEnr
         />
       </Cells>
       <Section
-        icon="sparkles"
         title={t().enrichmentState}
         count={enrichment().recentRuns.length || undefined}
         summary={t().enrichmentTraceHint}
@@ -178,7 +177,7 @@ export default function SettingsScreen(props: { nav: NavProps; data: AiSettingsD
       content: (
         <>
           <Show when={texts().length}>
-            <Section icon="file-text" title={t().builtInTexts} summary={t().builtInTextsSummary}>
+            <Section title={t().builtInTexts} summary={t().builtInTextsSummary}>
               <For each={texts()}>{(item) => <Row icon="file-text" lines={[item.title, item.meta]} onOpen={() => setReading(item)} />}</For>
             </Section>
           </Show>
