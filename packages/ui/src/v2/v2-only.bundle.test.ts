@@ -122,6 +122,24 @@ test("HeadSearch brings the head search along", async () => {
   expect(modules["v2/head-search.tsx"]).toBeGreaterThan(0);
 }, 60_000);
 
+// A field (its frame: label line, deed, message) and a setting ("geändert · vorher …", its catalog) come with `Field`
+// and `Setting`, never with the `Input` a nav's search uses: `Field.Row` is attached with a pure `Object.assign`, as
+// `Avatar.Stack` is, since a top-level `Field.Row = …` kept the whole frame in every island (#4223, 2.3 KB). The
+// quota of a nav comes with `NavQuota`.
+test("Field, Setting and NavQuota bring their parts along, and a nav with its search loads none of them", async () => {
+  const [lean, parts] = await Promise.all([
+    islandModules(`import { Menu, Nav, Workspace } from ${v2Index};\nconsole.log(Menu, Nav, Workspace);\n`),
+    islandModules(
+      `import { Field, Menu, Nav, NavQuota, Setting, Workspace } from ${v2Index};\nconsole.log(Field, Menu, Nav, NavQuota, Setting, Workspace);\n`,
+    ),
+  ]);
+  expect(lean["v2/setting-messages.ts"]).toBeUndefined();
+  expect(parts["v2/setting-messages.ts"]).toBeGreaterThan(0);
+  // the frame of a field is more than 1.5 KB of `controls.tsx`, and the quota more than 300 B of `components.tsx`
+  expect(parts["v2/controls.tsx"]! - (lean["v2/controls.tsx"] ?? 0)).toBeGreaterThan(1500);
+  expect(parts["v2/components.tsx"]! - (lean["v2/components.tsx"] ?? 0)).toBeGreaterThan(300);
+}, 60_000);
+
 test("navTree and menuPanel bring the tree and the panel along", async () => {
   const modules = await islandModules(
     `import { menuPanel, Menu, Nav, navTree, Workspace } from ${v2Index};\nconsole.log(Menu, Nav, Workspace, navTree, menuPanel);\n`,

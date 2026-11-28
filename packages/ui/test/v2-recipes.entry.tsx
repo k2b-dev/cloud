@@ -4,6 +4,7 @@ import * as actions from "../skills/k2b-ui/recipes/actions";
 import * as content from "../skills/k2b-ui/recipes/content";
 import * as conversations from "../skills/k2b-ui/recipes/conversations";
 import * as dialogs from "../skills/k2b-ui/recipes/dialogs";
+import * as files from "../skills/k2b-ui/recipes/files";
 import * as filteredTable from "../skills/k2b-ui/recipes/filtered-table";
 import * as form from "../skills/k2b-ui/recipes/form";
 import * as formDetail from "../skills/k2b-ui/recipes/form-detail";
@@ -16,6 +17,7 @@ import * as publicPage from "../skills/k2b-ui/recipes/public-page";
 import * as record from "../skills/k2b-ui/recipes/record";
 import * as recordGroups from "../skills/k2b-ui/recipes/record-groups";
 import * as settings from "../skills/k2b-ui/recipes/settings";
+import * as settingsPage from "../skills/k2b-ui/recipes/settings-page";
 import * as start from "../skills/k2b-ui/recipes/start";
 import * as states from "../skills/k2b-ui/recipes/states";
 import * as table from "../skills/k2b-ui/recipes/table";
@@ -32,6 +34,7 @@ const recipes: Record<string, Recipe> = {
   "content.tsx": content,
   "conversations.tsx": conversations,
   "dialogs.tsx": dialogs,
+  "files.tsx": files,
   "filtered-table.tsx": filteredTable,
   "form-detail.tsx": formDetail,
   "form.tsx": form,
@@ -44,6 +47,7 @@ const recipes: Record<string, Recipe> = {
   "record-groups.tsx": recordGroups,
   "settings.tsx": settings,
   "record.tsx": record,
+  "settings-page.tsx": settingsPage,
   "start.tsx": start,
   "states.tsx": states,
   "table.tsx": table,

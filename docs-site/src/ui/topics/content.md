@@ -50,9 +50,15 @@ Values with their labels; `mono` and `copy` make a key, a token or an ID easy to
 
 ### Tiles
 
-Like things to press, such as attachments and media files; each opens its file.
+Like things to press, such as attachments and media files; each opens its file. `variant="media"` shows photos, pages and videos as a grid of pictures that people select.
 
 <Props of="Tiles Tile" />
+
+### Preview
+
+The large picture of the open thing at the top of its detail, 4:3; its symbol stands while the picture loads, fails or is missing.
+
+<Props of="Preview" />
 
 ### Canvas
 

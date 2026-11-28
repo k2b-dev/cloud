@@ -27,6 +27,7 @@ import { ActionButton } from "./button";
 import { accentStyle } from "./colors";
 import { type Column, ColumnsContext, type DetailEmpty, InnerContext } from "./columns-context";
 import { RowOpen } from "./content";
+import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Icon, Mark, Spark, type SparkProps } from "./marks";
 import { BarFold, Menu, type MenuItem } from "./menu";
@@ -1059,6 +1060,14 @@ export type Tile = {
   foot?: string;
   /** Cards only: a short history at the top end, in the thing's colour (`Spark`). */
   trend?: SparkProps;
+  /** Media only: the picture of the thing, such as a photo or the first page of a PDF; its symbol stands without one. */
+  image?: string;
+  /** Media only: the type on the picture's corner, such as `PDF`, or a video's length. */
+  kind?: string;
+  /** Media only: a quiet symbol at the end of the second line with its name, such as the sharing state. */
+  sign?: { icon: string; label: string };
+  /** The stable key of the tile, which a selection names; its `href` or title when not set. */
+  key?: string;
   /**
    * Cards only: a glance of what the thing holds, across the top of the card above its name: a small table (its
    * columns and first rows, as words), a page (its title and first words), or a sign for a thing that holds nothing yet.
@@ -1162,9 +1171,15 @@ export type TilesProps = {
    * `card`: each thing a card in a grid (at least 240 px a card), with its mark, figures, people and a short history,
    * such as the bases of Grids or the projects of a team. Without it: small tiles in one wrapping line (attachments).
    */
-  variant?: "card";
-  /** Cards only: the last card makes a new thing. */
+  variant?: "card" | "media";
+  /** The last tile makes a new thing: a dashed card, or among media a dashed picture with a plus ("Neuer Ordner"). */
   create?: TileCreate;
+  /**
+   * Media only: the tiles stand in a selection (pair it with `StatusRow selection`). Each tile has a box on its
+   * picture, named by its title; it shows under the pointer, with the focus, on touch, and on every tile while one is
+   * selected. A selected tile is tinted blue with a line inside its edge.
+   */
+  select?: { selected: readonly string[]; onChange: (key: string, selected: boolean) => void };
   /**
    * At most this many tiles share a row and grow with its width, such as the four ways to start a notebook across
    * the page. A tile never gets narrower than 240 px for it: where n do not fit, they stand in rows of half of them
@@ -1260,6 +1275,71 @@ const TileMake = (props: { create: TileCreate }) => (
   </div>
 );
 
+/** The place to make a new thing among media: a dashed picture with a plus, then what it makes and a quiet hint. */
+const TileMakeMedia = (props: { create: TileCreate }) => (
+  <div class="k2-tile" role="listitem" data-create="" data-open={props.create.href !== undefined || props.create.onClick ? "" : undefined}>
+    <span class="k2-tile-media">
+      <span class="k2-tile-make">
+        <Icon name="plus" />
+      </span>
+    </span>
+    <span class="k2-tile-title" title={props.create.title}>
+      <RowOpen href={props.create.href} onOpen={props.create.onClick}>
+        {props.create.title}
+      </RowOpen>
+    </span>
+    <Show when={props.create.meta}>
+      <span class="k2-tile-line">
+        <span class="k2-tile-meta">{props.create.meta}</span>
+      </span>
+    </Show>
+  </div>
+);
+
+const keyOf = (tile: Tile) => tile.key ?? tile.href ?? tile.title;
+
+/**
+ * A photo, a page or a video as a tile in a grid of at least 160 px: its picture 4:3 above its name and a quiet line
+ * with its owner, its meta and a sign. The whole tile opens its `href` (or presses `onOpen`); the box on the picture
+ * selects it.
+ */
+const TileMedia = (props: { tile: Tile; select?: TilesProps["select"] }) => {
+  const title = createUniqueId();
+  const selected = () => props.select?.selected.includes(keyOf(props.tile)) ?? false;
+  const owner = () => props.tile.people?.[0];
+  return (
+    <div
+      class="k2-tile"
+      role="listitem"
+      data-open={props.tile.href !== undefined || props.tile.onOpen ? "" : undefined}
+      data-selected={selected() ? "" : undefined}
+    >
+      <span class="k2-tile-media">
+        <Mark icon={props.tile.icon} color={props.tile.color} image={props.tile.image} kind={props.tile.kind} />
+        <Show when={props.select}>
+          {(select) => (
+            <span class="k2-tile-check">
+              <MarkCheck labelledBy={title} checked={selected()} onChange={(on) => select().onChange(keyOf(props.tile), on)} />
+            </span>
+          )}
+        </Show>
+      </span>
+      <span class="k2-tile-title" id={title} title={props.tile.title}>
+        <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate} onOpen={props.tile.onOpen}>
+          {props.tile.title}
+        </RowOpen>
+      </span>
+      <span class="k2-tile-line">
+        <Show when={owner()}>{(person) => <Avatar {...person()} />}</Show>
+        <Show when={props.tile.meta}>
+          <span class="k2-tile-meta">{props.tile.meta}</span>
+        </Show>
+        <Show when={props.tile.sign}>{(sign) => <Icon name={sign().icon} label={sign().label} />}</Show>
+      </span>
+    </div>
+  );
+};
+
 /** How many tiles share a row, a whole number of at least one, and the half (rounded up) they fall back to. */
 const perRowStyle = (perRow: number) => {
   const count = Math.max(1, Math.floor(perRow));
@@ -1271,15 +1351,20 @@ export const Tiles = (props: TilesProps) => (
     class="k2-tiles"
     data-k2-part="Tiles"
     data-variant={props.variant}
+    data-selecting={props.select && props.select.selected.length > 0 ? "" : undefined}
     data-per-row={props.perRow ? "" : undefined}
     style={props.perRow ? perRowStyle(props.perRow) : undefined}
     role="list"
     aria-label={props.label}
   >
+    <Show when={props.variant === "media"}>
+      <For each={props.items}>{(tile) => <TileMedia tile={tile} select={props.select} />}</For>
+      <Show when={props.create}>{(create) => <TileMakeMedia create={create()} />}</Show>
+    </Show>
     <Show
       when={props.variant === "card"}
       fallback={
-        <For each={props.items}>
+        <For each={props.variant === undefined ? props.items : []}>
           {(tile) => (
             <div class="k2-tile" role="listitem" data-open={tile.href !== undefined || tile.onOpen ? "" : undefined}>
               <Show when={tile.color} fallback={<Icon name={tile.icon} />}>

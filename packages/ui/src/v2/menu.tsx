@@ -15,6 +15,7 @@ import {
   useContext,
 } from "solid-js";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
+import { safeColor } from "./colors";
 import { custom, Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
 import { usePhone } from "./overlays";
@@ -32,9 +33,10 @@ export type MenuItem = {
   /** A Tabler icon name without the `ti-` prefix. */
   icon?: string;
   /**
-   * The data colour of the thing the entry stands for, such as an area: a dot before its words, in place of an icon.
-   * It goes through the colour guard (a value that is no colour leaves a neutral dot) and is decoration: the entry's
-   * name stays its words.
+   * The data colour of the thing the entry stands for, such as an area or a calendar: a dot before its words where
+   * the entry has no icon, else its icon in that colour (a hex colour kept at 3:1 on the menu, light and dark). It goes
+   * through the colour guard (a value that is no colour leaves a neutral dot and a neutral icon) and is decoration: the
+   * entry's name stays its words.
    */
   color?: string;
   /** The deed; a returned Promise keeps the menu open and the entry busy until it settles. */
@@ -310,29 +312,38 @@ const kindOf = (entry: MenuItem): EntryKind =>
 const itemOf = (entry: MenuEntry): MenuItem => (entry === "separator" || isSection(entry) ? { label: "" } : entry);
 
 /** The words of an entry, its symbol and what it set (internal: also `menu-panel.tsx`). */
-export const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) => (
-  <>
-    <Show when={props.lead}>
-      <span class="k2-mi-lead">
-        <Show
-          when={props.item.color === undefined}
-          fallback={<span class="k2-mi-dot" aria-hidden="true" style={custom({ "--k2-c": props.item.color })} />}
-        >
-          <Show when={props.item.icon}>{(name) => <Icon name={name()} />}</Show>
-        </Show>
-      </span>
-    </Show>
-    <span class="k2-mi-label">{props.item.label}</span>
-    <Show when={props.item.current ?? props.item.meta}>
-      {(meta) => (
-        <span class="k2-mi-meta" data-set={props.item.current ? "" : undefined}>
-          {meta()}
+export const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) => {
+  // an icon takes the entry's colour where it is one (a value that is no colour leaves it neutral); without an icon a
+  // dot stands in its place
+  const tinted = () => (props.item.icon !== undefined && safeColor(props.item.color) !== undefined ? props.item.color : undefined);
+  return (
+    <>
+      <Show when={props.lead}>
+        <span class="k2-mi-lead" data-color={tinted() ? "" : undefined} style={custom({ "--k2-c": tinted() })}>
+          <Show
+            when={props.item.icon}
+            fallback={
+              <Show when={props.item.color !== undefined}>
+                <span class="k2-mi-dot" aria-hidden="true" style={custom({ "--k2-c": props.item.color })} />
+              </Show>
+            }
+          >
+            {(name) => <Icon name={name()} />}
+          </Show>
         </span>
-      )}
-    </Show>
-    {props.end}
-  </>
-);
+      </Show>
+      <span class="k2-mi-label">{props.item.label}</span>
+      <Show when={props.item.current ?? props.item.meta}>
+        {(meta) => (
+          <span class="k2-mi-meta" data-set={props.item.current ? "" : undefined}>
+            {meta()}
+          </span>
+        )}
+      </Show>
+      {props.end}
+    </>
+  );
+};
 
 /** One entry of one kind (submenu, tick, link, deed); its words and states follow the data. */
 const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; value: string; lead: boolean }) => {

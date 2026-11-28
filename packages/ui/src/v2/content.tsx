@@ -338,7 +338,8 @@ export type RowProps = {
   icon?: string;
   /**
    * … the mark of the thing the row stands for (a base, a file with its thumbnail, a table): its symbol on a tint of
-   * its colour, or its picture; 24 px in a row of one line, 32 px in a row of two or three …
+   * its colour, or its picture; 24 px, and 32 px in a list that shows pictures of its things (a mark with `image` or
+   * `kind`); the row is then 44 px, on the phone 56 with a mark of 40 …
    */
   mark?: MarkProps;
   /** … or a person. */
@@ -363,7 +364,8 @@ export type RowProps = {
   /**
    * The row stands in a selection, such as "10 ausgewählt" (pair it with `StatusRow selection`): a box in the lead,
    * named by the title, and the blue tint while `selected`, as `Table select` draws it. The box takes the place of the
-   * lead's symbol, person or dot. Open and selected combine: a selected row stays blue, and stays the open one.
+   * lead's symbol, person or dot; a `mark` stays beside it, so a file keeps its thumbnail. Open and selected combine: a
+   * selected row stays blue, and stays the open one.
    */
   select?: { selected: boolean; onChange: (selected: boolean) => void };
   /** "You are next", in the blue tint. */
@@ -372,6 +374,12 @@ export type RowProps = {
   time?: JSX.Element;
   /** Bottom right on the third line: chips, icons, people. */
   marks?: JSX.Element;
+  /**
+   * States that belong to the entry and must be read whole, such as the checks of a domain: `Chip`s with colour,
+   * symbol and word under the row's lines, on the text edge of its title. They wrap to further lines instead of being
+   * cut, on the phone too; the row grows only when they are there (40, 52 and 72 px stay as they are without them).
+   */
+  states?: JSX.Element;
   /** The one deed of this entry, a framed button at the end; on the phone it moves under the text. */
   action?: Action;
   /** At the end: a few icon buttons, such as "Reply" and "More". */
@@ -434,6 +442,7 @@ export const Row = (props: RowProps) => {
   const time = resolveChildren(() => props.time);
   const end = resolveChildren(() => props.end);
   const marks = resolveChildren(() => props.marks);
+  const states = resolveChildren(() => props.states);
   const title = createUniqueId();
   // a level outside 1..6 (a heading level 0 or 7 from data) stands at the edge and says nothing
   const level = () => {
@@ -458,10 +467,11 @@ export const Row = (props: RowProps) => {
       data-yours={props.yours ? "" : undefined}
       // in a selection the box takes the person's place, so the row's text starts where the other rows' text does
       data-avatar={props.avatar && !props.select ? "" : undefined}
-      data-mark={props.mark && !props.avatar && !props.select ? "" : undefined}
+      data-mark={props.mark && !props.avatar ? "" : undefined}
       data-end-hover={props.endOnHover ? "" : undefined}
       data-time={time() !== undefined ? "" : undefined}
       data-action={props.action ? "" : undefined}
+      data-states={states() !== undefined ? "" : undefined}
       // a deed or an end beside the time: on one line both stand at the end, the time first
       data-end={end() !== undefined || props.action ? "" : undefined}
     >
@@ -483,7 +493,9 @@ export const Row = (props: RowProps) => {
           />
         </Show>
       </Show>
-      <span class="k2-row-lead">
+      {/* in a selection with a mark the lead holds both, the box before the mark (a mark the stylesheet cannot ask for
+          through an island's wrapper) */}
+      <span class="k2-row-lead" data-pair={props.select && props.mark ? "" : undefined}>
         <Show
           when={props.select}
           fallback={
@@ -513,7 +525,13 @@ export const Row = (props: RowProps) => {
             </Show>
           }
         >
-          {(select) => <MarkCheck labelledBy={title} checked={select().selected} onChange={(on) => select().onChange(on)} />}
+          {(select) => (
+            <>
+              <MarkCheck labelledBy={title} checked={select().selected} onChange={(on) => select().onChange(on)} />
+              {/* a thing's mark stays beside the box (a file keeps its thumbnail); a symbol, person or dot gives way */}
+              <Show when={props.mark}>{(mark) => <Mark {...mark()} />}</Show>
+            </>
+          )}
         </Show>
         <Show when={props.badge && !props.select ? props.badge : undefined}>
           {(badge) => (
@@ -550,6 +568,9 @@ export const Row = (props: RowProps) => {
       <Show when={marks() !== undefined}>
         <span class="k2-row-marks">{marks()}</span>
       </Show>
+      <Show when={states() !== undefined}>
+        <span class="k2-row-states">{states()}</span>
+      </Show>
     </div>
   );
 };
@@ -569,6 +590,13 @@ export type Column<T> = {
   cell: (row: T) => CellValue;
   /** Numbers and amounts stand at the end. */
   align?: "start" | "end";
+  /**
+   * The cell leads with the thing's mark: a base's symbol in 24 px, a file's thumbnail or type in 32 (with them every
+   * mark of the table), rule: each thing its mark.
+   */
+  mark?: (row: T) => MarkProps;
+  /** The cell leads with a person, such as the owner; the name in the cell names the avatar. A row without one leads with nothing. */
+  avatar?: (row: T) => Person | undefined;
   /**
    * A column that can be dragged wider or narrower: its minimum and default in px; `{ fixed }`: one width, no grip. The
    * column is exactly that wide; cut text never widens it.
@@ -1126,7 +1154,20 @@ export const Table = <T,>(props: TableProps<T>) => {
   const stickyLeft = () => (props.select ? "44px" : "0px");
   const firstSticky = (index: number) => (props.sticky && index === 0 ? "last" : undefined);
 
-  const cell = (column: Column<T>, value: CellValue, target?: OpenTarget, inTree = false) => {
+  const cell = (column: Column<T>, value: CellValue, target?: OpenTarget, row?: T, inTree = false) => {
+    const lines = cellLines(column, value, target, inTree);
+    // a cell that leads with the thing's mark or a person: the lead beside its lines, the lines cut as before
+    const mark = row !== undefined ? column.mark?.(row) : undefined;
+    const person = row !== undefined ? column.avatar?.(row) : undefined;
+    if (!mark && !person) return lines;
+    return (
+      <span class="k2-cell-lead">
+        {mark ? <Mark {...mark} /> : person ? <Avatar {...person} decorative /> : null}
+        <span class="k2-cell-lines">{lines}</span>
+      </span>
+    );
+  };
+  const cellLines = (column: Column<T>, value: CellValue, target?: OpenTarget, inTree = false) => {
     // Every line of a cell is a block of its own: cut with "…" in a sized table, wrapped in a small one.
     const line = (content: JSX.Element, second = false) => (
       <span class="k2-cell-line" data-wrap={!second && column.wrap ? "" : undefined} data-second={second ? "" : undefined}>
@@ -1165,6 +1206,8 @@ export const Table = <T,>(props: TableProps<T>) => {
           data-lines={lines()}
           data-sized={sized() ? "" : undefined}
           data-grid={grid() ? "" : undefined}
+          // a column that leads with the thing's mark makes every row 44 px, as the mockup's lists
+          data-marks={props.columns.some((column) => column.mark) ? "" : undefined}
           aria-label={props.label}
           aria-busy={loading() ? "true" : undefined}
           role={props.tree ? "treegrid" : undefined}
@@ -1412,7 +1455,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                                   </span>
                                 )}
                               </Show>
-                              {cell(column, cellsOf(item)[columnIndex()]!, columnIndex() === 0 ? target() : undefined, inTree)}
+                              {cell(column, cellsOf(item)[columnIndex()]!, columnIndex() === 0 ? target() : undefined, item.row, inTree)}
                             </td>
                           )}
                         </For>

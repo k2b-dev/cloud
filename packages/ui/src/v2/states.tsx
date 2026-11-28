@@ -13,8 +13,10 @@ export type EmptyProps = {
   icon: string;
   /** One sentence that says what is the matter: "Noch keine Einlieferung." is not "Keine Treffer mit diesem Filter." */
   text: string;
-  /** The one way out, such as "Einlieferung erfassen" or "Filter zurücksetzen". */
+  /** The way out, such as "Einlieferung erfassen" or "Filter zurücksetzen". */
   action?: Action;
+  /** A second, quieter way out after the first, such as "Ganzes Notizbuch zeigen"; a text button. */
+  secondary?: Action;
   /**
    * The sign in the colour of a state, for a place that holds nothing because something went wrong or waits and the
    * person cannot retry it here, such as a server's error page: `bad` for wrong, `warn` for waiting. Without it the
@@ -23,14 +25,22 @@ export type EmptyProps = {
   tone?: "bad" | "warn";
 };
 
-/** Nothing here: a round sign, one sentence, one way out, without a box (mockup: Notice · Empty). */
+/**
+ * Nothing here: a round sign, one sentence, a way out, without a box (mockup: Notice · Empty). A second way out stands
+ * after the first, quieter; the first stays first, so it is the one a focus that comes to the state reaches.
+ */
 export const Empty = (props: EmptyProps) => (
   <div class="k2-state" data-k2-part="Empty">
     <span class="k2-sign" data-tone={props.tone}>
       <Icon name={props.icon} />
     </span>
     <span class="k2-state-text">{props.text}</span>
-    <Show when={props.action}>{(action) => <ActionButton action={action()} />}</Show>
+    <Show when={props.action || props.secondary}>
+      <span class="k2-state-ways">
+        <Show when={props.action}>{(action) => <ActionButton action={action()} />}</Show>
+        <Show when={props.secondary}>{(secondary) => <ActionButton action={secondary()} variant="text" />}</Show>
+      </span>
+    </Show>
   </div>
 );
 

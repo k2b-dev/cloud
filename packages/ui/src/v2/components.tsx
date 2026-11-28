@@ -153,6 +153,43 @@ export type NavProps = {
   phone?: "page";
   /** Entries at the foot, such as "Hidden (2)". */
   foot?: readonly NavItem[];
+  /**
+   * What the open place uses of what it may, above the foot: a `NavQuota`, such as
+   * `<NavQuota label="Werkstatt" value={38.2} of={100} text="38,2 von 100 GB" />`. A part of its own, so a sidebar
+   * without one loads none of it.
+   */
+  quota?: JSX.Element;
+};
+
+export type NavQuotaProps = { label: string; value: number; of: number; text: string };
+
+/**
+ * What the open place uses of what it may, in the `quota` of a `Nav`: a storage of 100 GB, seats of a plan. Its name
+ * and the words ("38,2 von 100 GB") on one line, a bar under them in the app colour, amber from 75 % and red from 90 %.
+ */
+export const NavQuota = (props: NavQuotaProps) => {
+  const share = () => (props.of > 0 ? Math.max(0, Math.min(1, props.value / props.of)) : 0);
+  return (
+    <div
+      class="k2-nav-quota"
+      data-k2-part="Nav.Quota"
+      data-status={share() >= 0.9 ? "bad" : share() >= 0.75 ? "warn" : undefined}
+      role="meter"
+      aria-label={props.label}
+      aria-valuemin={0}
+      aria-valuemax={props.of}
+      aria-valuenow={props.value}
+      aria-valuetext={props.text}
+    >
+      <span class="k2-nav-quota-line">
+        <span>{props.label}</span>
+        <span>{props.text}</span>
+      </span>
+      <span class="k2-nav-quota-track" style={custom({ "--k2-p": `${Math.round(share() * 1000) / 10}%` })}>
+        <i />
+      </span>
+    </div>
+  );
 };
 
 /**
@@ -330,6 +367,7 @@ export const Nav = (props: NavProps) => {
           {list()}
         </div>
       </Show>
+      {props.quota}
       <Show when={props.foot?.length}>
         <div class="k2-nav-foot">
           <Index each={props.foot}>{(item) => <NavEntry item={item()} />}</Index>
@@ -769,6 +807,7 @@ const holdsContent = (resolved: ChildrenReturn) =>
   resolved.toArray().some((child) => child != null && typeof child !== "boolean" && child !== "");
 
 /** The status row of a pane (52 px): the one lead statement, its loading mark, key figures, filters on the right. */
+
 export const StatusRow = (props: StatusRowProps) => {
   useStatusToolbar();
   const t = useUiMessages();
