@@ -5,13 +5,14 @@ import { Bar, Button, Input, Menu, Pane, Path, Text, Workspace } from "../src/v2
 // head holds where it stands, the search, its menu "…" and "Neuer Chat"; a list, whose head holds where it stands, the
 // search and the main action that the workspace repeats as the floating button on the phone; a bare head without a
 // start, only the search and the menu "…"; a list with an open detail (on the phone the detail is the page, and no
-// main action floats over it); and a list whose head marks its main action `floats` but whose workspace has no `primary` ("nofab").
+// main action floats over it); a list whose head marks its main action `floats` but whose workspace has no `primary` ("nofab");
+// and a list whose head repeats the workspace's `primary` without `floats` ("twin"), the mistake the layout check names.
 
 declare global {
   interface Window {
     __k2Mounted?: boolean;
     /** Set before the fixture mounts: the shape of the page. */
-    __k2HeadKind?: "chat" | "list" | "bare" | "detail" | "nofab";
+    __k2HeadKind?: "chat" | "list" | "bare" | "detail" | "nofab" | "twin";
     /** What the head's search sent with Enter. */
     __k2Searched?: string;
     /** What the chat's menu opened. */
@@ -57,7 +58,7 @@ render(
           }
         />
       }
-      primary={kind === "list" ? { label: "Neuer Chat", icon: "plus" } : undefined}
+      primary={kind === "list" || kind === "twin" ? { label: "Neuer Chat", icon: "plus" } : undefined}
     >
       {kind === "detail" ? (
         <Pane.Split>

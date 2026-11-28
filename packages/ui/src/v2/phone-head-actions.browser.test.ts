@@ -25,7 +25,11 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (kind: "chat" | "list" | "bare" | "detail" | "nofab", width: number, run: (page: Page) => Promise<void>) => {
+const withPage = async (
+  kind: "chat" | "list" | "bare" | "detail" | "nofab" | "twin",
+  width: number,
+  run: (page: Page) => Promise<void>,
+) => {
   const page = await browser.newPage({ viewport: { width, height: 800 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
@@ -58,6 +62,14 @@ test("390: a chat's head with its menu keeps its height, and the menu opens and 
     await page.getByRole("menuitem", { name: "In diesem Chat" }).click();
     expect(await page.evaluate(() => window.__k2HeadOpened)).toBe("context");
     expect(await describeV2Page(page)).not.toContain("primary buttons");
+  });
+}, 30_000);
+
+test("390: a head that repeats the floating button without `floats` is named, with its fix", async () => {
+  await withPage("twin", 390, async (page) => {
+    const text = await describeV2Page(page);
+    expect(text).toContain('the head\'s "Neuer Chat" repeats the floating button: mark it `floats`');
+    expect(text).not.toContain("primary buttons");
   });
 }, 30_000);
 

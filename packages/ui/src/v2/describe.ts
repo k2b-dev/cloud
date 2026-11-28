@@ -607,11 +607,23 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     allPrimaries.some((button) => surfaceOf(button) === root && !button.classList.contains("k2-fab"))
   )
     problems.push("the primary action is hidden at this width: give Workspace a `primary` action so the phone shows it");
-  for (const [surface, primaries] of bySurface)
-    if (primaries.length > 1)
+  for (const [surface, primaries] of bySurface) {
+    // The head's twin of the floating button left without `floats`: on the phone both stand, so name the fix.
+    const fab = primaries.find((button) => button.classList.contains("k2-fab"));
+    const twin =
+      fab &&
+      primaries.find(
+        (button) => button !== fab && button.closest('[data-slot="head"]') && quote(button.textContent, 24) === quote(fab.textContent, 24),
+      );
+    if (twin && primaries.length === 2)
+      problems.push(
+        `the head's ${quote(twin.textContent, 24)} repeats the floating button: mark it \`floats\` so the phone shows the main action once`,
+      );
+    else if (primaries.length > 1)
       problems.push(
         `${primaries.length} primary buttons ${surface === root ? "" : `in ${surfaceName(surface)} `}(${primaries.map((button) => quote(button.textContent, 24)).join(", ")}): one primary action per ${surface === root ? "page" : "dialog"}; make the others secondary`,
       );
+  }
   // Cut text a person sees: a control's label that does not fit its control, a line of a three-line row that wraps.
   if (options.layout) {
     for (const control of root.querySelectorAll(".k2-btn, .k2-chip, .k2-tab")) {
