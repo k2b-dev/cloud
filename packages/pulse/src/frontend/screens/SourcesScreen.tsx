@@ -435,7 +435,7 @@ export default function SourcesScreen(props: SourcesScreenProps) {
             columns={[
               {
                 title: t().source,
-                width: { min: 200, default: 320 },
+                width: { min: 200, default: 240 },
                 mark: sourceMark,
                 cell: (source) => <Text weight="strong">{source.name}</Text>,
               },
@@ -444,21 +444,27 @@ export default function SourcesScreen(props: SourcesScreenProps) {
                 width: { min: 130, default: 150 },
                 cell: (source) => stateWord(source, t()),
               },
-              {
-                title: words().fetchesColumn,
-                width: { min: 130, default: 140 },
-                drop: true,
-                // k2b-ui gap: Ticks (#4353); becomes <Ticks slots={source.fetches} label={…} /> once it is on main.
-                // Push sources record no fetches and leave the cell empty.
-                cell: (source) =>
-                  source.fetches ? (
-                    <Canvas label={words().fetchesOf({ name: source.name })}>
-                      <FetchTicksDrawing slots={source.fetches} label={fetchesLabel(source.fetches)} />
-                    </Canvas>
-                  ) : (
-                    ""
-                  ),
-              },
+              // the fetches step aside while a source is open: its detail shows them per minute, and the list beside the
+              // detail keeps its name, state and values whole down to 1024 (columns drop on the phone only, rule 7)
+              ...(selected()
+                ? []
+                : [
+                    {
+                      title: words().fetchesColumn,
+                      width: { min: 130, default: 140 },
+                      drop: true,
+                      // k2b-ui gap: Ticks (#4353); becomes <Ticks slots={source.fetches} label={…} /> once it is on main.
+                      // Push sources record no fetches and leave the cell empty.
+                      cell: (source: PulseSource) =>
+                        source.fetches ? (
+                          <Canvas label={words().fetchesOf({ name: source.name })}>
+                            <FetchTicksDrawing slots={source.fetches} label={fetchesLabel(source.fetches)} />
+                          </Canvas>
+                        ) : (
+                          ""
+                        ),
+                    },
+                  ]),
               {
                 title: words().dataColumn,
                 align: "end",

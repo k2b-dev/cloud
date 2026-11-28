@@ -109,7 +109,7 @@ export default function QueriesScreen(props: QueriesScreenProps) {
                   columns={[
                     {
                       title: t().name,
-                      width: { min: 240, default: 520 },
+                      width: { min: 240, default: 440 },
                       mark: (query) => queryMark(query.sql),
                       cell: (query) => ({ lines: [query.name, excerpt(query.sql)] }),
                     },
@@ -120,7 +120,7 @@ export default function QueriesScreen(props: QueriesScreenProps) {
                       avatar: (query) => ({ name: author(query) ?? "?" }),
                       cell: (query) => author(query) ?? "—",
                     },
-                    { title: words().updated, drop: true, cell: (query) => time(query.updatedAt) },
+                    { title: words().updated, width: { min: 140, default: 160 }, drop: true, cell: (query) => time(query.updatedAt) },
                   ]}
                 />
               </Show>
