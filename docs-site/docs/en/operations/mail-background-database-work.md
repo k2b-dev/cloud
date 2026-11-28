@@ -99,7 +99,8 @@ plan cannot replace the bounded delete with a hash join over the whole heap.
 
 The upgrade adds one nullable folder checkpoint column. It builds the four
 cleanup indexes with `CREATE INDEX CONCURRENTLY` after startup, through the
-platform's concurrent index helper, one Mail build at a time across replicas. Busy or failed builds are retried by subsequent
+platform's concurrent index helper, one Mail build at a time across replicas,
+and waits through maintenance stage "Ruhe". Busy or failed builds are retried by subsequent
 minute passes. The smaller auxiliary indexes build first. Sync-history cleanup
 waits for its matching index to be valid; auxiliary cleanup continues with
 bounded statements even before its new indexes exist. No startup migration

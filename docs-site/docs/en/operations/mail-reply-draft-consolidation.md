@@ -140,7 +140,10 @@ and all drafts intact; resolve the reported data before retrying.
 
 On the upgrade start, F6 builds a temporary supporting partial index over the
 open reply drafts with a plain `CREATE INDEX`: the earlier image is stopped, so
-the build locks out no writer and waits for no older transaction. Each batch
+the build waits for no older transaction. It holds a SHARE lock on
+`mail.drafts` while it reads the table, so writes of an earlier image that is
+still running wait for it; this is one more reason to stop that image first.
+Each batch
 groups the open reply drafts once, then handles several duplicate
 conversations, up to 100 deletions per transaction. A
 conversation with more than 100 losers spans batches. A bounded keyset pass
@@ -173,7 +176,29 @@ conversation: every writer that puts a draft into a conversation's box takes
 that conversation's reply-box lock and checks first, and a merge of two
 conversations that both have an open reply draft returns
 `DRAFT_SUGGESTION_CONFLICT` (409). `pg_index.indisvalid` shows when the build
-has finished. A completed marker skips the destructive work.
+has finished. Mail waits through maintenance stage "Ruhe" and builds the index
+once the Cloud resumes. A completed marker skips the destructive work.
+
+### A duplicate open reply draft after F6
+
+If the background build finds two open reply drafts in one conversation, which
+the reply-box locks prevent, Mail logs one error, **The reply box index cannot
+be built: rows that it would keep apart exist twice**, with
+`index: drafts_one_open_reply_idx`. It does not try again until the next start.
+Find the conversations:
+
+```sql
+SELECT conversation_id, array_agg(short_id || ' rev ' || revision ORDER BY updated_at DESC) AS drafts
+FROM mail.drafts
+WHERE origin = 'user' AND intent <> 'new' AND state IN ('draft', 'scheduled', 'sending')
+GROUP BY conversation_id HAVING count(*) > 1;
+```
+
+Keep the draft the person works on and discard the others in Mail, or with
+`cld mail draft discard <draft id> --mailbox <mailbox> --revision <revision> --yes`.
+Cancel a scheduled send first. Do not change `mail.drafts` by hand: a discard
+also closes the draft's shared document and attachments. The next start of
+Mail builds the index again.
 
 After startup, create a reply twice without content and confirm both requests
 return the same ID. Supplied content to an occupied box must return

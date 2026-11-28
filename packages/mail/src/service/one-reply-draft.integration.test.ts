@@ -319,6 +319,38 @@ suite("one reply draft per conversation", () => {
     if (!refused.ok) expect(refused.error.code).toBe("DRAFT_SUGGESTION_CONFLICT");
     await expectOneReplyEach(target, source);
   });
+  test("a merge that loses a deadlock answers try again and merges nothing", async () => {
+    const [target, source] = [await thread(), await create()];
+    const revision = async (conversationId: string) =>
+      Number(
+        (await sql<{ revision: string }[]>`SELECT revision::text FROM mail.conversations WHERE id = ${conversationId}::uuid`)[0]!.revision,
+      );
+    // The merge moves the source's reply draft; this stands in for the deadlock Postgres reports to one of two sessions.
+    await sql`CREATE FUNCTION mail.test_merge_deadlock() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'simulated deadlock' USING ERRCODE = '40P01'; END $$`.simple();
+    await sql`CREATE TRIGGER test_merge_deadlock BEFORE UPDATE OF conversation_id ON mail.drafts
+      FOR EACH ROW EXECUTE FUNCTION mail.test_merge_deadlock()`.simple();
+    try {
+      const result = await mergeConversations({
+        context: owner,
+        mailboxId,
+        targetConversationId: target.conversationId,
+        input: {
+          sourceConversationId: source.conversationId!,
+          expectedTargetRevision: await revision(target.conversationId),
+          expectedSourceRevision: await revision(source.conversationId!),
+          confirm: true,
+        },
+      });
+      expect(result.ok).toBeFalse();
+      if (!result.ok) expect([result.error.code, result.error.status]).toEqual(["CONFLICT", 409]);
+      const [draft] = await sql<{ conversation_id: string }[]>`SELECT conversation_id FROM mail.drafts WHERE id = ${source.id}::uuid`;
+      expect(draft?.conversation_id).toBe(source.conversationId!);
+    } finally {
+      await sql`DROP TRIGGER test_merge_deadlock ON mail.drafts`.simple();
+      await sql`DROP FUNCTION mail.test_merge_deadlock()`.simple();
+    }
+  });
   test("suggestions skip human/adopted drafts, and an untouched suggestion is the one draft", async () => {
     const human = await create();
     const skipped = unwrap(

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { processQuiesce } from "@k2b/cloud/services/runtime-quiesce";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import { buildMailIndexes, MAIL_CONCURRENT_INDEXES, migrate } from "./migrate";
 
@@ -98,6 +99,22 @@ suite("mail start next to concurrent index builds", () => {
       snapshot.release();
       other.release();
     }
+    expect(await valid("drafts_shared_derived_message_idx")).toBeTrue();
+  });
+
+  test("waits through maintenance stage Ruhe and builds once the Cloud resumes", async () => {
+    await sql`DROP INDEX mail.drafts_shared_derived_message_idx`.simple();
+    await processQuiesce.quiesce();
+    let building: Promise<void> | undefined;
+    try {
+      building = buildMailIndexes();
+      // Long enough for a build that ignored the quiet to have started.
+      await Bun.sleep(500);
+      expect(await valid("drafts_shared_derived_message_idx")).toBeFalse();
+    } finally {
+      await processQuiesce.resume();
+    }
+    await within(building, 20);
     expect(await valid("drafts_shared_derived_message_idx")).toBeTrue();
   });
 
