@@ -698,7 +698,8 @@ name wraps in a small table and ends with "…" in one with column widths.
   rounded corners), never both. When the head has no room, the ids give way
   first (always on the phone), then the name is cut with "…"; the head's
   actions keep their place. On the phone a name too long for one line takes
-  a second line before it is cut (the head grows from 57 to 73 px), and
+  a second line before it is cut (the head grows from 57 to 73 px, so a
+  rename from one line to two moves the content below by 16 px), and
   kinds without room beside it leave the head.
 
 ## Overlays: Dialog, Menu, Popover, Toast
