@@ -945,13 +945,15 @@
 .k2-ui .k2-cell-label {
   font: var(--k2-t-meta);
   line-height: 20px;
-  color: var(--k2-subtle);
+  color: var(--k2-n500);
   min-width: 0;
 }
+/* a key figure in the object's step, 18/600 in tabular numbers (taste parts 5, Kennzahlen-Streifen); its label and its
+   note stay 12, so the figure leads */
 .k2-ui .k2-cell-value {
   grid-column: 2 / -1;
-  font: var(--k2-t-body);
-  font-weight: 600;
+  font: var(--k2-t-lead);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

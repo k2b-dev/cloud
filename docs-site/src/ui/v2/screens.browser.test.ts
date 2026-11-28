@@ -80,9 +80,10 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x57"],
       tabs: ['[data-slot="head"] > .k2-tabs-nav', "0,57 390x44"],
       notice: [".k2-notice", "0,101 390x137"],
-      cells: [".k2-cells", "0,238 390x279"],
-      section: [".k2-sec", "0,517 390x246"],
-      todo: [".k2-sec .k2-row", "0,569 390x92"],
+      // the key figures in 18 (taste parts 5): each of the stacked cells 2 to 3 px higher
+      cells: [".k2-cells", "0,238 390x287"],
+      section: [".k2-sec", "0,525 390x246"],
+      todo: [".k2-sec .k2-row", "0,577 390x92"],
     },
   },
   // akte-einlieferungen.html
