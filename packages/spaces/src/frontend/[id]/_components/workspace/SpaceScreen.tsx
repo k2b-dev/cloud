@@ -130,6 +130,8 @@ export default function SpaceScreen(props: SpaceScreenProps) {
   const primaryLabel = view === "calendar" ? t.newEvent : t.newTask;
   /** The search of the head runs through the view below, which owns its address and its loading. */
   const [search, setSearch] = createSignal<(text: string) => void>();
+  /** The words in the search box: the address's at first, then what the person types, and history sets its entry's. */
+  const [searchText, setSearchText] = createSignal(route.filter.search);
   createEffect(() => {
     if (!state.canWrite) return;
     const commands = spaceCommandMessages.resolve([locale()]).t;
@@ -231,7 +233,13 @@ export default function SpaceScreen(props: SpaceScreenProps) {
     };
     window.addEventListener(SPACES_DETAIL_NAVIGATION_EVENT, onCommitted);
     onCleanup(() => window.removeEventListener(SPACES_DETAIL_NAVIGATION_EVENT, onCommitted));
-    onCleanup(listenPopState(({ url }) => follow(url.href)));
+    onCleanup(
+      listenPopState(({ url }) => {
+        follow(url.href);
+        // Back and forward show the words of their entry, also over words typed and not yet searched.
+        if (url.pathname === spaceHref) setSearchText(url.searchParams.get("q") ?? "");
+      }),
+    );
   });
   const viewHref = (id: View) => {
     const params = new URLSearchParams(committedQuery());
@@ -269,13 +277,15 @@ export default function SpaceScreen(props: SpaceScreenProps) {
                   icon="search"
                   label={t.searchItems}
                   placeholder={t.searchItems}
-                  value={route.filter.search}
+                  value={searchText()}
+                  onInput={setSearchText}
                   onKeyDown={(event) => {
                     if (event.isComposing) return;
                     const input = event.currentTarget as HTMLInputElement;
                     if (event.key === "Enter") search()?.(input.value.trim());
                     if (event.key === "Escape" && input.value) {
                       input.value = "";
+                      setSearchText("");
                       search()?.("");
                     }
                   }}
