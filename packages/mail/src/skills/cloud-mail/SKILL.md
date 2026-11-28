@@ -29,7 +29,7 @@ Mailbox-scoped tools take `mailbox` (its public ID); every resource and batch me
 
 - Choose a verified sender with `mail.mailbox.identity.list`. For ambiguous recipients, consider Contacts and its Skill rather than guessing an address.
 - For reply, Reply all or forward, read the exact source message; let Mail derive reply recipients and threading. Pass its returned conversation and message IDs and the chosen intent to `mail.draft.create`.
-- Each conversation has one reply draft across reply, reply-all and forward. Content-free creation returns it unchanged. With supplied content, an occupied box returns `DRAFT_REPLY_BOX_OCCUPIED` (409) with its draft ID and its current `revision`: preserve unsaved text and update explicitly at that revision, or switch its mode first as the error says. On `creationOutcome: suggestion_skipped`, stop the automatic suggestion.
+- Each conversation has one reply draft across reply, reply-all and forward. Content-free creation returns it unchanged. With supplied content, an occupied box returns `DRAFT_REPLY_BOX_OCCUPIED` (409) with its ID and `revision`: preserve unsaved text, follow its hint. On `creationOutcome: suggestion_skipped`, stop the automatic suggestion.
 - Use `mail.draft.intent` with the current revision to switch modes, preserving body, custom subject and manual Bcc. Inspect derived recipients and attachments before sending.
 - Retry mutations with their original idempotency key. Preserve unsaved text on conflicts; automatic cleanup requires `creationOutcome: created`.
 - For an existing draft prefer `mail.draft.patch`: omitted fields stay unchanged. A supplied recipient array replaces that array; read and preserve its existing members when adding one recipient.
