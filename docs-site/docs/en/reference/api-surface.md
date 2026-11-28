@@ -594,6 +594,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/ssr/code-live` | Supported, browser | `followCodeRuns`: follow payload-free Core run hints, with resync and disposal | [Code run updates](/en/docs/platform/code-page#follow-run-updates) |
 | `@k2b/cloud/ssr/code-page` | Supported, browser | `CodePage`: the shared Code page of a resource, rendered in an island; `CodeDatabaseStatus`: authorized database usage, deadline and export controls; `CodeDatabaseDelete`: confirmed unused-database removal | [Code page](/en/docs/platform/code-page) |
 | `@k2b/cloud/ssr/islands` | Supported, server-only | Shared SSR island helpers | [In-product help](/en/docs/platform/help) |
+| `@k2b/cloud/ssr/testing` | Supported, tests | `withCoreStylesheet(render)`: render a v2 public page as a current Core serves it, with `v2.css` linked; restores the previous state afterwards | [Frontend testing](/en/docs/frontend/testing#test-ssr-pages) |
 | `@k2b/cloud/ssr/WorkspaceNavigation.island` | Supported | SSR-first workspace links for the Cloud mobile menu | [Application shells](/en/docs/frontend/application-shells) |
 | `@k2b/cloud/ssr/layout-runtime` | Supported, browser | `layout.update()` and `layout.handleUp()` for islands that navigate in place | [Layout and navigation](/en/docs/frontend/layout-and-navigation) |
 | `@k2b/cloud/ssr/*` | Advanced | Named SSR modules; prefer the barrel | — |
