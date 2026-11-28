@@ -4621,8 +4621,11 @@
 /* StatusRow: one lead statement, key figures; filters on the right. The start takes the room up to the filters; in
    it the lead comes first and the figures take only what the lead leaves (#4149). A lead longer than that room is cut
    with "…", so it never runs under a control; the controls keep their words until the row is too narrow (#4166). */
+/* The lead is a statement in the row's words, 13/600: a count or a statement never shouts above the list it sums up
+   (taste rule 3: counters stay small; 18 belongs to the open object's name). */
 .k2-ui .k2-status-lead {
-  font: var(--k2-t-lead);
+  font: var(--k2-t-row);
+  font-weight: 600;
   white-space: nowrap;
 }
 .k2-ui .k2-bar[data-status-row] > .k2-bar-start {
@@ -6788,15 +6791,25 @@
   color: var(--k2-subtle);
   white-space: nowrap;
 }
-.k2-ui .k2-order .k2-btn {
+/* sort, group and "+ Filter" read as words with their symbol (taste parts 2, "Sortierung in Worten"): no frame, the
+   quiet grey of a control under the pointer; the words keep their 28 px target */
+.k2-ui :is(.k2-order, .k2-fbar-add) .k2-btn {
   height: var(--k2-h-control-small);
-  padding: 0 8px 0 10px;
-  gap: 4px;
+  padding: 0 8px;
+  gap: 5px;
+  border-color: transparent;
+  background: transparent;
   font: var(--k2-t-meta);
   font-weight: 500;
+  color: var(--k2-text-2);
 }
-.k2-ui .k2-order .k2-btn > .k2-icon {
+.k2-ui :is(.k2-order, .k2-fbar-add) .k2-btn:hover,
+.k2-ui :is(.k2-order, .k2-fbar-add) .k2-btn[aria-expanded="true"] {
+  background: var(--k2-n100);
+}
+.k2-ui :is(.k2-order, .k2-fbar-add) .k2-btn > .k2-icon {
   font-size: 14px;
+  color: var(--k2-n500);
 }
 /* A narrow status row (below 600 px): every control at its end that has a symbol keeps only the symbol, as the
    head's controls on the phone, sort and group included; the words stay its name. A menu keeps its chevron. A control
