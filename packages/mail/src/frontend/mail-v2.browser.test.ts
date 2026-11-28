@@ -97,6 +97,27 @@ describe("Mail on the v2 pilot", () => {
       }
     }, 60_000);
 
+  test("a message an organization's rule blocked says so and offers no attachment to open", async () => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01&quarantined=1`);
+    try {
+      const notice = page.locator('[data-k2-part="Notice"][data-tone="bad"]');
+      await notice.waitFor({ state: "visible" });
+      expect(await notice.textContent()).toContain("In Mail blockiert");
+      expect(await notice.textContent()).toContain("Links und Anhänge sind hier deaktiviert");
+      expect(await page.locator('a[href*="/attachments/"]').count()).toBe(0);
+      expect(await page.getByText("Angebot-4471.pdf").count()).toBe(0);
+    } finally {
+      await page.close();
+    }
+    // the same conversation without the rule keeps its attachments
+    const clear = await open(`${MAIL_V2_PATH}?conversation=Demo01`);
+    try {
+      expect(await clear.locator('a[href*="/attachments/"]').count()).toBeGreaterThan(0);
+    } finally {
+      await clear.close();
+    }
+  });
+
   test("a failed list says what failed in words; a search that is not valid offers to clear it", async () => {
     const failed = await open(`${MAIL_V2_PATH}?listError=load_failed`);
     try {

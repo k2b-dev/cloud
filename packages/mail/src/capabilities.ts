@@ -2148,7 +2148,8 @@ const queryDefinitions = {
         if (!attachmentId.ok) throw attachmentId.error;
         const parent = await resourceParents.attachment(attachmentId.data);
         if (!parent) throw err.notFound("Attachment");
-        const open = () => messages.openAttachment({ context: requestContext(context), ...parent, attachmentId: attachmentId.data });
+        const open = (assess = true) =>
+          messages.openAttachment({ context: requestContext(context), ...parent, attachmentId: attachmentId.data, assess });
         const opened = await open();
         if (!opened.ok) throw opened.error;
         if (opened.data.blobId !== source.blobId || opened.data.total !== stream.size) throw err.conflict("Attachment changed");
@@ -2159,9 +2160,9 @@ const queryDefinitions = {
             chunkCount: opened.data.chunkCount,
             start: 0,
             endExclusive: stream.size,
-            async assertCurrentAccess() {
+            async assertCurrentAccess(last) {
               context.signal.throwIfAborted();
-              const current = await open();
+              const current = await open(last);
               if (!current.ok) throw current.error;
               if (current.data.blobId !== source.blobId) throw err.conflict("Attachment changed");
             },

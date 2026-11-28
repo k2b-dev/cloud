@@ -17,7 +17,7 @@ const attachment: messages.AttachmentDownload = {
   filename: "private-original.png",
 };
 const pngPrefix = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-const request = (result: Result<messages.AttachmentDownload> = ok(attachment), access = async (_blobId: string) => {}) =>
+const request = (result: Result<messages.AttachmentDownload> = ok(attachment), access = async (_blobId: string, _last: boolean) => {}) =>
   new Hono<MailApiContext>().get("/", (c) => attachmentThumbnailResponse(c, result, access)).request("/");
 const source = () => {
   spyOn(messages, "readAttachmentPrefix").mockResolvedValue(pngPrefix);
@@ -59,7 +59,7 @@ describe("Mail image thumbnails", () => {
       ok: true,
       variants: [{ data, type: "image/png", width: 96, height: 48 }],
     });
-    const check = mock(async (_blobId: string) => {});
+    const check = mock(async (_blobId: string, _last: boolean) => {});
     const response = await request(ok(attachment), check);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("image/png");
@@ -73,7 +73,8 @@ describe("Mail image thumbnails", () => {
       { signal: expect.any(AbortSignal), timeoutMs: 15000 },
     );
     expect(stream.mock.calls[0]?.[0]).toMatchObject({ start: 0, endExclusive: 4096, assertCurrentAccess: expect.any(Function) });
-    expect(check).toHaveBeenCalledWith(attachment.blobId);
+    // the check after the image is prepared is the last one: it also asks the message's rule again
+    expect(check).toHaveBeenCalledWith(attachment.blobId, true);
   });
 
   test("worker errors, null variants and runtime failures produce bounded errors without source bytes", async () => {

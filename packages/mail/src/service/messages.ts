@@ -30,7 +30,7 @@ import { mailingListMetadata } from "./mailing-list-metadata";
 import { parseMessageProtocolFacts } from "./message-protocol";
 import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
 import { type MessageRemoteContent, resolveMessagesRemoteContent } from "./remote-content";
-import { assessMessages } from "./security";
+import { assessMessages, attachmentsBlocked, messageLinksDisabled } from "./security";
 import { cachedConversationViewCounts, cachedConversationViewCountsBy } from "./view-count-cache";
 import { type MailboxConversationCounts, queryConversationViewCounts } from "./view-count-query";
 
@@ -1346,6 +1346,11 @@ export const openAttachment = async (params: {
   mailboxId: string;
   messageId: string;
   attachmentId: string;
+  /**
+   * Whether to check the message's policy (default). A stream checks it when it opens and before its last chunk; its
+   * re-check of each chunk in between passes `false` and keeps only the access check.
+   */
+  assess?: boolean;
 }): Promise<Result<AttachmentDownload>> => {
   const access = await resolveMailExecution({
     mailboxId: params.mailboxId,
@@ -1385,6 +1390,13 @@ export const openAttachment = async (params: {
       AND ${messageVisibleTo(visibility, sql`mc.id`)}
   `;
   if (!attachment) return fail(err.notFound("Attachment"));
+  // A message whose links a policy turns off keeps its attachments closed as well, as remote content: the readers hide
+  // them, and the download, the thumbnail and the capability read refuse them here.
+  if (params.assess !== false) {
+    const blocked = await messageLinksDisabled(params.mailboxId, messageId);
+    if (!blocked.ok) return blocked;
+    if (blocked.data) return attachmentsBlocked();
+  }
   const total = Number(attachment.byte_length);
   if (
     !Number.isSafeInteger(total) ||
@@ -1414,7 +1426,8 @@ export const createAttachmentStream = (params: {
   chunkCount: number;
   start: number;
   endExclusive: number;
-  assertCurrentAccess?: () => Promise<void>;
+  /** Runs before each chunk; `last` is true before the final one. */
+  assertCurrentAccess?: (last: boolean) => Promise<void>;
 }): ReadableStream<Uint8Array> => {
   const firstPosition = Math.floor(params.start / params.chunkSize);
   const lastPosition = params.endExclusive > params.start ? Math.floor((params.endExclusive - 1) / params.chunkSize) : firstPosition - 1;
@@ -1429,7 +1442,7 @@ export const createAttachmentStream = (params: {
         controller.close();
         return;
       }
-      await params.assertCurrentAccess?.();
+      await params.assertCurrentAccess?.(nextPosition === lastPosition);
       if (buffered.length === 0) {
         const batchEnd = Math.min(lastPosition, nextPosition + 7);
         buffered = await sql<{ position: number; bytes: Uint8Array }[]>`

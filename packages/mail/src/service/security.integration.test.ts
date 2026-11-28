@@ -1,10 +1,16 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { Readable } from "node:stream";
 import { sql } from "@k2b/cloud";
 import { toPgTextArray } from "@k2b/cloud/services";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import type { MailRequestContext } from "./auth";
+import { __test as draftCopies } from "./drafts";
 import { createMailbox } from "./mailboxes";
+import { storeReadableBlob } from "./message-blobs";
+import { openMessageSource, previewMessageSource } from "./message-inspector";
+import { createAttachmentStream, openAttachment } from "./messages";
 import {
   assessMessage,
   createPolicy,
@@ -232,6 +238,121 @@ suite("Mail security operations", () => {
     expect(reopened.ok && reopened.data.resolutionNote).toBeNull();
     expect(reopened.ok && reopened.data.reportCount).toBe(1);
     expect(await countEvents()).toBe(before);
+  });
+
+  test("a message whose links a deny policy disables refuses its attachments; a clear message still opens them", async () => {
+    const mailbox = await createMailbox(adminContext, { name: `Mail security attachments ${suffix}` });
+    expect(mailbox.ok).toBeTrue();
+    if (!mailbox.ok) return;
+    mailboxIds.push(mailbox.data.id);
+    const blockedDomain = `blocked-attachment-${suffix}.example`;
+    const policy = await createPolicy({
+      context: adminContext,
+      input: { disposition: "deny", target: "sender_domain", value: blockedDomain, enabled: true },
+    });
+    expect(policy.ok).toBeTrue();
+    if (!policy.ok) return;
+    policyIds.push(policy.data.id);
+    const withAttachment = async (label: string, sender: string) => {
+      const bytes = Buffer.from(`${label} attachment`);
+      const blob = await storeReadableBlob(Readable.from([bytes]), bytes.length);
+      const [message] = await sql<{ id: string }[]>`
+        INSERT INTO mail.message_contents (short_id, mailbox_id, message_id, subject, normalized_subject, internal_date,
+          size_bytes, content_hash, hydration_status, source_blob_id)
+        VALUES (${newShortId()}, ${mailbox.data.id}::uuid, ${`<${label}-${suffix}@example.test>`}, ${label}, ${label},
+          now(), ${bytes.length}, ${blob.contentHash}, 'complete', ${blob.id}::uuid)
+        RETURNING id`;
+      if (!message) throw new Error("Failed to seed the attachment message");
+      await sql`INSERT INTO mail.message_addresses (message_id, role, position, display_name, email, normalized_email)
+        VALUES (${message.id}::uuid, 'from', 0, 'Sender', ${sender}, ${sender})`;
+      const [part] = await sql<{ id: string }[]>`INSERT INTO mail.message_parts
+        (message_id, part_path, content_type, disposition, filename, size_bytes, blob_id, hydration_status)
+        VALUES (${message.id}::uuid, '2', 'text/plain', 'attachment', 'offer.txt', ${bytes.length}, ${blob.id}::uuid, 'complete')
+        RETURNING id`;
+      if (!part) throw new Error("Failed to seed the attachment part");
+      const [attachment] = await sql<{ id: string }[]>`INSERT INTO mail.attachments
+        (short_id, message_id, part_id, filename, content_type, disposition, size_bytes, blob_id)
+        VALUES (${newShortId()}, ${message.id}::uuid, ${part.id}::uuid, 'offer.txt', 'text/plain', 'attachment', ${bytes.length}, ${blob.id}::uuid)
+        RETURNING id`;
+      if (!attachment) throw new Error("Failed to seed the attachment");
+      return { mailboxId: mailbox.data.id, messageId: message.id, attachmentId: attachment.id };
+    };
+    const blocked = await withAttachment("blocked", `sender@${blockedDomain}`);
+    const clear = await withAttachment("clear", `sender@clear-${suffix}.example`);
+    const closed = { ok: false, error: { code: "ATTACHMENTS_BLOCKED", status: 403 } };
+    expect(await openAttachment({ context: adminContext, ...blocked })).toMatchObject(closed);
+    expect(await openAttachment({ context: adminContext, ...clear })).toMatchObject({ ok: true, data: { filename: "offer.txt" } });
+    // a stream between its first and last chunk keeps only the access check
+    expect(await openAttachment({ context: adminContext, ...blocked, assess: false })).toMatchObject({ ok: true });
+    // the exact source carries the attachments: closed as well, for the preview and the download
+    const source = (message: typeof blocked) => ({ context: adminContext, mailboxId: message.mailboxId, messageId: message.messageId });
+    expect(await previewMessageSource(source(blocked))).toMatchObject(closed);
+    expect(await openMessageSource(source(blocked))).toMatchObject(closed);
+    expect(await previewMessageSource(source(clear))).toMatchObject({ ok: true });
+    expect(await openMessageSource(source(clear))).toMatchObject({ ok: true });
+    // a forward or "Use as new" copies no attachment of the closed message, and all of a clear one
+    expect(await draftCopies.prepareSourceAttachments(sql, blocked.messageId)).toEqual({ ok: true, data: [] });
+    expect(
+      await draftCopies.copyForwardAttachments({
+        db: sql,
+        draftId: crypto.randomUUID(),
+        sourceMessageId: blocked.messageId,
+        forwarded: true,
+      }),
+    ).toEqual({
+      ok: true,
+      data: 0,
+    });
+    expect(await draftCopies.prepareSourceAttachments(sql, clear.messageId)).toMatchObject({ ok: true, data: [{ filename: "offer.txt" }] });
+  });
+
+  test("a download of three chunks checks the rule when it opens and before its last chunk, not before each", async () => {
+    const mailbox = await createMailbox(adminContext, { name: `Mail security chunks ${suffix}` });
+    if (!mailbox.ok) throw new Error(mailbox.error.message);
+    mailboxIds.push(mailbox.data.id);
+    const bytes = Buffer.alloc(3 * 1024 * 1024 - 7, 7);
+    const blob = await storeReadableBlob(Readable.from([bytes]), bytes.length);
+    const [message] = await sql<{ id: string }[]>`
+      INSERT INTO mail.message_contents (short_id, mailbox_id, message_id, subject, normalized_subject, internal_date,
+        size_bytes, content_hash, hydration_status)
+      VALUES (${newShortId()}, ${mailbox.data.id}::uuid, ${`<chunks-${suffix}@example.test>`}, 'Chunks', 'chunks',
+        now(), ${bytes.length}, ${blob.contentHash}, 'complete')
+      RETURNING id`;
+    if (!message) throw new Error("Failed to seed the chunked message");
+    const [part] = await sql<{ id: string }[]>`INSERT INTO mail.message_parts
+      (message_id, part_path, content_type, disposition, filename, size_bytes, blob_id, hydration_status)
+      VALUES (${message.id}::uuid, '2', 'application/octet-stream', 'attachment', 'plan.bin', ${bytes.length}, ${blob.id}::uuid, 'complete')
+      RETURNING id`;
+    const [attachment] = await sql<{ id: string }[]>`INSERT INTO mail.attachments
+      (short_id, message_id, part_id, filename, content_type, disposition, size_bytes, blob_id)
+      VALUES (${newShortId()}, ${message.id}::uuid, ${part!.id}::uuid, 'plan.bin', 'application/octet-stream', 'attachment', ${bytes.length}, ${blob.id}::uuid)
+      RETURNING id`;
+    const params = { context: adminContext, mailboxId: mailbox.data.id, messageId: message.id, attachmentId: attachment!.id };
+    const meter = await meterSql();
+    try {
+      let received = 0;
+      // as the download route: open with the rule, then each chunk re-checks access and the last one the rule too
+      const statements = await meter.during(async () => {
+        const opened = await openAttachment(params);
+        if (!opened.ok) throw new Error(opened.error.message);
+        expect(opened.data.chunkCount).toBe(3);
+        const stream = createAttachmentStream({
+          ...opened.data,
+          start: 0,
+          endExclusive: opened.data.total,
+          assertCurrentAccess: async (last) => {
+            const current = await openAttachment({ ...params, assess: last });
+            if (!current.ok) throw new Error(current.error.message);
+          },
+        });
+        for await (const chunk of stream) received += chunk.byteLength;
+      });
+      expect(received).toBe(bytes.length);
+      const assessments = statements.filter((statement) => statement.includes("selected_headers")).length;
+      expect({ assessments, statements: statements.length }).toEqual({ assessments: 2, statements: 35 });
+    } finally {
+      await meter.close();
+    }
   });
 
   test("a spoofed From claiming a sender identity is still assessed and reportable", async () => {

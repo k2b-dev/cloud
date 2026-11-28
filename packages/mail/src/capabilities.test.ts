@@ -3843,7 +3843,7 @@ describe("mail capabilities", () => {
       (params) =>
         new ReadableStream({
           async start(controller) {
-            await params.assertCurrentAccess?.();
+            await params.assertCurrentAccess?.(true);
             controller.enqueue(new Uint8Array([1, 2, 3]));
             controller.close();
           },

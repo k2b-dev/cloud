@@ -9,6 +9,7 @@ import { getStoredBlob, readStoredBlobPrefix } from "./message-blobs";
 import { parseMessageProtocolFacts } from "./message-protocol";
 import type { AttachmentDownload } from "./messages";
 import { decodeRemoteMessageAddress } from "./remote-message-ref";
+import { attachmentsBlocked, messageLinksDisabled } from "./security";
 
 export const MESSAGE_HEADER_LIMIT_BYTES = 2 * 1024 * 1024;
 export const MESSAGE_HEADER_FIELD_LIMIT = 10_000;
@@ -418,6 +419,10 @@ export const previewMessageSource = async (params: {
   const loaded = await requireMessageRead(params.context, params.mailboxId, params.messageId);
   if (!loaded.ok) return loaded;
   if (!loaded.data.source_blob_id) return fail(err.notFound("Exact message source"));
+  // The exact source carries the attachments: a message whose links a policy turns off keeps it closed as well.
+  const blocked = await messageLinksDisabled(params.mailboxId, params.messageId);
+  if (!blocked.ok) return blocked;
+  if (blocked.data) return attachmentsBlocked();
 
   let prefix: Awaited<ReturnType<typeof readStoredBlobPrefix>>;
   try {
@@ -447,10 +452,18 @@ export const openMessageSource = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   messageId: string;
+  /** Whether to check the message's policy (default); a stream's re-check between its first and last chunk skips it. */
+  assess?: boolean;
 }): Promise<Result<MessageSourceDownload>> => {
   const loaded = await requireMessageRead(params.context, params.mailboxId, params.messageId);
   if (!loaded.ok) return loaded;
   if (!loaded.data.source_blob_id) return fail(err.notFound("Exact message source"));
+  // as the preview: the exact source of a message whose links a policy turns off stays closed
+  if (params.assess !== false) {
+    const blocked = await messageLinksDisabled(params.mailboxId, params.messageId);
+    if (!blocked.ok) return blocked;
+    if (blocked.data) return attachmentsBlocked();
+  }
   try {
     const blob = await getStoredBlob(loaded.data.source_blob_id);
     if (

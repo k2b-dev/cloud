@@ -861,7 +861,7 @@ const attachmentDownloadResponse = async (
   c: Context<MailApiContext>,
   result: Result<AttachmentDownload>,
   query: z.infer<typeof attachmentQuerySchema>,
-  assertCurrentAccess?: (blobId: string) => Promise<void>,
+  assertCurrentAccess?: (blobId: string, last: boolean) => Promise<void>,
 ) => {
   if (!result.ok) return respondPublic(c, result);
   const rangeHeader = c.req.header("range");
@@ -915,7 +915,7 @@ const attachmentDownloadResponse = async (
       chunkCount,
       start: selectedRange.start,
       endExclusive: selectedRange.endExclusive,
-      assertCurrentAccess: assertCurrentAccess ? () => assertCurrentAccess(blobId) : undefined,
+      assertCurrentAccess: assertCurrentAccess ? (last) => assertCurrentAccess(blobId, last) : undefined,
     }),
     { status: partial ? 206 : 200, headers },
   );
@@ -967,7 +967,7 @@ const releaseThumbnailSlot = () => {
 export const attachmentThumbnailResponse = async (
   c: Context<MailApiContext>,
   result: Result<AttachmentDownload>,
-  assertCurrentAccess: (blobId: string) => Promise<void>,
+  assertCurrentAccess: (blobId: string, last: boolean) => Promise<void>,
 ) => {
   if (!result.ok) return respondPublic(c, result);
   const attachment = result.data;
@@ -1005,9 +1005,9 @@ export const attachmentThumbnailResponse = async (
       ...attachment,
       start: 0,
       endExclusive: attachment.total,
-      assertCurrentAccess: async () => {
+      assertCurrentAccess: async (last) => {
         reading.throwIfAborted();
-        await assertCurrentAccess(attachment.blobId);
+        await assertCurrentAccess(attachment.blobId, last);
       },
     });
     const bytes = await untilAborted(readBoundedBody(source, attachment.total), reading);
@@ -1027,7 +1027,7 @@ export const attachmentThumbnailResponse = async (
     }
     const variant = prepared.variants[0];
     if (!variant) return respondPublic(c, fail(err.badInput("Attachment thumbnail exceeds the size limit")));
-    await assertCurrentAccess(attachment.blobId);
+    await assertCurrentAccess(attachment.blobId, true);
     return new Response(variant.data, {
       headers: { ...cacheHeaders, "Content-Type": variant.type, "Content-Disposition": "inline" },
     });
@@ -2809,8 +2809,8 @@ const mailOperationsApi = new Hono<MailApiContext>()
         c,
         await messageInspector.openMessageSource({ context: requestContext(c), ...params }),
         { ...query, inline: false },
-        async (expectedBlobId) => {
-          const current = await messageInspector.openMessageSource({ context: requestContext(c), ...params });
+        async (expectedBlobId, last) => {
+          const current = await messageInspector.openMessageSource({ context: requestContext(c), ...params, assess: last });
           if (!current.ok || current.data.blobId !== expectedBlobId) {
             throw Object.assign(new Error("Message source access was revoked during transfer"), { code: "ACCESS_REVOKED" });
           }
@@ -2836,8 +2836,8 @@ const mailOperationsApi = new Hono<MailApiContext>()
         c,
         await messages.openAttachment({ context, ...params }),
         await internalInput(c, c.req.valid("query")),
-        async (expectedBlobId) => {
-          const current = await messages.openAttachment({ context, ...params });
+        async (expectedBlobId, last) => {
+          const current = await messages.openAttachment({ context, ...params, assess: last });
           if (!current.ok || current.data.blobId !== expectedBlobId) {
             throw Object.assign(new Error("Attachment access was revoked during transfer"), { code: "ACCESS_REVOKED" });
           }
@@ -2872,8 +2872,8 @@ const mailOperationsApi = new Hono<MailApiContext>()
     async (c) => {
       const context = requestContext(c);
       const params = internalParams(c, c.req.valid("param"));
-      return attachmentThumbnailResponse(c, await messages.openAttachment({ context, ...params }), async (expectedBlobId) => {
-        const current = await messages.openAttachment({ context, ...params });
+      return attachmentThumbnailResponse(c, await messages.openAttachment({ context, ...params }), async (expectedBlobId, last) => {
+        const current = await messages.openAttachment({ context, ...params, assess: last });
         if (!current.ok || current.data.blobId !== expectedBlobId) throw new Error("Attachment access was revoked");
       });
     },

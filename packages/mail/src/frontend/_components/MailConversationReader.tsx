@@ -825,7 +825,8 @@ export default function MailConversationReader(props: {
   };
   const emlItem = (): DropdownAction[] => {
     const message = latestMessage();
-    return message?.sourceAvailable
+    // the exact source carries the attachments: closed for a message whose links a policy turns off
+    return message?.sourceAvailable && !message.security?.linksDisabled
       ? [
           {
             label: t().downloadEml,

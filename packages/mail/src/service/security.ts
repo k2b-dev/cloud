@@ -219,6 +219,25 @@ export const assessMessage = async (mailboxId: string, messageId: string): Promi
   return assessment ? ok(assessment) : fail(err.notFound("Mail message"));
 };
 
+/**
+ * The refusal for a message whose links a policy turns off: its attachments, their copies into a draft, their public
+ * links and its exact source stay closed. A stable code lets the CLI and capabilities explain it.
+ */
+export const attachmentsBlocked = () =>
+  fail({ code: "ATTACHMENTS_BLOCKED" as const, status: 403 as const, message: "Attachments are blocked for this message" });
+
+/** Whether a policy turns off the links, and with them the attachments and the exact source, of a stored message. */
+export const messageLinksDisabled = async (mailboxId: string, messageId: string): Promise<Result<boolean>> => {
+  const assessment = await assessMessage(mailboxId, messageId);
+  return assessment.ok ? ok(assessment.data.linksDisabled) : assessment;
+};
+
+/** The same, for a message known only by its ID (a draft's source): its mailbox comes from the message. */
+export const sourceMessageLinksDisabled = async (messageId: string): Promise<Result<boolean>> => {
+  const [message] = await sql<{ mailbox_id: string }[]>`SELECT mailbox_id FROM mail.message_contents WHERE id = ${messageId}::uuid`;
+  return message ? messageLinksDisabled(message.mailbox_id, messageId) : fail(err.notFound("Mail message"));
+};
+
 export const getMessageAssessment = async (params: {
   context: MailRequestContext;
   mailboxId: string;

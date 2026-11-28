@@ -88,6 +88,7 @@ export const localizeMailError = <T extends HumanFacingError>(
   locale?: string | null,
   { includeInputDetails = true }: { includeInputDetails?: boolean } = {},
 ): T => {
+  if (error.code === "ATTACHMENTS_BLOCKED") return { ...error, message: mailErrorMessages.resolve([locale ?? "en"]).t.attachmentsBlocked };
   if (error.code === "DRAFT_DOCUMENT_STREAM_FULL")
     return { ...error, message: mailErrorMessages.resolve([locale ?? "en"]).t.draftStorageFull };
   if (error.code === "SENDER_IDENTITY_UNVERIFIED")

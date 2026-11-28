@@ -9,6 +9,8 @@ export const mailErrorMessages = i18n.define({
       draftStorageFull:
         "Mail's draft storage is full. Keep your unsent text and try again later. If the problem continues, ask a mailbox administrator to check draft storage.",
       invalidCapabilityInput: "Check the details supplied for this mail action, then try again.",
+      attachmentsBlocked:
+        "A mailbox rule closes the attachments and the original of this message. A mailbox administrator can review the rule.",
     },
     de: {
       senderUnverified: ({ address }: { address: string | null }) =>
@@ -16,6 +18,8 @@ export const mailErrorMessages = i18n.define({
       draftStorageFull:
         "Der Entwurfsspeicher von Mail ist voll. Sichere deinen ungesendeten Text und versuche es später erneut. Bleibt das Problem bestehen, bitte die Postfach-Administration, den Entwurfsspeicher zu prüfen.",
       invalidCapabilityInput: "Prüfe die Angaben für diese Mail-Aktion und versuche es erneut.",
+      attachmentsBlocked:
+        "Eine Regel des Postfachs schließt die Anhänge und das Original dieser Nachricht. Die Postfach-Administration kann die Regel prüfen.",
     },
   },
 });

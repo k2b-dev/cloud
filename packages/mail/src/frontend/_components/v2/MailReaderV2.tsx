@@ -19,6 +19,7 @@ import { mailMessageMessages } from "../mail-message-messages";
 import { normalizeContentId, referencedContentIds, resolveMessageBodyFormat, resolveMessageColors } from "../mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "../mail-navigation";
 import { mailReaderMessages } from "../mail-reader-messages";
+import { mailSecurityFindingPresentation } from "../mail-security-finding";
 import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "../mail-sender-identity-status";
 import { createMailV2Reply, type MailV2Session } from "./MailReplyV2";
 import { mailV2MenuEntries } from "./mail-v2-menu";
@@ -67,6 +68,12 @@ function MessageV2(props: {
   const locale = useLocale();
   const t = createMemo(() => mailMessageMessages.resolve([locale()]).t);
   const outgoing = () => isOutgoingMessage(props.message, props.identities);
+  // A message the security check flags says so above its text; one whose links a policy disables shows no attachments.
+  const flagged = () => {
+    const security = props.message.security;
+    return security && security.risk !== "none" ? security : null;
+  };
+  const linksDisabled = () => props.message.security?.linksDisabled ?? false;
   const sender = () => props.message.from[0];
   const senderName = () => (outgoing() ? t().you : sender()?.name || sender()?.address || t().unknownSender);
   const route = () => {
@@ -180,6 +187,21 @@ function MessageV2(props: {
           </>
         }
       />
+      <Show when={flagged()}>
+        {(security) => (
+          <Notice
+            tone={security().risk === "danger" ? "bad" : "warn"}
+            icon={security().risk === "danger" ? "shield-x" : "shield-exclamation"}
+            title={security().verdict === "quarantined" ? t().blockedInReader : t().checkCarefully}
+            actions={[{ label: t().securityHelp, href: "/app/mail/help/mail-security" }]}
+          >
+            {[
+              ...security().findings.map((finding) => mailSecurityFindingPresentation(finding, t()).title),
+              ...(security().linksDisabled ? [t().linksDisabled] : []),
+            ].join(" · ")}
+          </Notice>
+        )}
+      </Show>
       <Show when={format()} fallback={<Text muted>{props.text.bodyLoading}</Text>}>
         {(bodyFormat) => (
           <Canvas label={props.text.messageText}>
@@ -195,7 +217,7 @@ function MessageV2(props: {
                 plainText={props.message.plainText}
                 attachments={props.message.attachments}
                 remoteContent={props.message.remoteContent}
-                linksDisabled={props.message.security?.linksDisabled ?? false}
+                linksDisabled={linksDisabled()}
                 frameStyle={MAIL_V2_FRAME_STYLE}
                 sharedFontsOrigin={cloudUrl ?? undefined}
                 onSelectionChange={() => undefined}
@@ -204,7 +226,7 @@ function MessageV2(props: {
           </Canvas>
         )}
       </Show>
-      <Show when={attachments().length > 0}>
+      <Show when={attachments().length > 0 && !linksDisabled()}>
         <Tiles
           label={props.text.attachments}
           items={attachments().map((attachment) => ({
