@@ -310,7 +310,8 @@ export function createMailboxController(props: MailboxControllerProps) {
   createEffect(() => {
     if (!data.viewCountsPending) return;
     countsRound();
-    const href = untrack(requestPath);
+    // the round belongs to this route: a navigation while the counts are pending starts a round for the new one
+    const href = requestPath();
     const request = new AbortController();
     onCleanup(() => request.abort());
     setCountsUnavailable(false);
@@ -339,12 +340,13 @@ export function createMailboxController(props: MailboxControllerProps) {
           if (response.status !== 200) continue;
           const counts = await response.json();
           if (request.signal.aborted || !("viewCounts" in counts)) continue;
+          if (untrack(requestPath) !== href) return;
           batch(() => {
             setData("viewCounts", counts.viewCounts);
-            // the groups of Assigned to me and the done footer read the same counts on the server
-            if (data.activeView === "mine" && !data.search.expression && data.listMode === "conversations" && !data.assignedGroups)
+            // the server answers the groups and the done footer only for a route that shows them, by the snapshot's rule
+            if (counts.assignedGroups && data.listMode === "conversations" && !data.assignedGroups)
               setData("assignedGroups", counts.assignedGroups);
-            if (data.hiddenDone && data.hiddenDone.count === null && !data.search.expression && !data.savedViewId)
+            if (counts.doneLeftOut !== null && data.hiddenDone?.count === null)
               setData("hiddenDone", { count: counts.doneLeftOut, more: false });
             setData("viewCountsPending", undefined);
           });

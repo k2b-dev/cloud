@@ -130,11 +130,17 @@ suite("Mail count cache", () => {
         await Bun.sleep(200);
       }
       expect(answer?.status).toBe(200);
-      expect(await answer!.json()).toMatchObject({
-        viewCounts: { needs_action: 0, done: 0 },
-        assignedGroups: { needsAction: 0, waiting: 0 },
+      // All mail shows the done footer but no groups: the route's own counts, by the snapshot's rule
+      expect(await answer!.json()).toEqual({
+        viewCounts: expect.objectContaining({ needs_action: 0, done: 0 }),
+        assignedGroups: null,
         doneLeftOut: 0,
       });
+      const mine = new URL(countsUrl);
+      mine.searchParams.set("href", `${href}?view=mine`);
+      const grouped = await fetch(mine, { headers: { ...headers, "x-forwarded-for": uniqueCallerAddress() } });
+      expect(grouped.status).toBe(200);
+      expect(await grouped.json()).toMatchObject({ assignedGroups: { needsAction: 0, waiting: 0 } });
     } finally {
       await server.stop(true);
       cold.mockRestore();

@@ -933,6 +933,20 @@ const loadEventsPage = async (
   });
 };
 
+/**
+ * Which counts of the cached snapshot a route shows: the groups of Assigned to me (its tab without a search, in the
+ * conversation list) and the done conversations a folder or All mail leaves out (no search or saved view, whose done
+ * count is a search of its own). The snapshot and the browser's later ask for pending counts follow the same rule.
+ */
+export const workspaceRouteCounts = (requestUrl: URL, search: Pick<ResolvedMailSearchRoute, "expression" | "error">) => {
+  const plainList =
+    !search.expression && !search.error && requestUrl.searchParams.get("scheduled") !== "1" && !isMailEventsRoute(requestUrl);
+  return {
+    groups: plainList && requestUrl.searchParams.get("view") === "mine",
+    doneLeftOut: plainList && !requestUrl.searchParams.get("savedView"),
+  };
+};
+
 const buildMailboxListView = async (
   params: MailboxListParams,
   folderResult: Awaited<ReturnType<typeof messages.listFolders>>,
@@ -1003,8 +1017,7 @@ const buildMailboxListView = async (
     eventsMode ? loadEventsPage(params.context, params.mailboxId, readMailEventsFilter(params.requestUrl)) : Promise.resolve(null),
   ]);
   // The same listing the service sorts by group: the Assigned to me tab without a search or another list mode.
-  const grouped =
-    activeView === "mine" && !searchExpression && !resolvedSearch.error && listMode === "conversations" && !scheduledMode && !eventsMode;
+  const grouped = workspaceRouteCounts(params.requestUrl, resolvedSearch).groups && listMode === "conversations";
   const countsBy = params.countsBy ?? Date.now() + FIRST_RENDER_COUNT_WAIT_MS;
   const [hiddenDone, assignedGroups] = await Promise.all([
     "openOnly" in list

@@ -229,9 +229,9 @@ const path = `/app/mail/${MAILBOX_ID}`;
 const settle = () => Bun.sleep(60);
 /** Waits until `condition` holds, at most `ms`: the counts' retry pauses are real time. */
 const until = async (condition: () => boolean, ms = 5_000) => {
-  const deadline = Date.now() + ms;
+  const deadline = performance.now() + ms;
   while (!condition()) {
-    if (Date.now() > deadline) throw new Error("Condition did not hold in time");
+    if (performance.now() > deadline) throw new Error("Condition did not hold in time");
     await Bun.sleep(25);
   }
 };
@@ -527,6 +527,49 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     expect(ring()?.getAttribute("role")).toBeNull();
     await settle();
     expect(ring()?.getAttribute("aria-label")).toContain("4");
+  });
+
+  test("a navigation while the counts are pending asks for the new route; the old route's late answer writes nothing", async () => {
+    const asked: string[] = [];
+    let answerA: () => void = () => {};
+    const heldA = new Promise<void>((resolve) => {
+      answerA = resolve;
+    });
+    const inner = globalThis.fetch;
+    // every snapshot of this test is cold: its counts pending, its done footer without a number
+    const cold = { viewCounts: zero, viewCountsPending: true as const, hiddenDone: { count: null, more: false } };
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+        if (url.pathname.endsWith("/workspace-counts")) {
+          const href = url.searchParams.get("href") ?? "";
+          asked.push(href);
+          // folder A's count answers late, after the reader went on to folder B
+          if (href.includes("folder=FolderA")) await heldA;
+          const done = href.includes("folder=FolderA") ? 4 : 6;
+          return Response.json({ viewCounts: { ...zero, needs_action: done }, assignedGroups: null, doneLeftOut: done });
+        }
+        const response = await inner(input, init);
+        if (!url.pathname.endsWith("/workspace-route") && !url.pathname.endsWith("/workspace-list")) return response;
+        return Response.json({ ...(await response.json()), ...cold });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const a = `${path}?folder=FolderA`;
+    const b = `${path}?folder=FolderB`;
+    mount(a, { ...snapshotFor(a), ...cold });
+    await settle();
+    expect(asked).toEqual([a]);
+    await pop(b);
+    await until(() => asked.length === 2);
+    expect(asked[1]).toBe(b);
+    // a folder shows no view tabs: the done footer names the folder's count
+    const doneFooter = () => dom.root.querySelector("[data-mail-hidden-done]")?.textContent ?? "";
+    await until(() => doneFooter().includes("6"));
+    answerA();
+    await settle();
+    expect(doneFooter()).toContain("6");
+    expect(doneFooter()).not.toContain("4");
   });
 
   test("leaving the mailbox stops the tries for its pending counts", async () => {

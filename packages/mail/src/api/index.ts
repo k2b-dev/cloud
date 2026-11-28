@@ -215,7 +215,13 @@ import type { AttachmentDownload } from "../service/messages";
 import { discoverMailConfigurations } from "../service/onboarding-discovery";
 import { loadReceivedPerDay } from "../service/received-per-day";
 import { CountRefreshBusy, FIRST_RENDER_COUNT_WAIT_MS } from "../service/view-count-cache";
-import { loadMailboxConversationDetail, loadMailboxListView, loadMailboxPageData, resolveWorkspaceRequest } from "../service/workspace";
+import {
+  loadMailboxConversationDetail,
+  loadMailboxListView,
+  loadMailboxPageData,
+  resolveWorkspaceRequest,
+  workspaceRouteCounts,
+} from "../service/workspace";
 import legacyLiveRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
 import automationExportRoutes from "./automation-export";
@@ -2028,6 +2034,8 @@ const mailOperationsApi = new Hono<MailApiContext>()
     });
     if (!counts.ok) return respondPublic(c, counts);
     if (!counts.data) return respond(c, ok({ pending: true as const }), 202);
+    // only the counts this route shows, by the same rule as its snapshot; the others are null
+    const shows = workspaceRouteCounts(request.requestUrl, request.search);
     const folderId = request.requestUrl.searchParams.get("folder");
     const mine = counts.data.views.mine;
     const waiting = Math.min(counts.data.mineWaiting, mine);
@@ -2035,8 +2043,8 @@ const mailOperationsApi = new Hono<MailApiContext>()
       c,
       ok({
         viewCounts: counts.data.views,
-        assignedGroups: { needsAction: mine - waiting, waiting },
-        doneLeftOut: folderId ? (counts.data.doneByFolder[folderId] ?? 0) : counts.data.views.done,
+        assignedGroups: shows.groups ? { needsAction: mine - waiting, waiting } : null,
+        doneLeftOut: shows.doneLeftOut ? (folderId ? (counts.data.doneByFolder[folderId] ?? 0) : counts.data.views.done) : null,
       }),
     );
   })
