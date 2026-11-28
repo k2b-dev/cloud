@@ -22,6 +22,7 @@ import { Lookup } from "./lookup";
 import { Icon } from "./marks";
 import { Menu, type MenuEntry, type MenuItem } from "./menu";
 import { Dialog } from "./overlays";
+import { useStatusToolbar } from "./status-toolbar";
 import { useToast } from "./toast";
 
 // ── Reading a state ────────────────────────────────────────────────────────────────────────────────────────────
@@ -298,6 +299,7 @@ export type FilterBarProps<F extends Fields, S extends string, G extends string>
  * tells the app, which loads the list on the server.
  */
 export const FilterBar = <F extends Fields, S extends string, G extends string>(props: FilterBarProps<F, S, G>) => {
+  useStatusToolbar();
   const t = useFilterMessages();
   const timeZone = () => props.timeZone ?? "UTC";
   const format = useFormats(timeZone);

@@ -99,14 +99,28 @@ test("an island of v2 alone (every export, and useLocale) bundles no v1 module",
 const lean = `import { Menu, Nav, Workspace } from ${v2Index};\nconsole.log(Menu, Nav, Workspace);\n`;
 // Measured 27.11.2026 (Bun 1.4.4, minified): 64 453 bytes of this package's own code, plus a tenth for growing. It holds
 // `Input` (5.5 KB) for the nav's search (#4443), which nearly every page loads anyway; a tree or a panel never.
-const leanBudget = Math.ceil(64_453 * 1.1);
+// The head block (look rule 30) is always on in every pane with a head and a toolbar, so its measured bytes count
+// exactly, without a reserve of their own: 294 in `Pane`/`Bar` and 11 in `status-toolbar` (#4537). The head search
+// adds nothing here: it comes with `HeadSearch` (see below).
+const leanBudget = Math.ceil(64_453 * 1.1) + 305; /* head block, measured 28.11.2026 on 1574c0a269 */
 
 test("an island with a Workspace, a Nav and a Menu loads no tree and no menu panel, and stays under its measure", async () => {
   const modules = await islandModules(lean);
   const total = Object.values(modules).reduce((sum, bytes) => sum + bytes, 0);
   console.info(`Workspace, Nav and Menu: ${total} bytes of packages/ui/src (budget ${leanBudget})`);
-  expect(Object.keys(modules).filter((module) => module === "v2/nav-tree.tsx" || module === "v2/menu-panel.tsx")).toEqual([]);
+  expect(Object.keys(modules).filter((module) => ["v2/nav-tree.tsx", "v2/menu-panel.tsx", "v2/head-search.tsx"].includes(module))).toEqual(
+    [],
+  );
   expect(total).toBeLessThanOrEqual(leanBudget);
+}, 60_000);
+
+// A head's search (`HeadSearch`: its symbol, its overlay, "/", its words and its held menu) comes with the part that
+// places it, as the tree and the panel do: an island whose head has no search loads none of it.
+test("HeadSearch brings the head search along", async () => {
+  const modules = await islandModules(
+    `import { HeadSearch, Menu, Nav, Workspace } from ${v2Index};\nconsole.log(HeadSearch, Menu, Nav, Workspace);\n`,
+  );
+  expect(modules["v2/head-search.tsx"]).toBeGreaterThan(0);
 }, 60_000);
 
 test("navTree and menuPanel bring the tree and the panel along", async () => {

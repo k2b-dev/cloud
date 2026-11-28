@@ -137,7 +137,8 @@ describe("the access dialog on v2", () => {
     const { context, tab, dialog } = await open(views[0]!);
     try {
       await dialog.getByRole("searchbox").fill("noah");
-      await row(dialog, "Noah Becker").getByRole("button", { name: "Add" }).click();
+      // each result's Add is named by its words and then the name (review of #4222), so ten results are told apart
+      await row(dialog, "Noah Becker").getByRole("button", { name: "Add: Noah Becker", exact: true }).click();
       await row(dialog, "Noah Becker").getByText("New").waitFor();
       await row(dialog, "Lea Schmitt").getByRole("button", { name: /View/ }).click();
       await tab.getByRole("menuitemradio", { name: /Edit/ }).click();

@@ -5,13 +5,15 @@ import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-range-bar.client";
+import type {} from "../../test/v2-range-bar-ranges.client";
 import { measureV2Layout } from "./testing";
 
 // RangeBar (test/v2-range-bar.client.tsx, a week of weather): each day from its low to its high on the week's one
 // scale. The range stands where the scale puts it, a single value still shows, a value past the scale stops at its
 // end and a range at the very end keeps its stub inside the track, the colours of its part run along it in the writing
 // direction and keep 3:1 on the surface in light and dark, and in forced colours the range stays visible. A data
-// colour on an icon arrives as its colour.
+// colour on an icon arrives as its colour. A week of opening hours (test/v2-range-bar-ranges.client.tsx) puts several
+// ranges in one row: each at its place on the one track, a closed day with an empty track, today's row still tinted.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
@@ -19,14 +21,22 @@ const testCss =
 
 let browser: Browser;
 let client: string;
+let hours: string;
 beforeAll(async () => {
-  [client, browser] = await Promise.all([bundleV2Entry("v2-range-bar.client.tsx", "dom"), launchBrowser()]);
+  [client, hours, browser] = await Promise.all([
+    bundleV2Entry("v2-range-bar.client.tsx", "dom"),
+    bundleV2Entry("v2-range-bar-ranges.client.tsx", "dom"),
+    launchBrowser(),
+  ]);
 }, launchHookMs);
 afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (options: { width: number; dark?: boolean; forced?: boolean }, run: (page: Page) => Promise<void>) => {
+const withPage = async (
+  options: { width: number; dark?: boolean; forced?: boolean; hours?: boolean },
+  run: (page: Page) => Promise<void>,
+) => {
   const page = await browser.newPage({ viewport: { width: options.width, height: 800 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
@@ -36,7 +46,7 @@ const withPage = async (options: { width: number; dark?: boolean; forced?: boole
     await page.setContent(
       `<!doctype html><html lang="de"${options.dark ? ' style="color-scheme: dark"' : ""}><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"${options.dark ? ' data-theme="dark"' : ""}><div id="root"></div></body></html>`,
     );
-    await page.addScriptTag({ content: client });
+    await page.addScriptTag({ content: options.hours ? hours : client });
     await page.waitForFunction(() => window.__k2Mounted === true);
     await settled(page);
     await run(page);
@@ -159,5 +169,88 @@ test("in forced colours the range draws in the text colour on an outlined track"
       expect(bar.color).not.toBe("rgba(0, 0, 0, 0)");
       expect(bar.outline).toBe("solid");
     }
+  });
+}, 30_000);
+
+/** Each day of the opening hours: its day and times as text, what the bar says, its row's state and tint, and every
+ * range on its track in px. */
+const readHours = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('[data-k2-part="RangeBar"]')].map((track) => {
+      const outer = track.getBoundingClientRect();
+      const row = track.closest("tr")!;
+      const cells = [...row.querySelectorAll("td")];
+      return {
+        day: cells[0]?.textContent,
+        times: cells.at(-1)?.textContent,
+        label: track.getAttribute("aria-label"),
+        hidden: track.getAttribute("aria-hidden"),
+        current: row.getAttribute("aria-current"),
+        tint: getComputedStyle(row.querySelector("td")!).backgroundColor,
+        track: outer.width,
+        ranges: [...track.querySelectorAll("i")].map((range) => {
+          const inner = range.getBoundingClientRect();
+          return {
+            start: inner.left - outer.left,
+            end: outer.right - inner.right,
+            height: inner.height,
+            label: range.getAttribute("aria-label"),
+          };
+        }),
+      };
+    }),
+  );
+
+for (const width of [1440, 390]) {
+  test(`several ranges in one row stand at their places on the one track at ${width} px, today's row keeps its tint`, async () => {
+    await withPage({ width, hours: true }, async (page) => {
+      const days = await readHours(page);
+      expect(days.map((day) => [day.day, day.times, day.ranges.length])).toEqual([
+        ["Mo.", "08:00–15:00", 1],
+        ["Di.", "08:00–12:00, 14:00–18:00", 2],
+        ["Mi.", "08:00–15:00", 1],
+        ["Do.", "11:30–14:00, 17:00–22:00", 2],
+        ["Fr.", "08:00–23:00", 1],
+        ["Sa.", "10:00–15:00", 1],
+        ["So.", "Geschlossen", 0],
+      ]);
+      // the times stand beside the bars as text: each bar is decoration and says nothing a second time
+      for (const day of days) expect([day.label, day.hidden]).toEqual([null, "true"]);
+      // 6…24: Tuesday's 8–12 and 14–18 lie 2/18 and 8/18 in from the start, 12/18 and 6/18 short of the end
+      const tuesday = days[1]!;
+      // (to the pixel: the browser rounds a percentage of the track to its own grid)
+      const at = (hours: number) => (hours / 18) * tuesday.track;
+      const places = [
+        [at(2), at(12)],
+        [at(8), at(6)],
+      ];
+      expect(tuesday.ranges.length).toBe(2);
+      tuesday.ranges.forEach((range, index) => {
+        expect(Math.abs(range.start - places[index]![0]!)).toBeLessThan(1);
+        expect(Math.abs(range.end - places[index]![1]!)).toBeLessThan(1);
+      });
+      // the break stays visible between the two bars, and the bars say nothing on their own
+      expect(tuesday.ranges[1]!.start - (tuesday.track - tuesday.ranges[0]!.end)).toBeGreaterThan(0);
+      for (const range of tuesday.ranges) {
+        expect(range.height).toBe(6);
+        expect(range.label).toBeNull();
+      }
+      // today is the table's open row and keeps its tint; the other rows have none
+      const today = days.find((day) => day.current === "true");
+      expect(today?.day).toBe("Sa.");
+      expect(today?.tint).not.toBe("rgba(0, 0, 0, 0)");
+      expect(days.filter((day) => day.current === null).every((day) => day.tint === "rgba(0, 0, 0, 0)")).toBe(true);
+      expect((await measureV2Layout(page)).problems).toEqual([]);
+    });
+  }, 30_000);
+}
+
+test("in the dark several ranges in one row keep their places, and today's row its tint", async () => {
+  await withPage({ width: 1440, hours: true, dark: true }, async (page) => {
+    const days = await readHours(page);
+    expect(days[3]!.ranges.length).toBe(2);
+    const today = days.find((day) => day.current === "true");
+    expect(today?.tint).not.toBe("rgba(0, 0, 0, 0)");
+    expect((await measureV2Layout(page)).problems).toEqual([]);
   });
 }, 30_000);

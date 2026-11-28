@@ -1,16 +1,14 @@
-import { mutation } from "@k2b/stdlib/solid";
-import { Avatar, announce, Button, IconButton, Placeholder, prompts, Select, SelectChip, Tooltip, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
-import { createStore, reconcile } from "solid-js/store";
+import { Avatar, Button, IconButton, Placeholder, prompts, Select, SelectChip, Tooltip, useLocale } from "@k2b/ui";
+import { For, Show } from "solid-js";
 import { CloudAvatar } from "../account/Avatar";
 import type { CloudResourceRef } from "../contracts/capabilities";
 import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind, ServiceAccountStatus } from "../contracts/shared";
 import { createGroupCoverage, type GroupCoverage, GroupCoveragePanel, GroupCoverageToggle } from "./GroupCoverage";
-import { isManagerEntry } from "./managers";
 import { accessMessages } from "./messages";
 import PrincipalAvatar from "./PrincipalAvatar";
 import PrincipalPicker, { principalKey } from "./PrincipalPicker";
-import { principalLabel } from "./principal-label";
+import { createPermissionEditorState } from "./permission-editor-state";
+import { type AllowedLevel, defaultLabels, type GrantableLevel, levelKey, type ResolvedLevel } from "./permission-levels";
 import { ServiceAccountLookup } from "./ServiceAccountLookup";
 import { serviceAccountKindDisplay } from "./service-account-kind";
 
@@ -18,18 +16,10 @@ import { serviceAccountKindDisplay } from "./service-account-kind";
 // Public API
 // ─────────────────────────────────────────────────────────────────────────
 
-/** The three grantable permission levels — `"none"` exists in the
- *  contract for resolution semantics but is never directly granted. */
-export type GrantableLevel = Exclude<PermissionLevel, "none">;
+export type { AllowedLevel, GrantableLevel, ResolvedLevel } from "./permission-levels";
+export { levelKey, resolveAllowedLevels } from "./permission-levels";
 
-/** Either a bare level (uses the default View / Edit / Manage label and
- *  icon) or an object with per-context overrides. A `scope` offers the level
- *  on a narrower part of the resource that the application defines, such as
- *  Mail's assigned conversations; it reaches the callbacks and matches the
- *  entry's `scope`. `description` explains an option in the level menu. */
-export type AllowedLevel = GrantableLevel | { level: GrantableLevel; scope?: string; label?: string; icon?: string; description?: string };
-
-type PermissionEditorProps = {
+export type PermissionEditorProps = {
   /** The resource being shared; targeted Kennung lookup is built in and always checked by Core. */
   target?: CloudResourceRef;
   /** Expanded form: choose a principal and level before adding; show durable inline feedback. */
@@ -116,51 +106,6 @@ type PermissionEditorProps = {
 // Defaults & helpers
 // ─────────────────────────────────────────────────────────────────────────
 
-const defaultLabels = (t: ReturnType<typeof accessMessages.resolve>["t"]): Record<PermissionLevel, { label: string; icon: string }> => ({
-  read: { label: t.view, icon: "ti-eye" },
-  write: { label: t.edit, icon: "ti-pencil" },
-  admin: { label: t.manage, icon: "ti-shield" },
-  // Defensive — never granted by this editor, but renders correctly if
-  // a legacy entry has permission === "none".
-  none: { label: t.noAccess, icon: "ti-ban" },
-});
-
-export type ResolvedLevel = {
-  level: GrantableLevel;
-  scope: string | undefined;
-  /** Unique per option: the level, prefixed by its scope. */
-  key: string;
-  label: string;
-  icon: string;
-  description: string | undefined;
-};
-
-export const levelKey = (level: PermissionLevel, scope: string | undefined): string => (scope ? `${scope}:${level}` : level);
-
-/** Resolve the AllowedLevel union into a flat shape the renderer can
- *  loop over. Falls back to the default View / Edit / Manage list when
- *  no override is given. */
-export const resolveAllowedLevels = (
-  allowed: AllowedLevel[] | undefined,
-  t: ReturnType<typeof accessMessages.resolve>["t"],
-): ResolvedLevel[] => {
-  const defaults = defaultLabels(t);
-  const list = allowed && allowed.length > 0 ? allowed : (["read", "write", "admin"] as GrantableLevel[]);
-  return list.map((entry) => {
-    const level = typeof entry === "string" ? entry : entry.level;
-    const override = typeof entry === "string" ? null : entry;
-    const def = defaults[level];
-    return {
-      level,
-      scope: override?.scope,
-      key: levelKey(level, override?.scope),
-      label: override?.label ?? def.label,
-      icon: override?.icon ?? def.icon,
-      description: override?.description,
-    };
-  });
-};
-
 /** Resolve a stored entry's permission to a renderable {label,icon},
  *  preferring the caller's allowedLevels override and falling back to
  *  the platform defaults. Tolerates "none" / unknown legacy values. */
@@ -197,203 +142,52 @@ const getPrincipalIcon = (entry: AccessEntry, t: ReturnType<typeof accessMessage
 
 export default function PermissionEditor(props: PermissionEditorProps) {
   const locale = useLocale();
-  const t = () => accessMessages.resolve([locale()]).t;
-  // A store keeps each row's identity across level changes, so an expanded member list stays open. It holds
-  // copies: store writes go into the objects themselves, and the caller's entries are not the editor's to change.
-  const initialEntries = props.initialEntries;
-  let appliedCallerEntries = new Map(initialEntries.map((entry) => [entry.id, JSON.stringify(entry)]));
-  const [entries, setEntries] = createStore<AccessEntry[]>(initialEntries.map((entry) => ({ ...entry })));
-  type Draft = {
-    principal: Principal;
-    display: { displayName: string; avatarHash?: string | null; serviceAccountKind?: ServiceAccountKind };
-  };
-  const [draft, setDraft] = createSignal<Draft>();
-  const [draftLevel, setDraftLevel] = createSignal("read");
-  const [feedback, setFeedback] = createStore<Record<string, { message: string; retry?: () => void } | undefined>>({});
-  const failure = (id: string, error: unknown, retry: () => void) => {
-    const message = error instanceof Error ? error.message : String(error);
-    if (props.expanded) setFeedback(id, { message, retry });
-    else prompts.error(message);
-  };
-  const saved = (id: string) => {
-    if (props.expanded) setFeedback(id, { message: t().saved });
-  };
-  const [pending, setPending] = createSignal<string | null>(null);
-  const grantPending = () => pending() !== null;
-  let disposed = false;
-  onCleanup(() => {
-    disposed = true;
-  });
-  const canEdit = () => props.canEdit !== false;
-  const allowPublic = () => props.allowPublic === true;
-  const allowAuthenticated = () => props.allowAuthenticated !== false;
-  const allowed = (principal: Principal, kind?: ServiceAccountKind) => {
-    const levels = resolveAllowedLevels(
-      typeof props.allowedLevels === "function" ? props.allowedLevels(principal) : props.allowedLevels,
-      t(),
-    );
-    const accountKind = kind ?? entries.find((entry) => principalKey(entry.principal) === principalKey(principal))?.serviceAccountKind;
-    return accountKind === "code" ? levels.filter((option) => option.level !== "admin") : levels;
-  };
-  const labelOf = (entry: AccessEntry) =>
-    entry.principal.type === "authenticated" && props.signedIn ? props.signedIn.label : principalLabel(entry, locale());
-
-  // Defensive dev-warning: an empty allowedLevels array makes the editor
-  // unable to grant anything.
-  if (Array.isArray(props.allowedLevels) && props.allowedLevels.length === 0) {
-    if (typeof console !== "undefined") {
-      console.warn(
-        "[PermissionEditor] `allowedLevels=[]` — the editor cannot grant any permission. Pass at least one level or omit the prop for the default View / Edit / Manage set.",
-      );
-    }
-  }
-
-  const grant = async (
-    principal: Principal,
-    display: { displayName: string; avatarHash?: string | null; serviceAccountKind?: ServiceAccountKind },
-    choice?: ResolvedLevel,
-  ) => {
-    if (!canStart()) return;
-    const key = principalKey(principal);
-    if (entries.some((entry) => principalKey(entry.principal) === key)) {
-      // A retry or selection for a principal already in the list has nothing left to add.
-      setFeedback("add", undefined);
-      if (draft() && principalKey(draft()!.principal) === key) {
-        setDraft(undefined);
-        if (props.expanded) focusPrincipalPicker();
-      }
-      return;
-    }
-    const first = choice ?? allowed(principal, display.serviceAccountKind)[0];
-    if (display.serviceAccountKind === "code" && first?.level === "admin") return;
-    if (!first) return;
-    const id = `pending:${key}`;
-    let granted = false;
-    setPending(id);
-    setFeedback("add", undefined);
-    setEntries(entries.length, {
-      id,
-      principal,
-      permission: first.level,
-      scope: first.scope,
-      createdAt: new Date().toISOString(),
-      ...display,
-    });
-    try {
-      const entry = await props.grantAccess(principal, first.level, display, first.scope);
-      if (disposed) return;
-      const index = entries.findIndex((entry) => entry.id === id);
-      const saved = {
-        ...entry,
-        displayName: entry.displayName ?? display.displayName,
-        avatarHash: entry.avatarHash !== undefined ? entry.avatarHash : display.avatarHash,
-        serviceAccountKind: entry.serviceAccountKind ?? display.serviceAccountKind,
-      };
-      if (index !== -1) setEntries(index, reconcile(saved));
-      announce(t().accessGranted({ name: labelOf(saved) }));
-      setDraft(undefined);
-      granted = true;
-      if (props.expanded) setFeedback(saved.id, { message: t().saved });
-    } catch (err) {
-      if (!disposed) setEntries((current) => current.filter((entry) => entry.id !== id));
-      // Prompts are global, so a grant that fails after its dialog closed still says so.
-      if (!(typeof err === "object" && err !== null && "name" in err && err.name === "AbortError")) {
-        failure("add", err, () => void grant(principal, display, first));
-      }
-    } finally {
-      if (!disposed) setPending(null);
-      if (props.expanded && granted) focusPrincipalPicker();
-    }
-  };
-
-  type LevelChange = { accessId: string; permission: GrantableLevel; scope: string | undefined };
-  // The row whose change is saving: it shows the chosen level with a spinner, the other rows wait.
-  const [updating, setUpdating] = createSignal<LevelChange | null>(null);
-  const [revoking, setRevoking] = createSignal<string | null>(null);
-  const updatingRow = (accessId: string) => {
-    const change = updating();
-    return change?.accessId === accessId ? change : undefined;
-  };
-  const updateMut = mutation.create<LevelChange | null, LevelChange>({
-    mutation: async (data) => {
-      const entry = entries.find((entry) => entry.id === data.accessId);
-      if (!entry || disposed || !canEdit()) return null;
-      if (props.beforeChange && !(await props.beforeChange(entry, data.permission))) return null;
-      if (disposed || !canEdit()) return null;
-      setUpdating(data);
-      setFeedback(data.accessId, undefined);
-      await props.updateAccess(data.accessId, data.permission, data.scope);
-      return data;
-    },
-    onSuccess: (result) => {
-      if (result) {
-        setEntries((entry) => entry.id === result.accessId, { permission: result.permission, scope: result.scope });
-        saved(result.accessId);
-      }
-    },
-    onError: (err) => {
-      const change = updating();
-      if (change) failure(change.accessId, err, () => startUpdate(change));
-      else prompts.error(err.message);
-    },
-    onFinally: () => {
-      if (!disposed) setUpdating(null);
-    },
-  });
-
-  const revokeMut = mutation.create<string | null, AccessEntry>({
-    mutation: async (entry) => {
-      if (disposed || !canEdit()) return null;
-      const displayName = labelOf(entry);
-      const confirmed = props.beforeChange
-        ? await props.beforeChange(entry, null)
-        : await prompts.confirm(t().removeAccessConfirm({ name: displayName }), {
-            title: t().removeAccess,
-            variant: "danger",
-          });
-      if (!confirmed || disposed || !canEdit()) return null;
-      setRevoking(entry.id);
-      setFeedback(entry.id, undefined);
-      await props.revokeAccess(entry.id);
-      return entry.id;
-    },
-    onSuccess: (accessId) => {
-      if (!accessId) return;
-      const index = entries.findIndex((entry) => entry.id === accessId);
-      setEntries((current) => current.filter((entry) => entry.id !== accessId));
-      focusAfterRemoval(index);
-    },
-    onError: (err) => {
-      const entry = entries.find((entry) => entry.id === revoking());
-      if (entry) failure(entry.id, err, () => startRevoke(entry));
-      else prompts.error(err.message);
-    },
-    onFinally: () => {
-      if (!disposed) setRevoking(null);
-    },
-  });
-  // Confirmation holds the operation lock, but its opener must stay focusable until the dialog returns focus.
-  const saving = () => grantPending() || updating() !== null || revoking() !== null;
-  const busy = () => saving() || updateMut.loading() || revokeMut.loading();
-  const canStart = () => !disposed && canEdit() && !busy();
-  const startUpdate = (change: LevelChange): void => {
-    if (canStart()) void updateMut.mutate(change);
-  };
-  const startRevoke = (entry: AccessEntry): void => {
-    if (canStart()) void revokeMut.mutate(entry);
-  };
   let editorRoot: HTMLDivElement | undefined;
   let principalPickerHost: HTMLDivElement | undefined;
+  const state = createPermissionEditorState(props, locale, {
+    confirm: (question) => prompts.confirm(question.body, { title: question.title, variant: "danger" }),
+    error: (message) => prompts.error(message),
+    focusAdd: () => focusPrincipalPicker(),
+    focusAfterRemoval: (index) => focusAfterRemoval(index),
+  });
+  const {
+    t,
+    entries,
+    draft,
+    setDraft,
+    draftLevel,
+    setDraftLevel,
+    feedback,
+    pending,
+    grantPending,
+    canEdit,
+    allowPublic,
+    allowAuthenticated,
+    allowed,
+    labelOf,
+    grant,
+    updating,
+    revoking,
+    updatingRow,
+    saving,
+    busy,
+    canStart,
+    startUpdate,
+    startRevoke,
+    shareEntries,
+    lastManagerId,
+  } = state;
+  const disposed = () => state.disposed();
   const searchEmpty = () => <p class="font-medium text-primary">{t().searchNobody}</p>;
   const focusPrincipalPicker = () => {
     queueMicrotask(() => {
-      if (!disposed && canEdit() && !busy()) principalPickerHost?.querySelector<HTMLInputElement>('input[role="combobox"]')?.focus();
+      if (!disposed() && canEdit() && !busy()) principalPickerHost?.querySelector<HTMLInputElement>('input[role="combobox"]')?.focus();
     });
   };
   // A removed row takes its focused button along; continue at the neighbouring row, else the principal search.
   const focusAfterRemoval = (index: number) => {
     queueMicrotask(() => {
-      if (disposed || busy()) return;
+      if (disposed() || busy()) return;
       const active = document.activeElement;
       if (active && active !== document.body && active.isConnected) return;
       const removes = Array.from(editorRoot?.querySelectorAll<HTMLButtonElement>("button[data-access-remove]") ?? []);
@@ -401,47 +195,6 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       (next ?? editorRoot?.querySelector<HTMLInputElement>('input[role="combobox"]:enabled'))?.focus();
     });
   };
-  createEffect(() => {
-    const next = props.initialEntries;
-    const nextCallerEntries = new Map(next.map((entry) => [entry.id, JSON.stringify(entry)]));
-    // Mutation loading clears before onSuccess; wait for its local writes and onFinally too.
-    if (busy() || updating() !== null || revoking() !== null) return;
-    if (
-      nextCallerEntries.size === appliedCallerEntries.size &&
-      next.every((entry) => nextCallerEntries.get(entry.id) === appliedCallerEntries.get(entry.id))
-    )
-      return;
-    // Rows the caller changed since its last list win; unchanged rows keep the editor's confirmed result.
-    const localEntries = new Map(entries.map((entry) => [entry.id, entry]));
-    const merged: AccessEntry[] = [];
-    for (const entry of next) {
-      const row = nextCallerEntries.get(entry.id) !== appliedCallerEntries.get(entry.id) ? entry : localEntries.get(entry.id);
-      if (row) merged.push({ ...row });
-    }
-    for (const entry of entries) {
-      if (!nextCallerEntries.has(entry.id) && !appliedCallerEntries.has(entry.id)) merged.push({ ...entry });
-    }
-    setEntries(reconcile(merged, { key: "id" }));
-    appliedCallerEntries = nextCallerEntries;
-  });
-  // Editing returns once the caller has the canonical list again, even an unchanged one: earlier failures and their
-  // retries no longer apply. Rows, confirmations and an unrelated selection stay.
-  createEffect(
-    on(canEdit, (editable, wasEditable) => {
-      if (!editable || wasEditable !== false) return;
-      for (const [id, state] of Object.entries(feedback)) if (state?.retry) setFeedback(id, undefined);
-      const selection = draft();
-      if (selection && entries.some((entry) => principalKey(entry.principal) === principalKey(selection.principal))) setDraft(undefined);
-    }),
-  );
-  const shareEntries = () => entries;
-  // The service refuses to remove the last manager; the row says so up front.
-  const lastManagerId = createMemo(() => {
-    // A grant on part of the resource never manages it.
-    const granted = shareEntries().filter((entry) => entry.id !== pending());
-    const managers = (props.effectiveEntries?.(granted) ?? granted).filter((entry) => !entry.scope && isManagerEntry(entry));
-    return managers.length === 1 ? managers[0]!.id : null;
-  });
 
   return (
     <div

@@ -677,6 +677,8 @@ export const Row = (props: RowProps) => {
       data-end-hover={props.endOnHover ? "" : undefined}
       data-time={time() !== undefined ? "" : undefined}
       data-action={props.action ? "" : undefined}
+      // a deed or an end beside the time: on one line both stand at the end, the time first
+      data-end={end() !== undefined || props.action ? "" : undefined}
     >
       {/* What opens the row lies over all of it and is named by the title; it holds no part of the row, so a link in
           the title stays a link of its own (no link inside a link). */}

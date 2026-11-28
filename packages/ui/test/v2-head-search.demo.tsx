@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { isServer } from "solid-js/web";
-import { Bar, Button, Input, Pane, Text, Workspace } from "../src/v2";
+import { Bar, Button, HeadSearch, Pane, Text, Workspace } from "../src/v2";
 
 // The head search of a list that the server filters, as the group list of Accounts has it: without JavaScript Enter
 // loads the list's page with `q` and the rest of the address (the filter `level=error`); where JavaScript runs, the
@@ -23,9 +23,7 @@ export function Demo() {
           start={<Text type="body">Gruppen</Text>}
           end={
             <>
-              <Input
-                type="search"
-                icon="search"
+              <HeadSearch
                 name="q"
                 label="Gruppen durchsuchen"
                 placeholder="Gruppen durchsuchen"

@@ -468,7 +468,7 @@ lines instead of cutting a thing. In a table cell its `Text` gives way to
 the marks beside it (a symbol, an `Avatar`, a `Chip` keep their size): the
 name wraps in a small table and ends with "…" in one with column widths.
 
-### Icon, Avatar, Chip, Progress, Ticks, Heat
+### Icon, Avatar, Chip, Progress, Ticks, RangeBar, Heat
 
 - `Icon`: `name`, `label` (without one it is decoration), `tone`.
 - `Avatar`: a `Person`; the place sets the size. With `image` the picture
@@ -518,6 +518,11 @@ name wraps in a small table and ends with "…" in one with column widths.
   keeps the strip at its start). Ok is soft, a failure red and taller, a
   slot without data a low stub; 140 × 20 px in a table cell. The one column
   of a list that shows its data over time; never decoration.
+- `RangeBar`: `from` and `to`, or `ranges` (several on one track, such as
+  opening hours with a break; `[]` for a closed day), on the `domain` the
+  rows of a list share; `stops` (colours by meaning along the scale),
+  `label` (every range in words: "Di.: 08:00 bis 12:00 und 14:00 bis
+  18:00") or `decorative` when the values stand beside it as text.
 - `Heat`: `days` (`{ date, count }` per day, at most the 53 weeks shown, from
   one bounded aggregate), `today` (a date key from the server: the last day,
   marked), `label` ("Mails pro Tag"), `unit` (a count in the app's words),
