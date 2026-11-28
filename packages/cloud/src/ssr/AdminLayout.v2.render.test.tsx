@@ -77,7 +77,7 @@ const server = new Hono<Env>()
     c.set("adminCodeApprovals", 2);
     await next();
   })
-  .get("/admin/rail", ...page([]))
+  .get("/admin/announcements", ...page([]))
   .get(
     "/admin/storage",
     ...page([
@@ -99,15 +99,15 @@ const entries = (nav: string) =>
 
 describe("an admin page on v2", () => {
   test("the server's page holds the admin bar as a v2 Nav with the open page current, inside the v2 scope", async () => {
-    const html = await request("/admin/rail");
+    const html = await request("/admin/announcements");
     expect(html).toMatch(/<main class="[^"]*\bk2-ui\b/);
     expect(html).not.toContain("admin-sidebar");
     const nav = navOf(html);
     expect(nav).toContain('aria-label="Administration"');
     for (const label of ["Einrichten", "Betrieb", "Einstellungen je App"]) expect(nav).toContain(label);
     const items = entries(nav);
-    expect(items.map((item) => item.name)).toEqual(expect.arrayContaining(["Übersicht", "Speicher", "App-Leiste", "Code", "Beispiel"]));
-    expect(items.filter((item) => item.current).map((item) => item.name)).toEqual(["App-Leiste"]);
+    expect(items.map((item) => item.name)).toEqual(expect.arrayContaining(["Übersicht", "Speicher", "Ankündigungen", "Code", "Beispiel"]));
+    expect(items.filter((item) => item.current).map((item) => item.name)).toEqual(["Ankündigungen"]);
     // the waiting Code approvals stay a count on the entry
     expect(nav).toMatch(/Code<\/span><span class="k2-ni-count">2<\/span>/);
   });
@@ -125,7 +125,7 @@ describe("an admin page on v2", () => {
   });
 
   test("the phone menu comes with the first render and lists the same admin bar", async () => {
-    const html = await request("/admin/rail");
+    const html = await request("/admin/announcements");
     expect(/<div class="layout-shell-content[^"]*"[^>]*>/.exec(html)?.[0]).toContain("data-workspace-navigation");
     const snapshot = /<script type="application\/json" data-cloud-workspace-navigation[^>]*>([^<]*)<\/script>/.exec(html)?.[1];
     const menu = JSON.parse(snapshot ?? "null") as {
@@ -133,7 +133,7 @@ describe("an admin page on v2", () => {
       items: { label: string; children?: { label: string; active?: boolean }[] }[];
     };
     expect(menu.label).toBe("Administration");
-    const operations = menu.items.find((item) => item.label === "Betrieb");
-    expect(operations?.children?.find((child) => child.label === "App-Leiste")?.active).toBe(true);
+    const setup = menu.items.find((item) => item.label === "Einrichten");
+    expect(setup?.children?.find((child) => child.label === "Ankündigungen")?.active).toBe(true);
   });
 });

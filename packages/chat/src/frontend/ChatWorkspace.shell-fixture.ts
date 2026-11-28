@@ -33,7 +33,7 @@ const person = {
 } satisfies User;
 
 /** Real SSR Cloud Layout around the existing Chat REST/live fixture; no copied shell markup or CSS. */
-export const chatShellPage = async (snapshot: (request: Request) => ChatWorkspaceProps) => {
+export const chatShellPage = async (snapshot: (request: Request) => ChatWorkspaceProps, options: { ui?: "v2" } = {}) => {
   const root = mkdtempSync(resolve(tmpdir(), "chat-shell-browser-"));
   registerSsrTestPlugin({ dev: true, rootDir: root });
 
@@ -41,7 +41,8 @@ export const chatShellPage = async (snapshot: (request: Request) => ChatWorkspac
   const settings = await import("@k2b/cloud/server/middleware/settings");
   const help = await import("@k2b/cloud/ssr/help");
   const { Layout } = await import("@k2b/cloud/ssr");
-  const { default: ChatWorkspace } = await import("./ChatWorkspace.island");
+  const { default: ChatWorkspace } =
+    options.ui === "v2" ? await import("./ChatWorkspaceV2.island") : await import("./ChatWorkspace.island");
   const spies = [
     stubRailSnapshot(),
     spyOn(settings, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
@@ -92,6 +93,7 @@ export const chatShellPage = async (snapshot: (request: Request) => ChatWorkspac
           createComponent(Layout, {
             c,
             fullPage: true,
+            ui: options.ui,
             title: [
               { title: "Start", href: "/" },
               props.chatId ? { title: "Chat", href: "/app/chat" } : { title: "Chat" },
@@ -122,7 +124,10 @@ export const chatShellPage = async (snapshot: (request: Request) => ChatWorkspac
         .text();
       return new Response(
         html
-          .replace("</head>", '<link rel="stylesheet" href="/fonts.css"><link rel="stylesheet" href="/styles.css"></head>')
+          .replace(
+            "</head>",
+            `<link rel="stylesheet" href="/fonts.css"><link rel="stylesheet" href="/styles.css">${options.ui === "v2" ? '<link rel="stylesheet" href="/v2.css">' : ""}</head>`,
+          )
           .replace("</body>", '<script type="module" src="/harness.js"></script></body>'),
         { headers: { "Content-Type": "text/html" } },
       );

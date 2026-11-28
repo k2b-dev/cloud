@@ -283,6 +283,9 @@
   --k2-ws-drawer: initial;
   --k2-drawer-w: initial;
   --k2-p: initial;
+  --k2-range-start: initial;
+  --k2-range-end: initial;
+  --k2-range-fill: initial;
   --k2-v: initial;
   --k2-avs-w: initial;
   --k2-heat-at: initial;
@@ -359,6 +362,10 @@
 }
 .k2-ui .k2-icon[data-tone="subtle"] {
   color: var(--k2-subtle);
+}
+/* a data colour by meaning takes the place of the tone; it comes in as --k2-c, checked to be a colour */
+.k2-ui .k2-icon[data-color] {
+  color: var(--k2-c);
 }
 .k2-ui .k2-text[data-tone="ok"] {
   color: var(--k2-ok);
@@ -2907,6 +2914,42 @@
   background: var(--k2-ok);
 }
 
+/* A range on a shared scale: a quiet track the width of its place, the range on it from its start to its end, in the
+   writing direction (the scale's start at the line's start). The bar is at least 4 px, so a range of one value still
+   shows, and a range at the scale's very end keeps those 4 px inside the track. */
+.k2-ui .k2-range {
+  position: relative;
+  display: block;
+  min-width: 48px;
+  height: 6px;
+  border-radius: var(--k2-r-round);
+  background: var(--k2-n100);
+}
+.k2-ui .k2-range > i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  inset-inline-start: min(var(--k2-range-start), calc(100% - 4px));
+  inset-inline-end: var(--k2-range-end);
+  min-width: 4px;
+  border-radius: var(--k2-r-round);
+  background: var(--k2-range-fill, var(--k2-n600));
+}
+/* right to left the colours run from the right, as the scale does */
+.k2-ui .k2-range:dir(rtl) {
+  --k2-range-way: to left;
+}
+/* forced colours replace backgrounds: the track keeps an outline, the range fills in the text colour */
+@media (forced-colors: active) {
+  .k2-ui .k2-range {
+    outline: 1px solid GrayText;
+  }
+  .k2-ui .k2-range > i {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+}
+
 /* ── Mark: what a thing looks like. Its symbol on a tint of its colour, or its picture, in one square place; the
    place sets the size (20 sidebar and sentence, 24 row of one line, 32 row of two or three lines, 36 tile) ──── */
 .k2-ui .k2-mk {
@@ -4162,6 +4205,30 @@
 }
 .k2-ui .k2-nav-primary {
   margin-bottom: 8px;
+}
+/* The groups: they scroll between the head and the foot, so many places never push the foot out of the sidebar. A tree
+   in a group still gives way first and scrolls on its own (the area is a column it can shrink in); the area scrolls
+   only what does not shrink. It shows no scroll bar of its own, which would end the rows short of the column's edge,
+   and keeps room for the focus ring, as a tree does. */
+.k2-ui .k2-nav-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  margin: -4px;
+  padding: 4px;
+}
+.k2-ui .k2-nav-groups::-webkit-scrollbar {
+  display: none;
+}
+/* Above a list of their own (Chat's filters above the conversations) the groups keep their height: only the list gives
+   way, or both would shrink by their share and cut the filters (nav-list.browser.test) */
+.k2-ui .k2-nav-groups:has(~ .k2-nav-list) {
+  flex-shrink: 0;
 }
 /* A group's own rows (an app's list, such as Chat's conversations): they reach the column's edges and scroll on their
    own between the groups and the foot, as a tree does; the foot keeps its place at the bottom */
@@ -5671,7 +5738,7 @@
   .k2-ui
     .k2-ws-side
     > .k2-nav:has(> .k2-nav-list[data-phone="page"])
-    > :is(.k2-nav-title, .k2-nav-primary, .k2-nav-label, .k2-ni, .k2-ni-row, .k2-nav-fold, .k2-nt, .k2-nav-foot) {
+    > :is(.k2-nav-title, .k2-nav-primary, .k2-nav-groups, .k2-nav-foot) {
     display: none;
   }
   .k2-ui .k2-ws-side > .k2-nav:has(> .k2-nav-list[data-phone="page"]) > .k2-nav-search {

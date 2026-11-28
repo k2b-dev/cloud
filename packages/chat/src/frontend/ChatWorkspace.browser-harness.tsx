@@ -4,12 +4,12 @@ import type { ChatWorkspaceProps } from "./ChatWorkspace.island";
 
 declare global {
   interface Window {
-    mountChat: (props: ChatWorkspaceProps, locale: string) => Promise<void>;
+    mountChat: (props: ChatWorkspaceProps, locale: string, ui?: "v2") => Promise<void>;
   }
 }
 
-window.mountChat = async (props, locale) => {
-  const { default: ChatWorkspace } = await import("./ChatWorkspace.island");
+window.mountChat = async (props, locale, ui) => {
+  const { default: ChatWorkspace } = ui === "v2" ? await import("./ChatWorkspaceV2.island") : await import("./ChatWorkspace.island");
   // Cloud's Layout publishes the page trail; the chat header reads its way up from it.
   const start = { title: "Start", href: "/" };
   setPageTrail(
