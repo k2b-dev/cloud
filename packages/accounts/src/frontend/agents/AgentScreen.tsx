@@ -171,7 +171,9 @@ export default function AgentScreen(props: Props) {
                     { label: t().created, value: props.agent.created },
                     {
                       label: t().createdBy,
-                      value: props.agent.createdBy ? <Text href={props.agent.createdBy.href}>{props.agent.createdBy.name}</Text> : "–",
+                      value: props.agent.createdBy ? (
+                        <Text href={props.agent.createdBy.href}>{props.agent.createdBy.name}</Text>
+                      ) : undefined,
                     },
                   ]}
                 />

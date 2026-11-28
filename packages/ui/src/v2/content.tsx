@@ -23,6 +23,7 @@ import { useBehaviorMessages } from "./behavior/messages";
 import { useGrip } from "./behavior/resize";
 import { announceBranch, announceText, type TreegridRow, treegridStep } from "./behavior/treegrid";
 import { ActionButton, CopyButton } from "./button";
+import { useControlMessages } from "./control-messages";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, custom, Dot, Icon, Mark, type MarkProps } from "./marks";
@@ -149,20 +150,158 @@ export const Inline = (props: InlineProps) => (
 
 // ── Facts ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type Fact = {
+/** What kind of value a fact holds; Facts makes its link and its copy from it. */
+export type FactKind = "email" | "phone" | "url" | "address" | "note";
+
+type FactBase = {
   /** The quiet label before the value. */
   label: string;
-  /** The value: words, a `Chip` or a link. */
-  value: JSX.Element;
   /** A quiet word under the value, such as "Standard". */
   hint?: string;
-  /** Offers a copy button at the value; the text that is copied. */
+  /**
+   * Why the value is what it is, quiet after " · " on the value's line, such as "Personalversammlung" after
+   * "Geschlossen". A long one wraps under the value, never under its label.
+   */
+  reason?: string;
+  /**
+   * The value is a state: a dot in its colour before it and the value in 500. `neutral` is a grey dot for a change
+   * that is neither good nor bad (other hours). The dot hangs: a value that wraps goes on under its text.
+   */
+  status?: Status | "neutral";
+  /** Offers a copy button at the value; the text that is copied. A kind brings its own. */
   copy?: string;
   /**
    * A value to be read sign by sign, such as a token, a key or an ID: monospace, it breaks at any sign instead of
    * mid-word, and one click selects all of it for copying.
    */
   mono?: boolean;
+};
+
+/** One of several values of a kind, with a quiet word after it, such as a phone number and "mobil". */
+export type FactEntry = string | { value: string; note: string };
+
+/**
+ * A label and its value. A value that is not set (left out, `""`, `null` or no entries) shows a quiet "—". With a
+ * `kind` the value is text and Facts makes what fits it; an address, a number or a web address it cannot link safely
+ * (a second address or a query in an e-mail address, no digits in a number, a scheme other than http or https) stays
+ * plain words, still with its copy button:
+ * - `email`, `phone`: a `mailto:` or `tel:` link and a copy button; several entries stand one under the other,
+ *   each its own link (and no copy button, as it could copy only one);
+ * - `url`: the address without its scheme on one line, cut with "…", that opens in a new tab;
+ * - `address`: its lines as they are (`\n` or several entries), and a copy button for all of them;
+ * - `note`: a person's longer words, kept at a reading measure with a quiet line before them.
+ */
+export type Fact = FactBase &
+  (
+    | { kind?: undefined; value?: JSX.Element }
+    | { kind: "email" | "phone" | "url"; value?: FactEntry | readonly FactEntry[] | null }
+    | { kind: "address" | "note"; value?: string | readonly string[] | null }
+  );
+
+const entriesOf = (value: FactEntry | readonly FactEntry[] | null | undefined): { value: string; note?: string }[] => {
+  const list: readonly FactEntry[] =
+    value === null || value === undefined ? [] : typeof value === "string" || !("length" in value) ? [value] : value;
+  return list.map((entry) => (typeof entry === "string" ? { value: entry } : entry)).filter((entry) => entry.value.trim() !== "");
+};
+
+/** The lines of an address or a note as one text. */
+const linesOf = (value: string | readonly string[] | null | undefined) => (typeof value === "string" ? value : (value ?? []).join("\n"));
+
+/** The text of a fact's value for its copy button, when its kind brings one. */
+const kindCopy = (item: Fact): string | undefined => {
+  if (item.kind === "address") {
+    const lines = linesOf(item.value);
+    return lines.trim() === "" ? undefined : lines;
+  }
+  if (item.kind === "email" || item.kind === "phone") {
+    const entries = entriesOf(item.value);
+    return entries.length === 1 ? entries[0]!.value : undefined;
+  }
+  return undefined;
+};
+
+/** Whether a fact's value is set: anything but nothing, an empty text or no entries. */
+const isSet = (item: Fact) => {
+  if (item.kind === "address" || item.kind === "note") return linesOf(item.value).trim() !== "";
+  if (item.kind !== undefined) return entriesOf(item.value).length > 0;
+  const value: unknown = item.value;
+  return !(value === undefined || value === null || value === false || value === "" || (Array.isArray(value) && value.length === 0));
+};
+
+/**
+ * The link of an entry. An address of the web opens only over http or https; one with another scheme (`javascript:`,
+ * `data:`) gets no link and stays words, as in `Prose`.
+ */
+const hrefOf = (kind: "email" | "phone" | "url", value: string): string | undefined => {
+  // an address is one local part and one domain and nothing a mail program reads as more: no query or fragment
+  // (`?bcc=`, `&body=`), no second address (`,` `;`), no escapes (`%2C`, `%0D%0A`), no space or control sign
+  if (kind === "email") {
+    const address = value.trim();
+    const part = "[^\\s?#&@/%,;\\p{Cc}\\p{Cf}]+";
+    return new RegExp(`^${part}@${part}$`, "u").test(address) ? `mailto:${address}` : undefined;
+  }
+  if (kind === "phone") {
+    // The line before an extension ("ext. 12", "Dw. 3", ";ext=12", ",12", "x 12", "#12"): the link calls the line, the
+    // words keep the extension. A word that is no extension ("Fax", "Box") does not count.
+    const line = value
+      .trim()
+      .split(/\s*(?:[,;]\s*(?:ext\.?|extension)?|ext\.?|extension|(?<![a-z])x|durchwahl|dw\.?|app\.?|#)\s*=?\s*\d/i)[0]!;
+    // a number is only digits with a leading plus, spaces, dashes, slashes, dots and brackets; anything else
+    // ("Tel:", "oder 0151 …", letters for digits) stays words
+    // one number on one line: spaces and tabs, dashes, dots and brackets, and one slash only after an area code (at
+    // most 6 digits before it), so two numbers joined by a slash or a new line stay words
+    if (!/^\+?[\d \t\-.()]+(?:\/[\d \t\-.]+)?$/.test(line)) return undefined;
+    const [area, subscriber] = line.split("/");
+    if (subscriber !== undefined && area!.replace(/\D/g, "").length > 6) return undefined;
+    // the trunk zero written `+49 (0) 30 …` or `+49-(0)-30-…` after a country code belongs to no international number
+    const plain = line.replace(/^(\+\d{1,3})[\s-]*\(0\)/, "$1");
+    const digits = plain.replace(/(?!^\+)[^\d]/g, "");
+    return /^\+?\d{3,}$/.test(digits) ? `tel:${digits}` : undefined;
+  }
+  // a scheme is letters before `:` that are not a port (`example.org:8080`), or anything before `://`
+  if (!/^[a-z][a-z\d+.-]*:(?!\d)/i.test(value) && !value.includes("://")) return `https://${value}`;
+  return /^https?:\/\//i.test(value) ? value : undefined;
+};
+
+/** The value of a fact: as given, or with a kind its links, lines or note. */
+const FactValue = (props: { item: Fact }) => {
+  const said = useControlMessages();
+  const item = props.item;
+  if (item.kind === undefined) return <>{item.value}</>;
+  if (item.kind === "address" || item.kind === "note")
+    return (
+      <span class="k2-fact-lines" data-note={item.kind === "note" ? "" : undefined}>
+        {linesOf(item.value)}
+      </span>
+    );
+  const kind = item.kind;
+  return (
+    <For each={entriesOf(item.value)}>
+      {(entry) => (
+        <span class="k2-fact-entry" data-url={kind === "url" ? "" : undefined}>
+          <Show when={hrefOf(kind, entry.value)} fallback={<span class="k2-fact-plain">{entry.value}</span>}>
+            {(href) => (
+              <a
+                class="k2-fact-link"
+                href={href()}
+                target={kind === "url" ? "_blank" : undefined}
+                rel={kind === "url" ? "noopener noreferrer" : undefined}
+                title={kind === "url" ? entry.value : undefined}
+              >
+                {kind === "url" ? entry.value.replace(/^https?:\/\//i, "").replace(/\/$/, "") : entry.value}
+                <Show when={kind === "url"}>
+                  <span class="k2-hidden-text"> {said().opensInNewTab}</span>
+                </Show>
+              </a>
+            )}
+          </Show>
+          <Show when={entry.note}>
+            <span class="k2-fact-note">{entry.note}</span>
+          </Show>
+        </span>
+      )}
+    </For>
+  );
 };
 
 export type FactsProps = {
@@ -183,10 +322,33 @@ export type FactsProps = {
 };
 
 /**
- * Values with their labels: label 12 quiet, value 13, 32 px a row, copy at the value. The label column is as wide as
- * the longest label, at least 80 px and at most 160 px.
+ * Values with their labels, such as the contact data of a person. The label stands in a column of 116 px and wraps
+ * there; the value beside it keeps its lines, and a kind gives it its link and its copy button. In a main column the
+ * pairs stand 34 px apart, and on the phone the label stands over its value; in a side column they are dense (28 px)
+ * and side by side at any width. No line parts the pairs. Nothing to set: the place decides.
  */
 export const Facts = (props: FactsProps) => {
+  const said = useControlMessages();
+  // the value with its reason after it; a state's dot hangs before both, so they wrap under the text
+  const valueOf = (item: Fact) => (
+    <>
+      <FactValue item={item} />
+      <Show when={item.reason}>
+        <span class="k2-fact-reason"> · {item.reason}</span>
+      </Show>
+    </>
+  );
+  const dotOf = (status: Status | "neutral") => (status === "neutral" ? undefined : status);
+  const shown = (item: Fact) => (
+    <Show when={item.status} fallback={valueOf(item)}>
+      {(status) => (
+        <>
+          <Dot status={dotOf(status())} />
+          <span class="k2-fact-state">{valueOf(item)}</span>
+        </>
+      )}
+    </Show>
+  );
   // A list of pairs (dt, dd); a copy button stands inside its value, the end of an inline line beside the list.
   const list = (part?: string) => (
     <dl class="k2-facts" data-k2-part={part} data-inline={props.inline ? "" : undefined} aria-busy={props.loading ? "true" : undefined}>
@@ -195,17 +357,27 @@ export const Facts = (props: FactsProps) => {
           <div class="k2-fact-pair">
             <dt>{item.label}</dt>
             <dd>
-              <span class="k2-fact-value" data-mono={item.mono ? "" : undefined}>
-                <Show when={!props.loading} fallback={<PlaceholderValue>{item.value}</PlaceholderValue>}>
-                  {item.value}
+              <span class="k2-fact-value" data-mono={item.mono ? "" : undefined} data-kind={item.kind} data-status={item.status}>
+                <Show when={!props.loading} fallback={<PlaceholderValue>{isSet(item) ? shown(item) : undefined}</PlaceholderValue>}>
+                  <Show
+                    when={isSet(item)}
+                    fallback={
+                      <span class="k2-fact-empty">
+                        <span aria-hidden="true">—</span>
+                        <span class="k2-hidden-text">{said().notSet}</span>
+                      </span>
+                    }
+                  >
+                    {shown(item)}
+                  </Show>
                 </Show>
                 <Show when={item.hint}>
                   <small>{item.hint}</small>
                 </Show>
               </span>
               {/* while the value is on its way its copy button stands, not yet usable, so nothing moves when it comes */}
-              <Show when={!props.inline && (props.loading ? item.copy !== undefined : item.copy)}>
-                <CopyButton label={item.label} value={item.copy ?? ""} disabled={props.loading} />
+              <Show when={!props.inline && (props.loading ? (item.copy ?? kindCopy(item)) !== undefined : (item.copy ?? kindCopy(item)))}>
+                <CopyButton label={item.label} value={item.copy ?? kindCopy(item) ?? ""} disabled={props.loading} />
               </Show>
             </dd>
           </div>

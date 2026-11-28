@@ -29,6 +29,9 @@ const controlMessages = i18n.define({
       areaValue: ({ saturation, brightness }: { saturation: number; brightness: number }) =>
         `Saturation ${saturation} %, brightness ${brightness} %`,
       imageChosen: "Image chosen",
+      notSet: "not set",
+      copyFailed: "Could not copy",
+      opensInNewTab: "(opens in a new tab)",
     },
     de: {
       removeValue: ({ label }: { label: string }) => `${label} entfernen`,
@@ -54,6 +57,9 @@ const controlMessages = i18n.define({
       areaValue: ({ saturation, brightness }: { saturation: number; brightness: number }) =>
         `Sättigung ${saturation} %, Helligkeit ${brightness} %`,
       imageChosen: "Bild gewählt",
+      notSet: "nicht angegeben",
+      copyFailed: "Kopieren nicht möglich",
+      opensInNewTab: "(öffnet in einem neuen Tab)",
     },
   },
 });

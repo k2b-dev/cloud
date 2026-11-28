@@ -2586,13 +2586,15 @@
   overflow: visible;
 }
 
-/* ── Facts: label quiet 12, value 13, 32 px per row, copy at the value ──────────────────────────────────────── */
-/* the label column takes the longest label, at least 80 px (short labels keep the values on one edge) and at most
-   160 px, where a longer label wraps */
+/* ── Facts: the key-value detail, label column 116 px, pairs of 34 px, copy at the value ───────────────────── */
+/* Facts: the label in a column of 116 px and 16 px to its value, so the facts of one page stand
+   in one line from section to section; a long label wraps in its column. Pairs of 34 px in 13: label n500, value in
+   ink. Dense in a side column (96 px, 12, pairs of 28), the label over its value on the phone. Space parts the pairs,
+   no line. */
 .k2-ui .k2-facts {
   display: grid;
-  grid-template-columns: minmax(80px, max-content) minmax(0, 1fr);
-  gap: 0 8px;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 0;
   padding: 0 var(--k2-edge);
   align-items: start;
   min-width: 0;
@@ -2602,20 +2604,108 @@
   display: contents;
 }
 .k2-ui .k2-fact-pair > dt {
-  font: var(--k2-t-meta);
-  line-height: 20px;
-  color: var(--k2-subtle);
-  padding: 6px 0;
-  max-width: 160px;
+  font: var(--k2-t-row);
+  color: var(--k2-n500);
+  padding: 7px 16px 7px 0;
+  overflow-wrap: anywhere;
 }
 .k2-ui .k2-fact-pair > dd {
   display: flex;
   align-items: start;
   gap: 8px;
   line-height: 20px;
-  padding: 6px 0;
+  padding: 7px 0;
+  min-width: 0;
+  color: var(--k2-text);
+  overflow-wrap: anywhere;
+}
+/* a side column is dense: a label column of 96 px in 12, pairs of 28 px */
+.k2-ui .k2-pane[data-side] .k2-facts:not([data-inline]) {
+  grid-template-columns: 108px minmax(0, 1fr);
+}
+.k2-ui .k2-pane[data-side] .k2-facts:not([data-inline]) > .k2-fact-pair > dt {
+  font: var(--k2-t-meta);
+  line-height: 20px;
+  padding: 4px 12px 4px 0;
+}
+.k2-ui .k2-pane[data-side] .k2-facts:not([data-inline]) > .k2-fact-pair > dd {
+  padding: 4px 0;
+}
+/* the kinds of a value: links in the ink of the text with a quiet underline, several one under the other, a web
+   address on one line, the lines of an address as they are, a note at a reading measure; nothing set is a quiet dash */
+.k2-ui .k2-fact-entry {
+  display: block;
+  min-width: 0;
+}
+.k2-ui .k2-fact-entry[data-url] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2-ui .k2-fact-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--k2-n300);
+  text-underline-offset: 3px;
+}
+.k2-ui .k2-fact-link:hover {
+  text-decoration-color: currentColor;
+}
+.k2-ui .k2-fact-link:focus-visible {
+  outline: 2px solid var(--k2-blue);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.k2-ui .k2-fact-value[data-kind="phone"] {
+  font-variant-numeric: tabular-nums;
+}
+.k2-ui .k2-fact-note {
+  margin-left: 6px;
+  font: var(--k2-t-meta);
+  color: var(--k2-n500);
+}
+.k2-ui .k2-fact-lines {
+  display: block;
+  white-space: pre-line;
+}
+.k2-ui .k2-fact-lines[data-note] {
+  max-width: 60ch;
+  padding-left: 10px;
+  border-left: 2px solid var(--k2-line);
+  color: var(--k2-text-2);
+}
+.k2-ui .k2-fact-empty {
+  color: var(--k2-n400);
+}
+/* A control in a value (a menu of tags, a link to change it) keeps to the value column: its words wrap, a line of
+   chips in it wraps, and a chip longer than the column is cut with "…", so nothing sticks out beside the column. */
+.k2-ui .k2-fact-value .k2-btn {
+  max-width: 100%;
+  height: auto;
+  min-height: var(--k2-h-control-small);
+  white-space: normal;
+  text-align: start;
+}
+.k2-ui .k2-fact-value .k2-btn > .k2-btn-label {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+.k2-ui .k2-fact-value .k2-inline {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  padding-block: 2px;
+}
+.k2-ui .k2-fact-value .k2-inline > .k2-chip {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+.k2-ui .k2-fact-value .k2-chip {
+  display: inline-block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 24px;
 }
 .k2-ui .k2-fact-value {
   flex: 1;
@@ -2640,6 +2730,27 @@
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
 }
+/* A value that is a state: its dot hangs in a column of 8 px, centred on the first line, and the value in 500 with its
+   reason wraps under its own text. A reason is quiet after " · " and wraps under the value, never under the label. */
+.k2-ui .k2-fact-value[data-status] {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: start;
+}
+.k2-ui .k2-fact-value[data-status] > .k2-dot {
+  margin-top: 6px;
+}
+.k2-ui .k2-fact-value[data-status] > :not(.k2-dot) {
+  grid-column: 2;
+}
+.k2-ui .k2-fact-state {
+  font-weight: 500;
+}
+.k2-ui .k2-fact-reason {
+  font-weight: 400;
+  color: var(--k2-n500);
+}
 /* the copy button stands 2 px below the top of its row and adds no height to it */
 .k2-ui .k2-fact-pair > dd > .k2-btn {
   margin: -4px -6px -4px 0;
@@ -2652,6 +2763,16 @@
 }
 .k2-ui .k2-facts[data-inline] > .k2-fact-pair > dd {
   margin-right: 8px;
+}
+/* one line of facts keeps its quiet 12 px labels and its 32 px */
+.k2-ui .k2-facts[data-inline] > .k2-fact-pair > dt {
+  font: var(--k2-t-meta);
+  line-height: 20px;
+  color: var(--k2-subtle);
+  padding: 6px 8px 6px 0;
+}
+.k2-ui .k2-facts[data-inline] > .k2-fact-pair > dd {
+  padding: 6px 0;
 }
 /* an inline line with an end: the list and the end beside it, on the text edge */
 .k2-ui .k2-facts-line {
@@ -6490,16 +6611,19 @@
     padding: 4px 0 0;
     flex-wrap: wrap;
   }
-  .k2-ui .k2-facts {
+  /* in a main column the label stands over its value, 12 over 13; a side column keeps its dense pairs side by side,
+     as its labels are short (a day, a name) and its values short states */
+  .k2-ui .k2-facts:not([data-inline], .k2-pane[data-side] *) {
     grid-template-columns: minmax(0, 1fr);
   }
-  .k2-ui .k2-fact-pair > dt {
-    padding-bottom: 0;
+  .k2-ui .k2-facts:not([data-inline], .k2-pane[data-side] *) > .k2-fact-pair > dt {
+    font: var(--k2-t-meta);
+    padding: 9px 0 0;
   }
-  .k2-ui .k2-fact-pair > dd {
-    padding-top: 0;
+  .k2-ui .k2-facts:not([data-inline], .k2-pane[data-side] *) > .k2-fact-pair > dd {
+    padding: 2px 0 9px;
   }
-  .k2-ui .k2-fact-pair > dd > .k2-btn {
+  .k2-ui .k2-facts:not([data-inline], .k2-pane[data-side] *) > .k2-fact-pair > dd > .k2-btn {
     margin: 2px -6px -6px 0;
   }
   .k2-ui .k2-facts[data-inline] > .k2-fact-pair > :is(dt, dd) {

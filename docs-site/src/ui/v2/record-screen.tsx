@@ -250,20 +250,9 @@ export const RecordScreen = () => (
         >
           <Facts
             items={[
-              { label: "Telefon", value: "+49 30 5550 142", hint: "Standard", copy: "+49 30 5550 142" },
-              { label: "E-Mail", value: "o.brandner@example.test", hint: "Standard", copy: "o.brandner@example.test" },
-              {
-                label: "Anschrift",
-                value: (
-                  <>
-                    Am Beispielhang 12
-                    <br />
-                    12345 Beispielstadt
-                  </>
-                ),
-                hint: "Standard",
-                copy: "Am Beispielhang 12, 12345 Beispielstadt",
-              },
+              { label: "Telefon", kind: "phone", value: "+49 30 5550 142", hint: "Standard" },
+              { label: "E-Mail", kind: "email", value: "o.brandner@example.test", hint: "Standard" },
+              { label: "Anschrift", kind: "address", value: ["Am Beispielhang 12", "12345 Beispielstadt"], hint: "Standard" },
               { label: "Sprache", value: "Deutsch" },
               // the kinds of the head stand here too: on the phone they give way to the name
               { label: "Kundentyp", value: "Privat" },

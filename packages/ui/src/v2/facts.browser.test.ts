@@ -1,0 +1,284 @@
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import type { Browser, Page } from "playwright";
+import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
+import { bundleV2Entry } from "../../test/v2-bundle";
+import type {} from "../../test/v2-facts.client";
+import { measureV2Layout } from "./testing";
+
+// Facts as the key-value detail: the label in a column of 116 px and 16 px
+// to its value, pairs of 34 px in the main column and of 28 px in a side column, the label over its value on the
+// phone. A kind makes the link and the copy button; a value that is not set is a quiet dash with a name. The fixture
+// is test/v2-facts.client.tsx, with the worst case in the same list.
+
+const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
+const testCss = "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; }";
+
+let browser: Browser;
+let client: string;
+beforeAll(async () => {
+  [client, browser] = await Promise.all([bundleV2Entry("v2-facts.client.tsx", "dom"), launchBrowser()]);
+}, launchHookMs);
+afterAll(async () => {
+  await browser?.close();
+});
+
+const withPage = async (
+  width: number,
+  run: (page: Page) => Promise<void>,
+  options: { loading?: boolean; clipboard?: "ok" | "refused" } = {},
+) => {
+  const page = await browser.newPage({ viewport: { width, height: 900 } });
+  page.setDefaultTimeout(2000);
+  const errors = pageErrors(page);
+  try {
+    await page.setContent(
+      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"${options.loading ? " data-loading" : ""}><div id="root"></div></body></html>`,
+    );
+    if (options.clipboard)
+      await page.evaluate((answer) => {
+        Object.defineProperty(navigator, "clipboard", {
+          configurable: true,
+          value: { writeText: () => (answer === "ok" ? Promise.resolve() : Promise.reject(new Error("refused"))) },
+        });
+      }, options.clipboard);
+    await page.addScriptTag({ content: client });
+    await page.waitForFunction(() => window.__k2Mounted === true);
+    await settled(page);
+    await run(page);
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+};
+
+/** Each pair of a list as boxes, rounded, with what its value holds. */
+const pairs = (page: Page, list: number) =>
+  page.evaluate((index) => {
+    const dl = document.querySelectorAll(".k2-facts")[index]!;
+    const round = (element: Element) => {
+      const box = element.getBoundingClientRect();
+      return { left: Math.round(box.left), right: Math.round(box.right), top: Math.round(box.top), bottom: Math.round(box.bottom) };
+    };
+    return [...dl.querySelectorAll(".k2-fact-pair")].map((pair) => {
+      const dt = pair.querySelector("dt")!;
+      const dd = pair.querySelector("dd")!;
+      const value = dd.querySelector(".k2-fact-value")!;
+      return {
+        label: dt.textContent,
+        dt: round(dt),
+        dd: round(dd),
+        links: [...dd.querySelectorAll("a")].map((a) => a.getAttribute("href")),
+        copy: dd.querySelectorAll(".k2-btn").length,
+        empty: dd.querySelector(".k2-fact-empty > .k2-hidden-text")?.textContent ?? null,
+        overflows: value.scrollWidth > value.clientWidth + 1,
+      };
+    });
+  }, list);
+
+test("1440 px: the label column is 116 px and 16 px to the value, pairs of 34 px; a side column is dense", async () => {
+  await withPage(1440, async (page) => {
+    const main = await pairs(page, 0);
+    const email = main[0]!;
+    expect(email.dd.left - email.dt.left).toBe(132);
+    expect(email.dd.bottom - email.dd.top).toBe(34);
+    // the long label wraps in its column and the value stays on the label's first line
+    const long = main.find((pair) => pair.label?.startsWith("Abweichende"))!;
+    expect(long.dt.right - long.dt.left).toBe(132);
+    expect(long.dd.top).toBe(long.dt.top);
+    const side = await pairs(page, 1);
+    expect(side[0]!.dd.left - side[0]!.dt.left).toBe(108);
+    expect(side[0]!.dd.bottom - side[0]!.dd.top).toBe(28);
+    // nothing runs out of its value, also the address that cannot break
+    expect([...main, ...side].filter((pair) => pair.overflows).map((pair) => pair.label)).toEqual([]);
+  });
+});
+
+test("a kind makes the link and the copy button; a scheme that may not open stays words; nothing set is a named dash", async () => {
+  await withPage(1440, async (page) => {
+    const byLabel = Object.fromEntries((await pairs(page, 0)).map((pair) => [pair.label, pair]));
+    expect(byLabel["E-Mail"]).toMatchObject({ links: ["mailto:o.brandner@example.org"], copy: 1 });
+    // two numbers: each its own link, and no copy button that could copy only one
+    expect(byLabel.Telefon).toMatchObject({ links: ["tel:+49305550142", "tel:+49305550990"], copy: 0 });
+    expect(byLabel.Anschrift).toMatchObject({ links: [], copy: 1 });
+    expect(byLabel.Website!.links).toEqual(["https://www.beispiel-verwaltung.example.org/kunden/portal/rechnungen?jahr=2026"]);
+    // a scheme that may not open, and an address that would add to the mail (a query, a second address, an escape),
+    // stay words without a link; the copy button stays
+    expect(byLabel.Skript!.links).toEqual([]);
+    for (const label of ["Kopie", "Komma", "Strichpunkt", "Prozent", "Zeilenumbruch"])
+      expect([label, byLabel[label]]).toEqual([label, expect.objectContaining({ links: [], copy: 1 })]);
+    // a number keeps its plus behind a space, and calls the line before its extension
+    expect(byLabel.Leerzeichen!.links).toEqual(["tel:+4930555"]);
+    expect(byLabel.Durchwahl!.links).toEqual(["tel:+49305550"]);
+    for (const label of ["Dw", "Strichpunkt-Durchwahl", "Komma-Durchwahl"])
+      expect([label, byLabel[label]!.links]).toEqual([label, ["tel:+49305550"]]);
+    expect(byLabel.Striche!.links).toEqual(["tel:+49305550"]);
+    // a fax number is a number; words before or between numbers, and letters for digits, stay words
+    expect(byLabel.Telefax!.links).toEqual(["tel:+49305551"]);
+    for (const label of ["Zwei Nummern", "Vorwort", "Buchstaben", "Zwei mit Strich", "Zwei Zeilen"])
+      expect([label, byLabel[label]!.links]).toEqual([label, []]);
+    // one slash before the subscriber number is part of one number
+    expect(byLabel.Schrägstrich!.links).toEqual(["tel:0305550142"]);
+    // an invisible format sign stays words; spaces around an address leave it
+    expect(byLabel.Unsichtbar!.links).toEqual([]);
+    expect(byLabel["Mit Rand"]!.links).toEqual(["mailto:anna@example.org"]);
+    // a port is no scheme; the trunk zero "(0)" leaves an international number
+    expect(byLabel.Port!.links).toEqual(["https://example.org:8080/status"]);
+    expect(byLabel.Zentrale!.links).toEqual(["tel:+49301234567"]);
+    expect(byLabel["Steuer-ID"]).toMatchObject({ empty: "nicht angegeben", copy: 0 });
+    expect(byLabel.Fax).toMatchObject({ empty: "nicht angegeben", links: [], copy: 0 });
+    // the web address stands on one line without its scheme, cut with "…", its whole address as its hint
+    const url = await page.evaluate(() => {
+      const entry = document.querySelector<HTMLElement>(".k2-fact-entry[data-url]")!;
+      return { height: entry.getBoundingClientRect().height, text: entry.textContent, title: entry.querySelector("a")!.title };
+    });
+    expect(url.height).toBe(20);
+    expect(url.text?.startsWith("www.beispiel-verwaltung")).toBe(true);
+    expect(url.title.startsWith("https://")).toBe(true);
+    // the new tab is named for assistive technology, hidden from sight
+    expect(url.text?.endsWith("(öffnet in einem neuen Tab)")).toBe(true);
+    expect(
+      await page
+        .locator(".k2-fact-entry[data-url] .k2-hidden-text")
+        .first()
+        .evaluate((element) => element.getBoundingClientRect().width),
+    ).toBeLessThanOrEqual(1);
+  });
+});
+
+test("390 px: in a main column every label stands over its value; a side column keeps its pairs side by side", async () => {
+  await withPage(390, async (page) => {
+    for (const pair of await pairs(page, 0)) {
+      expect(pair.dd.top).toBeGreaterThanOrEqual(pair.dt.bottom);
+      expect(pair.dd.left).toBe(pair.dt.left);
+      expect(pair.overflows).toBe(false);
+    }
+    for (const list of [1, 2])
+      for (const pair of await pairs(page, list)) {
+        expect([pair.label, pair.dd.left - pair.dt.left, pair.dd.top - pair.dt.top]).toEqual([pair.label, 108, 0]);
+        expect(pair.overflows).toBe(false);
+      }
+  });
+});
+
+for (const width of [1440, 390])
+  test(`${width} px: a state's dot hangs before its value, and a long reason wraps under the value's text`, async () => {
+    await withPage(width, async (page) => {
+      const states = await page.evaluate(() =>
+        [...document.querySelectorAll(".k2-facts")[2]!.querySelectorAll(".k2-fact-pair")].map((pair) => {
+          const value = pair.querySelector(".k2-fact-value")!;
+          const dot = value.querySelector(":scope > .k2-dot");
+          const text = value.querySelector(":scope > .k2-fact-state") ?? value;
+          const reason = value.querySelector(".k2-fact-reason")!;
+          // the boxes of the reason by line (its words may lie in several boxes on one line), the start of each line
+          const starts = new Map<number, number>();
+          for (const box of reason.getClientRects())
+            starts.set(Math.round(box.top), Math.min(starts.get(Math.round(box.top)) ?? Infinity, Math.round(box.left)));
+          const lines = [...starts].sort(([a], [b]) => a - b).map(([, left]) => left);
+          return {
+            label: pair.querySelector("dt")!.textContent,
+            dot: dot ? { status: dot.getAttribute("data-status"), right: Math.round(dot.getBoundingClientRect().right) } : null,
+            text: Math.round(text.getBoundingClientRect().left),
+            weight: getComputedStyle(text).fontWeight,
+            reason: reason.textContent,
+            reasonWeight: getComputedStyle(reason).fontWeight,
+            // where each line of the reason after the first starts
+            wrapped: lines.slice(1),
+          };
+        }),
+      );
+      const [closed, hours, plain] = states;
+      expect(closed).toMatchObject({ dot: { status: "warn" }, weight: "500", reason: " · Personalversammlung", reasonWeight: "400" });
+      // the text stands 8 px after its dot of 8 px
+      expect(closed!.text - closed!.dot!.right).toBe(8);
+      // a neutral state has a grey dot without a status
+      expect(hours!.dot).toMatchObject({ status: null });
+      // the long reason wraps, and each further line starts under the value's text, not under its dot
+      expect(hours!.wrapped.length).toBeGreaterThan(0);
+      for (const left of hours!.wrapped) expect(left).toBe(hours!.text);
+      // a reason without a state: no dot, the value in 400
+      expect(plain).toMatchObject({ dot: null, weight: "400", reason: " · Tag der offenen Tür" });
+    });
+  });
+
+test("while the values load, an address keeps the room of its lines, so nothing moves when it comes", async () => {
+  const height = async (loading: boolean) => {
+    let found = 0;
+    await withPage(
+      1440,
+      async (page) => {
+        found = await page.evaluate(() => {
+          const pair = [...document.querySelectorAll(".k2-fact-pair")].find(
+            (each) => each.querySelector("dt")?.textContent === "Anschrift",
+          )!;
+          return Math.round(pair.querySelector("dd")!.getBoundingClientRect().height);
+        });
+      },
+      { loading },
+    );
+    return found;
+  };
+  const [loaded, waiting] = [await height(false), await height(true)];
+  expect(loaded).toBeGreaterThan(34);
+  expect(waiting).toBe(loaded);
+});
+
+for (const answer of ["ok", "refused"] as const)
+  test(`a copy that ${answer === "ok" ? "works" : "the browser refuses"} shows it in its symbol for two seconds and says it once; its name stays`, async () => {
+    await withPage(
+      1440,
+      async (page) => {
+        const button = page.getByRole("button", { name: "Kopieren: E-Mail", exact: true });
+        // every news a live region gets is a node of its own: count the nodes added under the regions
+        await page.evaluate(() => {
+          const said: string[] = [];
+          (window as unknown as { __said: string[] }).__said = said;
+          new MutationObserver((changes) => {
+            for (const change of changes)
+              if (change.target instanceof Element && change.target.matches("[data-k2-news]"))
+                for (const node of change.addedNodes) said.push(node.textContent?.trim() ?? "");
+          }).observe(document.body, { subtree: true, childList: true });
+        });
+        await button.click();
+        const symbol = () => button.locator(".k2-icon").getAttribute("data-name");
+        await page.waitForFunction(
+          (icon) => document.querySelector('[aria-label="Kopieren: E-Mail"] .k2-icon')?.getAttribute("data-name") === icon,
+          answer === "ok" ? "check" : "alert-circle",
+        );
+        expect(await button.getAttribute("aria-label")).toBe("Kopieren: E-Mail");
+        const news = answer === "ok" ? "Kopiert" : "Kopieren nicht möglich";
+        await page.waitForFunction(
+          (words) => [...document.querySelectorAll("[data-k2-news]")].some((region) => region.textContent?.includes(words)),
+          news,
+        );
+        await page.waitForTimeout(2100);
+        expect(await symbol()).toBe("copy");
+        // said once, and its name was never the news
+        const said = await page.evaluate(() => (window as unknown as { __said: string[] }).__said);
+        expect(said.filter((words) => words.includes(news))).toHaveLength(1);
+        expect(said.filter((words) => words.includes("Kopieren: E-Mail"))).toEqual([]);
+      },
+      { clipboard: answer },
+    );
+  });
+
+for (const width of [1024, 390])
+  test(`${width} px: a menu of tags in a value keeps to the value column; its chips wrap and a long one is cut`, async () => {
+    await withPage(width, async (page) => {
+      const found = await page.evaluate(() => {
+        const pair = [...document.querySelectorAll(".k2-fact-pair")].find((each) => each.querySelector("dt")?.textContent === "Tags")!;
+        const dd = pair.querySelector("dd")!.getBoundingClientRect();
+        const chips = [...pair.querySelectorAll<HTMLElement>(".k2-chip")];
+        return {
+          inside: [pair.querySelector(".k2-btn")!, ...chips].every((element) => element.getBoundingClientRect().right <= dd.right + 0.5),
+          cut: chips[0]!.scrollWidth > chips[0]!.clientWidth,
+          lines: new Set(chips.map((chip) => Math.round(chip.getBoundingClientRect().top))).size,
+        };
+      });
+      expect(found.inside).toBe(true);
+      expect(found.cut).toBe(true);
+      expect(found.lines).toBeGreaterThan(1);
+      expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
+    });
+  });
