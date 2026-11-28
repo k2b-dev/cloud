@@ -6,11 +6,7 @@ import type { SkillFileDiff } from "../settings/_components/skill-diff";
  * from the app (+), unchanged runs folded. k2b-ui gap: v2 has no diff or code view, so this drawing stands in a
  * `Canvas`, the one place for own markup; the screen places it, and the drawing keeps the 20 px text edge itself.
  */
-export default function SkillDiff(props: {
-  files: readonly SkillFileDiff[];
-  replaced: string;
-  unchanged: (count: number) => string;
-}) {
+export default function SkillDiff(props: { files: readonly SkillFileDiff[]; replaced: string; unchanged: (count: number) => string }) {
   return (
     <div class="flex flex-col gap-5 px-5">
       <For each={props.files}>

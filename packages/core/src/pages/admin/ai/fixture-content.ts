@@ -35,11 +35,22 @@ const fromApp = (appId: keyof typeof APPS, status: "current" | "modified" | "upd
 });
 
 const normalSkills = (): AiSkillAdminListItem[] => [
-  skill(1, { name: "Rechnungen prüfen", description: "Prüft eingehende Rechnungen auf Betrag, Fälligkeit und Kostenstelle.", accessCount: 38, adminCount: 2, referenceCount: 4 }),
+  skill(1, {
+    name: "Rechnungen prüfen",
+    description: "Prüft eingehende Rechnungen auf Betrag, Fälligkeit und Kostenstelle.",
+    accessCount: 38,
+    adminCount: 2,
+    referenceCount: 4,
+  }),
   skill(2, { name: "cloud-grids", source: fromApp("grids", "current"), adminCount: 0, accessCount: 0, referenceCount: 6 }),
   skill(3, { name: "cloud-mail", source: fromApp("mail", "modified"), adminCount: 1, accessCount: 12, referenceCount: 3 }),
   skill(4, { name: "cloud-contacts", source: fromApp("contacts", "update_available"), adminCount: 0, accessCount: 0, referenceCount: 2 }),
-  skill(5, { name: "Protokoll schreiben", description: "Fasst Besprechungen als Protokoll mit Aufgaben zusammen.", accessCount: 64, adminCount: 3 }),
+  skill(5, {
+    name: "Protokoll schreiben",
+    description: "Fasst Besprechungen als Protokoll mit Aufgaben zusammen.",
+    accessCount: 64,
+    adminCount: 3,
+  }),
   skill(6, { name: "Angebot entwerfen", accessCount: 9, adminCount: 0 }),
   skill(7, { name: "cloud-weather", source: fromApp("weather", "current", false), adminCount: 0, accessCount: 0 }),
   skill(8, { name: "Bewerbungen sichten", accessCount: 5, adminCount: 1, referenceCount: 0 }),
@@ -63,7 +74,10 @@ const worstSkills = (): AiSkillAdminListItem[] =>
     ];
     return skill(index + 1, {
       name: names[index % names.length]!,
-      description: index % 5 === 0 ? "Eine Beschreibung, die sehr lang ist und über viele Zeilen läuft, damit die Ansicht zeigt, wie sie umbricht. ".repeat(4) : "",
+      description:
+        index % 5 === 0
+          ? "Eine Beschreibung, die sehr lang ist und über viele Zeilen läuft, damit die Ansicht zeigt, wie sie umbricht. ".repeat(4)
+          : "",
       source: index % 7 === 1 ? fromApp("spaces", index % 2 ? "update_available" : "modified", index % 3 !== 0) : null,
       accessCount: index % 4 === 0 ? 987_654 : index,
       adminCount: index % 3 === 0 ? 0 : 12_345,
@@ -115,7 +129,13 @@ const project = (index: number, extra: Partial<AiProjectAdminListItem> & Pick<Ai
 });
 
 const normalProjects = (): AiProjectAdminListItem[] => [
-  project(1, { name: "Website-Relaunch", icon: "ti ti-world", description: "Texte, Struktur und Bildsprache der neuen Website.", accessCount: 14, adminCount: 2 }),
+  project(1, {
+    name: "Website-Relaunch",
+    icon: "ti ti-world",
+    description: "Texte, Struktur und Bildsprache der neuen Website.",
+    accessCount: 14,
+    adminCount: 2,
+  }),
   project(2, { name: "Jahresabschluss 2026", icon: "ti ti-calculator", accessCount: 5, adminCount: 1 }),
   project(3, { name: "Kundenservice", icon: "ti ti-headset", accessCount: 31, adminCount: 3 }),
   project(4, { name: "Altes Intranet", icon: "ti ti-archive", accessCount: 2, adminCount: 0 }),

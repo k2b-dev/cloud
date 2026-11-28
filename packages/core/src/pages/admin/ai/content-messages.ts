@@ -45,14 +45,16 @@ export const aiContentMessages = i18n.define({
     },
     de: {
       skillsLead: ({ count }) => i18n.plural(count, "de", { one: `${de(count)} geteilter Skill`, other: `${de(count)} geteilte Skills` }),
-      projectsLead: ({ count }) => i18n.plural(count, "de", { one: `${de(count)} geteiltes Projekt`, other: `${de(count)} geteilte Projekte` }),
+      projectsLead: ({ count }) =>
+        i18n.plural(count, "de", { one: `${de(count)} geteiltes Projekt`, other: `${de(count)} geteilte Projekte` }),
       matches: ({ count, search }) =>
         i18n.plural(count, "de", { one: `${de(count)} Treffer für „${search}“`, other: `${de(count)} Treffer für „${search}“` }),
       accessAfter: "Freigaben",
       pageOf: ({ page, pages }) => `Seite ${de(page)} von ${de(pages)}`,
       previousPage: "Vorige Seite",
       nextPage: "Nächste Seite",
-      skillsUnmanaged: ({ count }) => i18n.plural(count, "de", { one: "1 Skill ohne Administration", other: `${de(count)} Skills ohne Administration` }),
+      skillsUnmanaged: ({ count }) =>
+        i18n.plural(count, "de", { one: "1 Skill ohne Administration", other: `${de(count)} Skills ohne Administration` }),
       projectsUnmanaged: ({ count }) =>
         i18n.plural(count, "de", { one: "1 Projekt ohne Administration", other: `${de(count)} Projekte ohne Administration` }),
       unmanagedText: "Niemand kann ihren Zugriff ändern. Öffne eines und trage unter Berechtigungen eine Administration ein.",

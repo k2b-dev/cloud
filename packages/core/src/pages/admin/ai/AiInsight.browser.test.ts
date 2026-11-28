@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, setDefaultTimeout, test } from "bun:test";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
-import { launchBrowser, pageErrors } from "../../../../../ui/test/browser";
+import { browserName, launchBrowser, pageErrors } from "../../../../../ui/test/browser";
 import { aiAreaBrowserFixture } from "./AiArea.browser-fixture";
 
 // KI › Nutzung and Budgets › Nutzung je Person on v2: every view keeps the layout rules at every width with no loader
@@ -32,7 +32,8 @@ beforeEach(async () => {
   await context?.close();
   fixture.reset();
   context = await browser.newContext();
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  // WebKit knows no clipboard permissions; there the "copied" toast proves the copy
+  if (browserName === "chromium") await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   page = await context.newPage();
   page.setDefaultTimeout(8000);
   errors = pageErrors(page);
@@ -121,7 +122,8 @@ test("a run opens beside the runs in place, keeps its address, and closes again;
   expect(fixture.requests.length).toBe(requestsBefore);
   await main().getByRole("button", { name: "Copy details", exact: true }).click();
   await page.getByText("Details copied", { exact: true }).waitFor();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("Run ID: 44444444-0000-4000-8000-000000000002");
+  if (browserName === "chromium")
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("Run ID: 44444444-0000-4000-8000-000000000002");
   await main().getByRole("link", { name: "Close", exact: true }).click();
   await page.waitForURL((url) => !url.searchParams.has("run"));
   expect(await main().getByText("Stored error", { exact: true }).count()).toBe(0);

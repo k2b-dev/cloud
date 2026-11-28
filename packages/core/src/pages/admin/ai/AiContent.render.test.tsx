@@ -67,14 +67,18 @@ describe("Skills on the server", () => {
   });
 
   test("an open Skill stands beside the list with its facts and deeds; German words come from the inherited locale", () => {
-    const { body, text } = render("de", () => createComponent(SkillsScreen, { nav, data: skillsFixture(input("de", "sec=skills&skill=sk0004")) }));
+    const { body, text } = render("de", () =>
+      createComponent(SkillsScreen, { nav, data: skillsFixture(input("de", "sec=skills&skill=sk0004")) }),
+    );
     for (const words of ["cloud-contacts", "Berechtigungen", "Update der App verfügbar", "Von App Kontakte", "Referenzdateien", "sk0004"])
       expect(text).toContain(words);
     expect(loaders(body)).toBe(0);
   });
 
   test("a search without matches says so and leads back to all Skills", () => {
-    const { text, body } = render("en", () => createComponent(SkillsScreen, { nav, data: skillsFixture(input("en", "sec=skills&search=zzz")) }));
+    const { text, body } = render("en", () =>
+      createComponent(SkillsScreen, { nav, data: skillsFixture(input("en", "sec=skills&search=zzz")) }),
+    );
     expect(text).toContain("No Skills match “zzz”.");
     expect(body.querySelector('a[href="/admin/ai?sec=skills"]')).not.toBeNull();
   });
@@ -83,7 +87,8 @@ describe("Skills on the server", () => {
 describe("Projects on the server", () => {
   test("the list shows each Project with its own symbol; Projects without admin are the problem", () => {
     const { body, text } = render("en", () => createComponent(ProjectsScreen, { nav, data: projectsFixture(input("en")) }));
-    for (const words of ["10 shared Projects", "Website-Relaunch", "2 Projects without an admin", "No admins"]) expect(text).toContain(words);
+    for (const words of ["10 shared Projects", "Website-Relaunch", "2 Projects without an admin", "No admins"])
+      expect(text).toContain(words);
     expect(loaders(body)).toBe(0);
   });
 
