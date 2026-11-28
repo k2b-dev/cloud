@@ -4482,6 +4482,26 @@
   outline: none;
   box-shadow: inset 0 -2px 0 var(--k2-blue);
 }
+/* While no tab is current, the default for the width (`defaultOn`) is the open tab: the server does not know the width,
+   so its page marks the default of each and this shows the one for the width; the browser then makes it current. */
+@media (min-width: 768px) {
+  .k2-ui .k2-tab[data-default-on="wide"] {
+    color: var(--k2-text);
+    border-bottom-color: var(--k2-app, var(--k2-blue));
+  }
+  .k2-ui .k2-tab[data-default-on="wide"] > .k2-icon {
+    color: var(--k2-app-text);
+  }
+}
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-tab[data-default-on="phone"] {
+    color: var(--k2-text);
+    border-bottom-color: var(--k2-app, var(--k2-blue));
+  }
+  .k2-ui .k2-tab[data-default-on="phone"] > .k2-icon {
+    color: var(--k2-app-text);
+  }
+}
 
 /* Path: where the page stands, in the start of its head. The bar's fold (bar-fold.ts) owns the order: the end folds
    first, against the path laid out at its least (below), and only then does the path give way. Once the bar is

@@ -27,6 +27,7 @@ import { Avatar, Chip, custom, Dot, Icon, Mark } from "./marks";
 import { Menu, type MenuEntry, type MenuItem, MenuTab } from "./menu";
 import type { NavTreeGroup } from "./nav-tree";
 import { useOverlayMessages } from "./overlay-messages";
+import { textEdge } from "./tokens";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 
 // Layer 2: components made only of the primitives. They exist where a form must be the same everywhere.
@@ -356,6 +357,13 @@ export type Tab = {
   /** The view shown now. */
   current?: boolean;
   /**
+   * The view a page opens on, on the phone (below 768 px) or on wider screens, while no tab is `current`: the server
+   * does not know the width, so its page marks the default of each and the stylesheet shows the one for the width;
+   * once the browser knows it, that tab is the current one (`aria-current`). The person's pick (`current`) ends it. The
+   * app shows the view the same way: chosen in the browser, or both in the page with the width choosing.
+   */
+  defaultOn?: "phone" | "wide";
+  /**
    * The tab opens a menu of further views, such as "Weitere +8": the entries of a `Menu` (links with `href` and
    * `onNavigate`, or `onClick`). It is the menu's button and has no address of its own. Its `count` counts these
    * entries; tabs that hide for lack of room join the menu and its count ("+8" with one hidden shows "+9").
@@ -385,14 +393,14 @@ const TabFace = (props: { tab: Tab }) => {
 };
 
 /** A tab that hides for lack of room, as an entry of the menu of further views. */
-const asEntry = (tab: Tab, locale: string): MenuEntry => ({
+const asEntry = (tab: Tab, locale: string, current: boolean): MenuEntry => ({
   label: tab.label,
   icon: tab.icon,
   meta: tab.count === undefined ? undefined : countIn(tab.count, locale),
   href: tab.href,
   onNavigate: tab.href !== undefined ? tab.onNavigate : undefined,
   onClick: tab.onClick,
-  checked: tab.current ? true : undefined,
+  checked: current ? true : undefined,
 });
 
 /**
@@ -486,8 +494,20 @@ export const Tabs = (props: TabsProps) => {
       parts.disconnect();
     });
   });
+  // While no tab is current, the tab for the width (`defaultOn`) is the open one: the server's page marks the default of
+  // each width and the stylesheet shows the one for the width; the browser knows the width and makes it current.
+  const defaults = () => !props.items.some((tab) => tab.current) && props.items.some((tab) => tab.defaultOn);
+  const [width, setWidth] = createSignal<"phone" | "wide">();
+  onMount(() => {
+    const wide = window.matchMedia(`(min-width: ${textEdge.phoneBelow}px)`);
+    const read = () => setWidth(wide.matches ? "wide" : "phone");
+    read();
+    wide.addEventListener("change", read);
+    onCleanup(() => wide.removeEventListener("change", read));
+  });
+  const isCurrent = (tab: Tab) => tab.current === true || (defaults() && tab.defaultOn !== undefined && tab.defaultOn === width());
   const hidden = () => plain().slice(fit());
-  const more = () => hidden().map((tab) => asEntry(tab, locale()));
+  const more = () => hidden().map((tab) => asEntry(tab, locale(), isCurrent(tab)));
   return (
     <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label} ref={nav}>
       <div class="k2-tabs" ref={row}>
@@ -500,7 +520,8 @@ export const Tabs = (props: TabsProps) => {
               href={tab().href}
               onNavigate={tab().href !== undefined ? tab().onNavigate : undefined}
               onClick={() => tab().onClick?.()}
-              aria-current={tab().current ? "page" : undefined}
+              aria-current={isCurrent(tab()) ? "page" : undefined}
+              data-default-on={defaults() ? tab().defaultOn : undefined}
               data-overflow={index >= fit() ? "" : undefined}
             >
               <TabFace tab={tab()} />

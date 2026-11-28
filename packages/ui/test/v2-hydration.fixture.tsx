@@ -24,6 +24,7 @@ import {
   Select,
   Slider,
   Table,
+  Tabs,
   TagsInput,
   Text,
   Workspace,
@@ -80,7 +81,20 @@ export function Fixture() {
       }
     >
       <Pane.Split>
-        <Pane label="Liste" width={{ min: 280, default: 360 }}>
+        <Pane
+          label="Liste"
+          width={{ min: 280, default: 360 }}
+          // views whose default depends on the width (`defaultOn`): the server marks both, the browser makes one current
+          head={
+            <Tabs
+              label="Ansicht"
+              items={[
+                { label: "Alle", defaultOn: "wide", onClick: () => {} },
+                { label: "Neu", defaultOn: "phone", onClick: () => {} },
+              ]}
+            />
+          }
+        >
           <List label="Einträge">
             <Row
               lines={[
