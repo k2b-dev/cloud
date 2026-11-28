@@ -103,11 +103,29 @@ export type SettingProps = Omit<FieldProps, "optional" | "required"> & {
  * 300 px, so the values stand in one line down the page and are read at a glance. On a narrow column the control
  * goes under the name. The control is the same as in a `Field`: `Input`, `Select`, `DateInput`, `Check` or `Choice`.
  */
-export const Setting = (props: SettingProps) => <FieldFrame field={props} setting />;
-
-const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action }; setting?: boolean }) => {
-  const props = frame.field;
+export const Setting = (props: SettingProps) => {
   const t = useSettingMessages();
+  // a changed setting says what it was below its control (inside the content, so the control keeps its place); made
+  // here, so a page with plain fields loads neither the chip nor the catalog
+  return (
+    <FieldFrame
+      field={props}
+      setting
+      was={
+        <Show when={props.was}>
+          {(before) => (
+            <span class="k2-field-was">
+              <Chip yours>{t().changedFrom({ value: before() })}</Chip>
+            </span>
+          )}
+        </Show>
+      }
+    />
+  );
+};
+
+const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action }; setting?: boolean; was?: JSX.Element }) => {
+  const props = frame.field;
   const control = createUniqueId();
   const label = createUniqueId();
   const message = createUniqueId();
@@ -173,16 +191,7 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       )}
     </Show>
   );
-  // a changed setting says what it was below its control (inside the content, so the control keeps its place)
-  const was = (
-    <Show when={props.was}>
-      {(before) => (
-        <span class="k2-field-was">
-          <Chip yours>{t().changedFrom({ value: before() })}</Chip>
-        </span>
-      )}
-    </Show>
-  );
+  const was = frame.was;
   // A group of choices is named by its label line; one control is labelled by it.
   return grouped ? (
     <div
