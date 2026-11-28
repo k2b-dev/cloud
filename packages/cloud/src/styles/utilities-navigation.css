@@ -1331,6 +1331,20 @@
   flex-direction: column;
 }
 
+/* A v2 page fills the window above the footer: its Workspace scrolls inside, and a kiosk screen without the footer
+   takes the whole window. */
+.minimal-layout-main {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.minimal-layout > .minimal-layout-main {
+  height: auto;
+}
+
 .minimal-layout-footer {
   display: flex;
   flex-wrap: wrap;

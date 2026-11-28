@@ -141,9 +141,17 @@ const localizeCapabilityError = <T extends { code: string; status: number; messa
   includeInputDetails = true,
 ): T => {
   const localized = localizeMailError(error, locale, { includeInputDetails });
-  return error.code === "DRAFT_REPLY_BOX_OCCUPIED"
-    ? { ...localized, message: `${localized.message} ${draftAdoptionMessages.resolve([locale ?? "en"]).t.occupiedCapabilityHint}` }
-    : localized;
+  if (error.code !== "DRAFT_REPLY_BOX_OCCUPIED" || !("revision" in error) || typeof error.revision !== "number") return localized;
+  // Name only the step Mail chose as able to succeed; a scheduled or sending draft has none.
+  const t = draftAdoptionMessages.resolve([locale ?? "en"]).t;
+  const nextStep = "nextStep" in error ? error.nextStep : undefined;
+  const hint =
+    nextStep === "update"
+      ? t.occupiedUpdateHint({ revision: error.revision })
+      : nextStep === "intent"
+        ? t.occupiedIntentHint({ revision: error.revision })
+        : null;
+  return hint ? { ...localized, message: `${localized.message} ${hint}` } : localized;
 };
 
 const localizeCapabilityErrors = <T extends CapabilityDefinitions>(definitions: T): T => {

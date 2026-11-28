@@ -4,14 +4,14 @@ import type { SqlClient } from "./audit";
 
 type DbRow = Record<string, unknown>;
 
-const WORKFLOW_SELECT = () =>
+export const WORKFLOW_SELECT = () =>
   sql.unsafe(`
   p.id, p.short_id, p.base_id, w.name, w.description,
   v.source, v.plan, v.diagnostics, v.revision,
   p.enabled, p.position, p.owner_user_id, p.deleted_at, p.created_at, p.updated_at
 `);
 
-const WORKFLOW_FROM = () =>
+export const WORKFLOW_FROM = () =>
   sql.unsafe(`
   FROM grids.workflow_profile AS p
   JOIN workflows.workflow AS w ON w.id = p.id
@@ -24,7 +24,7 @@ const WORKFLOW_FROM = () =>
   ) AS v ON TRUE
 `);
 
-const mapWorkflow = (row: DbRow): GridsWorkflow => {
+export const mapWorkflow = (row: DbRow): GridsWorkflow => {
   const parsed = GridsWorkflowSchema.safeParse({
     id: row.id,
     shortId: row.short_id,

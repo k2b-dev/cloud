@@ -52,8 +52,7 @@ export default function AdminLayout(props: Props) {
   const runtime = getDisplayRuntimeContext(c);
   // Admin is the area's root, as an app's root is: the rail and the admin sidebar lead there. So it is no level
   // above an admin page, and every admin page shows its title alone, whichever app owns it.
-  const overview = title === "Overview" || title === t.overview;
-  const breadcrumbs: Breadcrumb[] = [{ title: t.start, href: "/" }, { title: overview ? t.admin : title }];
+  const breadcrumbs: Breadcrumb[] = [{ title: t.start, href: "/" }, { title }];
   if (props.ui === "v2")
     return (
       <Layout c={c} fullWidth fullPage ui="v2" title={breadcrumbs}>

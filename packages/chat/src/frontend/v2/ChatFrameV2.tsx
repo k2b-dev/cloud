@@ -40,11 +40,15 @@ export type ChatDetailV2 = {
   head: { name: string; avatar?: Person; kinds?: readonly string[]; ids?: readonly RecordId[] };
   /** The way back to the list on the phone. */
   back: Action;
+  /** The way back shows on a wide screen too: a discussion stands in the place of its room's stream. */
+  wideBack?: boolean;
   /** The part of the chat that shows, as a choice with words (the threads). */
   picker?: { label: string; name: string; items: readonly MenuEntry[] };
   buttons?: readonly ChatHeadButton[];
   /** The rest of the deeds behind "…". */
   menu?: readonly MenuEntry[];
+  /** A page's own search and filter at the start of the head's end, which the page hands in once it has loaded. */
+  tools?: Accessor<JSX.Element | undefined>;
   /** What the pane shows, made once per key. */
   content: () => JSX.Element;
   /** The content is Chat's own drawing (the history and composer), drawn in a `Canvas` that fills the pane; `false` for a page built of v2 parts. */
@@ -52,6 +56,7 @@ export type ChatDetailV2 = {
 };
 
 export type ChatFrameV2Props = {
+  /** The filters (Unread, For you, Discover channels) and the archive at the foot; the chats follow the filters. */
   nav: { label: string; groups: readonly NavGroup[]; foot?: readonly NavItem[] };
   newChat: Action;
   search: { value: string; onInput: (value: string) => void; onKeyDown: (event: KeyboardEvent) => void };
@@ -90,6 +95,7 @@ const HeadButton = (props: { button: ChatHeadButton }) => (
       onNavigate={props.button.onNavigate}
       onClick={() => props.button.onClick?.()}
       pressed={props.button.pressed}
+      keep={props.button.keep}
       busy={props.button.busy}
       disabled={props.button.disabled}
     >
@@ -99,10 +105,10 @@ const HeadButton = (props: { button: ChatHeadButton }) => (
 );
 
 /**
- * Chat on @k2b/ui v2: the places in the sidebar (and the phone's menu) under Chat's search and "New chat", with no
- * head bar of its own (Valentin, v8); the chats as a list beside the open chat, whose history and composer are Chat's
- * own drawing; the chat's info beside it. On the phone the list is the page, "New chat" floats over it, and an open
- * chat is a page of its own with its way back.
+ * Chat on @k2b/ui v2 in two columns (Valentin, v8): the sidebar holds Chat's name, the search and "New chat", the
+ * filters as entries, then the chats themselves, which scroll on their own above the archive; the open chat (or one of
+ * Chat's pages) takes the rest, with its info beside it. There is no head bar of its own. On the phone the chats with
+ * their search are the page, "New chat" floats, and an open chat is a page of its own with its way back.
  */
 export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
   const locale = useLocale();
@@ -113,11 +119,12 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
       <V2WorkspaceNavigation label={props.nav.label} groups={props.nav.groups} foot={props.nav.foot} />
       <Workspace
         sidebarLabel={v2().sidebarWidth}
-        // The chat keeps room to read: where list, chat and sidebar do not fit (a tablet), the sidebar is a drawer.
-        // The chat, or its info while open, keeps room to read: where it does not fit, the sidebar becomes a drawer.
+        // The chats need more room than a few entries; the chat, or its info while open, keeps room to read, and where
+        // both do not fit (a tablet), the sidebar becomes a drawer.
+        sidebarWidth={{ min: 280, default: 340 }}
         detail={520}
         detailEmpty={{ icon: "messages", text: v2().noneOpen }}
-        // On the phone the main action floats over the list only; in an open chat it would cover the composer.
+        // On the phone the main action floats over the chats only; in an open chat it would cover the composer.
         primary={props.detail() ? undefined : props.newChat}
         sidebar={
           <Nav
@@ -131,21 +138,25 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
             }}
             primary={props.newChat}
             groups={props.nav.groups}
+            // the chats are the nav's own rows, the phone's page: the list's notices over the list (or the search's results)
+            list={
+              <>
+                <For each={props.list.notices}>
+                  {(notice) => (
+                    <Notice tone={notice.tone} actions={notice.action ? [notice.action] : undefined}>
+                      {notice.text}
+                    </Notice>
+                  )}
+                </For>
+                {props.list.content}
+              </>
+            }
+            phone="page"
             foot={props.nav.foot}
           />
         }
       >
         <Pane.Split>
-          <Pane label={v2().listWidth} width={{ min: 300, default: 380 }} scrollKey="chat-list">
-            <For each={props.list.notices}>
-              {(notice) => (
-                <Notice tone={notice.tone} actions={notice.action ? [notice.action] : undefined}>
-                  {notice.text}
-                </Notice>
-              )}
-            </For>
-            {props.list.content}
-          </Pane>
           <Show when={props.detail()?.key} keyed>
             {(_key) => {
               // The head follows the open chat; the drawing stays for as long as the key does.
@@ -162,6 +173,7 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
                   width={props.info() ? { min: 440, default: 560 } : undefined}
                   label={detail().label}
                   back={detail().back}
+                  wideBack={detail().wideBack}
                   head={
                     <Bar
                       start={
@@ -174,6 +186,7 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
                       }
                       end={
                         <>
+                          {detail().tools?.()}
                           <Show when={detail().picker}>
                             {(picker) => (
                               <Menu label={picker().label} items={picker().items}>
