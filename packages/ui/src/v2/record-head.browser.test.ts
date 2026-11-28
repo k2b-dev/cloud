@@ -5,6 +5,7 @@ import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-record-head.client";
+import { measureV2Layout } from "./testing";
 
 // A record's head on the phone (W8, Weather at 390 px with a long place name; W7, the Kundenakte with four symbols):
 // avatar, name and the head's actions stand in one row, as the approved mockup's 57 px head. The name comes before
@@ -24,7 +25,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (kinds: boolean, width: number, run: (page: Page) => Promise<void>) => {
+const withPage = async (kinds: boolean, width: number, run: (page: Page) => Promise<void>, meta = false) => {
   const page = await browser.newPage({ viewport: { width, height: 800 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
@@ -32,7 +33,7 @@ const withPage = async (kinds: boolean, width: number, run: (page: Page) => Prom
     await page.setContent(
       `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
     );
-    await page.addScriptTag({ content: `window.__k2Kinds = ${kinds};` });
+    await page.addScriptTag({ content: `window.__k2Kinds = ${kinds}; window.__k2Meta = ${meta};` });
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
     await settled(page);
@@ -110,3 +111,45 @@ test("1440 px, unchanged: the head's 56 px, the name cut beside both kinds and t
     expect(found.inside).toBe(true);
   });
 });
+
+// A thing's record (a run in gateway-ops, as the approved mockup v7 shows it): its mark leads, the name stands on the
+// first line and its quiet line under it, never beside it; the actions keep their row, and the kinds leave the head.
+for (const width of [1440, 390])
+  test(`a record head with a mark and a line under its name at ${width}px`, async () => {
+    await withPage(
+      true,
+      width,
+      async (page) => {
+        const head = await page.evaluate(() => {
+          const bar = document.querySelector<HTMLElement>('.k2-ws-main > [data-slot="head"] > .k2-bar')!;
+          const box = (selector: string) => {
+            const found = bar.querySelector(selector)?.getBoundingClientRect();
+            return found ? { top: found.top, bottom: found.bottom, left: found.left, right: found.right, height: found.height } : null;
+          };
+          return {
+            bar: box(":scope > .k2-bar-start")!,
+            height: Math.round(bar.getBoundingClientRect().height),
+            mark: box(".k2-mk")!,
+            name: box(".k2-record-name")!,
+            meta: box(".k2-record-meta")!,
+            kinds: [...bar.querySelectorAll(".k2-chip")].filter((chip) => chip.getBoundingClientRect().width > 0).length,
+            actions: [...bar.querySelectorAll(":scope > .k2-bar-end .k2-btn")].map((button) => button.getBoundingClientRect().top),
+          };
+        });
+        // the line stands under the name, both beside the mark, which is as high as the two lines together
+        expect(head.meta.top).toBeGreaterThanOrEqual(head.name.bottom - 1);
+        expect(head.name.left).toBeGreaterThan(head.mark.right);
+        expect(Math.abs(head.meta.left - head.name.left)).toBeLessThan(1);
+        expect(head.mark.top).toBeLessThan(head.meta.top);
+        expect(head.mark.bottom).toBeGreaterThan(head.name.bottom);
+        // both lines inside the head, the kinds out of it, the actions on its row
+        expect(head.meta.bottom).toBeLessThanOrEqual(head.bar.bottom + 0.5);
+        expect(head.kinds).toBe(0);
+        expect(head.actions.length).toBeGreaterThan(0);
+        // two lines of 24 and 16 px with 8 px above and below, and the head's line: 57 px, as the mockup's heads
+        if (width === 1440) expect(head.height).toBe(57);
+        expect((await measureV2Layout(page)).problems).toEqual([]);
+      },
+      true,
+    );
+  });
