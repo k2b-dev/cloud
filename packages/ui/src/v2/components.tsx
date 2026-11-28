@@ -304,22 +304,25 @@ export const Nav = (props: NavProps) => {
           </div>
         )}
       </Show>
-      <Index each={props.groups}>
-        {(group) => (
-          <>
-            <Show when={group().label}>
-              <div class="k2-nav-label">
-                {group().label}
-                <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
-                <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
-              </div>
-            </Show>
-            <Show when={group().tree} fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}>
-              {(tree) => <Dynamic component={tree().view} {...tree()} />}
-            </Show>
-          </>
-        )}
-      </Index>
+      {/* the groups scroll between the head and the foot, so many places never push the foot out of the sidebar */}
+      <div class="k2-nav-groups">
+        <Index each={props.groups}>
+          {(group) => (
+            <>
+              <Show when={group().label}>
+                <div class="k2-nav-label">
+                  {group().label}
+                  <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
+                  <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
+                </div>
+              </Show>
+              <Show when={group().tree} fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}>
+                {(tree) => <Dynamic component={tree().view} {...tree()} />}
+              </Show>
+            </>
+          )}
+        </Index>
+      </div>
       <Show when={list()}>
         <div class="k2-nav-list" data-phone={props.phone}>
           {list()}
@@ -736,9 +739,10 @@ export type StatusRowProps = {
   /** A box at the start that selects all entries. */
   select?: { label: string; checked?: boolean | "mixed"; onChange?: (checked: boolean) => void };
   /**
-   * Filters or a segment at the end; they leave on the phone. They keep their words while the lead gives way; in a row
-   * narrower than 600 px a button with a symbol keeps only the symbol, and its words stay its name. Give each one a
-   * symbol, so it can fold; a toggle is a `Button pressed` with an `icon`, which folds, not a switch.
+   * Filters or a segment at the end; on the phone they stay in the row: what has no room folds into one "+n" menu.
+   * They keep their words while the lead gives way; in a row narrower than 600 px a button with a symbol keeps only
+   * the symbol, and its words stay its name. Give each one a symbol, so it can fold; a toggle is a `Button pressed`
+   * with an `icon`, which folds, not a switch.
    */
   filters?: JSX.Element;
   /**
@@ -761,13 +765,26 @@ export const StatusRow = (props: StatusRowProps) => {
   const t = useUiMessages();
   const filters = resolveChildren(() => props.filters);
   const marks = resolveChildren(() => props.marks);
-  // While entries are selected, the bar's fold watches the row: the actions without room fold into "…" from the end,
-  // and the way out never. None on the server's page.
+  // The bar's fold watches the row while entries are selected (the actions without room fold into "…" from the end,
+  // the way out never), and on the phone (the end that has no room beside the shortened lead folds into one "+n",
+  // the last first, which opens what it holds as a menu: a pressed chip is an entry with a check). Wider and without
+  // a selection, nothing folds. None on the server's page.
   let bar: HTMLDivElement | undefined;
   const [folded, setFolded] = createSignal<readonly MenuItem[]>([]);
+  const [phone, setPhone] = createSignal(false);
+  onMount(() => {
+    const query = matchMedia("not all and (min-width: 768px)");
+    const follow = () => setPhone(query.matches);
+    follow();
+    query.addEventListener("change", follow);
+    onCleanup(() => query.removeEventListener("change", follow));
+  });
   const selecting = createMemo(() => props.selection !== undefined);
   createEffect(() => {
-    if (!bar || !selecting()) return;
+    // both are read, so the fold starts again on the row's other end when a selection begins or ends
+    const watch = selecting();
+    const narrow = phone();
+    if (!bar || !(watch || narrow)) return;
     const fold = watchFold(bar, (entries) => setFolded(entries));
     onCleanup(() => {
       fold.stop();
@@ -818,7 +835,17 @@ export const StatusRow = (props: StatusRowProps) => {
               </Show>
             </div>
             <Show when={holdsContent(filters)}>
-              <div class="k2-bar-end">{filters()}</div>
+              <div class="k2-bar-end">
+                {filters()}
+                <Show when={folded().length > 0}>
+                  <span class="k2-bar-fold">
+                    <Menu items={folded()}>
+                      <span aria-hidden="true">+{folded().length}</span>
+                      <span class="k2-hidden-text">{t().moreFilters({ count: folded().length })}</span>
+                    </Menu>
+                  </span>
+                </Show>
+              </div>
             </Show>
           </>
         }

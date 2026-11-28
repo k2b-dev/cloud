@@ -20,7 +20,7 @@ import { type Accessor, batch, createEffect, createMemo, createSignal, on, onCle
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory";
-import type { MailDraft, MailDraftSeed, MailWorkspaceHintId } from "../contracts";
+import type { MailDraft, MailDraftSeed } from "../contracts";
 import { isAggregatedListing, mailListingExcludesTrashAndJunk, mailRowLeavesListing } from "../folder-display-rules";
 import { mailFolderNames } from "../folder-names";
 import { mailFolderPaths } from "../folder-tree";
@@ -1393,17 +1393,15 @@ export function createMailboxController(props: MailboxControllerProps) {
   });
 
   const hasSelection = createMemo(() => Boolean(data.selectedConversationId || data.selectedMessageId));
-  // F8: the list's share and the hints this person saw in this mailbox, from the server so the first frame has them.
+  // F8: the list's share in this mailbox, from the server so the first frame has it.
   const [listShare, setListShare] = createSignal<number | null>(data.workspacePreference.listShare);
   /** The share while the handle moves, in percent; the saved share takes over when the move ends. */
   const [dragPercent, setDragPercent] = createSignal<number | null>(null);
-  const [seenHints, setSeenHints] = createSignal<ReadonlySet<MailWorkspaceHintId>>(new Set(data.workspacePreference.seenHints));
   createEffect(
     on(
       () => data.workspacePreference,
       (preference) => {
         if (dragPercent() === null) setListShare(preference.listShare);
-        setSeenHints((seen) => new Set([...seen, ...preference.seenHints]));
       },
       { defer: true },
     ),
@@ -1438,17 +1436,6 @@ export function createMailboxController(props: MailboxControllerProps) {
     shareTimer = setTimeout(() => void sendListShare(), 250);
   };
   onCleanup(() => void sendListShare());
-  const hintSeen = (id: MailWorkspaceHintId) => seenHints().has(id);
-  /** A hint shows once: it counts as seen as soon as the person closes it or uses its action. */
-  const markHintSeen = (id: MailWorkspaceHintId) => {
-    setSeenHints((seen) => new Set([...seen, id]));
-    void apiClient.mailboxes[":mailboxId"]["workspace-preference"]["seen-hints"]
-      .$put({ param: { mailboxId }, json: { hintId: id } })
-      .catch(() => {
-        // The hint stays closed in this tab; it may show once more after a reload.
-      });
-  };
-  const [densityHintOpen, setDensityHintOpen] = createSignal(false);
   /** Full screen moves the list and the details aside while a draft is open in the reader. */
   const draftFullscreenActive = () => draftOpen() && draftFullscreen() && hasSelection();
   /**
@@ -1840,22 +1827,6 @@ export function createMailboxController(props: MailboxControllerProps) {
   };
 
   onMount(() => {
-    // V switched the view before the list's width decided it (F2). Once per person and mailbox it now shows at the
-    // handle where the width changes; typing, menus and dialogs keep the key.
-    const explainView = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() !== "v" || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-      if (event.defaultPrevented || event.repeat || event.isComposing || hintSeen("density-by-width") || densityHintOpen()) return;
-      if (
-        event.target instanceof Element &&
-        event.target.closest(
-          '[role="dialog"],[role="menu"],[role="listbox"],input,textarea,select,[contenteditable]:not([contenteditable="false"])',
-        )
-      )
-        return;
-      if (!dom.sideBySide()) return;
-      event.preventDefault();
-      setDensityHintOpen(true);
-    };
     // Escape closes the open conversation, as × does; the list then takes the full width. An open menu, dialog, hint,
     // or field takes it first.
     const leaveReader = (event: KeyboardEvent) => {
@@ -1869,8 +1840,8 @@ export function createMailboxController(props: MailboxControllerProps) {
       )
         return;
       try {
-        // A shown hint takes Escape first, like every open popup; the "moved" hint does not hold it.
-        if (document.querySelector(":popover-open:not(.k2b-moved-hint)")) return;
+        // A shown popup takes Escape first.
+        if (document.querySelector(":popover-open")) return;
       } catch {
         // Older engines have no popover selector; the other guards still apply.
       }
@@ -1880,10 +1851,8 @@ export function createMailboxController(props: MailboxControllerProps) {
       const href = buildMailListHref(mailRouteUrl(requestPath()));
       void closeConversationAt(href, (options) => navigate(href, options));
     };
-    document.addEventListener("keydown", explainView);
     document.addEventListener("keydown", leaveReader);
     onCleanup(() => {
-      document.removeEventListener("keydown", explainView);
       document.removeEventListener("keydown", leaveReader);
     });
   });
@@ -3251,10 +3220,6 @@ export function createMailboxController(props: MailboxControllerProps) {
     listPercent,
     setDragPercent,
     saveListShare,
-    hintSeen,
-    markHintSeen,
-    densityHintOpen,
-    setDensityHintOpen,
     toggleAllConversations,
     completeSelection,
     snoozeSelection,
@@ -3407,7 +3372,6 @@ export function MailboxComposeWindows(props: MailboxWorkspaceProps & { controlle
             onDraftsChanged={() => void mailbox.requireWorkspaceReconcile().catch(() => undefined)}
             onDockedChange={mailbox.setWindowsDocked}
             replyPosition={mailbox.replyPosition}
-            arrangeHint={{ open: () => !mailbox.hintSeen("panes-arrange"), dismiss: () => mailbox.markHintSeen("panes-arrange") }}
           />
         </Show>
       )}
@@ -3684,10 +3648,6 @@ export function MailboxWorkspace(props: MailboxWorkspaceProps) {
                   controller().searchControls?.cancelPending();
                   void controller().openWorkspaceHref(href);
                 }}
-                hint={{
-                  open: !controller().hintSeen("filters-moved"),
-                  onDismiss: () => controller().markHintSeen("filters-moved"),
-                }}
               />
             </MailSearchInput>
           ) : undefined
@@ -3784,13 +3744,6 @@ export function MailboxWorkspace(props: MailboxWorkspaceProps) {
                           onResize={(percent) => controller().setDragPercent(percent)}
                           onResizeEnd={(percent) => controller().saveListShare(Math.round(percent * 10) / 1000)}
                           onReset={() => controller().saveListShare(null)}
-                          hint={{
-                            open: controller().densityHintOpen() && !controller().hintSeen("density-by-width"),
-                            onDismiss: () => {
-                              controller().setDensityHintOpen(false);
-                              controller().markHintSeen("density-by-width");
-                            },
-                          }}
                         />
                       </Show>
                       <MailConversationReader
@@ -3843,9 +3796,6 @@ export function MailboxWorkspace(props: MailboxWorkspaceProps) {
                         commentsCursor={controller().data.commentsCursor}
                         detailErrors={controller().data.detailErrors}
                         presence={controller().presence().participants}
-                        hintSeen={controller().hintSeen}
-                        toolbarCustomized={props.session.initialPreferences.toolbarCustomized}
-                        onHintSeen={controller().markHintSeen}
                         actionPending={controller().structureMutationLoading()}
                         structurePending={controller().structurePending()}
                         onAction={controller().runAction}

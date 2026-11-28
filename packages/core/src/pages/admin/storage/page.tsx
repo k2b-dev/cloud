@@ -1,10 +1,14 @@
 import { parseStorageBucketId } from "@k2b/cloud/contracts/storage-buckets";
-import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, getLocale, getTimeZone } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
 import { storageBucketStore } from "@k2b/cloud/services/storage-buckets/store";
+import { AdminLayout, adminNavigation } from "@k2b/cloud/ssr";
 import { ssr } from "../../../config";
+import { settingsDocumentationHref } from "../settings/documentation";
 import { buildEntries } from "../settings/entries";
-import { type StorageSelection, StorageView } from "./view";
+import { storageAreaMessages } from "./messages";
+import type { StorageSelection } from "./StorageScreen";
+import StorageScreen from "./StorageScreen.island";
 
 /** Administration › Storage: the default bucket and the further buckets apps can use. `?bucket=` opens one. */
 export default ssr<AuthContext>(async (c) => {
@@ -29,13 +33,15 @@ export default ssr<AuthContext>(async (c) => {
           ? { kind: "bucket", bucket }
           : { kind: "unknown" };
   return () => (
-    <StorageView
-      c={c}
-      locale={locale}
-      items={items}
-      selection={selection}
-      defaultEntries={defaultEntries}
-      documentationBase={documentationBase}
-    />
+    <AdminLayout c={c} ui="v2" title={storageAreaMessages.resolve([locale]).t.area}>
+      <StorageScreen
+        nav={adminNavigation(c)}
+        items={items}
+        selection={selection}
+        defaultEntries={defaultEntries}
+        documentationHref={settingsDocumentationHref(documentationBase, "storage")}
+        timeZone={getTimeZone(c)}
+      />
+    </AdminLayout>
   );
 });

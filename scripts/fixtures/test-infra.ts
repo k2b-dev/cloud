@@ -347,6 +347,18 @@ try {
 // Private databases this process owns: nothing else runs in them, so work that outlives a test belongs to this process.
 const ownedDatabases = new Set<string>();
 
+// A migration in a test starts index builds in the background (`buildConcurrentIndexesInBackground`). Registered here,
+// this hook runs before the file's own teardown, so the builds end before it closes and drops its database.
+try {
+  afterAll(async () => {
+    if (ownedDatabases.size === 0) return;
+    const { settleBackgroundIndexBuilds } = await import("../../packages/cloud/src/services/concurrent-index");
+    await settleBackgroundIndexBuilds(10_000);
+  }, 15_000);
+} catch {
+  // Loaded by a script outside `bun test`; the template builder settles its builds itself.
+}
+
 /** Marks a private database of this process, so work an aborted test leaves running there ends after each test. */
 export const ownTestDatabase = (name: string): void => {
   ownedDatabases.add(name);

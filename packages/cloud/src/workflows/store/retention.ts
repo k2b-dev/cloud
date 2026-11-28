@@ -1,5 +1,6 @@
 import type { SQL } from "bun";
 import { sql } from "../../runtime/clients";
+import { type ConcurrentIndex, ensureConcurrentIndexes } from "../../services/concurrent-index";
 import { logger } from "../../services/logging";
 import { toPgUuidArray } from "../../services/postgres";
 import { startRuntimeInterval } from "../../services/runtime-lifecycle";
@@ -15,74 +16,23 @@ export const WORKFLOW_EVENT_RETENTION_DAYS = 30;
 const DEFAULT_BATCH_SIZE = 1000;
 const log = logger("workflows:retention");
 
-const retentionIndexes = [
+const retentionIndexes: ConcurrentIndex[] = [
   {
     name: "idx_workflows_event_retention",
     table: "workflows.event",
     definition:
       "((COALESCE(dispatched_at, dispatch_failed_at)), id) WHERE payload_expired_at IS NULL AND (dispatched_at IS NOT NULL OR dispatch_failed_at IS NOT NULL)",
   },
-  {
-    name: "idx_workflows_run_event",
-    table: "workflows.run",
-    definition: "(event_id) WHERE event_id IS NOT NULL",
-  },
-] as const;
-
-const readRetentionIndex = async (db: SQL, index: (typeof retentionIndexes)[number]) => {
-  const name = `workflows.${index.name}`;
-  const [state] = await db<{ present: boolean; valid: boolean; building: boolean }[]>`
-    SELECT to_regclass(${name}) IS NOT NULL AS present,
-      EXISTS (SELECT 1 FROM pg_catalog.pg_index WHERE indexrelid = to_regclass(${name}) AND indisvalid AND indisready AND indislive) AS valid,
-      EXISTS (SELECT 1 FROM pg_catalog.pg_stat_progress_create_index progress
-        WHERE progress.datname = pg_catalog.current_database()
-          AND (progress.relid = to_regclass(${index.table}) OR progress.relid IS NULL)) AS building
-  `;
-  return state ?? { present: false, valid: false, building: false };
-};
-
-const dropRetentionIndex = (db: SQL, name: string) => db.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS workflows.${name}`).simple();
+  { name: "idx_workflows_run_event", table: "workflows.run", definition: "(event_id) WHERE event_id IS NOT NULL" },
+];
 
 /**
- * Build after Core setup without blocking event or run writes. Each statement
- * runs outside a transaction, including through transaction poolers. Interrupted
- * builds are replaced; active builds are left for the next sweep. Never throws.
+ * Builds the retention indexes from the background sweep, never from startup, without blocking event or run writes
+ * (`ensureConcurrentIndexes`). True once both are valid; the sweep skips until then. Never throws.
  */
 export const ensureWorkflowEventRetentionIndexes = async (db: SQL = sql): Promise<boolean> => {
-  try {
-    // Bun may pipeline ordinary pool queries behind this long-running DDL.
-    // Reserve its connection so a startup read cannot wait behind a build
-    // that is itself waiting for the reader's open transaction.
-    const build = await db.reserve();
-    try {
-      for (const index of retentionIndexes) {
-        const before = await readRetentionIndex(build, index);
-        if (before.valid) continue;
-        if (before.building) return false;
-        if (before.present) await dropRetentionIndex(build, index.name);
-        try {
-          await build.unsafe(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition}`).simple();
-        } catch (error) {
-          const after = await readRetentionIndex(build, index);
-          log.warn("Workflow event retention index build failed; retrying on the next sweep", {
-            index: index.name,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          if (after.present && !after.valid && !after.building) await dropRetentionIndex(build, index.name);
-          return false;
-        }
-        if (!(await readRetentionIndex(build, index)).valid) return false;
-      }
-      return true;
-    } finally {
-      build.release();
-    }
-  } catch (error) {
-    log.warn("Workflow event retention indexes are unavailable; retrying on the next sweep", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return false;
-  }
+  const outcome = await ensureConcurrentIndexes(retentionIndexes, { db, log, purpose: "workflow event retention" });
+  return outcome === "ready" || outcome === "built";
 };
 
 /** Expire one bounded batch atomically; concurrent Core replicas skip locked rows. */

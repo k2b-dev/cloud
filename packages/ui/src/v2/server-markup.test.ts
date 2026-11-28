@@ -215,6 +215,88 @@ test("Ticks are drawn by the server alone: a picture with its sentence and one t
   expect(markup).toContain("--k2-c:#7c3aed");
 });
 
+test("a RangeBar is drawn by the server alone: its words, its place on the scale and the colours of its part", async () => {
+  const { RangeBar } = await import("./marks");
+  const markup = renderToString(() =>
+    createComponent(RangeBar, {
+      from: 0,
+      to: 10,
+      domain: [-10, 30],
+      stops: [
+        { at: 0, color: "#0369a1" },
+        { at: 10, color: "#15803d" },
+      ],
+      label: "0° bis 10°",
+    }),
+  );
+  expect(markup).toContain('role="img"');
+  expect(markup).toContain('aria-label="0° bis 10°"');
+  // a quarter in from the start, half the scale short of its end
+  expect(markup).toContain("--k2-range-start:25%");
+  expect(markup).toContain("--k2-range-end:50%");
+  expect(markup).toContain("--k2-range-fill:linear-gradient(var(--k2-range-way, to right), #0369a1 0%, #15803d 100%)");
+});
+
+test("a RangeBar reads from and to in either order, holds a range past its scale to the scale, and stays empty without numbers", async () => {
+  const { RangeBar } = await import("./marks");
+  const draw = (from: number, to: number) =>
+    renderToString(() => createComponent(RangeBar, { from, to, domain: [0, 10], label: "Bereich" }));
+  // the order does not matter
+  expect(draw(8, 2)).toBe(draw(2, 8));
+  // past the scale: held to its ends
+  const past = draw(-5, 15);
+  expect(past).toContain("--k2-range-start:0%");
+  expect(past).toContain("--k2-range-end:0%");
+  // at the scale's very end: a stub that stands at the end (the CSS keeps its 4 px inside the track)
+  expect(draw(10, 10)).toContain("--k2-range-start:100%");
+  // no number: the track alone, no range on it
+  expect(draw(Number.NaN, 3)).not.toContain("<i");
+  expect(renderToString(() => createComponent(RangeBar, { from: 1, to: 2, domain: [5, 5], label: "leer" }))).not.toContain("<i");
+});
+
+test("a RangeBar's colours are colours: stops sorted, held to the visible part, and anything else dropped", async () => {
+  const { RangeBar } = await import("./marks");
+  const markup = renderToString(() =>
+    createComponent(RangeBar, {
+      from: -20,
+      to: 5,
+      domain: [-10, 10],
+      stops: [
+        { at: 10, color: "#15803d" },
+        { at: 0, color: "red), url(https://example.org/x.png), linear-gradient(red" },
+        { at: -10, color: "light-dark(#1d4ed8, #93c5fd)" },
+        { at: 0, color: "#0369a1;background:url(https://example.org/x.png)" },
+      ],
+      label: "-10° bis 5°",
+    }),
+  );
+  expect(markup).not.toContain("url(");
+  // the visible part runs from -10 to 5: the stops sit at their place on it, in the order of the scale
+  expect(markup).toContain(
+    "--k2-range-fill:linear-gradient(var(--k2-range-way, to right), light-dark(#1d4ed8, #93c5fd) 0%, #15803d 133.3%)",
+  );
+});
+
+test("a decorative RangeBar says nothing to assistive technology", async () => {
+  const { RangeBar } = await import("./marks");
+  const markup = renderToString(() => createComponent(RangeBar, { from: 1, to: 2, domain: [0, 4], decorative: true }));
+  // as a decorative Avatar: hidden from assistive technology, without words of its own
+  expect(markup).toContain('aria-hidden="true"');
+  expect(markup).not.toContain("aria-label");
+});
+
+test("an Icon takes a data colour as a checked --k2-c, and drops what is no colour", async () => {
+  const { Icon } = await import("./marks");
+  const colored = renderToString(() => createComponent(Icon, { name: "sun", color: "light-dark(#b45309, #fbbf24)" }));
+  expect(colored).toContain("--k2-c:light-dark(#b45309, #fbbf24)");
+  expect(colored).toContain("data-color");
+  for (const color of ["red;background:url(https://example.org/x.png)", "red", "light-dark(#fff, red)"]) {
+    const markup = renderToString(() => createComponent(Icon, { name: "sun", color }));
+    expect(markup).not.toMatch(/--k2-c|url\(|background/);
+    expect(markup).not.toContain("data-color");
+  }
+});
+
 // A Heat is drawn whole by the server: every day of the 53 weeks with its tone and words, today marked and the one Tab
 // stop, so the first paint needs no script and no measuring.
 test("a heat sends every day of its 53 weeks, today marked, in the server's markup", () => {
