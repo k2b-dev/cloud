@@ -1,6 +1,6 @@
 import { createSignal, type JSX, Show } from "solid-js";
 import { render } from "solid-js/web";
-import { Bar, Button, Chip, Input, Pane, Path, StatusRow, Table, Tabs, Text, Workspace } from "../src/v2";
+import { Bar, Button, Chip, HeadSearch, Pane, Path, StatusRow, Table, Tabs, Text, Workspace } from "../src/v2";
 
 // A filtered list as an operations log draws it: a head with views, a search and "…"; a status row with the result,
 // key figures, a loading mark and the order controls, above a large table with a sticky first column, group rows of
@@ -169,9 +169,7 @@ render(
           }
           end={
             <>
-              <Input
-                type="search"
-                icon="search"
+              <HeadSearch
                 placeholder="Durchsuchen"
                 label="Durchsuchen"
                 onKeyDown={(event) => {
