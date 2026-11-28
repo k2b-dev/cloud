@@ -157,6 +157,21 @@ const message = (
   attachments,
 });
 
+/** The message as an organization's deny rule leaves it, when the address asks for that state. */
+const quarantine = (url: URL, now: number, shown: MailWorkspaceMessage): MailWorkspaceMessage =>
+  url.searchParams.get("quarantined") === "1"
+    ? {
+        ...shown,
+        security: {
+          risk: "danger",
+          verdict: "quarantined",
+          findings: [{ code: "admin_deny_policy", title: "", explanation: "" }],
+          linksDisabled: true,
+          evaluatedAt: new Date(now).toISOString(),
+        },
+      }
+    : shown;
+
 const savedViewNames: Record<string, string> = { "Priority view": "Wichtig", "Team view": "Team" };
 
 /**
@@ -253,24 +268,29 @@ export const mailV2Data = (url: URL, now: number): MailboxPageData => {
       ? [
           message(now, "DemoMsg1", 3 * DAY, "<p>Guten Tag,</p><p>wir brauchen 14 Eichenplatten, 40 mm, bis Mitte Dezember.</p>", []),
           message(now, "DemoMsg2", 2 * DAY, "<p>Guten Tag Frau Solberg,</p><p>das Angebot liegt bei.</p>", []),
-          message(now, "DemoMsg3", 18, body, [
-            {
-              id: "DemoAtt1",
-              filename: "Angebot-4471.pdf",
-              contentType: "application/pdf",
-              sizeBytes: 217_088,
-              contentId: null,
-              checksum: null,
-            },
-            {
-              id: "DemoAtt2",
-              filename: "Lieferbedingungen.pdf",
-              contentType: "application/pdf",
-              sizeBytes: 98_304,
-              contentId: null,
-              checksum: null,
-            },
-          ]),
+          // `?quarantined=1`: an organization's deny rule has blocked the latest message (links and attachments closed)
+          quarantine(
+            url,
+            now,
+            message(now, "DemoMsg3", 18, body, [
+              {
+                id: "DemoAtt1",
+                filename: "Angebot-4471.pdf",
+                contentType: "application/pdf",
+                sizeBytes: 217_088,
+                contentId: null,
+                checksum: null,
+              },
+              {
+                id: "DemoAtt2",
+                filename: "Lieferbedingungen.pdf",
+                contentType: "application/pdf",
+                sizeBytes: 98_304,
+                contentId: null,
+                checksum: null,
+              },
+            ]),
+          ),
         ]
       : data.detailMessages,
     conversationSummary: open

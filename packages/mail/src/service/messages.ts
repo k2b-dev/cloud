@@ -1351,6 +1351,11 @@ export const openAttachment = async (params: {
       AND ${messageVisibleTo(visibility, sql`mc.id`)}
   `;
   if (!attachment) return fail(err.notFound("Attachment"));
+  // A message whose links a policy disables keeps its attachments closed as well. The readers hide them; every way to
+  // the file (download, thumbnail, capabilities) refuses it here, like remote content.
+  const assessments = await assessMessages(params.mailboxId, [messageId]);
+  if (!assessments.ok) return assessments;
+  if (assessments.data.get(messageId)?.linksDisabled) return fail(err.forbidden("Attachments are blocked for this message"));
   const total = Number(attachment.byte_length);
   if (
     !Number.isSafeInteger(total) ||

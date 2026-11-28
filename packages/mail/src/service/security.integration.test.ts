@@ -1,10 +1,13 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { Readable } from "node:stream";
 import { sql } from "@k2b/cloud";
 import { toPgTextArray } from "@k2b/cloud/services";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import type { MailRequestContext } from "./auth";
 import { createMailbox } from "./mailboxes";
+import { storeReadableBlob } from "./message-blobs";
+import { openAttachment } from "./messages";
 import {
   assessMessage,
   createPolicy,
@@ -232,6 +235,49 @@ suite("Mail security operations", () => {
     expect(reopened.ok && reopened.data.resolutionNote).toBeNull();
     expect(reopened.ok && reopened.data.reportCount).toBe(1);
     expect(await countEvents()).toBe(before);
+  });
+
+  test("a message whose links a deny policy disables refuses its attachments; a clear message still opens them", async () => {
+    const mailbox = await createMailbox(adminContext, { name: `Mail security attachments ${suffix}` });
+    expect(mailbox.ok).toBeTrue();
+    if (!mailbox.ok) return;
+    mailboxIds.push(mailbox.data.id);
+    const blockedDomain = `blocked-attachment-${suffix}.example`;
+    const policy = await createPolicy({
+      context: adminContext,
+      input: { disposition: "deny", target: "sender_domain", value: blockedDomain, enabled: true },
+    });
+    expect(policy.ok).toBeTrue();
+    if (!policy.ok) return;
+    policyIds.push(policy.data.id);
+    const withAttachment = async (label: string, sender: string) => {
+      const bytes = Buffer.from(`${label} attachment`);
+      const blob = await storeReadableBlob(Readable.from([bytes]), bytes.length);
+      const [message] = await sql<{ id: string }[]>`
+        INSERT INTO mail.message_contents (short_id, mailbox_id, message_id, subject, normalized_subject, internal_date,
+          size_bytes, content_hash, hydration_status)
+        VALUES (${newShortId()}, ${mailbox.data.id}::uuid, ${`<${label}-${suffix}@example.test>`}, ${label}, ${label},
+          now(), ${bytes.length}, ${blob.contentHash}, 'complete')
+        RETURNING id`;
+      if (!message) throw new Error("Failed to seed the attachment message");
+      await sql`INSERT INTO mail.message_addresses (message_id, role, position, display_name, email, normalized_email)
+        VALUES (${message.id}::uuid, 'from', 0, 'Sender', ${sender}, ${sender})`;
+      const [part] = await sql<{ id: string }[]>`INSERT INTO mail.message_parts
+        (message_id, part_path, content_type, disposition, filename, size_bytes, blob_id, hydration_status)
+        VALUES (${message.id}::uuid, '2', 'text/plain', 'attachment', 'offer.txt', ${bytes.length}, ${blob.id}::uuid, 'complete')
+        RETURNING id`;
+      if (!part) throw new Error("Failed to seed the attachment part");
+      const [attachment] = await sql<{ id: string }[]>`INSERT INTO mail.attachments
+        (short_id, message_id, part_id, filename, content_type, disposition, size_bytes, blob_id)
+        VALUES (${newShortId()}, ${message.id}::uuid, ${part.id}::uuid, 'offer.txt', 'text/plain', 'attachment', ${bytes.length}, ${blob.id}::uuid)
+        RETURNING id`;
+      if (!attachment) throw new Error("Failed to seed the attachment");
+      return { mailboxId: mailbox.data.id, messageId: message.id, attachmentId: attachment.id };
+    };
+    const blocked = await withAttachment("blocked", `sender@${blockedDomain}`);
+    const clear = await withAttachment("clear", `sender@clear-${suffix}.example`);
+    expect(await openAttachment({ context: adminContext, ...blocked })).toMatchObject({ ok: false, error: { status: 403 } });
+    expect(await openAttachment({ context: adminContext, ...clear })).toMatchObject({ ok: true, data: { filename: "offer.txt" } });
   });
 
   test("a spoofed From claiming a sender identity is still assessed and reportable", async () => {

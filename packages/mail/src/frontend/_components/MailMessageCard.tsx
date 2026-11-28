@@ -41,6 +41,7 @@ import {
   resolveMessageColors,
 } from "./mail-message-presentation";
 import { mailReaderMessages } from "./mail-reader-messages";
+import { mailSecurityFindingPresentation } from "./mail-security-finding";
 import type { MailReadingFormat } from "./mail-user-preferences";
 
 /** How long a reader waits for an opened message's body before it says that it waits for the mailbox. */
@@ -99,25 +100,7 @@ export default function MailMessageCard(props: {
   const locale = useLocale();
   const messages = createMemo(() => mailMessageMessages.resolve([locale()]).t);
   const reader = createMemo(() => mailReaderMessages.resolve([locale()]).t);
-  const findingPresentation = (finding: MailSecurityFinding): { title: string; explanation: string } => {
-    const t = messages();
-    if (finding.code === "admin_deny_policy") {
-      return { title: t.blockedByOrganization, explanation: t.blockedByOrganizationExplanation };
-    }
-    if (finding.code === "authentication_failed") {
-      return { title: t.senderVerificationFailed, explanation: t.senderVerificationFailedExplanation };
-    }
-    if (finding.code === "reply_to_mismatch") {
-      return { title: t.repliesAnotherDomain, explanation: t.repliesAnotherDomainExplanation };
-    }
-    if (finding.code === "misleading_link") {
-      return { title: t.unexpectedLink, explanation: t.unexpectedLinkExplanation };
-    }
-    if (finding.code === "protected_identity_mismatch") {
-      return { title: t.senderNameImpersonated, explanation: t.senderNameImpersonatedExplanation };
-    }
-    return finding;
-  };
+  const findingPresentation = (finding: MailSecurityFinding) => mailSecurityFindingPresentation(finding, messages());
   let messageBody!: HTMLDivElement;
   const [bodyFormatOverride, setBodyFormatOverride] = createSignal<MessageBodyFormat | null>(null);
   const [colorsOverride, setColorsOverride] = createSignal<MessageColors | null>(null);
