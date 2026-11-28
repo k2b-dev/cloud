@@ -317,10 +317,11 @@ databaseSuite()("Administration › Code: statements per first view and the inde
       "SELECT * FROM (SELECT b.*,CASE WHEN b.state='del",
       "SELECT count(*)::int AS total, count(DISTINCT CO",
     ]);
-    expect(starts("history")).toEqual([
+    // The audit page reads its count and its rows in parallel (`audit.list`), so that pair is compared as a set.
+    const history = starts("history");
+    expect([history[0], [...history.slice(1, 3)].sort(), ...history.slice(3)]).toEqual([
       area,
-      "SELECT COUNT(*)::int AS count, 0::int AS automat",
-      "SELECT * FROM audit.events WHERE TRUE AND action",
+      ["SELECT * FROM audit.events WHERE TRUE AND action", "SELECT COUNT(*)::int AS count, 0::int AS automat"],
       "SELECT id,name FROM auth.groups WHERE id=ANY($1:",
       "SELECT id,COALESCE(NULLIF(display_name,''),uid) ",
     ]);
