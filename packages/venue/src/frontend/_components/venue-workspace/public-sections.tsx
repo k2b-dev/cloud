@@ -1,7 +1,13 @@
 import { Button, DateRangePicker, ImageInput, SegmentedControl, Switch, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { createStore } from "solid-js/store";
-import { MAX_PUBLIC_MENU_ITEMS, type PublicSection, type PublicSectionInput, publicLinkHref } from "../../../contracts";
+import {
+  isExternalMenuImage,
+  MAX_PUBLIC_MENU_ITEMS,
+  type PublicSection,
+  type PublicSectionInput,
+  publicLinkHref,
+} from "../../../contracts";
 import { type VenueMessages, venueMessages } from "../../../messages";
 import { createDialogSave, DialogFrame, type SubmittingDialogProps } from "./schedule";
 
@@ -153,6 +159,8 @@ export function PublicSectionDialog(
     submitLabel?: string;
     /** Menu items the Venue's other sections hold; with this menu's rows, they count toward {@link MAX_PUBLIC_MENU_ITEMS}. */
     otherMenuItems: number;
+    /** The Venue's public ID, which tells its own menu images from images at other addresses. */
+    venueId: string;
   },
 ) {
   const locale = useLocale();
@@ -345,7 +353,9 @@ export function PublicSectionDialog(
                   <div class="grid gap-3">
                     <ImageInput
                       label={t().image}
-                      description={t().menuImageDescription}
+                      // An image at another address keeps showing while its item stays unchanged; saving a change
+                      // needs it uploaded again. The hint takes the description's place, so the layout stays.
+                      description={isExternalMenuImage(item.image, props.venueId) ? t().externalImageNotice : t().menuImageDescription}
                       value={() => item.image}
                       onValueChange={(value) => updateItem(item.id, { image: value })}
                       variant="small"

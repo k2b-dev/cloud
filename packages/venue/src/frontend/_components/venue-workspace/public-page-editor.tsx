@@ -308,6 +308,7 @@ export function PublicPageEditor(props: {
               nextPosition={intent.nextPosition}
               publicPageEnabled={intent.publicPageEnabled}
               otherMenuItems={intent.otherMenuItems}
+              venueId={intent.venueId}
               submit={async (input) => {
                 const response = await apiClient.venues[":id"].sections.$post({ param: { id: intent.venueId }, json: input });
                 return response.ok ? null : await readError(response, t().addSectionFailed);
@@ -340,6 +341,7 @@ export function PublicPageEditor(props: {
               nextPosition={intent.section.position}
               publicPageEnabled={intent.publicPageEnabled}
               otherMenuItems={intent.otherMenuItems}
+              venueId={intent.venueId}
               title={t().editPublicSection}
               submitLabel={t().saveSection}
               submit={async ({ position: _position, ...patch }) => {

@@ -35,8 +35,10 @@ import {
   FeedbackEntrySchema,
   FeedbackInputSchema,
   FreeSignupInputSchema,
+  MAX_MENU_IMAGE_BYTES,
   MAX_PUBLIC_MENU_ITEMS,
   MAX_PUBLIC_SECTIONS,
+  MENU_IMAGE_INVALID,
   MENU_ITEM_LIMIT,
   OpeningRuleInputSchema,
   PUBLIC_SECTION_LIMIT,
@@ -65,6 +67,10 @@ import { venueMessages } from "../messages";
 import { venueService } from "../service";
 import { notifyShiftCancelled } from "../shift-notices";
 import { formatVenueDateTime } from "../time-format";
+
+const MENU_IMAGE_DESCRIPTION = `A menu item's \`image\` is a WebP, PNG, JPEG, or GIF data URL of at most ${MAX_MENU_IMAGE_BYTES} bytes, which the save stores as a public file and replaces with the file's permanent address, or such an address of this venue. Anyone with that address can see the image. An item saved again unchanged keeps an image address it already had; an item the save adds or changes with any other web address, and any other image value, answers 422 with code \`${MENU_IMAGE_INVALID}\`. A new image without a configured object store answers 503 with code \`storage_not_configured\` and stores nothing.`;
+const STORAGE_MISSING_DESCRIPTION =
+  "A new menu image needs the object store, which this Cloud has not configured (`storage_not_configured`)";
 
 const VenueIdParamSchema = z.object({ id: VenueResourceIdSchema });
 const AccessParamSchema = z.object({ id: VenueResourceIdSchema, accessId: z.string().uuid() });
@@ -856,12 +862,16 @@ const venueRoutes = new Hono<AuthContext>()
     describeRoute({
       tags: ["Venues"],
       summary: "Create public section",
-      description: `Requires admin permission. A venue stores at most ${MAX_PUBLIC_SECTIONS} sections and ${MAX_PUBLIC_MENU_ITEMS} menu items in all its menus together, drafts included; a section past either limit answers 422 with code \`${PUBLIC_SECTION_LIMIT}\` or \`${MENU_ITEM_LIMIT}\` and stores nothing.`,
+      description: `Requires admin permission. A venue stores at most ${MAX_PUBLIC_SECTIONS} sections and ${MAX_PUBLIC_MENU_ITEMS} menu items in all its menus together, drafts included; a section past either limit answers 422 with code \`${PUBLIC_SECTION_LIMIT}\` or \`${MENU_ITEM_LIMIT}\` and stores nothing. ${MENU_IMAGE_DESCRIPTION}`,
       responses: {
         201: jsonResponse(PublicSectionSchema, "Created public section"),
         400: jsonResponse(ErrorResponseSchema, "Invalid section"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        422: jsonResponse(ErrorResponseSchema, "Malformed image (`MALFORMED_IMAGE`), or the venue's section or menu item limit is reached"),
+        422: jsonResponse(
+          ErrorResponseSchema,
+          "Malformed image (`MALFORMED_IMAGE`), an image that is not allowed (`MENU_IMAGE_INVALID`), or the venue's section or menu item limit is reached",
+        ),
+        503: jsonResponse(ErrorResponseSchema, STORAGE_MISSING_DESCRIPTION),
       },
     }),
     v("param", VenueIdParamSchema),
@@ -907,9 +917,13 @@ const venueRoutes = new Hono<AuthContext>()
     describeRoute({
       tags: ["Venues"],
       summary: "Update public section",
-      description: `Change only the fields in the body. Omitted fields keep their stored value: an edit keeps a draft (\`enabled: false\`) off the public page and keeps its position. Requires admin permission. A change that adds menu items past the venue's ${MAX_PUBLIC_MENU_ITEMS} in all menus together answers 422 with code \`${MENU_ITEM_LIMIT}\` and changes nothing; a change that adds none always saves.`,
+      description: `Change only the fields in the body. Omitted fields keep their stored value: an edit keeps a draft (\`enabled: false\`) off the public page and keeps its position. Requires admin permission. A change that adds menu items past the venue's ${MAX_PUBLIC_MENU_ITEMS} in all menus together answers 422 with code \`${MENU_ITEM_LIMIT}\` and changes nothing; a change that adds none always saves. ${MENU_IMAGE_DESCRIPTION}`,
       responses: {
-        422: jsonResponse(ErrorResponseSchema, "Malformed image (`MALFORMED_IMAGE`), or the venue's menu item limit is reached"),
+        422: jsonResponse(
+          ErrorResponseSchema,
+          "Malformed image (`MALFORMED_IMAGE`), an image that is not allowed (`MENU_IMAGE_INVALID`), or the venue's menu item limit is reached",
+        ),
+        503: jsonResponse(ErrorResponseSchema, STORAGE_MISSING_DESCRIPTION),
         200: jsonResponse(PublicSectionSchema, "Updated section"),
         400: jsonResponse(ErrorResponseSchema, "Invalid section"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),

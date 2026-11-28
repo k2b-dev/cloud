@@ -293,6 +293,34 @@ export const MAX_PUBLIC_MENU_ITEMS = 60;
 /** The stable error codes (422) of a save that would take a public page past one of its limits. */
 export const PUBLIC_SECTION_LIMIT = "PUBLIC_SECTION_LIMIT";
 export const MENU_ITEM_LIMIT = "MENU_ITEM_LIMIT";
+/**
+ * A menu image that is not a WebP, PNG, JPEG, or GIF image, one past {@link MAX_MENU_IMAGE_BYTES}, or a web address
+ * other than this Venue's own menu images on an item the save adds or changes.
+ */
+export const MENU_IMAGE_INVALID = "MENU_IMAGE_INVALID";
+
+/**
+ * The most bytes of one new menu image a save takes. The editor sends a 512 × 512 px WebP at quality 0.8, about
+ * 15–60 kB for a photo; 256 KiB leaves room for a detailed one and keeps an image far below the object store limit.
+ */
+export const MAX_MENU_IMAGE_BYTES = 256 * 1024;
+
+/**
+ * Whether a menu item's image is a web address other than the Venue's own menu images, which the save stores at
+ * `/public/storage/[~bucket/]<package>/menu/<venue ID>/<random>.<type>`. The editor marks such an image; the
+ * server decides from the object store's own address.
+ */
+export const isExternalMenuImage = (image: unknown, venueId: string): boolean => {
+  if (typeof image !== "string" || !/^https?:\/\//.test(image)) return false;
+  let path: string;
+  try {
+    path = decodeURIComponent(new URL(image).pathname);
+  } catch {
+    return true;
+  }
+  const own = /^\/public\/storage\/(?:~[^/]+\/)?[^/]+\/menu\/([^/]+)\/[0-9a-f]{32}\.(?:webp|png|jpg|gif)$/.exec(path);
+  return own?.[1] !== venueId;
+};
 
 /** How many items a menu section holds; other kinds hold none. */
 export const publicMenuItemCount = (section: { kind: string; content: Record<string, unknown> }): number =>

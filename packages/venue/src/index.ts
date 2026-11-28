@@ -6,6 +6,7 @@ import { app, ssr } from "./config";
 import pageRoutes from "./frontend";
 import { venueHelp } from "./help";
 import { migrate } from "./migrate";
+import { menuImageCleanup } from "./service/menu-images";
 import { shiftNoticeScheduler } from "./shift-notices";
 
 const router = new Hono<AuthContext>()
@@ -26,8 +27,14 @@ export default await app.start({
     setup: async () => {
       await migrate();
     },
-    start: shiftNoticeScheduler.start,
-    stop: shiftNoticeScheduler.stop,
+    start: async () => {
+      await shiftNoticeScheduler.start();
+      menuImageCleanup.start();
+    },
+    stop: async () => {
+      await menuImageCleanup.stop();
+      await shiftNoticeScheduler.stop();
+    },
   },
 });
 

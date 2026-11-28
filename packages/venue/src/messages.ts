@@ -135,6 +135,14 @@ export const venueMessages = i18n.define({
       }) =>
         `This page was saved before its limits: its visible sections are ${sections} with ${items} menu items, of at most ${maxSections} and ${maxItems}. Visitors and the preview see the first ${maxSections} sections and the first ${maxItems} menu items. Delete sections or remove menu items to bring the page within its limits.`,
       copyMenuItemsTooMany: ({ count, max }: { count: number; max: number }) => `A copy would make ${count} of ${max} menu items.`,
+      menuImageInvalid: ({ position }: { position: number }) => `Item ${position}: use a WebP, PNG, JPEG, or GIF image.`,
+      menuImageTooLarge: ({ position, maxKilobytes }: { position: number; maxKilobytes: number }) =>
+        `Item ${position}: the image is larger than ${maxKilobytes} kB. Choose a smaller image.`,
+      menuImageExternal: ({ position }: { position: number }) =>
+        `Item ${position}: this image comes from another address. Upload it again or remove it to save the item.`,
+      menuImageStorageMissing:
+        "Menu images need the object store, which this Cloud has not set up. Remove the new image or ask an administrator to set up storage.",
+      externalImageNotice: "External image – please upload it again",
       editPublicSection: "Edit public section",
       deletePublicSection: "Delete public section",
       deletePublicSectionQuestion: ({ title }: { title: string }) => `Delete “${title}”?`,
@@ -717,6 +725,14 @@ export const venueMessages = i18n.define({
       pageOverLimits: ({ sections, items, maxSections, maxItems }) =>
         `Diese Seite wurde vor ihren Grenzen gespeichert: Sichtbar sind ${sections} Abschnitte mit ${items} Speisekarteneinträgen, bei höchstens ${maxSections} und ${maxItems}. Besucher und die Vorschau sehen die ersten ${maxSections} Abschnitte und die ersten ${maxItems} Einträge. Lösche Abschnitte oder entferne Einträge, bis die Seite in ihren Grenzen liegt.`,
       copyMenuItemsTooMany: ({ count, max }) => `Eine Kopie ergäbe ${count} von ${max} Speisekarteneinträgen.`,
+      menuImageInvalid: ({ position }) => `Eintrag ${position}: Verwende ein WebP-, PNG-, JPEG- oder GIF-Bild.`,
+      menuImageTooLarge: ({ position, maxKilobytes }) =>
+        `Eintrag ${position}: Das Bild ist größer als ${maxKilobytes} kB. Wähle ein kleineres Bild.`,
+      menuImageExternal: ({ position }) =>
+        `Eintrag ${position}: Dieses Bild stammt von einer anderen Adresse. Lade es neu hoch oder entferne es, um den Eintrag zu speichern.`,
+      menuImageStorageMissing:
+        "Bilder in Speisekarten brauchen den Objektspeicher, den diese Cloud nicht eingerichtet hat. Entferne das neue Bild oder bitte eine Administratorin oder einen Administrator, den Speicher einzurichten.",
+      externalImageNotice: "Externes Bild – bitte neu hochladen",
       editPublicSection: "Öffentlichen Abschnitt bearbeiten",
       deletePublicSection: "Öffentlichen Abschnitt löschen",
       deletePublicSectionQuestion: ({ title }) => `„${title}“ löschen?`,

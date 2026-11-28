@@ -1,9 +1,10 @@
 import { beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { sql } from "@k2b/cloud";
+import { sql, storage } from "@k2b/cloud";
 import type { CloudRuntime } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { settings } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
+import { useTestSettings } from "@k2b/cloud/services/settings/settings.test-fixture";
 import { dates } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../scripts/fixtures/caller-address";
@@ -70,6 +71,17 @@ const insertUser = async (label: string): Promise<string> => {
   return row!.id;
 };
 
+/**
+ * Where the current test's Venue keeps its menu images, as the object store addresses them. Saving accepts only
+ * such addresses besides image data, and building one needs no object store.
+ */
+let imageBase = "";
+const useVenueImages = async (venue: string) => {
+  const probe = `${"0".repeat(32)}.webp`;
+  const url = await storage.public.file(`menu/${venue}/${probe}`).url;
+  imageBase = url.slice(0, -probe.length);
+};
+
 /** A full menu item as a café writes one: a long name, a description, allergens, a price, and an image address. */
 const menuItem = (index: number) => ({
   name: `Homemade pumpkin and ginger soup with roasted seeds, number ${index}`,
@@ -77,7 +89,7 @@ const menuItem = (index: number) => ({
     "Slow-cooked Hokkaido pumpkin with fresh ginger, coconut milk and a hint of chili, served with toasted sourdough bread and a swirl of pumpkin seed oil.",
   info: "Contains celery, mustard, and gluten; vegan on request",
   price: "4.50 EUR",
-  image: `https://images.example.org/venue/menus/autumn-2026/pumpkin-soup-${index}.webp`,
+  image: `${imageBase}${index.toString(16).padStart(32, "0")}.webp`,
 });
 const menuItems = (count: number, from = 0) => Array.from({ length: count }, (_, index) => menuItem(from + index));
 
@@ -138,6 +150,7 @@ const seedEverythingButSections = async (cafe: string, caller: Caller, timeZone:
 };
 
 suite("Venue public page limits", () => {
+  useTestSettings({ "app.url": "https://cloud.example.test" });
   beforeAll(async () => {
     await settings.set("security.rate_limit_per_second", 1000);
   });
@@ -155,6 +168,7 @@ suite("Venue public page limits", () => {
         publicEnabled: true,
       });
       const { id: cafe, timezone } = JSON.parse(await expectStatus(created, 201, "create venue")) as { id: string; timezone: string };
+      await useVenueImages(cafe);
       const [venueRow] = await sql<{ id: string }[]>`SELECT id FROM venue.venues WHERE short_id = ${cafe}`;
       const venueId = venueRow!.id;
       await seedEverythingButSections(cafe, admin, timezone);
@@ -181,7 +195,8 @@ suite("Venue public page limits", () => {
       for (let index = 2; index < MAX_PUBLIC_SECTIONS; index++) linkIds.push(await createOk(linksSection(index), `links ${index}`));
       expect(await stored()).toEqual({ sections: MAX_PUBLIC_SECTIONS, items: MAX_PUBLIC_MENU_ITEMS });
 
-      // The guest page at both limits, with the worst case of everything else, stays within its HTML budget.
+      // The guest page at both limits, every menu item with an image address and the worst case of everything else,
+      // stays within its HTML budget.
       const shown = JSON.parse(
         await expectStatus(await send("GET", `/api/venue/public/${cafe}/status`, {}), 200, "public status"),
       ) as PublicStatus;
@@ -194,6 +209,7 @@ suite("Venue public page limits", () => {
       }).toEqual({ rules: 14, changedDays: true, openings: 8, sections: MAX_PUBLIC_SECTIONS });
       const html = await expectStatus(await send("GET", `/app/venue/public/${cafe}`, {}), 200, "public page");
       const pageBytes = Buffer.byteLength(html);
+      expect(html).toContain(`<img src="${imageBase}`);
       expect({ pageBytes, withinBudget: pageBytes <= PUBLIC_PAGE_HTML_BUDGET_BYTES }).toEqual({ pageBytes, withinBudget: true });
 
       // One more section is refused with the stable code and the caller's language, and stores nothing.
@@ -281,6 +297,7 @@ suite("Venue public page limits", () => {
         publicEnabled: true,
       });
       const bakery = (JSON.parse(await expectStatus(created, 201, "create venue")) as { id: string }).id;
+      await useVenueImages(bakery);
       const [venueRow] = await sql<{ id: string }[]>`SELECT id FROM venue.venues WHERE short_id = ${bakery}`;
       const venueId = venueRow!.id;
       const menu = (

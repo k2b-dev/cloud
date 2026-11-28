@@ -198,6 +198,24 @@ export const migrate = async (): Promise<void> => {
   await sql`ALTER TABLE venue.public_sections ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_venue_public_sections_short_id ON venue.public_sections(short_id)`.simple();
   await sql`CREATE INDEX IF NOT EXISTS idx_venue_public_sections_venue_position ON venue.public_sections(venue_id, position, created_at)`.simple();
+  // Menu image deletions that commit with the change dropping the image. No foreign key: a Venue's deletion
+  // enqueues its whole image prefix and must outlive the Venue.
+  await sql`
+    CREATE TABLE IF NOT EXISTS venue.menu_image_cleanup (
+      seq BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+      venue_short_id TEXT NOT NULL,
+      object_key TEXT NOT NULL,
+      prefix BOOLEAN NOT NULL DEFAULT false,
+      attempts INT NOT NULL DEFAULT 0,
+      next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      claimed_until TIMESTAMPTZ,
+      last_error TEXT
+    )
+  `.simple();
+  await sql`CREATE INDEX IF NOT EXISTS idx_venue_menu_image_cleanup_busy ON venue.menu_image_cleanup (venue_short_id)
+    WHERE claimed_until IS NOT NULL OR attempts > 0`.simple();
+  console.log("  ✓ venue.menu_image_cleanup table");
   // Decode historical object strings inside Postgres to retain numeric precision.
   await sql`
     DO $$
