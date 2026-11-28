@@ -1169,17 +1169,21 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* on the phone, where cards share a row of half (2 × 2), a card's name takes a second line before it is cut: a name
-   such as "Leeres Notizbuch" reads whole, as the approved first start draws it */
+/* on the phone, where cards share a row of half (2 × 2), a card's name and its quiet line take a second line before
+   they are cut: a name such as "Leeres Notizbuch" reads whole, as the approved first start draws it. Lines break
+   between words; a word too long for the card is hyphenated in the page's language ("Rechnungs-wesen"), and only
+   where no hyphenation is known does it break at a letter, never past the card's edge. */
 @media not all and (min-width: 768px) {
   .k2-ui .k2-tiles[data-variant="card"][data-per-row] .k2-tile-title,
-  .k2-ui .k2-tiles[data-variant="card"][data-per-row] .k2-tile-title > .k2-row-open {
+  .k2-ui .k2-tiles[data-variant="card"][data-per-row] .k2-tile-title > .k2-row-open,
+  .k2-ui .k2-tiles[data-variant="card"][data-per-row] .k2-tile-meta {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     line-clamp: 2;
     white-space: normal;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
+    hyphens: auto;
   }
 }
 .k2-ui .k2-tile-top > .k2-tile-name > .k2-tile-title > .k2-row-open::after,
