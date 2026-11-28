@@ -8,13 +8,15 @@ import { Bar, Button, HeadSearch, Input, List, Pane, Path, Row, StatusRow, Text,
 // - `filled`: `path` with words in the search from the address, as the server sends them;
 // - `withEnd`: `path` whose search has a filter at its end, as Mail's: it keeps its field;
 // - `nested`: `path` whose search holds a plain search in its end: that one is no head search;
+// - `floats`: `path` whose main action is the floating button's twin (`Button floats`, #4373): on the phone it leaves
+//   the head, the block and the head search stay;
 // - `longPath`: `path` with seven places, which fold into "…" where the pane is narrow and stand whole where it is wide;
 // - `actions`: a head of actions only (a search), above the same toolbar: one row on every width;
 // - `state`: a head above a plain `Bar` that says the state of an open entry: no toolbar, so no block; it keeps its line;
 // - `workspace`: a workspace head of actions only (a search) above a pane with a toolbar and no head of its own, the
 //   case DR's #4470 moves into the pane's first row;
 // - `rows`: a list whose rows of one line carry a time, a deed, or both: every row keeps one height.
-export type Kind = "path" | "filled" | "withEnd" | "nested" | "longPath" | "actions" | "state" | "workspace" | "rows";
+export type Kind = "path" | "filled" | "withEnd" | "nested" | "floats" | "longPath" | "actions" | "state" | "workspace" | "rows";
 
 const Status = () => (
   <StatusRow
@@ -45,7 +47,7 @@ const Search = (props: { kind: Kind }) => (
 );
 
 export const Fixture = (props: { kind: Kind }) => {
-  const withPath = () => ["path", "filled", "withEnd", "nested", "longPath", "state"].includes(props.kind);
+  const withPath = () => ["path", "filled", "withEnd", "nested", "floats", "longPath", "state"].includes(props.kind);
   const places = () =>
     props.kind === "longPath"
       ? [
@@ -78,7 +80,13 @@ export const Fixture = (props: { kind: Kind }) => {
                         <Button variant="ghost" icon="download">
                           Laden
                         </Button>
-                        <Button variant="ghost" icon="plus" label="Neu" />
+                        {props.kind === "floats" ? (
+                          <Button variant="primary" floats icon="plus">
+                            Neu
+                          </Button>
+                        ) : (
+                          <Button variant="ghost" icon="plus" label="Neu" />
+                        )}
                       </>
                     ) : undefined}
                   </>

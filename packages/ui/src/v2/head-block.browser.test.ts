@@ -112,6 +112,27 @@ describe("a pane's head and its status row are one block", () => {
         expect(await linesOf(page)).toBe(1);
       });
     });
+
+  // #4373: the main action the floating button repeats (`Button floats`) leaves the head on the phone; the block and
+  // the head search stay as they are, on the server's page and the live one
+  for (const live of [false, true])
+    for (const width of [390, 1440])
+      test(`with the floating button's twin at ${width}px (${live ? "hydrated" : "server"})`, async () => {
+        await withPage(width, "floats", live, async (page) => {
+          const twin = page.locator('.k2-pane > [data-slot="head"] .k2-bar-end > [data-floats]');
+          expect(await twin.isVisible()).toBe(width > 390);
+          expect(await page.locator('.k2-pane > [data-slot="head"]').getAttribute("data-block")).toBe("");
+          expect((await boxOf(page, search))?.width).toBe(36);
+          expect(await page.locator(search).getAttribute("data-head-search")).toBe("");
+          expect(await linesOf(page)).toBe(1);
+          const gap = middle(await boxOf(page, filter)) - middle(await boxOf(page, path));
+          if (width > 390) {
+            // one row, and nothing folds beside the twin
+            expect(Math.abs(gap)).toBeLessThan(4);
+            expect(await page.locator('.k2-pane > [data-slot="head"] .k2-bar-fold').count()).toBe(0);
+          } else expect(gap).toBeGreaterThan(30);
+        });
+      });
 });
 
 describe("a line of state under a head is no toolbar", () => {
