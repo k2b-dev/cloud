@@ -11,14 +11,23 @@ afterAll(async () => {
 }, 60_000);
 const { AUDIT_COUNT_BOUND, AuditCursorError, audit, auditListStatements } = await import("./index");
 const { migrate } = await import("../../../../core/src/migrate/core/audit");
+const { settleBackgroundIndexBuilds } = await import("../concurrent-index");
+/** The migration, and the index build it starts in the background, as a start that runs until the build ends. */
+const migrateAndBuild = async () => {
+  await migrate();
+  expect(await settleBackgroundIndexBuilds()).toBe(true);
+};
 
 const AUTOMATIC = `'{"provenance":"system","service":"app-workload"}'::jsonb`;
 const INDEX = "idx_audit_events_visible_created";
-/** The names of the indexes a statement of the service reads, as the planner chooses for it. */
+/**
+ * The names of the indexes a statement of the service reads, as the planner chooses for it. Where TimescaleDB made the
+ * log a hypertable, each chunk is read through its own copy of the index (`_hyper_1_2_chunk_<name>`); those count as it.
+ */
 const indexesOf = async (statement: SQL.Query<unknown>) => {
   const [row] = await sql<{ "QUERY PLAN": unknown }[]>`EXPLAIN (FORMAT JSON) ${statement}`;
   const plan = JSON.stringify(row!["QUERY PLAN"]);
-  const names = [...plan.matchAll(/"Index Name":"([^"]+)"/g)].map((match) => match[1]);
+  const names = [...new Set([...plan.matchAll(/"Index Name":"(?:_hyper_\d+_\d+_chunk_)?([^"]+)"/g)].map((match) => match[1]))];
   // a plan without an index names its nodes, so a failure shows what the planner chose instead
   return names.length > 0 ? names : [plan.slice(0, 400)];
 };
@@ -63,16 +72,16 @@ databaseSuite()("the visible audit log (integration)", () => {
   });
 
   test("the migration builds the partial index of the visible log, valid; again and twice at once keep that one", async () => {
-    await migrate();
-    await Promise.all([migrate(), migrate()]);
+    await migrateAndBuild();
+    await Promise.all([migrateAndBuild(), migrateAndBuild()]);
     expect(await visibleIndex()).toEqual([{ valid: true }]);
   });
 
   test("an invalid index left by an interrupted build is built again", async () => {
-    // what an interrupted CONCURRENTLY build leaves: the index in the catalog, marked invalid
+    // what an interrupted build leaves: the index in the catalog, marked invalid
     await sql.unsafe(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = 'audit.${INDEX}'::regclass`);
     expect(await visibleIndex()).toEqual([{ valid: false }]);
-    await migrate();
+    await migrateAndBuild();
     expect(await visibleIndex()).toEqual([{ valid: true }]);
   });
 
