@@ -293,6 +293,45 @@ describe("the permission editor on v2", () => {
     }
   });
 
+  // review of #4222: a check before the change that throws (`beforeChange`, before the row saves) said nothing in v2
+  test("a check that fails before the change says so in its row and tries again", async () => {
+    const { context, tab } = await open(views[0]!, "?guard");
+    try {
+      await row(tab, "Jonas Weber").getByRole("button", { name: "Edit", exact: true }).click();
+      await tab.getByRole("menuitemradio", { name: /View/ }).click();
+      await row(tab, "Jonas Weber").getByText("The policy could not be checked.").waitFor();
+      await row(tab, "Jonas Weber").getByRole("button", { name: "Try again" }).click();
+      await row(tab, "Jonas Weber").getByText("Saved").waitFor();
+      expect(await calls(tab)).toEqual([{ update: "00000000-0000-4000-8000-000000000002", permission: "read" }]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("a failed removal says so in its row, keeps the row and tries again", async () => {
+    const { context, tab } = await open(views[0]!, "?failrevoke");
+    try {
+      await row(tab, "Lagerbot")
+        .getByRole("button", { name: /Remove Lagerbot/ })
+        .click();
+      await tab
+        .getByRole("alertdialog")
+        .getByRole("button", { name: /Remove/ })
+        .click();
+      await row(tab, "Lagerbot").getByText("The access could not be removed.").waitFor();
+      expect(await calls(tab)).toEqual([]);
+      await row(tab, "Lagerbot").getByRole("button", { name: "Try again" }).click();
+      await tab
+        .getByRole("alertdialog")
+        .getByRole("button", { name: /Remove/ })
+        .click();
+      await tab.locator('[data-k2-part="Row"]').filter({ hasText: "Lagerbot" }).waitFor({ state: "detached" });
+      expect(await calls(tab)).toEqual([{ revoke: "00000000-0000-4000-8000-000000000004" }]);
+    } finally {
+      await context.close();
+    }
+  });
+
   test("a group shows who receives access through it", async () => {
     const { context, tab } = await open(views[2]!);
     try {

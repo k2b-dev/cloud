@@ -7,7 +7,8 @@ import { PermissionEditor, type PickedPrincipal, PrincipalPicker } from "./v2";
 
 /**
  * The v2 permission editor in a v2 settings pane, with invented people, a group and an agent. Changes are recorded
- * on `window.calls`; `?fail` lets the first level change fail, `?readonly` shows it without the right to change,
+ * on `window.calls`; `?fail` lets the first level change fail, `?failrevoke` the first removal, `?guard` the first
+ * check before a change (`beforeChange` throws before the row saves), `?readonly` shows it without the right to change,
  * `?worst` lists the worst case (long, unbreakable and non-Latin names, many rows). Below it, a picker of several
  * principals (`PrincipalPicker` of v2), as a new chat asks for its people: what it holds is on `window.picked`.
  */
@@ -104,6 +105,8 @@ page.calls = [];
 page.picked = [];
 const [picked, setPicked] = createSignal<PickedPrincipal[]>([]);
 let failures = params.has("fail") ? 1 : 0;
+let revokeFailures = params.has("failrevoke") ? 1 : 0;
+let guardFailures = params.has("guard") ? 1 : 0;
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing harness root");
 render(
@@ -126,7 +129,24 @@ render(
                 }
                 page.calls.push({ update: accessId, permission });
               }}
-              revokeAccess={async (accessId) => void page.calls.push({ revoke: accessId })}
+              revokeAccess={async (accessId) => {
+                if (revokeFailures > 0) {
+                  revokeFailures -= 1;
+                  throw new Error("The access could not be removed.");
+                }
+                page.calls.push({ revoke: accessId });
+              }}
+              beforeChange={
+                params.has("guard")
+                  ? async () => {
+                      if (guardFailures > 0) {
+                        guardFailures -= 1;
+                        throw new Error("The policy could not be checked.");
+                      }
+                      return true;
+                    }
+                  : undefined
+              }
             />
           </Section>
           <Section icon="messages" title="New chat">
