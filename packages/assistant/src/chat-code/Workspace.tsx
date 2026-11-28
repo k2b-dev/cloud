@@ -33,7 +33,6 @@ import {
 import type { AssistantChatContextSnapshot, AssistantChatResult } from "../chat-context";
 import { AssistantChatContextContent, type ContextView } from "../frontend/AssistantChatContext";
 import type { ChatSidebarJump } from "../frontend/AssistantChatSidebar";
-import { dismissAssistantPanesHint } from "../frontend/chat-sidebar-layout";
 import { chatSidebarMessages } from "../frontend/chat-sidebar-messages";
 import { GENERIC_VIEW_ICON, viewKindMessages } from "../frontend/view-kind-messages";
 import { artifactMessages } from "./messages";
@@ -129,8 +128,6 @@ export function ChatWorkspace(props: {
   onAsk?: (title: string) => void;
   /** "Add pane": the chat's whole list. */
   onAdd?: () => void;
-  /** The one-time hint that tabs can be arranged was dismissed on this browser, as the server read it. */
-  arrangeHintSeen?: boolean;
   /** The operator set up reading web pages: web links of the chat open as reading-view tabs. */
   webReader?: boolean;
 }) {
@@ -138,7 +135,6 @@ export function ChatWorkspace(props: {
     t = () => artifactMessages.resolve([locale()]).t,
     w = () => workspaceMessages.resolve([locale()]).t;
   const state = props.controller.state;
-  const [arrangeHintOpen, setArrangeHintOpen] = createSignal(props.arrangeHintSeen !== true);
   // The chat's whole list carries the name of the box it opens from.
   const title = (tab: WorkspaceTab) =>
     tab.kind === "context" ? (tab.category === "files" ? chatSidebarMessages.resolve([locale()]).t.title : t()[tab.category]) : tab.title;
@@ -435,13 +431,6 @@ export function ChatWorkspace(props: {
         onLayoutChange={props.controller.setLayout}
         onActivate={props.controller.activateItem}
         onAddItem={props.onAdd ? () => props.onAdd!() : undefined}
-        arrangeHint={{
-          open: arrangeHintOpen(),
-          onDismiss: () => {
-            setArrangeHintOpen(false);
-            dismissAssistantPanesHint();
-          },
-        }}
       />
     </div>
   );

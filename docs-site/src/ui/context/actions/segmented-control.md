@@ -19,7 +19,7 @@ import {
 
 ## Options and state
 
-`SegmentedControl` is generic over a string union. `options` contain `value`, `label`, and an optional Tabler `icon`. The controlled `value` accessor must match one option, and `onValueChange` receives the selected value.
+`SegmentedControl` is generic over a string union. `options` contain `value`, `label`, an optional Tabler `icon`, and an optional `title`, a hint on hover such as the option's name where a narrow place shows only its icon. The controlled `value` accessor must match one option, and `onValueChange` receives the selected value.
 
 Use `disabled` for the whole group. Set an option's `disabled` property to skip it during keyboard navigation. `ariaLabel` names the group and defaults to `"Options"`.
 
@@ -31,7 +31,7 @@ The options sit on a grey track (`--k2b-tray`), and with it the control is as ta
 
 ```ts
 type SegmentOption<T extends string = string> = {
-  value: T; label: JSX.Element; icon?: string; disabled?: boolean;
+  value: T; label: JSX.Element; icon?: string; title?: string; disabled?: boolean;
 };
 
 type SegmentedControlProps<T extends string = string> = {

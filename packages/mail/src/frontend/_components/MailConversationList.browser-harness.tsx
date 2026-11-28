@@ -105,7 +105,6 @@ function HarnessHead(props: { requestUrl: string; onOpenHref: (href: string, rep
             quickSearch={search}
             onOpenHref={(href) => props.onOpenHref(href)}
             onEditSearch={(state, source) => search.edit(state, source)}
-            hint={{ open: false, onDismiss: () => {} }}
           />
         </MailSearchInput>
       }
@@ -385,9 +384,6 @@ window.mountMailList = (options) => {
                     commentsCursor={null}
                     detailErrors={NO_DETAIL_ERRORS}
                     presence={[]}
-                    hintSeen={(hint) => hint === "reader-head-moved"}
-                    toolbarCustomized={false}
-                    onHintSeen={noop}
                     actionPending={false}
                     structurePending={false}
                     onAction={noop}

@@ -35,7 +35,9 @@ databaseSuite()("inference turn index migration", () => {
     throw new Error("The inference index build did not wait on the controlled writer");
   };
 
-  test("creates a valid index and accepts it on repeated migration", async () => {
+  test("the migration leaves the index to the background; a build makes it valid and a repeat keeps it", async () => {
+    expect(await valid()).toBeUndefined();
+    expect(await ensureAiInferenceTurnIndex()).toBe(true);
     expect(await valid()).toBe(true);
     await migrateAiQuotas();
     expect(await ensureAiInferenceTurnIndex()).toBe(true);
@@ -96,8 +98,8 @@ databaseSuite()("inference turn index migration", () => {
       expect(await running).toBe(false);
       expect(warn).toHaveBeenCalledWith(
         "[ai:quotas]",
-        "Inference turn index build failed; retrying at the next migration",
-        expect.objectContaining({ error: expect.any(String) }),
+        "The inference turn index was not built; queries run without it until the next attempt",
+        expect.objectContaining({ index: "inference_calls_all_turn", error: expect.any(String) }),
       );
     } finally {
       await writer`ROLLBACK`.simple();

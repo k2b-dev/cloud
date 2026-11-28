@@ -62,7 +62,6 @@ const routeContext = (state: OkWorkspaceState, initialDetail: SpaceItemDetail | 
 
 export default function SpacesWorkspace(props: {
   sidebar: SpacesSidebarData;
-  hints: { sidebarSwitch: boolean; viewTabs: boolean; spaceMenu: boolean };
   people: SpaceAssignableUser[];
   userId?: string;
   state: OkWorkspaceState;
@@ -113,16 +112,9 @@ export default function SpacesWorkspace(props: {
         />
       )}
       <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
-        <SpaceSidebar
-          ctx={sidebarContext}
-          dateConfig={props.dateConfig}
-          sidebar={props.sidebar}
-          hint={{ id: "spaces.sidebar-switch", open: props.hints.sidebarSwitch }}
-        />
+        <SpaceSidebar ctx={sidebarContext} dateConfig={props.dateConfig} sidebar={props.sidebar} />
         <AppWorkspace.Head
-          views={
-            <SpaceViewTabs spaceId={state.space.id} query={state.query} currentView={state.currentView} hintOpen={props.hints.viewTabs} />
-          }
+          views={<SpaceViewTabs spaceId={state.space.id} query={state.query} currentView={state.currentView} />}
           filters={
             state.currentView !== "calendar" ? (
               <SpaceHeadFilters
@@ -145,7 +137,6 @@ export default function SpacesWorkspace(props: {
               currentView={state.currentView}
               canWrite={state.canWrite}
               people={props.people}
-              hintOpen={props.hints.spaceMenu}
             />
           }
           primary={

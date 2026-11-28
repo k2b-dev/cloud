@@ -1,6 +1,6 @@
 import { type AuthContext, getLocale, getTimeZone, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "@k2b/cloud/server";
 import { AccountIdentityError } from "@k2b/cloud/services";
-import { hintOpen, Layout, markHintSeen } from "@k2b/cloud/ssr";
+import { Layout } from "@k2b/cloud/ssr";
 import { FilegateError } from "@k2b/filegate";
 import type { Context } from "hono";
 import { filegateErrorCode } from "../api/filegate-error";
@@ -13,7 +13,6 @@ import { SEARCH_REQUEST_SECONDS } from "../service/search";
 import { browserMessages } from "./browser-messages";
 import { browseOptions, parsePreferences, viewFor } from "./browser-preferences";
 import { directoryPageCount, directoryPages } from "./directory-pages";
-import { RECENT_MOVED_HINT, SELECTION_PILL_HINT } from "./hints";
 import { activityRequest, itemHistoryRequest, itemHistorySource, movedEntry } from "./history-requests";
 import { filesMessages } from "./messages";
 import { filesPageScope } from "./page-scope";
@@ -180,12 +179,6 @@ export default ssr<AuthContext>(async (c) => {
       initial.errorCode = error.status === 404 ? "not_found" : "unavailable";
     } else throw error;
   }
-  // Opening "Me" is using the new place, which counts as having seen the hint.
-  const selectionPill = hintOpen(c, SELECTION_PILL_HINT, { allowed: true });
-  if (activityFilters?.actor === "me") {
-    markHintSeen(c, RECENT_MOVED_HINT);
-    initial.hints = { selectionPill };
-  } else initial.hints = { recentMoved: hintOpen(c, RECENT_MOVED_HINT, { allowed: true }), selectionPill };
   const locale = getLocale(c);
   const title = snapshotTitle(initial, t.files, browserMessages.resolve([locale]).t, locale);
   const scope = filesPageScope(initial) ?? undefined;

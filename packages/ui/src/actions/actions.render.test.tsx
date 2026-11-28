@@ -817,6 +817,20 @@ describe("@k2b/ui complete action migrations", () => {
       }),
     );
     expect(stretched).toContain('data-stretch=""');
+    // an option may carry a hint, such as its name where only its icon shows
+    const titled = renderToString(() =>
+      createComponent(SegmentedControl, {
+        ariaLabel: "Layout",
+        value: "list",
+        onValueChange: () => {},
+        options: [
+          { value: "list", label: "List", icon: "ti ti-list", title: "List" },
+          { value: "grid", label: "Grid" },
+        ],
+      }),
+    );
+    expect(titled).toContain('title="List"');
+    expect(titled.match(/title=/g)?.length).toBe(1);
   });
 
   test("keeps CopyButton neutral and propagates clipboard failures after reporting them", async () => {

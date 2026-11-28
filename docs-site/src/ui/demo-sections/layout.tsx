@@ -882,7 +882,6 @@ const arrangedPanesDefault = applyPanesPreset(
 
 const PanesArrangeDemo = () => {
   const [layout, setLayout] = createSignal<PanesLayout>(arrangedPanesDefault);
-  const [hintSeen, setHintSeen] = createSignal(false);
   const items: readonly PanesItem[] = arrangedPaneDefinitions.map((item) => ({
     id: item.id,
     title: item.title,
@@ -905,20 +904,12 @@ const [layout, setLayout] = createSignal<PanesLayout>(storedLayout ?? defaultLay
   layout={layout()}
   onLayoutChange={(next) => { setLayout(next); saveLayout(next); }}
   defaultLayout={defaultLayout}
-  arrangeHint={{ open: !hintSeen, onDismiss: markHintSeen }}
   items={items}
   ariaLabel="Reply panes"
 />`}
     >
       <div class="ui-panes-demo">
-        <Panes
-          layout={layout()}
-          onLayoutChange={setLayout}
-          defaultLayout={arrangedPanesDefault}
-          arrangeHint={{ open: !hintSeen(), onDismiss: () => setHintSeen(true) }}
-          items={items}
-          ariaLabel="Reply panes"
-        />
+        <Panes layout={layout()} onLayoutChange={setLayout} defaultLayout={arrangedPanesDefault} items={items} ariaLabel="Reply panes" />
       </div>
     </DemoCard>
   );

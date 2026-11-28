@@ -4,6 +4,7 @@ import { query as queries } from "@k2b/stdlib/solid";
 import { Button, IconButton, Placeholder, SegmentedControl, TextInput, type ToastHandle, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { hexColor } from "@/frontend/lib/color";
 import type { OverviewView, OverviewWork } from "@/overview-contracts";
 import { createRetryToasts } from "../frontend/lib/feedback";
 import { overviewMessages } from "../frontend/overview-messages";
@@ -292,7 +293,7 @@ export default function MyTasks(props: Props) {
             <span class="spaces-pwa__space">
               <span
                 class="spaces-pwa__dot"
-                style={{ "background-color": item().spaceColor ?? "var(--k2b-text-muted)" }}
+                style={{ "background-color": hexColor(item().spaceColor) ?? "var(--k2b-text-muted)" }}
                 aria-hidden="true"
               />
               {item().spaceName}

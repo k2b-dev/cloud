@@ -25,7 +25,7 @@ import { announceBranch, announceText, type TreegridRow, treegridStep } from "./
 import { ActionButton, CopyButton } from "./button";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
-import { Avatar, custom, Dot, Icon } from "./marks";
+import { Avatar, custom, Dot, Icon, Mark, type MarkProps } from "./marks";
 import { Empty, type EmptyProps, Loading, LoadingStatus, PlaceholderValue } from "./states";
 import type { TypeRole } from "./tokens";
 import { useTreeMessages } from "./tree-messages";
@@ -84,7 +84,13 @@ export const Text = (props: TextProps) => (
 /** The links reading text may carry; any other target shows as text. */
 const proseLinks = ["https:", "http:", "mailto:"] as const;
 
-export type ProseProps =
+export type ProseProps = {
+  /**
+   * Short text a person wrote, such as a comment: a heading is no larger than the text, and in Markdown a table shows
+   * its rows as lines of text. Images show their words as always; links and inline code stay.
+   */
+  compact?: boolean;
+} & (
   | {
       /**
        * Text in Markdown, such as a message. Raw HTML in it shows as text; links lead only to web pages and mail
@@ -97,7 +103,8 @@ export type ProseProps =
       markdown?: never;
       /** Reading text as elements, when it is not Markdown. */
       children: JSX.Element;
-    };
+    }
+);
 
 /** Reading text: 14/22, a measure of 720 px, headings at 16 and 18. It carries the text edge itself. */
 export const Prose = (props: ProseProps) => {
@@ -106,7 +113,7 @@ export const Prose = (props: ProseProps) => {
     <Show
       when={props.markdown !== undefined}
       fallback={
-        <div class="k2-prose" data-k2-part="Prose" data-k2-prose="">
+        <div class="k2-prose" data-k2-part="Prose" data-k2-prose="" data-compact={props.compact ? "" : undefined}>
           {props.children}
         </div>
       }
@@ -115,7 +122,13 @@ export const Prose = (props: ProseProps) => {
         class="k2-prose"
         data-k2-part="Prose"
         data-k2-prose=""
-        innerHTML={renderSafeMarkdown(props.markdown ?? "", { locale: locale(), allowImages: false, linkProtocols: proseLinks })}
+        data-compact={props.compact ? "" : undefined}
+        innerHTML={renderSafeMarkdown(props.markdown ?? "", {
+          locale: locale(),
+          allowImages: false,
+          allowTables: !props.compact,
+          linkProtocols: proseLinks,
+        })}
       />
     </Show>
   );
@@ -219,6 +232,11 @@ export type ListProps = {
   children: JSX.Element;
   /** A name for the list, for assistive technology. */
   label?: string;
+  /**
+   * The colour of the app the rows belong to, for the tint of the open row, such as rows of the files
+   * app inside another app; the app of the page by default.
+   */
+  color?: string;
 };
 
 /**
@@ -289,7 +307,15 @@ export const List = (props: ListProps) => {
     if (list) keepPlace(list);
   });
   return (
-    <div ref={list} class="k2-list" data-k2-part="List" role="list" aria-label={props.label}>
+    <div
+      ref={list}
+      class="k2-list"
+      data-k2-part="List"
+      data-k2-owner={props.color ? "" : undefined}
+      style={custom({ "--k2-app": props.color })}
+      role="list"
+      aria-label={props.label}
+    >
       <ListContext.Provider value={true}>{props.children}</ListContext.Provider>
     </div>
   );
@@ -305,10 +331,13 @@ export type RowProps = {
   lines: RowLines;
   /** A quiet note after the title, such as a count or an address. */
   meta?: JSX.Element;
-  /** The lead: a symbol in the colour of its area … */
+  /** The lead: a quiet symbol for what the row is … */
   icon?: string;
-  /** … the data colour of that symbol … */
-  color?: string;
+  /**
+   * … the mark of the thing the row stands for (a base, a file with its thumbnail, a table): its symbol on a tint of
+   * its colour, or its picture; 24 px in a row of one line, 32 px in a row of two or three …
+   */
+  mark?: MarkProps;
   /** … or a person. */
   avatar?: Person;
   /** Unread: a dot leads and the first two lines turn 600. */
@@ -317,6 +346,12 @@ export type RowProps = {
   strong?: boolean;
   /** The open one (its detail is shown), in the tint of the app; like `current` of `Nav`, `Tabs` and `Table`. */
   current?: boolean;
+  /**
+   * The depth of the entry in a flat list, 1 to 6, such as the headings of a note: each level stands 20 px further
+   * in (`--k2-level-step`, the step of `Table tree`), and in a `List` assistive technology hears it as
+   * `aria-level`. Nothing folds; for places that open and close, use a `Nav` group's `tree` or `Table tree`.
+   */
+  level?: 1 | 2 | 3 | 4 | 5 | 6;
   /**
    * The row stands in a selection, such as "10 ausgewählt" (pair it with `StatusRow selection`): a box in the lead,
    * named by the title, and the blue tint while `selected`, as `Table select` draws it. The box takes the place of the
@@ -386,13 +421,21 @@ export const Row = (props: RowProps) => {
   const end = resolveChildren(() => props.end);
   const marks = resolveChildren(() => props.marks);
   const title = createUniqueId();
+  // a level outside 1..6 (a heading level 0 or 7 from data) stands at the edge and says nothing
+  const level = () => {
+    const given = props.level;
+    return given !== undefined && Number.isInteger(given) && given >= 1 && given <= 6 ? given : undefined;
+  };
   return (
+    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: aria-level is set only with the listitem role, which supports it (ARIA 1.2).
     <div
       class="k2-row"
       data-k2-part="Row"
       role={inList ? "listitem" : undefined}
       data-open={props.href !== undefined || props.onOpen ? "" : undefined}
       data-lines={String(lines())}
+      data-level={level()}
+      aria-level={inList ? level() : undefined}
       data-unread={props.unread ? "" : undefined}
       data-strong={props.strong ? "" : undefined}
       data-current={props.current ? "" : undefined}
@@ -401,9 +444,9 @@ export const Row = (props: RowProps) => {
       data-yours={props.yours ? "" : undefined}
       // in a selection the box takes the person's place, so the row's text starts where the other rows' text does
       data-avatar={props.avatar && !props.select ? "" : undefined}
+      data-mark={props.mark && !props.avatar && !props.select ? "" : undefined}
       data-time={time() !== undefined ? "" : undefined}
       data-action={props.action ? "" : undefined}
-      style={custom({ "--k2-c": props.color })}
     >
       {/* What opens the row lies over all of it and is named by the title; it holds no part of the row, so a link in
           the title stays a link of its own (no link inside a link). */}
@@ -431,14 +474,21 @@ export const Row = (props: RowProps) => {
               when={props.avatar}
               fallback={
                 <Show
-                  when={props.icon}
+                  when={props.mark}
                   fallback={
-                    <Show when={props.unread}>
-                      <Dot status="ok" />
+                    <Show
+                      when={props.icon}
+                      fallback={
+                        <Show when={props.unread}>
+                          <Dot status="ok" />
+                        </Show>
+                      }
+                    >
+                      {(name) => <Icon name={name()} />}
                     </Show>
                   }
                 >
-                  {(name) => <Icon name={name()} />}
+                  {(mark) => <Mark {...mark()} />}
                 </Show>
               }
             >
@@ -530,6 +580,11 @@ type TableBase<T> = {
   rows: readonly T[];
   /** A name for the table, for assistive technology. */
   label?: string;
+  /**
+   * The colour of the app the rows belong to, for the tint of the open row, such as rows of the files
+   * app inside another app; the app of the page by default.
+   */
+  color?: string;
   /** The first column (and the box column) stays while the table scrolls sideways; an edge shows behind it. */
   sticky?: boolean;
   /** The column the rows are sorted by now: an arrow in its head and darker words (a column's `sort` makes it pressable). */
@@ -540,7 +595,14 @@ type TableBase<T> = {
    * On the phone each row becomes a row of two lines instead (rule 7): `time` stands top right, `marks` at the end of
    * the second line, such as the state of the entry as a chip.
    */
-  phone?: (row: T) => { lines: readonly [JSX.Element, JSX.Element]; avatar?: Person; time?: JSX.Element; marks?: JSX.Element };
+  phone?: (row: T) => {
+    lines: readonly [JSX.Element, JSX.Element];
+    avatar?: Person;
+    /** The thing's mark (a file's thumbnail, a base's symbol), as `Row mark`. */
+    mark?: MarkProps;
+    time?: JSX.Element;
+    marks?: JSX.Element;
+  };
   /**
    * While the rows load: the head stays and square placeholders hold the place of the rows, so nothing moves when they
    * come; `rows` (3 when not set) and `lines` (1 or 2) say how many and how high.
@@ -671,6 +733,31 @@ export const Table = <T,>(props: TableProps<T>) => {
   const t = useTreeMessages();
   const said = useBehaviorMessages();
   const grid = () => props.select !== undefined || props.sticky === true;
+  // A touch on the head gives its column grips a target of a fingertip until a touch or a click lands elsewhere; a tap
+  // beside a title before that stays the title's (v2.css).
+  let head: HTMLTableSectionElement | undefined;
+  const [touched, setTouched] = createSignal(false);
+  let stopAway: (() => void) | undefined;
+  const touchHead = (event: PointerEvent) => {
+    if (event.pointerType !== "touch" || touched()) return;
+    setTouched(true);
+    const away = (next: PointerEvent) => {
+      if (next.target instanceof Node && head?.contains(next.target)) return;
+      setTouched(false);
+      stopAway?.();
+    };
+    document.addEventListener("pointerdown", away, true);
+    stopAway = () => {
+      document.removeEventListener("pointerdown", away, true);
+      stopAway = undefined;
+    };
+  };
+  onCleanup(() => stopAway?.());
+  // a focus in the head shows its grips; the head's own focus events say so, which a focus in the body never reaches
+  const [headFocused, setHeadFocused] = createSignal(false);
+  const leaveHead = (event: FocusEvent) => {
+    if (!(event.relatedTarget instanceof Node && head?.contains(event.relatedTarget))) setHeadFocused(false);
+  };
   const sized = () => grid() || props.columns.some((column) => column.width);
   /** The width of column `index` when it can be dragged, else nothing. */
   const dragWidth = (index: number) => {
@@ -1040,6 +1127,8 @@ export const Table = <T,>(props: TableProps<T>) => {
       <div
         class="k2-table-scroll"
         data-k2-part="Table"
+        data-k2-owner={props.color ? "" : undefined}
+        style={custom({ "--k2-app": props.color })}
         data-grid={grid() ? "" : undefined}
         data-wrap={props.columns.some((column) => column.wrap) ? "" : undefined}
       >
@@ -1068,7 +1157,14 @@ export const Table = <T,>(props: TableProps<T>) => {
               </For>
             </colgroup>
           </Show>
-          <thead>
+          <thead
+            ref={head}
+            data-touched={touched() ? "" : undefined}
+            data-focused={headFocused() ? "" : undefined}
+            onPointerDown={touchHead}
+            onFocusIn={() => setHeadFocused(true)}
+            onFocusOut={leaveHead}
+          >
             <tr>
               <Show when={props.select}>
                 {(select) => (
@@ -1310,7 +1406,7 @@ export const Table = <T,>(props: TableProps<T>) => {
           <div class="k2-table-phone">
             {/* while the rows load, the phone shows rows of placeholders of two lines, not an empty list */}
             <Show when={!loading()} fallback={<Loading rows={loading()?.rows} lines={2} />}>
-              <List label={props.label}>
+              <List label={props.label} color={props.color}>
                 {/* a tree shows its top level on the phone; its rows open as pages */}
                 <For
                   each={items().filter(
@@ -1355,6 +1451,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                           <Row
                             lines={form().lines}
                             avatar={form().avatar}
+                            mark={form().mark}
                             time={form().time}
                             marks={form().marks}
                             strong
