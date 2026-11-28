@@ -22,7 +22,10 @@ test("`mono` marks the words, and only them, as read sign by sign", () => {
   expect(markup({ mono: false, children: "Pulse" })).not.toContain("data-mono");
 });
 
-test("the stylesheet sets monospace for marked words from the mono token", () => {
+test("the stylesheet sets monospace for marked words from the mono token, in the type role of their place", () => {
   const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
-  expect(css).toMatch(/\.k2-ui \.k2-text\[data-mono\] \{[^}]*font-family: var\(--k2-font-mono\);/);
+  const rule = css.match(/\.k2-ui \.k2-text\[data-mono\] \{[^}]*\}/)?.[0] ?? "";
+  expect(rule).toContain("font-family: var(--k2-font-mono);");
+  // a size of its own (0.923em was 11.999 px on a 20 px line) leaves the type roles; measureV2Layout reports it
+  expect(rule).not.toContain("font-size");
 });
