@@ -7,7 +7,7 @@ import { workspaceMessages } from "../workspace/messages";
 import { type NavigationResource, navigationResources, navigationState } from "../workspace/navigation-catalog";
 import type { PublicOkWorkspaceState } from "../workspace/workspace-public-state-model";
 import type { HomeActivity } from "./base-activity-model";
-import GridsFrame, { LiveNotice, useGridsFrame } from "./GridsFrame";
+import GridsFrame, { type GridsBases, LiveNotice, useGridsFrame } from "./GridsFrame";
 import GridsHero, { type HeroException } from "./GridsHero";
 import { kindMark, type MarkedKind } from "./kind-marks";
 import { frameMessages } from "./messages";
@@ -22,6 +22,8 @@ export type BaseHomeProps = {
   tab: "groups" | "resources";
   /** What happens in the base: new records, the exceptions, who changed what last (real data, from the server). */
   activity?: HomeActivity;
+  /** The switcher between bases and the dialog that makes one. */
+  bases?: GridsBases;
 };
 
 /**
@@ -43,6 +45,7 @@ export default function BaseHome(props: BaseHomeProps) {
       state={navigationState(props.state)}
       activeKeys={[`base:${props.state.base.id}`]}
       revision={props.state.workspaceRevision}
+      bases={props.bases}
       head={<HomeHead {...own} />}
     >
       <HomeList {...own} />

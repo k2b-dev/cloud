@@ -1,7 +1,8 @@
 /**
  * The base home's one declaration: what a base holds, narrowed by a search over names, their table and kind. The
  * SSR page and the island read the address only through it; the list is the base's own catalog, filtered where it
- * is shown. `tab` picks the curated groups or every entry, `edit` keeps edit mode.
+ * is shown. `tab` picks the curated groups or every entry, `edit` keeps edit mode, `new` names the open dialog that
+ * makes a base.
  */
 import { defineListQuery, type ListQueryStateOf } from "@k2b/ui/v2/list-query";
 import { NavigationResourceTypeSchema } from "../../../navigation-contracts";
@@ -19,7 +20,7 @@ export const resourcesQuery = (locale: string) => {
     fields: {},
     search: { label: t.searchResources },
     sort: { fixed: { field: "arranged", direction: "asc", label: t.sortName } },
-    pageParams: ["tab", "edit"],
+    pageParams: ["tab", "edit", "new"],
   });
 };
 

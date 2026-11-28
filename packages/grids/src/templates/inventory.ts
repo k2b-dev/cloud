@@ -348,6 +348,12 @@ const inventoryMessages = i18n.define({
       chooseLoanToSendAgreement: "Choose loan to send agreement",
       scanDamagedInventoryItem: "Scan damaged inventory item",
       returnItemsForLoan: "Scan returned inventory item",
+      previewCamera: "Camera",
+      previewTripod: "Tripod",
+      previewMicrophone: "Microphone",
+      previewShelfOne: "Shelf 1",
+      previewShelfTwo: "Shelf 2",
+      previewBoxFour: "Box 4",
     },
     de: {
       requestedEquipment: "Angefragte Ausrüstung",
@@ -697,6 +703,12 @@ const inventoryMessages = i18n.define({
       chooseLoanToSendAgreement: "Ausleihe für den Versand der Vereinbarung wählen",
       scanDamagedInventoryItem: "Beschädigten Inventargegenstand scannen",
       returnItemsForLoan: "Zurückgegebenen Inventargegenstand scannen",
+      previewCamera: "Kamera",
+      previewTripod: "Stativ",
+      previewMicrophone: "Mikrofon",
+      previewShelfOne: "Regal 1",
+      previewShelfTwo: "Regal 2",
+      previewBoxFour: "Kiste 4",
     },
   },
 });
@@ -749,6 +761,14 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
     icon: "ti ti-packages",
     baseName: t.templateName,
     baseDescription: t.baseDescription,
+    preview: {
+      columns: [{ name: t.name }, { name: t.location }, { name: t.status }],
+      rows: [
+        [t.previewCamera, t.previewShelfTwo, t.available],
+        [t.previewTripod, t.previewShelfOne, t.reserved],
+        [t.previewMicrophone, t.previewBoxFour, t.available],
+      ],
+    },
     navigationGroups: [
       {
         name: t.loans,

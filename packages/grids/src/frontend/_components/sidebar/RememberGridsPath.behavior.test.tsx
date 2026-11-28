@@ -13,7 +13,7 @@ describe("the base page the Grids entry opens next", () => {
     let visibility: DocumentVisibilityState = "visible";
     Object.defineProperty(dom.document, "visibilityState", { configurable: true, get: () => visibility });
     const { default: RememberGridsPath } = await import("./RememberGridsPath.island");
-    const { parseLastGridsPath, setLastGridsPath } = await import("./GridsSettingsStore");
+    const { parseLastGridsPath, parseRecentBases, setLastGridsPath } = await import("./GridsSettingsStore");
     const pages: Array<() => void> = [];
     return {
       open: (path: string) => {
@@ -28,12 +28,26 @@ describe("the base page the Grids entry opens next", () => {
       },
       otherTabOpens: (path: string) => setLastGridsPath(path),
       last: () => parseLastGridsPath(dom.document.cookie),
+      recent: () => parseRecentBases(dom.document.cookie),
       cleanup: () => {
         for (const dispose of pages) dispose();
         dom.cleanup();
       },
     };
   };
+
+  test("names the five bases opened last, newest first and each once, for the switcher", async () => {
+    const page = await setup();
+    try {
+      for (const base of ["BASE01", "BASE02", "BASE03", "BASE01", "BASE04", "BASE05", "BASE06"])
+        page.open(`/app/grids/${base}/table/TABLE1`);
+      // a page below Grids that is no base leaves the list as it is
+      page.open("/app/grids/help/grids-overview");
+      expect(page.recent()).toEqual(["BASE06", "BASE05", "BASE04", "BASE01", "BASE03"]);
+    } finally {
+      page.cleanup();
+    }
+  });
 
   test("ignores a base opened in a background tab until it is looked at", async () => {
     const page = await setup();

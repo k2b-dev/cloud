@@ -87,6 +87,15 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   side`, `width={{ min: 280, default: 320 }}`). It stands in two columns
   from 720 px of the detail (a window of ~1680 px beside a list of 640 px)
   and in reading order below that.
+- `center`: the content stands in the middle of the column, across at its
+  own measure (at most four cards of 240 px with their gaps) and in the
+  middle of the height where it fits; taller content starts at the top and
+  scrolls, and on the phone it always starts at the top. Only for a page
+  with little on it and nothing beside it, such as the first start of an
+  app without data: one `Text type="lead"` line and `Tiles perRow={4}` with
+  the ways to start, without a sidebar. The line stands centred over the
+  cards, on the phone at the start. No line or box of its own; CSS
+  alone, so the server's first render already stands there.
 - children: bands, sections, groups, lists, tables, notices, `Text`.
 
 ### Pane.Split
@@ -152,13 +161,27 @@ key statements of a record or the home of a place.
 Like things to press, such as attachments: `items: { icon, title, meta?,
 href?, onNavigate?, color? }[]`, `more` (an action after them), `label`.
 Never nested. With `color` the symbol becomes the thing's `Mark`.
+`perRow={n}`: at most n tiles share a row and grow with its width; a tile
+never gets narrower than 240 px for it. Where n do not fit, a row holds
+half of them (four as 2 × 2, never 3 + 1), and below that one under the
+other. On the phone a row always holds half of them, even below 240 px,
+and a card's name there takes a second line before it is cut; it breaks
+between words only, and a name of one word that does not fit ends in
+"…". A card with a `preview` (a way to start) names itself in medium
+weight, as the approved first start.
 
 `variant="card"`: each thing a card in a grid (at least 240 px a card) for
 an overview of things with a face, such as the bases of Grids. A card
 adds `stats` (`{ icon?, label, status?, yours? }`: "6 Tabellen", "8 knapp"
 in `warn`), `people` (an `Avatar.Stack` at the foot), `foot` (quiet words
 at its end: "Felix · vor 2 Min") and `trend` (a `Spark` at the top end, in
-the card's colour). The whole card opens its `href`. `create` adds the last
+the card's colour), `preview` (a glance of what it holds across its top,
+112 px, 84 px on the phone: `{ table: { columns, rows } }` as a small
+table of words (a column `{ label, align: "end" }` for amounts), two columns on the phone, `{ page: { title, text? } }`, or
+`{ icon }` for a thing that holds nothing yet; it is a picture, the card
+keeps its name; keep its values short, about 12 characters a cell, so
+nothing is cut at 1440 or on the phone: leave out what does not fit; the
+phone shows a table's first two columns, so an amount comes second). The whole card opens its `href`. `create` adds the last
 card that makes a new thing: dashed, `title`, `meta`, `href` or `onClick`,
 and `choices` as round chips (templates). Cards hold no box and no line.
 
@@ -274,7 +297,7 @@ open row in the tint of the app it belongs to, a chosen row blue; rows part
 with the quiet line, the column head with the clear one). A column: `title`, `cell(row)`
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
-never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer, on focus and while dragged; on touch screens it stays), `wrap` (one text column may take 3
+never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer or holds the focus, and while dragged; on touch screens it stays, and after a touch on the head it takes a 44 px target), `wrap` (one text column may take 3
 lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
@@ -531,7 +554,17 @@ name wraps in a small table and ends with "…" in one with column widths.
 
 ## Components
 
-- `Nav`: `title`, `icon`, `search?`, `primary?`, `groups: { label?, action?, items }[]`, `list?`, `phone?`, `foot`.
+- `Nav`: `title`, `icon`, `switcher?`, `search?`, `primary?`, `groups: { label?, action?, items }[]`, `list?`, `phone?`, `foot`.
+  `switcher` (`{ label, current?, options, search, noMatch, more, actions? }`) is the
+  open thing of an app that holds several (a notebook, a base) as a button
+  under the name; its panel lists `options` (`{ label, href, icon, color?,
+  meta?, group?, current? }`) in the order the app gives, consecutive options
+  of one `group` under its quiet heading ("Zuletzt geöffnet", "Alle Basen"),
+  a search from 8 options, and the `actions` ("Neue Base", "Aus Vorlage")
+  after a line. It lists at most 20 options before a search and 50 matches;
+  `more(hidden)` words the quiet line for the rest ("+480 weitere über die
+  Suche"). On the phone pass the same `switcher` to
+  `V2WorkspaceNavigation`; the shell's menu shows it there.
   `search` (`{ label, value, onInput, onKeyDown? }`) and `primary` (an
   `Action`, such as "Neuer Chat") stand under the name, each across the
   column; pass the same action as `Workspace` `primary`, which floats on the
@@ -578,8 +611,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   stands at the end and its `count` counts its own entries. A tab is never
   cut: one without room hides whole and joins that menu (and its count),
   opening from there as it does as a tab; without a menu tab a tab "Mehr"
-  holds them. Known: while tabs hide, a gap of less than one tab may stand
-  before the menu tab.
+  holds them. A tab that holds the focus and hides hands it to the menu tab,
+  and a "Mehr" that goes hands it to the last tab. Known: while tabs hide, a
+  gap of less than one tab may stand before the menu tab.
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"; cut with "…"
   first where it does not fit, its whole words as a hint on hover),
   `loading` (results
@@ -601,8 +635,8 @@ name wraps in a small table and ends with "…" in one with column widths.
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`, each with an `icon`; below 600 px of row
-  they keep only their symbols, the words stay their names; leave on the
-  phone),
+  they keep only their symbols, the words stay their names; on the phone
+  they stay in the row, and what has no room folds into one "+n" menu),
   `selection: { count, actions, clear }` (while rows are selected the row
   becomes the bar of what can be done with them; the count is never cut, and
   actions without room go whole into a "…" menu from the end, right after the
@@ -728,7 +762,9 @@ status row above it never move.
 
 - `Empty`: `icon`, `text` (one sentence that says what is the matter: "Noch
   keine Einlieferung." is not "Keine Treffer mit diesem Filter."), `action`
-  (the one way out).
+  (the one way out), `tone` (`bad` or `warn` for a place empty because
+  something went wrong or waits and cannot be retried there, such as an error
+  page; data to load again is `Failed`).
 - `Loading`: `rows` (3 when not set; give as many as usually come),
   `lines` (1, 2 or 3, as the rows that will come). It stands where the
   `List` will stand; a `Table` takes `loading` itself.

@@ -4,7 +4,14 @@ import { parseDataUrl } from "@k2b/cloud/shared";
 import { deleteWorkflowScope } from "@k2b/cloud/workflows/store";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { documentTemplateStarterById } from "../document-template-starters";
-import { type GridTemplate, getTemplate, getTemplates, type TemplateDateExpression, type TemplateRef } from "../templates";
+import {
+  type GridTemplate,
+  getTemplate,
+  getTemplates,
+  type TemplateDateExpression,
+  type TemplatePreview,
+  type TemplateRef,
+} from "../templates";
 import type { GridsWorkflow } from "../workflows/contracts";
 import { updateBaseNavigation } from "./base-navigation";
 import * as bases from "./bases";
@@ -76,6 +83,14 @@ const summarizeTemplate = (template: GridTemplate): TemplateSummary => ({
 });
 
 export const list = (locale?: string): TemplateSummary[] => getTemplates(locale).map(summarizeTemplate);
+
+/** What a start tile shows of a template: the tables it makes, and the small table it brings for the card. */
+export type StartPreview = TemplatePreview & { tables: number };
+
+export const preview = (id: string, locale = "en"): StartPreview | null => {
+  const template = getTemplate(id, locale);
+  return template?.preview ? { tables: template.tables.length, ...template.preview } : null;
+};
 
 export const get = (id: string, locale?: string): TemplateSummary | null => {
   const template = getTemplate(id, locale);

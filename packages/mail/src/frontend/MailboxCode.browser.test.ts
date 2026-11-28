@@ -604,7 +604,7 @@ describe("Process existing mail in a browser", () => {
         const link = page.getByRole("link", { name: "Vorhandene E-Mails nachholen" });
         expect({ state, count: await link.count() }).toEqual({ state, count: shown ? 1 : 0 });
         if (shown) {
-          expect(await link.getAttribute("href")).toBe("/app/mail/Mb4kd2/code/catch-up");
+          expect(await link.getAttribute("href")).toBe("/app/mail/Mb4kd2/code?catchUp=1");
           // The line ends the Code page's overview, where "Incoming mail" stood, without a divider.
           expect(await page.locator(".cloud-code .mail-code-backfill").count()).toBe(1);
           expect(await page.locator("main hr").count()).toBe(0);

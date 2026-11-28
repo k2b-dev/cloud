@@ -9,7 +9,6 @@ describe("Mail workspace preferences", () => {
     expect(readMailWorkspacePreferences(`cloud_mail_workspace=${value}`)).toEqual({
       draftFullscreen: true,
       replyPosition: "top",
-      toolbarCustomized: true,
       listMode: "conversations",
       lastMailboxId: null,
       eventsDiscovered: false,
@@ -18,22 +17,11 @@ describe("Mail workspace preferences", () => {
     });
   });
 
-  test("knows who arranged their own toolbar before Mail v5, and keeps that through every later write", () => {
-    const read = (stored: unknown) => readMailWorkspacePreferences(`cloud_mail_workspace=${encodeURIComponent(JSON.stringify(stored))}`);
-    expect(read({ toolbarActions: [] }).toolbarCustomized).toBe(true);
-    expect(read({ toolbarActions: ["reply", "reply_all", "forward", "done", "spam", "trash"] }).toolbarCustomized).toBe(false);
-    expect(read({ toolbarActions: ["reply", "reply_all", "forward", "archive", "spam", "trash"] }).toolbarCustomized).toBe(false);
-    expect(read({}).toolbarCustomized).toBe(false);
-    const rewritten = readMailWorkspacePreferences(mailWorkspaceCookie({ ...read({ toolbarActions: ["trash"] }), draftFullscreen: true }));
-    expect(rewritten.toolbarCustomized).toBe(true);
-  });
-
   test("ignores invalid and removed preferences", () => {
     const value = encodeURIComponent(JSON.stringify({ listCollapsed: true, searchDiscovered: true, shortcutOverrides: { archive: "e" } }));
     expect(readMailWorkspacePreferences(`cloud_mail_workspace=${value}`)).toEqual({
       draftFullscreen: false,
       replyPosition: "top",
-      toolbarCustomized: false,
       listMode: "conversations",
       lastMailboxId: null,
       eventsDiscovered: false,
@@ -43,7 +31,6 @@ describe("Mail workspace preferences", () => {
     expect(readMailWorkspacePreferences("cloud_mail_workspace=%7Bbroken")).toEqual({
       draftFullscreen: false,
       replyPosition: "top",
-      toolbarCustomized: false,
       listMode: "conversations",
       lastMailboxId: null,
       eventsDiscovered: false,

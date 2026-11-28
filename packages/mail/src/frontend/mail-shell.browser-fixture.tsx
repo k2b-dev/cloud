@@ -2,14 +2,7 @@ import { LocaleProvider } from "@k2b/ui";
 import type { ComponentProps } from "solid-js";
 import { scaleMailboxData } from "../../test/fixtures/mail-folder-scale.browser-fixture";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
-import {
-  type ConversationDraftSummary,
-  type ConversationView,
-  MAIL_WORKSPACE_HINT_IDS,
-  type MailActivityKind,
-  type MailWorkspacePreference,
-  type SenderIdentity,
-} from "../contracts";
+import type { ConversationDraftSummary, ConversationView, MailActivityKind, MailWorkspacePreference, SenderIdentity } from "../contracts";
 import { mailFolderNames } from "../folder-names";
 import { readMailEventsFilter } from "../mail-events-route";
 import { resolveMailSearchRoute } from "../search-state";
@@ -495,19 +488,10 @@ const eventsFixture = (url: URL): Pick<MailboxPageData, "eventsMode" | "eventsPa
   };
 };
 
-/**
- * The person's list share and seen hints: `?share=0.55` sets the share, `?hints=new` leaves every hint unseen and
- * `?hints=filters-moved` only the ones named (by default the person saw them all, so no hint covers other cases). What
- * the fixture server stored wins.
- */
+/** The person's list share: `?share=0.55` sets it. What the fixture server stored wins. */
 export const fixtureWorkspacePreference = (url: URL, stored?: Partial<MailWorkspacePreference>): MailWorkspacePreference => ({
   listShare: stored?.listShare !== undefined ? stored.listShare : Number(url.searchParams.get("share")) || null,
-  seenHints:
-    stored?.seenHints ??
-    MAIL_WORKSPACE_HINT_IDS.filter((id) => {
-      const unseen = url.searchParams.get("hints");
-      return unseen !== "new" && !unseen?.split(",").includes(id);
-    }),
+  seenHints: stored?.seenHints ?? [],
 });
 
 /** URL state is resolved for every SSR request and every in-place workspace API read. */
@@ -873,11 +857,7 @@ export default function MailShellFixture(props: {
         contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
         cloudUrl="https://cloud.example"
         dateConfig={{ locale, timeZone: "UTC" }}
-        initialPreferences={{
-          ...readMailWorkspacePreferences(props.cookieHeader ?? ""),
-          // A person who had arranged their own toolbar before Mail v5 (`?toolbar=reply,archive`).
-          toolbarCustomized: url.searchParams.has("toolbar"),
-        }}
+        initialPreferences={readMailWorkspacePreferences(props.cookieHeader ?? "")}
         initialUserPreferences={readMailUserPreferencesFromCookieHeader("", data.mailbox.id)}
         initialTheme={props.theme}
         calendarIntegrationAvailable={false}

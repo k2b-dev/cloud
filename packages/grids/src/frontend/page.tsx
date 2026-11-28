@@ -1,122 +1,67 @@
-import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
-import { currentActorUser, gridsAccessContext, listUsableCustomAppsForAccess } from "../api/permissions";
-import { toPublicBases } from "../api/public-dto";
+import { currentAccessSubject, currentActorUser } from "../api/permissions";
 import { ssr } from "../config";
 import { gridsService } from "../service";
-import BasesOverview from "./_components/overview/BasesOverview.island";
-import {
-  APPS_PER_PAGE,
-  BASES_PAGE_PATH,
-  BASES_PER_PAGE,
-  basesHref,
-  basesQuery,
-  parseBasesAddress,
-  withParam,
-} from "./_components/overview/bases-query";
+import { hasAtLeast, loadBaseGrantsForSubject, resolveEffectivePermission } from "../service/permission-resolver";
+import { withParam } from "./_components/overview/bases-query";
+import { BLANK } from "./_components/overview/CreateBaseDialog";
+import GridsStart, { type StartWay } from "./_components/overview/GridsStart.island";
+import { overviewMessages } from "./_components/overview/messages";
+import { parseLastGridsPath } from "./_components/sidebar/GridsSettingsStore";
 import { resolveGridsMessages } from "./messages";
 import { recentBasePath } from "./recent-base-path";
 
-/** One overview screen of recently changed tables. */
-const RECENT_TABLE_LIMIT = 12;
-/** The apps the side column shows before "All apps". */
-const APP_TILE_LIMIT = 8;
+/**
+ * The templates the start offers beside a blank base: the broadest uses (money, things and their loans, invoices).
+ * The others stay in the dialog's choice and in the switcher's "Aus Vorlage".
+ */
+export const START_TEMPLATES = ["finance", "inventory", "billing"] as const;
 
 /**
- * Bases overview on v2: the visible bases, searched and paged in the address (`bases-query.ts`); beside them the
- * usable apps and the most recently changed tables across bases, which search and paging leave alone.
+ * Grids has no overview page: it opens the base someone worked in last (else the newest they can open), and every old
+ * link to the overview lands there too. `?new=` opens the dialog that creates a base on that base's home. Only before
+ * the first base does the page show something of its own: the four ways to begin (`GridsStart`).
  */
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const { t } = resolveGridsMessages(locale);
   const user = currentActorUser(c);
   if (!user) return ssr.error(c, 403, { description: t.signInToOpenGrids });
-  const url = new URL(c.req.url);
-  const query = basesQuery(locale);
-  const address = parseBasesAddress(query, url.searchParams);
-  const search = address.state.search ?? "";
-  const limit = BASES_PER_PAGE;
-  const offset = (address.page - 1) * limit;
+  const create = new URL(c.req.url).searchParams.get("new")?.trim() || null;
+  const subject = { userId: user.id, userGroups: user.memberofGroupIds };
 
-  const visible = await gridsService.base.listVisible({
-    userId: user.id,
-    userGroups: user.memberofGroupIds,
-    query: search,
-    limit,
-    offset,
-  });
+  const cookie = c.req.header("Cookie");
+  const home = (base: { shortId: string }) => `/app/grids/${base.shortId}`;
+  const go = (base: { shortId: string }, page?: string | null) =>
+    c.redirect(create ? withParam(home(base), "new", create) : (page ?? home(base)), 302);
 
-  if (url.searchParams.get("recent") === "true" && visible.items.length > 0) {
-    const lastPath = recentBasePath(c.req.header("Cookie"), visible.items);
-    if (lastPath) return c.redirect(lastPath, 302);
+  // the base of the last page, while the person may still open it: the base by its id and its grants (2 statements)
+  const lastId = parseLastGridsPath(cookie)?.split(/[/?#]/)[3];
+  const lastBase = lastId ? await gridsService.base.getByShortId(lastId) : null;
+  if (lastBase) {
+    const grants = await loadBaseGrantsForSubject({ baseId: lastBase.id, subject: currentAccessSubject(c) });
+    if (hasAtLeast(resolveEffectivePermission(grants, { baseId: lastBase.id }), "read"))
+      return go(lastBase, recentBasePath(cookie, [lastBase]));
   }
-  // A page past the end, after deletions or from an old link, opens the last page with the same search.
-  const pages = Math.max(1, Math.ceil(visible.total / limit));
-  if (address.page > pages) return c.redirect(basesHref(query, address.state, pages), 302);
-
-  // `?apps=<page>` swaps the overview for the full list of usable apps.
-  const appsPage = address.apps;
-  const appsLimit = appsPage ? APPS_PER_PAGE : APP_TILE_LIMIT;
-  const usableApps = await listUsableCustomAppsForAccess(gridsAccessContext(c), {
-    limit: appsLimit,
-    offset: appsPage ? (appsPage - 1) * APPS_PER_PAGE : 0,
-  });
-  // an apps page past the end opens the last one, as the bases' pages do
-  const appPages = Math.max(1, Math.ceil(usableApps.total / APPS_PER_PAGE));
-  if (appsPage && appsPage > appPages) return c.redirect(withParam(BASES_PAGE_PATH, "apps", String(appPages)), 302);
-  const apps = {
-    items: usableApps.items
-      .filter((app) => app.publishedValid)
-      .map((app) => ({ id: app.shortId, name: app.name, icon: app.icon, baseName: app.baseName })),
-    total: usableApps.total,
-    page: appsPage,
-  };
+  // else the newest base the person may open (1 statement, from their own grants)
+  const [newest] = await gridsService.base.listVisibleItems({ ...subject, limit: 1 });
+  if (newest) return go(newest);
 
   const templates = gridsService.template.list(locale);
-  const publicBases = await toPublicBases(visible.items);
-  // Recent tables always span the first page of all visible bases, independent of search and paging.
-  const scope =
-    address.page === 1 && !search
-      ? visible.items
-      : (await gridsService.base.listVisible({ userId: user.id, userGroups: user.memberofGroupIds, limit })).items;
-  const basesById = new Map([...scope, ...visible.items].map((base) => [base.id, base]));
-  const activity = await gridsService.base.overviewActivity({ baseIds: [...basesById.keys()], tableLimit: RECENT_TABLE_LIMIT });
-  const baseStats = Object.fromEntries(
-    activity.bases.flatMap((stats) => {
-      const base = basesById.get(stats.baseId);
-      return base ? [[base.shortId, { tableCount: stats.tableCount, lastActivityAt: stats.lastActivityAt }]] : [];
+  const words = overviewMessages.resolve([locale]).t;
+  const ways: StartWay[] = [
+    { id: BLANK, name: words.blankBase, icon: "plus", preview: null },
+    ...START_TEMPLATES.flatMap((id) => {
+      const template = templates.find((each) => each.id === id);
+      return template
+        ? [{ id, name: template.name, icon: template.icon.replace(/^ti ti-/, ""), preview: gridsService.template.preview(id, locale) }]
+        : [];
     }),
-  );
-  const recentTables = activity.tables.flatMap((table) => {
-    const base = basesById.get(table.baseId);
-    return base
-      ? [
-          {
-            id: table.shortId,
-            baseId: base.shortId,
-            baseName: base.name,
-            name: table.name,
-            icon: table.icon,
-            lastActivityAt: table.lastActivityAt,
-          },
-        ]
-      : [];
-  });
-
+  ];
   return () => (
     <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: "Grids" }]}>
-      <BasesOverview
-        state={address.state}
-        page={address.page}
-        bases={publicBases}
-        total={visible.total}
-        templates={templates}
-        baseStats={baseStats}
-        recentTables={recentTables}
-        apps={apps}
-        create={address.create}
-        dateConfig={getDateConfig(c)}
-      />
+      <GridsStart ways={ways} templates={templates} create={create} />
     </Layout>
   );
 });

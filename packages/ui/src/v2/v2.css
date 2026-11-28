@@ -269,10 +269,15 @@
   --k2-ws-drawer: initial;
   --k2-drawer-w: initial;
   --k2-p: initial;
+  --k2-range-start: initial;
+  --k2-range-end: initial;
+  --k2-range-fill: initial;
   --k2-v: initial;
   --k2-avs-w: initial;
   --k2-heat-at: initial;
   --k2-canvas-h: initial;
+  --k2-per-row: initial;
+  --k2-per-row-half: initial;
   --k2-steps: initial;
   --k2-sticky-left: initial;
   --k2-fade: initial;
@@ -343,6 +348,10 @@
 }
 .k2-ui .k2-icon[data-tone="subtle"] {
   color: var(--k2-subtle);
+}
+/* a data colour by meaning takes the place of the tone; it comes in as --k2-c, checked to be a colour */
+.k2-ui .k2-icon[data-color] {
+  color: var(--k2-c);
 }
 .k2-ui .k2-text[data-tone="ok"] {
   color: var(--k2-ok);
@@ -656,6 +665,38 @@
 .k2-ui .k2-scroll > * {
   flex: none;
 }
+/* A pane with `center` (a first start: one line and a few cards): its content stands in the middle across, at its
+   own measure and at most that of four cards of 240 px with their 12 px gaps between the text edges, and in the
+   middle of the height. Auto margins centre it where it fits and fall to zero where it does not, so taller content
+   starts at the top and scrolls with nothing cut away above (centring the flex column itself would cut it). On the
+   phone it starts at the top. Its parts keep 12 px between them, and the text edge stands above and below it too, so
+   it never touches the head of the page. */
+.k2-ui .k2-pane[data-center] > .k2-scroll {
+  align-items: center;
+  gap: 12px;
+  padding-block: var(--k2-edge);
+}
+.k2-ui .k2-pane[data-center] > .k2-scroll > * {
+  width: min(100%, calc(4 * 240px + 3 * 12px + 2 * var(--k2-edge)));
+}
+.k2-ui .k2-pane[data-center] > .k2-scroll > :first-child {
+  margin-top: auto;
+}
+.k2-ui .k2-pane[data-center] > .k2-scroll > :last-child {
+  margin-bottom: auto;
+}
+/* its lines of text stand centred over what follows, as a title over the cards; on the phone at the start */
+.k2-ui .k2-pane[data-center] > .k2-scroll > .k2-text {
+  text-align: center;
+}
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-pane[data-center] > .k2-scroll > :first-child {
+    margin-top: 0;
+  }
+  .k2-ui .k2-pane[data-center] > .k2-scroll > .k2-text {
+    text-align: start;
+  }
+}
 /* panes side by side inside content: the list beside its reader, the main column beside its info column */
 .k2-ui .k2-split {
   position: relative;
@@ -759,7 +800,7 @@
      parts at its end, a closing × among them, the same before and after the page is alive */
   justify-content: flex-end;
 }
-.k2-ui .k2-bar:not([data-k2-measuring]) > .k2-bar-end > [data-k2-folded] {
+.k2-ui .k2-bar:not([data-k2-measuring]) > .k2-bar-end [data-k2-folded] {
   display: none;
 }
 /* while the bar is measured, every part stands at its whole width, the folded buttons too */
@@ -924,12 +965,43 @@
 
 /* ── Tiles: like things side by side; each one is pressed, so it is round ───────────────────────────────────── */
 .k2-ui .k2-tiles {
+  --k2-tiles-gap: 8px;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--k2-tiles-gap);
   align-items: center;
   padding: 0 var(--k2-edge);
   min-width: 0;
+}
+/* `perRow`: at most n tiles share a row and grow with it; a track never gets narrower than 240 px. Where n do not
+   fit, a row holds half of them (n / 2, rounded up: four as 2 × 2, never 3 + 1), and below 240 px one under the
+   other. The last term is the track of that half while the row is narrower than n tiles of 240 px, and far below
+   zero once it is wide enough, so `max()` then takes the n tracks. The part name outranks the rules of a variant that
+   lays its tiles out itself. */
+.k2-ui .k2-tiles[data-k2-part][data-per-row] {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(
+      max(
+        240px,
+        calc((100% - (var(--k2-per-row) - 1) * var(--k2-tiles-gap)) / var(--k2-per-row)),
+        min(
+          calc((100% - (var(--k2-per-row-half) - 1) * var(--k2-tiles-gap)) / var(--k2-per-row-half)),
+          calc((var(--k2-per-row) * 240px + (var(--k2-per-row) - 1) * var(--k2-tiles-gap) - 100%) * 1000)
+        )
+      ),
+      1fr
+    )
+  );
+  align-items: stretch;
+}
+/* On the phone a row holds half of them, also below 240 px a tile (the approved first start: four as 2 × 2); a tile's
+   name is cut with "…" there like anywhere. */
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-tiles[data-k2-part][data-per-row] {
+    grid-template-columns: repeat(var(--k2-per-row-half), minmax(0, 1fr));
+  }
 }
 .k2-ui .k2-tile {
   display: flex;
@@ -975,7 +1047,7 @@
 .k2-ui .k2-tiles[data-variant="card"] {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
+  --k2-tiles-gap: 12px;
   align-items: stretch;
   padding: 4px var(--k2-edge) 12px;
 }
@@ -992,6 +1064,105 @@
 .k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-open]:hover {
   background: var(--k2-n50);
 }
+/* A card's preview: a glance of what it holds across its top, edge to edge above its name, on the quiet surface with a
+   line under it; a small table or page stands in it on the card's surface, its top corners round, its foot cut off by
+   the line, as a sheet seen from above. 112 px, 84 px and two columns on the phone. */
+.k2-ui .k2-tile > .k2-tile-preview {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  height: 112px;
+  margin: -12px -12px 0;
+  padding: 12px 12px 0;
+  overflow: hidden;
+  background: var(--k2-n50);
+  border-bottom: var(--k2-hairline);
+  /* the card's own top corners, inside its hairline, so the card needs no clipping */
+  border-radius: calc(var(--k2-r-control) - 1px) calc(var(--k2-r-control) - 1px) 0 0;
+}
+.k2-ui .k2-tile-pv-table,
+.k2-ui .k2-tile-pv-page {
+  flex: none;
+  width: 100%;
+  background: var(--k2-surface);
+  border: var(--k2-hairline);
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  overflow: hidden;
+}
+.k2-ui .k2-tile-pv-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font: var(--k2-t-meta);
+}
+.k2-ui .k2-tile-pv-table :is(th, td) {
+  padding: 5px 6px;
+  text-align: start;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-bottom: var(--k2-hairline);
+}
+/* a column of amounts or counts stands at the end, its figures of one width */
+.k2-ui .k2-tile-pv-table :is(th, td)[data-align="end"] {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+/* the line under the preview closes the table: its last row draws none of its own */
+.k2-ui .k2-tile-pv-table tr:last-child td {
+  border-bottom: 0;
+}
+.k2-ui .k2-tile-pv-table th {
+  font-weight: 500;
+  color: var(--k2-text-2);
+}
+.k2-ui .k2-tile-pv-table td {
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-tile-pv-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-tile-pv-page > b {
+  font: var(--k2-t-row);
+  font-weight: 600;
+  color: var(--k2-text);
+}
+.k2-ui .k2-tile-preview > .k2-icon {
+  margin: auto;
+  font-size: 28px;
+  color: var(--k2-subtle);
+}
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-tile > .k2-tile-preview {
+    height: 84px;
+    padding: 10px 10px 0;
+  }
+  /* the phone's foot of a start card has the mockup's room for its words: 10 px inside, a sign of 32, 8 px beside it */
+  .k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-preview] {
+    padding: 10px;
+  }
+  .k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-preview] > .k2-tile-preview {
+    margin: -10px -10px 0;
+  }
+  .k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-preview] > .k2-tile-top {
+    gap: 8px;
+  }
+  .k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-preview] .k2-mk {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+  }
+  .k2-ui .k2-tile-pv-table :is(th, td)[data-past] {
+    display: none;
+  }
+}
 .k2-ui .k2-tile > .k2-tile-top {
   display: flex;
   flex-direction: row;
@@ -1005,6 +1176,31 @@
 .k2-ui .k2-tiles[data-variant="card"] .k2-tile-title {
   font: var(--k2-t-body);
   font-weight: 600;
+}
+/* a card with a preview is a way to start, not a thing with a face: its name stands medium, as the approved first
+   start draws it, so it is quieter than its preview's heads and leaves room for its words on the phone */
+.k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-preview] .k2-tile-title {
+  font-weight: 500;
+}
+/* a name that opens (a link, or a button with `onOpen`) is cut with "…" like a plain one: a button would cut hard */
+.k2-ui .k2-tile-title > .k2-row-open {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* on the phone, where cards share a row of half (2 × 2), a card's name takes a second line before it is cut: a name
+   such as "Leeres Notizbuch" reads whole, as the approved first start draws it. It breaks between words only, never
+   inside one; a name of one word that does not fit stays one line and ends in "…". The quiet line stays one line. */
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-tiles[data-variant="card"][data-per-row] .k2-tile-title:not([data-one-word]),
+  .k2-ui .k2-tiles[data-variant="card"][data-per-row] .k2-tile-title:not([data-one-word]) > .k2-row-open {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+  }
 }
 .k2-ui .k2-tile-top > .k2-tile-name > .k2-tile-title > .k2-row-open::after,
 .k2-ui .k2-tile-name > .k2-tile-title > .k2-row-open::after {
@@ -1996,14 +2192,27 @@
   outline: none;
   opacity: 0;
 }
+/* a focus in the head (a sort, a box) shows the grips as a pointer on it does: `data-focused`, set by the head's own
+   focus events. Not `:focus-within`: WebKit then restyles the whole table on every move of the focus in its body
+   (10 000 rows: about 300 ms a key). */
 .k2-ui .k2-cgrip:is(:hover, :focus-visible, :active, [data-dragging]),
-.k2-ui .k2-table thead:hover .k2-cgrip {
+.k2-ui .k2-table thead:is(:hover, [data-focused]) .k2-cgrip {
   opacity: 1;
 }
-/* with touch it stays, as the seam's grip does */
+/* with touch it stays, as the seam's grip does; after a touch on the head (`data-touched`, until a touch lands
+   elsewhere) each grip takes a target of 44 x 44 px around its line, from the top of the head down (the table's
+   scroller ends there). Before that a grip keeps its own small target, so a tap beside a title stays the title's. */
 @media (hover: none), (any-pointer: coarse) {
   .k2-ui .k2-cgrip {
     opacity: 1;
+  }
+  .k2-ui .k2-table thead[data-touched] .k2-cgrip::after {
+    content: "";
+    position: absolute;
+    top: -9px;
+    left: -17.5px;
+    width: 44px;
+    height: 44px;
   }
 }
 @media (forced-colors: active) {
@@ -2663,6 +2872,42 @@
   background: var(--k2-ok);
 }
 
+/* A range on a shared scale: a quiet track the width of its place, the range on it from its start to its end, in the
+   writing direction (the scale's start at the line's start). The bar is at least 4 px, so a range of one value still
+   shows, and a range at the scale's very end keeps those 4 px inside the track. */
+.k2-ui .k2-range {
+  position: relative;
+  display: block;
+  min-width: 48px;
+  height: 6px;
+  border-radius: var(--k2-r-round);
+  background: var(--k2-n100);
+}
+.k2-ui .k2-range > i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  inset-inline-start: min(var(--k2-range-start), calc(100% - 4px));
+  inset-inline-end: var(--k2-range-end);
+  min-width: 4px;
+  border-radius: var(--k2-r-round);
+  background: var(--k2-range-fill, var(--k2-n600));
+}
+/* right to left the colours run from the right, as the scale does */
+.k2-ui .k2-range:dir(rtl) {
+  --k2-range-way: to left;
+}
+/* forced colours replace backgrounds: the track keeps an outline, the range fills in the text colour */
+@media (forced-colors: active) {
+  .k2-ui .k2-range {
+    outline: 1px solid GrayText;
+  }
+  .k2-ui .k2-range > i {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+}
+
 /* ── Mark: what a thing looks like. Its symbol on a tint of its colour, or its picture, in one square place; the
    place sets the size (20 sidebar and sentence, 24 row of one line, 32 row of two or three lines, 36 tile) ──── */
 .k2-ui .k2-mk {
@@ -2710,12 +2955,12 @@
   letter-spacing: 0.02em;
 }
 /* sidebar entry and sentence: 20 */
-.k2-ui :is(.k2-ni, .k2-row-l1, .k2-text, .k2-sh) .k2-mk {
+.k2-ui :is(.k2-ni, .k2-row-l1, .k2-text, .k2-sh, .k2-switcher .k2-mi) .k2-mk {
   width: 20px;
   height: 20px;
   border-radius: 5px;
 }
-.k2-ui :is(.k2-ni, .k2-row-l1, .k2-text, .k2-sh) .k2-mk > .k2-icon {
+.k2-ui :is(.k2-ni, .k2-row-l1, .k2-text, .k2-sh, .k2-switcher .k2-mi) .k2-mk > .k2-icon {
   font-size: 13px;
 }
 /* in the words of a sentence the mark sits on their middle, with a little room on each side */
@@ -3910,6 +4155,96 @@
 .k2-ui .k2-nav-primary {
   margin-bottom: 8px;
 }
+/* The groups: they scroll between the head and the foot, so many places never push the foot out of the sidebar. A tree
+   in a group still gives way first and scrolls on its own (the area is a column it can shrink in); the area scrolls
+   only what does not shrink. It shows no scroll bar of its own, which would end the rows short of the column's edge,
+   and keeps room for the focus ring, as a tree does. */
+.k2-ui .k2-nav-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  margin: -4px;
+  padding: 4px;
+}
+.k2-ui .k2-nav-groups::-webkit-scrollbar {
+  display: none;
+}
+/* Above a list of their own (Chat's filters above the conversations) the groups keep their height: only the list gives
+   way, or both would shrink by their share and cut the filters (nav-list.browser.test) */
+.k2-ui .k2-nav-groups:has(~ .k2-nav-list) {
+  flex-shrink: 0;
+}
+/* The switcher: the open thing (its mark, its name, ↕) as a button across the column under the app's name, as a nav
+   entry stands; behind it a panel of the others in their groups, the search from 8, and the deeds. */
+.k2-ui .k2-nav-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  min-width: 0;
+  height: var(--k2-h-control);
+  padding: 0 8px;
+  border: var(--k2-hairline);
+  border-radius: var(--k2-r-control);
+  background: var(--k2-surface);
+  color: var(--k2-text);
+  font: var(--k2-t-row);
+  font-weight: 500;
+  text-align: start;
+  margin-bottom: 8px;
+}
+.k2-ui .k2-nav-switch:hover {
+  background: var(--k2-n50);
+}
+.k2-ui .k2-nav-switch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--k2-blue-ring);
+}
+.k2-ui .k2-nav-switch-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.k2-ui .k2-nav-switch > .k2-icon {
+  flex: none;
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-menu.k2-switcher {
+  width: 280px;
+}
+.k2-ui .k2-switcher-search {
+  display: flex;
+  padding: 0 0 4px;
+}
+.k2-ui .k2-switcher-search > .k2-input {
+  flex: 1;
+  min-width: 0;
+}
+.k2-ui .k2-switcher-none {
+  padding: 8px;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-switcher .k2-mi {
+  cursor: pointer;
+}
+.k2-ui .k2-switcher .k2-mi:is(:hover, :focus-visible) {
+  background: var(--k2-n100);
+}
+.k2-ui .k2-switcher .k2-mi[aria-current] {
+  color: var(--k2-text);
+  font-weight: 500;
+}
+.k2-ui .k2-switcher .k2-mi-lead {
+  width: 20px;
+}
 /* A group's own rows (an app's list, such as Chat's conversations): they reach the column's edges and scroll on their
    own between the groups and the foot, as a tree does; the foot keeps its place at the bottom */
 .k2-ui .k2-nav-list {
@@ -3918,6 +4253,11 @@
   overflow: hidden auto;
   overscroll-behavior: contain;
   margin: 0 -12px;
+  /* no bar of its own, as a pane's column: Cloud's 0.5rem one (WebKit) would cut the rows' lines short of the edge */
+  scrollbar-width: none;
+}
+.k2-ui .k2-nav-list::-webkit-scrollbar {
+  display: none;
 }
 .k2-ui .k2-nav-foot {
   margin-top: auto;
@@ -5411,7 +5751,7 @@
   .k2-ui
     .k2-ws-side
     > .k2-nav:has(> .k2-nav-list[data-phone="page"])
-    > :is(.k2-nav-title, .k2-nav-primary, .k2-nav-label, .k2-ni, .k2-ni-row, .k2-nav-fold, .k2-nt, .k2-nav-foot) {
+    > :is(.k2-nav-title, .k2-nav-primary, .k2-nav-groups, .k2-nav-foot) {
     display: none;
   }
   .k2-ui .k2-ws-side > .k2-nav:has(> .k2-nav-list[data-phone="page"]) > .k2-nav-search {
@@ -5629,8 +5969,23 @@
   .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-start:has(> .k2-path) {
     display: none;
   }
+  /* The end of a status row stays on the phone, in the row's one line: what has no room beside the statement, shortened
+     to 40 % of the row, folds into one "+n" from the end (StatusRow, bar-fold.ts), which opens it as a menu. */
+  .k2-ui .k2-bar[data-status-row][data-k2-measuring] > .k2-bar-start {
+    flex: none;
+    width: max-content;
+    max-width: 40%;
+  }
+  .k2-ui .k2-bar[data-status-row][data-k2-measuring] > .k2-bar-start > * {
+    flex: none;
+  }
+  /* before the fit (the server's page) the end of a status row on the phone cuts from its start, as a bar's end does,
+     so its last parts stand whole until the fold takes over */
   .k2-ui .k2-bar[data-status-row] > .k2-bar-end {
-    display: none;
+    margin-right: -4px;
+    padding-inline: 4px;
+    overflow: clip;
+    justify-content: flex-end;
   }
   /* tabs that share a head with actions stand closer */
   .k2-ui .k2-bar-start > .k2-tabs-nav,
@@ -5871,6 +6226,10 @@
 .k2-ui .k2-sign[data-tone="bad"] {
   background: var(--k2-bad-tint);
   color: var(--k2-bad);
+}
+.k2-ui .k2-sign[data-tone="warn"] {
+  background: var(--k2-warn-tint);
+  color: var(--k2-warn-ink);
 }
 /* Loading: square placeholders, each exactly one text line of its place high (20 in a row, 16 for a quiet line), so a
    placeholder row is as high as the row that replaces it; the bar of 12 px sits in the middle of that line */

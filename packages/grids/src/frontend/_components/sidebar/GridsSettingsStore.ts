@@ -5,12 +5,19 @@ export const NAVIGATION_EXPANSION_EVENT = "grids:navigation-expansion";
 
 type GridsSettings = {
   lastPath: string | null;
+  /** The bases opened last, newest first: the switcher's "Zuletzt geöffnet". */
+  recentBases: string[];
   documentViewMode: GridsDocumentViewMode;
   navigation: Array<{ base: string; expanded: string[] }>;
 };
 
+/** How many bases the switcher names as opened last. */
+export const RECENT_BASES = 5;
+const BASE_ID = /^[A-Za-z0-9]{6}$/;
+
 const DEFAULT_SETTINGS: GridsSettings = {
   lastPath: null,
+  recentBases: [],
   documentViewMode: "list",
   navigation: [],
 };
@@ -24,10 +31,13 @@ const normalizeSettings = (raw: unknown): GridsSettings => {
   const candidate = raw as Partial<GridsSettings>;
   return {
     lastPath: typeof candidate.lastPath === "string" ? candidate.lastPath : null,
+    recentBases: Array.isArray(candidate.recentBases)
+      ? [...new Set(candidate.recentBases.filter((id): id is string => typeof id === "string" && BASE_ID.test(id)))].slice(0, RECENT_BASES)
+      : [],
     documentViewMode: normalizeDocumentViewMode(candidate.documentViewMode),
     navigation: Array.isArray(candidate.navigation)
       ? candidate.navigation.flatMap((entry) =>
-          entry && typeof entry.base === "string" && /^[A-Za-z0-9]{6}$/.test(entry.base) && Array.isArray(entry.expanded)
+          entry && typeof entry.base === "string" && BASE_ID.test(entry.base) && Array.isArray(entry.expanded)
             ? [
                 {
                   base: entry.base,
@@ -73,7 +83,11 @@ export const setNavigationExpansion = (base: string, expanded: string[]) => {
 
 export const setLastGridsPath = (path: string) => {
   if (!isSafeGridsPath(path) || path === "/app/grids") return;
-  writeGridsSettings({ ...readGridsSettings(), lastPath: path });
+  const settings = readGridsSettings();
+  // the base the path opens leads the ones opened last
+  const base = path.split(/[/?#]/)[3] ?? "";
+  const recentBases = BASE_ID.test(base) ? [base, ...settings.recentBases.filter((id) => id !== base)] : settings.recentBases;
+  writeGridsSettings(normalizeSettings({ ...settings, lastPath: path, recentBases }));
 };
 
 export const setDocumentViewMode = (mode: GridsDocumentViewMode) => {
@@ -95,6 +109,9 @@ export const parseLastGridsPath = (cookieHeader: string | undefined): string | n
   const path = parseCookie(cookieHeader).lastPath;
   return path && isSafeGridsPath(path) ? path : null;
 };
+
+/** The bases opened last, newest first, as the cookie names them; whether each may still be opened is the caller's. */
+export const parseRecentBases = (cookieHeader: string | undefined): string[] => parseCookie(cookieHeader).recentBases;
 
 export const parseDocumentViewMode = (cookieHeader: string | undefined): GridsDocumentViewMode =>
   parseCookie(cookieHeader).documentViewMode;

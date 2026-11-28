@@ -1,19 +1,20 @@
 /**
- * Invented data for the v2 frame's browser tests: the bases overview and a base home in three states. `plain` is a
- * small team's Grids, `worst` the break-ui catalogue (long and unbreakable names, one letter, non-Latin, emoji,
- * missing descriptions, huge counts), `huge` a Grids with 1,000 bases and a base with 1,000 tables.
+ * Invented data for the v2 frame's browser tests: Grids before its first base, and a base home with its switcher in
+ * three states. `plain` is a small team's Grids, `worst` the break-ui catalogue (long and unbreakable names, one
+ * letter, non-Latin, emoji, huge counts), `huge` a Grids with 1,000 bases and a base with 1,000 tables.
  */
 import type { PublicBase, PublicTable } from "../../../api/public-dto";
-import type { BasesOverviewProps } from "../overview/BasesOverview";
+import type { BaseTemplate } from "../overview/CreateBaseDialog";
+import type { GridsStartProps } from "../overview/GridsStart";
 import type { PublicOkWorkspaceState } from "../workspace/workspace-public-state-model";
 import type { HomeActivity } from "./base-activity-model";
+import type { GridsBases } from "./GridsFrame";
 
 export type FixtureVariant = "plain" | "worst" | "huge";
 
 export const FIXTURE_REVISION = { revision: "r1", resources: { "base:Bas001": "b1" } };
 export const FIXTURE_NOW = "2026-11-25T09:00:00.000Z";
 const minutesAgo = (minutes: number) => new Date(Date.parse(FIXTURE_NOW) - minutes * 60_000).toISOString();
-const DATE_CONFIG = { locale: "de", timeZone: "Europe/Berlin", firstDayOfWeek: 1 } as const;
 
 const base = (id: string, name: string, description: string | null): PublicBase => ({
   id,
@@ -39,94 +40,117 @@ const PLAIN_BASES = [
   base("Bas009", "Buchhaltung", "Rechnungen, Zahlungen und Mahnungen"),
 ];
 
-/** What tables of a small company are called, for the recently changed ones. */
-const TABLE_NAMES = ["Aufträge", "Bestand", "Kontakte", "Urlaub", "Fahrzeuge", "Bestellungen", "Ausleihen", "Mängel", "Rechnungen"];
-
 const WORST_BASES = [
   base("Bas101", "Ersatzteilverwaltung-und-Reparaturdokumentation-der-Werkstatt-Nordhausen-Ost-2026", null),
   base("Bas102", "X", "Y"),
   base("Bas103", "物流センター東京 – 在庫と出荷", "倉庫ごとの在庫数、入荷、出荷予定を一つの表で管理します。"),
   base("Bas104", "🚚 Fuhrpark 🔧", "Fahrzeuge, TÜV-Termine, Schäden 💥 und Tankkarten"),
-  base(
-    "Bas105",
-    "Kunden",
-    "Eine sehr lange Beschreibung, die erklärt, welche Kunden, Ansprechpersonen, Verträge, Zahlungsbedingungen, Mahnstufen und Sonderabsprachen hier stehen und warum.",
-  ),
-  base("Bas106", "Sozialversicherungsfachangestelltenausbildungsunterlagen", "unbreakable@a-very-long-domain-name-for-testing.example"),
+  base("Bas105", "Kunden", null),
+  base("Bas106", "Sozialversicherungsfachangestelltenausbildungsunterlagen", null),
 ];
 
-const hugeBases = (offset: number) =>
-  Array.from({ length: 100 }, (_, index) => {
-    const n = offset + index + 1;
-    return base(`H${String(n).padStart(5, "0")}`, `Base ${n}`, n % 3 === 0 ? null : `Bereich ${n % 17} · Standort ${n % 9}`);
-  });
-
-const TEMPLATES: BasesOverviewProps["templates"] = [
+/** The four templates as the server lists them (their real names, signs and main tables). */
+const TEMPLATES: BaseTemplate[] = [
+  {
+    id: "bookshop",
+    name: "Buchhandlung",
+    description: "Bücher, Kunden, Bestellungen und Versand",
+    icon: "ti ti-books",
+    highlights: ["Katalog mit Autoren und Genres", "Bestellungen mit Positionen", "App für den Laden"],
+  },
+  {
+    id: "finance",
+    name: "Private Finanzen",
+    description: "Konten, Ausgaben, Budgets und Belege",
+    icon: "ti ti-wallet",
+    highlights: ["Transaktionen mit Kategorien", "Budgets je Monat", "Formular für Belege"],
+  },
   {
     id: "inventory",
     name: "Inventar",
-    description: "Geräte, Ausleihen und Rückgaben",
-    icon: "ti ti-package",
-    highlights: ["Tabellen für Geräte und Ausleihen", "Formular zur Ausleihe", "App für die Ausgabe"],
+    description: "Gegenstände, Lagerorte, Ausleihen und Reparaturen",
+    icon: "ti ti-packages",
+    highlights: ["Gegenstände mit Lagerort", "Ausleihen mit Positionen", "App für die Ausgabe"],
   },
   {
-    id: "crm",
-    name: "CRM",
-    description: "Kunden, Kontakte und Angebote",
-    icon: "ti ti-address-book",
-    highlights: ["Kunden und Kontakte", "Angebote mit Status", "Workflow für Wiedervorlagen"],
+    id: "billing",
+    name: "Rechnungswesen",
+    description: "Rechnungen, Korrekturen und Gutschriften",
+    icon: "ti ti-receipt",
+    highlights: ["Rechnungen mit Positionen", "Geschäftspartner", "Zahlungen"],
   },
 ];
 
-const stats = (bases: PublicBase[], large = false) =>
-  Object.fromEntries(
-    bases.map((each, index) => [
-      each.id,
-      { tableCount: large && index === 1 ? 128_345 : (index * 7) % 23, lastActivityAt: minutesAgo(index * 97 + 3) },
-    ]),
-  );
+/** Grids before the first base: blank and the three templates the page offers, with their real main tables. */
+export const startFixture = (params: URLSearchParams): GridsStartProps => ({
+  ways: [
+    { id: "blank", name: "Leere Base", icon: "plus", preview: null },
+    {
+      id: "finance",
+      name: "Private Finanzen",
+      icon: "wallet",
+      preview: {
+        tables: 5,
+        columns: [{ name: "Datum" }, { name: "Betrag", align: "end" }, { name: "Kategorie" }],
+        rows: [
+          ["01.04.", "3.200,00", "Gehalt"],
+          ["02.04.", "980,00", "Miete"],
+          ["18.04.", "28,90", "Bücher"],
+        ],
+      },
+    },
+    {
+      id: "inventory",
+      name: "Inventar",
+      icon: "packages",
+      preview: {
+        tables: 6,
+        columns: [{ name: "Name" }, { name: "Lagerort" }, { name: "Status" }],
+        rows: [
+          ["Kamera", "Regal 2", "Verfügbar"],
+          ["Stativ", "Regal 1", "Reserviert"],
+          ["Mikrofon", "Kiste 4", "Verfügbar"],
+        ],
+      },
+    },
+    {
+      id: "billing",
+      name: "Rechnungswesen",
+      icon: "receipt",
+      preview: {
+        tables: 3,
+        columns: [{ name: "Nr." }, { name: "Betrag", align: "end" }, { name: "Kunde" }],
+        rows: [
+          ["RE-0001", "1.190,00", "Nordlicht"],
+          ["RE-0002", "476,00", "Weber"],
+          ["RE-0003", "89,25", "Atelier K"],
+        ],
+      },
+    },
+  ],
+  templates: TEMPLATES,
+  create: params.get("new"),
+});
 
-/** The overview's props for a variant and an address (`q`, `page`, `apps`, `new` are read like the server does). */
-export const basesFixture = (variant: FixtureVariant, params: URLSearchParams): Omit<BasesOverviewProps, "state"> => {
-  const page = Math.max(1, Number(params.get("page") ?? "1") || 1);
-  const all = variant === "huge" ? hugeBases((page - 1) * 100) : variant === "worst" ? WORST_BASES : PLAIN_BASES;
-  const search = params.get("q")?.trim().toLowerCase();
-  const bases = search ? all.filter((each) => `${each.name} ${each.description ?? ""}`.toLowerCase().includes(search)) : all;
-  const apps =
-    variant === "plain"
-      ? [
-          { id: "App0", name: "Annahme-Terminal", icon: "scan", baseName: "Werkstatt" },
-          { id: "App1", name: "Geräteausgabe", icon: "package", baseName: "Geräteverleih" },
-          { id: "App2", name: "Schichtplan", icon: "calendar", baseName: "Personal" },
-        ]
-      : Array.from({ length: 8 }, (_, index) => ({
-          id: `App${index}`,
-          name: variant === "worst" && index === 0 ? "Ausgabe-und-Rücknahme-Terminal-für-Leihgeräte-im-Erdgeschoss" : `App ${index + 1}`,
-          icon: index % 2 ? "scan" : null,
-          baseName: variant === "worst" && index === 1 ? "物流センター東京" : "Lager Nord",
-        }));
+/** The switcher's bases for a variant: the five opened last (the open one first), then the others by name. */
+export const basesFixture = (variant: FixtureVariant, params: URLSearchParams): GridsBases => {
+  const open = base("Bas001", variant === "worst" ? "Ersatzteilverwaltung-und-Reparaturdokumentation-Nordhausen" : "Werkstatt", null);
+  const others =
+    variant === "huge"
+      ? Array.from({ length: 999 }, (_, index) => base(`H${String(index + 1).padStart(5, "0")}`, `Base ${index + 1}`, null))
+      : variant === "worst"
+        ? WORST_BASES
+        : PLAIN_BASES.slice(1);
+  const choice = (each: PublicBase) => ({ id: each.id, name: each.name });
   return {
-    page,
-    bases,
-    total: search ? bases.length : variant === "huge" ? 1000 : all.length,
+    recent: [open, ...others.slice(0, 4)].map(choice),
+    others: others
+      .slice(4)
+      .map(choice)
+      .sort((a, b) => a.name.localeCompare(b.name, "de")),
     templates: TEMPLATES,
-    baseStats: stats(bases, variant === "worst"),
-    recentTables: bases.slice(0, 12).map((each, index) => ({
-      id: `Tab${index}`,
-      baseId: each.id,
-      baseName: each.name,
-      name:
-        variant === "worst" && index === 0
-          ? "Wartungsprotokolle-der-Hebebühnen-und-Druckluftanlagen"
-          : variant === "huge"
-            ? `Tabelle ${index + 1}`
-            : (TABLE_NAMES[index % TABLE_NAMES.length] ?? "Aufträge"),
-      icon: null,
-      lastActivityAt: minutesAgo(index * 41 + 1),
-    })),
-    apps: { items: apps, total: variant === "worst" ? 12_480 : apps.length, page: params.get("apps") ? Number(params.get("apps")) : null },
     create: params.get("new"),
-    dateConfig: DATE_CONFIG,
+    canCreate: true,
   };
 };
 

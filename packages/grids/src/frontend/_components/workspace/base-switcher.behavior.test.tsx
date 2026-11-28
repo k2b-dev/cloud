@@ -40,10 +40,10 @@ describe("grids container switcher loader", () => {
     reply = async () => success();
   });
 
-  test("switcher labels match the overview in English and German", async () => {
+  test("switcher labels in English and German; there is no page of all bases", async () => {
     for (const { locale, expected } of [
-      { locale: "en", expected: { switchLabel: "Switch base", actions: ["New base", "All bases"] } },
-      { locale: "de", expected: { switchLabel: "Base wechseln", actions: ["Neue Base", "Alle Bases"] } },
+      { locale: "en", expected: { switchLabel: "Switch base", actions: ["New base"] } },
+      { locale: "de", expected: { switchLabel: "Base wechseln", actions: ["Neue Base"] } },
     ]) {
       dom.document.documentElement.lang = locale;
       const view = await mount(true);
@@ -133,13 +133,13 @@ describe("grids container switcher loader", () => {
     }
   });
 
-  test("offers creation only for a user-backed actor, before All", async () => {
+  test("offers creation only for a user-backed actor, and no page of all bases", async () => {
     const allowed = await mount(true);
     const denied = await mount(false);
     try {
-      expect(allowed.switcher().actions?.map((action) => action.id)).toEqual(["new", "all"]);
+      expect(allowed.switcher().actions?.map((action) => action.id)).toEqual(["new"]);
       expect(allowed.switcher().actions?.[0]?.label).toBe("New base");
-      expect(denied.switcher().actions?.map((action) => action.id)).toEqual(["all"]);
+      expect(denied.switcher().actions).toEqual([]);
     } finally {
       allowed.dispose();
       denied.dispose();

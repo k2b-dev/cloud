@@ -192,41 +192,55 @@ const expectClean = async (tab: Page) => {
 
 const elements = (tab: Page) => tab.evaluate(() => document.querySelectorAll("#root *").length);
 
-describe("the bases overview on v2", () => {
-  for (const variant of ["plain", "worst"] as const)
-    test(`keeps the v2 rules at 1920, 1440, 1024 and 390 px (${variant})`, async () => {
-      for (const view of [xl, wide, narrow, phone]) {
-        const { context, tab, errors } = await open(view, "/app/grids", variant);
-        try {
-          await expectClean(tab);
-          await shoot(tab, `grids-bases-${variant}-light-${view.name}`);
-          expect(await tab.locator("[data-k2-part=Loading]").count()).toBe(0);
-          expect(errors).toEqual([]);
-        } finally {
-          await context.close();
+describe("Grids before its first base", () => {
+  test("no sidebar and no switcher: the question and four ways in the middle, v2 rules at 1920, 1440, 1024 and 390 px", async () => {
+    for (const view of [xl, wide, narrow, phone]) {
+      const { context, tab, errors } = await open(view, "/app/grids");
+      try {
+        await expectClean(tab);
+        expect(await tab.locator("[data-k2-part=Nav]").count()).toBe(0);
+        expect(await tab.locator("[data-k2-part=NavSwitcher]").count()).toBe(0);
+        const ways = tab.locator("[data-k2-part=Tiles] [role=listitem]");
+        expect(await ways.allInnerTexts()).toEqual([
+          expect.stringContaining("Leere Base"),
+          expect.stringContaining("Private Finanzen"),
+          expect.stringContaining("Inventar"),
+          expect.stringContaining("Rechnungswesen"),
+        ]);
+        // above each name a preview: a template's main table with its sample rows, the blank base a table's sign
+        expect(await ways.locator(".k2-tile-preview").count()).toBe(4);
+        expect(await ways.locator(".k2-tile-pv-table").count()).toBe(3);
+        for (const way of [1, 2, 3]) expect(await ways.nth(way).locator(".k2-tile-pv-table tbody tr").count()).toBe(3);
+        // amounts stand at the end of their column
+        expect(await ways.nth(1).locator(".k2-tile-pv-table th").nth(1).getAttribute("data-align")).toBe("end");
+        // every word of a preview stands whole: no cell of a shown column ends in "…"
+        await settled(tab);
+        const cut = await ways
+          .locator(".k2-tile-pv-table :is(th, td)")
+          .evaluateAll((cells) =>
+            cells
+              .filter((cell) => getComputedStyle(cell).display !== "none" && cell.scrollWidth > cell.clientWidth)
+              .map((cell) => cell.textContent),
+          );
+        expect(cut).toEqual([]);
+        // from 1440 on the four ways stand in one row; below, a card keeps its 240 px and they wrap
+        if (view === wide || view === xl) {
+          await settled(tab);
+          const tops = await ways.evaluateAll((cards) => cards.map((card) => Math.round(card.getBoundingClientRect().top)));
+          expect(new Set(tops).size).toBe(1);
         }
+        await shoot(tab, `grids-start-light-${view.name}`);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
       }
-    }, 90_000);
-
-  test("search lives in the address and a miss offers the whole list", async () => {
-    const { context, tab, errors } = await open(wide, "/app/grids?q=lager");
-    try {
-      expect(await tab.locator("[data-k2-part=Table] tbody tr").count()).toBe(1);
-      expect(await tab.getByRole("searchbox", { name: "Bases durchsuchen" }).inputValue()).toBe("lager");
-      await tab.goto(`${origin}/app/grids?q=zzz`);
-      await settled(tab);
-      await expect(tab.getByText("Keine passenden Bases")).toBeTruthy();
-      expect(await tab.getByRole("link", { name: "Alle Bases zeigen" }).getAttribute("href")).toBe("/app/grids");
-      expect(errors).toEqual([]);
-    } finally {
-      await context.close();
     }
-  }, 60_000);
+  }, 90_000);
 
-  test("New base opens its dialog in the address, keeps the name after a failed request and asks before discarding", async () => {
+  test("a way opens its dialog in the address, keeps the name after a failed request and asks before discarding", async () => {
     const { context, tab, errors, seen } = await open(wide, "/app/grids");
     try {
-      await tab.getByRole("link", { name: "Neue Base" }).first().click();
+      await tab.getByRole("link", { name: "Leere Base" }).click();
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("new") === "blank");
       const dialog = tab.getByRole("dialog", { name: "Neue Base" });
       await dialog.waitFor();
@@ -235,7 +249,7 @@ describe("the bases overview on v2", () => {
       await dialog.getByText("Base creation unavailable").waitFor();
       expect(await dialog.getByRole("textbox", { name: "Name" }).inputValue()).toBe("Werkzeuge");
       expect(seen.created).toEqual([{ name: "Werkzeuge", description: null }]);
-      await shoot(tab, "grids-bases-new-failed-light-1440");
+      await shoot(tab, "grids-start-new-failed-light-1440");
       // Escape with a typed name asks first; keeping the dialog keeps the name
       await tab.keyboard.press("Escape");
       const question = tab.getByRole("alertdialog");
@@ -251,27 +265,13 @@ describe("the bases overview on v2", () => {
     }
   }, 60_000);
 
-  test("a template tile opens the dialog with that template on the first picture", async () => {
-    const { context, tab, errors } = await open(wide, "/app/grids?new=crm");
+  test("a template's way opens the dialog with its name on the first picture, also on reload", async () => {
+    const { context, tab, errors } = await open(wide, "/app/grids?new=inventory");
     try {
-      const dialog = tab.getByRole("dialog", { name: "CRM erstellen" });
+      const dialog = tab.getByRole("dialog", { name: "Inventar erstellen" });
       await dialog.waitFor();
-      expect(await dialog.getByRole("textbox", { name: "Name" }).inputValue()).toBe("CRM");
+      expect(await dialog.getByRole("textbox", { name: "Name" }).inputValue()).toBe("Inventar");
       expect(await dialog.getByText("Beispieldaten hinzufügen").count()).toBe(1);
-      expect(errors).toEqual([]);
-    } finally {
-      await context.close();
-    }
-  }, 60_000);
-
-  test("1,000 bases stay bounded: 100 rows a page, ready quickly", async () => {
-    const { context, tab, errors, readyMs } = await open(wide, "/app/grids", "huge");
-    try {
-      expect(await tab.locator("[data-k2-part=Table] tbody tr").count()).toBe(100);
-      expect(await tab.getByText("Seite 1 von 10").count()).toBe(1);
-      const count = await elements(tab);
-      console.info(`grids bases huge: ${count} elements, ready ${readyMs} ms`);
-      expect(count).toBeLessThan(6000);
       expect(errors).toEqual([]);
     } finally {
       await context.close();
@@ -323,6 +323,43 @@ describe("a base home on v2", () => {
       expect(await nav.getByRole("link", { name: "Übersicht" }).getAttribute("aria-current")).toBe("page");
       expect(await nav.getByRole("link", { name: "Offene Aufträge" }).getAttribute("href")).toBe("/app/grids/Bas001/table/T1/view/V1");
       expect(await nav.getByRole("link", { name: "Bearbeiten" }).getAttribute("href")).toBe("/app/grids/Bas001?edit=true");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("the switcher names the open base; its panel lists the bases opened last, then all others; New base opens here", async () => {
+    const { context, tab, errors } = await open(wide, "/app/grids/Bas001");
+    try {
+      const button = tab.getByRole("button", { name: "Base wechseln" });
+      expect(await button.innerText()).toContain("Werkstatt");
+      await button.click();
+      const panel = tab.locator(".k2-switcher");
+      await panel.waitFor();
+      expect(await panel.locator(".k2-mh").allInnerTexts()).toEqual(["Zuletzt geöffnet", "Alle Bases"]);
+      expect(await panel.locator('.k2-mi[aria-current="page"]').innerText()).toContain("Werkstatt");
+      // nine bases: the search shows
+      expect(await panel.getByRole("searchbox", { name: "Base suchen" }).count()).toBe(1);
+      await shoot(tab, "grids-switcher-plain-light-1440");
+      await panel.getByRole("link", { name: "Neue Base" }).click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("new") === "blank");
+      await tab.getByRole("dialog", { name: "Neue Base" }).waitFor();
+      expect(new URL(tab.url()).pathname).toBe("/app/grids/Bas001");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("with 1,000 bases the switcher lists 20 and says how many more its search reaches", async () => {
+    const { context, tab, errors } = await open(wide, "/app/grids/Bas001", "huge");
+    try {
+      await tab.getByRole("button", { name: "Base wechseln" }).click();
+      const panel = tab.locator(".k2-switcher");
+      await panel.waitFor();
+      expect(await panel.locator(".k2-mi-label").count()).toBe(22);
+      expect(await panel.locator(".k2-switcher-none").innerText()).toBe("980 weitere Bases über die Suche");
       expect(errors).toEqual([]);
     } finally {
       await context.close();

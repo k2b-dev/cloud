@@ -6,7 +6,7 @@ import { billingFieldHelp } from "./billing-field-help";
 import { billingAmountFields } from "./billing-lines";
 import { billingSamples } from "./billing-samples";
 import { billingWorkflows } from "./billing-workflows";
-import { field, type GridTemplate, type TemplateField, table } from "./types";
+import { field, type GridTemplate, previewAmount, type TemplateField, table } from "./types";
 
 const messages = i18n.define({
   baseLocale: "en",
@@ -176,6 +176,9 @@ const messages = i18n.define({
         "The positions exceed the remaining net/VAT amount or leave a rounding difference. Adjust the partial positions or correct the full remaining amount so the remainder stays exactly correctable.",
       correctionHelp:
         "For a partial correction, reduce quantities or remove positions. Check the correction reason and choose a due date. The original company and recipient details are retained.",
+      previewNumber: "No.",
+      previewCustomer: "Customer",
+      previewAmount: "Amount",
     },
     de: {
       draftWorkspaceTitle: "Beleg vorbereiten",
@@ -345,6 +348,9 @@ const messages = i18n.define({
         "Die Positionen überschreiten den verbleibenden Netto-/Steuerbetrag oder hinterlassen eine Rundungsdifferenz. Passe die Teilpositionen an oder korrigiere den gesamten Restbetrag, damit der Rest exakt korrigierbar bleibt.",
       correctionHelp:
         "Für eine Teilkorrektur verringerst du Mengen oder entfernst Positionen. Ergänze Korrekturgrund und Zahlungsziel. Unternehmens- und Empfängerangaben werden aus dem Original übernommen.",
+      previewNumber: "Nr.",
+      previewCustomer: "Kunde",
+      previewAmount: "Betrag",
     },
   },
 });
@@ -353,7 +359,8 @@ export type BillingText = ReturnType<typeof messages.resolve>["t"];
 
 /** Template-owned domain composition; financial rules remain ordinary workflows. */
 export function createBillingTemplate(locale?: string): GridTemplate {
-  const { t } = messages.resolve(locale ? [locale] : []);
+  // the preview writes amounts in the language its words resolved to
+  const { t, locale: language } = messages.resolve(locale ? [locale] : []);
   const fieldHelp = billingFieldHelp(locale);
   const text = (key: string, name: string, required = false, config: Record<string, unknown> = {}): TemplateField => ({
     key,
@@ -444,6 +451,15 @@ export function createBillingTemplate(locale?: string): GridTemplate {
     icon: "ti ti-receipt",
     baseName: t.title,
     baseDescription: t.description,
+    preview: {
+      // the phone shows the first two columns: the number and its amount
+      columns: [{ name: t.previewNumber }, { name: t.previewAmount, align: "end" }, { name: t.previewCustomer }],
+      rows: [
+        ["RE-0001", previewAmount(1190, language), "Nordlicht"],
+        ["RE-0002", previewAmount(476, language), "Weber"],
+        ["RE-0003", previewAmount(89.25, language), "Atelier K"],
+      ],
+    },
     tables: [
       {
         key: "parties",

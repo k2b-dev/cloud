@@ -1,3 +1,4 @@
+import { Link } from "@k2b/ssr/nav";
 import {
   type ChildrenReturn,
   createComputed,
@@ -19,6 +20,7 @@ import { Dynamic } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { watchFold } from "./bar-fold";
+import { usePopover } from "./behavior/overlays";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { Input, MarkCheck } from "./controls";
@@ -123,11 +125,51 @@ export type NavSearch = {
   onKeyDown?: (event: KeyboardEvent) => void;
 };
 
+/** One thing the switcher can open, such as a notebook or a base. */
+export type NavSwitcherOption = {
+  label: string;
+  /** The page of the thing. */
+  href: string;
+  /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
+  onNavigate?: OnNavigate;
+  /** The thing's symbol; with `color` it stands on a tint of it, as the thing's mark (`Mark`). */
+  icon: string;
+  color?: string;
+  /** Quiet words at the end, such as when it was opened. */
+  meta?: string;
+  /** Options one after another with the same group stand under its quiet heading, such as "Zuletzt geöffnet". */
+  group?: string;
+  /** The open one: a tick at its end. */
+  current?: boolean;
+};
+
+/**
+ * The switcher at the top of the sidebar: the open thing (a notebook, a base) as a button, and behind it the others,
+ * a search from 8 of them, and the deeds that make a new one. The app gives every word and the order.
+ */
+export type NavSwitcher = {
+  /** The name of the button, such as "Base wechseln". */
+  label: string;
+  /** The open thing on the button; without it the button says `label`. */
+  current?: { label: string; icon: string; color?: string };
+  options: readonly NavSwitcherOption[];
+  /** The search field's name and placeholder, such as "Base suchen"; the field shows from 8 options. */
+  search: string;
+  /** What the list says when the search finds nothing. */
+  noMatch: string;
+  /** The quiet line under a list cut short, such as "+480 weitere – über die Suche". */
+  more: (hidden: number) => string;
+  /** Deeds after the options, such as "Neue Base" and "Aus Vorlage". */
+  actions?: readonly Action[];
+};
+
 export type NavProps = {
   /** The app's name and symbol at the top. */
   title: string;
   /** A Tabler icon beside the app's name. */
   icon: string;
+  /** The switcher between the app's things under the name, such as its notebooks or bases. */
+  switcher?: NavSwitcher;
   /** The search under the name. */
   search?: NavSearch;
   /**
@@ -273,6 +315,159 @@ const groupDeed = (action: NavGroup["action"]) => (action && !("items" in action
  * The sidebar of an app: its name, its search and main action, groups of round entries with counts, its own rows, and
  * entries at the foot.
  */
+/** From this many options the switcher shows its search. */
+const SWITCHER_SEARCH_FROM = 8;
+/**
+ * The most options the panel lists before a search (the ones opened last and the first of the rest), and the most
+ * matches of a search: the panel stays a short list however many things an app holds; the search reaches the others.
+ */
+const SWITCHER_SHOWN = 20;
+const SWITCHER_MATCHES = 50;
+
+/**
+ * The open thing as a button across the column (its mark, its name, ↕); behind it a panel of the others in their
+ * groups, the search from 8, and the deeds. Arrow keys move between the entries, from the search into the list; choosing
+ * one closes the panel. On the phone the sidebar leaves, and the shell's menu shows the switcher there
+ * (`V2WorkspaceNavigation` `switcher`).
+ */
+const NavSwitch = (props: { switcher: NavSwitcher }) => {
+  const locale = useLocale();
+  const [open, setOpen] = createSignal(false);
+  const [query, setQuery] = createSignal("");
+  const popover = usePopover(() => ({
+    open: open(),
+    onOpenChange: (next: boolean) => {
+      setOpen(next);
+      if (!next) setQuery("");
+    },
+  }));
+  const searchable = () => props.switcher.options.length >= SWITCHER_SEARCH_FROM;
+  const found = createMemo(() => {
+    const needle = query().trim().toLocaleLowerCase(locale());
+    return needle
+      ? props.switcher.options.filter((option) => option.label.toLocaleLowerCase(locale()).includes(needle))
+      : props.switcher.options;
+  });
+  const shown = createMemo(() => found().slice(0, query().trim() ? SWITCHER_MATCHES : SWITCHER_SHOWN));
+  // options one after another with the same group form one section under its heading
+  const sections = createMemo(() => {
+    const out: { group?: string; options: NavSwitcherOption[] }[] = [];
+    for (const option of shown()) {
+      const last = out.at(-1);
+      if (last && last.group === option.group) last.options.push(option);
+      else out.push({ group: option.group, options: [option] });
+    }
+    return out;
+  });
+  let panel: HTMLElement | undefined;
+  const move = (event: KeyboardEvent) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    const entries = [...(panel?.querySelectorAll<HTMLElement>(".k2-mi") ?? [])];
+    if (!entries.length) return;
+    event.preventDefault();
+    const at = entries.indexOf(document.activeElement as HTMLElement);
+    const next = event.key === "ArrowDown" ? (at + 1) % entries.length : at <= 0 ? -1 : at - 1;
+    // up from the first entry goes back into the search, where there is one
+    if (next === -1) (panel?.querySelector<HTMLElement>("input") ?? entries.at(-1))?.focus();
+    else entries[next]?.focus();
+  };
+  const close = () => setOpen(false);
+  return (
+    <>
+      <popover.Trigger class="k2-nav-switch" data-k2-part="NavSwitcher" aria-label={props.switcher.label}>
+        <Show when={props.switcher.current} fallback={<span class="k2-nav-switch-name">{props.switcher.label}</span>}>
+          {(current) => (
+            <>
+              <Mark icon={current().icon} color={current().color} />
+              <span class="k2-nav-switch-name">{current().label}</span>
+            </>
+          )}
+        </Show>
+        <Icon name="selector" />
+      </popover.Trigger>
+      <popover.Popup
+        ref={(element: HTMLElement) => {
+          panel = element;
+        }}
+        class="k2-menu k2-switcher"
+        side="bottom"
+        align="start"
+        sideOffset={4}
+        collisionPadding={8}
+        onKeyDown={move}
+      >
+        <Show when={searchable()}>
+          <div class="k2-switcher-search">
+            <Input
+              type="search"
+              icon="search"
+              label={props.switcher.search}
+              placeholder={props.switcher.search}
+              value={query()}
+              onInput={setQuery}
+            />
+          </div>
+        </Show>
+        <Show when={shown().length} fallback={<div class="k2-switcher-none">{props.switcher.noMatch}</div>}>
+          <For each={sections()}>
+            {(section) => (
+              <div class="k2-mgroup" role="group" aria-label={section.group}>
+                <Show when={section.group}>{(group) => <div class="k2-mh">{group()}</div>}</Show>
+                <For each={section.options}>
+                  {(option) => (
+                    <Link
+                      class="k2-mi"
+                      href={option.href}
+                      onNavigate={option.onNavigate}
+                      aria-current={option.current ? "page" : undefined}
+                      onClick={close}
+                    >
+                      <span class="k2-mi-lead">
+                        <Mark icon={option.icon} color={option.color} />
+                      </span>
+                      <span class="k2-mi-label">{option.label}</span>
+                      <Show when={option.meta}>{(meta) => <span class="k2-mi-meta">{meta()}</span>}</Show>
+                      <Show when={option.current}>
+                        <Icon name="check" />
+                      </Show>
+                    </Link>
+                  )}
+                </For>
+              </div>
+            )}
+          </For>
+          <Show when={found().length > shown().length}>
+            <div class="k2-switcher-none">{props.switcher.more(found().length - shown().length)}</div>
+          </Show>
+        </Show>
+        <Show when={props.switcher.actions?.length}>
+          <div class="k2-msep" />
+          <For each={props.switcher.actions}>
+            {(action) => (
+              <Dynamic
+                component={linkOr(action.href, "button")}
+                class="k2-mi"
+                href={action.href}
+                onNavigate={action.onNavigate}
+                type={action.href === undefined ? "button" : undefined}
+                onClick={() => {
+                  action.onClick?.();
+                  close();
+                }}
+              >
+                <span class="k2-mi-lead">
+                  <Icon name={action.icon ?? "plus"} />
+                </span>
+                <span class="k2-mi-label">{action.label}</span>
+              </Dynamic>
+            )}
+          </For>
+        </Show>
+      </popover.Popup>
+    </>
+  );
+};
+
 export const Nav = (props: NavProps) => {
   // A part passed as JSX is made once, here, and read from here (as `Workspace` does with its parts).
   const list = resolveChildren(() => props.list);
@@ -282,6 +477,7 @@ export const Nav = (props: NavProps) => {
         <Icon name={props.icon} />
         {props.title}
       </div>
+      <Show when={props.switcher}>{(switcher) => <NavSwitch switcher={switcher()} />}</Show>
       <Show when={props.search}>
         {(search) => (
           <div class="k2-nav-search">
@@ -304,22 +500,25 @@ export const Nav = (props: NavProps) => {
           </div>
         )}
       </Show>
-      <Index each={props.groups}>
-        {(group) => (
-          <>
-            <Show when={group().label}>
-              <div class="k2-nav-label">
-                {group().label}
-                <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
-                <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
-              </div>
-            </Show>
-            <Show when={group().tree} fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}>
-              {(tree) => <Dynamic component={tree().view} {...tree()} />}
-            </Show>
-          </>
-        )}
-      </Index>
+      {/* the groups scroll between the head and the foot, so many places never push the foot out of the sidebar */}
+      <div class="k2-nav-groups">
+        <Index each={props.groups}>
+          {(group) => (
+            <>
+              <Show when={group().label}>
+                <div class="k2-nav-label">
+                  {group().label}
+                  <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
+                  <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
+                </div>
+              </Show>
+              <Show when={group().tree} fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}>
+                {(tree) => <Dynamic component={tree().view} {...tree()} />}
+              </Show>
+            </>
+          )}
+        </Index>
+      </div>
       <Show when={list()}>
         <div class="k2-nav-list" data-phone={props.phone}>
           {list()}
@@ -408,6 +607,7 @@ const countWith = (count: Tab["count"], hidden: number): Tab["count"] => {
  * tab is a link or a button the Tab key reaches; a tab with `menu` is the button of a menu of further views and
  * stands at the end. A tab is never cut: one that has no room hides whole and is an entry of that menu (without a
  * menu tab a tab "More" opens them), opened from there as its tab opens it, and the menu tab itself always stays whole.
+ * A tab that holds the focus and hides hands it to the menu tab; a "More" that goes hands it to the last tab.
  * Known: while tabs hide, a gap of less than one tab may stand before the menu tab (closing it would move the menu tab
  * after the page loads).
  */
@@ -420,6 +620,18 @@ export const Tabs = (props: TabsProps) => {
   // Measured in the browser; the server sends every tab, and the stylesheet already hides what wraps.
   const [fit, setFit] = createSignal(Number.POSITIVE_INFINITY);
   let row: HTMLDivElement | undefined;
+  let nav: HTMLElement | undefined;
+  // A tab that holds the focus and hides for lack of room hands it to the menu tab ("Mehr" or the views' own), so it
+  // never falls to the page; a "Mehr" that holds it and goes, as every tab has room again, hands it to the last tab.
+  const place = (next: number) => {
+    const held = document.activeElement;
+    const fromMore = held !== null && nav?.querySelector(":scope > .k2-tab[data-k2-more]")?.contains(held) === true;
+    setFit(next);
+    if (!row || !nav || !held) return;
+    if (row.contains(held) && held.closest(".k2-tab")?.hasAttribute("data-overflow"))
+      [...nav.querySelectorAll<HTMLElement>(":scope > .k2-tab[data-menu]")].at(-1)?.focus();
+    else if (fromMore && !held.isConnected) [...row.querySelectorAll<HTMLElement>(":scope > .k2-tab:not([data-overflow])")].at(-1)?.focus();
+  };
   onMount(() => {
     if (!row) return;
     const measure = () => {
@@ -434,11 +646,11 @@ export const Tabs = (props: TabsProps) => {
         const navGap = Number.parseFloat(getComputedStyle(row.parentElement!).columnGap) || 0;
         const need = tabs.reduce((sum, tab) => sum + tab.getBoundingClientRect().width, 0) + gap * (tabs.length - 1);
         if (need <= row.getBoundingClientRect().width + navGap + more.getBoundingClientRect().width) {
-          setFit(Number.POSITIVE_INFINITY);
+          place(Number.POSITIVE_INFINITY);
           return;
         }
       }
-      setFit(index < 0 ? Number.POSITIVE_INFINITY : index);
+      place(index < 0 ? Number.POSITIVE_INFINITY : index);
     };
     // What the measurement changes (the count of the menu tab, "+8" to "+12") can change the room of the tabs again.
     // So it runs in the next frame, once per frame, never inside the observer's own turn (WebKit reports that as a
@@ -472,7 +684,7 @@ export const Tabs = (props: TabsProps) => {
   const hidden = () => plain().slice(fit());
   const more = () => hidden().map((tab) => asEntry(tab, locale()));
   return (
-    <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
+    <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label} ref={nav}>
       <div class="k2-tabs" ref={row}>
         <Index each={plain()}>
           {(tab, index) => (
@@ -723,9 +935,10 @@ export type StatusRowProps = {
   /** A box at the start that selects all entries. */
   select?: { label: string; checked?: boolean | "mixed"; onChange?: (checked: boolean) => void };
   /**
-   * Filters or a segment at the end; they leave on the phone. They keep their words while the lead gives way; in a row
-   * narrower than 600 px a button with a symbol keeps only the symbol, and its words stay its name. Give each one a
-   * symbol, so it can fold; a toggle is a `Button pressed` with an `icon`, which folds, not a switch.
+   * Filters or a segment at the end; on the phone they stay in the row: what has no room folds into one "+n" menu.
+   * They keep their words while the lead gives way; in a row narrower than 600 px a button with a symbol keeps only
+   * the symbol, and its words stay its name. Give each one a symbol, so it can fold; a toggle is a `Button pressed`
+   * with an `icon`, which folds, not a switch.
    */
   filters?: JSX.Element;
   /**
@@ -748,13 +961,26 @@ export const StatusRow = (props: StatusRowProps) => {
   const t = useUiMessages();
   const filters = resolveChildren(() => props.filters);
   const marks = resolveChildren(() => props.marks);
-  // While entries are selected, the bar's fold watches the row: the actions without room fold into "…" from the end,
-  // and the way out never. None on the server's page.
+  // The bar's fold watches the row while entries are selected (the actions without room fold into "…" from the end,
+  // the way out never), and on the phone (the end that has no room beside the shortened lead folds into one "+n",
+  // the last first, which opens what it holds as a menu: a pressed chip is an entry with a check). Wider and without
+  // a selection, nothing folds. None on the server's page.
   let bar: HTMLDivElement | undefined;
   const [folded, setFolded] = createSignal<readonly MenuItem[]>([]);
+  const [phone, setPhone] = createSignal(false);
+  onMount(() => {
+    const query = matchMedia("not all and (min-width: 768px)");
+    const follow = () => setPhone(query.matches);
+    follow();
+    query.addEventListener("change", follow);
+    onCleanup(() => query.removeEventListener("change", follow));
+  });
   const selecting = createMemo(() => props.selection !== undefined);
   createEffect(() => {
-    if (!bar || !selecting()) return;
+    // both are read, so the fold starts again on the row's other end when a selection begins or ends
+    const watch = selecting();
+    const narrow = phone();
+    if (!bar || !(watch || narrow)) return;
     const fold = watchFold(bar, (entries) => setFolded(entries));
     onCleanup(() => {
       fold.stop();
@@ -805,7 +1031,17 @@ export const StatusRow = (props: StatusRowProps) => {
               </Show>
             </div>
             <Show when={holdsContent(filters)}>
-              <div class="k2-bar-end">{filters()}</div>
+              <div class="k2-bar-end">
+                {filters()}
+                <Show when={folded().length > 0}>
+                  <span class="k2-bar-fold">
+                    <Menu items={folded()}>
+                      <span aria-hidden="true">+{folded().length}</span>
+                      <span class="k2-hidden-text">{t().moreFilters({ count: folded().length })}</span>
+                    </Menu>
+                  </span>
+                </Show>
+              </div>
             </Show>
           </>
         }

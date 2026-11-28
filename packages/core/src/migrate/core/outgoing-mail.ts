@@ -1,5 +1,6 @@
-import { lazySync, sql } from "@k2b/cloud";
+import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
+import { type ConcurrentIndex, type ConcurrentIndexOutcome, ensureConcurrentIndexes } from "@k2b/cloud/services/concurrent-index";
 import { ensureSchema } from "@k2b/cloud/services/postgres";
 import { decryptValue } from "@k2b/cloud/services/settings/crypto";
 import type { SQL } from "bun";
@@ -137,105 +138,23 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
 };
 
 /** Send-log search indexes on recipients and subjects. */
-const searchIndexes = {
-  outgoing_mail_messages_search: "USING gin (outgoing_mail.search_text(subject, to_addresses) gin_trgm_ops)",
-  outgoing_mail_messages_recipients: "USING gin (outgoing_mail.lower_addresses(to_addresses))",
-} as const;
-type SearchIndex = keyof typeof searchIndexes;
-type BuildOutcome = "ready" | "busy" | "built" | "failed";
-
-/**
- * One Core process builds at a time: two builds on the same table wait for each other, and Postgres
- * cancels one of them. The lease is renewed while the build runs.
- */
-const SEARCH_INDEX_LEASE_MS = 60_000;
-const searchIndexBuildMutex = lazySync((sync) =>
-  sync.mutex({ id: "core:outgoing-mail:search-index-build", ttlMs: SEARCH_INDEX_LEASE_MS, retry: { maxAttempts: 1 } }),
-);
-
-/**
- * The index as the database sees it. `building` is any index build on the send log, in any process.
- * Postgres hides what another role builds, so any build of another role in this database counts.
- */
-const readSearchIndex = async (db: SQL, name: SearchIndex) => {
-  const index = `outgoing_mail.${name}`;
-  const [state] = await db<{ present: boolean; valid: boolean; building: boolean }[]>`
-    SELECT to_regclass(${index}) IS NOT NULL AS present,
-      EXISTS (SELECT 1 FROM pg_catalog.pg_index WHERE indexrelid = to_regclass(${index}) AND indisvalid AND indisready AND indislive) AS valid,
-      EXISTS (SELECT 1 FROM pg_catalog.pg_stat_progress_create_index progress
-        WHERE progress.datname = pg_catalog.current_database()
-          AND (progress.relid = to_regclass('outgoing_mail.messages') OR progress.relid IS NULL)) AS building`;
-  return state ?? { present: false, valid: false, building: false };
-};
-
-const dropSearchIndex = (db: SQL, name: SearchIndex) => db.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS outgoing_mail.${name}`).simple();
-
-const buildSearchIndex = async (db: SQL, name: SearchIndex): Promise<BuildOutcome> => {
-  const before = await readSearchIndex(db, name);
-  if (before.valid) return "ready";
-  if (before.building) return "busy";
-  // IF NOT EXISTS would keep an invalid index, such as one whose build was interrupted.
-  if (before.present) await dropSearchIndex(db, name);
-  log.info("Building a send log search index", { index: name });
-  const startedAt = performance.now();
-  try {
-    await db.unsafe(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${name} ON outgoing_mail.messages ${searchIndexes[name]}`).simple();
-  } catch (error) {
-    const after = await readSearchIndex(db, name);
-    if (after.valid) return "ready";
-    if (after.building) return "busy";
-    log.warn("A send log search index was not built; searches run without it until the next start", {
-      index: name,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    await dropSearchIndex(db, name);
-    return "failed";
-  }
-  // IF NOT EXISTS skips the build when another build created the index meanwhile; it is valid only if that build succeeded.
-  if (!(await readSearchIndex(db, name)).valid) return "busy";
-  log.info("Built a send log search index", { index: name, durationMs: Math.round(performance.now() - startedAt) });
-  return "built";
-};
+const searchIndexes: ConcurrentIndex[] = [
+  {
+    name: "outgoing_mail_messages_search",
+    table: "outgoing_mail.messages",
+    definition: "USING gin (outgoing_mail.search_text(subject, to_addresses) gin_trgm_ops)",
+  },
+  {
+    name: "outgoing_mail_messages_recipients",
+    table: "outgoing_mail.messages",
+    definition: "USING gin (outgoing_mail.lower_addresses(to_addresses))",
+  },
+];
 
 /**
  * Builds the send-log search indexes after Core's setup, without blocking new mail or Core's start;
- * searches run without them until they are valid. One process builds at a time through a NATS lease.
- * An index left invalid by an interrupted build is replaced, and one that another process still builds
- * is left to the next start. Every database step is one statement without session state, so a
- * transaction pooler may send each to another backend. Never throws.
+ * searches run without them until they are valid (`ensureConcurrentIndexes`: one build per table across
+ * replicas, interrupted builds replaced, never throws).
  */
-export const buildSearchIndexes = async (db: SQL = sql): Promise<BuildOutcome> => {
-  try {
-    const names = Object.keys(searchIndexes) as SearchIndex[];
-    if ((await Promise.all(names.map((name) => readSearchIndex(db, name)))).every((state) => state.valid)) return "ready";
-    const mutex = searchIndexBuildMutex();
-    const lease = await mutex.acquire({ resource: "send-log-search" });
-    if (!lease) return "busy";
-    // runtime-timer: lease of a migration step during startup, which is not background work.
-    const renewal = setInterval(() => void mutex.extend(lease).catch(() => false), SEARCH_INDEX_LEASE_MS / 3);
-    renewal.unref();
-    try {
-      // Keep pool queries out of the concurrent build's snapshot wait.
-      const build = await db.reserve();
-      try {
-        let outcome: BuildOutcome = "ready";
-        for (const name of names) {
-          const built = await buildSearchIndex(build, name);
-          if (built === "busy" || built === "failed") return built;
-          if (built === "built") outcome = "built";
-        }
-        return outcome;
-      } finally {
-        build.release();
-      }
-    } finally {
-      clearInterval(renewal);
-      await mutex.release(lease).catch(() => false);
-    }
-  } catch (error) {
-    log.warn("Send log search indexes are unavailable; searches run without them", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return "failed";
-  }
-};
+export const buildSearchIndexes = (db: SQL = sql): Promise<ConcurrentIndexOutcome> =>
+  ensureConcurrentIndexes(searchIndexes, { db, log, purpose: "send log search" });

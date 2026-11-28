@@ -196,16 +196,8 @@ export function createGridsNav(state: NavigationState): GridsNav {
 
   const groups = createMemo((): NavGroup[] => {
     if (workspaceLiveStatus().revoked) return [];
+    // the base itself is the switcher above the groups; "Neu" stands in the head of the page
     const head: NavGroup = {
-      label: state.base.name,
-      action: {
-        label: t().baseActions,
-        items: [
-          ...(create().length ? [{ title: t().newResource, items: create() }] : []),
-          { label: t().allBases, icon: "layout-grid", href: "/app/grids" },
-          { label: t().newBase, icon: "plus", href: "/app/grids?new=blank" },
-        ],
-      },
       items: [
         { label: t().overview, icon: "layout-dashboard", href: href(), current: state.route.kind === "overview" },
         ...(state.canUseQueryWorkspace
