@@ -247,7 +247,23 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
         },
       },
       access: {
-        list: async () => ({ items: [], page: 1, perPage: 0, total: 0, hasNext: false }),
+        list: async () => {
+          calls.push("access.list");
+          return {
+            items: [
+              {
+                id: "99999999-9999-4999-8999-999999999999",
+                principal: { type: "user" as const, userId: USER_ID },
+                permission: "admin" as const,
+                displayName: "Robin Example",
+              },
+            ],
+            page: 1,
+            perPage: 50,
+            total: 1,
+            hasNext: false,
+          };
+        },
         apiKeys: { list: async () => [] },
       },
       wormhole: {
@@ -308,6 +324,34 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
         });
         // Public access alone reads the space but never shows who else has access.
         expect(state).toMatchObject({ kind: "ok", accessVisible: false });
+      } finally {
+        memberPermission = "read";
+      }
+    });
+
+    test("an open item in a Space the person reads only through public access carries no list of who has access", async () => {
+      const open = (memberAccess: string) => {
+        memberPermission = memberAccess;
+        return loadSpacesWorkspaceState({
+          authority: null,
+          user: { id: USER_ID, roles: ["user"] },
+          spaceId: SPACE_ID,
+          spaceShortId: SPACE_SHORT_ID,
+          href: `/app/spaces/${SPACE_SHORT_ID}?item=${ITEM_SHORT_ID}`,
+        });
+      };
+      try {
+        // Public access alone: the item opens, and the page neither reads nor sends who else has access.
+        const publicOnly = await open("none");
+        expect(publicOnly).toMatchObject({ kind: "ok", accessVisible: false, accessMembers: null });
+        if (publicOnly.kind === "ok") expect(publicOnly.selectedItemDetail?.item.id).toBe(ITEM_SHORT_ID);
+        expect(calls).not.toContain("access.list");
+
+        // Access of their own: the first picture of the open item names who has access.
+        calls.splice(0);
+        const member = await open("read");
+        expect(member).toMatchObject({ kind: "ok", accessVisible: true, accessMembers: [{ displayName: "Robin Example" }] });
+        expect(calls).toContain("access.list");
       } finally {
         memberPermission = "read";
       }

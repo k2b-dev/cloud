@@ -331,6 +331,18 @@ suite("every Spaces page's first view (integration)", () => {
         }
     });
 
+  // A bookmark from before v2 opens the same list: the page answers with the v2 address, every other parameter kept.
+  test("an address from before v2 leads to the same list in the v2 address, which opens", async () => {
+    const fixture = await seed(USUAL);
+    const request = (path: string) =>
+      server.request(`${origin}${path}`, { headers: { cookie: fixture.cookie, "x-forwarded-for": uniqueCallerAddress() } });
+    const old = await request(`/app/spaces/${fixture.main}?view=table&sort=deadline&sortDesc=true&q=Task&groupBy=none`);
+    const next = `/app/spaces/${fixture.main}?view=table&sort=deadline.desc&q=Task&groupBy=none`;
+    expect({ status: old.status, location: old.headers.get("location") }).toEqual({ status: 302, location: next });
+    const opened = await request(next);
+    expect({ status: opened.status, location: opened.headers.get("location") }).toEqual({ status: 200, location: null });
+  });
+
   // The test database ran every migration once already; a second run adds nothing and keeps the admin's name index.
   test("the migrations apply again cleanly and keep the administration's name index", async () => {
     await migrate();
