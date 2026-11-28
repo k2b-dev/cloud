@@ -1,5 +1,5 @@
 import { LocaleProvider } from "../src/intl/locale";
-import { Bar, Button, HeadSearch, Input, List, Pane, Path, Row, StatusRow, Text, Workspace } from "../src/v2";
+import { Bar, Button, HeadSearch, Input, List, Pane, Path, Row, StatusRow, Tabs, Text, Workspace } from "../src/v2";
 
 // A pane's head and its toolbar as one block, the head's search as its symbol, and a row's time beside its deed, as the
 // test sets them up:
@@ -15,8 +15,10 @@ import { Bar, Button, HeadSearch, Input, List, Pane, Path, Row, StatusRow, Text,
 // - `state`: a head above a plain `Bar` that says the state of an open entry: no toolbar, so no block; it keeps its line;
 // - `workspace`: a workspace head of actions only (a search) above a pane with a toolbar and no head of its own, the
 //   case DR's #4470 moves into the pane's first row;
-// - `rows`: a list whose rows of one line carry a time, a deed, or both: every row keeps one height.
-export type Kind = "path" | "filled" | "withEnd" | "nested" | "floats" | "longPath" | "actions" | "state" | "workspace" | "rows";
+// - `rows`: a list whose rows of one line carry a time, a deed, or both: every row keeps one height;
+// - `tabs`: a head with tabs and a search above the same toolbar: on the phone the block keeps the toolbar's row
+//   under the tabs, and the pane's content starts under the block.
+export type Kind = "path" | "filled" | "withEnd" | "nested" | "floats" | "longPath" | "actions" | "state" | "workspace" | "rows" | "tabs";
 
 const Status = () => (
   <StatusRow
@@ -68,7 +70,19 @@ export const Fixture = (props: { kind: Kind }) => {
           head={
             props.kind === "rows" || props.kind === "workspace" ? undefined : (
               <Bar
-                start={withPath() ? <Path label="Ort" items={places()} /> : undefined}
+                start={
+                  withPath() ? (
+                    <Path label="Ort" items={places()} />
+                  ) : props.kind === "tabs" ? (
+                    <Tabs
+                      label="Ansichten"
+                      items={[
+                        { label: "Alle", count: 42, current: true },
+                        { label: "Fehlgeschlagen", count: 5 },
+                      ]}
+                    />
+                  ) : undefined
+                }
                 end={
                   <>
                     <Search kind={props.kind} />
