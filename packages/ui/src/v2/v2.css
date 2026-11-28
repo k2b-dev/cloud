@@ -6058,35 +6058,6 @@
   .k2-ui .k2-pane-back {
     display: flex;
   }
-  /* A detail with a head keeps its way back and its title in one row (W3): the way back is its chevron at the row's
-     start, the list's name its hint, and the head moves past it. A host that shows the way back in its own bar
-     (Cloud's shell) keeps it there. */
-  .k2-ui:not([data-k2-host-search]) .k2-pane[data-back="head"] {
-    position: relative;
-  }
-  .k2-ui:not([data-k2-host-search]) .k2-pane[data-back="head"] > .k2-pane-back {
-    position: absolute;
-    inset-block-start: 0;
-    inset-inline-start: 0;
-    z-index: 1;
-    height: var(--k2-h-status);
-    padding-block: 0;
-    padding-inline: calc(var(--k2-edge) - 10px) 0;
-    border-bottom: 0;
-  }
-  .k2-ui:not([data-k2-host-search]) .k2-pane[data-back="head"] > .k2-pane-back > .k2-btn[data-variant="text"] {
-    width: var(--k2-h-control);
-    max-width: none;
-    margin-left: 0;
-    padding: 0;
-    justify-content: center;
-  }
-  .k2-ui:not([data-k2-host-search]) .k2-pane[data-back="head"] > .k2-pane-back > .k2-btn[data-variant="text"] > .k2-btn-label {
-    display: none;
-  }
-  .k2-ui:not([data-k2-host-search]) .k2-pane[data-back="head"] > [data-slot="head"] > .k2-bar {
-    padding-inline-start: calc(var(--k2-edge) - 10px + var(--k2-h-control) + 4px);
-  }
   /* a detail with its way back has one way back: its head's close x (`Button closes`) leaves the head here */
   .k2-ui .k2-pane[data-detail]:has(> [data-k2-part="Back"]) > [data-slot="head"] > .k2-bar > .k2-bar-end > [data-closes] {
     display: none;

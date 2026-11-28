@@ -11,8 +11,8 @@ import type { Kind } from "../../test/v2-head-place.fixture";
 // What a workspace's head knows of its place (test/v2-head-place.fixture.tsx), in Chromium and WebKit, the server's
 // page and the live one alike: several main actions stand as one "+ Neu" menu, which the phone's round button offers
 // too; a title that repeats the sidebar's current entry gives way while the sidebar shows; a head with nothing to show on
-// the phone takes no room; an open entry named after a path is small in the path's row, and on the phone its way back
-// stands in the head's row; a long file name at the end of a path is cut in its middle, its end kept.
+// the phone takes no room; an open entry named after a path is small in the path's row, and keeps its name on the phone
+// where the path gives way; a long file name at the end of a path is cut in its middle, its end kept.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
@@ -191,39 +191,27 @@ describe("an open entry named after a path", () => {
   }, 30_000);
 
   for (const live of [false, true])
-    test(`390 px${live ? ", live" : ""}: the way back stands in the head's row, its words its hint`, async () => {
+    test(`390 px${live ? ", live" : ""}: the path gives way and the name stays, under the way back`, async () => {
       await withPage(390, "detail", { live }, async (page) => {
-        const back = page.locator('.k2-pane[data-detail] > [data-k2-part="Back"] > .k2-btn');
-        const bar = page.locator('.k2-pane[data-detail] > [data-slot="head"] > .k2-bar');
-        const [button, row] = await Promise.all([back.boundingBox(), bar.boundingBox()]);
-        expect(button).not.toBeNull();
-        // in the head's row, before its start
-        expect(button!.y).toBeGreaterThanOrEqual(row!.y - 0.5);
-        expect(button!.y + button!.height).toBeLessThanOrEqual(row!.y + row!.height + 0.5);
-        const start = await page.locator('.k2-pane[data-detail] > [data-slot="head"] .k2-bar-start').boundingBox();
-        expect(button!.x + button!.width).toBeLessThanOrEqual(start!.x + 0.5);
-        expect(await back.getAttribute("title")).toBe("Fotos");
+        const start = '.k2-pane[data-detail] > [data-slot="head"] > .k2-bar > .k2-bar-start';
+        expect(await shows(page, `${start} > .k2-text`)).toBe(true);
+        expect(await shows(page, `${start} > .k2-path`)).toBe(false);
+        const back = await page.locator('.k2-pane[data-detail] > [data-k2-part="Back"]').boundingBox();
+        const row = await page.locator('.k2-pane[data-detail] > [data-slot="head"] > .k2-bar').boundingBox();
+        expect(back!.y + back!.height).toBeLessThanOrEqual(row!.y + 0.5);
       });
     }, 30_000);
-
-  test("390 px in a host with its own phone bar: the way back keeps its own row there", async () => {
-    await withPage(390, "detail", { live: true, host: true }, async (page) => {
-      const back = await page.locator('.k2-pane[data-detail] > [data-k2-part="Back"]').boundingBox();
-      const row = await page.locator('.k2-pane[data-detail] > [data-slot="head"] > .k2-bar').boundingBox();
-      expect(back!.y + back!.height).toBeLessThanOrEqual(row!.y + 0.5);
-    });
-  }, 30_000);
 });
 
 describe("a long file name at the end of a path", () => {
   test("the server's page sends its start and its end apart, and its whole name as the hint", () => {
     const { html } = server("path");
-    expect(html).toContain('title="IMG_20260412_101500_Werkstatt_Espresso.jpg"');
+    expect(html).toMatch(/<b[^>]* aria-current="page"[^>]* title="IMG_20260412_101500_Werkstatt_[^"]*_Espresso\.jpg"/);
     expect(html).toContain('class="k2-path-name-end"');
   });
 
   for (const width of [1024, 1440])
-    test(`${width} px: where it has no room it is cut in its middle, its end whole`, async () => {
+    test(`${width} px: without room it is cut in its middle, its end whole`, async () => {
       await withPage(width, "path", { live: true }, async (page) => {
         const cut = await page.evaluate(() => {
           const page = document.querySelector<HTMLElement>(".k2-path > b")!;
@@ -240,8 +228,7 @@ describe("a long file name at the end of a path", () => {
         expect(cut.end).toBe("Espresso.jpg");
         expect(cut.endWhole).toBe(true);
         expect(cut.inside).toBe(true);
-        // the head's room: 1024 px leaves it too little for the whole name beside the actions, 1440 px enough
-        expect(cut.startCut).toBe(width === 1024);
+        expect(cut.startCut).toBe(true);
       });
     }, 30_000);
 });

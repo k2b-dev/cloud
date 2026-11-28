@@ -612,8 +612,6 @@ export const Pane = (props: PaneProps) => {
       data-detail={props.detail ? "" : undefined}
       data-side={props.side ? "" : undefined}
       data-wide-back={props.wideBack && props.back ? "" : undefined}
-      // a detail with its way back and a head of its own: on the phone the way back stands in the head's row
-      data-back={props.detail && props.back && head() !== undefined ? "head" : undefined}
       data-center={props.center ? "" : undefined}
       style={custom({
         "--k2-pane-w": props.width ? `${size() ?? columnPx(props.width)}px` : undefined,

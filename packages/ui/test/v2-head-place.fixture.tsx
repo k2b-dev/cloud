@@ -9,7 +9,7 @@ import { Bar, Button, HeadSearch, List, Nav, Pane, Path, Row, Text, Workspace } 
 // - `hollow`: a head without a start whose end holds only the main action the round button repeats (`floats`): on the
 //   phone it takes no room; `hollowSearch`: the same with a head search, which keeps the head without a host;
 // - `detail`: a list beside an open entry whose head names it after a path (small, in the path's row), with its way
-//   back: on the phone the way back stands in the head's row;
+//   back: on the phone the path gives way and the name stays;
 // - `path`: a head whose path ends in a long file name: cut in its middle where it has no room, its end kept.
 export type Kind = "creates" | "repeats" | "repeatsOnly" | "hollow" | "hollowSearch" | "detail" | "path";
 
@@ -46,7 +46,9 @@ const Rows = () => (
   </List>
 );
 
-const longName = "IMG_20260412_101500_Werkstatt_Espresso.jpg";
+// longer than the head has room for beside its actions at 1440 px in any font, so it is cut at both widths
+const longName =
+  "IMG_20260412_101500_Werkstatt_Lindqvist-Oswald_Kueche_Familie_Oswald_Rueckseite_Arbeitsplatte_nach_dem_Oelen_Espresso.jpg";
 
 const Head = (props: { kind: Kind }) => {
   switch (props.kind) {
