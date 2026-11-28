@@ -10,6 +10,7 @@ import solidPreset from "babel-preset-solid";
 import { dirname } from "path";
 import { islandIdFromFile } from "./island-id";
 import { resolveIslandImport } from "./island-resolve";
+import { PROPS_COMMENT } from "./props-comment";
 
 export { hash } from "./island-id";
 
@@ -44,6 +45,7 @@ const componentWrapperPlugin = (filename: string, rootDir: string, dev: boolean)
       Program(programPath: any) {
         const componentImports = new Map<string, { path: string; type: ComponentType; id: string }>();
         let usesMergeProps = false;
+        let usesSsr = false;
 
         // Import Seroval toJSON under an alias so application imports do not collide
         programPath.node.body.unshift(
@@ -101,21 +103,39 @@ const componentWrapperPlugin = (filename: string, rootDir: string, dev: boolean)
               props = t.objectExpression(attributes.map(named));
             }
 
-            // For islands: wrap the component, for client: empty wrapper (no SSR)
-            const children = component.type === "island" ? [path.node] : [];
+            // Props travel as Seroval JSON in a comment, the wrapper's first child: an attribute would escape every
+            // quote as `&quot;`, and an element (a JSON script) would change what CSS sees before the island mounts
+            // (`:empty`, `:first-child`, `+`). Comment text ends at `-->` or `--!>` and must not hold `<!--`, so `<` and
+            // `>` become `\u003c` and `\u003e`, which JSON.parse reads back as the same characters.
+            const propsComment = t.jsxExpressionContainer(
+              t.callExpression(t.identifier("__solid_ssr"), [
+                t.arrayExpression([t.stringLiteral(`<!--${PROPS_COMMENT}`), t.stringLiteral("-->")]),
+                t.callExpression(
+                  t.memberExpression(
+                    t.callExpression(
+                      t.memberExpression(
+                        t.callExpression(t.memberExpression(t.identifier("JSON"), t.identifier("stringify")), [
+                          t.callExpression(t.identifier("__seroval_toJSON"), [props]),
+                        ]),
+                        t.identifier("replace"),
+                      ),
+                      [t.regExpLiteral("<", "g"), t.stringLiteral("\\u003c")],
+                    ),
+                    t.identifier("replace"),
+                  ),
+                  [t.regExpLiteral(">", "g"), t.stringLiteral("\\u003e")],
+                ),
+              ]),
+            );
+            usesSsr = true;
+
+            // For islands: wrap the component, for client: only the props (no SSR)
+            const children = component.type === "island" ? [propsComment, path.node] : [propsComment];
 
             // Extract filename from path (e.g., "Counter.island.tsx")
             const file = component.path.split("/").pop() || "";
 
-            const attrs = [
-              attr("data-id", component.id),
-              attr(
-                "data-props",
-                t.callExpression(t.memberExpression(t.identifier("JSON"), t.identifier("stringify")), [
-                  t.callExpression(t.identifier("__seroval_toJSON"), [props]),
-                ]),
-              ),
-            ];
+            const attrs = [attr("data-id", component.id)];
 
             // Add file attribute in dev mode
             if (dev) {
@@ -129,6 +149,11 @@ const componentWrapperPlugin = (filename: string, rootDir: string, dev: boolean)
           },
         });
 
+        if (usesSsr) {
+          programPath.node.body.unshift(
+            t.importDeclaration([t.importSpecifier(t.identifier("__solid_ssr"), t.identifier("ssr"))], t.stringLiteral("solid-js/web")),
+          );
+        }
         if (usesMergeProps) {
           programPath.node.body.unshift(
             t.importDeclaration(

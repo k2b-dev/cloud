@@ -29,7 +29,7 @@ const lifetime = (event: Event) => {
   if (event instanceof CustomEvent) events.push(event.detail);
 };
 const wrapper = (label: string, entry = id) =>
-  `<solid-island data-id="${entry}" data-props='${JSON.stringify(toJSON({ label }))}'>server ${label}</solid-island>`;
+  `<solid-island data-id="${entry}"><!--ssr-props:${JSON.stringify(toJSON({ label }))}-->server ${label}</solid-island>`;
 const html = (label = "old", content = wrapper(label)) => `<!doctype html><html><head>
   <title>${label}</title><link rel="stylesheet" href="/base.css">
   <script data-ssr-assets="${prefix}" data-ssr-preload="shared.js"></script></head><body>
@@ -2158,7 +2158,7 @@ test.each(["reload", "back_forward"])("%s restores saved region scroll again aft
 test("the reload replay notices a last island that renders nothing", async () => {
   disposeIslands(document);
   document.querySelector("main")!.innerHTML =
-    `${wrapper("list", scrollId)}<solid-island data-id="nothing" data-props='${JSON.stringify(toJSON({}))}'></solid-island>`;
+    `${wrapper("list", scrollId)}<solid-island data-id="nothing"><!--ssr-props:${JSON.stringify(toJSON({}))}--></solid-island>`;
   const snapshot = { window: { x: 0, y: 240 }, regions: [{ key: "list", x: 0, y: 110 }] };
   window.history.replaceState({ [markerKey]: { page: "reloaded", position: 4, scroll: snapshot } }, "");
   const timing = { name: window.location.href, entryType: "navigation", startTime: 0, duration: 0, type: "reload", toJSON: () => ({}) };

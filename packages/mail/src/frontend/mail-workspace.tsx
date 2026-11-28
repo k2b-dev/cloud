@@ -167,6 +167,10 @@ const pageNextCursor = (snapshot: MailboxListView): string | null | undefined =>
       ? snapshot.draftsPage?.nextCursor
       : snapshot.nextListCursor;
 
+/** How often the browser asks for counts a snapshot left pending, and the first pause between two tries (it doubles). */
+const PENDING_COUNT_ATTEMPTS = 3;
+const PENDING_COUNT_PAUSE_MS = 1_000;
+
 export type MailWorkspaceProps = {
   data: MailboxPageData;
   /** Route as `pathname + search`; resolved against the browser origin, never an upstream URL. */
@@ -298,6 +302,67 @@ export function createMailboxController(props: MailboxControllerProps) {
   const [selectionMode, setSelectionMode] = createSignal(false);
   const [conversationOpenIntent, setConversationOpenIntent] = createSignal(0);
   const mailboxId = props.data.mailbox.id;
+  // Counts that were still cold when the snapshot's wait ran out: the server goes on counting into its cache. The browser
+  // asks for them a few times, each with a short wait on the server and a growing pause in between; if they still do
+  // not come, the tabs show "–" and a toast offers to try again. Until then the tabs keep the place of their numbers.
+  const [countsUnavailable, setCountsUnavailable] = createSignal(false);
+  const [countsRound, setCountsRound] = createSignal(0);
+  createEffect(() => {
+    if (!data.viewCountsPending) return;
+    countsRound();
+    // the round belongs to this route: a navigation while the counts are pending starts a round for the new one
+    const href = requestPath();
+    const request = new AbortController();
+    onCleanup(() => request.abort());
+    setCountsUnavailable(false);
+    const pause = (ms: number) =>
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, ms);
+        request.signal.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timer);
+            resolve();
+          },
+          { once: true },
+        );
+      });
+    void (async () => {
+      for (let attempt = 0; attempt < PENDING_COUNT_ATTEMPTS; attempt++) {
+        if (attempt > 0) await pause(PENDING_COUNT_PAUSE_MS * 2 ** (attempt - 1));
+        if (request.signal.aborted) return;
+        try {
+          const response = await apiClient.mailboxes[":mailboxId"]["workspace-counts"].$get(
+            { param: { mailboxId }, query: { href } },
+            { init: { signal: request.signal } },
+          );
+          if (request.signal.aborted) return;
+          if (response.status !== 200) continue;
+          const counts = await response.json();
+          if (request.signal.aborted || !("viewCounts" in counts)) continue;
+          if (untrack(requestPath) !== href) return;
+          batch(() => {
+            setData("viewCounts", counts.viewCounts);
+            // the server answers the groups and the done footer only for a route that shows them, by the snapshot's rule
+            if (counts.assignedGroups && data.listMode === "conversations" && !data.assignedGroups)
+              setData("assignedGroups", counts.assignedGroups);
+            if (counts.doneLeftOut !== null && data.hiddenDone?.count === null)
+              setData("hiddenDone", { count: counts.doneLeftOut, more: false });
+            setData("viewCountsPending", undefined);
+          });
+          return;
+        } catch {
+          if (request.signal.aborted) return;
+        }
+      }
+      if (request.signal.aborted) return;
+      setCountsUnavailable(true);
+      toast.error(t().countsUnavailable, {
+        title: t().countsUnavailableTitle,
+        action: { label: t().tryAgain, onClick: () => setCountsRound((round) => round + 1) },
+      });
+    })();
+  });
   const userPreferences = createMemo(() => observeMailUserPreferences(mailboxId, props.initialUserPreferences));
   // The views that mix folders name the first folder set to "Only in the folder" until this person dismisses it.
   // The dismissals live in the preferences cookie, so the server renders the same hint and nothing moves on load.
@@ -3043,7 +3108,7 @@ export function createMailboxController(props: MailboxControllerProps) {
   const viewTabs = createMemo(() =>
     mailboxViewTabs({
       mailboxId: data.mailbox.id,
-      viewCounts: listCounts().viewCounts,
+      viewCounts: data.viewCountsPending ? (countsUnavailable() ? "unavailable" : "pending") : listCounts().viewCounts,
       savedViews: data.savedViews,
       assignedOnly: assignedOnly(),
       labels: {
@@ -3435,11 +3500,12 @@ export function MailboxWorkspace(props: MailboxWorkspaceProps) {
         };
       })()}
       doneToday={
+        // done today is known at once; its share of open work waits while the counts are pending
         controller().data.listMode === "conversations"
           ? {
               done: controller().data.doneTodayCounts.doneToday,
               automated: controller().data.doneTodayCounts.doneByAutomation,
-              open: controller().data.viewCounts.needs_action,
+              open: controller().data.viewCountsPending ? null : controller().data.viewCounts.needs_action,
               logHref: automationLogHref(controller().data.mailbox.id),
             }
           : null

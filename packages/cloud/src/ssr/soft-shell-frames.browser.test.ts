@@ -62,7 +62,7 @@ window.mountShell = () => {
   const islands = [...document.querySelectorAll("solid-island")].filter(element => element.innerHTML.includes("layout-rail-navigation") || element.closest(".layout-header"));
   if (islands.length !== 2) throw new Error("Expected the real rail and header CloudShell islands, got " + islands.length);
   for (const island of islands) {
-    const props = fromJSON(JSON.parse(island.dataset.props));
+    const props = fromJSON(JSON.parse(island.firstChild.nodeValue.replace(/^ssr-props:/, "")));
     island.replaceChildren();
     render(() => createComponent(LocaleProvider, {
       locale: document.documentElement.lang,

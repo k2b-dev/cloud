@@ -234,7 +234,7 @@ describe("Cloud app approval UI", () => {
       navigatedAt = Date.now() - t0;
     });
     const forms: Node[] = [];
-    const observer = new dom.window.MutationObserver((records) => {
+    const observer = new MutationObserver((records) => {
       for (const record of records)
         for (const node of record.addedNodes)
           if (node.nodeName === "FORM" || (node as unknown as Element).querySelector?.("form")) forms.push(node as unknown as Node);

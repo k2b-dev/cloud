@@ -48,6 +48,11 @@ const apiAs = async (account: { id: string }, scopes: string[]) => {
 
 const listedIds = async (response: Response) =>
   ((await response.json()) as { venues: { id: string }[] }).venues.map((venue) => venue.id).sort();
+/** Each listed venue's permission, by venue ID. */
+const listedPermissions = async (response: Response) =>
+  Object.fromEntries(
+    ((await response.json()) as { venues: { id: string; permission?: string }[] }).venues.map((venue) => [venue.id, venue.permission]),
+  );
 
 suite("Venue REST access for standalone agents", () => {
   test("an agent uses only its direct grants within its scopes; resource-bound keys stay bound", async () => {
@@ -76,6 +81,8 @@ suite("Venue REST access for standalone agents", () => {
       const venues = await call("/venues");
       expect(venues.status).toBe(200);
       expect(await listedIds(venues)).toEqual([managed.shortId, readable.shortId].sort());
+      // The list reports each grant capped by the token's scopes: the `admin` grant reads as `write` under "read write".
+      expect(await listedPermissions(await call("/venues"))).toEqual({ [managed.shortId]: "write", [readable.shortId]: "read" });
       expect((await call(`/venues/${readable.shortId}/dashboard`)).status).toBe(200);
       expect((await call(`/venues/${other.shortId}/dashboard`)).status).toBe(403);
       expect((await call(`/venues/${readable.shortId}/access`)).status).toBe(403);
@@ -84,6 +91,7 @@ suite("Venue REST access for standalone agents", () => {
       const rename = { name: `Renamed ${suffix}`, slug: managed.slug, publicEnabled: false };
       expect((await call(`/venues/${managed.shortId}`, { method: "PATCH", body: rename })).status).toBe(403);
       const manager = await apiAs(agent, ["read", "write", "admin"]);
+      expect(await listedPermissions(await manager("/venues"))).toEqual({ [managed.shortId]: "admin", [readable.shortId]: "read" });
       const renamed = await manager(`/venues/${managed.shortId}`, { method: "PATCH", body: rename });
       expect(renamed.status).toBe(200);
       expect(await renamed.json()).toMatchObject({ id: managed.shortId, name: `Renamed ${suffix}` });

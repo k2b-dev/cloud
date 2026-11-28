@@ -309,6 +309,26 @@ answers with a toast with `status` `ok` or `bad`.
 - The open state of the dialog lives in the screen (`open`,
   `onOpenChange`).
 
+## start.tsx: the first start of an app without data
+
+![start at 1440 px](../images/start-1440.png)
+![start at 390 px](../images/start-390.png)
+
+A person opens Notebooks or Grids for the first time. No sidebar and no
+switcher: a `Pane center` with one `Text type="lead"` line ("Leg dein
+erstes Notizbuch an") and `Tiles variant="card" perRow={4}`. Each card
+shows a `preview` of what it makes across its top (`{ page }` for the
+blank way, `{ table }` with a template's first table, `{ icon }` where
+there is nothing to show), its `Mark` in the app's colour, its name and
+`meta` ("6 Seiten"). The whole card opens the dialog that makes it:
+`onOpen`, or `href` to an address that opens the dialog.
+
+- The blank way first, then at most three templates; the rest stay in
+  the dialog's choice, which a quiet line under the cards says.
+- Four in one row on a wide screen, 2 × 2 where four do not fit and on
+  the phone; the line stands centred, on the phone at the start.
+- States: `grids` (the first base: tables and a sign for the blank base).
+
 ## states.tsx: the states of a list
 
 ![states at 1440 px](../images/states-1440.png)

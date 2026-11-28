@@ -230,13 +230,13 @@ beforeAll(async () => {
         },
       } satisfies ComponentProps<typeof NoteEditor>;
       const preview = renderToString(() => createComponent(NotePreview, { text: note, mode, historyIncomplete }));
-      const serialized = Bun.escapeHTML(JSON.stringify(toJSON(props)));
+      const serialized = JSON.stringify(toJSON(props)).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e");
       return new Response(
         `<!doctype html><html lang="en"${url.searchParams.has("dark") ? ' class="dark"' : ""}><head>
         <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style>
         <style>solid-client,solid-island{display:contents}#layout{display:flex;height:100dvh}#navigation{width:288px;flex:none}#main{display:flex;flex:1;min-width:0;min-height:0;flex-direction:column}@media(max-width:600px){#navigation{display:none}}</style>
         </head><body class="k2b-ui" style="margin:0"><div id="layout"><nav id="navigation">Notizbuch</nav><main id="main">
-        <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col"${fullWidth ? " data-full-width" : ""}><solid-client data-id="note-editor" data-props="${serialized}"></solid-client>${preview}</div>
+        <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col"${fullWidth ? " data-full-width" : ""}><solid-client data-id="note-editor"><!--ssr-props:${serialized}--></solid-client>${preview}</div>
         </main></div><script type="module" src="/editor.js"></script></body></html>`,
         {
           headers: {
