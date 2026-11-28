@@ -1,5 +1,21 @@
 import { sql } from "@k2b/cloud";
+import { logger } from "@k2b/cloud/services";
+import { buildConcurrentIndexesInBackground, type ConcurrentIndex } from "@k2b/cloud/services/concurrent-index";
 import { repairEncodedMetadata } from "./jsonb-metadata";
+
+/** An entry an app's runtime key wrote on its own; `audit.list` and `latest` leave these out (the same words). */
+const AUTOMATIC = "(metadata->>'provenance' = 'system' AND metadata->>'service' = 'app-workload') IS TRUE";
+
+/**
+ * The visible log alone: the newest visible entries read only themselves, not the automatic app-key entries between
+ * them, which are most of the log. Writes of those automatic entries do not touch this index.
+ */
+const VISIBLE_INDEX: ConcurrentIndex = {
+  name: "idx_audit_events_visible_created",
+  table: "audit.events",
+  definition: "(created_at DESC, id DESC)",
+  where: `NOT (${AUTOMATIC})`,
+};
 
 export const migrate = async (): Promise<void> => {
   await sql`CREATE SCHEMA IF NOT EXISTS audit`.simple();
@@ -59,4 +75,7 @@ export const migrate = async (): Promise<void> => {
       END IF;
     END $$;
   `.simple();
+
+  // After the hypertable step, which would wait for a running build: on a hypertable each chunk is indexed in turn.
+  void buildConcurrentIndexesInBackground([VISIBLE_INDEX], { log: logger("core:audit"), purpose: "visible audit log" });
 };

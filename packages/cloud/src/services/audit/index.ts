@@ -376,40 +376,129 @@ const buildWhere = (filter: AuditListFilter = {}) => {
   return conditions.reduce((acc, condition) => sql`${acc} AND ${condition}`);
 };
 
-const list = async (config: {
+/**
+ * Where a bounded count stops. A log this long is paged by cursor or narrowed by a filter; nobody acts on the exact
+ * number past it, and counting it would read every entry of the range on each load.
+ */
+export const AUDIT_COUNT_BOUND = 1000;
+
+export type AuditListPage = Paginated<AuditEvent> & {
+  /** With `automatic: "hide"`: how many automatic entries the filter matched and the list leaves out. */
+  hiddenAutomaticCount?: number;
+  /** With `cursor`: the cursor of the next page, or `null` on the last one. */
+  nextCursor?: string | null;
+  /** With `count: "bounded"`: `total` stopped at `AUDIT_COUNT_BOUND`; there are at least that many visible entries. */
+  countIsLowerBound?: boolean;
+  /** With `count: "bounded"` and `automatic: "hide"`: `hiddenAutomaticCount` stopped at `AUDIT_COUNT_BOUND`. */
+  hiddenCountIsLowerBound?: boolean;
+};
+
+/** A `cursor` this service did not write. A transport answers it as a bad request (400), never as the first page. */
+export class AuditCursorError extends Error {
+  constructor() {
+    super("Invalid audit cursor");
+    this.name = "AuditCursorError";
+  }
+}
+
+/**
+ * A page boundary: the exact time of the last entry in whole microseconds since 1970 and its id, both integers, so a
+ * cursor can only name a time Postgres can read back exactly.
+ */
+const encodeCursor = (micros: number, id: number) => Buffer.from(JSON.stringify([micros, id])).toString("base64url");
+const decodeCursor = (cursor: string): { micros: number; id: number } => {
+  try {
+    const value: unknown = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+    if (Array.isArray(value) && value.length === 2 && Number.isSafeInteger(value[0]) && Number.isSafeInteger(value[1]))
+      return { micros: value[0], id: value[1] };
+  } catch {}
+  throw new AuditCursorError();
+};
+
+export type AuditListConfig = {
   pagination?: PageParams;
   filter?: AuditListFilter;
-}): Promise<Paginated<AuditEvent> & { hiddenAutomaticCount?: number }> => {
+  cursor?: string | null;
+  count?: "exact" | "bounded";
+};
+
+/**
+ * The two statements of `list`, not yet sent, also for a test that reads their plans. Throws `AuditCursorError` for a
+ * cursor this service did not write.
+ */
+export const auditListStatements = (config: AuditListConfig) => {
   const { page, perPage, offset } = paginate(config.pagination);
   const where = buildWhere(config.filter);
   const hideAutomatic = config.filter?.automatic === "hide";
-  // Remove this predicate when runtime keys are no longer issued (step 8).
+  // Remove this predicate when runtime keys are no longer issued (step 8). Its words match the partial index of the
+  // audit migration exactly, so the planner can use it.
   const automatic = sql`(metadata->>'provenance' = 'system' AND metadata->>'service' = 'app-workload') IS TRUE`;
   const visibleWhere = hideAutomatic ? sql`${where} AND NOT (${automatic})` : where;
-  const [countRows, rows] = await Promise.all([
-    sql<{ count: number; automatic_count: number }[]>`
-      SELECT COUNT(*)::int AS count,
-        ${hideAutomatic ? sql`COUNT(*) FILTER (WHERE ${automatic})` : sql`0`}::int AS automatic_count
-      FROM audit.events WHERE ${where}
-    `,
-    sql<DbAuditRow[]>`
-      SELECT *
+  const byCursor = config.cursor !== undefined;
+  const after = config.cursor ? decodeCursor(config.cursor) : null;
+  const pageWhere = after
+    ? sql`${visibleWhere} AND (created_at, id) < (timestamptz 'epoch' + ${after.micros}::bigint * interval '1 microsecond', ${after.id}::bigint)`
+    : visibleWhere;
+  const bounded = config.count === "bounded";
+  const upTo = AUDIT_COUNT_BOUND + 1;
+  // a page by cursor or under a bounded count reads one entry more, which says whether another page follows
+  const peek = byCursor || bounded;
+  return {
+    page,
+    perPage,
+    byCursor,
+    bounded,
+    hideAutomatic,
+    count: bounded
+      ? sql<{ count: number; automatic_count: number }[]>`
+          SELECT (SELECT COUNT(*) FROM (SELECT 1 FROM audit.events WHERE ${visibleWhere} LIMIT ${upTo}) visible)::int AS count,
+            ${hideAutomatic ? sql`(SELECT COUNT(*) FROM (SELECT 1 FROM audit.events WHERE ${where} AND ${automatic} LIMIT ${upTo}) hidden)` : sql`0`}::int AS automatic_count
+        `
+      : sql<{ count: number; automatic_count: number }[]>`
+          SELECT COUNT(*)::int AS count,
+            ${hideAutomatic ? sql`COUNT(*) FILTER (WHERE ${automatic})` : sql`0`}::int AS automatic_count
+          FROM audit.events WHERE ${where}
+        `,
+    rows: sql<(DbAuditRow & { cursor_micros: string })[]>`
+      SELECT *, (EXTRACT(EPOCH FROM created_at) * 1000000)::bigint::text AS cursor_micros
       FROM audit.events
-      WHERE ${visibleWhere}
+      WHERE ${pageWhere}
       ORDER BY created_at DESC, id DESC
-      LIMIT ${perPage}
-      OFFSET ${offset}
+      LIMIT ${peek ? perPage + 1 : perPage}
+      OFFSET ${byCursor ? 0 : offset}
     `,
-  ]);
-  const hiddenAutomaticCount = countRows[0]?.automatic_count ?? 0;
-  const total = (countRows[0]?.count ?? 0) - hiddenAutomaticCount;
+  };
+};
+
+/**
+ * One page of the log, newest first. By default it pages by number and counts the whole match exactly, as before.
+ * `cursor` (`null` for the first page, then the `nextCursor` of the page before) pages by the last entry instead of an
+ * offset; `count: "bounded"` stops counting at `AUDIT_COUNT_BOUND`, so it reads up to the bound's worth of matching
+ * entries, never the whole range. Without a range the visible entries read through `idx_audit_events_visible_created`.
+ * Two statements in every mode. Rejects with `AuditCursorError` for a cursor this service did not write.
+ */
+const list = async (config: AuditListConfig): Promise<AuditListPage> => {
+  const statements = auditListStatements(config);
+  const { page, perPage, byCursor, bounded, hideAutomatic } = statements;
+  const [countRows, rows] = await Promise.all([statements.count, statements.rows]);
+  const counted = countRows[0] ?? { count: 0, automatic_count: 0 };
+  const upTo = AUDIT_COUNT_BOUND + 1;
+  const hiddenAutomaticCount = bounded ? Math.min(counted.automatic_count, AUDIT_COUNT_BOUND) : counted.automatic_count;
+  // the exact count includes the hidden entries; the bounded one counts the visible ones directly
+  const total = bounded ? Math.min(counted.count, AUDIT_COUNT_BOUND) : counted.count - hiddenAutomaticCount;
+  const shown = rows.slice(0, perPage);
+  const last = shown.at(-1);
+  const more = byCursor || bounded ? rows.length > perPage : page * perPage < total;
   return {
     ...(hideAutomatic ? { hiddenAutomaticCount } : {}),
-    items: rows.map(mapRow),
+    ...(byCursor ? { nextCursor: more && last ? encodeCursor(Number(last.cursor_micros), Number(last.id)) : null } : {}),
+    ...(bounded ? { countIsLowerBound: counted.count >= upTo } : {}),
+    ...(bounded && hideAutomatic ? { hiddenCountIsLowerBound: counted.automatic_count >= upTo } : {}),
+    items: shown.map(mapRow),
     page,
     perPage,
     total,
-    hasNext: page * perPage < total,
+    hasNext: more,
   };
 };
 
