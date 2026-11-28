@@ -1189,8 +1189,10 @@ export const Table = <T,>(props: TableProps<T>) => {
     if (!sized() || grid()) return undefined;
     const last = props.columns.at(-1);
     const others = props.columns.slice(0, -1);
-    const mins = others.map((column) => column.width?.min).filter((min): min is number => min !== undefined);
-    const floor = last?.width?.min ?? (mins.length > 0 ? Math.min(...mins) : undefined);
+    // a fixed column's least is its fixed width (#4227)
+    const least = (width: ColumnWidth | undefined) => (width === undefined ? undefined : "fixed" in width ? width.fixed : width.min);
+    const mins = others.map((column) => least(column.width)).filter((min): min is number => min !== undefined);
+    const floor = least(last?.width) ?? (mins.length > 0 ? Math.min(...mins) : undefined);
     if (floor === undefined) return undefined;
     return others.reduce((sum, _, index) => sum + (columnWidth(index) ?? 0), floor);
   };
