@@ -134,6 +134,8 @@ export default function RoutesScreen(props: RoutesScreenProps) {
               time: row.requests,
               marks: row.failing ? <Chip status="bad">{row.errors}</Chip> : undefined,
             })}
+            // The widths fit beside the context column at 1440: wider ones pushed Anfragen and Fehler out of the pane, and
+            // the layout check does not report a column its pane cuts (#4563).
             columns={[
               { title: t().prefix, width: { min: 160, default: 220 }, cell: (row) => row.prefix },
               {
