@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { frontMatterLength, LIGATURES } from "@k2b/editor/markdown/lib/ligatures";
+import { PERSON_COLORS, PERSON_COLORS_DARK } from "@k2b/ui";
 import { NOTE_PREVIEW_BUDGET, type NotePreviewPart, notePreviewChart, notePreviewLines } from "./note-preview";
 
 const repositoryRoot = resolve(import.meta.dir, "../../../../../../..");
@@ -251,6 +252,9 @@ test("a comment's colour reaches the passage and its dot only as a colour", () =
       { id: "b", from: 13, to: 13, color, label: "Ada", orphan: true },
     ]).flatMap((line) => styleOf(line.parts));
   expect(styles("#7c3aed")).toEqual(["--annotation-color: #7c3aed", "--annotation-color: #7c3aed"]);
+  // a person's hue gets its dark step, so the passage keeps 3:1 on the dark surface too
+  const [hue, dark] = [PERSON_COLORS[2], PERSON_COLORS_DARK[2]];
+  expect(styles(hue)).toEqual([`--annotation-color: light-dark(${hue}, ${dark})`, `--annotation-color: light-dark(${hue}, ${dark})`]);
   for (const color of ["#7c3aed;position:fixed;inset:0", "red;background:url(https://example.org/x.png)"])
     expect(styles(color)).toEqual(["--annotation-color: transparent", "--annotation-color: transparent"]);
 });

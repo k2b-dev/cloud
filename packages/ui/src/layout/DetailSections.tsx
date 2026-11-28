@@ -4,7 +4,7 @@ import type { DropdownItem } from "../actions/Dropdown";
 import { cssColor } from "../internal/color";
 import { Avatar, type AvatarShape } from "../surfaces/Avatar";
 import { AvatarStack, type AvatarStackPerson } from "../surfaces/AvatarStack";
-import { personColor } from "../surfaces/person-color";
+import { personMarkColor } from "../surfaces/person-color";
 import { Section } from "../surfaces/Section";
 import DetailPanel from "./DetailPanel";
 import { useDetailPanelMessages } from "./detail-panel-messages";
@@ -84,7 +84,7 @@ export function DetailPresence(props: DetailPresenceProps): JSX.Element {
   const others = createMemo(() => props.people.filter((person) => !person.self));
   const self = createMemo(() => props.people.find((person) => person.self));
   const short = (person: DetailPresencePerson) => person.shortName ?? person.name;
-  const color = (person: DetailPresencePerson) => cssColor(person.color) ?? personColor(person.name);
+  const color = (person: DetailPresencePerson) => cssColor(person.color) ?? personMarkColor(person.name);
   const [hidden, setHidden] = createSignal(0);
   let chips: HTMLDivElement | undefined;
 

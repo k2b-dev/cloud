@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { PERSON_COLORS, personColor, personTint } from "./person-color";
+import {
+  PERSON_COLORS,
+  PERSON_COLORS_DARK,
+  personColor,
+  personColorDark,
+  personMarkColor,
+  personMarkColorOf,
+  personTint,
+} from "./person-color";
 
 // OKLCH hue of an sRGB hex color (Björn Ottosson's OKLab), in degrees.
 const hue = (hex: string): number => {
@@ -103,6 +111,31 @@ describe("person colors", () => {
       ] as const)
         expect([color, surface, contrast(mix(color, text, 0.55), mix(color, surface, 0.18)) >= 4.5]).toEqual([color, surface, true]);
     }
+  });
+
+  test("mark a page in either theme: the hue 3:1 on the light surface, its dark step 3:1 on the dark one", () => {
+    expect(PERSON_COLORS_DARK).toHaveLength(PERSON_COLORS.length);
+    for (const [index, color] of PERSON_COLORS.entries()) {
+      expect([color, contrast(channels(color), [255, 255, 255]) >= 3]).toEqual([color, true]);
+      const dark = PERSON_COLORS_DARK[index]!;
+      expect([dark, contrast(channels(dark), channels("#11151b")) >= 3]).toEqual([dark, true]);
+    }
+  });
+
+  test("keep soft initials readable on their tint, at least 4.5:1, in light and dark (v2 soft avatar, record head)", () => {
+    for (const [index, color] of PERSON_COLORS.entries()) {
+      // light: the hue 85 % into black on the hue 16 % into the surface (v2.css, soft initials)
+      expect([color, contrast(mix(color, "#000000", 0.85), mix(color, "#ffffff", 0.16)) >= 4.5]).toEqual([color, true]);
+      // dark: the dark step on itself 16 % into the dark surface
+      const dark = PERSON_COLORS_DARK[index]!;
+      expect([dark, contrast(channels(dark), mix(dark, "#11151b", 0.16)) >= 4.5]).toEqual([dark, true]);
+    }
+  });
+
+  test("give a mark both hues, and leave a color outside the palette as it is", () => {
+    expect(personMarkColor("Nora Brandt")).toBe(`light-dark(${personColor("Nora Brandt")}, ${personColorDark("Nora Brandt")})`);
+    expect(personMarkColorOf(PERSON_COLORS[3].toUpperCase())).toBe(`light-dark(${PERSON_COLORS[3]}, ${PERSON_COLORS_DARK[3]})`);
+    expect(personMarkColorOf("#8a8478")).toBe("#8a8478");
   });
 
   test("stay apart pair by pair, also for people who see colours differently (CIEDE2000 of at least 5)", () => {

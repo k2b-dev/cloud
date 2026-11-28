@@ -1,5 +1,5 @@
 import type { EditorView } from "@codemirror/view";
-import { personColor, Skeleton, useLocale } from "@k2b/ui";
+import { personMarkColor, Skeleton, useLocale } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import type { Annotation } from "../../../../lib/annotation-contracts";
 import type { AnnotationMark } from "../../../lib/editor/annotations";
@@ -250,7 +250,7 @@ export function CommentMargin(props: Props) {
     const end = id ? markOf(id)?.to : ui.draft()?.to;
     return view && host && end !== undefined ? bottomOf(view, host, end) + 8 : MIN_TOP;
   };
-  const color = (item: Annotation) => (item.state === "open" ? personColor(item.author.name) : "#8a8478");
+  const color = (item: Annotation) => (item.state === "open" ? personMarkColor(item.author.name) : "#8a8478");
 
   return (
     <>

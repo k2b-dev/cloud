@@ -8,7 +8,7 @@ import { isNamedBlockHandle } from "@k2b/editor/markdown/lib/named-blocks";
 import { blockMathPattern, inlineMathPattern } from "@k2b/editor/markdown/math-syntax";
 import { highlightTree, tagHighlighter, tags } from "@lezer/highlight";
 import { notebookChartOptions } from "../../../../lib/chart-options";
-import { hexColor } from "../../../lib/color";
+import { markColor } from "../../../lib/color";
 
 export const NOTE_PREVIEW_ID = "notebook-note-preview";
 export type NotePreviewPart = string | { className: string; children: NotePreviewPart[]; attributes?: Record<string, string> };
@@ -225,7 +225,7 @@ const markRanges = (marks: readonly NotePreviewMark[]) => ({
         order: 3,
         attributes: {
           "data-annotation": mark.id,
-          style: `--annotation-color: ${hexColor(mark.color) ?? "transparent"}`,
+          style: `--annotation-color: ${markColor(mark.color)}`,
           "aria-description": mark.label,
         },
       }),
@@ -253,7 +253,7 @@ const linePartsWithDots = (
       children: [],
       attributes: {
         "data-annotation": dot.id,
-        style: `--annotation-color: ${hexColor(dot.color) ?? "transparent"}`,
+        style: `--annotation-color: ${markColor(dot.color)}`,
         role: "button",
         "aria-label": dot.label,
       },

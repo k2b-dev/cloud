@@ -1,6 +1,6 @@
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import { personColor } from "../surfaces/person-color";
+import { personColor, personColorDark } from "../surfaces/person-color";
 import { colorStyle, safeColor, safeValue } from "./colors";
 import { useControlMessages } from "./control-messages";
 import { Icon } from "./icon";
@@ -96,7 +96,12 @@ export const Face = (props: AvatarProps & { place?: number }) => {
       aria-hidden={props.decorative ? "true" : undefined}
       // Every person has a colour: given, or the fixed one of their name, the same as everywhere in Cloud. A face reads
       // only the colour itself, none of the inks a mark derives from it; one that is no colour leaves it neutral.
-      style={faceColor(props.color === undefined ? personColor(props.name) : safeColor(props.color))}
+      // a person's own hue also brings its dark step, for soft initials on the dark surface
+      style={
+        props.color === undefined
+          ? { "--k2-c": personColor(props.name), "--k2-c-dark": personColorDark(props.name) }
+          : faceColor(safeColor(props.color))
+      }
     >
       {initialsOf(props)}
       <picture.Picture />
