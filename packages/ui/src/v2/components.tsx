@@ -14,11 +14,13 @@ import {
   children as resolveChildren,
   Show,
   untrack,
+  useContext,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { watchFold } from "./bar-fold";
+import { SidebarPlaceContext } from "./bar-place";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { Input, MarkCheck } from "./controls";
@@ -275,9 +277,21 @@ const groupDeed = (action: NavGroup["action"]) => (action && !("items" in action
  * The sidebar of an app: its name, its search and main action, groups of round entries with counts, its own rows, and
  * entries at the foot.
  */
+/** The words of the sidebar's current entry, also of one tucked away under another; none where no entry is current. */
+const currentEntry = (items: readonly NavItem[]): string | undefined => {
+  for (const item of items) {
+    if (item.current) return item.label;
+    const inner = item.items ? currentEntry(item.items) : undefined;
+    if (inner !== undefined) return inner;
+  }
+  return undefined;
+};
+
 export const Nav = (props: NavProps) => {
   // A part passed as JSX is made once, here, and read from here (as `Workspace` does with its parts).
   const list = resolveChildren(() => props.list);
+  // the workspace learns which page the sidebar already names, so its head does not name it a second time
+  useContext(SidebarPlaceContext)?.(() => currentEntry([...props.groups.flatMap((group) => group.items ?? []), ...(props.foot ?? [])]));
   return (
     <nav class="k2-nav" data-k2-part="Nav" aria-label={props.title}>
       <div class="k2-nav-title">
@@ -544,6 +558,13 @@ export const Tabs = (props: TabsProps) => {
  */
 export type PathProps = { items: readonly { label: string; href?: string }[]; label: string };
 
+/** The end of a long name that stays when the name is cut in its middle: its extension or number, up to 12 letters. */
+const nameEnd = (name: string) => {
+  // letters, not code units: an emoji or an accent stays whole
+  const letters = Array.from(name);
+  return letters.length > 16 ? letters.slice(-Math.min(12, Math.floor(letters.length / 2))).join("") : "";
+};
+
 /** How much of a path stands in "…": nothing, the places between the first one and the parent, or every place. */
 type PathFold = 0 | 1 | 2;
 
@@ -565,6 +586,12 @@ export const Path = (props: PathProps) => {
       probe.remove();
       return found;
     };
+    // The page's own width. A long name cut in its middle shrinks its start inside the page, so the page shows no
+    // overflow; its start's own width counts in place of the part that shows.
+    const own = (page: HTMLElement) => {
+      const name = page.querySelector<HTMLElement>(":scope > .k2-path-name");
+      return name ? page.scrollWidth - name.clientWidth + name.scrollWidth : page.scrollWidth;
+    };
     const measure = () => {
       if (!nav) return;
       const places = [...nav.querySelectorAll<HTMLElement>(":scope > .k2-path-step")];
@@ -574,7 +601,7 @@ export const Path = (props: PathProps) => {
       // (`--k2-start-least`, the same least the bar's fold gives the start)
       const cap = width("12ch", places[0]!);
       const least = places.map((place) => Math.min(place.scrollWidth, cap));
-      const page = Math.min(current.scrollWidth, width("var(--k2-start-least)", current));
+      const page = Math.min(own(current), width("var(--k2-start-least)", current));
       const more = nav.querySelector<HTMLElement>(":scope > .k2-path-fold")?.scrollWidth ?? 0;
       const chevron = current.previousElementSibling instanceof HTMLElement ? current.previousElementSibling.offsetWidth : 0;
       const step = chevron + 2 * (Number.parseFloat(getComputedStyle(nav).columnGap) || 0);
@@ -584,7 +611,7 @@ export const Path = (props: PathProps) => {
       // grid gives the start the width of what it holds), it asks for this, so a path that folded unfolds again
       nav.style.setProperty(
         "--k2-path-whole",
-        `${Math.ceil(sum(places.map((place) => place.scrollWidth)) + current.scrollWidth + places.length * step)}px`,
+        `${Math.ceil(sum(places.map((place) => place.scrollWidth)) + own(current) + places.length * step)}px`,
       );
       const next: PathFold =
         sum(least) + page + places.length * step <= room
@@ -682,7 +709,18 @@ export const Path = (props: PathProps) => {
                   </Show>
                 }
               >
-                <b aria-current="page">{item.label}</b>
+                {/* a long name is cut in its middle where it has no room ("IMG_2026…Espresso.jpg"): its end, the
+                    extension or number that tells two files apart, stays; its whole name is its hint */}
+                <b aria-current="page" title={nameEnd(item.label) ? item.label : undefined} dir="auto">
+                  <Show when={nameEnd(item.label)} fallback={item.label}>
+                    {(end) => (
+                      <>
+                        <span class="k2-path-name">{item.label.slice(0, -end().length)}</span>
+                        <span class="k2-path-name-end">{end()}</span>
+                      </>
+                    )}
+                  </Show>
+                </b>
               </Show>
               {/* "…" stands after the first place, where it is laid out also while nothing folds, so the path can measure
                   it; it shows only while it holds places */}

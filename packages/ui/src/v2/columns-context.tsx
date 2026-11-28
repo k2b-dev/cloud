@@ -1,4 +1,5 @@
 import { type Accessor, createContext, type JSX } from "solid-js";
+import { BarPlaceContext, HeadPlaceContext } from "./bar-place";
 
 /**
  * A column of the workspace and what it needs at least: its minimum, or 400 px for a column without a width; a detail
@@ -24,10 +25,15 @@ export const InnerContext = createContext<(need: Accessor<number>) => void>();
 
 /**
  * What stands over the page (a dialog, a popover's panel) is no column of the workspace behind it: a pane or a split in
- * it asks that workspace for no room. Solid's context passes through a portal, so the overlay ends it here.
+ * it asks that workspace for no room, and a main action in it joins no "+" of the head it was opened from. Solid's
+ * context passes through a portal, so the overlay ends it here.
  */
 export const OverPage = (props: { children: JSX.Element }) => (
   <ColumnsContext.Provider value={undefined}>
-    <InnerContext.Provider value={undefined}>{props.children}</InnerContext.Provider>
+    <InnerContext.Provider value={undefined}>
+      <BarPlaceContext.Provider value={undefined}>
+        <HeadPlaceContext.Provider value={undefined}>{props.children}</HeadPlaceContext.Provider>
+      </BarPlaceContext.Provider>
+    </InnerContext.Provider>
   </ColumnsContext.Provider>
 );

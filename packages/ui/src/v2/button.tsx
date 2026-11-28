@@ -1,6 +1,7 @@
 import { createUniqueId, type JSX, children as resolveChildren, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
+import { markBarCreate } from "./bar-place";
 import { linkOr } from "./link";
 import { Face, Icon } from "./marks";
 import type { Action, OnNavigate, Person } from "./types";
@@ -102,12 +103,28 @@ export const Button = (props: ButtonProps) => {
   // focus a press gave it (a native `disabled` would drop it): it says "disabled" and refuses the click, which also
   // stops a form being sent twice.
   const off = () => props.disabled || props.busy;
+  let element: HTMLElement | undefined;
+  // A main action at the end of a workspace's head: several there become one "+" menu, whose entry runs this button's
+  // own click, or opens its address as the button does.
+  markBarCreate(() => {
+    if (props.variant !== "primary") return undefined;
+    const words = label();
+    return {
+      label: props.label ?? (typeof words === "string" ? words : (element?.querySelector(".k2-btn-label")?.textContent?.trim() ?? "")),
+      icon: props.icon,
+      disabled: off(),
+      ...(props.href !== undefined ? { href: props.href, onNavigate: props.onNavigate } : { onClick: () => element?.click() }),
+    };
+  });
   // with `about`, the name is the button's own (its words, or its label for a symbol) and then what it is about
   // (made only then, so the ids of every other button and of the page around it stay as they were)
   const self = props.about ? createUniqueId() : "";
   return (
     // a disabled link is an anchor without an address: it leads nowhere and takes no `onNavigate`
     <Dynamic
+      ref={(node: HTMLElement) => {
+        element = node;
+      }}
       component={off() && props.href !== undefined ? "a" : linkOr(props.href, "button")}
       href={off() ? undefined : props.href}
       onNavigate={off() || props.href === undefined || props.download ? undefined : props.onNavigate}

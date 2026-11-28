@@ -21,6 +21,7 @@ import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { Announcer } from "./announce";
 import { type Fold, watchFold } from "./bar-fold";
+import { BarPlaceContext, HeadPlaceContext, SidebarPlaceContext } from "./bar-place";
 import { useDrawer } from "./behavior/overlays";
 import { type GripOptions, useGrip } from "./behavior/resize";
 import { ActionButton } from "./button";
@@ -28,7 +29,7 @@ import { type Column, ColumnsContext, type DetailEmpty, InnerContext } from "./c
 import { RowOpen } from "./content";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Icon, Mark, Spark, type SparkProps } from "./marks";
-import { BarFold, Menu, type MenuItem } from "./menu";
+import { BarFold, Menu, type MenuEntry, type MenuItem } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 import { ConfirmDialog } from "./overlays";
 import { Empty, PlaceholderValue } from "./states";
@@ -219,11 +220,26 @@ const HeadBlockContext = createContext<HeadBlock>();
  */
 export const Workspace = (props: WorkspaceProps) => {
   const t = useUiMessages();
+  const overlay = useOverlayMessages();
   const width = () => props.sidebarWidth ?? sidebarDefault;
   // A part passed as JSX is made once, here, and read from here: reading the prop again would make it again (the
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
-  const sidebar = resolveChildren(() => props.sidebar);
-  const head = resolveChildren(() => props.head);
+  // The sidebar tells which page its current entry names; the head's title does not name it a second time.
+  const [named, setNamed] = createSignal<() => string | undefined>();
+  const sidebar = resolveChildren(() => (
+    <SidebarPlaceContext.Provider value={(name) => setNamed(() => name)}>{props.sidebar}</SidebarPlaceContext.Provider>
+  ));
+  // the head's main actions: where they are several, the phone's round button offers them all as one "+"
+  const [headCreates, setHeadCreates] = createSignal<() => readonly MenuEntry[]>();
+  const headPlace = {
+    named: () => named()?.(),
+    creates: (entries: () => readonly MenuEntry[]) => {
+      setHeadCreates(() => entries);
+      return () => setHeadCreates((current) => (current === entries ? undefined : current));
+    },
+  };
+  const head = resolveChildren(() => <HeadPlaceContext.Provider value={headPlace}>{props.head}</HeadPlaceContext.Provider>);
+  const fabCreates = () => headCreates()?.() ?? [];
   // `detailEmpty` written as an object in JSX is a getter that makes its hero anew on every read: read it once here.
   const detailEmpty = createMemo(() => props.detailEmpty);
   const emptyHero = resolveChildren(() => detailEmpty()?.hero);
@@ -259,7 +275,9 @@ export const Workspace = (props: WorkspaceProps) => {
     `@media (min-width: 768px) { .k2-ui [data-k2-ws="${id}"] > .k2-ws-side { max-width: calc(100% - ${room() - width().default}px); } ` +
     `@container k2-ws-${id} (width < ${room()}px) { ` +
     `.k2-ui [data-k2-ws="${id}"] > :is(.k2-ws-side, .k2-ws-side + .k2-seam) { display: none; } ` +
-    `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-ws-toggle: inline-flex; --k2-ws-drawer: 1; } } }`;
+    // a head title that repeats the sidebar's page names it again while the sidebar is a drawer
+    `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-ws-toggle: inline-flex; --k2-ws-drawer: 1; ` +
+    "--k2-names-place: static; --k2-names-place-size: auto; --k2-names-place-clip: none; --k2-names-place-head: var(--k2-h-head); } } }";
   const [drawerOpen, setDrawerOpen] = createSignal(false);
   const drawer = useDrawer(() => ({ open: drawerOpen(), onOpenChange: setDrawerOpen, side: "start" }));
   let element: HTMLDivElement | undefined;
@@ -361,7 +379,15 @@ export const Workspace = (props: WorkspaceProps) => {
           {props.sidebar}
         </drawer.Popup>
       </Show>
-      <Show when={props.primary}>
+      <Show when={fabCreates().length > 1}>
+        {/* several main actions in the head: the round button is their one "+" ("Neu") */}
+        <span class="k2-fab-menu">
+          <Menu variant="primary" icon="plus" items={fabCreates()}>
+            {overlay().create}
+          </Menu>
+        </span>
+      </Show>
+      <Show when={fabCreates().length < 2 && props.primary}>
         {(action) => (
           // a disabled link is an anchor without an address, as in `Button`
           <Dynamic
@@ -586,6 +612,8 @@ export const Pane = (props: PaneProps) => {
       data-detail={props.detail ? "" : undefined}
       data-side={props.side ? "" : undefined}
       data-wide-back={props.wideBack && props.back ? "" : undefined}
+      // a detail with its way back and a head of its own: on the phone the way back stands in the head's row
+      data-back={props.detail && props.back && head() !== undefined ? "head" : undefined}
       data-center={props.center ? "" : undefined}
       style={custom({
         "--k2-pane-w": props.width ? `${size() ?? columnPx(props.width)}px` : undefined,
@@ -850,12 +878,44 @@ export const Bar = (props: BarProps) => {
   };
   // the first bar of a pane's head claims its block, before its parts are made (a bar inside them finds it taken)
   const headBlock = useContext(HeadBlockContext)?.();
-  const start = resolveChildren(() => props.start);
+  // In a workspace's head, the main actions at its end: more than one become one "+" menu (one create action at a
+  // head's end), which the phone's round button offers too; and a title in its start that only repeats the sidebar's
+  // page gives way. A bar elsewhere (a pane's, a section's, one inside this bar) keeps its actions and its title.
+  const head = useContext(HeadPlaceContext);
+  const heard = <T,>() => {
+    const [list, setList] = createSignal<readonly T[]>([]);
+    const add = (item: T) => {
+      setList((items) => [...items, item]);
+      return () => setList((items) => items.filter((other) => other !== item));
+    };
+    return [list, add] as const;
+  };
+  const [creates, create] = heard<() => MenuEntry | undefined>();
+  const entries = () => creates().flatMap((entry) => entry() ?? []);
+  const many = () => entries().length > 1;
+  if (head) onCleanup(head.creates(entries));
+  const [titles, repeats] = heard<() => boolean>();
+  const start = resolveChildren(() => (
+    <HeadPlaceContext.Provider value={undefined}>
+      <BarPlaceContext.Provider value={head ? { place: "start", named: head.named, repeats } : undefined}>
+        {props.start}
+      </BarPlaceContext.Provider>
+    </HeadPlaceContext.Provider>
+  ));
+  const filled = (part: unknown) => part !== undefined && part !== null && typeof part !== "boolean";
+  // a bar that holds nothing but a title that repeats the sidebar's page gives way whole while the sidebar shows it
+  const onlyRepeats = () => !hasEnd() && start.toArray().filter(filled).length === 1 && titles().some((repeat) => repeat());
   // the pane's toolbar, which this head bar stands between its start and its end (one block, one box, one Tab order)
   const toolbar = () => headBlock?.toolbar();
   createRenderEffect(() => headBlock?.tell(toolbar() === undefined ? undefined : start() === undefined ? "row" : ""));
   // the end is made inside the fold's context, so a menu "…" in it can offer itself to take the folded buttons
-  const end = resolveChildren(() => <BarFold.Provider value={{ offer, host, entries: folded }}>{props.end}</BarFold.Provider>);
+  const end = resolveChildren(() => (
+    <BarFold.Provider value={{ offer, host, entries: folded }}>
+      <HeadPlaceContext.Provider value={undefined}>
+        <BarPlaceContext.Provider value={head ? { place: "end", create } : undefined}>{props.end}</BarPlaceContext.Provider>
+      </HeadPlaceContext.Provider>
+    </BarFold.Provider>
+  ));
   const hasEnd = createMemo(() => end() !== undefined);
   createEffect(() => {
     if (!bar || !hasEnd()) return;
@@ -878,7 +938,7 @@ export const Bar = (props: BarProps) => {
     });
   });
   return (
-    <div ref={bar} class="k2-bar" data-k2-part="Bar">
+    <div ref={bar} class="k2-bar" data-k2-part="Bar" data-names-place={onlyRepeats() ? "" : undefined}>
       <Show when={start() !== undefined}>
         <div class="k2-bar-start">{start()}</div>
       </Show>
@@ -890,8 +950,16 @@ export const Bar = (props: BarProps) => {
         )}
       </Show>
       <Show when={hasEnd()}>
-        <div class="k2-bar-end">
+        <div class="k2-bar-end" data-creates={many() ? "" : undefined}>
           {end()}
+          <Show when={many()}>
+            {/* the bar's own "+": outside its end's place, so it joins no "+" itself */}
+            <span class="k2-creates">
+              <Menu variant="primary" icon="plus" items={entries()}>
+                {t().create}
+              </Menu>
+            </span>
+          </Show>
           <Show when={folded().length > 0 && !host()}>
             <span class="k2-bar-fold">
               <BarFold.Provider value={undefined}>

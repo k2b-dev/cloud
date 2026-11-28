@@ -14,6 +14,7 @@ import {
   untrack,
   useContext,
 } from "solid-js";
+import { BarPlaceContext, HeadPlaceContext, markBarCreate } from "./bar-place";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
 import { custom, Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
@@ -436,6 +437,16 @@ const MenuRoot = (props: MenuRootProps) => {
   const iconOnly = () => words() === undefined;
   const name = () => props.label ?? t().moreActions;
   let trigger: HTMLElement | undefined;
+  // a main action with words at the end of a workspace's head joins the head's one "+" as a submenu
+  markBarCreate(() => {
+    if (iconOnly() || props.variant !== "primary") return undefined;
+    const label = words();
+    return {
+      label: props.label ?? (typeof label === "string" ? label : (trigger?.querySelector(".k2-btn-label")?.textContent?.trim() ?? "")),
+      icon: props.icon,
+      items: props.items,
+    };
+  });
   // The "…" at the end of a bar takes the buttons the bar has no room for, as its first section (see `Bar`), so no
   // second "…" stands beside it. Every "…" offers itself: no words and no symbol of its own, whatever its name says
   // ("Weitere Aktionen", "Mehr zum Angebot"). A `Menu icon="filter" label="Filter"` is another thing and takes none.
@@ -476,7 +487,12 @@ const MenuRoot = (props: MenuRootProps) => {
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
       </level.Trigger>
       <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={edgeRoom}>
-        <Entries level={level} entries={items()} />
+        {/* what opens here stands in no head: its buttons join no "+" */}
+        <BarPlaceContext.Provider value={undefined}>
+          <HeadPlaceContext.Provider value={undefined}>
+            <Entries level={level} entries={items()} />
+          </HeadPlaceContext.Provider>
+        </BarPlaceContext.Provider>
       </level.Popup>
     </>
   );

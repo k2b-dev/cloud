@@ -70,7 +70,10 @@ const paths = (page: Page) =>
         const steps = [...nav.querySelectorAll<HTMLElement>(".k2-path-step")].filter(shows);
         return {
           name: nav.getAttribute("aria-label"),
-          whole: current.scrollWidth <= current.clientWidth + 1,
+          // a long page name is cut in its middle: its start shrinks inside the page
+          whole:
+            (current.querySelector<HTMLElement>(".k2-path-name") ?? current).scrollWidth <=
+            (current.querySelector<HTMLElement>(".k2-path-name") ?? current).clientWidth + 1,
           // the page never runs past the path, and a cut page ends in "…"
           inside: box.right <= room.right + 0.5 && box.left >= room.left - 0.5,
           ends: getComputedStyle(current).textOverflow,
