@@ -38,9 +38,10 @@ export type PrincipalPickerV2Props = PrincipalSearchOptions & {
 export function PrincipalPickerV2(props: PrincipalPickerV2Props) {
   const locale = useLocale();
   const t = () => accessMessages.resolve([locale()]).t;
-  // Everything a search found, by key, so a pick knows its principal and face; the chosen ones always.
-  const known = new Map<string, PickedPrincipal>();
-  for (const picked of props.value) known.set(principalKey(picked.principal), picked);
+  // What the last search found, by key, so a pick knows its principal and face. The chosen ones come from `value`
+  // itself, also when the caller set it after mount (a restored draft); a newer search replaces the older results.
+  let found = new Map<string, PickedPrincipal>();
+  const lookup = (key: string) => props.value.find((picked) => principalKey(picked.principal) === key) ?? found.get(key);
   const keys = createMemo(() => props.value.map((picked) => principalKey(picked.principal)));
   const itemOf = (entry: PrincipalSearchEntry, unavailable?: string): LookupItem => ({
     value: principalKey(entry.principal),
@@ -58,9 +59,10 @@ export function PrincipalPickerV2(props: PrincipalPickerV2Props) {
     const entries = await searchPrincipals(query, props, context.signal, locale());
     const existing = new Set(props.existing?.map(principalKey));
     const items: LookupItem[] = [];
+    const results = new Map<string, PickedPrincipal>();
     for (const entry of entries) {
       const key = principalKey(entry.principal);
-      known.set(key, {
+      results.set(key, {
         principal: entry.principal,
         display: { displayName: entry.label, avatarHash: entry.avatarHash, serviceAccountKind: entry.serviceAccountKind },
       });
@@ -70,13 +72,14 @@ export function PrincipalPickerV2(props: PrincipalPickerV2Props) {
         if (reason) items.push(itemOf(entry, reason));
       }
     }
+    found = results;
     return { items };
   };
   // a single pick closes the search: the field shows what was picked
   const [open, setOpen] = createSignal(false);
   const pick = (next: string[]) => {
     const chosen = props.single ? next.filter((key) => !keys().includes(key)).slice(-1) : next;
-    props.onChange(chosen.flatMap((key) => known.get(key) ?? []));
+    props.onChange(chosen.flatMap((key) => lookup(key) ?? []));
     if (props.single && chosen.length > 0) setOpen(false);
   };
   const remove = (picked: PickedPrincipal) =>

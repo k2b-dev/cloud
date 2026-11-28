@@ -154,7 +154,50 @@ describe("the permission editor on v2", () => {
         permission: "read",
       });
       await row(tab, "Noah Becker").waitFor();
+      // the focus goes back to where the next one is added, never to the page (review of #4415)
+      await tab.waitForFunction(
+        () => document.activeElement?.tagName === "BUTTON" && document.activeElement.textContent?.includes("Add user or group") === true,
+        undefined,
+        { timeout: 1500 },
+      );
       expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("a failed add says so above the list and tries again", async () => {
+    const { context, tab } = await open(views[0]!, "?failgrant");
+    try {
+      const editor = tab.getByRole("region", { name: "Who has access" });
+      await editor.getByRole("button", { name: /Add user or group/ }).click();
+      const panel = tab.getByRole("dialog", { name: /Add user or group/ });
+      await panel.getByRole("searchbox").fill("noah");
+      await panel.getByRole("option", { name: /Noah Becker/ }).click();
+      await panel.waitFor({ state: "hidden" });
+      await editor.getByRole("button", { name: "Add", exact: true }).click();
+      await editor.getByText("The access could not be granted.").waitFor();
+      expect(await calls(tab)).toEqual([]);
+      await editor.getByRole("button", { name: "Try again" }).click();
+      await row(tab, "Noah Becker").waitFor();
+      expect(await calls(tab)).toEqual([{ grant: { type: "user", userId: "10000000-0000-4000-8000-000000000021" }, permission: "read" }]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  // review of #4415: a value the caller set after mount (a restored draft) was lost on the next pick
+  test("a picker keeps a value set after it mounted when the next one is picked", async () => {
+    const { context, tab } = await open(views[0]!, "?late");
+    try {
+      const chat = tab.getByRole("region", { name: "New chat" });
+      await chat.getByRole("button", { name: "Remove Ada Draft" }).waitFor();
+      await chat.getByRole("button", { name: /Add/ }).click();
+      const panel = tab.getByRole("dialog", { name: "People" });
+      await panel.getByRole("searchbox").fill("noah");
+      await panel.getByRole("option", { name: /Noah Becker/ }).click();
+      await tab.waitForFunction(() => (window as unknown as { picked: string[] }).picked.length === 2, undefined, { timeout: 1500 });
+      expect(await tab.evaluate(() => (window as unknown as { picked: string[] }).picked)).toEqual(["Ada Draft", "Noah Becker"]);
     } finally {
       await context.close();
     }

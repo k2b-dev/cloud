@@ -104,13 +104,16 @@ export function PermissionEditorV2(props: PermissionEditorProps) {
   // k2b-ui gap: Row keeps no focus when its own action leaves; after a removal the focus goes to the next row's Remove.
   const anchors = new Set<HTMLElement>();
   const [loose, setLoose] = createSignal<string>();
+  // k2b-ui gap: a Popover gives no handle on its button; after an add the focus goes to the picker's button through
+  // a mark in the add bar, so the next one is added from where the last one was.
+  let addMark: HTMLElement | undefined;
   // v2 has one look: saves and failures always speak in their own row (the v1 `expanded` behaviour).
   const state = createPermissionEditorState(mergeProps(props, { expanded: true }), locale, {
     confirm: (question) => confirm({ title: question.title, description: question.body, confirm: state.t().removeAccess }),
     // v2 is `expanded`: a failure speaks in its own row, with its message and "Try again"; one without a row left (the
     // entry went meanwhile) says so above the list
     error: setLoose,
-    focusAdd: () => {},
+    focusAdd: () => queueMicrotask(() => addMark?.parentElement?.querySelector<HTMLElement>("button:not(:disabled)")?.focus()),
     focusAfterRemoval: (index) =>
       queueMicrotask(() => {
         // The removed row took its own anchor along: find the list through a row that is still there.
@@ -253,6 +256,12 @@ export function PermissionEditorV2(props: PermissionEditorProps) {
   };
   const addBar = () => (
     <Inline>
+      <span
+        hidden
+        ref={(element) => {
+          addMark = element;
+        }}
+      />
       <PrincipalPickerV2
         single
         label={props.placeholder ?? t().addBasic}
