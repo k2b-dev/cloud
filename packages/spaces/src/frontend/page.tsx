@@ -3,7 +3,7 @@ import { expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/serv
 import { logger } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { spacesService } from "@/service";
-import { loadOverviewWork, loadSpacesSidebar } from "@/service/overview";
+import { loadOverviewWork, loadReachableSpaces, loadSpacesSidebar } from "@/service/overview";
 import { ssr } from "../config";
 import { spacesPageHelp } from "../help";
 import { parseLastSpaceId } from "./[id]/_components/settings/SpaceSettingsStore";
@@ -25,12 +25,21 @@ export default ssr<AuthContext>(async (c) => {
   const cookieHeader = c.req.raw.headers.get("Cookie") ?? undefined;
 
   const subject = { type: "user" as const, userId: user.id };
-  const work = loadOverviewWork({ userId: user.id, view, dateConfig: getDateConfig(c) });
+  // The reachable Spaces are read once; the sidebar lists them, and work and activity filter by their ids.
+  const spaces = loadReachableSpaces(user.id);
+  const spaceIds = spaces.then((reachable) => reachable.ids);
+  const work = spaceIds.then((ids) => loadOverviewWork({ userId: user.id, view, dateConfig: getDateConfig(c), spaceIds: ids }));
   const [sidebar, initialWork, activityResult] = await Promise.all([
-    loadSpacesSidebar({ userId: user.id, cookieHeader, dateConfig: getDateConfig(c), myWorkCount: work.then((work) => work.counts.mine) }),
+    loadSpacesSidebar({
+      userId: user.id,
+      cookieHeader,
+      dateConfig: getDateConfig(c),
+      spaces,
+      myWorkCount: work.then((work) => work.counts.mine),
+    }),
     work,
-    spacesService.activity
-      .list({ subject, limit: 30 })
+    spaceIds
+      .then((ids) => spacesService.activity.list({ subject, limit: 30, spaceIds: ids }))
       .then((page) => ({ page, error: null }))
       .catch((error: unknown) => {
         log.warn("Failed to load Spaces activity", { error: error instanceof Error ? error.message : "Unknown error" });

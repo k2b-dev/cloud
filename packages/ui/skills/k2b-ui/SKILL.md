@@ -91,7 +91,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |
 | an exception in the statement ("1 ohne Zugriff") | `StatusRow marks` with a `Chip status` | – |
 | many like things, one per line | `List` of `Row` | `mail.tsx` |
-| a thing with a face (a base, a file, a table); an overview of such things with figures, people and a history | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`); `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
+| a thing with a face (a base, a file, a table); an overview of such things with figures, people and a history; the first start of an app without data | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`); `Tiles variant="card"` (+ `create` for the new one); first start: `Pane center`, `Tiles perRow={4}` with `preview` and `onOpen` | `overview.tsx`, `start.tsx` |
 | who did what; several people at once (a team, who has access) | `Digest activity`; `Avatar.Stack` | `overview.tsx`, `home.tsx` |
 | a short history beside a number | `Spark`; in a cell `Cells.Cell trend` | `home.tsx` |
 | many like things with columns | `Table` | `table.tsx` |
@@ -190,7 +190,7 @@ a `Notice` that names the deed.
   `Disclosure`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
   body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
-  `Chip`, `Progress`, `Spark`, `Ticks`, `Steps`.
+  `Chip`, `Progress`, `Spark`, `Ticks`, `RangeBar`, `Heat`, `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
   `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`, `ImageInput`,
   `CodeInput`, `Slider`, `ColorInput`.
