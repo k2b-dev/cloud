@@ -1,14 +1,10 @@
-import { type LinkNavigateEvent, navigateTo } from "@k2b/ssr/nav";
+import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
-import { mutation } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, Placeholder, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import { apiClient } from "../../api/client";
-import type { CancelScheduledSendInput, CancelScheduledSendResult, ScheduledSendPage } from "../../contracts";
-import { readApiError } from "./api-response";
-import { mailDraftHref } from "./mail-compose-route";
+import { Button, ButtonLink, Placeholder, prompts, ScrollArea, useLocale } from "@k2b/ui";
+import { createMemo, For, Show } from "solid-js";
+import type { ScheduledSendPage } from "../../contracts";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
-import { createRetryToasts } from "./mail-feedback";
+import { createMailScheduledCancel, type MailScheduledDisposition } from "./mail-scheduled-cancel";
 
 const recipients = (item: ScheduledSendPage["items"][number], t: ReturnType<typeof mailConversationUiMessages.resolve>["t"]): string => {
   const all = [...item.to, ...item.cc, ...item.bcc];
@@ -19,7 +15,7 @@ const recipients = (item: ScheduledSendPage["items"][number], t: ReturnType<type
 };
 
 const chooseDisposition = (t: ReturnType<typeof mailConversationUiMessages.resolve>["t"]) =>
-  prompts.dialog<CancelScheduledSendInput["disposition"] | null>(
+  prompts.dialog<MailScheduledDisposition>(
     (close) => (
       <div class="flex flex-col gap-4">
         <p class="text-sm text-secondary">{t.cancelScheduledDescription}</p>
@@ -51,62 +47,11 @@ export default function MailScheduledView(props: {
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
-  const retryToast = createRetryToasts();
-  const [cancellingId, setCancellingId] = createSignal<string | null>(null);
-  const cancel = mutation.create<
-    {
-      result: CancelScheduledSendResult;
-      disposition: CancelScheduledSendInput["disposition"];
-      refreshError: Error | null;
-    } | null,
-    string
-  >({
-    onBefore: (scheduledSendId) => setCancellingId(scheduledSendId),
-    mutation: async (scheduledSendId, { abortSignal }) => {
-      const disposition = await chooseDisposition(t());
-      if (!disposition || abortSignal.aborted) return null;
-      const response = await apiClient.mailboxes[":mailboxId"]["scheduled-sends"][":scheduledSendId"].cancel.$post(
-        {
-          param: { mailboxId: props.mailboxId, scheduledSendId },
-          json: { disposition },
-        },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readApiError(response, t().cancelScheduledFailed));
-      const result: CancelScheduledSendResult = await response.json();
-      abortSignal.throwIfAborted();
-      let refreshError: Error | null = null;
-      if (result.disposition !== "draft") {
-        try {
-          await props.onRefresh();
-        } catch (error) {
-          refreshError = error instanceof Error ? error : new Error(String(error));
-        }
-      }
-      return { result, disposition, refreshError };
-    },
-    onSuccess: (value) => {
-      if (!value) return;
-      const { result, disposition, refreshError } = value;
-      toast.success(disposition === "draft" ? t().cancelledDraftRestored : t().scheduledDiscarded);
-      if (result.disposition === "draft") {
-        navigateTo(mailDraftHref(props.mailboxId, result.draftId, `/app/mail/${props.mailboxId}?scheduled=1`));
-        return;
-      }
-      if (refreshError) reportRefreshFailure(refreshError);
-    },
-    onError: (error) => toast.error(error.message),
-    onFinally: () => setCancellingId(null),
+  const { cancellingId, cancel } = createMailScheduledCancel({
+    mailboxId: () => props.mailboxId,
+    onRefresh: () => props.onRefresh(),
+    choose: () => chooseDisposition(t()),
   });
-  onCleanup(cancel.abort);
-  /** The scheduled send was cancelled, only the list is stale, so Retry repeats the refresh, not the cancellation. */
-  const reportRefreshFailure = (error: Error): void => {
-    retryToast(error.message, {
-      title: t().cancelledRefreshFailed,
-      retryLabel: t().retry,
-      retry: () => props.onRefresh().catch((next: unknown) => reportRefreshFailure(next instanceof Error ? next : new Error(String(next)))),
-    });
-  };
 
   return (
     <section class="flex h-full min-h-0 flex-1 flex-col overflow-hidden" aria-busy={props.loading}>
@@ -172,7 +117,7 @@ export default function MailScheduledView(props: {
                         type="button"
                         class="shrink-0"
                         disabled={Boolean(cancellingId())}
-                        onClick={() => void cancel.mutate(item.id)}
+                        onClick={() => cancel(item.id)}
                       >
                         <i
                           class={`ti ${cancellingId() === item.id ? "ti-loader-2 animate-spin" : "ti-calendar-cancel"}`}

@@ -187,7 +187,7 @@ packages/mail/src/frontend/_components/MailConnectionSettings.tsx | untitled | m
 packages/mail/src/frontend/_components/MailConnectionSettings.tsx | untitled | result.replaced ? messages().connectedAccountUpdated : result.senderCreated ? messages().providerAndIdentityConnected : messages().providerConnected
 packages/mail/src/frontend/_components/MailConnectionSettings.tsx | untitled | result.senderCreated ? messages().providerAndIdentityConnected : messages().providerConnected
 packages/mail/src/frontend/_components/MailConversationReader.tsx | untitled | t().referenceCopyFailed
-packages/mail/src/frontend/_components/MailDraftsView.tsx | untitled | code === LEASE_HELD ? t().draftInUse : code === "CONFLICT" ? t().draftChangedBeforeDelete : error.message
+packages/mail/src/frontend/_components/mail-draft-delete.ts | untitled | code === LEASE_HELD ? t().draftInUse : code === "CONFLICT" ? t().draftChangedBeforeDelete : error.message
 packages/mail/src/frontend/_components/MailFocusNotice.tsx | untitled | error instanceof Error ? error.message : messages().failedCloseFocusNotice
 packages/mail/src/frontend/_components/MailFolderSettings.tsx | untitled | action === "delete" ? messages().folderDeleted : action === "dismiss" ? messages().unavailableFolderRemoved : messages().providerSubscriptionUpdated
 packages/mail/src/frontend/_components/MailIdentitySettings.tsx | untitled | messages().mailboxSmtpSelected
@@ -201,7 +201,7 @@ packages/mail/src/frontend/_components/MailOperationalSettings.tsx | untitled | 
 packages/mail/src/frontend/_components/MailOperationalSettings.tsx | untitled | messages().operatorActionQueued
 packages/mail/src/frontend/_components/MailRemoteContentRulesDialog.tsx | untitled | messages().remoteImagePreferenceSaved
 packages/mail/src/frontend/_components/MailResponsePolicySettings.tsx | untitled | messages().referenceSettingsSaved
-packages/mail/src/frontend/_components/MailScheduledView.tsx | untitled | disposition === "draft" ? t().cancelledDraftRestored : t().scheduledDiscarded
+packages/mail/src/frontend/_components/mail-scheduled-cancel.ts | untitled | disposition === "draft" ? t().cancelledDraftRestored : t().scheduledDiscarded
 packages/mail/src/frontend/_components/MailSearchBuilder.tsx | untitled | updated ? messages().savedViewUpdated : messages().savedViewCreated
 packages/mail/src/frontend/_components/MailSenderMessageActions.tsx | untitled | t().reportSubmitted
 packages/mail/src/frontend/_components/MailSubscriptionDialog.tsx | untitled | error instanceof Error ? error.message : messages().mailingListsRefreshFailed

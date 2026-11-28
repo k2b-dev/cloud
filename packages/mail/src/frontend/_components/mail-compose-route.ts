@@ -8,6 +8,14 @@ export const mailDraftHref = (mailboxId: string, draftId: string, returnHref: st
   return `/app/mail/${mailboxId}/compose/${draftId}?${query}`;
 };
 
+/** A draft of the Drafts folder: a reply opens in its conversation, a new message as a window over the list (`?draft=`). */
+export const mailDraftFolderHref = (mailboxId: string, draft: { id: string; conversationId: string | null }, listPath: string): string => {
+  if (draft.conversationId) return mailDraftHref(mailboxId, draft.id, listPath);
+  const target = new URL(listPath, "http://mail.local");
+  target.searchParams.set("draft", draft.id);
+  return `${target.pathname}${target.search}`;
+};
+
 export const mailConversationHref = (mailboxId: string, conversationId: string, returnHref: string): string => {
   const target = new URL(mailDraftReturnHref(returnHref, mailboxId), "http://mail.local");
   if (target.pathname !== `/app/mail/${mailboxId}`) return `${target.pathname}${target.search}${target.hash}`;

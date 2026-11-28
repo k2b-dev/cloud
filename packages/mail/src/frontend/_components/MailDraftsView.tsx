@@ -1,21 +1,12 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
-import { mutation } from "@k2b/stdlib/solid";
-import { ButtonLink, Placeholder, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import { apiClient } from "../../api/client";
-import type { DraftFolderItem, DraftFolderPage, DraftLeaseErrorCode } from "../../contracts";
-import { MailApiError, readApiFailure } from "./api-response";
+import { ButtonLink, Placeholder, prompts, ScrollArea, useLocale } from "@k2b/ui";
+import { createMemo, For, Show } from "solid-js";
+import type { DraftFolderItem, DraftFolderPage } from "../../contracts";
 import MailDraftRow from "./MailDraftRow";
-import { mailDraftHref } from "./mail-compose-route";
+import { mailDraftFolderHref } from "./mail-compose-route";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
-import { createRetryToasts } from "./mail-feedback";
-
-/** An open composer holds the draft. The contracts module carries Zod, so the mailbox island imports only its types. */
-const LEASE_HELD = "DRAFT_LEASE_HELD" satisfies DraftLeaseErrorCode;
-
-/** The collapse of a deleted row (`mail-list-row-leave`); the list drops the row once it ends. */
-const LEAVE_MS = 160;
+import { createMailDraftDelete } from "./mail-draft-delete";
 
 /**
  * The Drafts folder: the mailbox's drafts as conversation rows, each opening in the composer for members who may edit
@@ -44,24 +35,8 @@ export default function MailDraftsView(props: {
     else target.searchParams.delete("cursor");
     return `${target.pathname}${target.search}`;
   };
-  /** A reply opens in its conversation; a new message opens as a window over this list (`?draft=`). */
-  const draftHref = (item: DraftFolderItem) => {
-    if (item.conversationId) return mailDraftHref(props.mailboxId, item.id, listHref(null));
-    const target = new URL(listHref(null), "http://mail.local");
-    target.searchParams.set("draft", item.id);
-    return `${target.pathname}${target.search}`;
-  };
+  const draftHref = (item: DraftFolderItem) => mailDraftFolderHref(props.mailboxId, item, listHref(null));
 
-  const [pendingId, setPendingId] = createSignal<string | null>(null);
-  const [leaving, setLeaving] = createSignal<ReadonlySet<string>>(new Set());
-  // A deleted draft stays out of the list even when the reload that drops it fails.
-  const [deleted, setDeleted] = createSignal<ReadonlySet<string>>(new Set());
-  const items = createMemo(() => props.page.items.filter((item) => !deleted().has(item.id)));
-  const timers = new Set<ReturnType<typeof setTimeout>>();
-  onCleanup(() => {
-    for (const timer of timers) clearTimeout(timer);
-  });
-  const add = (set: ReadonlySet<string>, id: string) => new Set([...set, id]);
   let list: HTMLDivElement | undefined;
   let heading: HTMLHeadingElement | undefined;
   /** A leaving row can hold no focus: it moves to the next draft, the previous one, or the folder's heading. */
@@ -74,74 +49,18 @@ export default function MailDraftsView(props: {
       .find(Boolean);
     (neighbour ?? heading)?.focus({ preventScroll: true });
   };
-  const retryToast = createRetryToasts();
-  /** Only the list is stale after a failed reload, so Retry repeats the reload, never the delete. */
-  const refresh = (): void => {
-    props.onRefresh().catch((error: unknown) =>
-      retryToast(error instanceof Error ? error.message : String(error), {
-        title: t().draftsRefreshFailed,
-        retryLabel: t().retry,
-        retry: async () => refresh(),
-      }),
-    );
-  };
-
-  /** What the person confirmed: the draft as its row showed it, not as a later reload may change it meanwhile. */
-  type DeleteTarget = Pick<DraftFolderItem, "id" | "revision">;
-  const deleteDraft = mutation.create<true, DeleteTarget, { item: DeleteTarget }>({
-    onBefore: (item) => {
-      setPendingId(item.id);
-      return { item };
-    },
-    mutation: async (item, { abortSignal }) => {
-      const response = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"].discard.$post(
-        { param: { mailboxId: props.mailboxId, draftId: item.id }, json: { expectedRevision: item.revision } },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw await readApiFailure(response, t().deleteDraftFailed);
-      return true;
-    },
-    onSuccess: (_removed, context) => {
-      const id = context?.item.id;
-      if (!id) return;
-      toast.success(t().draftDeleted);
-      keepFocus(id);
-      setLeaving((current) => add(current, id));
-      const timer = setTimeout(() => {
-        timers.delete(timer);
-        setDeleted((current) => add(current, id));
-      }, LEAVE_MS);
-      timers.add(timer);
-      refresh();
-    },
-    onError: (error) => {
-      const code = error instanceof MailApiError ? error.code : null;
-      // An open composer holds the draft, or someone changed it since the list loaded: the draft stays either way.
-      toast.error(code === LEASE_HELD ? t().draftInUse : code === "CONFLICT" ? t().draftChangedBeforeDelete : error.message);
-      // The server answered: reload, so the row shows the draft as it is now, or leaves once it was sent meanwhile.
-      if (error instanceof MailApiError) refresh();
-    },
-    onFinally: () => setPendingId(null),
-  });
-  onCleanup(deleteDraft.abort);
-  // The row shows its request only once the person confirmed; one delete runs at a time.
-  let confirming = false;
-  const requestDelete = async (item: DraftFolderItem) => {
-    if (confirming || pendingId()) return;
-    confirming = true;
-    // A reload during the question may update the row in place; the delete keeps the revision the person saw.
-    const target: DeleteTarget = { id: item.id, revision: item.revision };
-    try {
-      const confirmed = await prompts.confirm(t().deleteDraftDescription({ subject: item.subject || t().noSubject }), {
+  const { pendingId, leaving, shown, requestDelete } = createMailDraftDelete({
+    mailboxId: () => props.mailboxId,
+    onRefresh: () => props.onRefresh(),
+    confirm: (item) =>
+      prompts.confirm(t().deleteDraftDescription({ subject: item.subject || t().noSubject }), {
         title: t().deleteDraftQuestion,
         confirmText: t().deleteDraft,
         variant: "danger",
-      });
-      if (confirmed) void deleteDraft.mutate(target);
-    } finally {
-      confirming = false;
-    }
-  };
+      }),
+    onLeave: keepFocus,
+  });
+  const items = createMemo(() => shown(props.page.items));
 
   return (
     <section class="mail-list-column flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[var(--ui-surface)]" aria-busy={props.loading}>

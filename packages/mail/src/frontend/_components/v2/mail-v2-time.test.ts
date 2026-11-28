@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mailV2MessageTime, mailV2RowTime } from "./mail-v2-time";
+import { mailV2DueTime, mailV2MessageTime, mailV2RowTime } from "./mail-v2-time";
 
 // A Friday morning in Berlin; the times below are UTC.
 const now = Date.parse("2026-11-27T09:00:00.000Z");
@@ -21,5 +21,15 @@ describe("Mail v2 times", () => {
     expect(mailV2MessageTime("2026-11-27T08:42:00.000Z", de, now)).toBe("heute, 09:42");
     expect(mailV2MessageTime("2026-11-26T15:02:00.000Z", de, now)).toBe("gestern, 16:02");
     expect(mailV2MessageTime("2026-11-27T08:42:00.000Z", { locale: "en", timeZone: "Europe/Berlin" }, now)).toBe("today, 09:42 AM");
+  });
+
+  test("a due time names today, tomorrow and yesterday in words, a later day by its weekday, another year with it", () => {
+    expect(mailV2DueTime("2026-11-27T13:30:00.000Z", de, now)).toBe("heute, 14:30");
+    expect(mailV2DueTime("2026-11-28T08:00:00.000Z", de, now)).toBe("morgen, 09:00");
+    expect(mailV2DueTime("2026-11-26T17:10:00.000Z", de, now)).toBe("gestern, 18:10");
+    // 23:30 UTC on Friday is already Saturday in Berlin
+    expect(mailV2DueTime("2026-11-27T23:30:00.000Z", de, now)).toBe("morgen, 00:30");
+    expect(mailV2DueTime("2026-12-02T08:00:00.000Z", de, now)).toMatch(/^Mi\.?, 2\. Dez\.?, 09:00$/);
+    expect(mailV2DueTime("2027-01-04T08:00:00.000Z", de, now)).toMatch(/2027/);
   });
 });
