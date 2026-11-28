@@ -24,15 +24,14 @@ props may change in any release; check the types of the installed version.
 ## The look is part of done
 
 Every screen starts as a mockup and then follows the look: the Fibel page
-**The look** (`/en/ui/look`) holds the thirteen rules as do and don't, the
-workflow and the tokens for custom parts; [look](references/look.md) adds a
-screen brief before code, one hero with its real trend, the app's colour
-where it means something, one data picture per row, a tinted head for the
-open object, a large screen that uses its room; dense, not busy: each thing
-has its mark (`Mark`, a person's `Avatar`), a state is a dot and its word,
-colour only for problems, people stand beside what they did. Run its
-wireframe check on your pictures: a screen that fails it is not done,
-however clean it is.
+**The look** (`/en/ui/look`) holds the thirteen rules, the workflow and the
+tokens for custom parts; [look](references/look.md) adds a screen brief
+before code, one hero with its real trend, the app's colour where it means
+something, one data picture per row, a tinted head for the open object, a
+large screen that uses its room; dense, not busy: each thing has its mark
+(`Mark`, a person's `Avatar`), a state is a dot and its word, colour only
+for problems, people stand beside what they did. Run its wireframe check on
+your pictures: a screen that fails it is not done, however clean it is.
 
 ## Start here
 
