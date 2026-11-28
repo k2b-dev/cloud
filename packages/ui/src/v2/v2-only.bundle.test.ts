@@ -98,7 +98,10 @@ test("an island of v2 alone (every export, and useLocale) bundles no v1 module",
 const lean = `import { Menu, Nav, Workspace } from ${v2Index};\nconsole.log(Menu, Nav, Workspace);\n`;
 // Measured 27.11.2026 (Bun 1.4.4, minified): 64 453 bytes of this package's own code, plus a tenth for growing. It holds
 // `Input` (5.5 KB) for the nav's search (#4443), which nearly every page loads anyway; a tree or a panel never.
-const leanBudget = Math.ceil(64_453 * 1.1);
+// The head block (look rule 30) is always on in every pane with a head and a toolbar, so its measured bytes count
+// exactly, without a reserve of their own: 294 in `Pane`/`Bar` and 11 in `status-toolbar` (#4537). The head search
+// adds nothing here: it comes with `HeadSearch` (see below).
+const leanBudget = Math.ceil(64_453 * 1.1) + 305; /* head block, measured 28.11.2026 on 1574c0a269 */
 
 test("an island with a Workspace, a Nav and a Menu loads no tree and no menu panel, and stays under its measure", async () => {
   const modules = await islandModules(lean);
