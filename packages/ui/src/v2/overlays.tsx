@@ -2,6 +2,7 @@ import { createEffect, createSignal, type JSX, onCleanup, onMount, Show } from "
 import { isServer, render } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { createQuestion, type Question, quietFocus, useDialog } from "./behavior/overlays";
+import { OverPage } from "./columns-context";
 import { Icon } from "./marks";
 
 // The overlays of v2: the behaviour (focus, Escape, placement, keys, the sheet on the phone) comes from the behaviour
@@ -149,7 +150,8 @@ export const Dialog = (props: DialogProps) => {
         </div>
       </div>
       <div class="k2-dialog-body" ref={watch} onScroll={(event) => measure(event.currentTarget)}>
-        {props.children}
+        {/* over the page: a pane or a split in it asks the workspace behind it for no room */}
+        <OverPage>{props.children}</OverPage>
       </div>
       <div class="k2-slot" data-slot="foot" ref={foot}>
         <div class="k2-bar">
