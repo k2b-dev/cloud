@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { demoBundle, serverMarkup } from "../../test/v2-behavior/harness";
 import type {} from "../../test/v2-nav-list.demo";
 import { measureV2Layout } from "./testing";
@@ -97,15 +97,16 @@ for (const width of [1440, 1024])
     await withPage(width, async (page) => {
       const side = await box(page, ".k2-ws-side");
       expect(side.visible).toBe(true);
-      // the search and "Neuer Chat" under the name, then the filters, the list and the foot
-      expect((await shown(page)).parts).toEqual([
-        "k2-nav-title",
-        "k2-nav-search",
-        "k2-nav-primary",
-        "k2-nav-groups",
-        "k2-nav-list",
-        "k2-nav-foot",
-      ]);
+      // "Neuer Chat" as an icon button at the end of the name's row, named and with its tooltip; the search under it,
+      // then the filters, the list and the foot
+      expect((await shown(page)).parts).toEqual(["k2-nav-title", "k2-nav-search", "k2-nav-groups", "k2-nav-list", "k2-nav-foot"]);
+      const button = page.locator(".k2-ws-side .k2-nav-title .k2-nav-primary button");
+      expect(await button.getAttribute("aria-label")).toBe("Neuer Chat");
+      expect(await button.getAttribute("title")).toBe("Neuer Chat");
+      expect(await button.innerText()).toBe("");
+      const [title, plus] = [await box(page, ".k2-ws-side .k2-nav-title"), await box(page, ".k2-ws-side .k2-nav-primary")];
+      expect(plus.top >= title.top && plus.bottom <= title.bottom).toBe(true);
+      expect(title.right - plus.right).toBeLessThanOrEqual(12);
       const list = await box(page, ".k2-ws-side .k2-nav-list");
       expect(list.left).toBe(side.left);
       expect(Math.abs(list.right - side.right)).toBeLessThanOrEqual(1);
@@ -127,6 +128,52 @@ for (const width of [1440, 1024])
       expect(scroll.page).toBeLessThanOrEqual(800);
       // the floating action is the phone's only
       expect((await box(page, ".k2-fab")).visible).toBe(false);
+      const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+      expect({ width, problems: layout.problems }).toEqual({ width, problems: [] });
+    });
+  }, 30_000);
+
+// Valentin, v8: a pinned chat wears a pin on its face's corner; the lines between the chats start right of the face;
+// the "…" of a row shows on hover, not on each row; a long name keeps the row's shape.
+for (const width of [1440, 390])
+  test(`at ${width} px a row wears its badge on its face, parts from the next from its text on, keeps its "…" for the pointer and cuts long text`, async () => {
+    await withPage(width, async (page) => {
+      const rows = page.locator(".k2-ws-side .k2-nav-list .k2-row");
+      // the pin on the first face's bottom right corner, named for assistive technology
+      const badge = rows.first().locator(".k2-row-lead > .k2-row-badge");
+      expect(await badge.locator('[role="img"]').getAttribute("aria-label")).toBe("Angeheftet");
+      const [face, pin] = [
+        await box(page, ".k2-ws-side .k2-nav-list .k2-row .k2-av"),
+        await box(page, ".k2-ws-side .k2-nav-list .k2-row-badge"),
+      ];
+      expect(pin.right).toBeGreaterThan(face.right - 4);
+      expect(pin.bottom).toBeGreaterThan(face.bottom - 4);
+      // the line between rows is drawn from the text column on, to the row's end; the last row draws none
+      const line = await rows.nth(1).evaluate((row) => {
+        const after = getComputedStyle(row, "::after");
+        return { own: getComputedStyle(row).borderBottomWidth, width: after.borderBottomWidth, column: after.gridColumnStart };
+      });
+      expect(line).toEqual({ own: "0px", width: "1px", column: "2" });
+      expect(await rows.last().evaluate((row) => getComputedStyle(row, "::after").display)).toBe("none");
+      // the "…": unseen in its place until the pointer is over the row (a pointer screen), not drawn on a touch screen
+      const end = rows.nth(1).locator(".k2-row-end");
+      if (width >= 768) {
+        expect(await end.evaluate((element) => getComputedStyle(element).opacity)).toBe("0");
+        await hoverInPlace(rows.nth(1));
+        await page.waitForFunction(() => getComputedStyle(document.querySelectorAll(".k2-nav-list .k2-row-end")[1]!).opacity === "1");
+      } else expect(await end.isVisible()).toBe(false);
+      // a long name stays on one line, its last message on at most two
+      const long = rows.nth(5);
+      const title = await long.locator(".k2-row-title").evaluate((element) => ({
+        height: element.getBoundingClientRect().height,
+        line: parseFloat(getComputedStyle(element).lineHeight),
+      }));
+      expect(title.height).toBeLessThanOrEqual(title.line + 1);
+      const second = await long.locator(".k2-row-l2").evaluate((element) => ({
+        height: element.getBoundingClientRect().height,
+        line: parseFloat(getComputedStyle(element).lineHeight),
+      }));
+      expect(second.height).toBeLessThanOrEqual(2 * second.line + 1);
       const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
       expect({ width, problems: layout.problems }).toEqual({ width, problems: [] });
     });

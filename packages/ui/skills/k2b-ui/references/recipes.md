@@ -79,7 +79,8 @@ levels; the open file is `current`, so its folder starts open).
 ![conversations in the sidebar at 1440 px](../images/conversations-1440.png)
 ![an open conversation at 390 px](../images/conversations-390.png)
 
-`Nav` with the app's name, `search` and `primary` ("Neuer Chat") under it,
+`Nav` with the app's name and `primary` ("Neuer Chat", an icon button at the
+end of the name's row), `search` under it,
 a plain group with the filters ("Ungelesen" with its count, "Für dich",
 "Kanäle entdecken"), its `list` (the conversations as a `List` of
 two-line `Row`s; the open one is `current`) with `phone: "page"`, and

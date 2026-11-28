@@ -427,6 +427,11 @@ export type PaneProps = {
    */
   back?: Action;
   /**
+   * The way back shows on a wide screen too: for a page that stands in the place of another one, not beside a list,
+   * such as a discussion in the place of its room's stream ("‹ Frühlingsausstellung").
+   */
+  wideBack?: boolean;
+  /**
    * The context column (quieter sections): the info column of a record, what a form feeds, a chart beside a table, or
    * the right half of a detail that grows on a large screen (who and what happened, beside what it is).
    *
@@ -542,13 +547,14 @@ export const Pane = (props: PaneProps) => {
       data-width={props.width ? "" : undefined}
       data-detail={props.detail ? "" : undefined}
       data-side={props.side ? "" : undefined}
+      data-wide-back={props.wideBack && props.back ? "" : undefined}
       data-center={props.center ? "" : undefined}
       style={custom({
         "--k2-pane-w": props.width ? `${size() ?? props.width.default}px` : undefined,
         "--k2-pane-min": props.width ? `${props.width.min}px` : undefined,
       })}
     >
-      {/* the way back shows only on the phone, above the head of the detail; a public part, so a shell can find it */}
+      {/* the way back shows on the phone (with `wideBack` everywhere), above the head; a public part, so a shell can find it */}
       <Show when={props.back}>
         {(back) => (
           <div class="k2-pane-back" data-k2-part="Back">

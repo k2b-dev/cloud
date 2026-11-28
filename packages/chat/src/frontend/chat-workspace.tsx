@@ -95,11 +95,13 @@ import {
   threadsPageHref as threadsPageAddress,
   UNREAD_COUNT_PATH,
 } from "./route";
-import { containerIcon, openResourceDiscussion, openResourceThread, openSystemChat } from "./system-chats";
+import { containerIcon, loadSystemThreads, openResourceDiscussion, openResourceThread, openSystemChat } from "./system-chats";
 import {
   chatHasThreads,
   isUnread,
   messageThread,
+  type Thread,
+  type ThreadList,
   type ThreadView,
   threadHref as threadAddress,
   threadIcon,
@@ -108,7 +110,7 @@ import {
   viewReadStart,
 } from "./threads";
 import type { ChatDetailV2, ChatHeadButton, ChatListNotice } from "./v2/ChatFrameV2";
-import type { ChatListSection, ChatRowsContext } from "./v2/ChatListV2";
+import type { ChatListModel, ChatRowsContext } from "./v2/ChatListV2";
 import type { ChatV2Parts } from "./v2/chat-v2-parts";
 
 type ReadUpdate = z.infer<typeof ReadUpdateSchema>;
@@ -901,6 +903,28 @@ export function ChatWorkspaceView(
     }
     return result;
   };
+  // v2: the state a place's discussions are shown in (its cards and its head menu), and the server's pages of them
+  // for that state, so the menu finds a discussion whose card lies outside the loaded window too.
+  type PlaceFilter = "all" | "open" | "done" | "unread";
+  const [placeFilter, setPlaceFilter] = createSignal<PlaceFilter>("all");
+  const [placeFound, setPlaceFound] = createSignal<{ chat: string; filter: PlaceFilter; list: ThreadList } | null>(null);
+  const placeShows = (thread: Thread) => {
+    const filter = placeFilter();
+    return filter === "all" || (filter === "unread" ? thread.unread > 0 : (filter === "done") === !!thread.resource?.done);
+  };
+  const findDiscussions = async (chatId: string, filter: PlaceFilter, more = false) => {
+    const previous = placeFound();
+    const same = previous?.chat === chatId && previous.filter === filter;
+    const cursor = more && same ? (previous.list.nextCursor ?? undefined) : undefined;
+    const page = await loadSystemThreads(
+      chatId,
+      { filter: filter === "all" ? undefined : filter, cursor },
+      AbortSignal.timeout(15_000),
+    ).catch(() => null);
+    if (!page) return void toast.error(t().threadsLoadFailed, { title: t().threadsLoadFailedTitle });
+    if (placeFilter() !== filter || conversation()?.id !== chatId) return;
+    setPlaceFound({ chat: chatId, filter, list: { ...page, items: more && same ? [...previous.list.items, ...page.items] : page.items } });
+  };
   const items = createMemo<readonly ChatFeedItem[]>((previous) => {
     const current = openChat();
     if (!current) return [];
@@ -982,6 +1006,54 @@ export function ChatWorkspaceView(
       }
       merged.push(...shown.slice(next));
       result.splice(0, result.length, ...groupEvents(merged, mixed));
+    }
+    // v2: a place's discussions about its items stand as cards in its "General" stream, at their last activity
+    // (Valentin, v8: no column of its own). They come from the thread list the chat already holds, no query of their
+    // own; a discussion whose last activity lies outside the loaded window shows once the reader gets there.
+    if (props.v2 && current.conversation?.kind === "system" && view === "general" && current.threads) {
+      const words = props.v2.chatV2Messages.resolve([locale()]).t;
+      const cards = current.threads.items
+        .filter((thread) => thread.resource && !thread.archived && placeShows(thread))
+        .filter((thread) => (!first || thread.lastActivityAt >= first) && (!current.hasNewer || !last || thread.lastActivityAt <= last))
+        .map((thread): ChatFeedItem => {
+          const resource = thread.resource!;
+          const author = thread.lastMessage?.author ?? null;
+          return {
+            key: `discussion:${thread.id}`,
+            kind: "discussion",
+            authorId: "",
+            authorName: "",
+            body: thread.name,
+            at: thread.lastActivityAt,
+            own: false,
+            discussion: {
+              href: listHref(threadHref(current.id, thread.id)),
+              onOpen: () => void openView(current.id, thread.id),
+              name: thread.name,
+              icon: threadIcon(thread),
+              state: resource.status ?? (resource.done ? t().threadsDone : t().threadsOpen),
+              done: !!resource.done,
+              line: thread.lastMessage
+                ? `${author?.id === props.viewerId ? t().you : (author?.name.split(" ")[0] ?? "")}: ${thread.lastMessage.preview}`
+                : t().noMessagesYet,
+              author,
+              unread: thread.unread,
+              unreadLabel: thread.unread > 0 ? words.newCount({ count: thread.unread.toLocaleString(locale()) }) : "",
+              openLabel: words.openDiscussion,
+            },
+          };
+        })
+        .sort((a, b) => a.at.localeCompare(b.at));
+      if (cards.length > 0) {
+        let next = 0;
+        const merged: ChatFeedItem[] = [];
+        for (const item of result) {
+          while (next < cards.length && cards[next]!.at < item.at) merged.push(cards[next++]!);
+          merged.push(item);
+        }
+        merged.push(...cards.slice(next));
+        result.splice(0, result.length, ...merged);
+      }
     }
     // Sends wait at the end of the newest history; a window further back shows them once the reader is there.
     if (!current.hasNewer) {
@@ -1636,9 +1708,11 @@ export function ChatWorkspaceView(
       const current = await openSystemChat({ resourceType: ref.type, resourceId: ref.id });
       if (token !== systemOpen) return;
       store?.includeSystemChats([current]);
-      if ((await open(chatRoute(current.id))) === "applied") {
+      // v2 opens a place on its "General" stream, its discussions as cards in it; v1 keeps "All threads".
+      const start: ThreadView = props.v2 ? "general" : "all";
+      if ((await open(chatRoute(current.id, start))) === "applied") {
         setListPredecessor(false);
-        go(viewHref(threadHref(current.id, "all")));
+        go(viewHref(threadHref(current.id, start)));
       }
     } catch {
       if (token === systemOpen) toast.error(t().openFailed);
@@ -3281,25 +3355,25 @@ export function ChatWorkspaceView(
     if ((await open(chatRoute(null, "all", { channels: true }))) === "applied") navigation.push(listHref(`${basePath}/channels`));
   };
   const loadedUnread = () => rows().reduce((sum, row) => sum + row.unread, 0);
+  /** A place's discussions hand their search and state filter to the pane's head once their page has loaded. */
+  const [directoryTools, setDirectoryTools] = createSignal<JSX.Element>();
+  // The chats stand in the nav itself (Valentin, v8), so there is no "Chats" entry: "Unread" and "Archive" filter them,
+  // and pressed again they lead back to all chats.
+  const unreadOn = () => atList() && !archived() && filter() === "unread";
+  const archiveOn = () => atList() && archived();
   const v2Nav = () => ({
     label: t().appName,
     groups: [
       {
         items: [
           {
-            label: t().chats,
-            icon: "messages",
-            href: basePath,
-            current: atList() && !archived() && filter() === "all",
-            onNavigate: (navigation: LinkNavigateEvent) => (atList() ? void changeList("all") : backToList(navigation)),
-          },
-          {
             label: t().unreadChats,
             icon: "mail",
-            href: `${basePath}?filter=unread`,
-            current: atList() && !archived() && filter() === "unread",
+            href: unreadOn() ? basePath : `${basePath}?filter=unread`,
+            current: unreadOn(),
             count: (unreadTotal() ?? loadedUnread()) || undefined,
-            onNavigate: (navigation: LinkNavigateEvent) => (atList() ? void changeList("unread") : navigation.fallback()),
+            onNavigate: (navigation: LinkNavigateEvent) =>
+              atList() ? void changeList(unreadOn() ? "all" : "unread") : navigation.fallback(),
             // the head's "…" is gone (Valentin, v8): reading all of them is a deed of the unread ones
             menu: [{ label: t().markAllRead, icon: "checks", onClick: () => void readAll() }],
           },
@@ -3325,13 +3399,14 @@ export function ChatWorkspaceView(
       {
         label: t().archive,
         icon: "archive",
-        href: `${basePath}/archive`,
-        current: atList() && archived(),
-        onNavigate: (navigation: LinkNavigateEvent) => (atList() ? void changeList("archive") : navigation.fallback()),
+        href: archiveOn() ? basePath : `${basePath}/archive`,
+        current: archiveOn(),
+        onNavigate: (navigation: LinkNavigateEvent) =>
+          atList() ? void changeList(archiveOn() ? "all" : "archive") : navigation.fallback(),
       },
     ],
   });
-  const rowMenu = (row: Conversation, section: string): MenuEntry[] => {
+  const rowMenu = (row: Conversation): MenuEntry[] => {
     const pending = listPending() || listLoading();
     const pins = pinnedRows();
     const unread = row.unread > 0 || row.read?.unreadFromSeq != null;
@@ -3345,7 +3420,7 @@ export function ChatWorkspaceView(
               disabled: pending,
               onClick: () => void personal(row.id, { pinned: row.pinnedRank === null }),
             },
-            ...(section === "pinned"
+            ...(row.pinnedRank !== null && !row.archived
               ? [
                   {
                     label: t().moveUp,
@@ -3383,7 +3458,8 @@ export function ChatWorkspaceView(
     viewerId: props.viewerId,
     dateConfig: props.dateConfig,
     now,
-    href: (row) => listHref(panelHref(row.id, null)),
+    // a place leads to its "General" stream, so its address is the one the page keeps
+    href: (row) => listHref(panelHref(row.id, null, null, row.kind === "system" ? "general" : "all")),
     onNavigate: (row) => (navigation) => {
       if (row.kind !== "system") return openFromList(row.id, navigation);
       const ref = row.resource;
@@ -3408,45 +3484,33 @@ export function ChatWorkspaceView(
     hasMore()
       ? { label: t().showMoreChats, icon: "dots", disabled: listLoading() || listPending(), onClick: () => void more() }
       : undefined;
-  const v2Sections = (): ChatListSection[] => {
-    if (archived()) return [{ key: "archive", title: t().archive, rows: listRows(), empty: t().archiveEmpty, more: moreChats() }];
-    const plain = listRows().filter((row) => row.pinnedRank === null && !row.channel && row.kind !== "system");
-    const channels = listRows().filter((row) => row.channel && row.pinnedRank === null && row.kind !== "system");
-    const discussions = systemRows();
+  /**
+   * The one list (Valentin, v8): no headings and no lines between kinds. The pinned chats on top, then the chats and
+   * channels in the server's order (last activity), then the discussions about places, each source with its own way
+   * to more.
+   */
+  const v2List = (): ChatListModel => {
+    const more = moreChats();
+    if (archived()) return { rows: listRows(), empty: t().archiveEmpty, more: more ? [more] : [] };
+    const rest = listRows().filter((row) => row.pinnedRank === null && row.kind !== "system");
     const systemMore = Object.values(systemList.page()?.cursors ?? {}).some(Boolean);
-    return [
-      ...(pinnedRows().length > 0
-        ? [{ key: "pinned", title: t().pinnedChats, rows: pinnedRows(), folded: collapsed().includes("pinned") }]
-        : []),
-      {
-        key: "chats",
-        folded: collapsed().includes("chats"),
-        title: v2t().directAndGroups,
-        rows: plain,
-        empty: hasMore() || listLoading() ? undefined : filter() === "unread" ? t().noUnreadChats : t().noneYet,
-        more: moreChats(),
-      },
-      ...(channels.length > 0 ? [{ key: "channels", title: t().channels, rows: channels, folded: collapsed().includes("channels") }] : []),
-      ...(discussions.length > 0 || systemMore
-        ? [
-            {
-              key: "system",
-              folded: !systemExpanded(),
-              title: t().systemChats,
-              count: discussions.reduce((sum, row) => sum + row.unread, 0) || undefined,
-              rows: discussions,
-              more: systemMore
-                ? {
-                    label: t().showMoreChats,
-                    icon: "dots",
-                    disabled: systemList.status() === "loading",
-                    onClick: () => void systemList.load(true),
-                  }
-                : undefined,
-            },
-          ]
-        : []),
-    ];
+    return {
+      rows: [...pinnedRows(), ...rest, ...systemRows()],
+      empty: hasMore() || listLoading() ? undefined : filter() === "unread" ? t().noUnreadChats : t().noneYet,
+      more: [
+        ...(more ? [more] : []),
+        ...(systemMore
+          ? [
+              {
+                label: v2t().moreDiscussions,
+                icon: "dots",
+                disabled: systemList.status() === "loading",
+                onClick: () => void systemList.load(true),
+              },
+            ]
+          : []),
+      ],
+    };
   };
   const v2Notices = (): ChatListNotice[] => {
     const notices: ChatListNotice[] = [];
@@ -3505,22 +3569,99 @@ export function ChatWorkspaceView(
     }
   };
   const [newAway, setNewAway] = createSignal<{ direction: "above" | "below"; jump: () => void } | null>(null);
-  const backAction = (): ChatDetailV2["back"] =>
-    backToThreadDirectory() && route().chatId
+  const backAction = (): ChatDetailV2["back"] => {
+    // A discussion about an item leads back to its place's "General" stream, where its card stands.
+    const current = conversation();
+    const view = openChat()?.view;
+    if (current?.kind === "system" && view && view !== "general" && view !== "all")
+      return {
+        label: current.title,
+        href: listHref(threadHref(current.id, "general")),
+        onNavigate: (navigation: LinkNavigateEvent) => openView(current.id, "general", navigation),
+      };
+    // A place has no directory of its own in v2 (its route leads to the place): its stream leads back to the chats.
+    if (props.v2 && current?.kind === "system") return { label: t().chats, href: listHref(), onNavigate: backToList };
+    return backToThreadDirectory() && route().chatId
       ? { label: t().backToThreads, href: listHref(threadsPageHref(route().chatId!)), onNavigate: backToThreads }
       : { label: t().chats, href: listHref(), onNavigate: backToList };
+  };
+  /**
+   * A place's head menu (v2): what to show (all, open, done, unread), its General stream and its discussions in that
+   * state, each opening as a page of its own, more from the server while it has them, and "Discuss an item".
+   */
+  const placeMenu = (current: Conversation): MenuEntry[] => {
+    const view = openChat()?.view ?? "general";
+    const found = placeFound();
+    const list = found?.chat === current.id && found.filter === placeFilter() ? found.list : null;
+    const shown = list?.items ?? (openChat()?.threads?.items ?? []).filter((thread) => thread.resource && placeShows(thread));
+    const go = (target: ThreadView) => (navigation: LinkNavigateEvent) => openView(current.id, target, navigation);
+    const states: { value: PlaceFilter; label: string }[] = [
+      { value: "all", label: t().allThreads },
+      { value: "open", label: t().threadsOpen },
+      { value: "done", label: t().threadsDone },
+      { value: "unread", label: t().threadsUnread },
+    ];
+    return [
+      {
+        title: v2t().discussionState,
+        choice: placeFilter(),
+        onChoose: (value: string) => {
+          const next = states.find((state) => state.value === value)?.value;
+          if (!next) return;
+          setPlaceFilter(next);
+          void findDiscussions(current.id, next);
+        },
+        items: states.map((state) => ({ label: state.label, value: state.value })),
+      },
+      {
+        title: t().systemChats,
+        choice: view,
+        items: [
+          {
+            label: viewName("general", openChat()?.threads ?? null, t()),
+            icon: "messages",
+            value: "general",
+            href: listHref(threadHref(current.id, "general")),
+            onNavigate: go("general"),
+          },
+          ...shown.map((thread) => ({
+            label: thread.name,
+            icon: threadIcon(thread).replace(/^ti ti-/, ""),
+            value: thread.id,
+            meta: [
+              thread.resource?.status ?? (thread.resource?.done ? t().threadsDone : t().threadsOpen),
+              thread.unread > 0 ? thread.unread.toLocaleString(locale()) : "",
+            ]
+              .filter(Boolean)
+              .join(" · "),
+            href: listHref(threadHref(current.id, thread.id)),
+            onNavigate: go(thread.id),
+          })),
+        ],
+      },
+      ...(list === null || list.nextCursor != null
+        ? [
+            {
+              label: t().moreThreads,
+              icon: "dots",
+              onClick: () => findDiscussions(current.id, placeFilter(), list !== null),
+            } satisfies MenuEntry,
+          ]
+        : []),
+      ...(canCreateThread()
+        ? [{ label: t().discussElement, icon: "plus", disabled: creatingThread(), onClick: () => void createThread() } satisfies MenuEntry]
+        : []),
+    ];
+  };
   const chatDetail = (current: Conversation): ChatDetailV2 => {
     const thread = openThread();
     const resource = system() ? (thread?.resource ?? undefined) : undefined;
     const status = resource ? (resource.status ?? (resource.done ? t().threadsDone : null)) : null;
-    const subtitle =
-      system() && thread
-        ? current.title
-        : system()
-          ? t().systemMembers
-          : current.channel
-            ? t().subscribers({ count: current.memberCount })
-            : t().members({ count: current.memberCount });
+    const subtitle = system()
+      ? t().systemMembers
+      : current.channel
+        ? t().subscribers({ count: current.memberCount })
+        : t().members({ count: current.memberCount });
     const buttons: ChatHeadButton[] = [];
     const away = newAway();
     if (away)
@@ -3532,13 +3673,21 @@ export function ChatWorkspaceView(
         onClick: away.jump,
       });
     if (resource?.href)
-      buttons.push({ label: t().openInType({ title: resource.typeTitle }), icon: "external-link", href: resource.href, words: true });
+      // the discussion's item and following it stay on the phone too, folded into "…" where the head has no room
+      buttons.push({
+        label: t().openInType({ title: resource.typeTitle }),
+        icon: "external-link",
+        href: resource.href,
+        words: true,
+        keep: true,
+      });
     if (system() && thread?.resource && thread.following !== undefined)
       buttons.push({
         label: thread.following ? t().followOn : t().followOff,
         icon: thread.following ? "bell-ringing" : "bell-plus",
         words: true,
         pressed: thread.following === true,
+        keep: true,
         busy: followBusy(),
         onClick: () => void toggleFollow(current.id, thread.id, !thread.following),
       });
@@ -3573,32 +3722,39 @@ export function ChatWorkspaceView(
         ids: [
           // A discussion about an element says where it stands (its context), else what kind of element it is, as v1.
           ...(resource ? [{ value: resource.context ?? resource.typeTitle }] : []),
-          { value: subtitle },
+          // a place's discussion names its place in its way back, which stands above it on every screen
+          ...(system() && thread ? [] : [{ value: subtitle }]),
           ...(current.notifications?.level === "none" ? [{ icon: "bell-off", value: t().notificationsOffMark }] : []),
         ],
       },
       back: backAction(),
-      picker: threaded()
-        ? {
-            label: t().switchThread({ name: viewTitle() }),
-            name: viewTitle(),
-            items: props.v2!.threadMenu({
-              t: t(),
-              chatId: current.id,
-              basePath,
-              view: openChat()?.view ?? "all",
-              threads: openChat()?.threads ?? null,
-              unread: current.unread,
-              system: system(),
-              canAdmin: canCreateThread(),
-              creating: creatingThread(),
-              total: current.summaryCursor == null ? current.threads : undefined,
-              onSelect: (view) => (navigation) => openView(current.id, view, navigation),
-              onOverview: (navigation) => openOverview(navigation),
-              onCreate: () => void createThread(),
-            }),
-          }
-        : undefined,
+      wideBack: system() && !!thread,
+      // a place's General stream holds the menu of its discussions and their state; a discussion leads back to it
+      picker: system()
+        ? thread
+          ? undefined
+          : { label: t().switchThread({ name: viewTitle() }), name: viewTitle(), items: placeMenu(current) }
+        : threaded()
+          ? {
+              label: t().switchThread({ name: viewTitle() }),
+              name: viewTitle(),
+              items: props.v2!.threadMenu({
+                t: t(),
+                chatId: current.id,
+                basePath,
+                view: openChat()?.view ?? "all",
+                threads: openChat()?.threads ?? null,
+                unread: current.unread,
+                system: system(),
+                canAdmin: canCreateThread(),
+                creating: creatingThread(),
+                total: current.summaryCursor == null ? current.threads : undefined,
+                onSelect: (view) => (navigation) => openView(current.id, view, navigation),
+                onOverview: (navigation) => openOverview(navigation),
+                onCreate: () => void createThread(),
+              }),
+            }
+          : undefined,
       buttons,
       menu,
       content: conversationView,
@@ -3663,9 +3819,12 @@ export function ChatWorkspaceView(
             now={now}
             revision={(openChat()?.watermark ?? 0) + (openChat()?.threadsRevision ?? 0)}
             onOpen={(view, navigation) => openView(threads.id, view, navigation)}
+            tools={(element) => setDirectoryTools(() => element)}
           />
         )),
-        head: { name: threads.title, ids: [{ value: t().systemMembers }] },
+        // The head holds the search and the state filter; who belongs to the place stands in its info.
+        head: { name: threads.title },
+        tools: directoryTools,
         drawing: false,
       };
     if (threads)
@@ -3768,7 +3927,7 @@ export function ChatWorkspaceView(
               <Show when={rows().length > 0 && !listError()}>
                 <V2.ChatDeviceNoticeV2 notice={deviceNotice()} onNotice={setDeviceNotice} dateConfig={props.dateConfig} now={now} />
               </Show>
-              <V2.ChatListV2 sections={v2Sections} context={rowsContext} />
+              <V2.ChatListV2 list={v2List} context={rowsContext} />
             </Show>
           ),
         }}

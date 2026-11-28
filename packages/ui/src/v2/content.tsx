@@ -341,6 +341,11 @@ export type RowProps = {
   mark?: MarkProps;
   /** … or a person. */
   avatar?: Person;
+  /**
+   * A small symbol on the lead's bottom right, such as a pin on a pinned chat's face, in place of a mark beside the
+   * name; its label names it for assistive technology and as its hint.
+   */
+  badge?: { icon: string; label: string };
   /** Unread: a dot leads and the first two lines turn 600. */
   unread?: boolean;
   /** The title in 600. */
@@ -376,6 +381,12 @@ export type RowProps = {
   action?: Action;
   /** At the end: a few icon buttons, such as "Reply" and "More". */
   end?: JSX.Element;
+  /**
+   * The end shows only while the pointer is over the row or the focus is in it (its place stays, so nothing moves); a
+   * list of many rows then carries no "…" on each. On a touch screen it is not drawn: give the row the same deeds
+   * through `Menu.Context` (a long press), or reach them where the entry opens.
+   */
+  endOnHover?: boolean;
   /** The row opens this link … */
   href?: string;
   /** … in place on a plain click, while the link still opens in a new tab (see `OnNavigate`) … */
@@ -454,6 +465,7 @@ export const Row = (props: RowProps) => {
       // in a selection the box takes the person's place, so the row's text starts where the other rows' text does
       data-avatar={props.avatar && !props.select ? "" : undefined}
       data-mark={props.mark && !props.avatar ? "" : undefined}
+      data-end-hover={props.endOnHover ? "" : undefined}
       data-time={time() !== undefined ? "" : undefined}
       data-action={props.action ? "" : undefined}
       data-states={states() !== undefined ? "" : undefined}
@@ -514,6 +526,13 @@ export const Row = (props: RowProps) => {
               {/* a thing's mark stays beside the box (a file keeps its thumbnail); a symbol, person or dot gives way */}
               <Show when={props.mark}>{(mark) => <Mark {...mark()} />}</Show>
             </>
+          )}
+        </Show>
+        <Show when={props.badge && !props.select ? props.badge : undefined}>
+          {(badge) => (
+            <span class="k2-row-badge" title={badge().label}>
+              <Icon name={badge().icon} label={badge().label} />
+            </span>
           )}
         </Show>
       </span>
