@@ -37,7 +37,7 @@ export const concurrentBuilds = (source: string): number[] => {
 const MESSAGE =
   `concurrent index statement outside ${HELPER}. An index queries only run faster with: ` +
   "buildConcurrentIndexesInBackground after the migration, never awaited at startup. " +
-  "A UNIQUE index a transaction relies on is not one of those: create it in the migration before its first use (createIndexIfMissing with unique)";
+  "A UNIQUE index a transaction relies on is not one of those: create it in the migration before its first use (createIndexes with unique: true from @k2b/cloud/services/migration-ddl)";
 
 export const rule: Rule = {
   name: "concurrent-index-builds",

@@ -5,7 +5,7 @@ section: Operations
 order: 1180
 description: Diagnose common application registration, request, data, and runtime failures.
 tags: [troubleshooting, health, diagnostics]
-updated: 2026-11-10
+updated: 2026-11-27
 ---
 
 # Troubleshooting
@@ -123,6 +123,22 @@ service health.
 
 Valkey defaults to localhost when `REDIS_URL` is absent. That is normally wrong
 inside a container.
+
+## Setup waits for a table lock
+
+An application start logs `Migration waits for a lock and tries again` with
+the table and the sessions that hold a lock on it, such as `pg_dump`. Setup
+needs to add a column, an index, or a trigger, and another session holds a
+conflicting lock: a backup, an index build, or a long transaction. Queries of
+that table keep running, because setup waits at most two seconds per attempt.
+
+After about 40 seconds, setup fails with
+`Migration could not lock TABLE in 8 attempts` and the same sessions. When it
+names no session, another migration's advisory lock was in the way, or the
+session ended meanwhile. The next start tries again. Let the backup or the
+build finish, or end the long transaction, and start the application again.
+
+Starts that change nothing take no table lock and do not wait.
 
 ## Postgres requires pg_textsearch
 

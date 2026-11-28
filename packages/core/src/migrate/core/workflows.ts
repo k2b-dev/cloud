@@ -22,12 +22,8 @@
 
 import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
-import {
-  addMissingColumns,
-  buildConcurrentIndexesInBackground,
-  type ConcurrentIndex,
-  createIndexIfMissing,
-} from "@k2b/cloud/services/concurrent-index";
+import { buildConcurrentIndexesInBackground, type ConcurrentIndex } from "@k2b/cloud/services/concurrent-index";
+import { addColumns, createIndexes, replaceTrigger } from "@k2b/cloud/services/migration-ddl";
 import type { SQL } from "bun";
 
 /**
@@ -81,10 +77,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       CONSTRAINT workflow_scope_identity_uniq UNIQUE (id, app_id, scope_id)
     )
   `.simple();
-  await db`
-    CREATE INDEX IF NOT EXISTS idx_workflows_workflow_scope
-    ON workflows.workflow(app_id, scope_id, name, id)
-  `.simple();
+  await createIndexes(db, "workflows.workflow", [{ name: "idx_workflows_workflow_scope", definition: "(app_id, scope_id, name, id)" }]);
   console.log("  ✓ workflows.workflow table");
 
   /**
@@ -116,10 +109,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       UNIQUE (id, workflow_id)
     )
   `.simple();
-  await db`
-    CREATE INDEX IF NOT EXISTS idx_workflows_version_history
-    ON workflows.version(workflow_id, revision DESC)
-  `.simple();
+  await createIndexes(db, "workflows.version", [{ name: "idx_workflows_version_history", definition: "(workflow_id, revision DESC)" }]);
 
   await db`
     CREATE OR REPLACE FUNCTION workflows.reject_version_update() RETURNS TRIGGER AS $$
@@ -128,12 +118,12 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     END;
     $$ LANGUAGE plpgsql
   `.simple();
-  await db`DROP TRIGGER IF EXISTS version_reject_update ON workflows.version`.simple();
-  await db`
-    CREATE TRIGGER version_reject_update
-    BEFORE UPDATE ON workflows.version
-    FOR EACH ROW EXECUTE FUNCTION workflows.reject_version_update()
-  `.simple();
+  await replaceTrigger(
+    db,
+    "workflows.version",
+    "version_reject_update",
+    "CREATE TRIGGER version_reject_update BEFORE UPDATE ON workflows.version FOR EACH ROW EXECUTE FUNCTION workflows.reject_version_update()",
+  );
 
   await db`
     DO $$
@@ -170,11 +160,9 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       UNIQUE (workflow_id, key)
     )
   `.simple();
-  await db`
-    CREATE INDEX IF NOT EXISTS idx_workflows_activation_dispatch
-    ON workflows.activation(event_type, workflow_id, id)
-    WHERE enabled
-  `.simple();
+  await createIndexes(db, "workflows.activation", [
+    { name: "idx_workflows_activation_dispatch", definition: "(event_type, workflow_id, id) WHERE enabled" },
+  ]);
   console.log("  ✓ workflows.activation table");
 
   // ─── Cause ─────────────────────────────────────────────────────────────────
@@ -232,24 +220,16 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
   // Set after retention empties data/context/authorization_snapshot. Readers
   // can say "expired", and the retention scan skips already expired payloads.
   // The retention sweep builds indexes on this table and on runs next to live writes (`ensureConcurrentIndexes`), so
-  // every column and index below takes a lock only when the catalog lacks it.
-  await addMissingColumns(db, "workflows.event", { payload_expired_at: "TIMESTAMPTZ" });
-  await createIndexIfMissing(db, {
-    unique: true,
-    name: "idx_workflows_event_dedupe",
-    table: "workflows.event",
-    definition: "(app_id, scope_id, type, dedupe_key) WHERE dedupe_key IS NOT NULL",
-  });
-  await createIndexIfMissing(db, {
-    name: "idx_workflows_event_pending",
-    table: "workflows.event",
-    definition: "(dispatch_after, occurred_at, id) WHERE dispatched_at IS NULL AND dispatch_failed_at IS NULL AND matched_count > 0",
-  });
-  await createIndexIfMissing(db, {
-    name: "idx_workflows_event_history",
-    table: "workflows.event",
-    definition: "(app_id, scope_id, occurred_at DESC, id DESC)",
-  });
+  // every column and index here takes a lock only when the catalog lacks it.
+  await addColumns(db, "workflows.event", { payload_expired_at: "TIMESTAMPTZ" });
+  await createIndexes(db, "workflows.event", [
+    { name: "idx_workflows_event_dedupe", definition: "(app_id, scope_id, type, dedupe_key) WHERE dedupe_key IS NOT NULL", unique: true },
+    {
+      name: "idx_workflows_event_pending",
+      definition: "(dispatch_after, occurred_at, id) WHERE dispatched_at IS NULL AND dispatch_failed_at IS NULL AND matched_count > 0",
+    },
+    { name: "idx_workflows_event_history", definition: "(app_id, scope_id, occurred_at DESC, id DESC)" },
+  ]);
   /**
    * The exact activation/version match is frozen when the event is recorded.
    * Deferred dispatch reads this receipt-time snapshot, so publishing a new
@@ -270,10 +250,9 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       PRIMARY KEY (event_id, activation_id)
     )
   `.simple();
-  await db`
-    CREATE INDEX IF NOT EXISTS idx_workflows_event_delivery_workflow
-    ON workflows.event_delivery(workflow_id, event_id)
-  `.simple();
+  await createIndexes(db, "workflows.event_delivery", [
+    { name: "idx_workflows_event_delivery_workflow", definition: "(workflow_id, event_id)" },
+  ]);
   console.log("  ✓ workflows.event table");
 
   // ─── Execution ─────────────────────────────────────────────────────────────
@@ -358,33 +337,19 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
   // Claimable work, oldest first:
   //   WHERE state IN ('queued', 'running') AND claimable_at < now()
   //   ORDER BY claimable_at, created_at, id
-  await createIndexIfMissing(db, {
-    name: "idx_workflows_run_dispatch",
-    table: "workflows.run",
-    definition: "(claimable_at, created_at, id) WHERE state IN ('queued', 'running')",
-  });
+  await createIndexes(db, "workflows.run", [
+    { name: "idx_workflows_run_dispatch", definition: "(claimable_at, created_at, id) WHERE state IN ('queued', 'running')" },
+  ]);
   // Parked runs the wake scan has to pick up once their deadline passes.
-  await createIndexIfMissing(db, {
-    name: "idx_workflows_run_wake",
-    table: "workflows.run",
-    definition: "(wake_at, id) WHERE state = 'waiting' AND wake_at IS NOT NULL",
-  });
+  await createIndexes(db, "workflows.run", [
+    { name: "idx_workflows_run_wake", definition: "(wake_at, id) WHERE state = 'waiting' AND wake_at IS NOT NULL" },
+  ]);
   // Fan-out: both "how are my children doing" and "list them" read this.
-  await createIndexIfMissing(db, {
-    name: "idx_workflows_run_children",
-    table: "workflows.run",
-    definition: "(parent_run_id, state, created_at, id) WHERE parent_run_id IS NOT NULL",
-  });
-  await createIndexIfMissing(db, {
-    name: "idx_workflows_run_workflow_history",
-    table: "workflows.run",
-    definition: "(workflow_id, created_at DESC, id DESC) WHERE parent_run_id IS NULL",
-  });
-  await createIndexIfMissing(db, {
-    name: "idx_workflows_run_scope_history",
-    table: "workflows.run",
-    definition: "(app_id, scope_id, created_at DESC, id DESC) WHERE parent_run_id IS NULL",
-  });
+  await createIndexes(db, "workflows.run", [
+    { name: "idx_workflows_run_children", definition: "(parent_run_id, state, created_at, id) WHERE parent_run_id IS NOT NULL" },
+    { name: "idx_workflows_run_workflow_history", definition: "(workflow_id, created_at DESC, id DESC) WHERE parent_run_id IS NULL" },
+    { name: "idx_workflows_run_scope_history", definition: "(app_id, scope_id, created_at DESC, id DESC) WHERE parent_run_id IS NULL" },
+  ]);
   console.log("  ✓ workflows.run table");
 
   /**
@@ -443,19 +408,21 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       CONSTRAINT step_outcome_dependency_chk CHECK ((state = 'waiting') = (dependency IS NOT NULL))
     )
   `.simple();
-  await db`ALTER TABLE workflows.step_outcome ADD COLUMN IF NOT EXISTS budget_charged_at TIMESTAMPTZ`.simple();
+  await addColumns(db, "workflows.step_outcome", { budget_charged_at: "TIMESTAMPTZ" });
   // Resuming a parked run: find the steps blocked on a dependency that fired.
-  await db`
-    CREATE INDEX IF NOT EXISTS idx_workflows_step_outcome_dependency
-    ON workflows.step_outcome((dependency ->> 'kind'), (dependency ->> 'key'))
-    WHERE state = 'waiting'
-  `.simple();
+  await createIndexes(db, "workflows.step_outcome", [
+    {
+      name: "idx_workflows_step_outcome_dependency",
+      definition: "((dependency ->> 'kind'), (dependency ->> 'key')) WHERE state = 'waiting'",
+    },
+  ]);
   // Ambiguous effects that never settled are the queue a human works through.
-  await db`
-    CREATE INDEX IF NOT EXISTS idx_workflows_step_outcome_unsettled_effect
-    ON workflows.step_outcome(effect_started_at, run_id)
-    WHERE effect_state IN ('executing', 'ambiguous')
-  `.simple();
+  await createIndexes(db, "workflows.step_outcome", [
+    {
+      name: "idx_workflows_step_outcome_unsettled_effect",
+      definition: "(effect_started_at, run_id) WHERE effect_state IN ('executing', 'ambiguous')",
+    },
+  ]);
   /**
    * A dependency may fire just before its action manages to park. Persisting
    * the signal makes both orderings converge; app_id prevents one app from

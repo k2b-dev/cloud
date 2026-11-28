@@ -1,5 +1,5 @@
 import { sql } from "@k2b/cloud";
-import { createIndexIfMissing } from "@k2b/cloud/services/concurrent-index";
+import { createIndexes } from "@k2b/cloud/services/migration-ddl";
 import { backfillShortIds, finalizeShortIds, type ShortIdTable, shortIdsFinalized } from "./lib/short-id";
 
 export const migrate = async (): Promise<void> => {
@@ -31,7 +31,7 @@ export const migrate = async (): Promise<void> => {
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_venue_venues_short_id ON venue.venues(short_id)`.simple();
   await sql`CREATE INDEX IF NOT EXISTS idx_venue_venues_slug ON venue.venues(slug)`.simple();
   // The venue list pages newest first. One row per venue, so the build is short; it locks only when the index is missing.
-  await createIndexIfMissing(sql, { name: "idx_venue_venues_created", table: "venue.venues", definition: "(created_at DESC, id)" });
+  await createIndexes(sql, "venue.venues", [{ name: "idx_venue_venues_created", definition: "(created_at DESC, id)" }]);
   // Calendar links are personal (venue.user_ical_tokens); the venue-wide token had no route and only leaked to readers.
   await sql`ALTER TABLE venue.venues DROP COLUMN IF EXISTS ical_token`.simple();
   console.log("  ✓ venue.venues table");

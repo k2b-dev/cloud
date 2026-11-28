@@ -7,7 +7,7 @@ import { backgroundWork } from "./runtime-quiesce";
 /**
  * An index built next to live writes. Queries must work without it; it only makes them faster. A UNIQUE index that a
  * transaction relies on is never one of these: the migration creates it before its first use, in its transaction
- * (`createIndexIfMissing` with `unique`).
+ * (`createIndexes` with `unique: true` in `./migration-ddl`).
  */
 export type ConcurrentIndex = {
   /** Index name without schema; Postgres creates it in the table's schema. */
@@ -102,7 +102,7 @@ const buildIndex = async (db: SQL, index: ConcurrentIndex, options: ConcurrentIn
  *
  * A build holds `SHARE UPDATE EXCLUSIVE` on its table for as long as it runs, so a migration of the same table never
  * takes a strong lock unconditionally: it adds a column or an index only when the catalog lacks it
- * (`addMissingColumns`, `createIndexIfMissing`), or the next start of another replica waits behind the build and every
+ * (`addColumns`, `createIndexes` in `./migration-ddl`), or the next start of another replica waits behind the build and every
  * write of the table waits behind that start.
  *
  * A build waits for every older snapshot, so a long transaction (a nightly dump) can hold it for hours. Startup must
@@ -253,38 +253,4 @@ export const settleBackgroundIndexBuilds = async (deadlineMs = 60_000): Promise<
     clearTimeout(timer);
   }
   return true;
-};
-
-/**
- * Adds the columns the table lacks, in one statement, and takes no lock at all when every column exists. `columns` maps
- * each name to its type and constraints, constants of the code. Use it for a table that a background build may hold
- * (`ensureConcurrentIndexes`); `ADD COLUMN IF NOT EXISTS` alone takes `ACCESS EXCLUSIVE` before it checks.
- */
-export const addMissingColumns = async (db: SQL, table: string, columns: Readonly<Record<string, string>>): Promise<void> => {
-  if (!qualifiedTable(table) || Object.entries(columns).some(([name, type]) => !IDENTIFIER.test(name) || type.includes(";")))
-    throw new Error(`Invalid columns for ${table}`);
-  const present = new Set(
-    (
-      await db<{ name: string }[]>`SELECT attname AS name FROM pg_catalog.pg_attribute
-        WHERE attrelid = to_regclass(${table}) AND attnum > 0 AND NOT attisdropped`
-    ).map((row) => row.name),
-  );
-  const missing = Object.entries(columns).filter(([name]) => !present.has(name));
-  if (missing.length === 0) return;
-  await db.unsafe(`ALTER TABLE ${table} ${missing.map(([name, type]) => `ADD COLUMN IF NOT EXISTS ${name} ${type}`).join(", ")}`).simple();
-};
-
-/**
- * Creates an ordinary index in the migration's transaction only when the catalog lacks it. `CREATE INDEX IF NOT EXISTS`
- * alone waits for the lock of a running concurrent build on the table even when the index exists.
- */
-export const createIndexIfMissing = async (db: SQL, index: ConcurrentIndex & { unique?: boolean }): Promise<void> => {
-  if (!validIndex(index)) throw new Error(`Invalid index: ${index.name} ON ${index.table}`);
-  const [state] = await db<
-    { present: boolean }[]
-  >`SELECT to_regclass(${`${index.table.split(".")[0]}.${index.name}`}) IS NOT NULL AS present`;
-  if (state?.present) return;
-  await db
-    .unsafe(`CREATE ${index.unique ? "UNIQUE " : ""}INDEX IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition}`)
-    .simple();
 };

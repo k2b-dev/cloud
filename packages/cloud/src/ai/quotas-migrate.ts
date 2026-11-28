@@ -1,7 +1,8 @@
 import type { SQL } from "bun";
 import { sql } from "../runtime/clients";
-import { addMissingColumns, type ConcurrentIndex, createIndexIfMissing, ensureConcurrentIndexes } from "../services/concurrent-index";
+import { type ConcurrentIndex, ensureConcurrentIndexes } from "../services/concurrent-index";
 import { logger } from "../services/logging";
+import { addColumns, createIndexes, withTableLock } from "../services/migration-ddl";
 
 const log = logger("ai:quotas");
 
@@ -19,7 +20,9 @@ export const ensureAiInferenceTurnIndex = async (db: SQL = sql): Promise<boolean
 };
 
 export async function migrateAiQuotas() {
-  await sql.begin(async (db) => {
+  // One transaction; withTableLock bounds its lock waits and retries it as a whole.
+  const tables = ["ai.cost_config", "ai.cost_alerts", "ai.inference_calls", "ai.cost_resets", "ai.cost_changes"];
+  await withTableLock(sql, tables, async (db) => {
     await db`CREATE TABLE IF NOT EXISTS ai.cost_config (
       singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK(singleton), enabled BOOLEAN NOT NULL DEFAULT false,
       revision INTEGER NOT NULL DEFAULT 0, rules JSONB NOT NULL DEFAULT '[]',
@@ -50,7 +53,7 @@ export async function migrateAiQuotas() {
       END IF;
     END $$`;
     // A background build may hold this table (`AI_INFERENCE_TURN_INDEX`); only what is missing takes a lock.
-    await addMissingColumns(db, "ai.inference_calls", {
+    await addColumns(db, "ai.inference_calls", {
       audio_ms: "INTEGER",
       credential_id: "UUID",
       estimated: "BOOLEAN NOT NULL DEFAULT false",
@@ -64,15 +67,14 @@ export async function migrateAiQuotas() {
       // Stable Code attribution survives chat, turn and Code deletion; no Code schema dependency.
       code_id: "TEXT",
     });
-    for (const [name, definition] of [
-      ["inference_calls_workflow", "(workflow_run_id,started_at)"],
-      ["inference_calls_started", "(started_at)"],
-      ["inference_calls_turn", "(turn_id,started_at,id) WHERE kind='chat'"],
-      ["inference_calls_compaction_turn", "(turn_id) WHERE task='chat-compaction'"],
-      ["inference_calls_user", "(user_id,started_at)"],
-      ["inference_calls_service", "(service_account_id,started_at)"],
-    ] as const)
-      await createIndexIfMissing(db, { name, table: "ai.inference_calls", definition });
+    await createIndexes(db, "ai.inference_calls", [
+      { name: "inference_calls_workflow", definition: "(workflow_run_id,started_at)" },
+      { name: "inference_calls_started", definition: "(started_at)" },
+      { name: "inference_calls_turn", definition: "(turn_id,started_at,id) WHERE kind='chat'" },
+      { name: "inference_calls_compaction_turn", definition: "(turn_id) WHERE task='chat-compaction'" },
+      { name: "inference_calls_user", definition: "(user_id,started_at)" },
+      { name: "inference_calls_service", definition: "(service_account_id,started_at)" },
+    ]);
     await db`CREATE TABLE IF NOT EXISTS ai.cost_resets (
       request_id UUID PRIMARY KEY, user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
       service_account_id UUID REFERENCES auth.service_accounts(id) ON DELETE CASCADE,

@@ -1,8 +1,9 @@
 import { CapabilityActionReviewDataSchema } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
 import { APPROVAL_MAX_WAIT_MS, approvalAssurance, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
-import { addMissingColumns, buildConcurrentIndexesInBackground } from "../services/concurrent-index";
+import { buildConcurrentIndexesInBackground } from "../services/concurrent-index";
 import { logger } from "../services/logging";
+import { addColumns, createIndexes, replaceTrigger, withTableLock } from "../services/migration-ddl";
 import { migrateAiCapabilityTargets } from "./capability-targets-migrate";
 import { migrateAiMaps } from "./map-store";
 import { migrateAiMessageQueue } from "./message-queue";
@@ -53,10 +54,7 @@ export const migrateCloudAi = async (): Promise<void> => {
     )
   `.simple();
 
-  await sql`ALTER TABLE ai.conversations
-    ADD COLUMN IF NOT EXISTS place_type TEXT,
-    ADD COLUMN IF NOT EXISTS place_id TEXT,
-    ADD COLUMN IF NOT EXISTS place_title VARCHAR(200)`.simple();
+  await addColumns(sql, "ai.conversations", { place_type: "TEXT", place_id: "TEXT", place_title: "VARCHAR(200)" });
   await sql`DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='ai.conversations'::regclass AND conname='ai_conversations_place_complete') THEN
       ALTER TABLE ai.conversations ADD CONSTRAINT ai_conversations_place_complete CHECK (
@@ -65,9 +63,13 @@ export const migrateCloudAi = async (): Promise<void> => {
       );
     END IF;
   END $$`.simple();
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_conversations_active_place
-    ON ai.conversations(created_by_user_id, place_type, place_id)
-    WHERE archived_at IS NULL AND place_type IS NOT NULL`.simple();
+  await createIndexes(sql, "ai.conversations", [
+    {
+      name: "idx_ai_conversations_active_place",
+      definition: "(created_by_user_id, place_type, place_id) WHERE archived_at IS NULL AND place_type IS NOT NULL",
+      unique: true,
+    },
+  ]);
 
   // Keep the request identity after deletion: retrying a lost response must not resurrect a chat.
   await sql`
@@ -105,17 +107,27 @@ export const migrateCloudAi = async (): Promise<void> => {
 
   await migrateAiMaps();
 
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_conversations_short_id ON ai.conversations(short_id)`.simple();
+  await addColumns(sql, "ai.conversations", { short_id: "TEXT" });
+  await createIndexes(sql, "ai.conversations", [{ name: "idx_ai_conversations_short_id", definition: "(short_id)", unique: true }]);
   await backfillAiShortIds(
     "idx_ai_conversations_short_id",
     await sql<{ id: string }[]>`SELECT id FROM ai.conversations WHERE short_id IS NULL`,
     (id, shortId) => sql`UPDATE ai.conversations SET short_id = ${shortId} WHERE id = ${id}::uuid`,
   );
-  await sql`ALTER TABLE ai.conversations ALTER COLUMN short_id SET NOT NULL`.simple();
-
-  await sql`ALTER TABLE ai.conversations DROP COLUMN IF EXISTS icon`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`.simple();
+  // SET NOT NULL and DROP COLUMN IF EXISTS lock the table even without a change, so the catalog decides first.
+  await withTableLock(sql, "ai.conversations", (tx) =>
+    tx`DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'ai.conversations'::regclass
+        AND attname = 'short_id' AND NOT attnotnull AND NOT attisdropped) THEN
+        ALTER TABLE ai.conversations ALTER COLUMN short_id SET NOT NULL;
+      END IF;
+      IF EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'ai.conversations'::regclass
+        AND attname = 'icon' AND NOT attisdropped) THEN
+        ALTER TABLE ai.conversations DROP COLUMN icon;
+      END IF;
+    END $$`.simple(),
+  );
+  await addColumns(sql, "ai.conversations", { description: "TEXT NOT NULL DEFAULT ''" });
   await sql`
     DO $$
     BEGIN
@@ -140,8 +152,7 @@ export const migrateCloudAi = async (): Promise<void> => {
       END IF;
     END $$
   `.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS loaded_tools TEXT[] NOT NULL DEFAULT '{}'`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS allowed_tools TEXT[]`.simple();
+  await addColumns(sql, "ai.conversations", { loaded_tools: "TEXT[] NOT NULL DEFAULT '{}'", allowed_tools: "TEXT[]" });
   // Capability tools used to persist provider-encoded function names. The
   // encoding is reversible for every non-hashed valid capability id; hashed
   // names were only cache state and are safely reloaded through discovery.
@@ -177,62 +188,91 @@ export const migrateCloudAi = async (): Promise<void> => {
       WHERE name ~ '^[a-z][a-z0-9-]*__(query|action)__'
     )
   `.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS draft_content JSONB NOT NULL DEFAULT '[]'::jsonb`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS draft_revision BIGINT NOT NULL DEFAULT 0`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS draft_updated_at TIMESTAMPTZ`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS launched_by_app_id TEXT`.simple();
-  // Enrichment (description/keywords/title upkeep) — dirty = updated_at > enriched_at.
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS keywords TEXT[] NOT NULL DEFAULT '{}'`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS search_summary TEXT NOT NULL DEFAULT ''`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS title_source TEXT NOT NULL DEFAULT 'default'`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS description_source TEXT NOT NULL DEFAULT 'default'`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS enriched_at TIMESTAMPTZ`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS enrich_failed_at TIMESTAMPTZ`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS enrich_fail_count INTEGER NOT NULL DEFAULT 0`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMPTZ`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS done BOOLEAN`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ`.simple();
+  await addColumns(sql, "ai.conversations", {
+    draft_content: "JSONB NOT NULL DEFAULT '[]'::jsonb",
+    draft_revision: "BIGINT NOT NULL DEFAULT 0",
+    draft_updated_at: "TIMESTAMPTZ",
+    launched_by_app_id: "TEXT",
+    // Enrichment (description/keywords/title upkeep) — dirty = updated_at > enriched_at.
+    keywords: "TEXT[] NOT NULL DEFAULT '{}'",
+    search_summary: "TEXT NOT NULL DEFAULT ''",
+    title_source: "TEXT NOT NULL DEFAULT 'default'",
+    description_source: "TEXT NOT NULL DEFAULT 'default'",
+    enriched_at: "TIMESTAMPTZ",
+    enrich_failed_at: "TIMESTAMPTZ",
+    enrich_fail_count: "INTEGER NOT NULL DEFAULT 0",
+    pinned_at: "TIMESTAMPTZ",
+    done: "BOOLEAN",
+    last_used_at: "TIMESTAMPTZ",
+  });
   await sql`DO $$ BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'ai' AND table_name = 'conversations' AND column_name = 'done_at') THEN
       UPDATE ai.conversations SET done = TRUE WHERE done_at IS NOT NULL;
       ALTER TABLE ai.conversations DROP COLUMN done_at;
     END IF;
   END $$`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS last_viewed_at TIMESTAMPTZ NOT NULL DEFAULT now()`.simple();
-  await sql`ALTER TABLE ai.conversations ALTER COLUMN last_viewed_at SET DEFAULT now()`.simple();
-  await sql`UPDATE ai.conversations SET last_viewed_at = now() WHERE last_viewed_at IS NULL`.simple();
-  await sql`ALTER TABLE ai.conversations ALTER COLUMN last_viewed_at SET NOT NULL`.simple();
-  await sql`UPDATE ai.conversations SET last_used_at = GREATEST(created_at, updated_at, last_viewed_at) WHERE last_used_at IS NULL`.simple();
-  await sql`ALTER TABLE ai.conversations ALTER COLUMN last_used_at SET DEFAULT now()`.simple();
-  await sql`ALTER TABLE ai.conversations ALTER COLUMN last_used_at SET NOT NULL`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS search_text TEXT NOT NULL DEFAULT ''`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS search_document TSVECTOR NOT NULL DEFAULT ''::tsvector`.simple();
-  await sql`
-    CREATE OR REPLACE FUNCTION ai.refresh_conversation_search() RETURNS trigger AS $$
-    BEGIN
-      NEW.search_text := COALESCE(NEW.title, '') || ' ' || COALESCE(NEW.title, '') || ' ' ||
-        COALESCE(array_to_string(NEW.keywords, ' '), '') || ' ' || COALESCE(NEW.search_summary, '') || ' ' ||
-        COALESCE(NEW.description, '');
-      NEW.search_document :=
-        setweight(to_tsvector('simple', COALESCE(NEW.title, '')), 'A') ||
-        setweight(to_tsvector('simple', COALESCE(array_to_string(NEW.keywords, ' '), '')), 'A') ||
-        setweight(to_tsvector('simple', COALESCE(NEW.search_summary, '')), 'B') ||
-        setweight(to_tsvector('simple', COALESCE(NEW.description, '')), 'C');
-      RETURN NEW;
-    END
-    $$ LANGUAGE plpgsql
-  `.simple();
-  await sql`DROP TRIGGER IF EXISTS ai_conversations_search_refresh ON ai.conversations`.simple();
-  await sql`
-    CREATE TRIGGER ai_conversations_search_refresh
-    BEFORE INSERT OR UPDATE OF title, description, keywords, search_summary
-    ON ai.conversations FOR EACH ROW EXECUTE FUNCTION ai.refresh_conversation_search()
-  `.simple();
-  await sql`UPDATE ai.conversations SET search_summary = search_summary`.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_ai_conversations_search_document
-    ON ai.conversations USING GIN(search_document)
-  `.simple();
+  await addColumns(sql, "ai.conversations", { last_viewed_at: "TIMESTAMPTZ NOT NULL DEFAULT now()" });
+  // Both columns default to now() and are never null. The catalog decides first: ALTER COLUMN locks even without a
+  // change, and the backfills only run while a column may still hold NULL.
+  await withTableLock(sql, "ai.conversations", (tx) =>
+    tx`DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+        WHERE a.attrelid = 'ai.conversations'::regclass AND a.attname = 'last_viewed_at' AND NOT a.attisdropped
+          AND (NOT a.attnotnull OR pg_get_expr(d.adbin, d.adrelid) IS DISTINCT FROM 'now()')) THEN
+        UPDATE ai.conversations SET last_viewed_at = now() WHERE last_viewed_at IS NULL;
+        ALTER TABLE ai.conversations ALTER COLUMN last_viewed_at SET DEFAULT now(), ALTER COLUMN last_viewed_at SET NOT NULL;
+      END IF;
+      IF EXISTS (SELECT 1 FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+        WHERE a.attrelid = 'ai.conversations'::regclass AND a.attname = 'last_used_at' AND NOT a.attisdropped
+          AND (NOT a.attnotnull OR pg_get_expr(d.adbin, d.adrelid) IS DISTINCT FROM 'now()')) THEN
+        UPDATE ai.conversations SET last_used_at = GREATEST(created_at, updated_at, last_viewed_at) WHERE last_used_at IS NULL;
+        ALTER TABLE ai.conversations ALTER COLUMN last_used_at SET DEFAULT now(), ALTER COLUMN last_used_at SET NOT NULL;
+      END IF;
+    END $$`.simple(),
+  );
+  // Rewriting every conversation locks every row, so it runs only when the search columns, the function or the trigger
+  // changed (#4515). All of it is one transaction: a rewrite that fails also rolls back the change that asked for it,
+  // so the next start sees the change again and retries. Without a change it takes no table lock.
+  await withTableLock(sql, "ai.conversations", async (tx) => {
+    const addedSearchColumns = await addColumns(tx, "ai.conversations", {
+      search_text: "TEXT NOT NULL DEFAULT ''",
+      search_document: "TSVECTOR NOT NULL DEFAULT ''::tsvector",
+    });
+    const searchFunction = async () =>
+      (
+        await tx<{ source: string | null }[]>`SELECT md5(prosrc) AS source FROM pg_proc
+          WHERE oid = to_regprocedure('ai.refresh_conversation_search()')`
+      )[0]?.source ?? null;
+    const searchFunctionBefore = await searchFunction();
+    await tx`
+      CREATE OR REPLACE FUNCTION ai.refresh_conversation_search() RETURNS trigger AS $$
+      BEGIN
+        NEW.search_text := COALESCE(NEW.title, '') || ' ' || COALESCE(NEW.title, '') || ' ' ||
+          COALESCE(array_to_string(NEW.keywords, ' '), '') || ' ' || COALESCE(NEW.search_summary, '') || ' ' ||
+          COALESCE(NEW.description, '');
+        NEW.search_document :=
+          setweight(to_tsvector('simple', COALESCE(NEW.title, '')), 'A') ||
+          setweight(to_tsvector('simple', COALESCE(array_to_string(NEW.keywords, ' '), '')), 'A') ||
+          setweight(to_tsvector('simple', COALESCE(NEW.search_summary, '')), 'B') ||
+          setweight(to_tsvector('simple', COALESCE(NEW.description, '')), 'C');
+        RETURN NEW;
+      END
+      $$ LANGUAGE plpgsql
+    `.simple();
+    const searchTriggerReplaced = await replaceTrigger(
+      tx,
+      "ai.conversations",
+      "ai_conversations_search_refresh",
+      "CREATE TRIGGER ai_conversations_search_refresh BEFORE INSERT OR UPDATE OF title, description, keywords, search_summary " +
+        "ON ai.conversations FOR EACH ROW EXECUTE FUNCTION ai.refresh_conversation_search()",
+    );
+    if (addedSearchColumns.length > 0 || searchTriggerReplaced || (await searchFunction()) !== searchFunctionBefore) {
+      await tx`UPDATE ai.conversations SET search_summary = search_summary`.simple();
+    }
+  });
+  await createIndexes(sql, "ai.conversations", [
+    { name: "idx_ai_conversations_search_document", definition: "USING GIN(search_document)" },
+  ]);
 
   // Semantics fix: 'auto' is reserved for enrichment-set titles (which always set
   // enriched_at in the same update). First-message snapshot titles are 'default'
@@ -257,11 +297,9 @@ export const migrateCloudAi = async (): Promise<void> => {
     END $$
   `.simple();
 
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_ai_conversations_enrich_dirty
-    ON ai.conversations(updated_at ASC)
-    WHERE archived_at IS NULL
-  `.simple();
+  await createIndexes(sql, "ai.conversations", [
+    { name: "idx_ai_conversations_enrich_dirty", definition: "(updated_at ASC) WHERE archived_at IS NULL" },
+  ]);
 
   // Per-conversation enrichment history — user-visible in the chat settings.
   await sql`
@@ -320,17 +358,13 @@ export const migrateCloudAi = async (): Promise<void> => {
     ON ai.structured_runs(model_profile_id, created_at DESC)
   `.simple();
 
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_ai_conversations_owner_updated
-    ON ai.conversations(created_by_user_id, updated_at DESC)
-    WHERE archived_at IS NULL
-  `.simple();
-
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_ai_conversations_owner_pinned
-    ON ai.conversations(created_by_user_id, pinned_at DESC, updated_at DESC)
-    WHERE archived_at IS NULL
-  `.simple();
+  await createIndexes(sql, "ai.conversations", [
+    { name: "idx_ai_conversations_owner_updated", definition: "(created_by_user_id, updated_at DESC) WHERE archived_at IS NULL" },
+    {
+      name: "idx_ai_conversations_owner_pinned",
+      definition: "(created_by_user_id, pinned_at DESC, updated_at DESC) WHERE archived_at IS NULL",
+    },
+  ]);
 
   await sql`
     CREATE TABLE IF NOT EXISTS ai.messages (
@@ -474,12 +508,9 @@ export const migrateCloudAi = async (): Promise<void> => {
       installed = true;
     }
     if (installed) {
-      await sql
-        .unsafe(`
-          CREATE INDEX IF NOT EXISTS conversations_search_bm25_idx
-          ON ai.conversations USING bm25 ((search_text)) WITH (text_config='simple')
-        `)
-        .simple();
+      await createIndexes(sql, "ai.conversations", [
+        { name: "conversations_search_bm25_idx", definition: "USING bm25 ((search_text)) WITH (text_config='simple')" },
+      ]);
       await sql
         .unsafe(`
           CREATE INDEX IF NOT EXISTS messages_search_bm25_idx
@@ -1897,12 +1928,13 @@ export const migrateCloudAi = async (): Promise<void> => {
   );
   await sql`ALTER TABLE ai.project_resource_refs ALTER COLUMN short_id SET NOT NULL`.simple();
 
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES ai.projects(id) ON DELETE SET NULL`.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_ai_conversations_project_owner_updated
-    ON ai.conversations(project_id, created_by_user_id, updated_at DESC)
-    WHERE project_id IS NOT NULL AND archived_at IS NULL
-  `.simple();
+  await addColumns(sql, "ai.conversations", { project_id: "UUID REFERENCES ai.projects(id) ON DELETE SET NULL" });
+  await createIndexes(sql, "ai.conversations", [
+    {
+      name: "idx_ai_conversations_project_owner_updated",
+      definition: "(project_id, created_by_user_id, updated_at DESC) WHERE project_id IS NOT NULL AND archived_at IS NULL",
+    },
+  ]);
 
   // Live updates. Triggers live at the persistence seam so route, worker, tool,
   // enrichment, and scheduler writes cannot bypass them. They write to Core's
@@ -2112,12 +2144,13 @@ export const migrateCloudAi = async (): Promise<void> => {
     END
     $$ LANGUAGE plpgsql
   `.simple();
-  await sql`DROP TRIGGER IF EXISTS ai_live_conversations_changed ON ai.conversations`.simple();
-  await sql`
-    CREATE TRIGGER ai_live_conversations_changed
-    AFTER INSERT OR UPDATE OR DELETE ON ai.conversations
-    FOR EACH ROW EXECUTE FUNCTION ai.live_conversation_row_changed()
-  `.simple();
+  await replaceTrigger(
+    sql,
+    "ai.conversations",
+    "ai_live_conversations_changed",
+    "CREATE TRIGGER ai_live_conversations_changed AFTER INSERT OR DELETE OR UPDATE ON ai.conversations " +
+      "FOR EACH ROW EXECUTE FUNCTION ai.live_conversation_row_changed()",
+  );
 
   await sql`
     CREATE OR REPLACE FUNCTION ai.live_conversation_child_changed() RETURNS trigger AS $$
@@ -2436,7 +2469,7 @@ export const migrateCloudAi = async (): Promise<void> => {
     ADD COLUMN IF NOT EXISTS delegated_target_turn_id uuid,
     ADD COLUMN IF NOT EXISTS delegated_send_receipt_id uuid`.simple();
 
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS background_received_at TIMESTAMPTZ`.simple();
+  await addColumns(sql, "ai.conversations", { background_received_at: "TIMESTAMPTZ" });
   await migrateAiMessageQueue();
   await migrateAiWakeups();
 
@@ -2635,5 +2668,5 @@ export const migrateAiModelClassesInTransaction = async (db: typeof sql): Promis
   for (const slot of ["fast", "balanced", "thorough", "maximum", "vision", "audio", "liveAudio", "decision"])
     await db`INSERT INTO ai.model_assignments(slot) VALUES(${slot}) ON CONFLICT DO NOTHING`;
   // A background build may hold this table (`AI_INFERENCE_TURN_INDEX`); only what is missing takes a lock.
-  await addMissingColumns(db, "ai.inference_calls", { requested_class: "TEXT", resolved_class: "TEXT", model_id: "TEXT" });
+  await addColumns(db, "ai.inference_calls", { requested_class: "TEXT", resolved_class: "TEXT", model_id: "TEXT" });
 };

@@ -1,4 +1,4 @@
-import { createIndexIfMissing } from "@k2b/cloud/services/concurrent-index";
+import { createIndexes } from "@k2b/cloud/services/migration-ddl";
 import type { SQL } from "bun";
 
 /** Run inside the Code migration transaction. Existing unused databases get a full grace period. */
@@ -42,11 +42,7 @@ export async function migrateUnusedCodeDatabases(tx: SQL): Promise<void> {
   await tx`CREATE INDEX IF NOT EXISTS databases_unused ON code.databases(unused_since,code_id) WHERE unused_since IS NOT NULL`.simple();
   // Administration › Code pages through the unused databases by Code ID.
   // One row per Code database, so the first deploy builds it once; later starts find it and take no lock.
-  await createIndexIfMissing(tx, {
-    name: "databases_unused_code",
-    table: "code.databases",
-    definition: "(code_id) WHERE unused_since IS NOT NULL",
-  });
+  await createIndexes(tx, "code.databases", [{ name: "databases_unused_code", definition: "(code_id) WHERE unused_since IS NOT NULL" }]);
   await tx`CREATE OR REPLACE FUNCTION code.database_is_unused(cid TEXT) RETURNS BOOLEAN AS $$
   DECLARE unused BOOLEAN;
   BEGIN

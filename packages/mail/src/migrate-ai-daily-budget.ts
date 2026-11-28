@@ -1,9 +1,9 @@
+import { addColumns } from "@k2b/cloud/services/migration-ddl";
 import type { sql } from "bun";
 
 /** Independent of summary storage and the workflow runtime; safe on every startup. */
 export const migrateAiDailyBudget = async (db: typeof sql): Promise<void> => {
-  await db`ALTER TABLE mail.mailboxes ADD COLUMN IF NOT EXISTS ai_calls_per_day integer
-    CHECK (ai_calls_per_day IS NULL OR ai_calls_per_day >= 0)`.simple();
+  await addColumns(db, "mail.mailboxes", { ai_calls_per_day: "integer CHECK (ai_calls_per_day IS NULL OR ai_calls_per_day >= 0)" });
   await db`
     CREATE TABLE IF NOT EXISTS mail.ai_daily_mailbox_usage (
       mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,

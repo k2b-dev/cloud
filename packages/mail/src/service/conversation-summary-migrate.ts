@@ -1,8 +1,9 @@
+import { addColumns, createIndexes } from "@k2b/cloud/services/migration-ddl";
 import type { sql } from "bun";
 
 /** Additions shared by startup and schema fixtures; all statements are idempotent. */
 export const migrateConversationSummaries = async (db: typeof sql): Promise<void> => {
-  await db`ALTER TABLE mail.conversations ADD COLUMN IF NOT EXISTS summary_metadata jsonb NOT NULL DEFAULT '{}'::jsonb`;
+  await addColumns(db, "mail.conversations", { summary_metadata: "jsonb NOT NULL DEFAULT '{}'::jsonb" });
   // Older writers recorded the actor and exact summary revision in activity, including clears.
   await db`WITH latest AS (
     SELECT candidate.id AS conversation_id, a.actor_kind, a.actor_id, a.created_at,
@@ -46,6 +47,7 @@ export const migrateConversationSummaries = async (db: typeof sql): Promise<void
       updated_at timestamptz NOT NULL DEFAULT now()
     )
   `;
-  await db`CREATE INDEX IF NOT EXISTS conversation_summary_requests_due_idx
-    ON mail.conversation_summary_requests (due_at, conversation_id) WHERE status IN ('pending','writing')`;
+  await createIndexes(db, "mail.conversation_summary_requests", [
+    { name: "conversation_summary_requests_due_idx", definition: "(due_at, conversation_id) WHERE status IN ('pending','writing')" },
+  ]);
 };
