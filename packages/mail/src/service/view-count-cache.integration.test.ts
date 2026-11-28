@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, expect, setSystemTime, spyOn, test } fr
 import { createSql, redis, sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
-import { ok, unwrap } from "@k2b/stdlib";
+import { unwrap } from "@k2b/stdlib";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import api from "../api";
@@ -12,9 +12,13 @@ import type { MailRequestContext } from "./auth";
 import { loadAggregatedViewScope } from "./folder-display";
 import { enqueueMailInvalidation } from "./live";
 import { createMailbox } from "./mailboxes";
-import * as messages from "./messages";
 import { type ConversationViewCounts, getConversationViewCounts } from "./messages";
-import { CountRefreshBusy, cachedConversationViewCounts, VIEW_COUNT_MAX_AGE_MS } from "./view-count-cache";
+import {
+  cachedConversationViewCounts,
+  cachedConversationViewCountsBy,
+  FIRST_RENDER_COUNT_WAIT_MS,
+  VIEW_COUNT_MAX_AGE_MS,
+} from "./view-count-cache";
 import { queryConversationViewCounts } from "./view-count-query";
 
 const suite = suiteFor("database", "nats", "valkey");
@@ -70,14 +74,16 @@ suite("Mail count cache", () => {
     await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
     await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
   });
-  test("the HTTP workspace survives a cold fill beyond the normal idle timeout and restores it", async () => {
+  test("a cold count holds the HTTP workspace only for its first-render wait and leaves the counts pending", async () => {
     if (context.actor.kind !== "user") throw new Error("Expected person");
     const user = context.actor.user;
     const auth = spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
-    const delayedCounts = spyOn(messages, "getConversationViewCounts").mockImplementation(async () => {
-      // fixed wait: the real HTTP request must outlive Bun's normal ten-second idle timeout.
-      await Bun.sleep(13_000);
-      return ok(counts(0));
+    // another replica holds the fill lease and has not published: the count stays cold for this request
+    const send = redis.send.bind(redis);
+    const cold = spyOn(redis, "send").mockImplementation((name, args) => {
+      if (args[0]?.startsWith("mail:view-counts:") && (name === "GET" || (name === "SET" && args.includes("NX"))))
+        return Promise.resolve(null);
+      return send(name, args);
     });
     const [mailbox] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
     const timeouts: number[] = [];
@@ -94,29 +100,82 @@ suite("Mail count cache", () => {
     });
     try {
       const href = `/app/mail/${mailbox!.short_id}`;
+      const started = performance.now();
       const response = await fetch(
         new URL(`/mailboxes/${mailbox!.short_id}/workspace-route?${new URLSearchParams({ href })}`, server.url),
-        {
-          headers: { authorization: "Bearer count-timeout-test", "x-forwarded-for": uniqueCallerAddress() },
-          signal: AbortSignal.timeout(25_000),
-        },
+        { headers: { authorization: "Bearer count-timeout-test", "x-forwarded-for": uniqueCallerAddress() } },
       );
+      const elapsed = performance.now() - started;
       expect(response.status).toBe(200);
-      await response.arrayBuffer();
+      const body = (await response.json()) as { viewCounts: ConversationViewCounts; viewCountsPending?: true };
+      // the wait is the first-render budget, never the fill's thirty seconds
+      expect(elapsed).toBeGreaterThanOrEqual(FIRST_RENDER_COUNT_WAIT_MS - 50);
+      expect(elapsed).toBeLessThan(FIRST_RENDER_COUNT_WAIT_MS + 4_000);
+      expect(body.viewCountsPending).toBe(true);
+      expect(Object.values(body.viewCounts).every((count) => count === 0)).toBe(true);
       expect(timeouts).toEqual([40, 10]);
-      delayedCounts.mockRejectedValue(new CountRefreshBusy("Mailbox counts are still refreshing; retry the request"));
-      const busy = await fetch(new URL(`/mailboxes/${mailbox!.short_id}/workspace-route?${new URLSearchParams({ href })}`, server.url), {
-        headers: { authorization: "Bearer count-timeout-test", "x-forwarded-for": uniqueCallerAddress() },
+      // the browser asks for the pending counts of that route: 202 while the count still runs …
+      const countsUrl = new URL(`/mailboxes/${mailbox!.short_id}/workspace-counts?${new URLSearchParams({ href })}`, server.url);
+      const headers = { authorization: "Bearer count-timeout-test", "x-forwarded-for": uniqueCallerAddress() };
+      const pending = await fetch(countsUrl, { headers });
+      expect(pending.status).toBe(202);
+      expect(await pending.json()).toEqual({ pending: true });
+      // … and the counts with the groups and the done footer once the cache holds them
+      cold.mockRestore();
+      let answer: Response | undefined;
+      for (const end = performance.now() + 15_000; performance.now() < end; ) {
+        answer = await fetch(countsUrl, { headers: { ...headers, "x-forwarded-for": uniqueCallerAddress() } });
+        if (answer.status === 200) break;
+        await answer.arrayBuffer();
+        await Bun.sleep(200);
+      }
+      expect(answer?.status).toBe(200);
+      // All mail shows the done footer but no groups: the route's own counts, by the snapshot's rule
+      expect(await answer!.json()).toEqual({
+        viewCounts: expect.objectContaining({ needs_action: 0, done: 0 }),
+        assignedGroups: null,
+        doneLeftOut: 0,
       });
-      expect(busy.status).toBe(503);
-      expect(await busy.json()).toMatchObject({ code: "MAIL_COUNTS_REFRESHING" });
-      expect(timeouts).toEqual([40, 10, 40, 10]);
+      const mine = new URL(countsUrl);
+      mine.searchParams.set("href", `${href}?view=mine`);
+      const grouped = await fetch(mine, { headers: { ...headers, "x-forwarded-for": uniqueCallerAddress() } });
+      expect(grouped.status).toBe(200);
+      expect(await grouped.json()).toMatchObject({ assignedGroups: { needsAction: 0, waiting: 0 } });
     } finally {
       await server.stop(true);
-      delayedCounts.mockRestore();
+      cold.mockRestore();
       auth.mockRestore();
     }
   }, 30_000);
+  test("a first render waits for a cold count only until its deadline; the count goes on and fills the cache", async () => {
+    const ownReader = reader();
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let calls = 0;
+    const started = performance.now();
+    const first = await cachedConversationViewCountsBy({
+      mailboxId,
+      reader: ownReader,
+      until: Date.now() + FIRST_RENDER_COUNT_WAIT_MS,
+      load: async () => {
+        calls++;
+        await gate;
+        return snapshot(5);
+      },
+    });
+    expect(first).toBeNull();
+    expect(performance.now() - started).toBeLessThan(FIRST_RENDER_COUNT_WAIT_MS + 1_000);
+    finish();
+    // the count that began for the first render answers the next read; nothing counts again
+    expect(await cachedConversationViewCounts({ mailboxId, reader: ownReader, load: async () => snapshot(99) })).toEqual(snapshot(5));
+    expect(calls).toBe(1);
+    // warm: the deadline does not matter
+    expect(
+      await cachedConversationViewCountsBy({ mailboxId, reader: ownReader, until: Date.now(), load: async () => snapshot(99) }),
+    ).toEqual(snapshot(5));
+  });
   test("a one-connection count transaction reads its own folder scope without a nested connection", async () => {
     const pool = createSql({ max: 1 });
     try {

@@ -214,8 +214,14 @@ import { mailLiveChannels } from "../service/live-channels";
 import type { AttachmentDownload } from "../service/messages";
 import { discoverMailConfigurations } from "../service/onboarding-discovery";
 import { loadReceivedPerDay } from "../service/received-per-day";
-import { CountRefreshBusy } from "../service/view-count-cache";
-import { loadMailboxConversationDetail, loadMailboxListView, loadMailboxPageData, resolveWorkspaceRequest } from "../service/workspace";
+import { CountRefreshBusy, FIRST_RENDER_COUNT_WAIT_MS } from "../service/view-count-cache";
+import {
+  loadMailboxConversationDetail,
+  loadMailboxListView,
+  loadMailboxPageData,
+  resolveWorkspaceRequest,
+  workspaceRouteCounts,
+} from "../service/workspace";
 import legacyLiveRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
 import automationExportRoutes from "./automation-export";
@@ -351,6 +357,7 @@ const workspaceRouteQuerySchema = z.object({
    */
   receivedPerDay: z.enum(["load", "keep"]).default("keep"),
 });
+const workspaceCountsQuerySchema = z.object({ href: z.string().trim().min(1).max(MAX_MAIL_WORKSPACE_HREF_LENGTH) });
 const attachmentQuerySchema = z.object({
   inline: z
     .enum(["true", "false"])
@@ -2023,6 +2030,35 @@ const mailOperationsApi = new Hono<MailApiContext>()
       }),
     ),
   )
+  // The counts a workspace snapshot left pending (its wait for cold counts ran out), for that snapshot's route: the views,
+  // the Assigned to me groups and the done conversations its list leaves out. It waits as briefly as the snapshot did
+  // and answers 202 while the count is still running, so the browser asks again a few times and never hangs.
+  .get("/mailboxes/:mailboxId/workspace-counts", v("param", mailboxParamSchema), v("query", workspaceCountsQuerySchema), async (c) => {
+    const mailboxId = internalMailboxId(c);
+    const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, c.req.valid("query").href);
+    const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
+    if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
+    const counts = await messages.getMailboxConversationCountsBy({
+      context: requestContext(c),
+      mailboxId,
+      until: Date.now() + FIRST_RENDER_COUNT_WAIT_MS,
+    });
+    if (!counts.ok) return respondPublic(c, counts);
+    if (!counts.data) return respond(c, ok({ pending: true as const }), 202);
+    // only the counts this route shows, by the same rule as its snapshot; the others are null
+    const shows = workspaceRouteCounts(request.requestUrl, request.search);
+    const folderId = request.requestUrl.searchParams.get("folder");
+    const mine = counts.data.views.mine;
+    const waiting = Math.min(counts.data.mineWaiting, mine);
+    return respondPublic(
+      c,
+      ok({
+        viewCounts: counts.data.views,
+        assignedGroups: shows.groups ? { needsAction: mine - waiting, waiting } : null,
+        doneLeftOut: shows.doneLeftOut ? (folderId ? (counts.data.doneByFolder[folderId] ?? 0) : counts.data.views.done) : null,
+      }),
+    );
+  })
   .get("/mailboxes/:mailboxId/activity", v("param", mailboxParamSchema), v("query", activityQuerySchema), async (c) => {
     const { kind, actor, ...query } = c.req.valid("query");
     const result = await collaboration.listActivity({
