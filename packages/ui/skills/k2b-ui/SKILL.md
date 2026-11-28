@@ -192,11 +192,10 @@ a `Notice` that names the deed.
   `Disclosure`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
   body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
-  `Chip`, `Progress`, `Spark`, `Ticks`, `RangeBar`, `Heat`, `Steps`.
+  `Chip`, `Progress`, `Spark`, `Ticks`, `RangeBar`, `Heat`, `Steps`, `Preview`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Setting`, `Input`,
   `Select`, `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`,
-  `ImageInput`, `CodeInput`, `Slider`, `ColorInput`, `Rating`. **Media:**
-  `Preview`.
+  `ImageInput`, `CodeInput`, `Slider`, `ColorInput`, `Rating`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,
