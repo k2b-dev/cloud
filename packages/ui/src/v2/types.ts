@@ -66,5 +66,6 @@ export const initialsOf = (person: Person): string => {
   const words = person.name.split(/\s+/).filter(Boolean);
   while (words.length > 1 && SUFFIX.test(words.at(-1)!)) words.pop();
   const ends = words.length > 1 ? [words[0]!, words.at(-1)!] : words;
-  return ends.map((word) => first(word).toLocaleUpperCase()).join("");
+  // locale-free, so the server and every browser write the same initials
+  return ends.map((word) => first(word).toUpperCase()).join("");
 };

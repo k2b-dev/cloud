@@ -665,14 +665,8 @@ name wraps in a small table and ends with "…" in one with column widths.
   into a "…" menu ("Weitere Orte"): the middle ones first, then all. On
   the phone the path gives way and the shell's phone bar names the page; the
   head itself is hidden unless it holds a search, which stays as its symbol.
-  From five places on, the first place and the page stand and every place
-  between folds into a menu "…" in its order, the same on the server and in
-  the browser. The page keeps its whole name: where room runs out the places
-  between shorten with "…" first, then the first place, the page only when
-  nothing else is left; whole names show on hover. The deeds at the end keep
-  their words before the path does. In an `Inline` with a chip (a folder's
-  sharing) the path behaves the same, and on the phone it gives way there
-  too while the chip stays.
+  In an `Inline` with a chip (a folder's sharing) the path behaves the same,
+  and on the phone it gives way there too while the chip stays.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
   }[]`; a way of a few steps, such as a delivery's way inside its `Group`.
 - `Notice`: `tone` `note`, `ai`, `bad`, `warn`; `title`, `meta`, `icon`,

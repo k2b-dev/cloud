@@ -1031,37 +1031,47 @@ test("beside the phone a row's mark is 32 again", async () => {
   );
 });
 
-for (const width of [1440, 1024, 800, 390])
+// the deeds bar of the open file in the flow of its column: its end on a line of its own where it has no room, never
+// under its deeds, every deed whole, inside its pane and in sight of the window
+const flowBar = (page: Page) =>
+  page.evaluate(() => {
+    const bar = document.querySelector(".k2-pane[data-detail] .k2-scroll > .k2-bar")!;
+    const end = bar.querySelector(".k2-bar-end")!.getBoundingClientRect();
+    const deeds = [...bar.querySelectorAll(".k2-bar-start .k2-btn")].map((button) => button.getBoundingClientRect());
+    const pane = bar.closest(".k2-pane")!.getBoundingClientRect();
+    return {
+      apart: deeds.every((deed) => end.left >= deed.right || end.top >= deed.bottom || end.bottom <= deed.top),
+      inside: [end, ...deeds].every((box) => box.right <= Math.min(pane.right, innerWidth) + 0.5),
+      whole: [...bar.querySelectorAll<HTMLElement>(".k2-bar-start .k2-btn")].every(
+        (button) => button.scrollWidth <= button.clientWidth + 1,
+      ),
+    };
+  });
+
+for (const width of [1440, 1024, 390])
   test(`a bar in the flow of a column puts its end on a line of its own where it has no room, never under its deeds (Files, ${width})`, async () => {
     await withPage(
       "list",
       async (page) => {
-        const found = await page.evaluate(() => {
-          const bar = document.querySelector(".k2-pane[data-detail] .k2-scroll > .k2-bar")!;
-          const end = bar.querySelector(".k2-bar-end")!.getBoundingClientRect();
-          const deeds = [...bar.querySelectorAll(".k2-bar-start .k2-btn")].map((button) => button.getBoundingClientRect());
-          const pane = bar.closest(".k2-pane")!.getBoundingClientRect();
-          return {
-            apart: deeds.every((deed) => end.left >= deed.right || end.top >= deed.bottom || end.bottom <= deed.top),
-            // inside its pane and in sight of the window
-            inside: [end, ...deeds].every((box) => box.right <= Math.min(pane.right, innerWidth) + 0.5),
-            // every deed keeps its whole label
-            whole: [...bar.querySelectorAll<HTMLElement>(".k2-bar-start .k2-btn")].every(
-              (button) => button.scrollWidth <= button.clientWidth + 1,
-            ),
-          };
-        });
-        // at 800 the detail column itself reaches past the window (878–951 in 800): MW's item of the narrow detail, not
-        // this bar's; there the bar keeps its deeds apart and whole
-        expect({ width, ...found }).toEqual({ width, apart: true, inside: width !== 800, whole: true });
-        // at 800 the detail stands at its narrowest; the actions of its sections are another place (MW)
-        if (width === 800) return;
+        expect({ width, ...(await flowBar(page)) }).toEqual({ width, apart: true, inside: true, whole: true });
         const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
         expect(layout.problems).toEqual([]);
       },
       width,
     );
   });
+
+// At 800 px the detail column itself reaches past the window (#4521): the bar keeps its deeds apart and whole, but its
+// end is out of sight. Turn this into a plain test when #4521 is fixed.
+test.failing("a bar in the flow of a column stays in sight of an 800 px window (Files, #4521)", async () => {
+  await withPage(
+    "list",
+    async (page) => {
+      expect({ width: 800, ...(await flowBar(page)) }).toEqual({ width: 800, apart: true, inside: true, whole: true });
+    },
+    800,
+  );
+});
 
 test("in a dialog on the phone a notice of many lines keeps its height above the next field, and a chip longer than its line ends with '…' inside the dialog", async () => {
   await withPage(

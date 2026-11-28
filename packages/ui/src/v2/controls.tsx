@@ -86,7 +86,7 @@ export const Field = (props: FieldProps) => <FieldFrame field={props} />;
 
 export type SettingProps = Omit<FieldProps, "optional" | "required"> & {
   /**
-   * The value before an unsaved change, such as "12 Std.": the setting then says "geändert · vorher 12 Std." beside
+   * The value before an unsaved change, such as "12 Std.": the setting then says "geändert · vorher 12 Std." below
    * its control, so a page that saves as a whole shows what will change.
    */
   was?: string;
@@ -173,7 +173,7 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       )}
     </Show>
   );
-  // a changed setting says what it was beside its control (inside the content, so the control keeps its place)
+  // a changed setting says what it was below its control (inside the content, so the control keeps its place)
   const was = (
     <Show when={props.was}>
       {(before) => (

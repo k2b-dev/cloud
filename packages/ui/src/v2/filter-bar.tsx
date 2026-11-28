@@ -1497,11 +1497,10 @@ export const ListOrder = <F extends Fields, S extends string, G extends string>(
     props.onChange(next);
   };
   const words = () => orderWords(props.query, props.state, t());
-  const groups = () => groupEntries(props.query, t());
   return (
     <span class="k2-order" data-k2-part="ListOrder">
       <Show
-        when={!props.query.sort.fixed}
+        when={sortSection(props.query, props.state, t(), change)}
         fallback={
           <span class="k2-order-fixed">
             <Icon name="arrows-sort" />
@@ -1509,14 +1508,18 @@ export const ListOrder = <F extends Fields, S extends string, G extends string>(
           </span>
         }
       >
-        <Menu icon="arrows-sort" label={t().sort} items={[sortSection(props.query, props.state, t(), change)!]}>
-          {words().sort}
-        </Menu>
+        {(section) => (
+          <Menu icon="arrows-sort" label={t().sort} items={[section()]}>
+            {words().sort}
+          </Menu>
+        )}
       </Show>
-      <Show when={groups().length > 1}>
-        <Menu icon="stack-2" label={t().group} items={[groupSection(props.query, props.state, t(), change)!]}>
-          {words().group ? t().groupBy({ field: words().group ?? "" }) : t().noGroups}
-        </Menu>
+      <Show when={groupSection(props.query, props.state, t(), change)}>
+        {(section) => (
+          <Menu icon="stack-2" label={t().group} items={[section()]}>
+            {words().group ? t().groupBy({ field: words().group ?? "" }) : t().noGroups}
+          </Menu>
+        )}
       </Show>
     </span>
   );

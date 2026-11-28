@@ -4831,13 +4831,6 @@
   }
 }
 
-/* the actions of a selection stand in the bar's end and fold into "…" from the end where they have no room. The count
-   is a statement of the row in 14 px, 600. */
-.k2-ui .k2-bar[data-selecting] .k2-status-lead {
-  font: var(--k2-t-body);
-  font-weight: 600;
-}
-
 /* StatusRow: one lead statement, key figures; filters on the right. The start takes the room up to the filters; in
    it the lead comes first and the figures take only what the lead leaves (#4149). A lead longer than that room is cut
    with "…", so it never runs under a control; the controls keep their words until the row is too narrow (#4166). */

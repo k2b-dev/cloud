@@ -38,7 +38,7 @@ The workspace decides from its own width, on the server's page too, so nothing j
 - Without room the places before the page shorten first, each down to its own width or 12 characters; the page itself shortens last, with "…".
 - When the places do not fit even at that least, they go into a "…" that opens them as a menu: first the ones between the first place and the parent (from four places on), then all of them. The server sends every place, shortened; only a path without room even so folds, once, in the browser.
 - On the phone the head with a path is hidden, and the shell's bar names the page.
-- A deep path folds: from five places on, the first place and the page stand and every place between goes into a menu "…". The page keeps its whole name: the places between shorten first, then the first place, the page only when nothing else is left; the deeds at the end keep their words.
+- In an `Inline` with a chip after it (a folder's sharing) the path behaves the same; on the phone it gives way there too while the chip stays.
 
 ## Parts
 
