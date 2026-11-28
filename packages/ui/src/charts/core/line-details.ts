@@ -1,5 +1,15 @@
 /** Existing line renderer, separated so detailed drawing stays behind lazy chart boundaries. */
 import { type ChartTimeAxis, type ChartTimeStep, chartTimeTickBudget } from "../../content/chart-time-calendar";
+import {
+  checkLineExtras,
+  LINE_TRACK_GAP,
+  lineBandsSvg,
+  lineScaleGradient,
+  lineScaleKey,
+  lineScaleToneAt,
+  lineTrackScale,
+  lineTrackSvg,
+} from "./line-extras";
 import { lineForecastLayout, lineLegendX } from "./line-options";
 import {
   chartDatumSvg,
@@ -73,6 +83,7 @@ export const renderLineDetailsSvg = (opts: LineOptions, time: LineTimeAdapter, s
     throw new RangeError("Line marker must be finite and positive on a log axis");
   if (opts.marker && opts.xAxis?.domain && (opts.marker.at < opts.xAxis.domain[0] || opts.marker.at > opts.xAxis.domain[1]))
     throw new RangeError("Line marker must be inside the explicit X domain");
+  checkLineExtras(opts);
   const width = opts.width ?? DEFAULT_WIDTH;
   const height = opts.height ?? DEFAULT_HEIGHT;
   const padding = normalizePadding(opts.padding);
@@ -84,6 +95,7 @@ export const renderLineDetailsSvg = (opts: LineOptions, time: LineTimeAdapter, s
   const timeAxis = opts.timeAxis && { ...opts.timeAxis, locale: opts.timeAxis.locale ?? opts.locale };
   const xValues = [
     ...collectAxisValues(opts.series, "x"),
+    ...(opts.track?.data.map((p) => p.x).filter(Number.isFinite) ?? []),
     ...(opts.marker ? [opts.marker.at] : []),
     ...(timeAxis ? (opts.references?.filter((ref) => ref.axis === "x").map((ref) => ref.value) ?? []) : []),
   ];
@@ -98,10 +110,29 @@ export const renderLineDetailsSvg = (opts: LineOptions, time: LineTimeAdapter, s
     [...collectAxisValues(opts.series, "y"), ...bandValues, ...(opts.zero ? [0] : []), ...(opts.threshold ? [opts.threshold.value] : [])],
     opts.yAxis,
   );
-  const labelRoom = Math.max(...yAxis.ticks.map((tick) => (opts.yAxis?.format?.(tick) ?? String(tick)).length * 6 + 12));
-  if ((opts.forecast || opts.zero || opts.threshold || opts.marker) && typeof opts.padding !== "number" && opts.padding?.left === undefined)
+  const track = opts.track;
+  const trackScale = track && lineTrackScale(track);
+  // the track's scale stands in the same column as the Y axis's labels
+  const labelRoom = Math.max(
+    ...yAxis.ticks.map((tick) => (opts.yAxis?.format?.(tick) ?? String(tick)).length * 6 + 12),
+    ...(track && trackScale ? trackScale.domain.map((value) => (track.format?.(value) ?? String(value)).length * 6 + 12) : []),
+  );
+  if (
+    (opts.forecast || opts.zero || opts.threshold || opts.marker || track) &&
+    typeof opts.padding !== "number" &&
+    opts.padding?.left === undefined
+  )
     padding.left = Math.max(padding.left, labelRoom);
-  const area = computePlotArea(width, height, padding, !!opts.xAxis?.label, !!opts.yAxis?.label, header.height, legendHeight);
+  // A track is a strip of its own under the plot, its label above it; the X axis's labels stand under the track.
+  const full = computePlotArea(width, height, padding, !!opts.xAxis?.label, !!opts.yAxis?.label, header.height, legendHeight);
+  const trackHeight = track ? (track.height ?? 48) : 0;
+  const lineArea = { ...full, y1: full.y1 - trackHeight - LINE_TRACK_GAP };
+  // The line stays the chart's main measure: its plot is at least as tall as the track, and tall enough that its Y
+  // labels (12 px apart at the tick font) do not run together. A chart that gets smaller than that (a small widget, a
+  // narrow pane) draws its line without the track and says so on the SVG; the line's own points still carry the X.
+  const trackOmitted = !!track && lineArea.y1 - lineArea.y0 < Math.max(trackHeight, (yAxis.ticks.length - 1) * 12);
+  const area = track && !trackOmitted ? lineArea : full;
+  const strip = track && !trackOmitted ? { ...full, y0: full.y1 - trackHeight } : undefined;
   const xMap = pickMapper(xAxis.scale),
     yMap = pickMapper(yAxis.scale);
   const x = (value: number) => xMap(value, xAxis.domain, [area.x0, area.x1]);
@@ -110,6 +141,8 @@ export const renderLineDetailsSvg = (opts: LineOptions, time: LineTimeAdapter, s
   const paint = (index: number) => `var(--stdlib-chart-c${(index % 8) + 1}, ${palette[index % 8]})`;
   const body: string[] = [];
   const inspectionMarks: string[] = [];
+  // quiet ranges first: behind the grid, the lines and the track
+  body.push(lineBandsSvg(opts.bands, x, full));
   if (opts.zero && yAxis.scale === "linear" && yAxis.domain[0] < 0) {
     const zeroY = y(Math.min(0, yAxis.domain[1]));
     body.push(
@@ -119,7 +152,7 @@ export const renderLineDetailsSvg = (opts: LineOptions, time: LineTimeAdapter, s
   body.push(renderYAxis(yAxis, area, opts.yAxis));
   let xLabels = renderXAxisNumeric(
     xAxis,
-    area,
+    full,
     height - legendHeight,
     timeAxis && timeStep
       ? { ...opts.xAxis, format: opts.xAxis?.format ?? ((value) => chartTimeLabel(value, timeStep, timeAxis)) }
@@ -185,8 +218,17 @@ export const renderLineDetailsSvg = (opts: LineOptions, time: LineTimeAdapter, s
         `<path class="k2b-line-forecast-band" d="${pathFn(upper)} ${lowerPath.replace(/^M/, "L")} Z" fill="${paint(0)}" fill-opacity=".15" stroke="none"/>`,
       );
     }
+  // the track in its own strip under the plot, in the palette's colour after the lines'
+  if (track && trackScale && strip) body.push(lineTrackSvg(track, trackScale, x, strip, paint(opts.series.length)));
   const boundsByPoint = new Map(forecast.map((point) => [point.source, point]));
   opts.series.forEach((s, i) => {
+    const scale = s.colorScale && lineScaleGradient(s.colorScale, y, i, opts.idPrefix);
+    if (scale) body.push(`<defs>${scale.defs}</defs>`);
+    const stroke = scale?.paint ?? paint(i);
+    // the series class paints a line in its palette colour and outranks an attribute: a scale's gradient is a style
+    const scaled = scale
+      ? { stroke: ` style="stroke:${scale.paint}"`, fill: ` style="fill:${scale.paint}" data-scaled-fill=""` }
+      : { stroke: "", fill: "" };
     const runs = runsOf(s.data);
     const isolated = new Set(runs.filter((run) => run.length === 1).map((run) => run[0]!));
     s.data.forEach((p, index) => {
@@ -202,7 +244,8 @@ export const renderLineDetailsSvg = (opts: LineOptions, time: LineTimeAdapter, s
       const datum: ChartDatum = { index, seriesIndex: i, role: "point", label: s.label, anchor: [x(p.x), y(p.y)], values };
       let mark = `<circle class="stdlib-chart-inspection-point" cx="${fmt(x(p.x))}" cy="${fmt(y(p.y))}" r="3" fill="transparent" stroke="none"/>`;
       if (opts.inspect) mark = chartDatumSvg(mark, datum, true);
-      if (isolated.has(p)) mark = mark.replace('fill="transparent"', `fill="${paint(i)}"`);
+      if (isolated.has(p))
+        mark = mark.replace('fill="transparent"', `fill="${s.colorScale ? lineScaleToneAt(s.colorScale, p.y) : paint(i)}"`);
       inspectionMarks.push(mark);
     });
     for (const sorted of runs) {
@@ -223,20 +266,20 @@ export const renderLineDetailsSvg = (opts: LineOptions, time: LineTimeAdapter, s
             `<path class="stdlib-chart-error-band stdlib-chart-series-${i % 8}" d="${pathFn(upper)}${lower
               .reverse()
               .map((p) => ` L ${fmt(p.x)} ${fmt(p.y)}`)
-              .join("")} Z" fill="${paint(i)}" fill-opacity=".15" stroke="none"/>`,
+              .join("")} Z" fill="${stroke}"${scaled.fill} fill-opacity=".15" stroke="none"/>`,
           );
       }
       if (opts.area) {
         const first = mapped[0]!,
           last = mapped.at(-1)!;
         body.push(
-          `<path class="stdlib-chart-area stdlib-chart-series-${i % 8}" d="${linePath} L ${fmt(last.x)} ${fmt(baselineY)} L ${fmt(first.x)} ${fmt(baselineY)} Z" fill="${paint(i)}" fill-opacity=".18" stroke="none"/>`,
+          `<path class="stdlib-chart-area stdlib-chart-series-${i % 8}" d="${linePath} L ${fmt(last.x)} ${fmt(baselineY)} L ${fmt(first.x)} ${fmt(baselineY)} Z" fill="${stroke}"${scaled.fill} fill-opacity=".18" stroke="none"/>`,
         );
       }
       const dashStyle = s.lineStyle ?? (opts.autoVariant ? DEFAULT_LINE_STYLES[i % DEFAULT_LINE_STYLES.length]! : "solid");
       const dash = LINE_DASH_PATTERNS[dashStyle];
       const path = (forecastDash = false) =>
-        `<path class="stdlib-chart-line stdlib-chart-series-${i % 8}" d="${linePath}" fill="none" stroke="${paint(i)}" stroke-width="2"${forecastDash ? ' stroke-dasharray="5 4"' : dash ? ` stroke-dasharray="${dash}"` : ""}/>`;
+        `<path class="stdlib-chart-line stdlib-chart-series-${i % 8}${scale ? " k2b-line-scaled" : ""}" d="${linePath}" fill="none" stroke="${stroke}"${scaled.stroke} stroke-width="2"${forecastDash ? ' stroke-dasharray="5 4"' : dash ? ` stroke-dasharray="${dash}"` : ""}/>`;
       const from = opts.forecast?.from;
       if (from === undefined || sorted.at(-1)!.x <= from) body.push(path());
       else if (sorted[0]!.x >= from) body.push(`<g class="k2b-line-forecast">${path(true)}</g>`);
@@ -303,15 +346,20 @@ export const renderLineDetailsSvg = (opts: LineOptions, time: LineTimeAdapter, s
       }
       const series = opts.series[entry.seriesIndex]!,
         point = series.data.find((p) => p.x === defaultX);
+      const axis = opts.yAxis;
       const amount =
         point && Number.isFinite(point.y)
-          ? (opts.yAxis?.format?.(point.y) ?? new Intl.NumberFormat(opts.locale ?? "en", { maximumFractionDigits: 6 }).format(point.y))
+          ? (axis?.format?.(point.y) ?? new Intl.NumberFormat(opts.locale ?? "en", { maximumFractionDigits: 6 }).format(point.y))
           : "—";
+      // a line with a colour scale shows its scale from its first stop to its last in the swatch
+      const key = series.colorScale && lineScaleKey(series.colorScale, entry.seriesIndex, opts.idPrefix);
+      const swatch = key?.paint ?? paint(entry.seriesIndex);
+      if (key) legend.push(`<defs>${key.defs}</defs>`);
       const label = series.label || seriesLabel(entry.seriesIndex);
       const room = Math.max(1, Math.floor((cell * 296) / width / 6) - Math.min(14, amount.length) - 4);
       const shortened = label.length > room ? label.slice(0, Math.max(0, room - 1)) + "…" : label;
       legend.push(
-        `<g class="stdlib-chart-legend-item"><rect class="stdlib-chart-legend-swatch" x="${fmt(left)}" y="${fmt(baseY - 8)}" width="8" height="8" rx="2" fill="${paint(entry.seriesIndex)}" stroke="none"/><text class="stdlib-chart-legend-label" aria-label="${escapeXml(label)}" x="${fmt(left + 12)}" y="${fmt(baseY)}" fill="currentColor" stroke="none" font-size="11">${escapeXml(shortened)}</text><text x="${fmt(left + cell - 8)}" y="${fmt(baseY)}" text-anchor="end" fill="currentColor" stroke="none" font-size="11" font-weight="600" data-chart-legend-value data-series-index="${entry.seriesIndex}" data-field="y" data-default="${escapeXml(amount)}">${escapeXml(amount)}</text></g>`,
+        `<g class="stdlib-chart-legend-item"><rect class="stdlib-chart-legend-swatch" x="${fmt(left)}" y="${fmt(baseY - 8)}" width="8" height="8" rx="2" fill="${swatch}" stroke="none"/><text class="stdlib-chart-legend-label" aria-label="${escapeXml(label)}" x="${fmt(left + 12)}" y="${fmt(baseY)}" fill="currentColor" stroke="none" font-size="11">${escapeXml(shortened)}</text><text x="${fmt(left + cell - 8)}" y="${fmt(baseY)}" text-anchor="end" fill="currentColor" stroke="none" font-size="11" font-weight="600" data-chart-legend-value data-series-index="${entry.seriesIndex}" data-field="y" data-default="${escapeXml(amount)}">${escapeXml(amount)}</text></g>`,
       );
     });
   }
@@ -324,6 +372,6 @@ export const renderLineDetailsSvg = (opts: LineOptions, time: LineTimeAdapter, s
   const fraction = Math.min(0.8, Math.max(0, area.x0 / width));
   return svg.replace(
     "<svg ",
-    `<svg data-line-details="true" data-line-default-x="${defaultX}" data-line-axis-room="true" style="--k2b-line-label-room:${labelRoom}px;--k2b-line-axis-fraction:${fraction};--k2b-line-axis-expand:${1 / (1 - fraction)}" `,
+    `<svg data-line-details="true"${trackOmitted ? ' data-track="omitted"' : ""} data-line-default-x="${defaultX}" data-line-axis-room="true" style="--k2b-line-label-room:${labelRoom}px;--k2b-line-axis-fraction:${fraction};--k2b-line-axis-expand:${1 / (1 - fraction)}" `,
   );
 };

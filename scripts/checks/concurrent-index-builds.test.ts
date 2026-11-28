@@ -32,7 +32,7 @@ test("reports statements outside the helper, in packages and scripts, and stale 
       ["scripts/fixtures/seed.ts", 1],
       ["packages/notes/src/migrate.ts", 2],
     ]);
-    expect(findings.find((finding) => finding.line)?.message).toContain("UNIQUE index a transaction relies on");
+    expect(findings.find((finding) => finding.line)?.message).toContain("UNIQUE index a transaction relies on is not one of those");
     // None of the allowed files exists here, so each one is stale.
     expect(findings.filter((finding) => !finding.line).map((finding) => finding.file)).toEqual(Object.keys(ALLOWED));
   } finally {

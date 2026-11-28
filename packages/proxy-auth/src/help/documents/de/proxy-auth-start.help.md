@@ -21,7 +21,7 @@ Mit Proxy Auth schützen Personen mit Administratorrechten externe Dienste über
 
 :::reference
 - **Client erstellen:** Benenne den Client, ergänze bei Bedarf eine Beschreibung und wähle mindestens eine erlaubte Gruppe.
-- **Prüf-URL kopieren:** Kopiere die URL nach der Erstellung oder über das Aktionsmenü des Clients und hinterlege sie in der Traefik-ForwardAuth-Middleware.
+- **Prüf-URL kopieren:** Kopiere die URL nach der Erstellung oder öffne den Client in der Liste und kopiere sie dort; hinterlege sie in der Traefik-ForwardAuth-Middleware.
 - **Gruppenabdeckung prüfen:** Die Kennzahl Keine Gruppen hebt Clients hervor, die ohne konfigurierte Gruppe gesperrt bleiben.
 - **Zugriff ändern:** Ändere Beschreibung oder erlaubte Gruppen über die Client-Bearbeitung. Löschen entfernt den Client und macht seine Prüf-URL ungültig.
 :::
