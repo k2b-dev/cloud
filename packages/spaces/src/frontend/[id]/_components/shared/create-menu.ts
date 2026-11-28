@@ -1,4 +1,5 @@
 import { type DropdownAction, type DropdownItem, type DropdownSearch, Kbd } from "@k2b/ui";
+import type { MenuEntry, MenuItem, MenuSection } from "@k2b/ui/v2";
 import { createComponent } from "solid-js";
 import { type ItemTemplateKind, MAX_ITEM_TEMPLATES_PER_KIND, type SpaceItemTemplate, type TemplateWeekday } from "@/contracts";
 import type { useSpaceMessages } from "../../messages";
@@ -183,4 +184,59 @@ export const createMenuModel = (options: {
       status: (query) => t.createMenuMatches({ count: count(query) }),
     },
   };
+};
+
+/**
+ * The same menu as v2 `Menu` entries: blank first (its key as hint), then the templates per kind with what they fill in,
+ * then "Create template…". k2b-ui gap: a v2 menu has no search; with many templates the sections stay one long list.
+ */
+export const createMenuEntries = (options: {
+  kind: CreateMenuKind;
+  templates: readonly SpaceItemTemplate[];
+  shortcuts?: boolean;
+  t: Messages;
+  locale: string;
+  choose: (choice: CreateMenuChoice) => void;
+}): MenuEntry[] => {
+  const { t, kind, choose } = options;
+  const kinds: ItemTemplateKind[] = kind === "calendar" ? ["event", "task"] : [kind];
+  const templatesOf = (of: ItemTemplateKind) => options.templates.filter((template) => template.kind === of);
+  const blank = (of: ItemType, label: string, key: string): MenuItem => ({
+    label,
+    icon: "plus",
+    meta: options.shortcuts ? key : undefined,
+    onClick: () => choose({ type: "blank", kind: of }),
+  });
+  const blanks =
+    kind === "calendar"
+      ? [blank("event", t.createMenuBlankEvent, "N"), blank("task", t.createMenuBlankTaskWithDeadline, "⇧ N")]
+      : [blank(kind, kind === "event" ? t.createMenuBlankEvent : t.createMenuBlankTask, "N")];
+  const sections = kinds.flatMap((of): MenuSection[] =>
+    templatesOf(of).length
+      ? [
+          {
+            title: kind !== "calendar" ? t.createMenuTemplates : of === "event" ? t.createMenuEventTemplates : t.createMenuTaskTemplates,
+            items: templatesOf(of).map((template) => ({
+              label: template.name,
+              icon: templateIcon(template).replace(/^ti\s+ti-/, ""),
+              meta: templateHint(template, t, options.locale) || undefined,
+              onClick: () => choose({ type: "template", template }),
+            })),
+          },
+        ]
+      : [],
+  );
+  const createKind: ItemTemplateKind = kind === "task" ? "task" : "event";
+  const full = templatesOf(createKind).length >= MAX_ITEM_TEMPLATES_PER_KIND;
+  return [
+    ...blanks,
+    ...sections,
+    {
+      label: t.createMenuCreateTemplate,
+      icon: "template",
+      disabled: full,
+      meta: full ? t.createMenuLimit({ count: MAX_ITEM_TEMPLATES_PER_KIND }) : undefined,
+      onClick: () => choose({ type: "create-template", kind: createKind }),
+    },
+  ];
 };

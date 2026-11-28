@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, setSystemTime, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
@@ -6,7 +6,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { ItemFilterSchema, type SpaceColumn, type SpaceItem, type SpaceItemReaction, type SpaceWormhole } from "@/contracts";
-import { browserName, hoverInPlace, keptThrough, launchBrowser, storedCookie } from "../../../../../../ui/test/browser";
+import { browserName, hoverInPlace, keptThrough, launchBrowser, pageErrors, storedCookie } from "../../../../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 import { kanbanBrowserPart as selectedPart } from "../../../../../test/kanban-browser";
 import type { KanbanBucketInitial } from "./types";
@@ -161,24 +161,7 @@ const wormhole: SpaceWormhole = {
 const assignedToMe = () =>
   bucketsFor((entry) => entry.assignees?.some((assignee) => assignee.kind === "user" && assignee.id === me.id) ?? false);
 
-const workspaceColumns: SpaceColumn[] = Array.from({ length: 8 }, (_, index) => ({
-  ...columns[index % columns.length]!,
-  id: `Column${index}`,
-  name: `Project phase ${index + 1}`,
-  rank: String(index),
-}));
-const workspaceItems = Array.from({ length: 80 }, (_, index) =>
-  item(`WorkspaceItem${index}`, workspaceColumns[index % workspaceColumns.length]!.id, `Website relaunch task ${index + 1}`),
-);
-const workspaceBuckets: KanbanBucketInitial[] = workspaceColumns.map((column) =>
-  bucket(
-    { key: `column:${column.id}`, label: column.name, color: column.color, kind: "column", columnId: column.id, isDone: column.isDone },
-    workspaceItems.filter((entry) => entry.columnId === column.id),
-  ),
-);
-
 type Scenario = {
-  workspace?: "kanban" | "table";
   now?: string;
   locale: "en" | "de";
   query?: string;
@@ -197,14 +180,10 @@ const serverBody = (scenario: Scenario) => {
         locale: scenario.locale,
         spaceId: "Space1",
         baseUrl: `/app/spaces/Space1${scenario.query ?? ""}`,
-        columns: scenario.workspace ? workspaceColumns : columns,
-        workspace: scenario.workspace,
-        itemsResult: scenario.workspace
-          ? { items: workspaceItems, total: workspaceItems.length, page: 1, pageSize: 80, totalPages: 1, groupCounts: {} }
-          : undefined,
+        columns,
         tags: [{ id: "Tag001", spaceId: "Space1", name: "Logistics", color: "#0ea5e9" }],
         wormholes: scenario.wormholes ?? [],
-        initialBuckets: scenario.workspace ? workspaceBuckets : (scenario.buckets ?? unfiltered()),
+        initialBuckets: scenario.buckets ?? unfiltered(),
         foldedColumns: scenario.folded ?? [],
         selectedItemId: "",
         canWrite: scenario.canWrite ?? true,
@@ -328,6 +307,13 @@ beforeAll(async () => {
   browser = await launchBrowser();
 }, 120_000);
 
+/** The page errors of each page the current case opened; a case passes only when none of its pages broke. */
+const pageErrorLists: string[][] = [];
+afterEach(() => {
+  const errors = pageErrorLists.flat();
+  pageErrorLists.length = 0;
+  expect(errors).toEqual([]);
+});
 afterAll(async () => {
   await browser?.close();
   server?.stop(true);
@@ -355,8 +341,8 @@ const pageHtml = (scenario: Scenario, theme: "light" | "dark", pointer?: Pointer
   `<!doctype html><html lang="${scenario.locale}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
   `<link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${pointer ? pointerCss(css, pointer) : css}</style>` +
   "<style>solid-client,solid-island{display:contents}</style></head>" +
-  // The workspace main area: a padded flex column the route fills.
-  `<body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box;${scenario.workspace ? "" : "padding:var(--ui-space-shell)"}">${serverBody(scenario)}</main>` +
+  // The page as the Space page draws it: the v2 workspace fills the window.
+  `<body class="k2b-ui" style="margin:0"><main class="k2-ui" style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box">${serverBody(scenario)}</main>` +
   `<script type="module">document.querySelectorAll('solid-island').forEach((e)=>import('/_ssr/'+e.dataset.id+'.js'))</script></body></html>`;
 
 let caseCounter = 0;
@@ -382,17 +368,14 @@ const open = async (
     isMobile: view.touch,
     hasTouch: view.touch,
     javaScriptEnabled: options.javaScript ?? true,
-    // The workspace scenarios measure the detail panel where it rests, not while it slides in.
-    reducedMotion: scenario.workspace ? "reduce" : "no-preference",
   });
   const page = await context.newPage();
+  // Every page of a case reports its errors; the case fails after it when one broke (see afterEach).
+  pageErrorLists.push(pageErrors(page));
   if (scenario.now) await page.clock.setFixedTime(new Date(scenario.now));
   await page.goto(`${server.url}app/spaces/Space1?case=${id}${scenario.query ? `&${scenario.query.slice(1)}` : ""}`);
   await page.evaluate(() => window.document.fonts.ready);
-  if (options.javaScript ?? true) {
-    if (scenario.workspace === "table") await page.waitForSelector('[data-scrollbar-enhanced="true"]');
-    else await rendered(page);
-  }
+  if (options.javaScript ?? true) await rendered(page);
   return page;
 };
 /** The island has replaced the server markup: hydrated icon buttons drop their server-only native title. */
@@ -406,7 +389,7 @@ const layout = (page: Page) =>
     };
     const board = window.document.querySelector('[role="region"]')!;
     return {
-      toolbar: box(window.document.querySelector("[data-spaces-head-filters]")),
+      toolbar: box(window.document.querySelector('[data-k2-part="FilterBar"]')),
       board: box(board),
       boardScroll: { width: board.scrollWidth, client: board.clientWidth },
       documentScroll: { width: window.document.documentElement.scrollWidth, client: window.document.documentElement.clientWidth },
@@ -987,7 +970,7 @@ describePart("board", "Spaces Kanban board in a browser", () => {
         expect(await selection('article:has([data-item-id="Item02"])')).toEqual(
           canWrite ? ["none", "none"] : expect.not.arrayContaining(["none"]),
         );
-        expect(await selection("[data-spaces-head-filters]")).toEqual(expect.not.arrayContaining(["none"]));
+        expect(await selection('[data-k2-part="FilterBar"]')).toEqual(expect.not.arrayContaining(["none"]));
       } finally {
         await page.context().close();
       }
@@ -1055,7 +1038,8 @@ describePart("board", "Spaces Kanban board in a browser", () => {
         const client = await layout(page);
         expect(client).toEqual(server);
         expect(client.titleOffset).toBeLessThanOrEqual(12);
-        expect(client.board.top).toBeGreaterThanOrEqual(client.toolbar.top + client.toolbar.height);
+        // the bar and the board share the one hairline between them
+        expect(client.board.top).toBeGreaterThanOrEqual(client.toolbar.top + client.toolbar.height - 1);
         expect(client.documentScroll.width).toBe(client.documentScroll.client);
         // The folded column is a narrow strip; open columns keep their width and scroll sideways on a phone.
         expect(client.columns.map((column) => column.width)).toEqual(view === phone ? [318, 318, 40, 318] : [280, 280, 40, 280]);
@@ -1249,10 +1233,11 @@ describePart("keyboard", "Spaces Kanban board in a browser", () => {
       await page.keyboard.press("ArrowRight");
       await page.keyboard.press("ArrowRight");
       await page.keyboard.press("Space");
-      const question = page.getByRole("dialog", { name: "Take over task" });
+      // the v2 question is an alert dialog
+      const question = page.getByRole("alertdialog", { name: "Take over task" });
       await question.waitFor();
       expect(await question.count()).toBe(1);
-      expect(await page.getByRole("dialog").count()).toBe(1);
+      expect(await page.getByRole("alertdialog").count()).toBe(1);
       expect(moves).toEqual([]);
       const moved = page.waitForResponse((response) => response.url().endsWith("/items/Item04/move"));
       await question.getByRole("button", { name: "Take over and complete" }).click();
@@ -1382,7 +1367,8 @@ describePart("keyboard", "Spaces Kanban board in a browser", () => {
       await page.keyboard.press("Space");
       await page.keyboard.press("ArrowDown");
       // The card's M and D belong to its link, not to the grip that moves it. Head commands use modifier chords.
-      expect(await singleKeyCommandShortcuts()).toEqual([]);
+      // The page's own n (a blank task, as on the v1 page) is the one single key; the board adds none.
+      expect(await singleKeyCommandShortcuts()).toEqual(["n"]);
       for (const key of ["j", "k", "m", "d"]) await page.keyboard.press(key);
       expect(await page.evaluate<unknown>(() => Reflect.get(window, "__workspaceKeys"))).toEqual([]);
       expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(1);
@@ -1507,13 +1493,46 @@ describePart("head", "Spaces Kanban board in a browser", () => {
     }
   }, 30_000);
 
+  /** Adds a filter from the bar's "+ Filter": the field, then its value; the bar writes the address and the board loads. */
+  const addFilter = async (page: Page, field: RegExp, value: string, touch = false) => {
+    if (touch) {
+      // On the phone the bar's first button opens its sheet: the field's row, then its value; Escape closes it again.
+      await page
+        .locator('[data-k2-part="FilterBar"] button:visible')
+        .filter({ hasText: /^\s*Filter\s*\d*\s*$/ })
+        .first()
+        .tap();
+      const sheet = page.getByRole("dialog", { name: "Filter" });
+      await sheet.waitFor();
+      // the sheet slides up; it takes a tap once it stands
+      let top = Number.NaN;
+      for (;;) {
+        const now = (await sheet.boundingBox())?.y ?? Number.NaN;
+        if (now === top) break;
+        top = now;
+        await page.waitForTimeout(100);
+      }
+      await sheet.getByRole("button", { name: field }).first().tap();
+      await page.getByRole("option", { name: value, exact: true }).tap();
+      return;
+    }
+    await page.locator('[data-k2-part="FilterBar"] .k2-fbar-add button').click();
+    await page.getByRole("menuitem", { name: field }).click();
+    await page.getByRole("option", { name: value, exact: true }).click();
+  };
+  const filterBar = (page: Page) => page.locator('[data-k2-part="FilterBar"]');
+
   test("a filter loads the narrowed board in place, keeps it in the URL, and counts what it hides", async () => {
     const page = await open(desktop, { locale: "en" });
     try {
-      await page.getByRole("button", { name: "Assignment" }).click();
-      await page.getByRole("menuitemradio", { name: "Assigned to me" }).click();
+      await addFilter(page, /Assigned to/, "Me");
       await page.waitForURL((url) => url.searchParams.get("assignedTo") === "me");
       await page.keyboard.press("Escape");
+      await page.waitForFunction(() =>
+        [...document.querySelectorAll('[role="region"] header span[title] > [aria-hidden="true"]')].some(
+          (count) => count.textContent === "1/3",
+        ),
+      );
       expect(await page.locator('[role="region"] header span[title] > [aria-hidden="true"]').allTextContents()).toEqual([
         "1/3",
         "1/2",
@@ -1521,33 +1540,39 @@ describePart("head", "Spaces Kanban board in a browser", () => {
         "0/1",
       ]);
       expect(await page.locator('[role="region"] section').nth(2).textContent()).toContain("No matching items");
-      expect(await page.locator("[data-spaces-kanban-card]").first().getAttribute("href")).toBe(
-        "/app/spaces/Space1?assignedTo=me&item=Item01",
-      );
+      // A card opens on the address the board shows now (the test's own `case` parameter rides along).
+      const card = new URL((await page.locator("[data-spaces-kanban-card]").first().getAttribute("href"))!, "http://spaces.local");
+      card.searchParams.delete("case");
+      expect(`${card.pathname}${card.search}`).toBe("/app/spaces/Space1?assignedTo=me&item=Item01");
     } finally {
       await page.context().close();
     }
   }, 30_000);
   const allFilters = "?assignedTo=assigned&priority=urgent,high,medium,low&deadline=overdue&activity=inactive&tags=Tag001&q=banners";
   for (const locale of ["de", "en"] as const) {
-    test(`${locale}: active head chips and Reset stay reachable at every width`, async () => {
+    test(`${locale}: every active filter and Reset stay reachable at every width, and the page never scrolls sideways`, async () => {
       for (const width of [390, 900, 960, 1040, 1120, 1280]) {
         const page = await open({ width, height: 800, touch: false }, { locale, query: allFilters });
         try {
-          const group = page.locator(".k2b-app-workspace__head-filters");
-          const head = page.locator("[data-spaces-head-filters]");
-          expect(await head.evaluate((element) => getComputedStyle(element).flexWrap)).toBe("nowrap");
-          const controls = head.locator("button:visible, a:visible, input:visible");
+          const bar = filterBar(page);
+          const clip = (await bar.boundingBox())!;
+          const controls = bar.locator("button:visible");
           expect(await controls.count()).toBeGreaterThan(0);
           for (const control of await controls.all()) {
-            // Chips share one row and the head group scrolls to every control, including Reset.
+            // From 768 px the statements wrap; on the phone the bar is one line that scrolls to every control.
             await control.scrollIntoViewIfNeeded();
             const box = (await control.boundingBox())!;
-            const clip = (await group.boundingBox())!;
             expect(box.x).toBeGreaterThanOrEqual(clip.x - 0.5);
             expect(box.x + box.width).toBeLessThanOrEqual(clip.x + clip.width + 0.5);
           }
-          const reset = page.getByRole("link", { name: locale === "de" ? "Zurücksetzen" : "Reset", exact: true });
+          // From 768 px Reset follows the statements; below, the bar's sheet button holds them and Reset.
+          const reset =
+            width < 768
+              ? bar
+                  .locator("button:visible")
+                  .filter({ hasText: /^\s*Filter\s*\d+\s*$/ })
+                  .first()
+              : bar.getByRole("button", { name: locale === "de" ? "Zurücksetzen" : "Reset", exact: true });
           await reset.focus();
           expect(await reset.evaluate((element) => document.activeElement === element)).toBe(true);
           expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
@@ -1559,37 +1584,33 @@ describePart("head", "Spaces Kanban board in a browser", () => {
   }
 
   for (const view of [desktop, phone]) {
-    test(`${view.width}px: a head chip applies its filter and moves neither the search, its own start, the menu, nor the board`, async () => {
+    test(`${view.width}px: a filter applies and moves neither the head's search, the menu, nor the board's start`, async () => {
       const page = await open(view, { locale: "de" });
       try {
-        // The active chip names its value and Reset appears after the chips; nothing before them and nothing below may move.
+        // The statement and Reset appear in the bar; the head above it and the board's columns keep their places.
         const positions = () =>
           page.evaluate(() => {
             const box = (element: Element | null) => {
               const rect = element!.getBoundingClientRect();
-              return { left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width) };
+              return { left: Math.round(rect.left), width: Math.round(rect.width) };
             };
-            const chip = Array.from(window.document.querySelectorAll("[data-spaces-head-filters] button")).find((button) =>
-              button.textContent?.includes("Zuständigkeit"),
-            )!;
-            const start = box(chip);
             return {
-              search: box(window.document.querySelector("[data-spaces-head-filters] input")),
-              chip: { left: start.left, top: start.top },
-              menu: box(window.document.querySelector("[data-spaces-menu]")),
+              head: box(window.document.querySelector('[data-k2-workspace] > .k2-ws-main > [data-slot="head"]')),
               board: box(window.document.querySelector('[role="region"]')),
             };
           });
         const before = await positions();
-        const chip = page.getByRole("button", { name: "Zuständigkeit" });
-        if (view.touch) await chip.tap();
-        else await chip.click();
-        const option = page.getByRole("menuitemradio", { name: "Mir zugewiesen" });
-        if (view.touch) await option.tap();
-        else await option.click();
+        await addFilter(page, /Zuständig/, "Mir", view.touch);
         await page.waitForURL((url) => url.searchParams.get("assignedTo") === "me");
-        await page.getByRole("link", { name: "Zurücksetzen", exact: true }).waitFor();
-        expect(await page.locator("[data-spaces-head-filters] [data-active]").count()).toBeGreaterThan(0);
+        await page.keyboard.press("Escape");
+        await page.getByRole("dialog").waitFor({ state: "detached" });
+        // The statement stands in the bar; on the phone its button counts the filter, from 768 px Reset follows it.
+        await filterBar(page).locator(".k2-stmt").first().waitFor();
+        if (view.touch)
+          await filterBar(page)
+            .getByRole("button", { name: /^Filter\s*1$/ })
+            .waitFor();
+        else await filterBar(page).getByRole("button", { name: "Zurücksetzen", exact: true }).waitFor();
         expect(await positions()).toEqual(before);
       } finally {
         await page.context().close();
@@ -1633,7 +1654,7 @@ describePart("head", "Spaces Kanban board in a browser", () => {
         filterRequests.some((request) => (request as { tagIds?: string[] }).tagIds || (request as { priority?: string[] }).priority),
       ).toBe(false);
       expect(await page.locator('[role="region"] button.text-red-600').count()).toBe(0);
-      expect(await page.locator("[data-spaces-head-filters] [data-active]").count()).toBe(0);
+      expect(await filterBar(page).locator(".k2-stmt").count()).toBe(0);
     } finally {
       remaining.resolve();
       await page.unrouteAll({ behavior: "wait" });
@@ -1642,19 +1663,29 @@ describePart("head", "Spaces Kanban board in a browser", () => {
   }, 30_000);
 
   for (const canWrite of [true, false]) {
-    test(`the head menu opens the shortcut list on a tap and names ${canWrite ? "the edit shortcuts" : "no edit shortcuts for a reader"}`, async () => {
+    test(`the Space menu opens the shortcut list on a tap and names ${canWrite ? "the edit shortcuts" : "no edit shortcuts for a reader"}`, async () => {
       const page = await open(phone, { locale: "en", canWrite });
       try {
-        await page.locator("[data-spaces-menu]").tap();
-        await page.getByRole("menuitem", { name: "Keyboard shortcuts" }).tap();
+        await page.getByRole("button", { name: "Space menu" }).tap();
+        // On the phone the menu slides up as a sheet; it takes a tap once it stands, as the filter sheet does.
+        const shortcuts = page.getByRole("menuitem", { name: /Keyboard shortcuts/ });
+        await shortcuts.waitFor();
+        let top = Number.NaN;
+        for (;;) {
+          const now = (await shortcuts.boundingBox())?.y ?? Number.NaN;
+          if (now === top) break;
+          top = now;
+          await page.waitForTimeout(100);
+        }
+        await shortcuts.tap();
         const dialog = page.getByRole("dialog", { name: "Keyboard shortcuts" });
         await dialog.waitFor();
         expect(await dialog.textContent()).toContain("Open the card");
         expect((await dialog.textContent())?.includes("Assign it to you")).toBe(canWrite);
         expect((await dialog.textContent())?.includes("On its grip: pick up, move, and drop or cancel")).toBe(canWrite);
-        // Each Kbd holds one visible cap per key next to its spoken name, so read the caps.
-        expect(await dialog.locator(".k2b-kbd__key").allTextContents()).toEqual(
-          canWrite ? ["←", "↑", "→", "↓", "↵", "M", "D", "Space", "←", "↑", "→", "↓", "Esc"] : ["←", "↑", "→", "↓", "↵"],
+        // Each key stands as its sign beside what it does (v2 has no key caps yet).
+        expect(await dialog.locator("dt").allTextContents()).toEqual(
+          canWrite ? ["← ↑ → ↓", "Enter", "M", "D", "Space, ← ↑ → ↓, Esc"] : ["← ↑ → ↓", "Enter"],
         );
         // The board's own description for screen readers names the same shortcuts.
         expect((await page.locator("#spaces-kanban-shortcuts-Space1").textContent())?.includes("M assigns")).toBe(canWrite);
@@ -1752,7 +1783,7 @@ describePart("columns", "Spaces Kanban board in a browser", () => {
     test(`${locale}: a task someone else claimed moves between open statuses as it is, and into done after one take-over question`, async () => {
       const de = locale === "de";
       const page = await open(desktop, { locale });
-      const question = page.getByRole("dialog", { name: de ? "Aufgabe übernehmen" : "Take over task" });
+      const question = page.getByRole("alertdialog", { name: de ? "Aufgabe übernehmen" : "Take over task" });
       const toDone = async () =>
         drag(
           page,
@@ -1778,7 +1809,7 @@ describePart("columns", "Spaces Kanban board in a browser", () => {
         expect(await cardsIn(page, "column:Col002")).toEqual(["Item04", "Item05"]);
         const after = await layout(page);
         expect({ cards: after.cards, columns: after.columns }).toEqual({ cards: before.cards, columns: before.columns });
-        expect(await page.locator("[data-k2b-toast]").count()).toBe(0);
+        expect(await page.locator(".k2-toast").count()).toBe(0);
 
         // Between open statuses the claim does not matter, and the move sends no completion state at all.
         await drag(
@@ -2056,6 +2087,114 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
       }
     }
   }, 30_000);
+
+  test("a title without a break opportunity, such as a long URL, breaks inside its card, with and without a priority", async () => {
+    const url = "https://example.com/a/very/long/unbreakable/path/that/keeps/going/without/any/space/at/all";
+    const titled = [item("Item11", "Col003", url), item("Item12", "Col003", url, { priority: "urgent" })];
+    const buckets = unfiltered().map((entry) =>
+      entry.key === "column:Col003" ? { ...entry, items: [...titled, ...entry.items], total: entry.total + titled.length } : entry,
+    );
+    for (const javaScript of [false, true]) {
+      const page = await open(desktop, { locale: "en", buckets, served: true }, { javaScript });
+      try {
+        await settled(page);
+        const overflow = await page.evaluate(() =>
+          ["Item11", "Item12"].map((id) => {
+            const link = window.document.querySelector(`[data-spaces-kanban-card][data-item-id="${id}"]`)!;
+            const card = link.closest("article")!.getBoundingClientRect();
+            const title = link.querySelector(".spaces-kanban-card-title")!;
+            return {
+              id,
+              past: Math.max(0, Math.round(title.getBoundingClientRect().right - card.right)),
+              wide: title.scrollWidth > title.clientWidth,
+            };
+          }),
+        );
+        expect(overflow).toEqual([
+          { id: "Item11", past: 0, wide: false },
+          { id: "Item12", past: 0, wide: false },
+        ]);
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 30_000);
+
+  test("cards keep one height whatever their meta, urgency is a word on an untinted card, and an empty column says one sentence", async () => {
+    const tent = { id: "Tag009", spaceId: "Space1", name: "Warehouse", color: "#f59e0b" };
+    const mixed = [
+      item("Mix01", "Col001", "Order the tents", { deadline: "2026-10-20", deadlineAllDay: true, tags: [tent], assignees: [me] }),
+      item("Mix02", "Col001", "Call the band"),
+      item("Mix03", "Col001", "Fix the gate", {
+        priority: "urgent",
+        deadline: "2026-10-12",
+        deadlineAllDay: true,
+        tags: [tent, { ...tent, id: "Tag010", name: "Gates" }],
+        assignees: [me, kim, { ...kim, id: "55555555-5555-4555-8555-555555555555", displayName: "Mia Example" }],
+      }),
+      item("Mix04", "Col001", "Set up the stage", {
+        startsAt: "2026-10-21T08:00:00.000Z",
+        endsAt: "2026-10-21T10:00:00.000Z",
+        assignees: [me, kim],
+      }),
+      item("Mix05", "Col001", "Rent the chairs", { priority: "high", assignees: [kim, me] }),
+    ];
+    const buckets = columns.map((column) =>
+      bucket(
+        { key: `column:${column.id}`, label: column.name, color: column.color, kind: "column", columnId: column.id, isDone: column.isDone },
+        column.id === "Col001" ? mixed : [],
+      ),
+    );
+    for (const javaScript of [false, true]) {
+      const page = await open(desktop, { locale: "en", now: reactionNow, buckets }, { javaScript });
+      try {
+        await settled(page);
+        const board = await page.evaluate(() => {
+          const cards = Array.from(document.querySelectorAll<HTMLElement>('[data-spaces-kanban-column="column:Col001"] article'));
+          const plain = getComputedStyle(cards[1]!).backgroundColor;
+          const urgent = cards[2]!;
+          const done = document.querySelector('[data-spaces-kanban-column="column:Col004"]')!;
+          const body = done.querySelector(":scope > header ~ div")! as HTMLElement;
+          return {
+            cards: cards.length,
+            heights: cards.map(
+              (card) => `${card.querySelector("[data-item-id]")!.getAttribute("data-item-id")} ${card.getBoundingClientRect().height}`,
+            ),
+            urgentTinted: getComputedStyle(urgent).backgroundColor !== plain,
+            urgentSays: urgent.querySelector('[id^="spaces-kanban-card-meta-"]')?.textContent?.includes("Urgent"),
+            emptyColumn: { text: body.innerText.trim(), controls: body.querySelectorAll("button, a, [role='button']").length },
+            columnCreate: done.querySelectorAll("header [data-spaces-kanban-column-create]").length,
+            // The meta line gives way in its words, never in its people: every face stands whole inside it.
+            cutPeople: cards
+              .filter((card) => {
+                const line = card.querySelector('[id^="spaces-kanban-card-meta-"]')!.getBoundingClientRect();
+                return Array.from(card.querySelectorAll('[id^="spaces-kanban-card-meta-"] [title] > div > *')).some(
+                  (face) => face.getBoundingClientRect().right > line.right + 0.5,
+                );
+              })
+              .map((card) => card.querySelector("[data-item-id]")!.getAttribute("data-item-id")),
+            // The tag name gives way before the date does.
+            dateCut: (() => {
+              const date = cards[0]!.querySelector<HTMLElement>("[data-spaces-kanban-card-when] > span")!;
+              return date.scrollWidth > date.clientWidth;
+            })(),
+          };
+        });
+        expect(board).toEqual({
+          cards: 5,
+          heights: board.heights.map((entry) => `${entry.split(" ")[0]} ${board.heights[1]!.split(" ")[1]}`),
+          urgentTinted: false,
+          urgentSays: true,
+          emptyColumn: { text: "No items", controls: 0 },
+          columnCreate: 1,
+          cutPeople: [],
+          dateCut: false,
+        });
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 30_000);
 });
 
 describePart("columns", "Spaces Kanban board in a browser", () => {
@@ -2289,72 +2428,6 @@ describePart("cards", "Spaces Kanban board in a browser", () => {
     },
     30_000,
   );
-});
-
-describePart("cards", "wide Spaces surfaces beside Detail", () => {
-  for (const [width, height] of [
-    [1366, 900],
-    [1920, 1080],
-  ] as const) {
-    for (const workspace of ["kanban", "table"] as const) {
-      test(`${width}×${height} ${workspace}: one inset and rounded clipping corners`, async () => {
-        const page = await open({ width, height, touch: false }, { locale: "en", workspace, query: `?view=${workspace}` });
-        try {
-          const selector = workspace === "table" ? ".k2b-table-wrap.k2b-detail-trail" : ".k2b-detail-trail";
-          const shape = await page.locator(selector).evaluate((viewport) => {
-            const token = (name: string) => {
-              const probe = document.createElement("div");
-              probe.style.width = `var(${name})`;
-              viewport.append(probe);
-              const pixels = probe.getBoundingClientRect().width;
-              probe.remove();
-              return pixels;
-            };
-            const inset = token("--k2b-workspace-detail-inset");
-            const radius = token("--k2b-radius-surface");
-            const style = getComputedStyle(viewport);
-            const paper = viewport.closest(".k2b-paper");
-            return {
-              inset,
-              // Inside a Paper frame the viewport's corner follows the frame's inner curve, one border smaller.
-              radius: radius - (paper ? Number.parseFloat(getComputedStyle(paper).borderRightWidth) : 0),
-              // The table's viewport sits inside its Paper frame's border; the frame is the surface's outer edge.
-              right: (paper ?? viewport).getBoundingClientRect().right,
-              panelLeft: document.querySelector(".k2b-app-workspace__detail")!.getBoundingClientRect().left,
-              radii: [
-                style.borderTopLeftRadius,
-                style.borderTopRightRadius,
-                style.borderBottomLeftRadius,
-                style.borderBottomRightRadius,
-              ].map(Number.parseFloat),
-              scrollWidth: viewport.scrollWidth,
-              clientWidth: viewport.clientWidth,
-              scrollHeight: viewport.scrollHeight,
-              clientHeight: viewport.clientHeight,
-            };
-          });
-          expect(shape.scrollWidth).toBeGreaterThan(shape.clientWidth);
-          expect(shape.right).toBeCloseTo(shape.panelLeft - shape.inset, 1);
-          for (const radius of shape.radii) expect(radius).toBeCloseTo(shape.radius, 1);
-          if (workspace === "table") {
-            expect(shape.scrollHeight).toBeGreaterThan(shape.clientHeight);
-            await page.locator(selector).evaluate((viewport) => {
-              viewport.scrollTop = 300;
-            });
-            const sticky = await page.locator(selector).evaluate((viewport) => ({
-              scroll: viewport.scrollTop,
-              top: viewport.getBoundingClientRect().top,
-              header: viewport.querySelector("thead")!.getBoundingClientRect().top,
-            }));
-            expect(sticky.scroll).toBeGreaterThan(0);
-            expect(sticky.header).toBeCloseTo(sticky.top, 0);
-          }
-        } finally {
-          await page.context().close();
-        }
-      }, 30_000);
-    }
-  }
 });
 
 // Reactions live only in these buckets; the default board keeps its original card geometry.

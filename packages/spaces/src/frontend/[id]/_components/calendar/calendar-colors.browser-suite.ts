@@ -25,7 +25,7 @@ const workspaceDir = resolve(import.meta.dir, "../workspace");
 registerSsrTestPlugin({ dev: false, verbose: false, rootDir: root, componentRoots: [workspaceDir] });
 
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { default: CalendarFixture } = await import("./calendar.browser-fixture");
+const { default: CalendarFixture, calendarItemDetail } = await import("./calendar.browser-fixture");
 
 const ui = resolve(import.meta.dir, "../../../../../../ui/dist");
 const styleEntries = [
@@ -201,6 +201,10 @@ beforeAll(async () => {
         viewRequests.push(url.searchParams.get("href") ?? "");
         return Response.json({ message: "The color choice must not load calendar data" }, { status: 500 });
       }
+      // The open item's detail, which the page asks for again when its address changes.
+      const detail = /^\/api\/spaces\/Space1\/items\/([^/]+)\/detail$/.exec(url.pathname);
+      const open = detail && items.find((item) => item.id === detail[1]);
+      if (open) return Response.json(calendarItemDetail(open));
       if (url.pathname !== "/app/spaces/Space1") return new Response("Not found", { status: 404 });
       // The page renders what its URL asks for, as the workspace page does on a reload. Locale and theme travel in
       // headers, so the page URL is the real route that the calendar compares its own links with.
@@ -224,7 +228,7 @@ const pageHtml = (url: URL, locale: "en" | "de", theme: "light" | "dark") =>
   `<link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style>` +
   "<style>solid-client,solid-island{display:contents}</style></head>" +
   // The workspace main area: a padded flex column the route fills.
-  `<body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box;padding:var(--ui-space-shell)">${serverBody(url, locale)}</main>` +
+  `<body class="k2b-ui" style="margin:0"><main class="k2-ui" style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box">${serverBody(url, locale)}</main>` +
   `<script type="module">document.querySelectorAll('solid-island').forEach((e)=>import('/_ssr/'+e.dataset.id+'.js'))</script></body></html>`;
 
 type View = { width: number; height: number; touch: boolean };
@@ -267,7 +271,7 @@ const layout = (page: Page) =>
     const chips = Array.from(window.document.querySelectorAll<HTMLElement>("[data-calendar-event]"));
     return {
       header: box(window.document.querySelector(".k2b-calendar-header")!),
-      toolbar: box(window.document.querySelector(".k2b-calendar-header__content")!),
+      toolbar: box(window.document.querySelector('[data-k2-part="FilterBar"]')!),
       calendar: box(window.document.querySelector(".k2b-content-calendar")!),
       items: chips.map((chip) => ({ title: chip.getAttribute("aria-label"), box: box(chip) })),
     };
@@ -308,30 +312,28 @@ const looks = (page: Page): Promise<Record<string, Look>> =>
       }),
     ),
   );
-/** The open menu: whether it needs scrolling, whether the color choice sits in one row, and whether it offers Reset. */
+/** The open menu: whether it needs scrolling, how many colours it offers, whether a label wraps, and whether it offers Reset. */
 const openMenu = (page: Page) =>
-  page.evaluate(() => {
-    const menu = window.document.querySelector<HTMLElement>(".k2b-dropdown__menu:popover-open")!;
-    const segments = Array.from(menu.querySelectorAll(".k2b-dropdown__row > [role='menuitemradio']"), (segment) =>
-      Math.round(segment.getBoundingClientRect().top),
-    );
-    const labels = Array.from(menu.querySelectorAll<HTMLElement>(".k2b-dropdown__row .k2b-dropdown__copy > span"));
+  page.getByRole("menu").evaluate((menu) => {
+    const labels = Array.from(menu.querySelectorAll<HTMLElement>("[role='menuitemradio'] .k2-mi-label"));
     const wrapped = labels.filter(
       (label) => label.getBoundingClientRect().height > Number.parseFloat(getComputedStyle(label).lineHeight) * 1.5,
     );
     return {
       scrolls: menu.scrollHeight > menu.clientHeight,
-      segments: segments.length,
-      rows: new Set(segments).size,
+      choices: menu.querySelectorAll("[role='menuitemradio']").length,
       wrapped: wrapped.length,
-      resets: menu.querySelectorAll("[role='group'][aria-label='Filter actions'], [role='group'][aria-label='Filteraktionen']").length,
+      resets: Array.from(menu.querySelectorAll("[role='menuitem']")).filter((item) => /Reset|Zurücksetzen/.test(item.textContent ?? ""))
+        .length,
     };
   });
-/** Opens the scope menu and picks a color by its visible label. */
-const chooseColor = async (page: Page, scope: string, label: string) => {
-  await page.getByRole("button", { name: scope }).click();
+/** The colour choice at the end of the page's filter bar: a symbol named "Color by: Tag". */
+const colorMenu = (page: Page) => page.locator('[data-k2-part="FilterBar"]').getByRole("button", { name: /^(Color by|Farbe nach):/ });
+/** Opens the colour choice and picks a colour by its visible label; choosing closes the menu. */
+const chooseColor = async (page: Page, label: string) => {
+  await colorMenu(page).click();
   await page.getByRole("menuitemradio", { name: label }).click();
-  await page.keyboard.press("Escape");
+  await page.getByRole("menu").waitFor({ state: "detached" });
   await settle(page);
 };
 const shoot = async (page: Page, name: string) => {
@@ -363,13 +365,14 @@ describe(`Spaces calendar colors in ${browserName}`, () => {
       expect(await layout(page)).toEqual(before);
       await page.mouse.move(0, 0);
 
-      // The choice is one section of the scope menu, so the toolbar keeps its row.
-      await page.getByRole("button", { name: "Scope" }).click();
+      // The choice is one menu at the end of the filter bar, so the bar keeps its row.
+      await colorMenu(page).click();
       expect(await page.getByRole("menuitemradio", { name: "Tag" }).getAttribute("aria-checked")).toBe("true");
-      expect(await openMenu(page)).toEqual({ scrolls: false, segments: 4, rows: 1, wrapped: 0, resets: 0 });
+      expect(await openMenu(page)).toEqual({ scrolls: false, choices: 4, wrapped: 0, resets: 0 });
       await shoot(page, "07-color-menu");
       await page.keyboard.press("Escape");
-      await chooseColor(page, "Scope", "Person");
+      await page.getByRole("menu").waitFor({ state: "detached" });
+      await chooseColor(page, "Person");
       await page.waitForURL(/ccolor=person/);
       const byPerson = await looks(page);
       expect(byPerson.Item01!.accent).not.toBe(tagged.Item01!.accent);
@@ -378,12 +381,14 @@ describe(`Spaces calendar colors in ${browserName}`, () => {
       expect(await layout(page)).toEqual(before);
       expect(viewRequests).toEqual([]);
       await shoot(page, "03-month-by-person");
-      // Another color is no filter: the menu keeps its size and offers no Reset.
-      await page.getByRole("button", { name: "Scope" }).click();
-      expect(await openMenu(page)).toEqual({ scrolls: false, segments: 4, rows: 1, wrapped: 0, resets: 0 });
+      // Another color is no filter: the menu keeps its size and offers no Reset, and the bar shows no Reset either.
+      await colorMenu(page).click();
+      expect(await openMenu(page)).toEqual({ scrolls: false, choices: 4, wrapped: 0, resets: 0 });
       await page.keyboard.press("Escape");
+      await page.getByRole("menu").waitFor({ state: "detached" });
+      expect(await page.locator('[data-k2-part="FilterBar"] .k2-fbar-reset').count()).toBe(0);
 
-      await chooseColor(page, "Scope", "Status");
+      await chooseColor(page, "Status");
       await page.waitForURL(/ccolor=status/);
       expect((await looks(page)).Item04!.accent).toBe("#6b7280");
       expect(await layout(page)).toEqual(before);
@@ -394,12 +399,12 @@ describe(`Spaces calendar colors in ${browserName}`, () => {
       expect((await looks(page)).Item04!.accent).toBe("#6b7280");
       expect(await layout(page)).toEqual(before);
 
-      await chooseColor(page, "Scope", "Priority");
+      await chooseColor(page, "Priority");
       await page.waitForURL(/ccolor=priority/);
       expect((await looks(page)).Item04!.accent).toBe("#ef4444");
       await shoot(page, "04-month-by-priority");
       // Picking Tag again returns to the default URL.
-      await chooseColor(page, "Scope", "Tag");
+      await chooseColor(page, "Tag");
       await page.waitForURL((url) => !url.searchParams.has("ccolor"));
       expect(await looks(page)).toEqual(tagged);
       expect(viewRequests).toEqual([]);
@@ -413,9 +418,12 @@ describe(`Spaces calendar colors in ${browserName}`, () => {
     // write the filters after it; both describe the same calendar data.
     const page = await open(desktop, { locale: "en", view: "month", search: "?cv=month&cd=2026-10-12&cassigned=assigned&item=Item03" });
     try {
+      // The open item's detail stands beside the calendar; the place it leaves the calendar is the one to keep.
+      await page.locator(".k2-pane[data-detail]").waitFor();
+      await settle(page);
       const before = await layout(page);
       expect(await page.locator('[data-space-item-id="Item03"]').getAttribute("data-selected")).toBe("true");
-      await chooseColor(page, "Scope", "Person");
+      await chooseColor(page, "Person");
       await page.waitForURL(/ccolor=person/);
       const url = new URL(page.url());
       expect(url.searchParams.get("item")).toBe("Item03");
@@ -435,7 +443,7 @@ describe(`Spaces calendar colors in ${browserName}`, () => {
       const before = await settledLayout(page);
       await shoot(page, "05-week-by-tag");
       for (const label of ["Priorität", "Person", "Status"]) {
-        await chooseColor(page, "Umfang", label);
+        await chooseColor(page, label);
         expect(await layout(page)).toEqual(before);
       }
       expect(viewRequests).toEqual([]);
@@ -451,15 +459,19 @@ describe(`Spaces calendar colors in ${browserName}`, () => {
       const before = await layout(page);
       expect(Object.values(await looks(page)).every((item) => item.dots === 0)).toBe(true);
       expect(before.toolbar[3]).toBeLessThanOrEqual(56);
-      await page.getByRole("button", { name: "Umfang" }).click();
-      // The whole menu, color row included, fits without scrolling on a phone too.
-      expect(await openMenu(page)).toEqual({ scrolls: false, segments: 4, rows: 1, wrapped: 0, resets: 0 });
-      await shoot(page, "08-phone-color-menu");
-      await page.keyboard.press("Escape");
-      await chooseColor(page, "Umfang", "Person");
-      await page.waitForURL(/ccolor=person/);
-      expect(await layout(page)).toEqual(before);
-      expect(viewRequests).toEqual([]);
+      // k2b-ui gap: the phone's filter bar has no end, so the colour choice is not there; a link with a colour still
+      // draws it, and the same days keep their places.
+      const tagged = await looks(page);
+      await page.context().close();
+      const person = await open(phone, { locale: "de", view: "month", colorBy: "person" });
+      try {
+        await shoot(person, "08-phone-month-by-person");
+        expect((await looks(person)).Item01!.accent).not.toBe(tagged.Item01!.accent);
+        expect(await layout(person)).toEqual(before);
+        expect(viewRequests).toEqual([]);
+      } finally {
+        await person.context().close();
+      }
     } finally {
       await page.context().close();
     }
@@ -484,7 +496,8 @@ describe(`Spaces calendar colors in ${browserName}`, () => {
         ["Year", "false", "year"],
       ]);
       expect(await page.locator('[data-space-item-id="Item03"]').count()).toBe(1);
-      expect(await page.locator("[role='alert']").count()).toBe(0);
+      // The page's live regions for announcements (the SDK's and v2's own) are always there and say nothing; no other alert shows.
+      expect(await page.locator("[role='alert']:not([data-ui-sdk-announcer], [data-k2-news])").allTextContents()).toEqual([]);
       expect(viewRequests).toEqual([]);
     } finally {
       await page.context().close();

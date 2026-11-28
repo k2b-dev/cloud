@@ -6,7 +6,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { browserName, hoverInPlace, launchBrowser, settled } from "../../../../ui/test/browser";
+import { browserName, launchBrowser, settled } from "../../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import {
   type CalendarRange,
@@ -17,7 +17,7 @@ import {
   type SourcedCalendarItem,
   viewWindow,
 } from "./calendar-model";
-import { answerFor, ITEMS, NOW, SOURCES, TIME_ZONE, TODAY } from "./cloud-calendar.browser-data";
+import { answerFor, ITEMS, NOW, SOURCES, SIDEBAR as sidebar, TIME_ZONE, TODAY } from "./cloud-calendar.browser-data";
 
 // The page renders on the server and then runs its real island bundle in a real browser, as Spaces serves it.
 const packageCache = resolve(import.meta.dir, "../../../node_modules/.cache");
@@ -54,16 +54,15 @@ let server: ReturnType<typeof Bun.serve>;
 let browser: Browser;
 
 const dateConfigFor = (locale: "en" | "de") => ({ locale, timeZone: TIME_ZONE, weekStartsOn: 1 as const });
-const sidebar = {
-  spaces: [
-    { id: "TeamLg", name: "Team Logistik", color: "#8b5cf6", description: null, openItemCount: 9 },
-    { id: "Einkf1", name: "Einkauf", color: "#3b82f6", description: null, openItemCount: 4 },
-    { id: "Messe1", name: "Messe 2026", color: "#f97316", description: null, openItemCount: 12 },
-    { id: "Werks1", name: "Werkstatt", color: "#10b981", description: null, openItemCount: 2 },
-  ],
-  pinnedSpaceIds: [],
-  myWorkCount: 5,
-};
+
+/** The status row under the head: the count, what still loads, and which calendars show busy times only. */
+const STATUS = '[data-k2-part="StatusRow"]';
+/** The warning above the calendar when a source does not answer, with Try again. */
+const NOTICE = '[data-k2-part="Notice"]';
+/** The page head: the views, search, and the calendar choice. */
+const HEAD = '[data-k2-workspace] > .k2-ws-main > [data-slot="head"]';
+/** The calendar choice in the head: "Kalender 9". */
+const CHOOSER = `${HEAD} button[aria-haspopup="menu"]`;
 
 /** The page's server work, as `page.tsx` does it, with the case's sources. */
 const serverBody = (data: Case, href: string) => {
@@ -90,6 +89,7 @@ const serverBody = (data: Case, href: string) => {
         items,
         reads,
         today: TODAY,
+        now: NOW.toISOString(),
         canCreateSpace: true,
         dateConfig,
       }),
@@ -101,13 +101,13 @@ const serverBody = (data: Case, href: string) => {
 
 const pageHtml = (data: Case, url: URL) => {
   const theme = url.searchParams.get("theme") === "dark" ? "dark" : "light";
-  const inset = "round(clamp(0.25rem, calc(0.25rem + (100vw - 64rem) / 104), 0.5rem), 1px)";
   return (
     `<!doctype html><html lang="${data.locale}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
     `<link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style>` +
     "<style>solid-client,solid-island{display:contents}</style></head>" +
-    `<body class="k2b-ui" data-theme="${theme}" style="margin:0"><div style="display:flex;box-sizing:border-box;height:100dvh;padding:${inset} ${inset} ${inset} 0"><div style="flex:none;width:3.5rem" class="max-md:hidden"></div><div style="display:flex;flex:1;min-width:0;flex-direction:column;container:k2b-app-area / inline-size"><main style="display:flex;flex:1;min-height:0;flex-direction:column">${serverBody(data, `${url.pathname}${url.search}`)}</main></div></div>` +
-    `<script>${controller}</script><script type="module">await document.fonts.ready;document.documentElement.dataset.serverStatus=document.querySelector('.spaces-calendar-status')?.textContent??'';` +
+    // The page as Spaces draws it on v2: the workspace fills the window.
+    `<body class="k2b-ui" data-theme="${theme}" style="margin:0"><main class="k2-ui" style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box">${serverBody(data, `${url.pathname}${url.search}`)}</main>` +
+    `<script>${controller}</script><script type="module">await document.fonts.ready;document.documentElement.dataset.serverStatus=document.querySelector('${STATUS}')?.textContent??'';` +
     "await Promise.all(Array.from(document.querySelectorAll('solid-island'),e=>import('/_ssr/'+e.dataset.id+'.js')));document.documentElement.dataset.ready='true';</script></body></html>"
   );
 };
@@ -232,20 +232,19 @@ describe("calendar of all Spaces and apps", () => {
     const { page, errors, close } = await open(desktop, "/app/spaces/calendar?view=week&date=2026-10-27", { locale: "de" });
     try {
       await shoot(page, "01-week-de");
-      expect(await page.locator('.spaces-sidebar-list [aria-current="page"]').textContent()).toContain("Kalender");
-      expect(await page.locator('.k2b-app-workspace__head-views [aria-current="page"]').textContent()).toContain("Woche");
+      expect(await page.locator('.k2-ws-side [aria-current="page"]').textContent()).toContain("Kalender");
+      expect(await page.locator(`${HEAD} [aria-current="page"]`).textContent()).toContain("Woche");
       // Nine suggested calendars; the busy-only and the shift calendar wait for a choice.
       expect(await page.getByRole("button", { name: /Kalender 9/ }).count()).toBe(1);
-      // The chip keeps its name in the calendar's toolbar, which shows no view switcher of its own.
-      expect(await page.locator(".spaces-calendar-chooser .k2b-filter-chip__label").isVisible()).toBe(true);
-      for (const title of ["Gabelstapler-Wartung", "All-Hands Q4", "Malte Sommer · abwesend", "Erste-Hilfe-Auffrischung"])
+      // The choice keeps its name in the head; the views are the head's tabs, so the calendar shows no switcher of its own.
+      expect(await page.locator(`${CHOOSER} .k2-btn-label`).isVisible()).toBe(true);
+      expect(await page.locator(".k2b-calendar-view-switcher").count()).toBe(0);
+      for (const title of ["Forklift inspection", "All-Hands Q4", "Sam Example · away", "First aid refresher"])
         expect(await page.getByText(title, { exact: false }).count()).toBeGreaterThan(0);
-      expect(await page.getByText("Frühschicht").count()).toBe(0);
-      // Nothing loaded after mount, and the status line stayed what the server rendered.
+      expect(await page.getByText("Early shift").count()).toBe(0);
+      // Nothing loaded after mount, and the status row stayed what the server rendered.
       expect(requests.length).toBe(0);
-      expect(await page.locator(".spaces-calendar-status").textContent()).toBe(
-        (await page.locator("html").getAttribute("data-server-status")) ?? "",
-      );
+      expect(await page.locator(STATUS).textContent()).toBe((await page.locator("html").getAttribute("data-server-status")) ?? "");
       expect(errors).toEqual([]);
     } finally {
       await close();
@@ -259,28 +258,32 @@ describe("calendar of all Spaces and apps", () => {
       const chipBefore = await chip.boundingBox();
       await chip.click();
       const menu = page.getByRole("menu");
-      expect(await menu.getByText("Abwesenheiten").count()).toBeGreaterThan(0);
+      expect(await menu.getByText("Absences").count()).toBeGreaterThan(0);
       await shoot(page, "02-chooser-de");
       const before = requests.length;
-      await menu.getByRole("menuitemcheckbox", { name: "Meine Schichten" }).click();
-      await page.getByText("Frühschicht").first().waitFor();
+      await menu.getByRole("menuitemcheckbox", { name: /^My shifts/ }).click();
+      await page.getByText("Early shift").first().waitFor();
       const added = requests.slice(before);
       expect(added.length).toBeGreaterThan(0);
       for (const request of added) expect(request.searchParams.getAll("cal")).toEqual(["shifts:meine"]);
       expect(new URL(page.url()).searchParams.getAll("cal")).toContain("shifts:meine");
       expect(await page.getByRole("button", { name: /Kalender 10/ }).count()).toBe(1);
-      // "Only" chooses that calendar alone.
-      await hoverInPlace(menu.getByRole("menuitemcheckbox", { name: "Werkstatt" }));
-      await menu.getByRole("menuitem", { name: "Nur Werkstatt" }).click();
-      expect(new URL(page.url()).searchParams.getAll("cal")).toEqual(["spaces:Werks1"]);
+      // Unticking a calendar takes it out at once and loads nothing.
+      if (!(await menu.isVisible())) await page.getByRole("button", { name: /Kalender 10/ }).click();
+      const beforeRemoval = requests.length;
+      await menu.getByRole("menuitemcheckbox", { name: /^Company events/ }).click();
+      await page.getByRole("button", { name: /Kalender 9/ }).waitFor();
+      expect(requests.length).toBe(beforeRemoval);
+      expect(new URL(page.url()).searchParams.getAll("cal")).not.toContain("intranet:firmenevents");
       await page.keyboard.press("Escape");
       expect(await page.getByText("All-Hands Q4").count()).toBe(0);
+      // k2b-ui gap: a menu entry has no "only this one" (see CloudCalendar), so choosing one calendar alone is unticking.
       await page.reload();
       await page.waitForFunction(() => document.documentElement.dataset.ready === "true");
-      expect(await page.getByRole("button", { name: /Kalender 1\b/ }).count()).toBe(1);
-      expect(await page.getByText("Gabelstapler-Wartung").count()).toBeGreaterThan(0);
+      expect(await page.getByRole("button", { name: /Kalender 9/ }).count()).toBe(1);
+      expect(await page.getByText("Early shift").count()).toBeGreaterThan(0);
       expect(await page.getByText("All-Hands Q4").count()).toBe(0);
-      const chipAfter = await page.getByRole("button", { name: /Kalender 1\b/ }).boundingBox();
+      const chipAfter = await page.getByRole("button", { name: /Kalender 9/ }).boundingBox();
       expect(chipAfter?.y).toBe(chipBefore?.y);
     } finally {
       await close();
@@ -290,22 +293,24 @@ describe("calendar of all Spaces and apps", () => {
   test("an event opens its details beside it, with its series, place, source, and a link into its app", async () => {
     const { page, close } = await open(desktop, "/app/spaces/calendar?view=week&date=2026-10-27", { locale: "de" });
     try {
-      await (await onScreen(page, /Team-Meeting Logistik/)).click();
-      const dialog = page.getByRole("dialog", { name: "Termindetails" });
+      await (await onScreen(page, /Team meeting/)).click();
+      // The dialog is named after the entry it shows.
+      const dialog = page.getByRole("dialog", { name: /Team meeting/ });
       await dialog.waitFor();
       expect(await dialog.textContent()).toContain("Meetings");
-      expect(await dialog.textContent()).toContain("Raum Elbe");
+      expect(await dialog.textContent()).toContain("Room Elbe");
       expect(await dialog.textContent()).toMatch(/Dienstag/);
       await shoot(page, "03-detail-de");
       await page.keyboard.press("Escape");
       await dialog.waitFor({ state: "hidden" });
-      await (await onScreen(page, /Gabelstapler-Wartung/)).click();
-      const link = page.getByRole("link", { name: /In Werkstatt öffnen/ });
+      await (await onScreen(page, /Forklift inspection/)).click();
+      const link = page.getByRole("dialog").getByRole("link", { name: /In Warehouse öffnen/ });
       expect(await link.getAttribute("href")).toMatch(/^\/app\/spaces\/Werks1\?item=/);
       // Another zone says both times.
       await page.keyboard.press("Escape");
-      await (await onScreen(page, /Call mit Partner Chicago/)).click();
-      expect(await page.getByRole("dialog", { name: "Termindetails" }).textContent()).toContain("in Chicago");
+      await page.getByRole("dialog").waitFor({ state: "hidden" });
+      await (await onScreen(page, /Call with the Chicago partner/)).click();
+      expect(await page.getByRole("dialog", { name: /Call with the Chicago partner/ }).textContent()).toContain("in Chicago");
     } finally {
       await close();
     }
@@ -314,8 +319,8 @@ describe("calendar of all Spaces and apps", () => {
   test("month and list show the same calendars", async () => {
     const month = await open(desktop, "/app/spaces/calendar?view=month&date=2026-10-27", { locale: "de" });
     try {
-      expect(await month.page.locator('.k2b-app-workspace__head-views [aria-current="page"]').textContent()).toContain("Monat");
-      expect(await month.page.getByText("Reformationstag").count()).toBeGreaterThan(0);
+      expect(await month.page.locator(`${HEAD} [aria-current="page"]`).textContent()).toContain("Monat");
+      expect(await month.page.getByText("Reformation Day").count()).toBeGreaterThan(0);
       await shoot(month.page, "04-month-de");
     } finally {
       await month.close();
@@ -323,8 +328,8 @@ describe("calendar of all Spaces and apps", () => {
     const list = await open(desktop, "/app/spaces/calendar?view=list&date=2026-10-27", { locale: "de" });
     try {
       expect(await list.page.locator(".spaces-calendar-agenda__day").first().textContent()).toContain("Heute");
-      expect(await list.page.getByText("Lieferantencall Spedition Nord").count()).toBe(1);
-      expect(await list.page.getByText("Rechnungen freigeben").count()).toBe(1);
+      expect(await list.page.getByText("Call with the forwarder").count()).toBe(1);
+      expect(await list.page.getByText("Approve invoices").count()).toBe(1);
       await shoot(list.page, "05-list-de");
       // The next page of the list starts 14 days later.
       const next = list.page.locator('.k2b-calendar-header a[aria-label="Weiter"], .k2b-calendar-header a[title="Weiter"]').first();
@@ -345,18 +350,18 @@ describe("calendar of all Spaces and apps", () => {
       gate,
     });
     try {
-      const status = page.locator(".spaces-calendar-status");
+      const status = page.locator(STATUS);
       expect(await status.textContent()).toContain("Lädt 3 von 9 Kalendern");
-      const chip = await box(page, ".spaces-calendar-chooser button");
-      const statusBox = await box(page, ".spaces-calendar-status");
-      expect(await page.getByText("Gabelstapler-Wartung").count()).toBeGreaterThan(0);
-      expect(await page.getByText("Erste-Hilfe-Auffrischung").count()).toBe(0);
+      const chip = await box(page, CHOOSER);
+      const statusBox = await box(page, STATUS);
+      expect(await page.getByText("Forklift inspection").count()).toBeGreaterThan(0);
+      expect(await page.getByText("First aid refresher").count()).toBe(0);
       await shoot(page, "06-loading-de");
       release();
-      await page.getByText("Erste-Hilfe-Auffrischung").first().waitFor();
-      await page.waitForFunction(() => !document.querySelector(".spaces-calendar-status")?.textContent?.includes("Lädt"));
-      expect(await box(page, ".spaces-calendar-chooser button")).toEqual(chip);
-      const after = await box(page, ".spaces-calendar-status");
+      await page.getByText("First aid refresher").first().waitFor();
+      await page.waitForFunction((selector) => !document.querySelector(selector)?.textContent?.includes("Lädt"), STATUS);
+      expect(await box(page, CHOOSER)).toEqual(chip);
+      const after = await box(page, STATUS);
       expect({ y: after.y, height: after.height }).toEqual({ y: statusBox.y, height: statusBox.height });
     } finally {
       await close();
@@ -379,11 +384,11 @@ describe("calendar of all Spaces and apps", () => {
       });
       try {
         await page.getByText("Lädt 2 von 9 Kalendern", { exact: false }).waitFor();
-        expect(await page.getByText("Malte Sommer · abwesend").count()).toBe(0);
-        const before = await box(page, '[data-calendar-event]:has-text("Gabelstapler-Wartung")');
+        expect(await page.getByText("Sam Example · away").count()).toBe(0);
+        const before = await box(page, '[data-calendar-event]:has-text("Forklift inspection")');
         release();
-        await page.getByText("Malte Sommer · abwesend").first().waitFor();
-        const after = await box(page, '[data-calendar-event]:has-text("Gabelstapler-Wartung")');
+        await page.getByText("Sam Example · away").first().waitFor();
+        const after = await box(page, '[data-calendar-event]:has-text("Forklift inspection")');
         expect({ view, x: after.x, y: after.y, height: after.height }).toEqual({ view, x: before.x, y: before.y, height: before.height });
       } finally {
         await close();
@@ -395,18 +400,20 @@ describe("calendar of all Spaces and apps", () => {
     const failing = new Set(["absence"]);
     const { page, close } = await open(desktop, "/app/spaces/calendar?view=week&date=2026-10-27", { locale: "de", failing });
     try {
-      const status = page.locator(".spaces-calendar-status");
-      expect(await status.textContent()).toContain("Abwesenheiten antwortet nicht.");
-      expect(await status.textContent()).toContain("Die anderen Kalender sind aktuell.");
-      expect(await page.getByText("Gabelstapler-Wartung").count()).toBeGreaterThan(0);
+      // The warning above the calendar names the app that does not answer.
+      const notice = page.locator(NOTICE);
+      expect(await notice.textContent()).toContain("Absences antwortet nicht.");
+      expect(await notice.textContent()).toContain("Die anderen Kalender sind aktuell.");
+      expect(await page.getByText("Forklift inspection").count()).toBeGreaterThan(0);
       await shoot(page, "07-failed-de");
+      // The choice marks its calendars as not reachable beside their names.
       await page.getByRole("button", { name: /Kalender 9/ }).click();
-      expect(await page.getByRole("menu").getByRole("img", { name: "nicht erreichbar" }).count()).toBeGreaterThan(0);
+      expect(await page.getByRole("menu").getByText("nicht erreichbar").count()).toBeGreaterThan(0);
       await page.keyboard.press("Escape");
       failing.clear();
-      await status.getByRole("button", { name: "Erneut versuchen" }).click();
-      await page.getByText("Malte Sommer · abwesend").first().waitFor();
-      await page.waitForFunction(() => !document.querySelector(".spaces-calendar-status")?.textContent?.includes("antwortet"));
+      await notice.getByRole("button", { name: "Erneut versuchen" }).click();
+      await page.getByText("Sam Example · away").first().waitFor();
+      await notice.waitFor({ state: "detached" });
     } finally {
       await close();
     }
@@ -422,11 +429,9 @@ describe("calendar of all Spaces and apps", () => {
       { locale: "de" },
     );
     try {
-      expect(await page.locator(".spaces-calendar-status").textContent()).toContain(
-        "Meetings · Geschäftsführung: nur frei/belegt sichtbar",
-      );
+      expect(await page.locator(STATUS).textContent()).toContain("Meetings · Management: nur frei/belegt sichtbar");
       await (await onScreen(page, /^Belegt/)).click();
-      const dialog = page.getByRole("dialog", { name: "Termindetails" });
+      const dialog = page.getByRole("dialog");
       expect(await dialog.textContent()).toContain("Du siehst bei diesem Kalender nur, wann Zeit belegt ist.");
       expect(await dialog.getByRole("link").count()).toBe(0);
       await shoot(page, "08-busy-de");
@@ -441,7 +446,7 @@ describe("calendar of all Spaces and apps", () => {
       await none.page.getByText("Kein Kalender gewählt").waitFor();
       await shoot(none.page, "09-no-calendar-de");
       await none.page.getByRole("button", { name: "Standard-Kalender laden" }).click();
-      await none.page.getByText("Gabelstapler-Wartung").first().waitFor();
+      await none.page.getByText("Forklift inspection").first().waitFor();
       expect(new URL(none.page.url()).searchParams.has("cal")).toBe(false);
     } finally {
       await none.close();
@@ -460,7 +465,7 @@ describe("calendar of all Spaces and apps", () => {
       expect(await failed.page.getByText("Keine Termine").count()).toBe(0);
       await shoot(failed.page, "11-catalog-failed-de");
       await failed.page.getByRole("button", { name: "Erneut versuchen" }).click();
-      await failed.page.getByText("Gabelstapler-Wartung").first().waitFor();
+      await failed.page.getByText("Forklift inspection").first().waitFor();
     } finally {
       await failed.close();
     }
@@ -473,10 +478,10 @@ describe("calendar of all Spaces and apps", () => {
       expect(width).toBeLessThanOrEqual(phone.width);
       await shoot(page, "12-phone-list-de");
       await page
-        .getByRole("button", { name: /Gabelstapler-Wartung/ })
+        .getByRole("button", { name: /Forklift inspection/ })
         .first()
         .click();
-      await page.getByRole("dialog", { name: "Termindetails" }).waitFor();
+      await page.getByRole("dialog", { name: /Forklift inspection/ }).waitFor();
       await shoot(page, "13-phone-detail-de");
       expect(errors).toEqual([]);
     } finally {
@@ -491,11 +496,33 @@ describe("calendar of all Spaces and apps", () => {
     }
   }, 90_000);
 
+  // The grid is the content of its pane: no edge or rounded corner of its own, so no second line stands beside the pane's.
+  test("the calendar lies flat in its pane, on the desktop and the phone", async () => {
+    for (const view of [desktop, phone]) {
+      const { page, close } = await open(view, "/app/spaces/calendar?view=week&date=2026-10-27", { locale: "en" });
+      try {
+        const edges = await page.locator(".k2b-content-calendar").evaluate((calendar) => {
+          const style = getComputedStyle(calendar);
+          return [
+            style.borderTopWidth,
+            style.borderLeftWidth,
+            style.borderRightWidth,
+            style.borderBottomWidth,
+            style.borderTopLeftRadius,
+          ].join(" ");
+        });
+        expect(edges).toBe("0px 0px 0px 0px 0px");
+      } finally {
+        await close();
+      }
+    }
+  }, 60_000);
+
   test("English and the dark theme read the same calendars", async () => {
     const { page, close } = await open(desktop, "/app/spaces/calendar?view=week&date=2026-10-27&theme=dark", { locale: "en" });
     try {
       expect(await page.getByRole("button", { name: /Calendars 9/ }).count()).toBe(1);
-      expect(await page.locator('.k2b-app-workspace__head-views [aria-current="page"]').textContent()).toContain("Week");
+      expect(await page.locator(`${HEAD} [aria-current="page"]`).textContent()).toContain("Week");
       await shoot(page, "15-week-dark-en");
     } finally {
       await close();

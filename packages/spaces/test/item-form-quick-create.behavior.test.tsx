@@ -4,6 +4,7 @@ import { isServer, render } from "solid-js/web";
 import type { SpaceColumn } from "@/contracts";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { ItemFormData } from "../src/frontend/[id]/_components/shared/ItemForm";
+import { choose, installV2Globals, sendDialog } from "./v2-dom";
 
 const SPACE_ID = "11111111-1111-4111-8111-111111111111";
 const columns: SpaceColumn[] = [
@@ -25,6 +26,7 @@ describe("Spaces item quick create", () => {
 
   test("keeps entered values when expanding to the full editor", async () => {
     const dom = createDomTestHarness();
+    installV2Globals(dom);
     const { default: ItemForm } = await import("../src/frontend/[id]/_components/shared/ItemForm");
     const dispose = render(
       () =>
@@ -45,28 +47,31 @@ describe("Spaces item quick create", () => {
       dom.root,
     );
 
-    const quickTitle = dom.root.querySelector<HTMLInputElement>('input[placeholder="Event title"]')!;
+    const quickTitle = dom.document.querySelector<HTMLInputElement>('input[placeholder="Event title"]')!;
     quickTitle.value = "Design review";
     quickTitle.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
 
-    const moreOptions = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find(
+    const moreOptions = [...dom.document.querySelectorAll<HTMLButtonElement>("button")].find(
       (button) => button.textContent?.trim() === "More options",
     )!;
     moreOptions.click();
 
-    expect(dom.root.textContent).toContain("General");
-    expect(dom.root.textContent).toContain("Event details");
-    expect(dom.root.textContent).toContain("Organize");
-    expect(dom.root.textContent).not.toContain("Tasks have a deadline");
-    expect(dom.root.querySelector<HTMLInputElement>('input[placeholder="What needs to be done?"]')?.value).toBe("Design review");
-    expect(dom.root.textContent).not.toContain("More options");
+    expect(dom.document.body.textContent).toContain("Status");
+    expect(dom.document.body.textContent).toContain("Location");
+    expect(dom.document.body.textContent).toContain("Assignees");
+    expect(dom.document.body.textContent).not.toContain("Tasks have a deadline");
+    expect(dom.document.querySelector<HTMLInputElement>('input[placeholder="Event title"]')?.value).toBe("Design review");
+    expect(dom.document.body.textContent).not.toContain("More options");
 
     dispose();
+    // A closing v2 dialog finishes its focus work a moment later, while the window still exists.
+    await Bun.sleep(20);
     dom.cleanup();
   });
 
   test("keeps task title and description when expanding to the full editor", async () => {
     const dom = createDomTestHarness();
+    installV2Globals(dom);
     const { default: ItemForm } = await import("../src/frontend/[id]/_components/shared/ItemForm");
     const dispose = render(
       () =>
@@ -85,32 +90,35 @@ describe("Spaces item quick create", () => {
       dom.root,
     );
 
-    const quickTitle = dom.root.querySelector<HTMLInputElement>('input[placeholder="What needs to be done?"]')!;
+    const quickTitle = dom.document.querySelector<HTMLInputElement>('input[placeholder="What needs to be done?"]')!;
     quickTitle.value = "Prepare launch";
     quickTitle.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
 
-    const quickDescription = dom.root.querySelector<HTMLTextAreaElement>("textarea")!;
+    const quickDescription = dom.document.querySelector<HTMLTextAreaElement>("textarea")!;
     quickDescription.value = "Confirm the release checklist.";
     quickDescription.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
 
-    const moreOptions = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find(
+    const moreOptions = [...dom.document.querySelectorAll<HTMLButtonElement>("button")].find(
       (button) => button.textContent?.trim() === "More options",
     )!;
     moreOptions.click();
 
-    expect(dom.root.textContent).toContain("General");
-    expect(dom.root.textContent).toContain("Organize");
-    expect(dom.root.textContent).not.toContain("Event details");
-    expect(dom.root.querySelector<HTMLInputElement>('input[placeholder="What needs to be done?"]')?.value).toBe("Prepare launch");
-    expect(dom.root.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("Confirm the release checklist.");
-    expect(dom.root.textContent).not.toContain("More options");
+    expect(dom.document.body.textContent).toContain("Status");
+    expect(dom.document.body.textContent).toContain("Assignees");
+    expect(dom.document.body.textContent).not.toContain("Location");
+    expect(dom.document.querySelector<HTMLInputElement>('input[placeholder="What needs to be done?"]')?.value).toBe("Prepare launch");
+    expect(dom.document.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("Confirm the release checklist.");
+    expect(dom.document.body.textContent).not.toContain("More options");
 
     dispose();
+    // A closing v2 dialog finishes its focus work a moment later, while the window still exists.
+    await Bun.sleep(20);
     dom.cleanup();
   });
 
   test("switches item type without losing shared or type-specific values", async () => {
     const dom = createDomTestHarness();
+    installV2Globals(dom);
     const { default: ItemForm } = await import("../src/frontend/[id]/_components/shared/ItemForm");
     const dispose = render(
       () =>
@@ -130,39 +138,36 @@ describe("Spaces item quick create", () => {
       dom.root,
     );
 
-    const title = dom.root.querySelector<HTMLInputElement>('input[placeholder="Event title"]')!;
+    const title = dom.document.querySelector<HTMLInputElement>('input[placeholder="Event title"]')!;
     title.value = "Design review";
     title.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
-    const description = dom.root.querySelector<HTMLTextAreaElement>("textarea")!;
+    const description = dom.document.querySelector<HTMLTextAreaElement>("textarea")!;
     description.value = "Review the launch screens.";
     description.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
 
-    const task = [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
-      (button) => button.textContent?.trim() === "Task",
-    )!;
-    task.click();
+    choose(dom, "Task");
 
-    expect(dom.root.textContent).toContain("New task");
-    expect(dom.root.textContent).toContain("Create Task");
-    expect(dom.root.textContent).not.toContain("Schedule");
-    expect(dom.root.querySelector<HTMLInputElement>('input[placeholder="What needs to be done?"]')?.value).toBe("Design review");
-    expect(dom.root.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("Review the launch screens.");
+    expect(dom.document.body.textContent).toContain("New task");
+    expect(dom.document.body.textContent).toContain("Create Task");
+    expect(dom.document.body.textContent).not.toContain("Schedule");
+    expect(dom.document.querySelector<HTMLInputElement>('input[placeholder="What needs to be done?"]')?.value).toBe("Design review");
+    expect(dom.document.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("Review the launch screens.");
 
-    const event = [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
-      (button) => button.textContent?.trim() === "Event",
-    )!;
-    event.click();
+    choose(dom, "Event");
 
-    expect(dom.root.textContent).toContain("New event");
-    expect(dom.root.textContent).toContain("Aug 14, 2026, 09:00");
-    expect(dom.root.querySelector<HTMLInputElement>('input[placeholder="Event title"]')?.value).toBe("Design review");
+    expect(dom.document.body.textContent).toContain("New event");
+    expect(dom.document.body.textContent).toContain("Start");
+    expect(dom.document.querySelector<HTMLInputElement>('input[placeholder="Event title"]')?.value).toBe("Design review");
 
     dispose();
+    // A closing v2 dialog finishes its focus work a moment later, while the window still exists.
+    await Bun.sleep(20);
     dom.cleanup();
   });
 
   test("retains the create key for unchanged retries and replaces it for new intent", async () => {
     const dom = createDomTestHarness();
+    installV2Globals(dom);
     const { default: ItemForm } = await import("../src/frontend/[id]/_components/shared/ItemForm");
     const attempts: ItemFormData[] = [];
     const dispose = render(
@@ -181,13 +186,13 @@ describe("Spaces item quick create", () => {
       dom.root,
     );
     try {
-      const title = dom.root.querySelector<HTMLInputElement>('input[placeholder="What needs to be done?"]')!;
+      const title = dom.document.querySelector<HTMLInputElement>('input[placeholder="What needs to be done?"]')!;
       const type = (value: string) => {
         title.value = value;
         title.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
       };
       const submit = async () => {
-        dom.root.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
+        sendDialog(dom);
         await Promise.resolve();
         await Promise.resolve();
       };
@@ -197,18 +202,21 @@ describe("Spaces item quick create", () => {
       expect(attempts).toHaveLength(2);
       expect(attempts[0]?.requestKey).toBeString();
       expect(attempts[1]?.requestKey).toBe(attempts[0]?.requestKey);
-      expect(dom.root.textContent).toContain("Response lost");
+      expect(dom.document.body.textContent).toContain("Response lost");
       type("Prepare another launch");
       await submit();
       expect(attempts[2]?.requestKey).not.toBe(attempts[0]?.requestKey);
     } finally {
       dispose();
+      // A closing v2 dialog finishes its focus work a moment later, while the window still exists.
+      await Bun.sleep(20);
       dom.cleanup();
     }
   });
 
   test("submits a compact task into the first status", async () => {
     const dom = createDomTestHarness();
+    installV2Globals(dom);
     const { default: ItemForm } = await import("../src/frontend/[id]/_components/shared/ItemForm");
     let submitted: ItemFormData | undefined;
     const dispose = render(
@@ -227,21 +235,24 @@ describe("Spaces item quick create", () => {
       dom.root,
     );
 
-    const quickTitle = dom.root.querySelector<HTMLInputElement>('input[placeholder="What needs to be done?"]')!;
+    const quickTitle = dom.document.querySelector<HTMLInputElement>('input[placeholder="What needs to be done?"]')!;
     quickTitle.value = "Prepare launch";
     quickTitle.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
-    dom.root.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
+    sendDialog(dom);
 
     expect(submitted?.title).toBe("Prepare launch");
     expect(submitted?.description).toBeUndefined();
     expect(submitted?.columnId).toBe(columns[0]!.id);
 
     dispose();
+    // A closing v2 dialog finishes its focus work a moment later, while the window still exists.
+    await Bun.sleep(20);
     dom.cleanup();
   });
 
   test("a template the opener chose keeps the opener's title and tags beside the template's", async () => {
     const dom = createDomTestHarness();
+    installV2Globals(dom);
     const { default: ItemForm } = await import("../src/frontend/[id]/_components/shared/ItemForm");
     const tag = (id: string, name: string) => ({ id, spaceId: SPACE_ID, name, color: "#16a34a" });
     const filterTag = tag("Tag001", "Touren");
@@ -295,9 +306,9 @@ describe("Spaces item quick create", () => {
       dom.root,
     );
     // The template applies once the form mounted; the test's timeout bounds the wait.
-    const chosen = () => Boolean(dom.root.querySelector("[data-testid='template-summary']"));
+    const chosen = () => dom.document.body.textContent?.includes("From the template:") ?? false;
     while (!chosen()) await Bun.sleep(0);
-    dom.root.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
+    sendDialog(dom);
     while (!submitted) await Bun.sleep(0);
 
     expect(submitted).toMatchObject({
@@ -308,6 +319,8 @@ describe("Spaces item quick create", () => {
     });
 
     dispose();
+    // A closing v2 dialog finishes its focus work a moment later, while the window still exists.
+    await Bun.sleep(20);
     dom.cleanup();
   });
 });

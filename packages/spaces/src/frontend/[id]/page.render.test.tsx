@@ -85,7 +85,14 @@ const state: Extract<SpacesWorkspaceState, { kind: "ok" }> = {
 const spies: { mockRestore(): void }[] = [];
 beforeEach(() => {
   spies.push(
-    spyOn(overview, "loadSpacesSidebar").mockResolvedValue({ spaces: [], pinnedSpaceIds: [], myWorkCount: 0 }),
+    spyOn(overview, "loadSpacesSidebar").mockResolvedValue({
+      spaces: [],
+      pinnedSpaceIds: [],
+      recentSpaceIds: [],
+      unlistedSpaceCount: 0,
+      myWorkCount: 0,
+    }),
+    spyOn(overview, "loadSpacePulse").mockResolvedValue({ done: Array(14).fill(0), overdue: 0, unassigned: 0 }),
     stubRailSnapshot(),
     spyOn(layoutHelp, "preloadLayoutHelp").mockResolvedValue(null),
     spyOn(cloudServices, "get").mockResolvedValue("https://cloud.test"),
@@ -96,7 +103,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const spy of spies.splice(0)) spy.mockRestore();
 });
-const request = () => {
+const request = (path = "/app/spaces/Space1") => {
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>()
     .use("*", async (c, next) => {
       const person = { ...user, roles: ["user"] as Array<"user">, provider: "local" as const, profile: "user" as const };
@@ -120,7 +127,7 @@ const request = () => {
       await next();
     })
     .get("/app/spaces/:id", ...handler);
-  return app.request("https://cloud.test/app/spaces/Space1");
+  return app.request(`https://cloud.test${path}`);
 };
 
 test("a page that shows a Space reports its public Space ID in shell data", async () => {
@@ -131,6 +138,71 @@ test("a page that shows a Space reports its public Space ID in shell data", asyn
   const shell = JSON.parse(html.match(/id="cloud-shell-data" type="application\/json">([^<]*)/)![1]!);
   expect(shell.panel.context.scope).toEqual({ type: "spaces.space", id: state.space.id });
   expect(shell.panel.context.scope.id).not.toBe(internalId);
+});
+
+test("an open task reads its due time against the snapshot's time, so the server and the first browser picture agree", async () => {
+  // The snapshot was taken two days before the deadline; the clock of the test run is long past it.
+  const item = {
+    id: "Item01",
+    spaceId: "Space1",
+    columnId: "Col001",
+    title: "Publish release",
+    description: null,
+    location: null,
+    url: null,
+    startsAt: null,
+    endsAt: null,
+    allDay: false,
+    deadline: "2026-10-20T10:00:00.000Z",
+    deadlineAllDay: false,
+    estimatedDurationMinutes: null,
+    activeBlockerCount: 0,
+    priority: null,
+    recurrence: null,
+    recurringEventId: null,
+    recurrenceId: null,
+    rank: "1024",
+    completedAt: null,
+    createdBy: user.id,
+    createdAt: now,
+    updatedAt: now,
+    assignees: [],
+    tags: [],
+    claim: null,
+  };
+  spies.push(
+    spyOn(workspaceState, "loadSpacesWorkspaceState").mockResolvedValue({
+      ...state,
+      query: "item=Item01",
+      snapshotAt: now,
+      selectedItemDetail: {
+        item,
+        comments: { items: [], page: 1, perPage: 50, total: 0, hasNext: false },
+        commentTarget: { itemId: item.id, recurrenceId: null },
+        recurringContext: null,
+        references: [],
+        links: [],
+        attachments: [],
+        checklist: [],
+        blockedBy: [],
+        blocks: [],
+      },
+    }),
+  );
+  const html = await (await request("/app/spaces/Space1?item=Item01")).text();
+  expect(html).toContain("Publish release");
+  expect(html).toContain("in 2 days");
+  expect(html).not.toContain("Overdue");
+});
+
+test("the Space is named once: by its entry in the sidebar and the phone bar, not again in the head", async () => {
+  spies.push(spyOn(workspaceState, "loadSpacesWorkspaceState").mockResolvedValue(state));
+  const html = await (await request()).text();
+  const head = html.slice(html.indexOf('data-slot="head"'), html.indexOf('data-k2-part="Pane.Split"'));
+  expect(head).toContain('data-k2-part="Tabs"');
+  expect(head).not.toContain(">Launch<");
+  // The phone bar names it: its menu carries the Space's name.
+  expect(html).toContain('data-cloud-workspace-navigation>{"label":"Launch"');
 });
 
 test("a writable Space with a long query still renders its primary command link", async () => {
@@ -145,7 +217,8 @@ test("a writable Space with a long query still renders its primary command link"
   const response = await request();
   expect(response.status).toBe(200);
   const html = await response.text();
-  const primary = html.match(/<a\b[^>]*data-workspace-primary[^>]*>/)?.[0];
+  // the main action of the phone is a command link, so it also works before the page is live
+  const primary = html.match(/<a\b[^>]*k2-fab[^>]*>/)?.[0];
   expect(primary?.match(/\bhref="([^"]*)"/)?.[1]).toContain("command=spaces.task.compose");
 });
 

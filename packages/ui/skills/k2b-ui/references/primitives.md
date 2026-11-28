@@ -163,6 +163,14 @@ key statements of a record or the home of a place.
 
 Like things to press, such as attachments: `items: { icon, title, meta?,
 href?, onNavigate?, color? }[]`, `more` (an action after them), `label`.
+
+`variant="media"`: photos, pages and videos in a grid of at least 160 px.
+A tile adds `image` (its picture, 4:3), `kind` (`PDF`, a video's length),
+`people` (the first is the owner, 16 px), `sign` (`{ icon, label }` at the
+end of its quiet line, such as the sharing state) and `key`. `select: {
+selected, onChange(key, on) }` puts a box on each picture; it shows under
+the pointer, with the focus, on touch, and on all tiles while one is
+selected; a selected tile is blue with a line inside its edge.
 Never nested. With `color` the symbol becomes the thing's `Mark`.
 `perRow={n}`: at most n tiles share a row and grow with its width; a tile
 never gets narrower than 240 px for it. Where n do not fit, a row holds
@@ -177,6 +185,9 @@ at its end: "Felix · vor 2 Min") and `trend` (a `Spark` at the top end, in
 the card's colour). The whole card opens its `href`. `create` adds the last
 card that makes a new thing: dashed, `title`, `meta`, `href` or `onClick`,
 and `choices` as round chips (templates). Cards hold no box and no line.
+Among media, `create` is the last tile too: a dashed picture with a plus,
+then its `title` and `meta` ("Neuer Ordner", "oder Dateien hierher
+ziehen").
 
 ### Canvas
 
@@ -246,7 +257,9 @@ content, a list and its detail, one section and the next. A `Row`:
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
 - lead: `mark` (the thing's `Mark`: a base, a file with its thumbnail, a
-  table; 24 px on one line, 32 px on two or three), or `avatar`, or a
+  table; 24 px, 32 in a list that shows pictures of its things (a mark
+  with `image` or `kind`, and the folders beside them); a row with a mark
+  is 44 px, on the phone 56 with a mark of 40), or `avatar`, or a
   quiet `icon` for a plain place or deed, or a dot when `unread`.
 - `meta` (quiet note after the title, a count), `time` (top right). Title
   and `meta` share the first line in equal parts, and each takes only what
@@ -255,6 +268,10 @@ content, a list and its detail, one section and the next. A `Row`:
 - `marks` (chips, icons, avatars bottom right): use them with 3 lines; on a
   2-line row they add a third line. The third line shares its width with
   the marks, so keep it a preview text that may be cut, never an amount.
+- `states` (chips that must be read whole, such as the checks of a domain:
+  colour, symbol, word): under the lines on the title's text edge; they
+  wrap to more lines instead of being cut, on the phone too, and the row
+  grows only when they are there.
 - `action` (one framed button at the end; under the text on the phone; its
   name is its words and then the row's title, "Ansehen Angebot Küche", so
   rows with the same deed are told apart: name nothing yourself; on the
@@ -297,7 +314,12 @@ lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `href` stays in the address there; offer another order on the phone in the
 page itself if it needs one. The last column takes the rest. Chips,
 `Progress`, text buttons are fine in cells. `open(row) => { href } | {
-onOpen }` makes each row open its entry.
+onOpen }` makes each row open its entry. A column's `mark(row)` leads its
+cell with the thing's `Mark` (a base's symbol 24 px; a file's thumbnail
+or type 32, and every mark of that table with it; the table's rows are
+then 44 px, as the mockup's lists), its
+`avatar(row)` with a person (the name in the cell names it); `phone(row)`
+takes a `mark` as well.
 
 A large table (Grids, a work list) adds, all optional: `rowKey(row)` (needed
 for the next three), `select: { selected, onChange, all, row }` (a box
@@ -405,8 +427,8 @@ name wraps in a small table and ends with "…" in one with column widths.
   symbol; while it loads and when it fails the symbol shows), `kind` (the
   type on its corner: `PDF`), `label` (without one it is decoration beside
   its name). The place sets the size: 20 in the sidebar and in a sentence,
-  24 leading a row of one line, 32 leading a row of two or three, 36 on a
-  card. In a sentence write `<Mark {...table} /><Text weight="strong">Aufträge</Text>`.
+  24 leading a row or a cell, 32 there in a list or table that shows
+  pictures of its things (`image` or `kind`), 36 on a card. In a sentence write `<Mark {...table} /><Text weight="strong">Aufträge</Text>`.
 - `Avatar.Stack`: `people`, `max` (3, at most 5), `label`. People over each
   other with a ring and "+n"; one picture with every name. In a narrow
   place (a 90 px column) it shows the faces it holds whole and counts the
@@ -418,10 +440,13 @@ name wraps in a small table and ends with "…" in one with column widths.
   side that compare should share `max`: the same value then has the same
   height, and a value above it stands at the top.
 - Data colours (`color` of `Mark`, `Avatar`, `Chip tag`, `Nav`, `Tiles`,
-  `Section`, `Cells.Cell`, `Digest`) are validated: a hex colour, an
+  `Section`, `Cells.Cell`, `Digest`, `Preview`) are validated: a hex colour, an
   `oklch()` or `var(--…)`; anything else renders neutral. For a hex colour
   the primitives derive readable foregrounds themselves (symbols and bars
   3:1, type 4.5:1, light and dark), so a pale yellow works too.
+- `Preview`: `label`, `icon`, `color`, `image`, `kind`. The large picture of
+  the open thing at the top of its detail, 4:3 from text edge to text edge;
+  the symbol stands while it loads, fails or is missing.
 - `Ticks`: `slots` (`"ok" | "bad" | "none"` per time slot, oldest first, in
   the writing direction; at most 60 in a table cell, more are cut at its
   end), `label` (always "what, period: what happened", such as
@@ -462,6 +487,15 @@ name wraps in a small table and ends with "…" in one with column widths.
   whose words give way to its symbol in a narrow place). Without children
   it needs `label`. With children, `label` is its name only where the
   words alone do not say enough, and it begins with the words.
+- `Setting`: `label`, `name`, `hint`, `error`, `was` ("12 Std.": an unsaved
+  change says "geändert · vorher 12 Std." under its control), `action`
+  (one quiet deed at the end of the name's line, such as "Auf Standard
+  zurücksetzen" while the value differs from its default, as `Field
+  action`), one control as child. One setting of a settings page: the name
+  (13, 500) and its hint on the left, the control in a column of 300 px
+  beside them, no line between settings; one column when its pane is
+  narrower than 600 px (by the pane, not the window). Never stack `Field`s
+  as a settings page.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
   such as "Sekunden", or "optional"), `action` (one quiet deed at the end
@@ -569,7 +603,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   problem there, `"running"` for work that runs now: a small turning mark
   in the dot's place that says "Läuft"), `color` (the place's data colour:
   its symbol becomes its `Mark`, the same as in its rows and on its card).
-  An item with `items` instead of `icon` and a link folds
+  `quota: { label, value, of, text }` shows what the open place uses above
+  the foot ("Werkstatt · 38,2 von 100 GB" over a bar; amber from 75 %, red
+  from 90 %). An item with `items` instead of `icon` and a link folds
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.
@@ -623,9 +659,10 @@ name wraps in a small table and ends with "…" in one with column widths.
   they keep only their symbols, the words stay their names; on the phone
   they stay in the row, and what has no room folds into one "+n" menu),
   `selection: { count, actions, clear }` (while rows are selected the row
-  becomes the bar of what can be done with them; the count is never cut, and
-  actions without room go whole into a "…" menu from the end, right after the
-  last one in sight; the way out stays at the end of the bar).
+  becomes the bar of what can be done with them; the count stands in 14 px
+  600 and is never cut, and actions without room go whole into a "…" menu
+  from the end, right after the last one in sight; the way out stays at the
+  end of the bar).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
   head `Bar start` instead of `Tabs`. The last item is the page itself;
   without room the places before it shorten to their own width or 12
@@ -633,6 +670,8 @@ name wraps in a small table and ends with "…" in one with column widths.
   into a "…" menu ("Weitere Orte"): the middle ones first, then all. On
   the phone the path gives way and the shell's phone bar names the page; the
   head itself is hidden unless it holds a search, which stays as its symbol.
+  In an `Inline` with a chip (a folder's sharing) the path behaves the same,
+  and on the phone it gives way there too while the chip stays.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
   }[]`; a way of a few steps, such as a delivery's way inside its `Group`.
 - `Notice`: `tone` `note`, `ai`, `bad`, `warn`; `title`, `meta`, `icon`,
@@ -656,7 +695,20 @@ name wraps in a small table and ends with "…" in one with column widths.
   `timeZone` (of points in time, "UTC" by default), `views` (`{ stores,
   current?: { key, label, query, scope? }, onSaved?, onRemoved? }`), `results` ("9 Artikel"
   for the phone sheet). It writes the address itself. See
-  [list queries](list-queries.md).
+  [list queries](list-queries.md). `end` (the `ListOrder` and a choice of
+  display such as list or grid) makes the bar the one status row of its
+  list (52 px) with `results` in quiet words before it: the page head then
+  has two rows, path and deeds, then this bar. Where the statements would
+  get less than 240 px beside it, the end takes a line of its own; its
+  width follows `results`, so right at that width a longer count can move
+  it there. `display` (`MenuSection`s,
+  such as "Darstellung" with list and grid, or a colour choice) puts each
+  section as a menu of its own in the end on the desktop; on the phone,
+  where the end has no room, sort, grouping and these sections fold into
+  one menu "Ansicht" at the end of the bar. Give every choice that changes
+  how the list shows to `display`, never to `end` alone, so the phone keeps
+  it. While entries are selected a
+  `StatusRow selection` takes its place at the same height.
 - `ListOrder`: `query`, `state`, `onChange`; the sort and the grouping in
   words, for `StatusRow filters`.
 - `Lookup`: `label`, `value`, `onChange`, `load`, `resolve?`, `known?`,
@@ -691,7 +743,10 @@ name wraps in a small table and ends with "…" in one with column widths.
   colour as a dot before the words, such as an area; it goes through the
   colour guard and adds nothing to the name), `onClick` (a
   Promise keeps the menu open and the entry busy), `href`, `danger`,
-  `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
+  `disabled`, `color` (the data colour of what it stands for, such as an
+  area of a notebook: a dot in the symbol's place, or the symbol in that
+  colour; a hex colour is kept at 3:1, `oklch()` and `var()` stand as
+  given, anything else leaves the entry neutral), `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
   `items` (a submenu to the side), or `panel` (`menuPanel((close) => …)`,
   which brings the panel's code along, so a menu without a panel loads none
@@ -747,9 +802,12 @@ status row above it never move.
 
 - `Empty`: `icon`, `text` (one sentence that says what is the matter: "Noch
   keine Einlieferung." is not "Keine Treffer mit diesem Filter."), `action`
-  (the one way out), `tone` (`bad` or `warn` for a place empty because
-  something went wrong or waits and cannot be retried there, such as an error
-  page; data to load again is `Failed`).
+  (the way out), `secondary` (a second, quieter way out after it, as a
+  text button, such as "Filter zurücksetzen" and "Ganzes Notizbuch
+  zeigen"; the first stays the one a focus that comes to the state reaches),
+  `tone` (`bad` or `warn` for a place empty because something went wrong or
+  waits and cannot be retried there, such as an error page; data to load
+  again is `Failed`).
 - `Loading`: `rows` (3 when not set; give as many as usually come),
   `lines` (1, 2 or 3, as the rows that will come). It stands where the
   `List` will stand; a `Table` takes `loading` itself.

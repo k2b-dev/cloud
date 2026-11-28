@@ -1,0 +1,235 @@
+/**
+ * Invented data for the Spaces home in tests and previews: a usual morning and a worst case (long names, many Spaces,
+ * huge counts, every priority, system and service actors). Nothing personal.
+ */
+import type { OverviewWork } from "../overview-contracts";
+import type { SidebarSpace } from "./[id]/_components/sidebar/spaces-navigation";
+
+export const OVERVIEW_NOW = "2026-10-15T09:00:00+02:00";
+export const OVERVIEW_DATES = { locale: "en", timeZone: "Europe/Berlin" } as const;
+
+type WorkItem = OverviewWork["items"][number];
+const task = (item: Partial<WorkItem> & Pick<WorkItem, "shortId" | "title">): WorkItem => ({
+  spaceShortId: "Space1",
+  spaceName: "Planning",
+  spaceColor: "#6366f1",
+  priority: null,
+  startsAt: null,
+  endsAt: null,
+  deadline: null,
+  deadlineAllDay: false,
+  canWrite: true,
+  ...item,
+});
+
+export const overviewSpaces: SidebarSpace[] = [
+  { id: "Space1", name: "Planning", color: "#6366f1", openItemCount: 9 },
+  { id: "Space2", name: "Ideas", color: "#2563eb", openItemCount: 3 },
+  { id: "Space3", name: "Trade fair 2026", color: "#f97316", openItemCount: 12 },
+];
+
+export const overviewWork: OverviewWork = {
+  view: "mine",
+  counts: { mine: 3, today: 4, upcoming: 4 },
+  items: [
+    task({ shortId: "Item01", title: "Clear out shelf B", deadline: "2026-10-16", deadlineAllDay: true }),
+    task({
+      shortId: "Item03",
+      title: "Agree on the route plan for week 43",
+      priority: "high",
+      deadline: "2026-10-13",
+      deadlineAllDay: true,
+    }),
+    task({
+      shortId: "Item21",
+      spaceShortId: "Space2",
+      spaceName: "Ideas",
+      spaceColor: "#2563eb",
+      title: "Collect ideas for the winter catalogue",
+      startsAt: "2026-10-15T14:00:00+02:00",
+      endsAt: "2026-10-15T15:00:00+02:00",
+    }),
+  ],
+  day: {
+    at: "2026-10-15T07:00:00.000Z",
+    agenda: [
+      task({ shortId: "Cal001", title: "Stand-up at ramp 1", startsAt: "2026-10-15T09:15:00+02:00", endsAt: "2026-10-15T09:30:00+02:00" }),
+      task({
+        shortId: "Cal003",
+        title: "Quarterly review with purchasing",
+        startsAt: "2026-10-15T11:00:00+02:00",
+        endsAt: "2026-10-15T12:00:00+02:00",
+      }),
+      task({
+        shortId: "Item21",
+        spaceShortId: "Space2",
+        spaceName: "Ideas",
+        spaceColor: "#2563eb",
+        title: "Collect ideas for the winter catalogue",
+        startsAt: "2026-10-15T14:00:00+02:00",
+        endsAt: "2026-10-15T15:00:00+02:00",
+      }),
+      task({ shortId: "Item07", title: "Count stock on shelf B", deadline: "2026-10-15T16:00:00+02:00" }),
+    ],
+    next: task({
+      shortId: "Cal001",
+      title: "Stand-up at ramp 1",
+      startsAt: "2026-10-15T09:15:00+02:00",
+      endsAt: "2026-10-15T09:30:00+02:00",
+    }),
+    overdue: 1,
+    // Tasks the reader finished per day over 14 days, today last (invented).
+    done: [2, 0, 3, 1, 4, 0, 0, 2, 5, 3, 1, 0, 0, 2],
+  },
+};
+
+/** Open tasks that do not start today, by due day: the Upcoming view of the same morning. */
+const upcomingItems: WorkItem[] = [
+  task({ shortId: "Item03", title: "Agree on the route plan for week 43", priority: "high", deadline: "2026-10-13", deadlineAllDay: true }),
+  task({ shortId: "Item07", title: "Count stock on shelf B", deadline: "2026-10-15T16:00:00+02:00" }),
+  task({ shortId: "Item01", title: "Clear out shelf B", deadline: "2026-10-16", deadlineAllDay: true }),
+  task({
+    shortId: "Item12",
+    spaceShortId: "Space3",
+    spaceName: "Trade fair 2026",
+    spaceColor: "#f97316",
+    title: "Book the stand lighting",
+    priority: "medium",
+    deadline: "2026-10-22",
+    deadlineAllDay: true,
+  }),
+];
+
+type Actor = { kind: "user" | "service_account" | "system"; id: string | null; displayName: string; avatarHash: string | null };
+const entry = (id: string, action: string, at: string, actor: Actor, title: string, count = 1) => ({
+  id,
+  space: { id: "Space1", name: "Planning", color: "#6366f1" },
+  item: { id: `Item${id.slice(-2)}`, title },
+  actor,
+  action,
+  metadata: {},
+  occurrenceCount: count,
+  createdAt: at,
+  lastOccurredAt: at,
+});
+const kim: Actor = { kind: "user", id: "11111111-1111-4111-8111-111111111111", displayName: "Kim Berger", avatarHash: null };
+const sam: Actor = { kind: "user", id: "22222222-2222-4222-8222-222222222222", displayName: "Sam Ortiz", avatarHash: null };
+
+export const overviewActivity = [
+  entry("Act001", "task.claimed", "2026-10-15T06:48:00.000Z", kim, "Count stock on shelf B"),
+  entry("Act002", "task.completed", "2026-10-14T15:10:00.000Z", sam, "Sweep ramp 2"),
+  entry(
+    "Act003",
+    "task.updated",
+    "2026-10-12T08:00:00.000Z",
+    { kind: "system", id: null, displayName: "Automatic", avatarHash: null },
+    "Weekly report",
+  ),
+];
+
+const longName = "Annual inventory of the north warehouse including the cold store and the returns area";
+export const overviewWorstSpaces: SidebarSpace[] = [
+  { id: "Space1", name: longName, color: "#6366f1", openItemCount: 128_400 },
+  { id: "Space2", name: "X", color: "#2563eb", openItemCount: 0 },
+  ...Array.from({ length: 24 }, (_, index) => ({
+    id: `Space${index + 10}`,
+    name: `Bereich ${index + 1} · Überstundenplanung für Außendienstmitarbeiterinnen`,
+    color: "#f97316",
+    openItemCount: index * 7,
+  })),
+];
+
+export const overviewWorstWork: OverviewWork = {
+  view: "mine",
+  counts: { mine: 98_765, today: 5, upcoming: 1_234_567 },
+  day: {
+    at: "2026-10-15T07:00:00.000Z",
+    agenda: [
+      task({
+        shortId: "Cal101",
+        title: longName,
+        spaceName: longName,
+        startsAt: "2026-10-15T09:05:00+02:00",
+        endsAt: "2026-10-15T17:45:00+02:00",
+      }),
+      task({ shortId: "Cal102", title: "Ü", startsAt: "2026-10-15T09:05:00+02:00", endsAt: "2026-10-15T09:10:00+02:00" }),
+      task({
+        shortId: "Cal103",
+        title: "会议准备：年度预算审查和团队规划",
+        spaceColor: null,
+        startsAt: "2026-10-15T10:00:00+02:00",
+        endsAt: null,
+      }),
+      task({
+        shortId: "Cal104",
+        title: "https://example.com/a/very/long/unbreakable/path/without/any/spaces",
+        deadline: "2026-10-15",
+        deadlineAllDay: true,
+      }),
+      task({ shortId: "Cal105", title: "Inventur Kühlhaus", startsAt: "2026-10-15T23:30:00+02:00", endsAt: "2026-10-16T01:00:00+02:00" }),
+    ],
+    next: task({
+      shortId: "Cal101",
+      title: longName,
+      spaceName: longName,
+      startsAt: "2026-10-15T09:05:00+02:00",
+      endsAt: "2026-10-15T17:45:00+02:00",
+    }),
+    overdue: 4_321,
+    // A huge, uneven history: 14 days with one burst of a bulk close.
+    done: [0, 0, 12_345, 1, 0, 0, 0, 98_765, 0, 0, 3, 0, 0, 1_234_567],
+  },
+  items: [
+    task({ shortId: "Item01", title: longName, spaceName: longName, priority: "urgent", deadline: "2026-10-01", deadlineAllDay: true }),
+    task({ shortId: "Item02", title: "Ü", priority: "low" }),
+    task({
+      shortId: "Item03",
+      title: "https://example.com/a/very/long/unbreakable/path/without/any/spaces/at/all/0123456789",
+      priority: "medium",
+    }),
+    task({ shortId: "Item04", title: "会议准备：年度预算审查和团队规划", spaceColor: null, priority: "high", deadline: "2027-01-31" }),
+    task({
+      shortId: "Item05",
+      title: "🎉🎉🎉 Party planning 🎉🎉🎉",
+      startsAt: "2026-12-31T20:00:00+01:00",
+      endsAt: "2027-01-01T02:00:00+01:00",
+    }),
+  ],
+};
+
+export const overviewWorstActivity = [
+  entry(
+    "Act001",
+    "task.taken_over",
+    "2026-10-15T06:48:00.000Z",
+    { ...kim, displayName: "Maximiliane Alexandra von Hohenzollern-Sigmaringen" },
+    longName,
+  ),
+  entry(
+    "Act002",
+    "custom.unknown.action",
+    "2026-10-14T15:10:00.000Z",
+    { kind: "service_account", id: "x", displayName: "Gustav", avatarHash: null },
+    "X",
+    999,
+  ),
+  entry(
+    "Act003",
+    "item.moved",
+    "2025-01-12T08:00:00.000Z",
+    { kind: "user", id: null, displayName: "Deleted user", avatarHash: null },
+    "Old task",
+  ),
+];
+
+/**
+ * The work the server answers for one view, as `loadOverviewWork` builds it: For me lists the assigned tasks, Today
+ * the entries of today (the agenda), Upcoming the open tasks that do not start today. The usual counts match the rows;
+ * the worst case keeps counts far above one page.
+ */
+export const overviewWorkFor = (view: OverviewWork["view"], worst = false): OverviewWork => {
+  const work = worst ? overviewWorstWork : overviewWork;
+  // None of the worst-case tasks starts today, so all of them are upcoming as well.
+  const items = view === "today" ? (work.day?.agenda ?? []) : view === "upcoming" && !worst ? upcomingItems : work.items;
+  return { ...work, view, items };
+};

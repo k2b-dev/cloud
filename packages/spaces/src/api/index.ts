@@ -752,16 +752,33 @@ const app = new Hono<AuthContext>()
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
       },
     }),
-    v("query", z.object({ view: OverviewViewSchema })),
+    v(
+      "query",
+      z.object({
+        view: OverviewViewSchema,
+        day: z
+          .enum(["true", "false"])
+          .default("false")
+          .describe("`true` also returns what counts today: the agenda, the next entry and the overdue count"),
+      }),
+    ),
     async (c) => {
       const access = getScopedSpaceAccess(c);
       if (!access.ok) return respond(c, access);
       if (access.data.boundSpaceId) return respond(c, fail(err.forbidden("This overview requires an unbound user-backed actor")));
       const user = requireUserBackedActor(c);
       if (!user.ok) return respond(c, user);
+      const query = c.req.valid("query");
       return respond(
         c,
-        ok(await loadOverviewWork({ userId: user.data.id, view: c.req.valid("query").view, dateConfig: getDateConfig(c) })),
+        ok(
+          await loadOverviewWork({
+            userId: user.data.id,
+            view: query.view,
+            dateConfig: getDateConfig(c),
+            ...(query.day === "true" ? { day: { now: new Date() } } : {}),
+          }),
+        ),
       );
     },
   )

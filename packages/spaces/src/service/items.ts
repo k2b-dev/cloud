@@ -933,6 +933,9 @@ export type DashboardItem = {
   deadlineAllDay: boolean;
 };
 
+/** How many days the "done per day" trend of the overview and a Space spans, today included. */
+export const DONE_TREND_DAYS = 14;
+
 export const dashboardSnapshot = async (params: {
   userId: string;
   todoLimit: number;
@@ -941,27 +944,62 @@ export const dashboardSnapshot = async (params: {
   dateConfig?: DateContext;
   /** Omit for the dashboard widget; overview routes load only their selected list. */
   view?: "today" | "upcoming" | "counts";
+  /** Also read the first entry of today that starts after this moment, however many entries came before it. */
+  nextAfter?: Date;
 }): Promise<{
   openTodoCount: number;
   assignedToMeCount: number;
+  /** Open tasks assigned to the reader whose due day has passed (isTaskOverdue), counted with the other counts. */
+  assignedOverdueCount: number;
   urgentCount: number;
   todayCount: number;
   upcomingCount: number;
+  /** Open tasks whose due day has passed, whoever holds them (isTaskOverdue). */
+  overdueCount: number;
+  /** Open tasks nobody is assigned to. */
+  unassignedCount: number;
+  /** Tasks completed per day of the last 14 days, today last, in the caller's time zone. */
+  doneByDay: number[];
+  /** The same, only tasks assigned to the reader. */
+  myDoneByDay: number[];
   events: DashboardItem[];
   todos: DashboardItem[];
+  /** Only with `nextAfter`; null when nothing starts later today. */
+  next: DashboardItem | null;
 }> => {
   const principalMatch = buildSpacePrincipalCondition({ type: "user", userId: params.userId });
   const { todayStart, tomorrowStart } = deadlineWindow(params.dateConfig);
   const spaceFilter = params.spaceId ? sql`AND i.space_id = ${params.spaceId}::uuid` : sql``;
+  const assignedToReader = sql`EXISTS (SELECT 1 FROM spaces.item_assignees ia WHERE ia.item_id = i.id AND ia.user_id = ${params.userId}::uuid)`;
+  // A task has no time span (an event has both ends); the trend counts finished tasks only.
+  const isTask = sql`(i.starts_at IS NULL OR i.ends_at IS NULL)`;
+  // The days of the trend as 15 boundaries in the caller's zone: one aggregate per day in the same statement, so the
+  // trend adds no read and stays bounded at 14 values whatever the Space holds.
+  const dayStarts = Array.from({ length: DONE_TREND_DAYS + 1 }, (_, index) =>
+    dates.addDays(dates.today(params.dateConfig), index - DONE_TREND_DAYS + 1, params.dateConfig).toISOString(),
+  );
+  const doneDays = (scope: typeof isTask) =>
+    dayStarts
+      .slice(0, -1)
+      .map(
+        (start, index) =>
+          sql`COUNT(*) FILTER (WHERE ${isTask} AND ${scope} AND i.completed_at >= ${start}::timestamptz AND i.completed_at < ${dayStarts[index + 1]!}::timestamptz)::int`,
+      )
+      .reduce((acc, count) => sql`${acc}, ${count}`);
 
   // Counts and lists retain the same access checks when limited to one Space.
   const [agg] = await sql<
     {
       open_count: number;
       assigned_count: number;
+      assigned_overdue_count: number;
       urgent_count: number;
       today_count: number;
       upcoming_count: number;
+      overdue_count: number;
+      unassigned_count: number;
+      done_by_day: number[];
+      my_done_by_day: number[];
     }[]
   >`
     SELECT
@@ -970,6 +1008,10 @@ export const dashboardSnapshot = async (params: {
         WHERE i.completed_at IS NULL AND c.is_done = false
           AND EXISTS (SELECT 1 FROM spaces.item_assignees ia WHERE ia.item_id = i.id AND ia.user_id = ${params.userId}::uuid)
       )::int AS assigned_count,
+      COUNT(*) FILTER (
+        WHERE i.completed_at IS NULL AND c.is_done = false AND ${overdueMatch(params.dateConfig)}
+          AND EXISTS (SELECT 1 FROM spaces.item_assignees ia WHERE ia.item_id = i.id AND ia.user_id = ${params.userId}::uuid)
+      )::int AS assigned_overdue_count,
       COUNT(*) FILTER (WHERE i.completed_at IS NULL AND c.is_done = false AND i.priority = 'urgent')::int AS urgent_count,
       COUNT(*) FILTER (
         WHERE i.completed_at IS NULL AND (
@@ -980,7 +1022,14 @@ export const dashboardSnapshot = async (params: {
       COUNT(*) FILTER (
         WHERE i.completed_at IS NULL AND c.is_done = false
           AND (i.starts_at IS NULL OR i.starts_at < ${todayStart}::timestamptz OR i.starts_at >= ${tomorrowStart}::timestamptz)
-      )::int AS upcoming_count
+      )::int AS upcoming_count,
+      COUNT(*) FILTER (WHERE i.completed_at IS NULL AND c.is_done = false AND ${overdueMatch(params.dateConfig)})::int AS overdue_count,
+      COUNT(*) FILTER (
+        WHERE i.completed_at IS NULL AND c.is_done = false AND ${isTask}
+          AND NOT EXISTS (SELECT 1 FROM spaces.item_assignees ia WHERE ia.item_id = i.id)
+      )::int AS unassigned_count,
+      ARRAY[${doneDays(sql`true`)}] AS done_by_day,
+      ARRAY[${doneDays(assignedToReader)}] AS my_done_by_day
     FROM spaces.items i
     JOIN spaces.columns c ON c.id = i.column_id
     JOIN spaces.spaces s ON s.id = i.space_id
@@ -1037,6 +1086,29 @@ export const dashboardSnapshot = async (params: {
     LIMIT 5
   `;
 
+  // The next entry of today: a list of today's first entries may end before it, so it has its own read.
+  const [nextRow] = params.nextAfter
+    ? await sql<DbWidget[]>`
+    SELECT i.id, i.short_id, i.space_id, s.short_id AS space_short_id, s.name AS space_name, s.color AS space_color, s.ical_token AS space_ical,
+           i.title, i.priority,
+           i.starts_at::text AS starts_at, i.ends_at::text AS ends_at, i.deadline::text AS deadline, i.deadline_date::text AS deadline_date
+    FROM spaces.items i
+    JOIN spaces.spaces s ON s.id = i.space_id
+    WHERE i.completed_at IS NULL
+      ${spaceFilter}
+      AND i.starts_at > ${params.nextAfter.toISOString()}::timestamptz AND i.starts_at < ${tomorrowStart}::timestamptz
+      AND EXISTS (
+        SELECT 1 FROM spaces.space_access sa
+        JOIN auth.access a ON a.id = sa.access_id
+        WHERE sa.space_id = i.space_id
+          AND a.permission <> 'none'
+          AND ${principalMatch}
+      )
+    ORDER BY i.starts_at ASC, i.id ASC
+    LIMIT 1
+  `
+    : [];
+
   // Next-up todos: open, not in is_done columns, ordered by deadline.
   const todoRows =
     params.view && params.view !== "upcoming"
@@ -1082,11 +1154,18 @@ export const dashboardSnapshot = async (params: {
   return {
     openTodoCount: agg?.open_count ?? 0,
     assignedToMeCount: agg?.assigned_count ?? 0,
+    assignedOverdueCount: agg?.assigned_overdue_count ?? 0,
     urgentCount: agg?.urgent_count ?? 0,
     todayCount: agg?.today_count ?? 0,
     upcomingCount: agg?.upcoming_count ?? 0,
+    overdueCount: agg?.overdue_count ?? 0,
+    unassignedCount: agg?.unassigned_count ?? 0,
+    // Postgres arrays arrive as typed arrays, which JSON would write as objects; the contract carries plain numbers.
+    doneByDay: Array.from(agg?.done_by_day ?? Array(DONE_TREND_DAYS).fill(0), Number),
+    myDoneByDay: Array.from(agg?.my_done_by_day ?? Array(DONE_TREND_DAYS).fill(0), Number),
     events: eventRows.map(map),
     todos: todoRows.map(map),
+    next: nextRow ? map(nextRow) : null,
   };
 };
 
@@ -1126,17 +1205,16 @@ export const list = async (params: { spaceId: string; includeCompleted?: boolean
   return hydrateRelations(rows.map(mapToItem), params.viewer);
 };
 
-/**
- * List items with full filtering, sorting, and pagination
- * Uses parameterized queries to prevent SQL injection
- */
-export const listFiltered = async (params: {
+type ItemListParams = {
   spaceId: string;
   filter: ItemFilter;
   viewer?: ReactionViewer;
   currentUserId?: string;
   dateConfig?: DateContext;
-}): Promise<ItemListResult> => {
+};
+
+/** The WHERE and ORDER BY of one filtered list, shared by a single list and the board's columns read together. */
+const itemListSql = (params: Omit<ItemListParams, "viewer">) => {
   const { spaceId, filter, currentUserId } = params;
   const {
     itemIds,
@@ -1154,8 +1232,6 @@ export const listFiltered = async (params: {
     sort,
     sortDesc,
     groupBy,
-    page,
-    pageSize,
   } = filter;
 
   // Build WHERE conditions as SQL fragments (safe from injection)
@@ -1333,6 +1409,16 @@ export const listFiltered = async (params: {
       break;
     }
   }
+  return { conditions, orderClause, sortClause, groupKey };
+};
+
+/**
+ * List items with full filtering, sorting, and pagination
+ * Uses parameterized queries to prevent SQL injection
+ */
+export const listFiltered = async (params: ItemListParams): Promise<ItemListResult> => {
+  const { groupBy, page, pageSize } = params.filter;
+  const { conditions, orderClause, sortClause, groupKey } = itemListSql(params);
 
   let groupCounts: Record<string, number> | undefined;
   if (groupBy !== "none") {
@@ -1394,6 +1480,70 @@ export const listFiltered = async (params: {
     totalPages,
     ...(groupCounts ? { groupCounts } : {}),
   };
+};
+
+/**
+ * Several ungrouped lists of one Space at once, such as the board's columns. One statement counts every list (and,
+ * when asked, its size without the board's filter), one statement reads each list's page as its own windowed
+ * subquery, and one hydration covers all rows. Each list keeps listFiltered's WHERE, order and paging, so the cost no
+ * longer grows with the number of lists.
+ */
+export const listFilteredBatch = async (params: {
+  spaceId: string;
+  lists: { filter: ItemFilter; unfiltered?: ItemFilter }[];
+  viewer?: ReactionViewer;
+  currentUserId?: string;
+  dateConfig?: DateContext;
+}): Promise<{ result: ItemListResult; unfilteredTotal?: number }[]> => {
+  if (params.lists.length === 0) return [];
+  const context = { spaceId: params.spaceId, currentUserId: params.currentUserId, dateConfig: params.dateConfig };
+  const lists = params.lists.map((list) => ({
+    filter: list.filter,
+    query: itemListSql({ ...context, filter: list.filter }),
+    unfiltered: list.unfiltered ? itemListSql({ ...context, filter: list.unfiltered }).conditions : null,
+  }));
+  const counted = lists.flatMap((list) => (list.unfiltered ? [list.query.conditions, list.unfiltered] : [list.query.conditions]));
+  const [counts] = await sql<{ totals: number[] }[]>`
+    SELECT ARRAY[${counted
+      .map((conditions) => sql`COUNT(*) FILTER (WHERE ${conditions})::int`)
+      .reduce((acc, count) => sql`${acc}, ${count}`)}] AS totals
+    FROM spaces.items i
+    WHERE i.space_id = ${params.spaceId}
+  `;
+  const pages = lists.map(
+    ({ filter, query }, index) => sql`(
+      SELECT ${index}::int AS list, ROW_NUMBER() OVER (ORDER BY ${query.orderClause}) AS position, i.id
+      FROM spaces.items i
+      LEFT JOIN spaces.columns c ON i.column_id = c.id
+      WHERE ${query.conditions}
+      ORDER BY ${query.orderClause}
+      LIMIT ${filter.pageSize} OFFSET ${(filter.page - 1) * filter.pageSize}
+    )`,
+  );
+  const rows = await sql<(DbItem & { list: number })[]>`
+    SELECT page.list, i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at,
+           i.all_day, i.deadline, i.deadline_date::text AS deadline_date, i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
+           i.rank::text AS rank,
+           i.completed_at,
+           i.created_by, i.created_by_workload, i.created_at, i.updated_at
+    FROM (${pages.reduce((acc, page) => sql`${acc} UNION ALL ${page}`)}) page
+    JOIN spaces.items i ON i.id = page.id
+    ORDER BY page.list, page.position
+  `;
+  const items = await hydrateRelations(rows.map(mapToItem), params.viewer);
+  const byList = lists.map((): SpaceItem[] => []);
+  rows.forEach((row, index) => byList[row.list]!.push(items[index]!));
+  const totals = Array.from(counts?.totals ?? [], Number);
+  let next = 0;
+  return lists.map((list, index) => {
+    const total = totals[next++] ?? 0;
+    const unfilteredTotal = list.unfiltered ? (totals[next++] ?? 0) : undefined;
+    const { page, pageSize } = list.filter;
+    return {
+      result: { items: byList[index]!, total, page, pageSize, totalPages: Math.ceil(total / pageSize) },
+      ...(unfilteredTotal === undefined ? {} : { unfilteredTotal }),
+    };
+  });
 };
 
 /**

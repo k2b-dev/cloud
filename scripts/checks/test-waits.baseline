@@ -50,8 +50,6 @@ packages/notebooks/src/frontend/lib/editor/late-parse.behavior.test.ts | 1
 packages/notebooks/src/frontend/lib/editor/query-blocks.behavior.test.tsx | 1
 packages/oauth/src/device-grant.integration.test.ts | 1
 packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts | 1
-packages/spaces/test/assignee-picker.behavior.test.tsx | 1
-packages/spaces/test/detail-properties.behavior.test.tsx | 1
 packages/ui/test/calendar-month-drag.behavior.test.ts | 3
 packages/ui/test/dropdown-sheet-dispose.behavior.test.tsx | 1
 packages/ui/test/dropdown-sheet-immediate.behavior.test.tsx | 1

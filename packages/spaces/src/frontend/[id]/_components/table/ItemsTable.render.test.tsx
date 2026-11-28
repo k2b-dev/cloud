@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -44,7 +44,7 @@ const task = (overrides: Partial<SpaceItem> = {}): SpaceItem => ({
   ...overrides,
 });
 
-test("colors each status tag with its column color and falls back to green only for a done column without one", () => {
+test("states are quiet words; the kind is the title's sign in the Space's colour", () => {
   const html = renderToString(() =>
     createComponent(LocaleProvider, {
       locale: "en",
@@ -67,23 +67,24 @@ test("colors each status tag with its column color and falls back to green only 
           tags: [],
           baseUrl: "/app/spaces/Space1",
           dateConfig: { timeZone: "Europe/Berlin" },
+          color: "#6366f1",
         });
       },
     }),
   );
 
-  const statusTag = (name: string) => html.match(new RegExp(`<span\\b[^>]*>\\s*<span\\b[^>]*>${name}</span>`))?.[0];
-
-  expect(statusTag("Verworfen")).toContain("--k2b-choice-color:#ef4444;");
-  expect(statusTag("Verworfen")).not.toContain("--k2b-choice-color:#10b981");
-  expect(statusTag("Erledigt")).toContain("--k2b-choice-color:#10b981;");
-  expect(statusTag("In progress")).toContain("--k2b-choice-color:#3b82f6;");
-  // A completed item in an open column without a color stays untinted, as in List and Kanban.
-  expect(statusTag("Backlog")).toBeDefined();
-  expect(statusTag("Backlog")).not.toContain("--k2b-choice-color");
+  // Identity B: a good or normal state is neutral, a word without colour; colour stands only for a problem.
+  for (const name of ["In progress", "Erledigt", "Verworfen", "Backlog"]) expect(html).toContain(name);
+  expect(html).not.toContain("--k2-c:#3b82f6");
+  expect(html).not.toContain("--k2-c:#10b981");
+  expect(html).not.toContain("--k2-c:#ef4444");
+  // The kind leads the title as its sign in the colour of the Space it belongs to; there is no Kind column.
+  expect(html.match(/data-k2-part="Mark"/g)?.length).toBeGreaterThanOrEqual(4);
+  expect(html).toContain("#6366f1");
+  expect(html).not.toContain(">Kind<");
 });
 
-const renderTable = (item: SpaceItem) =>
+const renderTable = (item: SpaceItem, dateConfig?: { timeZone: string }) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale: "en",
@@ -95,12 +96,31 @@ const renderTable = (item: SpaceItem) =>
           tags: [],
           currentUserId: "33333333-3333-4333-8333-333333333333",
           baseUrl: "/app/spaces/Space1",
+          dateConfig,
         });
       },
     }),
   );
 
-test("shows the working assignee once, first, with one green ring", () => {
+// The Schedule column is 200 px: an event names its day once and its times as a range, as the list row does.
+beforeEach(() => setSystemTime(new Date("2026-10-01T10:00:00Z")));
+afterEach(() => setSystemTime());
+
+test("an event's schedule names its day once: one day with its times, several days with both ends", () => {
+  const berlin = { timeZone: "Europe/Berlin" };
+  const sameDay = renderTable(task({ startsAt: "2026-10-15T12:00:00.000Z", endsAt: "2026-10-15T13:00:00.000Z" }), berlin);
+  expect(sameDay).toContain("Thu, Oct 15, 14:00–15:00");
+  expect(sameDay).not.toContain("Oct 15, 2026");
+  const overnight = renderTable(task({ startsAt: "2026-10-15T20:00:00.000Z", endsAt: "2026-10-16T07:00:00.000Z" }), berlin);
+  expect(overnight).toContain("Thu, Oct 15, 22:00 – Fri, Oct 16, 09:00");
+  // An all-day event ends at midnight, exclusive: one day stays one day, three days name their last.
+  const oneDay = renderTable(task({ startsAt: "2026-10-15T22:00:00.000Z", endsAt: "2026-10-16T22:00:00.000Z", allDay: true }), berlin);
+  expect(oneDay).toContain("Fri, Oct 16<");
+  const threeDays = renderTable(task({ startsAt: "2026-10-15T22:00:00.000Z", endsAt: "2026-10-18T22:00:00.000Z", allDay: true }), berlin);
+  expect(threeDays).toContain("Fri, Oct 16 – Sun, Oct 18");
+});
+
+test("names whoever works on the task once, first, as on it", () => {
   const mira = { id: "44444444-4444-4444-8444-444444444444", kind: "user" as const, displayName: "Mira Beck", avatarHash: null };
   const html = renderTable(
     task({
@@ -117,10 +137,22 @@ test("shows the working assignee once, first, with one green ring", () => {
       },
     }),
   );
-  expect(html.match(/data-ring="success"/g)).toHaveLength(1);
-  expect(html.match(/aria-label="Mira Beck is on it"/g)).toHaveLength(1);
-  expect(html).not.toContain('aria-label="Mira Beck avatar"');
-  expect(html.indexOf('aria-label="Mira Beck is on it"')).toBeLessThan(html.indexOf('aria-label="Valentin Kolb avatar"'));
-  expect(html).toContain('title="Mira Beck, Valentin Kolb"');
-  expect(html).toContain(">Mira Beck, Valentin Kolb</span>");
+  // The people are the row's picture: a stack named once with everyone, whoever works on it first, and each face
+  // once in that order.
+  expect(html).toContain('data-k2-part="Avatar.Stack"');
+  expect(html).toContain('aria-label="Mira Beck is on it, Valentin Kolb"');
+  const faces = [...html.matchAll(/data-k2-part="Avatar"[^>]*>([A-Z]{2})</g)].map((match) => match[1]);
+  expect(faces.slice(0, 2)).toEqual(["MB", "VK"]);
+});
+
+test("the table names when an item was created and last updated, as main's table did", async () => {
+  const { dates } = await import("@k2b/stdlib");
+  const berlin = { timeZone: "Europe/Berlin" };
+  const created = "2026-08-20T10:00:00.000Z";
+  const updated = "2026-09-02T15:30:00.000Z";
+  const html = renderTable(task({ createdAt: created, updatedAt: updated }), berlin);
+  expect(html).toContain(">Created<");
+  expect(html).toContain(">Updated<");
+  expect(html).toContain(dates.formatDateTime(created, berlin));
+  expect(html).toContain(dates.formatDateTime(updated, berlin));
 });

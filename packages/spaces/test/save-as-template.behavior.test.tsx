@@ -3,6 +3,7 @@ import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import type { SpaceItem } from "@/contracts";
 import { createDomTestHarness } from "../../ui/test/dom";
+import { installV2Globals, sendDialog } from "./v2-dom";
 
 if (!isServer)
   mock.module("@/api/client", () => ({ apiClient: { [":id"]: { "assignable-users": { $get: async () => Response.json([]) } } } }));
@@ -42,6 +43,7 @@ describe("Save as template", () => {
 
   test("fills the form from the item and replaces the week or the weekday only when the person says so", async () => {
     const dom = createDomTestHarness();
+    installV2Globals(dom);
     const { TemplateForm } = await import("../src/frontend/[id]/_components/edit/TemplatesSection");
     const { templateFromItem } = await import("../src/frontend/[id]/_components/edit/template-from-item");
     const { LocaleProvider } = await import("@k2b/ui");
@@ -72,10 +74,10 @@ describe("Save as template", () => {
         }),
       dom.root,
     );
-    const text = () => dom.root.textContent ?? "";
+    const text = () => dom.document.body.textContent ?? "";
     const button = (name: string) =>
-      Array.from(dom.root.querySelectorAll("button")).find((candidate) => candidate.textContent?.trim() === name)!;
-    const input = (value: string) => Array.from(dom.root.querySelectorAll("input")).find((candidate) => candidate.value === value);
+      Array.from(dom.document.querySelectorAll("button")).find((candidate) => candidate.textContent?.trim() === name)!;
+    const input = (value: string) => Array.from(dom.document.querySelectorAll("input")).find((candidate) => candidate.value === value);
 
     expect(input("Wochenbericht")).toBeDefined();
     expect(input("Wochenbericht KW 44")).toBeDefined();
@@ -92,7 +94,7 @@ describe("Save as template", () => {
     button("Ja").click();
     expect(text()).toContain("Schlägt die nächsten Freitage vor.");
 
-    dom.root.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
+    sendDialog(dom);
     expect(saved).toEqual([
       expect.objectContaining({
         kind: "task",
@@ -107,6 +109,8 @@ describe("Save as template", () => {
       }),
     ]);
     dispose();
+    // A closing v2 dialog finishes its focus work a moment later, while the window still exists.
+    await Bun.sleep(20);
     dom.cleanup();
   });
 });

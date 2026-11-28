@@ -252,7 +252,7 @@ const pageHtml = (options: { canWrite: boolean; items: CalendarItem[]; tray: Cal
   `<link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style>` +
   "<style>solid-client,solid-island{display:contents}</style></head>" +
   // The workspace main area: a padded flex column the route fills.
-  `<body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box;padding:var(--ui-space-shell)">${serverBody(options)}</main>` +
+  `<body class="k2b-ui" style="margin:0"><main class="k2-ui" style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box">${serverBody(options)}</main>` +
   `<script type="module">document.querySelectorAll('solid-island').forEach((e)=>import('/_ssr/'+e.dataset.id+'.js'))</script></body></html>`;
 
 let caseCounter = 0;
@@ -345,13 +345,15 @@ const focusedInTray = (page: Page) =>
   });
 
 describe(`Spaces task tray in ${browserName}`, () => {
-  test("keeps the tray below the day on every screen, and the day in place whether the tray is full, empty, or loading", async () => {
-    mkdirSync(shots, { recursive: true });
-    for (const [name, view] of [
-      ["desktop-1440", desktop],
-      ["ipad-1024", tablet],
-      ["phone-390", phone],
-    ] as const) {
+  // One case per screen.
+  for (const [name, view] of [
+    ["desktop-1440", desktop],
+    ["ipad-1024", tablet],
+    ["phone-390", phone],
+  ] as const) {
+    const title = `keeps the tray below the day at ${name}, and the day in place whether the tray is full, empty, or loading`;
+    test(title, async () => {
+      mkdirSync(shots, { recursive: true });
       const server = await open(view, { javaScript: false });
       const serverDay = await rounded(server, DAY);
       const serverTray = await rounded(server, TRAY);
@@ -376,8 +378,8 @@ describe(`Spaces task tray in ${browserName}`, () => {
       expect(await rounded(empty, TRAY)).toEqual(tray);
       await empty.getByText("Nichts überfällig und keine Aufgaben ohne Datum für dich").waitFor();
       await empty.context().close();
-    }
-  }, 120_000);
+    }, 120_000);
+  }
 
   test("keeps the row while a day opens from the month view, so the day does not move when its tasks come in", async () => {
     const page = await open(desktop, { href: hrefOf(TODAY, "month") });
@@ -409,8 +411,10 @@ describe(`Spaces task tray in ${browserName}`, () => {
     try {
       viewRequests.splice(0);
       // Only urgent tasks: the row's tasks no longer answer the filter, so it waits for the ones that do.
-      await page.getByRole("button", { name: "Priorität" }).click();
-      await page.getByRole("menuitemcheckbox", { name: "Dringend" }).click();
+      // The filter bar under the head: "+ Filter", the field, then its value.
+      await page.locator('[data-k2-part="FilterBar"] .k2-fbar-add button').click();
+      await page.getByRole("menuitem", { name: "Priorität" }).click();
+      await page.getByRole("option", { name: "Dringend", exact: true }).click();
       await page.keyboard.press("Escape");
       await requested((href) => href.includes("cpriority=urgent"));
       await page.locator(`${TRAY}[aria-busy="true"]`).waitFor({ timeout: 5000 });
@@ -574,7 +578,7 @@ describe(`Spaces task tray in ${browserName}`, () => {
     expect(await opened).toContain("cv=day&cd=2026-10-08&item=Late02");
     // The reader has three undated tasks and sees two, so the tray links to the list with all of them.
     expect(await page.getByRole("link", { name: "Alle anzeigen: 3 deiner Aufgaben ohne Datum" }).getAttribute("href")).toBe(
-      "/app/spaces/Space1?view=list&type=task&assignedTo=me&deadline=none&sort=priority",
+      "/app/spaces/Space1?view=list&type=task&assignedTo=me&deadline=none&sort=priority.asc",
     );
     await page.context().close();
   }, 60_000);
@@ -669,7 +673,7 @@ describe(`Spaces task tray in ${browserName}`, () => {
     await page.context().close();
   }, 60_000);
 
-  test("fits Today, the views, and New event in one header row on tablets and on a phone, where the views are a menu", async () => {
+  test("fits Today and the views in one header row on tablets and on a phone, where the views are a menu, with New event in the page head", async () => {
     for (const view of [phone, tablet, { width: 1366, height: 1024, touch: true }, desktop]) {
       const page = await open(view);
       const rows = await page.locator(".k2b-calendar-header__actions a, .k2b-calendar-header__actions button").evaluateAll((elements) => {
@@ -680,10 +684,16 @@ describe(`Spaces task tray in ${browserName}`, () => {
         const others = boxes(elements.filter((element) => element.getAttribute("role") !== "radio"));
         return { count: views.length + others.length, all: oneRow([...views, ...others]), views: oneRow(views), others: oneRow(others) };
       });
-      // A phone keeps Today, the views as one menu ("Woche ▾", no segmented control) and New event in the title's row;
+      // A phone keeps Today and the views as one menu ("Woche ▾", no segmented control) in the title's row;
       // wider screens show the four views as a segmented control in the same row.
-      expect(rows).toEqual({ count: view === desktop ? 7 : view === phone ? 3 : 6, all: true, views: true, others: true });
+      expect(rows).toEqual({ count: view === desktop ? 6 : view === phone ? 2 : 5, all: true, views: true, others: true });
       expect(await page.locator(".k2b-calendar-view-menu__trigger").isVisible()).toBe(view === phone);
+      // New event left the calendar's header: it is the head's main menu, on a phone the page's main button.
+      const create =
+        view === phone
+          ? page.locator(".k2-fab").getByText("Neuer Termin")
+          : page.locator('[data-k2-workspace] > .k2-ws-main > [data-slot="head"]').getByRole("button", { name: "Neuer Termin" });
+      expect(await create.isVisible()).toBe(true);
       await page.context().close();
     }
   }, 90_000);

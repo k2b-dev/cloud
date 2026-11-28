@@ -1,5 +1,5 @@
 import { CloudAvatar } from "@k2b/cloud/account/ui";
-import { Avatar, type AvatarSize } from "@k2b/ui";
+import type { AvatarSize } from "@k2b/ui";
 import type { SpaceItemClaim } from "@/contracts";
 import { useSpaceMessages } from "../../../messages";
 import { isOwnClaim } from "./claim";

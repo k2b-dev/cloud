@@ -1,11 +1,14 @@
-import { afterAll, afterEach, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, expect, mock, test } from "bun:test";
 import type { SpaceItemClaim } from "@/contracts";
 import { createDomTestHarness } from "../../../../../../../ui/test/dom";
 
 // The prompts and their components load against a document.
 const dom = createDomTestHarness();
 afterAll(() => dom.cleanup());
-const { prompts } = await import("@k2b/ui");
+// The v2 question is answered here, so each test sees what it asks.
+const ui = await import("@k2b/ui/v2");
+const confirm = mock((_options: Parameters<typeof ui.confirm>[0]) => Promise.resolve(false));
+mock.module("@k2b/ui/v2", () => ({ ...ui, confirm }));
 const { spaceMessages } = await import("../../../messages");
 const { resolveAssigneeClaim, isClaimHolder } = await import("./claim");
 
@@ -20,7 +23,7 @@ const claimOf = (actor: SpaceItemClaim["actor"], displayName: string): SpaceItem
   claimedAt: "2026-09-26T08:00:00.000Z",
 });
 const t = spaceMessages.resolve(["en"]).t;
-const confirm = spyOn(prompts, "confirm");
+
 afterEach(() => confirm.mockReset());
 
 test("a list that keeps the person working on the task needs no claim fields and asks nothing", async () => {
@@ -52,8 +55,11 @@ test("removing someone else who works on the task asks once and then ends their 
   confirm.mockResolvedValueOnce(true);
   expect(await resolveAssigneeClaim(claim, me, [claim.actor], [kim], t)).toEqual({ claimId: claim.id, force: true });
   expect(confirm).toHaveBeenCalledTimes(1);
-  expect(confirm.mock.calls[0]?.[0]).toBe("Jana Berger is working on this – remove them and end their claim?");
-  expect(confirm.mock.calls[0]?.[1]).toMatchObject({ title: "Remove assignee", confirmText: "Remove and end claim" });
+  expect(confirm.mock.calls[0]?.[0]).toMatchObject({
+    title: "Remove assignee",
+    description: "Jana Berger is working on this – remove them and end their claim?",
+    confirm: "Remove and end claim",
+  });
 
   confirm.mockResolvedValueOnce(false);
   expect(await resolveAssigneeClaim(claim, me, [claim.actor], [], t)).toBeNull();
@@ -68,7 +74,7 @@ test("the confirmation speaks German for a German person", async () => {
     [],
     spaceMessages.resolve(["de"]).t,
   );
-  expect(confirm.mock.calls[0]?.[0]).toBe("Jana Berger arbeitet daran – entfernen und die Übernahme beenden?");
+  expect(confirm.mock.calls[0]?.[0]?.description).toBe("Jana Berger arbeitet daran – entfernen und die Übernahme beenden?");
 });
 
 test("claim holders match both principal kind and ID", () => {

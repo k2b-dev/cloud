@@ -349,7 +349,7 @@ const pageHtml = (options: { canWrite: boolean; items: CalendarItem[]; tray: Cal
   `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
   `<link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style>` +
   "<style>solid-client,solid-island{display:contents}</style></head>" +
-  `<body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box;padding:var(--ui-space-shell)">${serverBody(options)}</main>` +
+  `<body class="k2b-ui" style="margin:0"><main class="k2-ui" style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box">${serverBody(options)}</main>` +
   `<script type="module">document.querySelectorAll('solid-island').forEach((e)=>import('/_ssr/'+e.dataset.id+'.js'))</script></body></html>`;
 
 let caseCounter = 0;
@@ -518,14 +518,14 @@ describe(`Spaces day and week views in ${browserName}`, () => {
     }
   }, 120_000);
 
-  test("the toolbar's New event opens one menu with both kinds of templates, and the quick create takes a template", async () => {
+  test("the head's New event opens one menu with both kinds of templates, and the quick create takes a template", async () => {
     const page = await open(desktop, { href: `${hrefOf(TODAY)}&tpl=1` });
     try {
-      const toolbar = page.getByRole("button", { name: "Neuer Termin" }).first();
-      await toolbar.click();
-      const menu = page.locator(".k2b-dropdown__menu:popover-open");
+      const head = page.locator('[data-k2-workspace] > .k2-ws-main > [data-slot="head"]');
+      await head.getByRole("button", { name: "Neuer Termin" }).click();
+      const menu = page.getByRole("menu");
       await menu.waitFor();
-      expect(await menu.locator("[role='menuitem'] .k2b-dropdown__copy > span").allTextContents()).toEqual([
+      expect(await menu.locator("[role='menuitem'] .k2-mi-label").allTextContents()).toEqual([
         "Leerer Termin",
         "Leere Aufgabe mit Frist",
         "Kundentermin",
@@ -731,8 +731,10 @@ describe(`Spaces day and week views in ${browserName}`, () => {
     const monday = '.k2b-calendar-days__day[data-calendar-keys="2026-10-12"]';
     const before = await box(page, monday);
     viewRequests.splice(0);
-    await page.getByRole("button", { name: "Priorität" }).click();
-    await page.getByRole("menuitemcheckbox", { name: "Hoch" }).click();
+    // The filter bar in the calendar's header: "+ Filter", the field, then its value.
+    await page.locator('[data-k2-part="FilterBar"] .k2-fbar-add button').click();
+    await page.getByRole("menuitem", { name: "Priorität" }).click();
+    await page.getByRole("option", { name: "Hoch", exact: true }).click();
     await page.keyboard.press("Escape");
     expect(await eventually(() => viewRequests.find((request) => request.href.includes("cpriority=high")))).toMatchObject({
       href: expect.stringContaining("cd=2026-10-12"),
@@ -764,8 +766,10 @@ describe(`Spaces day and week views in ${browserName}`, () => {
       });
       const pending = await eventually(() => viewRequests.find((request) => request.from && Date.parse(request.from) < Date.parse(first)));
       expect(pending.includeTray).toBe("false");
-      await page.getByRole("button", { name: "Priorität" }).click();
-      await page.getByRole("menuitemcheckbox", { name: "Hoch" }).click();
+      // The filter bar under the head: "+ Filter", the field, then its value.
+      await page.locator('[data-k2-part="FilterBar"] .k2-fbar-add button').click();
+      await page.getByRole("menuitem", { name: "Priorität" }).click();
+      await page.getByRole("option", { name: "Hoch", exact: true }).click();
       await page.keyboard.press("Escape");
       expect(
         await eventually(() => viewRequests.find((request) => request.href.includes("cpriority=high") && request.from === first)),
@@ -800,13 +804,15 @@ describe(`Spaces day and week views in ${browserName}`, () => {
     const columnWidth = (await box(page, "[data-calendar-column]")).width;
     const left = () => page.locator(WEEK).evaluate((element) => element.scrollLeft);
     const start = await left();
+    // The week opens with now in its upper third, so the hours may start scrolled; a sideways gesture keeps them there.
+    const top = await page.locator(WEEK).evaluate((element) => element.scrollTop);
     // A sideways trackpad gesture with a little drift up and down moves only the days, and settles on a day start.
     await gesture(page, WEEK, 32, 5, 10);
     await rested(page);
     const moved = await left();
     expect(moved).toBeGreaterThan(start);
     expect(Math.abs(moved / columnWidth - Math.round(moved / columnWidth))).toBeLessThan(0.02);
-    expect(await page.locator(WEEK).evaluate((element) => element.scrollTop)).toBe(0);
+    expect(await page.locator(WEEK).evaluate((element) => element.scrollTop)).toBe(top);
     // Shift with the wheel goes sideways too.
     await gesture(page, WEEK, 0, 120, 2, true);
     await rested(page);

@@ -7,9 +7,10 @@ import { spacesPageHelp } from "../../help";
 import { spacesService } from "../../service";
 import { isEstimateSuggestionAvailable } from "../../service/estimate-suggestion";
 import { isMailInvitationIntegrationAvailable } from "../../service/mail-integration";
-import { loadSpacesSidebar } from "../../service/overview";
+import { loadSpacePulse, loadSpacesSidebar } from "../../service/overview";
 import { spacesPublicResources } from "../../service/public-resources";
-import SpacesWorkspace from "./_components/workspace/SpacesWorkspace";
+import { legacyFilterHref } from "./_components/filter/query";
+import SpaceScreen from "./_components/workspace/SpaceScreen.island";
 import { loadSpacesWorkspaceState } from "./_components/workspace/workspace-state";
 import { spaceMessages } from "./messages";
 
@@ -21,6 +22,9 @@ export default ssr<AuthContext>(async (c) => {
     : null;
   const dateConfig = getDateConfig(c);
   if (!spaceId) return ssr.error(c, 404, { action: { label: t.allSpaces, href: "/app/spaces" } });
+  // Addresses from before v2 (`sort=deadline&sortDesc=true`) open the same list in the v2 address.
+  const legacy = legacyFilterHref(new URL(c.req.url));
+  if (legacy) return c.redirect(legacy);
   const user = expectUserBackedActor(c);
   const statePromise = loadSpacesWorkspaceState({
     user,
@@ -40,12 +44,14 @@ export default ssr<AuthContext>(async (c) => {
   const estimatePromise = statePromise.then((state) =>
     state.kind === "ok" && state.canWrite ? isEstimateSuggestionAvailable(c.get("accessSubject")) : false,
   );
-  const [state, mailIntegrationAvailable, sidebar, people, estimateSuggestions] = await Promise.all([
+  const [state, mailIntegrationAvailable, sidebar, people, estimateSuggestions, pulse] = await Promise.all([
     statePromise,
     isMailInvitationIntegrationAvailable(appAccessAuthority(c)),
-    loadSpacesSidebar({ userId: user.id, cookieHeader: c.req.header("Cookie"), dateConfig }),
+    loadSpacesSidebar({ userId: user.id, cookieHeader: c.req.header("Cookie"), dateConfig, openSpaceId: spaceShortId }),
     peoplePromise,
     estimatePromise,
+    // The Space's first band: one aggregate statement with the overview's access condition.
+    loadSpacePulse({ userId: user.id, spaceId, dateConfig }),
   ]);
 
   if (state.kind !== "ok")
@@ -60,16 +66,19 @@ export default ssr<AuthContext>(async (c) => {
       c={c}
       help={spacesPageHelp.workspace}
       fullWidth
+      ui="v2"
+      // The phone bar names the open Space, not the app.
+      headTitle="page"
       title={state.title}
     >
-      <SpacesWorkspace
-        userId={user.id}
+      <SpaceScreen
         state={state}
         dateConfig={dateConfig}
         mailIntegrationAvailable={mailIntegrationAvailable}
         estimateSuggestions={estimateSuggestions}
         sidebar={sidebar}
         people={people}
+        pulse={pulse}
       />
     </Layout>
   );

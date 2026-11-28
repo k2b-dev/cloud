@@ -1,91 +1,83 @@
-import { AppWorkspace, LocaleProvider } from "@k2b/ui";
-import type { ComponentProps } from "solid-js";
-import type { ItemListResult } from "@/contracts";
-import SpaceHeadFilters from "../filter/SpaceHeadFilters.island";
-import { defaultFilter } from "../filter/types";
-import SpaceHeadActions from "../workspace/SpaceHeadActions.island";
-import SpacesKanbanRoute from "../workspace/SpacesKanbanRoute.island";
-import SpacesListRoute from "../workspace/SpacesListRoute.island";
+import { LocaleProvider } from "@k2b/ui";
+import type { SpaceColumn, SpaceTag, SpaceWormhole } from "@/contracts";
+import SpaceScreen from "../workspace/SpaceScreen.island";
+import type { KanbanBucketInitial } from "./types";
 
-type Props = ComponentProps<typeof SpacesKanbanRoute> & { locale: string; workspace?: "kanban" | "table"; itemsResult?: ItemListResult };
+type Props = {
+  spaceId: string;
+  baseUrl: string;
+  columns: SpaceColumn[];
+  tags: SpaceTag[];
+  wormholes: SpaceWormhole[];
+  initialBuckets: KanbanBucketInitial[];
+  foldedColumns: string[];
+  selectedItemId: string;
+  canWrite: boolean;
+  currentUserId: string;
+  locale: string;
+};
 
-/** The Kanban route as the workspace page mounts it: an island below the server locale. */
+/**
+ * The board as the Space page mounts it on v2: the page's one island, `SpaceScreen`, below the server
+ * locale, with the board as the Space's own view (no `view` in the address).
+ */
 export default function KanbanFixture(props: Props) {
-  const route = () =>
-    props.workspace === "table" && props.itemsResult ? (
-      <SpacesListRoute
-        spaceId={props.spaceId}
-        currentView="table"
-        columns={props.columns}
-        tags={props.tags}
-        filter={defaultFilter}
-        initialItemsResult={props.itemsResult}
-        initialSelectedItemId=""
-        itemLinkBaseUrl={props.baseUrl}
-        paginationBaseUrl={`${props.baseUrl}&page=`}
-        canWrite={props.canWrite}
-        currentUserId={props.currentUserId}
-      />
-    ) : (
-      <SpacesKanbanRoute
-        spaceId={props.spaceId}
-        baseUrl={props.baseUrl}
-        columns={props.columns}
-        tags={props.tags}
-        wormholes={props.wormholes}
-        initialBuckets={props.initialBuckets}
-        foldedColumns={props.foldedColumns}
-        selectedItemId={props.selectedItemId}
-        canWrite={props.canWrite}
-        currentUserId={props.currentUserId}
-      />
-    );
+  const view = "kanban";
+  const space = {
+    id: props.spaceId,
+    name: "Project",
+    description: null,
+    color: "#3b82f6",
+    icalToken: null,
+    columns: props.columns,
+    tags: props.tags,
+    templates: [],
+    virtualColumns: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const query = new URL(props.baseUrl, "http://spaces.local").searchParams.toString();
   return (
     <LocaleProvider locale={props.locale}>
-      <AppWorkspace>
-        {props.workspace && (
-          <AppWorkspace.Sidebar>
-            <AppWorkspace.SidebarDesktop>
-              <AppWorkspace.SidebarItem href="/app/spaces/Space1" active>
-                Project
-              </AppWorkspace.SidebarItem>
-            </AppWorkspace.SidebarDesktop>
-          </AppWorkspace.Sidebar>
-        )}
-        <AppWorkspace.Head
-          filters={
-            <SpaceHeadFilters
-              spaceId={props.spaceId}
-              columns={props.columns}
-              tags={props.tags}
-              currentView={props.workspace === "table" ? "table" : "kanban"}
-              initialSource={props.baseUrl}
-              initialTotal={props.itemsResult?.total}
-            />
-          }
-          actions={
-            <SpaceHeadActions
-              spaceId={props.spaceId}
-              spaceName="Project"
-              icalToken={null}
-              baseUrl={props.baseUrl}
-              currentView={props.workspace === "table" ? "table" : "kanban"}
-              canWrite={props.canWrite}
-              people={[]}
-            />
-          }
-        />
-        <AppWorkspace.Content>
-          <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scroll={false}>
-            {route()}
-          </AppWorkspace.Main>
-          {props.workspace && (
-            <AppWorkspace.Detail id="item" open>
-              Selected item
-            </AppWorkspace.Detail>
-          )}
-        </AppWorkspace.Content>
-      </AppWorkspace>
+      <SpaceScreen
+        sidebar={{
+          spaces: [{ id: props.spaceId, name: space.name, color: space.color, openItemCount: 0 }],
+          pinnedSpaceIds: [],
+          recentSpaceIds: [],
+          unlistedSpaceCount: 0,
+          myWorkCount: 0,
+        }}
+        people={[]}
+        mailIntegrationAvailable={false}
+        pulse={{ done: Array(14).fill(0), overdue: 0, unassigned: 0 }}
+        state={{
+          kind: "ok",
+          title: [{ title: "Spaces", href: "/app/spaces" }, { title: space.name }],
+          currentUserId: props.currentUserId,
+          space,
+          settings: { view, hideSettings: false, ...(props.foldedColumns.length ? { foldedColumns: props.foldedColumns } : {}) },
+          currentView: view,
+          hasOverride: false,
+          isAdmin: false,
+          canWrite: props.canWrite,
+          accessVisible: false,
+          query,
+          icalBaseUrl: "https://cloud.example.test",
+          eventCursor: null,
+          snapshotDay: "2026-10-01",
+          itemsResult: { items: [], total: 0, page: 1, pageSize: 50, totalPages: 0, groupCounts: {} },
+          kanbanBuckets: props.initialBuckets,
+          calendarView: "month",
+          calendarDate: "2026-10-01T00:00:00.000Z",
+          calendarFilter: { type: "all", assignedTo: "all", priorities: [], columnIds: [], tagIds: [], colorBy: "tag" },
+          calendarRange: { from: "2026-09-28T00:00:00.000Z", to: "2026-11-02T00:00:00.000Z" },
+          calendarItems: [],
+          calendarWeather: {},
+          calendarTray: null,
+          selectedItemDetail: null,
+          wormholes: props.wormholes,
+        }}
+      />
     </LocaleProvider>
   );
 }

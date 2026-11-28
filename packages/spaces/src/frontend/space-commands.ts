@@ -9,7 +9,7 @@ import { apiClient } from "../api/client";
 import { SpaceBrowseDataSchema } from "../capability-contracts";
 import { SpaceComposeInputSchema, SpaceInvitationInputSchema, spaceCommandMessages } from "../commands";
 import type { SpaceDetail, SpaceItemResourceReferenceInput } from "../contracts";
-import { createItemController } from "./[id]/_components/sidebar/CreateItemButton";
+import { createItemController } from "./[id]/_components/sidebar/create-item";
 
 export const createSpaceCommands = (options: { current?: () => SpaceDetail | undefined; dateConfig?: DateContext }) => {
   const locale = useLocale();

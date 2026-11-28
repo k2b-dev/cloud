@@ -12,7 +12,7 @@ describe("the space the Spaces entry opens next", () => {
     const dom = createDomTestHarness();
     let visibility: DocumentVisibilityState = "visible";
     Object.defineProperty(dom.document, "visibilityState", { configurable: true, get: () => visibility });
-    const { default: RememberSpace } = await import("../src/frontend/[id]/_components/workspace/RememberSpace.island");
+    const { default: RememberSpace } = await import("../src/frontend/[id]/_components/workspace/RememberSpace");
     const { parseLastSpaceId, setLastSpaceId } = await import("../src/frontend/[id]/_components/settings/SpaceSettingsStore");
     const pages: Array<() => void> = [];
     return {

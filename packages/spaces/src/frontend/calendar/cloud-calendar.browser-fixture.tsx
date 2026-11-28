@@ -16,6 +16,7 @@ export default function CloudCalendarFixture(props: Props) {
         items={props.items}
         reads={props.reads}
         today={props.today}
+        now={props.now}
         canCreateSpace={props.canCreateSpace}
         dateConfig={props.dateConfig}
       />

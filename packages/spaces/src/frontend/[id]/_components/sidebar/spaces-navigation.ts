@@ -1,11 +1,18 @@
-import { importOnDemand } from "@k2b/cloud/browser/reload";
-import type { NavigationItem } from "@k2b/ui";
 import { createSignal, onCleanup, onMount } from "solid-js";
-import type { overviewMessages } from "../../../overview-messages";
 
-export type SidebarSpace = { id: string; name: string; color: string; description: string | null; openItemCount: number };
+export type SidebarSpace = { id: string; name: string; color: string; openItemCount: number };
 export type SpacesSidebarCurrent = { kind: "overview" } | { kind: "calendar" } | { kind: "space"; id: string };
-export type SpacesSidebarData = { spaces: SidebarSpace[]; pinnedSpaceIds: string[]; myWorkCount: number };
+/**
+ * The server sends the Spaces the sidebar shows before a search (the pinned, the recent and the open one, and the first
+ * 20 by name); `unlistedSpaceCount` counts the reachable Spaces it left out.
+ */
+export type SpacesSidebarData = {
+  spaces: SidebarSpace[];
+  unlistedSpaceCount: number;
+  pinnedSpaceIds: string[];
+  recentSpaceIds: string[];
+  myWorkCount: number;
+};
 
 const PINS_CHANGED_EVENT = "spaces-pins-changed";
 const PINS_REQUEST_EVENT = "spaces-pins-request";
@@ -41,55 +48,47 @@ export function createPinnedSpaces(initial: string[]) {
   return [pinned, update] as const;
 }
 
-/** Pin order is shared by the desktop rows and the phone title menu. */
-export const orderSidebarSpaces = (spaces: SidebarSpace[], pinnedSpaceIds: string[]) =>
-  [...spaces].sort((left, right) => {
-    const a = pinnedSpaceIds.indexOf(left.id);
-    const b = pinnedSpaceIds.indexOf(right.id);
-    if (a === -1 && b === -1) return 0;
-    if (a === -1) return 1;
-    if (b === -1) return -1;
-    return a - b;
-  });
-
-export const createSpacesNavigationItems = (props: {
-  spaces: SidebarSpace[];
-  pinnedSpaceIds: string[];
-  current: SpacesSidebarCurrent;
-  canCreate: boolean;
-  myWorkLabel: string;
-  calendarLabel: string;
-  newSpaceLabel: string;
-}): NavigationItem[] => [
-  { id: "my-work", label: props.myWorkLabel, icon: "ti ti-checkbox", href: "/app/spaces", active: props.current.kind === "overview" },
-  {
-    id: "all-calendars",
-    label: props.calendarLabel,
-    icon: "ti ti-calendar",
-    href: "/app/spaces/calendar",
-    active: props.current.kind === "calendar",
-  },
-  ...orderSidebarSpaces(props.spaces, props.pinnedSpaceIds).map((space) => ({
-    id: space.id,
-    label: space.name,
-    color: space.color,
-    icon: props.pinnedSpaceIds.includes(space.id) ? "ti ti-flag" : "ti ti-circle-filled",
-    href: `/app/spaces/${space.id}`,
-    active: props.current.kind === "space" && props.current.id === space.id,
-  })),
-  ...(props.canCreate ? [{ id: "new-space", label: props.newSpaceLabel, icon: "ti ti-plus", action: "new-space" }] : []),
-];
-
-export function createNewSpace(t: ReturnType<typeof overviewMessages.resolve>["t"]) {
-  const [pending, setPending] = createSignal(false);
-  return async () => {
-    if (pending()) return;
-    setPending(true);
-    try {
-      const dialog = await importOnDemand(() => import("../../../create-space-dialog"));
-      if (dialog) await dialog.createSpaceCreation(t)();
-    } finally {
-      setPending(false);
-    }
+/**
+ * The order of the sidebar and the phone menu: pinned Spaces in pin order, then the ones opened last, newest first,
+ * then the rest as the server lists them.
+ */
+export const orderSidebarSpaces = (spaces: SidebarSpace[], pinnedSpaceIds: string[], recentSpaceIds: string[]) => {
+  const rank = (space: SidebarSpace): [number, number] => {
+    const pin = pinnedSpaceIds.indexOf(space.id);
+    if (pin !== -1) return [0, pin];
+    const recent = recentSpaceIds.indexOf(space.id);
+    return recent === -1 ? [2, 0] : [1, recent];
   };
-}
+  return [...spaces].sort((left, right) => {
+    const [a, i] = rank(left);
+    const [b, j] = rank(right);
+    return a - b || i - j;
+  });
+};
+
+/** The sidebar lists at most this many Spaces before a search (as Grids and Pulse do), and this many matches. */
+export const SIDEBAR_SPACES = 20;
+export const SIDEBAR_MATCHES = 50;
+/** From this many Spaces the sidebar holds a search. */
+export const SIDEBAR_SEARCH_FROM = 8;
+
+/**
+ * The Spaces the sidebar shows, in `orderSidebarSpaces` order: before a search the first 20, the open Space always
+ * among them; a search finds by name among the listed ones, at most 50. `hidden` counts the ones left out, with the
+ * `unlisted` ones the server did not send; "+n more" opens the search of all Spaces for them.
+ */
+export const sidebarSpaceList = (
+  spaces: SidebarSpace[],
+  options: { pinned: string[]; recent: string[]; currentId?: string; query: string; locale: string; unlisted: number },
+): { shown: SidebarSpace[]; hidden: number } => {
+  const ordered = orderSidebarSpaces(spaces, options.pinned, options.recent);
+  const needle = options.query.trim().toLocaleLowerCase(options.locale);
+  if (needle) {
+    const matches = ordered.filter((space) => space.name.toLocaleLowerCase(options.locale).includes(needle));
+    return { shown: matches.slice(0, SIDEBAR_MATCHES), hidden: Math.max(0, matches.length - SIDEBAR_MATCHES) + options.unlisted };
+  }
+  let shown = ordered.slice(0, SIDEBAR_SPACES);
+  const current = ordered.find((space) => space.id === options.currentId);
+  if (current && !shown.includes(current)) shown = [...shown.slice(0, SIDEBAR_SPACES - 1), current];
+  return { shown, hidden: ordered.length - shown.length + options.unlisted };
+};

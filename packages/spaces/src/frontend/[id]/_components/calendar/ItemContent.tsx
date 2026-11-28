@@ -93,7 +93,11 @@ export function CalendarItemContent(props: {
   );
 }
 
-/** A band, a deadline, or an all-day entry of the day and week views, in the calendar's own parts. */
+/**
+ * A band, a deadline, or an all-day entry of the day and week views, in the calendar's own parts.
+ * k2b-ui gap: in a narrow band (many overlapping entries) the calendar's line clamp ends every word with an ellipsis
+ * ("An… saf… bri…") and clips the last line mid-glyph; the day and week views have no "+n" for overlaps.
+ */
 function TimelineContent(props: {
   event: CalendarEvent;
   context: CalendarEventRenderContext;

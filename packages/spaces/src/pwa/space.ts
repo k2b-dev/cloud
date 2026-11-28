@@ -263,7 +263,8 @@ export async function loadPwaSpaceEntries(params: {
   myWorkCount: number;
 }): Promise<PwaSpaceEntry[]> {
   const [sidebar, writable] = await Promise.all([
-    loadSpacesSidebar({ userId: params.userId, cookieHeader: params.cookieHeader, myWorkCount: params.myWorkCount }),
+    // The title's switcher lists every Space and finds among them; it has no "+n more" to the search of all Spaces.
+    loadSpacesSidebar({ userId: params.userId, cookieHeader: params.cookieHeader, myWorkCount: params.myWorkCount, complete: true }),
     spacesService.space.list({ subject: { type: "user", userId: params.userId }, requiredLevel: "write" }),
   ]);
   const writableIds = new Set((await spacesPublicResources.projectSpaces(writable.items)).map((space) => space.id));

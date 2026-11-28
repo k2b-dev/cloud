@@ -1,7 +1,9 @@
 import type { DateContext } from "@k2b/stdlib";
+import type { JSX } from "solid-js";
 import type { CalendarItem, SpaceColumn, SpaceItemTemplate, SpaceTag } from "@/contracts";
+import type { CreateMenuChoice } from "../shared/create-menu";
 import type { CalendarTray } from "../workspace/workspace-types";
-import type { CalendarFilter } from "./filter";
+import type { CalendarColorBy, CalendarFilter } from "./filter";
 import type { CalendarRange } from "./range";
 
 export type CalendarView = "day" | "week" | "month" | "year";
@@ -15,6 +17,8 @@ export type DayWeather = {
 
 export type CalendarProps = {
   spaceId: string;
+  /** The page's controls in the calendar's own header row, right after the period title: its filters and count. */
+  toolbarContent?: JSX.Element;
   items: CalendarItem[];
   columns: SpaceColumn[];
   tags: SpaceTag[];
@@ -47,4 +51,13 @@ export type CalendarProps = {
    * the URL itself.
    */
   onFollowHref?: (href: string) => void;
+  /** Hands the page the calendar's filter and colour changes, which keep the day the reader scrolled to. */
+  /** The page drives the calendar: its filter bar, its colour choice, and the head's create menu (on the selected days). */
+  onControls?: (controls: {
+    setFilter: (patch: Partial<CalendarFilter>) => void;
+    setColorBy: (colorBy: CalendarColorBy) => void;
+    choose: (choice: CreateMenuChoice) => void;
+  }) => void;
+  /** The number of entries in view, for the page's status row. */
+  onShownCount?: (count: number) => void;
 };

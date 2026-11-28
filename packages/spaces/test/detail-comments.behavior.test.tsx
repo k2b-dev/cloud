@@ -83,24 +83,26 @@ describe("Spaces live detail comments", () => {
         },
       },
     }));
-    const { default: ItemDetailPanel } = await import("../src/frontend/[id]/_components/detail/ItemDetailPanel");
+    Object.assign(globalThis, { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
+    const { DetailPaneFixture } = await import("./detail-pane");
     const { invalidateSpacesData } = await import("../src/frontend/[id]/_components/workspace/workspace-events");
     const dispose = render(
       () =>
-        createComponent(ItemDetailPanel, {
-          item,
-          columns: [],
-          tags: [],
-          wormholes: [],
-          spaceId: item.spaceId,
-          baseUrl: "/app/spaces/Space1",
-          currentUserId: "user",
-          initialCommentsPage: page(1, "Original comment"),
-          commentTarget: { itemId: item.id, recurrenceId: null },
-          recurringContext: null,
+        createComponent(DetailPaneFixture, {
+          detail: () => ({
+            item,
+            comments: page(1, "Original comment"),
+            commentTarget: { itemId: item.id, recurrenceId: null },
+            recurringContext: null,
+            references: [],
+            links: [],
+            attachments: [],
+            checklist: [],
+            blockedBy: [],
+            blocks: [],
+          }),
           canWrite: true,
-          mailIntegrationAvailable: false,
-          scrollPreserveKey: "test-detail",
+          currentUserId: "user",
         }),
       dom.root,
     );

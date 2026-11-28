@@ -1,5 +1,5 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import type { DateContext } from "@k2b/stdlib";
+import { type DateContext, dates } from "@k2b/stdlib";
 import {
   type DndBuildIntentContext,
   type DndDraggableSnapshot,
@@ -24,7 +24,7 @@ import {
   type WormholeTransferResult,
 } from "@/contracts";
 import { hexColor } from "@/frontend/lib/color";
-import { formatDeadline } from "@/presentation/deadline";
+import { deadlineDayKey, formatDeadline } from "@/presentation/deadline";
 import { descriptionPreview } from "@/presentation/description-preview";
 import { isTaskOverdue } from "@/task-overdue";
 import { spaceCommandMessages } from "../../../../commands";
@@ -127,11 +127,17 @@ const CARD_DRAG_DISTANCE = 6;
 
 const virtualColumnIcon = { blocked: "ti-lock", overdue: "ti-alert-triangle" } as const;
 
-const priorityMeta: Record<string, { icon: string; color: string }> = {
-  urgent: { icon: "ti-alert-circle", color: "text-red-500" },
-  high: { icon: "ti-arrow-up", color: "text-orange-500" },
-  medium: { icon: "ti-minus", color: "text-yellow-500" },
-  low: { icon: "ti-arrow-down", color: "text-blue-500" },
+/**
+ * When a card's item happens, in the deadline's words so every card of a board says a day alike: an event's day and
+ * hours ("Thu, Oct 15, 14:00–15:00", or its day and "All day"), or a task's deadline. Urgent and high priority stand
+ * beside it as a word; low and medium say nothing a card needs and stay in the detail.
+ */
+const cardWhen = (entry: SpaceItem, dateConfig: DateContext | undefined, allDay: string) => {
+  if (entry.startsAt && entry.endsAt) {
+    if (entry.allDay) return `${formatDeadline(deadlineDayKey(entry.startsAt, dateConfig), dateConfig)}, ${allDay}`;
+    return `${formatDeadline(entry.startsAt, dateConfig)}–${dates.formatTime(entry.endsAt, dateConfig)}`;
+  }
+  return entry.deadline ? formatDeadline(entry.deadline, dateConfig) : undefined;
 };
 
 const buildItemUrl = (baseUrl: string, itemId: string) => {
@@ -322,14 +328,21 @@ export default function KanbanBoard(props: Props) {
       return;
     }
     const doc = document as Document & {
-      startViewTransition?: (callback: () => void) => unknown;
+      startViewTransition?: (callback: () => void) => { ready?: Promise<unknown>; finished?: Promise<unknown> } | undefined;
     };
     if (!doc.startViewTransition) {
       update();
       return;
     }
-    doc.startViewTransition(() => {
+    const transition = doc.startViewTransition(() => {
       update();
+    });
+    // A newer transition skips this one (AbortError), or a hidden page cannot animate (InvalidStateError): then only the
+    // animation is lost, `ready` rejects, and the update still runs. Any other error, such as a failing update, stays
+    // loud; `finished` rejects only then and is left alone.
+    void transition?.ready?.catch((error: unknown) => {
+      if (error instanceof DOMException && (error.name === "AbortError" || error.name === "InvalidStateError")) return;
+      throw error;
     });
   };
   const boardScrollKey = () => `spaces-kanban-board-${props.spaceId}`;
@@ -916,8 +929,11 @@ export default function KanbanBoard(props: Props) {
    * redraw never pulls the focus back.
    */
   let dropFocus: { itemId: string; bucketKey: string } | null = null;
+  // The dropped card's own link counts too: a question the drop asked hands the focus back to the card when it closes,
+  // and the card is drawn again while the move saves, so its grip still takes the focus after that.
   const isDropFocusTarget = (element: Element, focus: { itemId: string; bucketKey: string }) =>
     element.closest<HTMLElement>("[data-spaces-kanban-grip]")?.dataset.spacesKanbanGrip === focus.itemId ||
+    element.closest<HTMLElement>("[data-spaces-kanban-card]")?.dataset.itemId === focus.itemId ||
     element.closest<HTMLElement>("[data-spaces-kanban-fold]")?.dataset.spacesKanbanFold === focus.bucketKey;
   const restoreDropFocus = () => {
     const focus = dropFocus;
@@ -1371,7 +1387,7 @@ export default function KanbanBoard(props: Props) {
             }
           });
         }}
-        class="k2b-detail-trail k2b-quiet-scrollbar relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden"
+        class="spaces-kanban-scroll k2b-detail-trail k2b-quiet-scrollbar relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden"
         data-scroll-preserve={`spaces-kanban-board-${props.spaceId}`}
       >
         <div class="spaces-kanban-columns flex h-full min-w-max items-stretch">
@@ -1511,8 +1527,24 @@ export default function KanbanBoard(props: Props) {
                         </h3>
                         <ColumnCount bucket={bucket()} />
                       </div>
-                      {/* Quiet until the column is hovered or focused; touch screens always show them. */}
+                      {/* Quiet until the column is hovered or focused; touch screens always show them. The column's own
+                          "+" stands here, not under its cards, so an empty column says one sentence and the head's
+                          New task stays the screen's one visible create action. */}
                       <span class="k2b-progressive-action flex items-center">
+                        <Show when={props.canWrite && bucket().columnId}>
+                          {(columnId) => (
+                            <CreateItemButton
+                              spaceId={props.spaceId}
+                              columns={props.columns}
+                              tags={props.tags}
+                              templates={props.templates}
+                              dateConfig={props.dateConfig}
+                              variant="column"
+                              defaultType="task"
+                              defaultColumnId={columnId()}
+                            />
+                          )}
+                        </Show>
                         <Show when={props.canWrite}>
                           <Dropdown.Root
                             position="bottom-left"
@@ -1593,7 +1625,7 @@ export default function KanbanBoard(props: Props) {
                           fallback={
                             <>
                               <DropLine bucketKey={key} index={0} />
-                              <p class="px-2 py-6 text-center text-xs text-dimmed">
+                              <p class="spaces-kanban-column-empty px-2.5 py-2">
                                 {bucket().unfilteredTotal
                                   ? t.noMatchingItems
                                   : virtual === "blocked"
@@ -1608,10 +1640,10 @@ export default function KanbanBoard(props: Props) {
                           <For each={itemIds()}>
                             {(id, itemIndex) => {
                               const item = createMemo<SpaceItem>((previous) => itemsById().get(id) ?? previous, itemsById().get(id)!);
-                              const priority = () => {
-                                const value = item().priority;
-                                return value ? priorityMeta[value] : null;
-                              };
+                              const urgency = () =>
+                                item().priority === "urgent" ? t.urgent : item().priority === "high" ? t.high : undefined;
+                              const when = () => cardWhen(item(), props.dateConfig, t.allDay);
+                              const overdue = () => !item().completedAt && isTaskOverdue(item(), props.dateConfig);
                               const isSelected = () => id === selectedItemId();
                               const firstTag = () => item().tags?.[0];
                               // Per column: a moved card's new element registers before its old one leaves, and an automatic
@@ -1653,14 +1685,12 @@ export default function KanbanBoard(props: Props) {
                                     data-card-index={itemIndex()}
                                     // On touch screens the grip's 44 px area ends 39 px below the card's top and the claim button's
                                     // starts 43 px above its bottom. A card with both is 82 px tall at least, so neither takes the other's taps.
-                                    // The card is an object, so it may be a rounded surface: its first tag tints it, and the tag's name
-                                    // stands in the footer, so the colour is never the only signal.
+                                    // The card is an object, so it is a rounded surface, always the same neutral one: colour on a
+                                    // card stands only in its dots (tag, status, urgency) and in an overdue deadline.
                                     data-spaces-kanban-card-state={
                                       isPickedUpThis() || heldItemId() === id ? "held" : isSelected() ? "selected" : undefined
                                     }
-                                    data-spaces-kanban-card-tint={firstTag() ? "" : undefined}
-                                    style={firstTag() ? { "--spaces-card-tag": firstTag()!.color } : undefined}
-                                    class={`spaces-kanban-card k2b-progressive-row relative rounded-[var(--ui-radius-control)] p-2.5 any-pointer-coarse:has-[[data-spaces-claim-action]]:min-h-[5.125rem] ${isDraggingThis() ? "opacity-40" : ""} ${props.canWrite ? "select-none [-webkit-touch-callout:none]" : ""}`}
+                                    class={`spaces-kanban-card k2b-progressive-row relative rounded-[var(--ui-radius-control)] px-2.5 py-2 any-pointer-coarse:has-[[data-spaces-claim-action]]:min-h-[5.125rem] ${isDraggingThis() ? "opacity-40" : ""} ${props.canWrite ? "select-none [-webkit-touch-callout:none]" : ""}`}
                                   >
                                     <Show when={props.canWrite}>
                                       <Show
@@ -1735,16 +1765,12 @@ export default function KanbanBoard(props: Props) {
                                       // the grip's area reaches 12 px past its box; the text ends before it, so a tap on it opens the item.
                                       class={`block rounded-[var(--ui-radius-control)] outline-none after:absolute after:-inset-px after:rounded-[var(--ui-radius-control)] focus-visible:after:shadow-[var(--ui-focus)] ${props.canWrite ? "pr-5 any-pointer-coarse:pr-8" : ""}`}
                                     >
-                                      <div class="flex items-start gap-2">
-                                        <Show when={priority()}>
-                                          <i class={`ti ${priority()!.icon} ${priority()!.color} mt-[0.1875rem] shrink-0 text-sm`} />
-                                        </Show>
-                                        <p
-                                          class={`spaces-kanban-card-title break-words text-sm font-medium leading-5 ${item().completedAt ? "line-through text-dimmed" : ""}`}
-                                        >
-                                          {item().title}
-                                        </p>
-                                      </div>
+                                      {/* Two lines at most, so a long title does not make a tall card; the detail shows it whole. */}
+                                      <p
+                                        class={`spaces-kanban-card-title line-clamp-2 ${item().completedAt ? "line-through text-dimmed" : ""}`}
+                                      >
+                                        {item().title}
+                                      </p>
 
                                       <Show when={descriptionPreview(item().description)}>
                                         {(preview) => (
@@ -1757,11 +1783,28 @@ export default function KanbanBoard(props: Props) {
                                         row keeps the chips' height, so the first reaction does not grow a card whose row has room. */}
                                     <div
                                       data-spaces-kanban-card-footer
-                                      class={`pointer-events-none relative z-[1] mt-1.5 flex flex-wrap items-center gap-x-1 gap-y-1 ${props.canWrite ? "min-h-6 pr-6 any-pointer-coarse:pr-8" : ""}`}
+                                      class={`pointer-events-none relative z-[1] mt-1 flex flex-wrap items-center gap-x-1 gap-y-1 ${props.canWrite ? "min-h-6 pr-6 any-pointer-coarse:pr-8" : ""}`}
                                     >
                                       {/* The metadata lies outside the link, so it describes the link: a focused card still says its status,
-                                          deadline, and people. The reactions are their own controls and stay out of it. */}
-                                      <span id={cardMetaId(id)} class="contents">
+                                          deadline, and people. The reactions are their own controls and stay out of it. It is one line
+                                          that never wraps: a long tag name gives way first, so every card of a column keeps one height. */}
+                                      <span id={cardMetaId(id)} class="spaces-kanban-card-facts">
+                                        <Show when={urgency()}>
+                                          {(word) => (
+                                            <span
+                                              data-spaces-kanban-card-urgency={item().priority!}
+                                              class="spaces-kanban-card-fact inline-flex shrink-0 items-center gap-1"
+                                            >
+                                              {/* k2b-ui gap: the v2 `Dot` cannot stand in this v1 board (one v2 value import puts the whole
+                                                  file under v2-app-layout-css); owner DP, with the card surface. */}
+                                              <span
+                                                class="spaces-kanban-card-urgency-dot h-2 w-2 shrink-0 rounded-full"
+                                                aria-hidden="true"
+                                              />
+                                              {word()}
+                                            </span>
+                                          )}
+                                        </Show>
                                         {/* In an automatic column the status is no longer the column, so the card names it. */}
                                         <Show when={virtual && columnOf(item().columnId)}>
                                           {(column) => (
@@ -1785,57 +1828,72 @@ export default function KanbanBoard(props: Props) {
                                         <Show when={virtual === "blocked" && isTaskOverdue(item(), props.dateConfig)}>
                                           <span
                                             data-spaces-kanban-card-overdue
-                                            class="inline-flex items-center gap-1 text-xs text-red-700 dark:text-red-300"
+                                            class="spaces-kanban-card-fact inline-flex shrink-0 items-center gap-1 text-xs text-red-700 dark:text-red-300"
                                           >
                                             <i class="ti ti-alert-triangle text-xs" aria-hidden="true" />
                                             {t.overdue}
                                           </span>
                                         </Show>
                                         <Show when={item().createdByWorkload}>
-                                          <span class="spaces-kanban-card-meta inline-flex text-xs text-dimmed" title={t.createdByWorkload}>
+                                          <span
+                                            class="spaces-kanban-card-fact spaces-kanban-card-meta inline-flex shrink-0"
+                                            title={t.createdByWorkload}
+                                          >
                                             <i class="ti ti-code text-xs" role="img" aria-label={t.createdByWorkload} />
                                           </span>
                                         </Show>
-                                        <Show when={item().deadline}>
-                                          <span class="spaces-kanban-card-meta inline-flex items-center gap-1 text-xs tabular-nums text-dimmed">
-                                            <i class="ti ti-clock text-xs" aria-hidden="true" />
-                                            {formatDeadline(item().deadline!, props.dateConfig)}
-                                          </span>
+                                        <Show when={when()}>
+                                          {(label) => (
+                                            // Red only when the deadline has passed; a date to come stays in the meta tone.
+                                            <span
+                                              data-spaces-kanban-card-when
+                                              data-overdue={overdue() ? "" : undefined}
+                                              class="spaces-kanban-card-fact spaces-kanban-card-meta inline-flex min-w-0 items-center gap-1 tabular-nums"
+                                            >
+                                              <i
+                                                class={`ti ${item().startsAt && item().endsAt ? "ti-calendar-event" : "ti-clock"} shrink-0 text-xs`}
+                                                aria-hidden="true"
+                                              />
+                                              <span class="truncate">{label()}</span>
+                                            </span>
+                                          )}
                                         </Show>
                                         <Show when={firstTag()}>
                                           {(tag) => (
-                                            // The tint and the dot carry the colour; the name stays in neutral text, so it reads at AA
-                                            // contrast for every tag colour in both themes.
-                                            <span data-spaces-kanban-card-tag class="inline-flex min-w-0 max-w-full items-center gap-1.5">
+                                            // The dot carries the colour; the name stays in neutral text, so it reads at AA contrast for
+                                            // every tag colour in both themes. A long name gives way before the people do.
+                                            <span
+                                              data-spaces-kanban-card-tag
+                                              class="spaces-kanban-card-fact inline-flex min-w-0 items-center gap-1.5"
+                                            >
                                               <span
                                                 class="h-2 w-2 shrink-0 rounded-full"
                                                 style={{ "background-color": hexColor(tag().color) }}
                                                 aria-hidden="true"
                                               />
-                                              <span class="spaces-kanban-card-meta min-w-0 max-w-32 truncate text-xs text-dimmed">
-                                                {tag().name}
-                                              </span>
+                                              <span class="spaces-kanban-card-meta min-w-0 truncate">{tag().name}</span>
                                               <Show when={(item().tags?.length ?? 0) > 1}>
-                                                <span class="spaces-kanban-card-meta text-xs text-dimmed">+{item().tags!.length - 1}</span>
+                                                <span class="spaces-kanban-card-meta shrink-0">+{item().tags!.length - 1}</span>
                                               </Show>
                                             </span>
                                           )}
                                         </Show>
-                                        <AssigneeAvatars
-                                          assignees={item().assignees ?? []}
-                                          claim={item().claim}
-                                          currentUserId={props.currentUserId}
-                                          max={3}
-                                        />
                                         <Show when={isInactiveTask(item())}>
                                           <span
-                                            class="inline-flex items-center gap-1 text-xs text-amber-800 dark:text-amber-300"
+                                            class="spaces-kanban-card-fact inline-flex shrink-0 items-center gap-1 text-xs text-amber-800 dark:text-amber-300"
                                             title={t.inactiveFor({ days: INACTIVE_ITEM_DAYS })}
                                           >
                                             <i class="ti ti-clock-pause text-xs" aria-hidden="true" />
                                             {t.inactive}
                                           </span>
                                         </Show>
+                                        <AssigneeAvatars
+                                          assignees={item().assignees ?? []}
+                                          claim={item().claim}
+                                          currentUserId={props.currentUserId}
+                                          max={3}
+                                          class="shrink-0"
+                                        />
                                       </span>
                                       <Show when={props.canWrite || (cardReactions(item())?.length ?? 0) > 0}>
                                         <ItemReactions
@@ -1886,19 +1944,6 @@ export default function KanbanBoard(props: Props) {
                             </button>
                           )}
                         </Show>
-
-                        <Show when={props.canWrite && bucket().columnId}>
-                          <CreateItemButton
-                            spaceId={props.spaceId}
-                            columns={props.columns}
-                            tags={props.tags}
-                            templates={props.templates}
-                            dateConfig={props.dateConfig}
-                            variant="inline"
-                            defaultType="task"
-                            defaultColumnId={bucket().columnId!}
-                          />
-                        </Show>
                       </div>
                     </div>
                   </section>
@@ -1908,7 +1953,7 @@ export default function KanbanBoard(props: Props) {
           </For>
 
           <Show when={showWormholes()}>
-            <section class="spaces-kanban-column flex h-full shrink-0 flex-col">
+            <section class="spaces-kanban-column relative flex h-full shrink-0 flex-col">
               <header class="flex h-10 items-center gap-2 pl-1.5 pr-1">
                 <i class="ti ti-arrow-bounce shrink-0 text-sm text-dimmed" />
                 <h3 class="min-w-0 flex-1 truncate text-sm font-semibold">{t.wormholes}</h3>
@@ -1941,8 +1986,8 @@ export default function KanbanBoard(props: Props) {
                             }`}
                             style={
                               active()
-                                ? `border-color:${wormhole.color};box-shadow:var(--ui-focus)`
-                                : `border-color:color-mix(in srgb, ${wormhole.color} 30%, var(--ui-border))`
+                                ? `border-color:${hexColor(wormhole.color) ?? "var(--ui-border)"};box-shadow:var(--ui-focus)`
+                                : `border-color:color-mix(in srgb, ${hexColor(wormhole.color) ?? "var(--ui-border)"} 30%, var(--ui-border))`
                             }
                             title={dropLabel}
                           >

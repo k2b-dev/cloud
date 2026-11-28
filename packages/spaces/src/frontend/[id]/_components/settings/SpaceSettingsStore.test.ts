@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { fitSettingsCookie, parseSpaceSettings } from "./SpaceSettingsStore";
+import { fitSettingsCookie, MAX_RECENT_SPACES, parseRecentSpaceIds, parseSpaceSettings } from "./SpaceSettingsStore";
 
 const cookie = (spaces: Record<string, unknown>) =>
   `theme=light; settings-app-spaces=${encodeURIComponent(JSON.stringify({ lastSpaceId: null, pinnedSpaceIds: [], spaces }))}`;
@@ -32,6 +32,7 @@ test("the settings cookie keeps within its size budget by dropping default and l
   const fitted = fitSettingsCookie({
     lastSpaceId: "Spaceb",
     pinnedSpaceIds: ["Space1"],
+    recentSpaceIds: ["Spaceb"],
     spaces: { Plain1: { view: "list", hideSettings: false }, ...spaces },
   });
 
@@ -42,4 +43,11 @@ test("the settings cookie keeps within its size budget by dropping default and l
   expect(fitted.spaces.Space0).toBeUndefined();
   expect(fitted.pinnedSpaceIds).toEqual(["Space1"]);
   expect(fitted.lastSpaceId).toBe("Spaceb");
+});
+
+test("recent Spaces come back from the cookie only as well-formed short IDs, each once, at most twenty", () => {
+  const ids = Array.from({ length: 30 }, (_, index) => `Rec${String(index).padStart(3, "0")}`);
+  const header = `settings-app-spaces=${encodeURIComponent(JSON.stringify({ spaces: {}, recentSpaceIds: ["Rec000", "<b>", 7, "Rec000", ...ids] }))}`;
+  expect(parseRecentSpaceIds(header)).toEqual(ids.slice(0, MAX_RECENT_SPACES));
+  expect(parseRecentSpaceIds("theme=light")).toEqual([]);
 });

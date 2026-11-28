@@ -21,16 +21,19 @@ describe("Spaces overview navigation", () => {
           spaces: [],
           initialView: "mine",
           initialPinnedSpaceIds: [],
+          recentSpaceIds: [],
+          unlistedSpaceCount: 0,
           initialWork: { view: "mine", items: [], counts: { mine: 0, today: 0, upcoming: 0 } },
           initialActivity: { items: [], nextCursor: null },
           initialActivityError: null,
           dateConfig: { locale: "en", timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
+          now: "2026-08-20T12:00:00.000Z",
         }),
       dom.root,
     );
     try {
       const option = (label: string) =>
-        Array.from(dom.root.querySelectorAll<HTMLAnchorElement>(".k2b-view-tabs a")).find((button) =>
+        Array.from(dom.root.querySelectorAll<HTMLAnchorElement>('[data-k2-part="Tabs"] a')).find((button) =>
           button.textContent?.startsWith(label),
         )!;
       const today = option("Today");

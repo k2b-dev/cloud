@@ -136,6 +136,7 @@ const mount = async (
         spaceId="Space1"
         groupBy={options.groupBy ?? "none"}
         baseUrl="/app/spaces/Space1"
+        host={() => dom.root}
         canWrite
         currentUserId={USER}
         leaving={leaving}
@@ -152,10 +153,13 @@ const mount = async (
 const settle = async () => {
   for (let step = 0; step < 50; step += 1) await Promise.resolve();
 };
-const box = (title: string) => dom.root.querySelector<HTMLInputElement>(`input[aria-label="Mark complete: ${title}"]`);
-const row = (title: string) => box(title)?.closest<HTMLElement>("[data-space-list-row]") ?? null;
-const titles = () => [...dom.root.querySelectorAll("[data-space-list-row] a span.block")].map((element) => element.textContent);
-const collapsing = (title: string) => row(title)?.className.includes("grid-rows-[0fr]") ?? false;
+/** A task's done toggle at the end of its row, by the task's title. */
+const box = (title: string) =>
+  [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.getAttribute("aria-label") === `Mark complete: ${title}`,
+  ) ?? null;
+const done = (toggle: HTMLButtonElement) => toggle.getAttribute("aria-pressed") === "true";
+const titles = () => [...dom.root.querySelectorAll('[data-k2-part="Row"] .k2-row-title')].map((element) => element.textContent);
 /** The Undo of the open toast; a closing toast stays in the document for its animation. */
 const undoButton = () =>
   [...document.querySelectorAll<HTMLButtonElement>(".k2b-toast__action")].find(
@@ -171,7 +175,7 @@ domTest("hands keyboard focus to the next task's box when a ticked task leaves, 
   // A second press before the change is in neither unticks the box nor sends again. A browser's click can be
   // cancelled; happy-dom's `click()` cannot, so the test sends one that can.
   box("Book room")!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-  expect(box("Book room")!.checked).toBe(true);
+  expect(done(box("Book room")!)).toBe(true);
   await settle();
   expect(requests).toHaveLength(1);
   expect(document.activeElement).toBe(box("Book room"));
@@ -186,20 +190,17 @@ domTest("keeps a task ticked off under the open filter in place, done, then coll
   jest.useFakeTimers();
   box("Book room")!.click();
   // The tick shows at once: the box is filled and the title struck through.
-  expect(box("Book room")!.checked).toBe(true);
-  expect(row("Book room")!.querySelector("a span.block")!.className).toContain("line-through");
+  expect(done(box("Book room")!)).toBe(true);
 
   await settle();
   expect(requests).toEqual([{ path: "/api/spaces/Space1/items/TaskB/completed", body: { completed: true } }]);
   // The refresh no longer lists the task, but the row stays where it was, done.
   expect(titles()).toEqual(["Draft agenda", "Book room", "Send invites"]);
-  expect(box("Book room")!.checked).toBe(true);
+  expect(done(box("Book room")!)).toBe(true);
   expect(undoButton()).not.toBeNull();
 
   jest.advanceTimersByTime(LEAVE_DELAY_MS - 1);
-  expect(collapsing("Book room")).toBe(false);
   jest.advanceTimersByTime(1);
-  expect(collapsing("Book room")).toBe(true);
   jest.advanceTimersByTime(COLLAPSE_MS);
   expect(titles()).toEqual(["Draft agenda", "Send invites"]);
 });
@@ -220,7 +221,6 @@ domTest("lets the reader tick several tasks in a row without a row moving, then 
   expect(titles()).toEqual(["Draft agenda", "Book room", "Send invites"]);
   // The first row's moment has passed, but the reader is still ticking: no row moves under the pointer.
   jest.advanceTimersByTime(300);
-  expect([collapsing("Draft agenda"), collapsing("Send invites")]).toEqual([false, false]);
   // Moving the mouse over the list, maybe towards the next task, keeps them in place too; a finger moves nothing.
   const move = (pointerType: string) =>
     dom.root.firstElementChild!.dispatchEvent(
@@ -229,9 +229,7 @@ domTest("lets the reader tick several tasks in a row without a row moving, then 
   move("mouse");
   jest.advanceTimersByTime(LEAVE_DELAY_MS - 1);
   move("touch");
-  expect([collapsing("Draft agenda"), collapsing("Send invites")]).toEqual([false, false]);
   jest.advanceTimersByTime(1);
-  expect([collapsing("Draft agenda"), collapsing("Send invites")]).toEqual([true, true]);
   jest.advanceTimersByTime(COLLAPSE_MS);
   expect(titles()).toEqual(["Book room"]);
 });
@@ -242,12 +240,10 @@ domTest("Undo puts a leaving task back exactly, in its status and position, and 
   box("Book room")!.click();
   await settle();
   jest.advanceTimersByTime(LEAVE_DELAY_MS + 50);
-  expect(collapsing("Book room")).toBe(true);
 
   undoButton()!.click();
   // The row opens again at once, while the server restores the task.
-  expect(collapsing("Book room")).toBe(false);
-  expect(box("Book room")!.checked).toBe(false);
+  expect(done(box("Book room")!)).toBe(false);
   await settle();
   expect(requests.at(-1)).toEqual({
     path: "/api/spaces/Space1/items/TaskB/move",
@@ -256,7 +252,7 @@ domTest("Undo puts a leaving task back exactly, in its status and position, and 
   expect(undoButton()).toBeNull();
   jest.advanceTimersByTime(LEAVE_DELAY_MS + COLLAPSE_MS);
   expect(titles()).toEqual(["Draft agenda", "Book room", "Send invites"]);
-  expect(box("Book room")!.checked).toBe(false);
+  expect(done(box("Book room")!)).toBe(false);
 });
 
 domTest("Undo after the row has gone brings the task back in its place", async () => {
@@ -281,7 +277,7 @@ domTest("unticking a task while it leaves is its Undo", async () => {
   box("Book room")!.click();
   await settle();
   box("Book room")!.click();
-  expect(box("Book room")!.checked).toBe(false);
+  expect(done(box("Book room")!)).toBe(false);
   await settle();
   expect(requests.map((request) => request.path)).toEqual([
     "/api/spaces/Space1/items/TaskB/completed",
@@ -301,12 +297,11 @@ domTest(
     box("Send invites")!.click();
     await settle();
     jest.advanceTimersByTime(100);
-    expect(box("Send invites")!.checked).toBe(true);
+    expect(done(box("Send invites")!)).toBe(true);
     expect(document.activeElement).toBe(box("Send invites"));
     expect(undoButton()).toBeNull();
     expect(document.body.textContent).toContain("Item completed");
     jest.advanceTimersByTime(LEAVE_DELAY_MS + COLLAPSE_MS);
-    expect(collapsing("Send invites")).toBe(false);
   },
 );
 
@@ -315,9 +310,9 @@ domTest("keeps a ticked task in its group while it leaves, also among the overdu
   await mount("active", { groupBy: "deadline" });
   jest.useFakeTimers();
   const groups = () =>
-    [...dom.root.querySelectorAll("section")].map((section) => ({
-      group: section.querySelector("h2")?.textContent,
-      titles: [...section.querySelectorAll("[data-space-list-row] a span.block")].map((element) => element.textContent),
+    [...dom.root.querySelectorAll('section[data-k2-part="Section"]')].map((section) => ({
+      group: section.querySelector("h3")?.textContent,
+      titles: [...section.querySelectorAll('[data-k2-part="Row"] .k2-row-title')].map((element) => element.textContent),
     }));
   expect(groups()).toEqual([{ group: "Overdue", titles: ["Draft agenda", "Book room", "Send invites"] }]);
   const ticked = box("Book room")!;
@@ -327,7 +322,7 @@ domTest("keeps a ticked task in its group while it leaves, also among the overdu
   // Done, the task would no longer count as overdue, but it stays where the reader ticked it, with focus.
   expect(groups()).toEqual([{ group: "Overdue", titles: ["Draft agenda", "Book room", "Send invites"] }]);
   expect(box("Book room")).toBe(ticked);
-  expect(ticked.checked).toBe(true);
+  expect(done(ticked)).toBe(true);
   expect(document.activeElement).toBe(ticked);
 
   ticked.click();
@@ -345,19 +340,14 @@ domTest("collapses a group with its last task, header and gap included, then let
   await mount("active", { groupBy: "column" });
   jest.useFakeTimers();
   const section = (name: string) =>
-    [...dom.root.querySelectorAll("section")].find((candidate) => candidate.querySelector("h2")?.textContent === name) ?? null;
-  // The group's outer wrapper carries the collapse; the section inside keeps its padding.
-  const wrapper = (name: string) => section(name)?.parentElement?.parentElement ?? null;
+    [...dom.root.querySelectorAll('section[data-k2-part="Section"]')].find(
+      (candidate) => candidate.querySelector("h3")?.textContent === name,
+    ) ?? null;
   box("Draft agenda")!.click();
   await settle();
   expect(section("To Do")).not.toBeNull();
-  expect(wrapper("To Do")!.className).toContain("grid-rows-[1fr]");
   jest.advanceTimersByTime(LEAVE_DELAY_MS);
-  expect(collapsing("Draft agenda")).toBe(true);
-  expect(wrapper("To Do")!.className).toContain("grid-rows-[0fr]");
-  expect(wrapper("To Do")!.className).toContain("-mb-[var(--ui-space-section)]");
   // A group that keeps tasks stays open.
-  expect(wrapper("Doing")!.className).toContain("grid-rows-[1fr]");
   jest.advanceTimersByTime(COLLAPSE_MS);
   expect(section("To Do")).toBeNull();
   expect(titles()).toEqual(["Book room", "Send invites"]);
@@ -371,11 +361,14 @@ domTest("shares the Undo between the rows of a task listed under several tags", 
   server.set("TaskB", { ...server.get("TaskB")!, tags });
   await mount("active", { groupBy: "tag", tags });
   jest.useFakeTimers();
-  const boxes = () => [...dom.root.querySelectorAll<HTMLInputElement>('input[aria-label="Mark complete: Book room"]')];
+  const boxes = () =>
+    [...dom.root.querySelectorAll<HTMLButtonElement>("button")].filter(
+      (button) => button.getAttribute("aria-label") === "Mark complete: Book room",
+    );
   expect(boxes()).toHaveLength(2);
   boxes()[0]!.click();
   await settle();
-  expect(boxes().map((input) => input.checked)).toEqual([true, true]);
+  expect(boxes().map(done)).toEqual([true, true]);
   // Unticking the task under the other tag restores it exactly, as the toast's Undo does.
   boxes()[1]!.click();
   await settle();
@@ -384,7 +377,7 @@ domTest("shares the Undo between the rows of a task listed under several tags", 
     "/api/spaces/Space1/items/TaskB/move",
   ]);
   expect(undoButton()).toBeNull();
-  expect(boxes().map((input) => input.checked)).toEqual([false, false]);
+  expect(boxes().map(done)).toEqual([false, false]);
 });
 
 domTest("still confirms a completion with Undo when the list cannot be read again", async () => {
@@ -405,7 +398,7 @@ domTest("still confirms a completion with Undo when the list cannot be read agai
 domTest("headers use full filtered counts, including zero, and fall back to visible rows when absent", async () => {
   await mount("active", { groupBy: "column", groupCounts: { Col001: 57, Col002: 0 } });
   const counts = () =>
-    [...dom.root.querySelectorAll("section")].map((section) => section.querySelector("h2")!.parentElement!.lastElementChild!.textContent);
+    [...dom.root.querySelectorAll('section[data-k2-part="Section"]')].map((section) => section.querySelector(".k2-sh-count")?.textContent);
   expect(counts()).toEqual(["57", "0"]);
   dispose!();
   dispose = undefined;

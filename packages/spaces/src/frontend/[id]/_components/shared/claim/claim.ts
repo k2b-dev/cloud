@@ -1,8 +1,11 @@
-import { prompts } from "@k2b/ui";
+import { confirm } from "@k2b/ui/v2";
+import { createComponent } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceItemAssignee, SpaceItemClaim } from "@/contracts";
+import { openDialog } from "../../../../lib/open-dialog";
 import { readResponseError } from "../../../../lib/response";
 import type { spaceMessages } from "../../../messages";
+import ReleaseNoteDialog from "./ReleaseNoteDialog";
 
 type Messages = ReturnType<typeof spaceMessages.resolve>["t"];
 type Target = { spaceId: string; itemId: string };
@@ -52,8 +55,8 @@ const resolveClaim = async (
         : change === "transfer"
           ? [t.takeOverAndMove({ name }), t.takeOverAndMoveAction]
           : [t.removeWorkingAssignee({ name }), t.removeWorkingAssigneeAction];
-  const [title, icon] = change === "unassign" ? [t.removeWorkingAssigneeTitle, "ti ti-user-minus"] : [t.takeOverTitle, "ti ti-replace"];
-  const confirmed = await prompts.confirm(question, { title, icon, confirmText, cancelText: t.cancel });
+  const title = change === "unassign" ? t.removeWorkingAssigneeTitle : t.takeOverTitle;
+  const confirmed = await confirm({ title, description: question, confirm: confirmText, cancel: t.cancel });
   return confirmed ? { claimId: other.id, force: true } : null;
 };
 
@@ -115,22 +118,5 @@ export const takeOverTask = async (target: Target, claim: SpaceItemClaim, t: Mes
 };
 
 /** Asks for an optional handoff note; resolves to null when the person cancels the release. */
-export const promptReleaseNote = async (t: Messages): Promise<string | null> => {
-  const values = await prompts.form({
-    title: t.releaseNoteTitle,
-    icon: "ti ti-hand-stop",
-    confirmText: t.releaseClaim,
-    cancelText: t.cancel,
-    fields: {
-      note: {
-        type: "text",
-        multiline: true,
-        lines: 3,
-        maxLength: 5000,
-        label: t.releaseNoteLabel,
-        placeholder: t.releaseNotePlaceholder,
-      },
-    },
-  });
-  return values ? (values.note ?? "") : null;
-};
+export const promptReleaseNote = (t: Messages): Promise<string | null> =>
+  openDialog<string | null>(document.documentElement.lang || "en", (close) => createComponent(ReleaseNoteDialog, { t, close }));

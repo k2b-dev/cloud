@@ -1,58 +1,84 @@
 import { expect, test } from "bun:test";
-import { createSpacesNavigationItems, orderSidebarSpaces } from "./spaces-navigation";
+import { orderSidebarSpaces, SIDEBAR_SEARCH_FROM, sidebarSpaceList } from "./spaces-navigation";
 
 const spaces = [
-  { id: "First01", name: "First", color: "#fff", description: null, openItemCount: 2 },
-  { id: "Other01", name: "Other", color: "#000", description: "Other work", openItemCount: 1 },
-  { id: "Last001", name: "Last", color: "#111", description: null, openItemCount: 0 },
+  { id: "First01", name: "First", color: "#fff", openItemCount: 2 },
+  { id: "Other01", name: "Other", color: "#000", openItemCount: 1 },
+  { id: "Last001", name: "Last", color: "#111", openItemCount: 0 },
 ];
 
 test("pins precede unpinned Spaces in stored order without changing the input", () => {
-  expect(orderSidebarSpaces(spaces, ["Last001", "missing", "Other01"]).map((space) => space.id)).toEqual(["Last001", "Other01", "First01"]);
+  expect(orderSidebarSpaces(spaces, ["Last001", "missing", "Other01"], []).map((space) => space.id)).toEqual([
+    "Last001",
+    "Other01",
+    "First01",
+  ]);
   expect(spaces.map((space) => space.id)).toEqual(["First01", "Other01", "Last001"]);
 });
 
-test("phone navigation contains My work, the calendar of all Spaces, and every Space with exactly the current Space active", () => {
-  const items = createSpacesNavigationItems({
-    spaces,
-    pinnedSpaceIds: ["Other01"],
-    current: { kind: "space", id: "First01" },
-    canCreate: true,
-    myWorkLabel: "My work",
-    calendarLabel: "Calendar",
-    newSpaceLabel: "New space",
-  });
-  expect(items.map(({ id }) => id)).toEqual(["my-work", "all-calendars", "Other01", "First01", "Last001", "new-space"]);
-  expect(items.filter(({ active }) => active).map(({ id }) => id)).toEqual(["First01"]);
-  expect(items[0]?.href).toBe("/app/spaces");
-  expect(items.at(-1)?.action).toBe("new-space");
-  expect(items.some(({ id }) => ["search", "settings", "ical", "list", "kanban", "table", "calendar"].includes(id))).toBe(false);
+test("recently opened Spaces follow the pins, newest first, and the rest keep the server's order", () => {
+  expect(orderSidebarSpaces(spaces, ["Last001"], ["Other01", "Last001"]).map((space) => space.id)).toEqual([
+    "Last001",
+    "Other01",
+    "First01",
+  ]);
 });
 
-test("overview marks My work and hides creation when it is not allowed", () => {
-  const items = createSpacesNavigationItems({
-    spaces,
-    pinnedSpaceIds: [],
-    current: { kind: "overview" },
-    canCreate: false,
-    myWorkLabel: "Meine Arbeit",
-    calendarLabel: "Kalender",
-    newSpaceLabel: "Neuer Space",
-  });
-  expect(items.filter(({ active }) => active).map(({ label }) => label)).toEqual(["Meine Arbeit"]);
-  expect(items.some(({ action }) => action === "new-space")).toBe(false);
+// Thirty invented Spaces as the server lists them, by name: "Space 01" … "Space 30".
+const many = Array.from({ length: 30 }, (_, index) => {
+  const n = String(index + 1).padStart(2, "0");
+  return { id: `Spc0${n}`, name: `Space ${n}`, color: "#3b82f6", openItemCount: index };
+});
+const ids = (list: { id: string }[]) => list.map((space) => space.id);
+
+test("thirty Spaces show twenty before a search, pinned and recent first, and count the ten others", () => {
+  const list = sidebarSpaceList(many, { pinned: ["Spc029"], recent: ["Spc030", "Spc029"], query: "", locale: "en", unlisted: 0 });
+  expect(list.shown).toHaveLength(20);
+  expect(list.hidden).toBe(10);
+  expect(ids(list.shown).slice(0, 3)).toEqual(["Spc029", "Spc030", "Spc001"]);
+  expect(ids(list.shown)).not.toContain("Spc025");
+  expect(many.length).toBeGreaterThanOrEqual(SIDEBAR_SEARCH_FROM);
 });
 
-test("the calendar page marks Calendar, right below My work", () => {
-  const items = createSpacesNavigationItems({
-    spaces,
-    pinnedSpaceIds: [],
-    current: { kind: "calendar" },
-    canCreate: true,
-    myWorkLabel: "Meine Arbeit",
-    calendarLabel: "Kalender",
-    newSpaceLabel: "Neuer Space",
-  });
-  expect(items.slice(0, 2).map(({ label }) => label)).toEqual(["Meine Arbeit", "Kalender"]);
-  expect(items.filter(({ active }) => active).map(({ href }) => href)).toEqual(["/app/spaces/calendar"]);
+test("the open Space shows even beyond the first twenty", () => {
+  const list = sidebarSpaceList(many, { pinned: [], recent: [], currentId: "Spc025", query: "", locale: "en", unlisted: 0 });
+  expect(list.shown).toHaveLength(20);
+  expect(ids(list.shown).at(-1)).toBe("Spc025");
+  expect(list.hidden).toBe(10);
+});
+
+test("a search finds a Space beyond the first twenty by its name, in any case, pinned first", () => {
+  expect(ids(sidebarSpaceList(many, { pinned: [], recent: [], query: " space 25 ", locale: "en", unlisted: 0 }).shown)).toEqual(["Spc025"]);
+  const twos = sidebarSpaceList(many, { pinned: ["Spc029"], recent: [], query: "2", locale: "en", unlisted: 0 });
+  // Every name with a 2, the pinned one first, then in the server's order.
+  expect(ids(twos.shown)).toEqual([
+    "Spc029",
+    "Spc002",
+    "Spc012",
+    "Spc020",
+    "Spc021",
+    "Spc022",
+    "Spc023",
+    "Spc024",
+    "Spc025",
+    "Spc026",
+    "Spc027",
+    "Spc028",
+  ]);
+  expect(twos.hidden).toBe(0);
+  expect(sidebarSpaceList(many, { pinned: [], recent: [], query: "Nothing", locale: "en", unlisted: 0 })).toEqual({ shown: [], hidden: 0 });
+});
+
+// The server sends only what the sidebar shows before a search (#4197): the first twenty by name, the pinned, the
+// recent and the open Space. That list shows the same Spaces as the complete one and counts the same "+n more".
+test("the bounded list the server sends shows and counts what the complete list does", () => {
+  const options = { pinned: ["Spc029"], recent: ["Spc027"], currentId: "Spc025", query: "", locale: "en" };
+  const sent = many.filter((space, index) => index < 20 || ["Spc029", "Spc027", "Spc025"].includes(space.id));
+  const bounded = sidebarSpaceList(sent, { ...options, unlisted: many.length - sent.length });
+  expect(bounded).toEqual(sidebarSpaceList(many, { ...options, unlisted: 0 }));
+  expect(bounded.hidden).toBe(10);
+  // A search looks among the listed Spaces; "+n more" still counts the ones the server left out.
+  const search = sidebarSpaceList(sent, { ...options, query: "Space 1", unlisted: many.length - sent.length });
+  expect(ids(search.shown)).toEqual(["Spc010", "Spc011", "Spc012", "Spc013", "Spc014", "Spc015", "Spc016", "Spc017", "Spc018", "Spc019"]);
+  expect(search.hidden).toBe(7);
 });

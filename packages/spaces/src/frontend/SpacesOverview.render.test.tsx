@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
+import type { OverviewWork } from "../overview-contracts";
 
 const root = mkdtempSync(join(tmpdir(), "spaces-overview-render-tests-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
@@ -27,7 +28,14 @@ const textOf = (html: string) => {
   return plain;
 };
 
-const render = (initialActivityError: string | null = null, locale = "en", spaceColor = "#3b82f6") =>
+type Extra = {
+  itemTitle?: string;
+  activitySpace?: string;
+  initialView?: "mine" | "today";
+  day?: OverviewWork["day"];
+  spaceColor?: string;
+};
+const render = (initialActivityError: string | null = null, locale = "en", extra: Extra = {}) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -37,28 +45,28 @@ const render = (initialActivityError: string | null = null, locale = "en", space
             {
               id: "Space1",
               name: "Launch",
-              description: "Launch work",
               color: "#3b82f6",
               openItemCount: 3,
             },
             {
               id: "Space2",
               name: "Archive",
-              description: null,
               color: "#10b981",
               openItemCount: 0,
             },
           ],
-          initialView: "mine",
+          initialView: extra.initialView ?? "mine",
           initialPinnedSpaceIds: ["Space1"],
+          recentSpaceIds: [],
+          unlistedSpaceCount: 0,
           initialWork: {
-            view: "mine",
+            view: extra.initialView ?? "mine",
             items: [
               {
                 shortId: "Item01",
                 spaceShortId: "Space1",
                 spaceName: "Launch",
-                spaceColor,
+                spaceColor: extra.spaceColor ?? "#3b82f6",
                 title: "Ship overview",
                 priority: "urgent",
                 deadline: "2026-08-21T08:00:00.000Z",
@@ -69,13 +77,14 @@ const render = (initialActivityError: string | null = null, locale = "en", space
               },
             ],
             counts: { mine: 1, today: 0, upcoming: 0 },
+            day: extra.day,
           },
           initialActivity: {
             items: [
               {
                 id: "1",
-                space: { id: "Space1", name: "Launch", color: "#3b82f6" },
-                item: { id: "Item01", title: "Ship overview" },
+                space: { id: "Space1", name: extra.activitySpace ?? "Launch", color: "#3b82f6" },
+                item: { id: "Item01", title: extra.itemTitle ?? "Ship overview" },
                 actor: { kind: "user", id: "00000000-0000-4000-8000-000000000001", displayName: "Sofie", avatarHash: null },
                 action: "task.completed",
                 metadata: {},
@@ -100,55 +109,120 @@ describe("Spaces overview", () => {
     const html = render(null, "de-CH");
     expect(html).toContain("Für mich");
     expect(html).toContain("Meine Arbeit");
-    expect(html).toContain("3 offene Einträge");
-    expect(html).toContain("„Ship overview“ in Launch erledigt");
-    expect(html).not.toContain("Completed “Ship overview”");
+    // The item's mark and name stand where the quotes were.
+    expect(textOf(html)).toContain("Sofie · Ship overview in Launch erledigt");
+    expect(textOf(html)).not.toContain("Completed");
   });
 
-  test("renders the shared object navigation, head tabs and flat work/activity rows", () => {
+  test("renders the Spaces in the sidebar, the views as tabs, and the work and activity as rows", () => {
     const html = render();
-    expect(html).toContain("spaces-overview-workspace");
+    expect(html).toContain("data-k2-workspace");
+    // The sidebar: each Space with its open items, pinned or not, and a way to start one.
     expect(html).toContain('href="/app/spaces/Space1"');
     expect(html).toContain('href="/app/spaces/Space2"');
-    expect(html).toContain("3 open items");
-    expect(html).toContain("0 open items");
     expect(html).toContain("Unpin Launch");
     expect(html).toContain("Pin Archive");
-    expect(html).toContain("Search Spaces");
     expect(html).toContain("New space");
-    expect(html).toContain("My work");
-    expect(html).toMatch(/href="\/app\/spaces"[^>]*aria-current="page"/);
-    expect(html).toMatch(/href="\/app\/spaces\?view=mine"[^>]*aria-current="page"/);
+    expect(html).toMatch(/<a[^>]*data-k2-part="Nav.Item"[^>]*aria-current="page"[^>]*href="\/app\/spaces"/);
+    // The head: the views as tabs, the search and the main action.
+    expect(html).toMatch(/<a[^>]*class="k2-tab "[^>]*aria-current="page"[^>]*href="\/app\/spaces"/);
+    expect(html).toContain('aria-label="Search Spaces"');
     expect(html).toContain("New task");
-    expect(html).not.toContain("k2b-app-workspace__switcher");
-    expect(html).not.toContain("k2b-paper");
-    expect(html).toContain("spaces-overview-work-row");
-    // Activity is the shared timeline: the sentence links to the item, the person starts the sentence.
-    expect(html).toContain('class="k2b-activity"');
-    expect(html).toContain('class="k2b-activity__text-link" href="/app/spaces/Space1?item=Item01"');
-    expect(textOf(html)).toContain("Sofie · ");
-    expect(html).toContain("2 hr. ago");
-    expect(html).toContain("k2b-activity__avatar");
-    expect(html).not.toContain("spaces-overview-space-list");
+    // The work opens its item; the activity is a sentence: who, the deed, and the item with its mark, linked to it.
     expect(html).toContain("Ship overview");
-    expect(html).not.toContain("k2b-stat-grid");
-    expect(html).toContain("Completed “Ship overview” in Launch");
-    expect(html).toMatch(/<aside[^>]*id="k2b-workspace-detail-spaces-overview-activity"(?![^>]*hidden)/);
+    expect(html.match(/href="\/app\/spaces\/Space1\?item=Item01"/g)).toHaveLength(2);
+    expect(textOf(html)).toContain("Sofie · Completed Ship overview in Launch");
+    expect(textOf(html)).toContain("Sofie");
+    expect(textOf(html)).toContain("2 hours ago");
+    expect(html).not.toContain('data-k2-part="Loading"');
   });
 
   test("keeps activity errors distinct from an empty feed, above the entries that are still there", () => {
     const html = render("Activity unavailable");
     expect(textOf(html)).toContain("Could not load activity: Activity unavailable");
-    expect(html).toContain("Reload");
+    expect(html).toContain("Retry");
     expect(html).not.toContain("Space and item changes will appear here.");
-    expect(html.indexOf("Activity unavailable")).toBeLessThan(html.indexOf('class="k2b-activity"'));
+    expect(html.indexOf("Activity unavailable")).toBeLessThan(html.indexOf("Completed"));
+    expect(html.indexOf("Completed")).toBeGreaterThan(-1);
+  });
+
+  test("puts the item's name where the sentence names it, also when the deed says the same word", () => {
+    // "Completed “Completed” in Launch": the title is the slot of the message, not the first place its words appear.
+    expect(textOf(render(null, "en", { itemTitle: "Completed" }))).toContain("Sofie · Completed Completed in Launch");
+    expect(textOf(render(null, "de", { itemTitle: "erledigt" }))).toContain("Sofie · erledigt in Launch erledigt");
+  });
+
+  test("keeps the whole sentence when a Space's name contains the sign that marks the title's place", () => {
+    // A Space name is free input; with the slot sign in it the sentence would split in three and lose its end.
+    expect(textOf(render(null, "en", { activitySpace: "AB" }))).toContain("Sofie · Completed “Ship overview” in AB");
+  });
+
+  test("says each thing once: no line about the activity, and one search place on the phone", () => {
+    const html = render();
+    // The section's title says what it is; a sentence under it that names no deed is left out.
+    expect(textOf(html)).not.toContain("Recent changes across your Spaces.");
+    // On the phone the shell's bar holds the one search; the head's search gives way there.
+    const search = html.match(/<button[^>]*aria-label="Search Spaces"[^>]*>/)?.[0];
+    expect(search).toBeDefined();
+    expect(search).not.toContain("data-keep");
+  });
+
+  test("the hero is the work done in 14 days with its real trend, and a good day stays neutral", () => {
+    const done = [0, 1, 0, 2, 3, 0, 0, 1, 2, 0, 1, 0, 2, 3];
+    const html = render(null, "en", { day: { at: "2026-08-20T12:00:00.000Z", agenda: [], next: null, overdue: 0, done } });
+    const text = textOf(html);
+    // One figure: the sum of the 14 days the server counted, and the spark draws exactly those days.
+    expect(text).toContain("Done in 14 days");
+    expect(text).toContain("15");
+    expect(html).toContain('aria-label="Tasks you finished per day over 14 days: 15 in all, 3 today"');
+    expect(html.match(/data-k2-part="Spark"[^>]*>(.*?)<\/span>/s)?.[1]?.match(/<i /g)).toHaveLength(14);
+    // Nothing overdue is no exception: no red, no "0 overdue"; nothing next says so in plain words.
+    expect(text).not.toContain("overdue");
+    expect(text).toContain("Nothing else today");
+    expect(html).not.toContain('data-k2-part="StatusRow"');
+  });
+
+  test("reads what counts today from the server in every view: overdue and the next entry", () => {
+    const next = {
+      shortId: "Event9",
+      spaceShortId: "Space1",
+      spaceName: "Launch",
+      spaceColor: "#3b82f6",
+      title: "Late review",
+      priority: null,
+      startsAt: "2026-08-20T15:00:00.000Z",
+      endsAt: null,
+      deadline: null,
+      deadlineAllDay: false,
+      canWrite: true,
+    };
+    // Opened on Today, whose rows hold no assigned task: the overdue count still comes from the day.
+    const text = textOf(
+      render(null, "en", {
+        initialView: "today",
+        day: { at: "2026-08-20T12:00:00.000Z", agenda: [], next, overdue: 2, done: Array(14).fill(0) },
+      }),
+    );
+    // The tab already counts the work for this person ("For me 1"); the row says only what to act on.
+    expect(text).toContain("2 overdue");
+    expect(text).not.toContain("for you");
+    expect(text).toContain("Late review");
+    expect(text).toContain("in 3 hr");
+    // A day read later (after a view switch) counts from its own moment, not from when the page loaded.
+    const later = textOf(
+      render(null, "en", {
+        initialView: "today",
+        day: { at: "2026-08-20T14:30:00.000Z", agenda: [], next, overdue: 2, done: Array(14).fill(0) },
+      }),
+    );
+    expect(later).toContain("in 30 min");
   });
 });
 
 test("a space colour reaches the overview's style only as a colour", () => {
-  for (const color of ["#3b82f6;position:fixed;inset:0", "red;background:url(https://example.org/x.png)"]) {
-    const html = render(null, "en", color);
+  for (const spaceColor of ["#3b82f6;position:fixed;inset:0", "red;background:url(https://example.org/x.png)"]) {
+    const html = render(null, "en", { spaceColor });
     expect(html).not.toMatch(/position:\s*fixed|url\(/);
-    expect(html).toContain("background-color:var(--ui-app-accent-border)");
+    expect(html).toContain("Ship overview");
   }
 });

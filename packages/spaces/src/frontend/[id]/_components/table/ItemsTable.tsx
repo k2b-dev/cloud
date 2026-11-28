@@ -1,236 +1,113 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { DataTable, type DataTableColumn, Tag } from "@k2b/ui";
-import type { JSX } from "solid-js";
-import { INACTIVE_ITEM_DAYS, type SpaceColumn, type SpaceItem, type SpaceTag } from "@/contracts";
-import { formatDeadline } from "@/presentation/deadline";
-import { shouldHandleDetailClick } from "../../../lib/detail";
+import { Avatar, Chip, Table } from "@k2b/ui/v2";
+import type { SpaceColumn, SpaceItem } from "@/contracts";
+import { deadlineDayKey, formatDeadline } from "@/presentation/deadline";
 import { useSpaceMessages } from "../../messages";
-import AssigneeAvatars from "../shared/AssigneeAvatars";
-import { isClaimHolder } from "../shared/claim/claim";
+import { itemPeople } from "../list/ItemRow";
 import { isInactiveTask, itemLastActivityAt } from "../shared/item-activity";
 import { requestSpacesRouteNavigation } from "../workspace/workspace-events";
 
 type Props = {
   items: SpaceItem[];
-  spaceId: string;
   columns: SpaceColumn[];
-  tags: SpaceTag[];
-  currentUserId: string;
   selectedItemId?: string;
   baseUrl: string;
-  scrollPreserveKey?: string;
   dateConfig?: DateContext;
+  /** The Space's colour: each row's sign belongs to the Space (identity B, rule 6). */
+  color?: string | null;
 };
 
-const PRIORITY_COLOR: Record<string, string> = {
-  urgent: "#ef4444",
-  high: "#f97316",
-  medium: "#eab308",
-  low: "#3b82f6",
-};
+const priorityStatus = { urgent: "bad", high: "warn" } as const;
 
-const buildItemHref = (baseUrl: string, itemId: string) => `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}item=${itemId}`;
-
-function CellLink(props: { itemLink?: boolean; href: string; class?: string; title?: string; tabIndex?: number; children: JSX.Element }) {
-  return (
-    <a
-      href={props.href}
-      data-spaces-item-link={props.itemLink ? "true" : undefined}
-      tabIndex={props.tabIndex}
-      class={props.class}
-      title={props.title}
-      onClick={(event) => {
-        if (!shouldHandleDetailClick(event, event.currentTarget)) return;
-        event.preventDefault();
-        requestSpacesRouteNavigation(props.href, { scroll: "preserve" });
-      }}
-    >
-      {props.children}
-    </a>
-  );
-}
-
-const formatSchedule = (item: SpaceItem, dateConfig?: DateContext) => {
-  if (item.startsAt && item.endsAt) {
-    return `${dates.formatDateTime(item.startsAt, dateConfig)} – ${dates.formatDateTime(item.endsAt, dateConfig)}`;
-  }
-  if (item.deadline) return formatDeadline(item.deadline, dateConfig);
-  return "—";
-};
-
-/** The people a row names, as its avatar stack orders them: whoever works on the task first, then the other assignees. */
-const peopleNames = (item: SpaceItem) =>
-  [
-    ...(item.claim ? [item.claim.displayName] : []),
-    ...(item.assignees ?? []).filter((assignee) => !isClaimHolder(item.claim, assignee)).map((assignee) => assignee.displayName),
-  ].join(", ");
-
+/** The items of a Space as a table: one row per item that opens it beside the table, two lines per row on the phone. */
 export default function ItemsTable(props: Props) {
   const t = useSpaceMessages();
-  const priorityLabel: Record<string, string> = { urgent: t.urgent, high: t.high, medium: t.medium, low: t.low };
-  const columnsById = new Map(props.columns.map((column) => [column.id, column]));
-  const tableColumns: DataTableColumn<SpaceItem>[] = [
-    { id: "title", header: t.title, value: (item) => item.title, cellClass: "max-w-[24rem]" },
-    { id: "status", header: t.status, value: (item) => columnsById.get(item.columnId)?.name },
-    {
-      id: "kind",
-      header: t.kind,
-      value: (item) => (Boolean(item.startsAt && item.endsAt) ? t.event : t.task),
-      nowrap: true,
-    },
-    { id: "priority", header: t.priority, value: (item) => item.priority, nowrap: true },
-    { id: "schedule", header: t.schedule, value: (item) => formatSchedule(item, props.dateConfig), cellClass: "max-w-[18rem]" },
-    {
-      id: "assignees",
-      header: t.assignees,
-      value: (item) => item.assignees?.map((assignee) => assignee.displayName).join(", "),
-      cellClass: "max-w-[14rem]",
-    },
-    {
-      id: "tags",
-      header: t.tags,
-      value: (item) => item.tags?.map((tag) => tag.name).join(", "),
-      cellClass: "max-w-[12rem]",
-    },
-    { id: "updated", header: t.updated, value: (item) => item.updatedAt, nowrap: true },
-    { id: "activity", header: t.activityState, value: itemLastActivityAt, nowrap: true },
-    { id: "created", header: t.created, value: (item) => item.createdAt, nowrap: true },
-  ];
-
+  const columnsById = () => new Map(props.columns.map((column) => [column.id, column]));
+  const href = (item: SpaceItem) => `${props.baseUrl}${props.baseUrl.includes("?") ? "&" : "?"}item=${item.id}`;
+  const isEvent = (item: SpaceItem) => Boolean(item.startsAt && item.endsAt);
+  // An event names its day once, as a deadline does ("Thu, Oct 15", the year only when it is not this one): one day
+  // with its times as a range, several days with both ends. An all-day event ends at midnight, exclusive.
+  const day = (at: Date) => formatDeadline(deadlineDayKey(at.toISOString(), props.dateConfig), props.dateConfig);
+  const eventSchedule = (startsAt: string, endsAt: string, allDay: boolean) => {
+    const start = new Date(startsAt);
+    const end = new Date(allDay ? Date.parse(endsAt) - 1 : endsAt);
+    const sameDay = day(start) === day(end);
+    if (allDay) return sameDay ? day(start) : `${day(start)} – ${day(end)}`;
+    const [from, to] = [dates.formatTime(start, props.dateConfig), dates.formatTime(end, props.dateConfig)];
+    return sameDay ? `${day(start)}, ${from}–${to}` : `${day(start)}, ${from} – ${day(end)}, ${to}`;
+  };
+  const schedule = (item: SpaceItem) =>
+    item.startsAt && item.endsAt
+      ? eventSchedule(item.startsAt, item.endsAt, item.allDay)
+      : item.deadline
+        ? formatDeadline(item.deadline, props.dateConfig)
+        : "—";
+  const priority = (item: SpaceItem) => {
+    if (!item.priority) return "—";
+    const label = { urgent: t.urgent, high: t.high, medium: t.medium, low: t.low }[item.priority];
+    return item.priority === "urgent" || item.priority === "high" ? <Chip status={priorityStatus[item.priority]}>{label}</Chip> : label;
+  };
+  // A state is a quiet word; colour stands only for a problem (priority, overdue).
+  // k2b-ui gap (DP, #4326): a quiet state, a neutral dot and its word without the tinted round, is not on this branch.
+  const status = (item: SpaceItem) => columnsById().get(item.columnId)?.name ?? "—";
+  const people = (item: SpaceItem) => {
+    // The faces carry the plain names; the stack's one name says who is on it.
+    const names = itemPeople(item);
+    return names.length ? (
+      <Avatar.Stack people={names.map((name) => ({ name }))} max={3} label={itemPeople(item, t.onIt).join(", ")} />
+    ) : (
+      "—"
+    );
+  };
+  const sign = (item: SpaceItem) => ({ icon: isEvent(item) ? "calendar-event" : "checkbox", color: props.color ?? undefined });
   return (
-    <div class="flex min-h-0 flex-col overflow-hidden [view-transition-name:spaces-items-table]">
-      <DataTable
-        rows={props.items}
-        columns={tableColumns}
-        getRowId={(item) => item.id}
-        selectedRowId={props.selectedItemId}
-        hoverRows
-        class="min-h-0 overflow-x-auto"
-        scrollClass="k2b-detail-trail"
-        tableClass="min-w-[72rem] w-full text-xs"
-        scrollPreserveKey={props.scrollPreserveKey}
-        renderCell={({ row: item, col }) => {
-          const column = columnsById.get(item.columnId) ?? null;
-          const isEvent = Boolean(item.startsAt && item.endsAt);
-          const href = buildItemHref(props.baseUrl, item.id);
-          if (col.id === "title") {
-            return (
-              <CellLink
-                itemLink
-                href={href}
-                class={`block truncate font-medium text-primary hover:underline ${item.completedAt ? "line-through text-dimmed" : ""}`}
-                title={item.title}
-              >
-                {item.title}
-              </CellLink>
-            );
-          }
-          if (col.id === "status") {
-            return (
-              <CellLink href={href} class="block text-secondary" tabIndex={-1}>
-                {column ? (
-                  <Tag size="sm" color={column.color ?? (column.isDone ? "#10b981" : null)}>
-                    {column.name}
-                  </Tag>
-                ) : (
-                  "—"
-                )}
-              </CellLink>
-            );
-          }
-          if (col.id === "kind") {
-            return (
-              <CellLink href={href} class="block text-secondary" tabIndex={-1}>
-                {isEvent ? t.event : t.task}
-              </CellLink>
-            );
-          }
-          if (col.id === "priority") {
-            return (
-              <CellLink href={href} class="block" tabIndex={-1}>
-                {item.priority ? (
-                  <Tag size="sm" color={PRIORITY_COLOR[item.priority]} icon="ti ti-flag">
-                    {priorityLabel[item.priority]}
-                  </Tag>
-                ) : (
-                  <span class="text-dimmed">—</span>
-                )}
-              </CellLink>
-            );
-          }
-          if (col.id === "schedule") {
-            return (
-              <CellLink href={href} class="block truncate text-secondary" title={formatSchedule(item, props.dateConfig)} tabIndex={-1}>
-                {formatSchedule(item, props.dateConfig)}
-              </CellLink>
-            );
-          }
-          if (col.id === "assignees") {
-            return (
-              <CellLink href={href} class="flex min-w-0 items-center" title={peopleNames(item) || "—"} tabIndex={-1}>
-                <AssigneeAvatars
-                  assignees={item.assignees ?? []}
-                  claim={item.claim}
-                  currentUserId={props.currentUserId}
-                  showNames
-                  empty={<span class="text-dimmed">—</span>}
-                  class="w-full text-xs"
-                />
-              </CellLink>
-            );
-          }
-          if (col.id === "tags") {
-            return (
-              <CellLink
-                href={href}
-                class="flex min-w-0 items-center gap-1"
-                title={item.tags?.map((tag) => tag.name).join(", ") || "—"}
-                tabIndex={-1}
-              >
-                {item.tags && item.tags.length > 0 ? (
-                  <>
-                    {item.tags.slice(0, 2).map((tag) => (
-                      <Tag size="sm" color={tag.color} class="max-w-24">
-                        {tag.name}
-                      </Tag>
-                    ))}
-                    {item.tags.length > 2 && <span class="shrink-0 text-dimmed">+{item.tags.length - 2}</span>}
-                  </>
-                ) : (
-                  <span class="text-dimmed">—</span>
-                )}
-              </CellLink>
-            );
-          }
-          if (col.id === "updated") {
-            return (
-              <CellLink href={href} class="block text-dimmed" tabIndex={-1}>
-                {dates.formatDateTime(item.updatedAt, props.dateConfig)}
-              </CellLink>
-            );
-          }
-          if (col.id === "activity") {
-            return (
-              <CellLink
-                href={href}
-                class={`block ${isInactiveTask(item) ? "text-amber-700 dark:text-amber-300" : "text-dimmed"}`}
-                title={isInactiveTask(item) ? t.inactiveFor({ days: INACTIVE_ITEM_DAYS }) : undefined}
-                tabIndex={-1}
-              >
-                {isInactiveTask(item) ? t.inactive : dates.formatDateTime(itemLastActivityAt(item), props.dateConfig)}
-              </CellLink>
-            );
-          }
-          if (col.id === "created") {
-            return (
-              <CellLink href={href} class="block text-dimmed" tabIndex={-1}>
-                {dates.formatDateTime(item.createdAt, props.dateConfig)}
-              </CellLink>
-            );
-          }
-          return "";
-        }}
-      />
-    </div>
+    // k2b-ui gap: v2 has no virtualized table yet; a page holds at most 50 rows (the table pages on the server).
+    <Table
+      label={t.table}
+      rows={props.items}
+      rowKey={(item) => item.id}
+      current={props.selectedItemId || undefined}
+      sticky
+      open={(item) => ({ href: href(item), onNavigate: () => requestSpacesRouteNavigation(href(item), { scroll: "preserve" }) })}
+      phone={(item) => ({
+        mark: sign(item),
+        lines: [item.title, [columnsById().get(item.columnId)?.name, schedule(item)].filter(Boolean).join(" · ")],
+        marks: item.priority === "urgent" || item.priority === "high" ? priority(item) : undefined,
+      })}
+      columns={[
+        // The kind is the title's sign, not a column of its own.
+        { title: t.title, width: { min: 200, default: 300 }, mark: sign, cell: (item) => item.title },
+        { title: t.status, width: { min: 100, default: 130 }, cell: status },
+        { title: t.priority, width: { min: 90, default: 110 }, cell: priority, drop: true },
+        { title: t.schedule, width: { min: 140, default: 200 }, cell: schedule },
+        // The row's one picture: who holds it, as faces and "+n"; the names stand in the detail.
+        { title: t.assignees, width: { min: 100, default: 120 }, cell: people, drop: true },
+        {
+          title: t.tags,
+          width: { min: 100, default: 140 },
+          cell: (item) => (item.tags ?? []).map((tag) => tag.name).join(", ") || "—",
+          drop: true,
+        },
+        {
+          title: t.activityState,
+          width: { min: 120, default: 150 },
+          cell: (item) => (isInactiveTask(item) ? t.inactive : dates.formatDateTime(itemLastActivityAt(item), props.dateConfig)),
+          drop: true,
+        },
+        // When it was last changed and when it was made, as main's table showed; they give way first where room is short.
+        {
+          title: t.updated,
+          width: { min: 120, default: 150 },
+          cell: (item) => dates.formatDateTime(item.updatedAt, props.dateConfig),
+          drop: true,
+        },
+        {
+          title: t.created,
+          width: { min: 120, default: 150 },
+          cell: (item) => dates.formatDateTime(item.createdAt, props.dateConfig),
+          drop: true,
+        },
+      ]}
+    />
   );
 }

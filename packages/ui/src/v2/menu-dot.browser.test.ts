@@ -76,7 +76,8 @@ for (const width of [1440, 390])
         });
         expect(found.map(({ name, dot, hidden, size }) => ({ name, dot, hidden, size }))).toEqual([
           { name: "Werkstatt", dot: "rgb(15, 118, 110)", hidden: "true", size: "8x8" },
-          { name: "Büro", dot: "rgb(124, 58, 237)", hidden: "true", size: "8x8" },
+          // the dot keeps 3:1 on the menu: a violet too dark beside the dark menu takes its lighter step there
+          { name: "Büro", dot: dark ? "rgb(131, 68, 238)" : "rgb(124, 58, 237)", hidden: "true", size: "8x8" },
           // without a colour: no dot, the words in the same place
           { name: "Lager", dot: null, hidden: null, size: null },
           // what is no colour never reaches the page: a neutral dot

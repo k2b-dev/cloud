@@ -1,131 +1,28 @@
-import type { DateContext } from "@k2b/stdlib";
-import { Dropdown, dialogCore, toast, useLocale } from "@k2b/ui";
-import { createSignal, Show } from "solid-js";
-import type { SpaceColumn, SpaceItem, SpaceItemResourceReferenceInput, SpaceItemTemplate, SpaceTag } from "@/contracts";
-import { createRetryToasts } from "../../../lib/feedback";
+import { Dropdown } from "@k2b/ui";
+import { Show } from "solid-js";
 import { useSpaceMessages } from "../../messages";
-import { openTemplateDialog } from "../edit/TemplateDialog";
-import type { CreateMenuChoice } from "../shared/create-menu";
-import { createSpaceItem } from "../shared/editItem";
-import ItemForm from "../shared/ItemForm";
-import { itemCreateDialogOptions } from "../shared/item-form/dialog";
-import type { ItemType } from "../shared/item-form/types";
-import { invalidateSpacesData } from "../workspace/workspace-events";
 import { CreateMenu } from "./CreateMenu";
-
-type Props = {
-  spaceId: string;
-  columns: SpaceColumn[];
-  tags: SpaceTag[];
-  templates?: SpaceItemTemplate[];
-  dateConfig?: DateContext;
-  variant?: "chip" | "inline";
-  defaultType?: ItemType;
-  defaultColumnId?: string;
-};
-
-export type CreateItemOptions = {
-  type?: ItemType;
-  references?: SpaceItemResourceReferenceInput[];
-  returnTo?: string;
-  /** A blank item's title, such as a menu query no template matched. */
-  title?: string;
-  /** Opens the dialog with this template chosen; a template deleted meanwhile says so and opens it blank. */
-  templateId?: string;
-};
-
-export function createItemController(props: Props) {
-  const t = useSpaceMessages();
-  const locale = useLocale();
-  const retryToast = createRetryToasts();
-  const defaultType = () => props.defaultType ?? "task";
-  const label = () => (defaultType() === "event" ? t.newEvent : t.newTask);
-  const [pending, setPending] = createSignal(false);
-  const refreshWorkspace = (): void =>
-    void invalidateSpacesData().catch(() => retryToast(t.workspaceRefreshAfterCreateFailed, t.retry, refreshWorkspace));
-  const createItem = async (options: CreateItemOptions = {}) => {
-    if (pending()) return;
-    setPending(true);
-    // The Space is the one the dialog opened for, even when a compose command selects another while it is open.
-    const spaceId = props.spaceId;
-    const template = options.templateId ? props.templates?.find((candidate) => candidate.id === options.templateId) : undefined;
-    if (options.templateId && !template) toast.error(t.templateGone);
-    try {
-      // The dialog stays open until the create answers, so a failure shows in it with the input still there.
-      const item = await dialogCore.open<SpaceItem | null>(
-        (close) => (
-          <ItemForm
-            spaceId={spaceId}
-            columns={props.columns}
-            tags={props.tags}
-            templates={props.templates}
-            quickCreate
-            defaults={{
-              type: template?.kind ?? options.type ?? defaultType(),
-              columnId: props.defaultColumnId,
-              references: options.references,
-              title: options.title,
-              templateId: template?.id,
-            }}
-            onSubmit={async (data) => close(await createSpaceItem(spaceId, data, t.createItemFailed))}
-            onCancel={() => close(null)}
-            dateConfig={props.dateConfig}
-          />
-        ),
-        itemCreateDialogOptions,
-      );
-      if (item) {
-        // The new entry can land outside the current view or filter, so it is confirmed.
-        toast.success(item.startsAt && item.endsAt ? t.eventCreated : t.taskCreated);
-        refreshWorkspace();
-      }
-      if (options.returnTo) window.location.assign(options.returnTo);
-    } finally {
-      setPending(false);
-    }
-  };
-  const createTemplate = async (kind: SpaceItemTemplate["kind"]) => {
-    const saved = await openTemplateDialog({
-      spaceId: props.spaceId,
-      kind,
-      tags: props.tags,
-      templates: props.templates ?? [],
-      dateConfig: props.dateConfig,
-      locale: locale(),
-    });
-    if (saved) refreshWorkspace();
-  };
-  /** Runs what a person chose in the "+" menu. */
-  const choose = (choice: CreateMenuChoice) => {
-    if (choice.type === "blank") void createItem({ type: choice.kind, title: choice.title });
-    else if (choice.type === "template") void createItem({ templateId: choice.template.id });
-    else void createTemplate(choice.kind);
-  };
-
-  return { createItem, createTemplate, choose, pending, label, defaultType };
-}
+import { type CreateItemProps, createItemController } from "./create-item";
 
 /** The "+" menu lives in its own module, so a page can offer it without the create dialog. */
 export { CreateMenu } from "./CreateMenu";
 
-export default function CreateItemButton(props: Props) {
+/**
+ * The create menu on a small button. A board column (`variant="column"`) shows it as a quiet "+" in its head beside the
+ * column's other actions, so the screen keeps one visible create cue and the column still offers its own.
+ */
+export default function CreateItemButton(props: CreateItemProps) {
   const t = useSpaceMessages();
   const controller = createItemController(props);
   const column = () => props.columns.find((candidate) => candidate.id === props.defaultColumnId);
   const kind = () => controller.defaultType();
   const icon = () => (controller.pending() ? "ti ti-loader-2 animate-spin" : "ti ti-plus");
+  const title = () => (column() ? t.createMenuInColumn({ column: column()!.name }) : undefined);
 
   return (
-    <CreateMenu
-      kind={kind()}
-      templates={props.templates ?? []}
-      choose={controller.choose}
-      title={column() ? t.createMenuInColumn({ column: column()!.name }) : undefined}
-      disabled={controller.pending()}
-      class={props.variant === "inline" ? "w-full" : undefined}
-    >
+    <CreateMenu kind={kind()} templates={props.templates ?? []} choose={controller.choose} title={title()} disabled={controller.pending()}>
       <Show
-        when={props.variant === "inline"}
+        when={props.variant === "column"}
         fallback={
           <Dropdown.Trigger size="sm">
             <i class={icon()} aria-hidden="true" />
@@ -134,18 +31,15 @@ export default function CreateItemButton(props: Props) {
           </Dropdown.Trigger>
         }
       >
-        {/* The chevron shows on hover, focus, and while open; it is always there, so the row never changes width. */}
         <Dropdown.Trigger
-          variant="ghost"
+          iconOnly
           size="xs"
-          class="group w-full justify-start text-left text-[11px] text-dimmed hover:text-primary [&_.k2b-button__label]:w-full [&_.k2b-button__label]:justify-start"
+          variant="ghost"
+          class="spaces-kanban-column-create h-6 w-6 text-dimmed"
+          label={title() ?? controller.label()}
+          data-spaces-kanban-column-create
         >
-          <i class={`${icon()} text-xs`} aria-hidden="true" />
-          <span>{kind() === "event" ? t.addEvent : t.addTask}</span>
-          <i
-            class="ti ti-chevron-down ml-auto text-xs opacity-0 group-hover:opacity-70 group-focus-visible:opacity-70 group-aria-expanded:opacity-70"
-            aria-hidden="true"
-          />
+          <i class={`${icon()} text-sm`} aria-hidden="true" />
         </Dropdown.Trigger>
       </Show>
     </CreateMenu>

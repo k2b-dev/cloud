@@ -8,7 +8,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { CalendarItem, SpaceColumn, SpaceTag } from "@/contracts";
-import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, launchBrowser, settled } from "../../../../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 import { parseCalendarRoute } from "./filter";
 import { calendarWindow } from "./range";
@@ -244,7 +244,7 @@ const pageHtml = (locale: "en" | "de", href: string, items: CalendarItem[]) =>
   `<link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style>` +
   "<style>solid-client,solid-island{display:contents}</style></head>" +
   // The workspace main area: a padded flex column the route fills.
-  `<body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box;padding:var(--ui-space-shell)">${serverBody(locale, href, items)}</main>` +
+  `<body class="k2b-ui" style="margin:0"><main class="k2-ui" style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box">${serverBody(locale, href, items)}</main>` +
   `<script type="module">document.querySelectorAll('solid-island').forEach((e)=>import('/_ssr/'+e.dataset.id+'.js'))</script></body></html>`;
 
 type View = { width: number; height: number; touch: boolean };
@@ -272,6 +272,7 @@ const open = async (
   });
   await context.clock.setFixedTime(NOW);
   const page = await context.newPage();
+  page.setDefaultTimeout(15_000);
   await page.goto(`${server.url}${(options.href ?? monthHref()).slice(1)}`);
   await page.evaluate(() => window.document.fonts.ready);
   await page.waitForFunction(
@@ -299,6 +300,22 @@ const box = async (page: Page, selector: string): Promise<Box> => {
   if (!found) throw new Error(`${selector} is not on screen`);
   return { x: Math.round(found.x), y: Math.round(found.y), width: Math.round(found.width), height: Math.round(found.height) };
 };
+/**
+ * The filter bar's lines: one row, or, where the bar is narrower than its statements' 240 px and its end (the count
+ * and the display), the statements in one row and the end on a line of its own under them (the bar's contract since
+ * #4223); never the end under the statements while the bar has room for both in one row.
+ */
+const filterBarLines = (page: Page) =>
+  page.evaluate(() => {
+    const bar = document.querySelector('[data-k2-part="FilterBar"]')!.getBoundingClientRect();
+    const flow = document.querySelector('[data-k2-part="FilterBar"] .k2-fbar-flow')!.getBoundingClientRect();
+    const tail = document.querySelector('[data-k2-part="FilterBar"] .k2-fbar-tail')?.getBoundingClientRect();
+    const endBelow = tail !== undefined && tail.height > 0 && tail.top >= flow.bottom;
+    return {
+      oneRowOrEndBelow: bar.height <= 56 || (endBelow && flow.height <= 36),
+      endBesideWhenRoom: !endBelow || bar.width < 240 + tail!.width + 16,
+    };
+  });
 const day = (key: string) => `[data-calendar-day-key="${key}"]`;
 /** A point in the empty lower part of a day cell, below its bars. */
 const emptyPoint = async (page: Page, key: string) => {
@@ -429,6 +446,45 @@ const quickCreateWhen = (page: Page) =>
     return rect.width >= 40 ? (element.textContent ?? "") : `hidden: ${element.textContent}`;
   });
 const menuEntries = (page: Page) => page.locator(".k2b-context-menu[role='menu']").getByRole("menuitem").allTextContents();
+/** The page's one row under the head: the filters, then the count and the colour choice at its end. */
+const filterBar = (page: Page) => page.locator('[data-k2-part="FilterBar"]');
+const pageHead = (page: Page) => page.locator('[data-k2-workspace] > .k2-ws-main > [data-slot="head"]');
+/** New event in the page head opens its menu; Blank event opens the full dialog. */
+const newBlankEvent = async (page: Page) => {
+  await pageHead(page).getByRole("button", { name: "New event" }).click();
+  await page.getByRole("menuitem", { name: /^Blank event/ }).click();
+};
+/** What the dialog says and holds: its text and the values of its fields, where the v2 form keeps its dates. */
+const dialogWhen = (dialog: ReturnType<Page["getByRole"]>) =>
+  dialog.evaluate(
+    (element) =>
+      `${element.textContent ?? ""} ${Array.from(element.querySelectorAll<HTMLInputElement>("input"), (input) => input.value).join(" ")}`,
+  );
+/** The boxes of the bar's visible controls and its count, rounded, to show that nothing in it moved. */
+const barControls = (page: Page) =>
+  filterBar(page).evaluate((bar) =>
+    Array.from(bar.querySelectorAll<HTMLElement>("button, .k2-fbar-results"))
+      .filter((element) => element.getClientRects().length > 0)
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        // A symbol button, such as the colour choice, is named by its label.
+        const name = element.textContent?.trim() || element.getAttribute("aria-label") || "";
+        return { name, x: Math.round(rect.left), y: Math.round(rect.top), width: Math.round(rect.width) };
+      }),
+  );
+/** Controls of the bar and of the calendar's own header that reach past either one's edges. */
+const overflowing = (page: Page) =>
+  page.evaluate(() =>
+    [".k2b-calendar-header", '[data-k2-part="FilterBar"]'].flatMap((selector) => {
+      const row = document.querySelector(selector)!.getBoundingClientRect();
+      return Array.from(document.querySelectorAll(`${selector} a, ${selector} button`))
+        .filter((element) => {
+          const rect = element.getBoundingClientRect();
+          return rect.width > 0 && (rect.right > row.right + 0.5 || rect.left < row.left - 0.5);
+        })
+        .map((element) => element.textContent?.trim() || element.getAttribute("aria-label"));
+    }),
+  );
 /** The text drawn at the torn ends of an item's bars, in row order. */
 const hints = (page: Page, itemId: string) =>
   page
@@ -494,13 +550,14 @@ describe(`Spaces month view in ${browserName}`, () => {
       await page.keyboard.press("Escape");
       await scrollWeek(page, "2026-10-19");
       // Oct 19 through Nov 22 paint the trip, recap, and autumn break from the fixture.
-      await page.locator(".k2b-calendar-header__content").getByText("3 shown", { exact: true }).waitFor();
+      await filterBar(page).getByText("3 shown", { exact: true }).waitFor();
       await page.waitForURL(/cd=2026-11-01/);
       await shoot(page, "month-midscroll-en");
+      await settled(page);
       expect(await page.locator(day("2026-10-16")).getAttribute("aria-selected")).toBe("true");
       await scrollWeek(page, "2026-11-02");
       // Nov 2 through Dec 6 contain only the last two days of the autumn break.
-      await page.locator(".k2b-calendar-header__content").getByText("1 shown", { exact: true }).waitFor();
+      await filterBar(page).getByText("1 shown", { exact: true }).waitFor();
       await clickDay(page, "2026-11-03");
       await page.waitForURL(/cd=2026-11-03/);
       await page.keyboard.press("Escape");
@@ -525,6 +582,7 @@ describe(`Spaces month view in ${browserName}`, () => {
       await page.touchscreen.tap(point.x, point.y);
       await page.waitForURL(/cd=2026-11-09/);
       expect(await page.locator(day("2026-11-09")).getAttribute("aria-selected")).toBe("true");
+      await settled(page);
       const row = await box(page, '[data-week-key="2026-11-09"]');
       const viewport = await box(page, ".k2b-calendar-month");
       expect(Math.abs(row.height * 5 + 32 - viewport.height)).toBeLessThanOrEqual(5);
@@ -533,39 +591,55 @@ describe(`Spaces month view in ${browserName}`, () => {
     }
   }, 60_000);
 
-  test("desktop: the filters and the count sit right after the title in the one toolbar row, and month navigation leaves the filters in place", async () => {
+  test("desktop: the filters and the count stand in the calendar's own row under the head, and month navigation leaves them in place", async () => {
     const page = await open(desktop);
     try {
-      // The calendar is its toolbar and its body: no row between them.
+      // The calendar is its own header and its body, and the filter bar stands in that header (design review 26.11.):
+      // the page head has two rows, the views and then the days with Today, the filters, the count and the colour.
       const parts = await page.evaluate(() =>
         Array.from(document.querySelector(".k2b-content-calendar")!.children, (child) => child.className.split(" ")[0]),
       );
       expect(parts).toEqual(["k2b-calendar-header", "k2b-calendar-body"]);
-      const order = await page.evaluate(() =>
-        Array.from(document.querySelector(".k2b-calendar-header")!.children, (child) => child.className.split(" ")[0]),
+      expect(await page.locator('.k2b-calendar-header [data-k2-part="FilterBar"]').count()).toBe(1);
+      const bar = await box(page, '[data-k2-part="FilterBar"]');
+      const header = await box(page, ".k2b-calendar-header");
+      expect(bar.y).toBeGreaterThanOrEqual(header.y);
+      expect(bar.y + bar.height).toBeLessThanOrEqual(header.y + header.height);
+      expect(bar.height).toBeLessThanOrEqual(56);
+      expect(await filterBar(page).locator(".k2-fbar-results").textContent()).toBe("13 shown");
+      // A filter stands in the bar as a statement; the bar keeps its one row.
+      await page.locator('[data-k2-part="FilterBar"] .k2-fbar-add button').click();
+      await page.getByRole("menuitem", { name: "Priority" }).click();
+      await page.getByRole("option", { name: "High", exact: true }).click();
+      await page.waitForURL(/cpriority=high/);
+      await page.keyboard.press("Escape");
+      await filterBar(page).locator(".k2-stmt").first().waitFor();
+      await settle(page);
+      // One row: the statement, "+ Filter", the count and the colour choice share their vertical middle.
+      const before = await barControls(page);
+      expect(before.map((control) => control.name)).toEqual(expect.arrayContaining(["Filter", "Color by: Tag"]));
+      const middles = await filterBar(page).evaluate((element) =>
+        Array.from(
+          element.querySelectorAll<HTMLElement>(".k2-stmt, .k2-fbar-add button, .k2-fbar-results, .k2-fbar-tail button"),
+          (part) => {
+            const rect = part.getBoundingClientRect();
+            return Math.round(rect.top + rect.height / 2);
+          },
+        ),
       );
-      expect(order).toEqual(["k2b-calendar-header__navigation", "k2b-calendar-header__content", "k2b-calendar-header__actions"]);
-      expect(await page.locator(".k2b-calendar-header__content").getByText("13 shown").count()).toBe(1);
-      const chips = () =>
-        page.locator(".k2b-calendar-header__content .k2b-filter-chip").evaluateAll((elements) =>
-          elements.map((element) => {
-            const rect = element.getBoundingClientRect();
-            return { name: element.getAttribute("aria-label"), x: Math.round(rect.left), y: Math.round(rect.top) };
-          }),
-        );
-      const before = await chips();
-      expect(before.map((chip) => chip.name)).toEqual(["Scope", "Priority", "Status", "Tags"]);
-      // One row: the chips, Today, and the title share their vertical middle.
+      expect(Math.max(...middles) - Math.min(...middles)).toBeLessThanOrEqual(2);
+      expect((await box(page, '[data-k2-part="FilterBar"]')).height).toBe(bar.height);
+      // The calendar's header keeps its title, Today and the filters in one row.
       const middle = async (selector: string) => {
         const found = await box(page, selector);
         return Math.round(found.y + found.height / 2);
       };
       const title = await middle(".k2b-calendar-header__title");
-      expect(Math.abs((await middle(".k2b-calendar-header__content .k2b-filter-chip")) - title)).toBeLessThanOrEqual(2);
       expect(Math.abs((await middle(".k2b-calendar-header__today")) - title)).toBeLessThanOrEqual(2);
-      expect((await box(page, ".k2b-calendar-header")).height).toBeLessThanOrEqual(56);
+      expect(Math.abs((await middle('[data-k2-part="FilterBar"] .k2-fbar-add button')) - title)).toBeLessThanOrEqual(2);
+      expect(header.height).toBeLessThanOrEqual(72);
 
-      // Scrolling to months with different title widths moves no filter.
+      // Months with titles of other widths move nothing in the bar; only its count follows the shown days.
       for (const [label, month] of [
         ["Next", "2026-11"],
         ["Next", "2026-12"],
@@ -576,44 +650,57 @@ describe(`Spaces month view in ${browserName}`, () => {
         await page.waitForURL(new RegExp(`cd=${month}`));
         await alignedFirst(page, `${month}-01`);
         await settle(page);
-        expect(await chips()).toEqual(before);
+        const after = await barControls(page);
+        // The count, or "Nothing planned" for a month without entries, is the one part that follows the shown days.
+        expect(after.filter((control) => !/shown$|^Nothing planned$/.test(control.name ?? ""))).toEqual(
+          before.filter((control) => !/shown$|^Nothing planned$/.test(control.name ?? "")),
+        );
       }
     } finally {
       await page.context().close();
     }
   }, 60_000);
 
-  test("desktop: the toolbar draws the filters as icons, then gives them a row of their own, and never overflows", async () => {
+  test("desktop: at every width the filter bar keeps one row, or its end on a line of its own where it is narrow, inside the calendar's header, and neither overflows", async () => {
     const page = await open(desktop);
     try {
-      for (const [width, iconOnly, ownRow] of [
-        [1200, true, false],
-        [960, false, true],
-        [700, false, true],
-      ] as const) {
+      for (const width of [1200, 960, 800]) {
         await page.setViewportSize({ width, height: 900 });
-        await settle(page);
-        const shape = await page.evaluate(() => {
-          const header = document.querySelector(".k2b-calendar-header")!.getBoundingClientRect();
-          const title = document.querySelector(".k2b-calendar-header__title")!.getBoundingClientRect();
-          const chip = document.querySelector(".k2b-calendar-header__content .k2b-filter-chip")!.getBoundingClientRect();
-          const overflow = Array.from(document.querySelectorAll(".k2b-calendar-header a, .k2b-calendar-header button")).filter(
-            (element) => {
-              const rect = element.getBoundingClientRect();
-              return rect.width > 0 && (rect.right > header.right + 0.5 || rect.left < header.left - 0.5);
-            },
-          ).length;
-          return { chipWidth: Math.round(chip.width), below: chip.top > title.bottom, overflow };
-        });
-        expect({ width, iconOnly: shape.chipWidth <= 36, ownRow: shape.below, overflow: shape.overflow }).toEqual({
+        await settled(page);
+        const bar = await box(page, '[data-k2-part="FilterBar"]');
+        const header = await box(page, ".k2b-calendar-header");
+        expect({
           width,
-          iconOnly,
-          ownRow,
-          overflow: 0,
-        });
+          ...(await filterBarLines(page)),
+          inside: bar.y >= header.y && bar.y + bar.height <= header.y + header.height,
+          overflow: await overflowing(page),
+          sideways: await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth),
+        }).toEqual({ width, oneRowOrEndBelow: true, endBesideWhenRoom: true, inside: true, overflow: [], sideways: 0 });
       }
     } finally {
       await page.context().close();
+    }
+  }, 60_000);
+
+  // The grid is the content of its pane: no edge or rounded corner of its own, so no second line stands beside the pane's.
+  test("the calendar lies flat in its pane, on the desktop and the phone", async () => {
+    for (const view of [desktop, phone]) {
+      const page = await open(view);
+      try {
+        const edges = await page.locator(".k2b-content-calendar").evaluate((calendar) => {
+          const style = getComputedStyle(calendar);
+          return [
+            style.borderTopWidth,
+            style.borderLeftWidth,
+            style.borderRightWidth,
+            style.borderBottomWidth,
+            style.borderTopLeftRadius,
+          ].join(" ");
+        });
+        expect(edges).toBe("0px 0px 0px 0px 0px");
+      } finally {
+        await page.context().close();
+      }
     }
   }, 60_000);
 
@@ -668,14 +755,13 @@ describe(`Spaces month view in ${browserName}`, () => {
       await page.waitForFunction(() => !document.querySelector(".k2b-calendar-popover:popover-open"));
       expect(await focusedDay(page)).toBe("2026-10-13");
 
-      // New event in the toolbar opens its menu; Blank event creates on the same day, in the full dialog.
-      await page.getByRole("button", { name: "New event" }).click();
-      await page.getByRole("menuitem", { name: "Blank event" }).click();
-      const dialog = page.locator("dialog[open]");
+      // New event in the page head opens its menu; Blank event creates on the same day, in the full dialog.
+      await newBlankEvent(page);
+      const dialog = page.getByRole("dialog");
       await dialog.waitFor();
-      expect(await dialog.textContent()).toContain("Oct 13");
+      expect(await dialogWhen(dialog)).toMatch(/Oct 13|2026-10-13|10\/13\/2026/);
       await page.keyboard.press("Escape");
-      await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+      await dialog.waitFor({ state: "detached" });
 
       // While the quick create waits after a click, Space still lists the day, and typing starts the title, N included.
       const popoverKind = (kind: string) =>
@@ -713,13 +799,12 @@ describe(`Spaces month view in ${browserName}`, () => {
       await page.waitForURL(/cv=month&cd=2026-11-02/);
       await page.locator(day("2026-11-02")).waitFor();
       expect(await selectedDays(page)).toEqual([]);
-      await page.getByRole("button", { name: "New event" }).click();
-      await page.getByRole("menuitem", { name: "Blank event" }).click();
+      await newBlankEvent(page);
       await dialog.waitFor();
-      expect(await dialog.textContent()).toContain("Nov 2");
-      expect(await dialog.textContent()).not.toContain("Oct 21");
+      expect(await dialogWhen(dialog)).toMatch(/Nov 2\b|2026-11-02|11\/2\/2026/);
+      expect(await dialogWhen(dialog)).not.toMatch(/Oct 21|2026-10-21|10\/21\/2026/);
       await page.keyboard.press("Escape");
-      await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+      await dialog.waitFor({ state: "detached" });
     } finally {
       await page.context().close();
     }
@@ -768,7 +853,8 @@ describe(`Spaces month view in ${browserName}`, () => {
     const page = await open(desktop);
     try {
       await page.addScriptTag({ content: dispatcher });
-      await clickDay(page, "2026-10-15");
+      // A day with room below its entries: on a crowded day that place is its "+N", which lists the day.
+      await clickDay(page, "2026-10-16");
       await page.locator(openPopover).waitFor();
       const when = await quickCreateWhen(page);
       // Shift+N is New task with a deadline, but here it is the first letter of a title.
@@ -1119,36 +1205,38 @@ describe(`Spaces month view in ${browserName}`, () => {
     }
   }, 60_000);
 
-  test("phone in German: the toolbar wraps without an extra row, a tap selects, a second tap creates, and bars keep their titles", async () => {
+  test("phone in German: the filter bar is one line with its sheet, a tap selects, a second tap creates, and bars keep their titles", async () => {
     const page = await open(phone, { locale: "de" });
     try {
       const parts = await page.evaluate(() =>
         Array.from(document.querySelector(".k2b-content-calendar")!.children, (child) => child.className.split(" ")[0]),
       );
       expect(parts).toEqual(["k2b-calendar-header", "k2b-calendar-body"]);
-      // The filters keep their icon and their names as accessible names.
-      const chips = await page
-        .locator(".k2b-calendar-header__content .k2b-filter-chip")
-        .evaluateAll((elements) =>
-          elements.map((element) => [element.getAttribute("aria-label"), Math.round(element.getBoundingClientRect().width)]),
-        );
-      expect(chips).toEqual([
-        ["Umfang", 36],
-        ["Priorität", 36],
-        ["Status", 36],
-        ["Tags", 36],
-      ]);
-      // Title, Today, and New event share the first row.
+      // The filter bar is one line inside the calendar's header; its first button opens the sheet with every filter.
+      const bar = await box(page, '[data-k2-part="FilterBar"]');
+      const header = await box(page, ".k2b-calendar-header");
+      expect(bar.height).toBeLessThanOrEqual(56);
+      expect(bar.y >= header.y && bar.y + bar.height <= header.y + header.height).toBe(true);
+      await filterBar(page)
+        .locator("button:visible")
+        .filter({ hasText: /^\s*Filter\s*\d*\s*$/ })
+        .first()
+        .tap();
+      const filters = page.getByRole("dialog", { name: "Filter" });
+      await filters.waitFor();
+      for (const name of ["Art", "Zuständigkeit", "Priorität", "Status", "Tags"])
+        expect(await filters.getByRole("button", { name: new RegExp(`^${name}`) }).count()).toBe(1);
+      await page.keyboard.press("Escape");
+      await filters.waitFor({ state: "detached" });
+      // Title and Today share the calendar's first row; New event is the page's main button.
       const middle = async (selector: string) => {
         const found = await box(page, selector);
         return Math.round(found.y + found.height / 2);
       };
       const title = await middle(".k2b-calendar-header__title");
       expect(Math.abs((await middle(".k2b-calendar-header__today")) - title)).toBeLessThanOrEqual(2);
-      // New event is the trigger of its "+" menu.
-      expect(
-        Math.abs((await middle(".k2b-calendar-header__actions > .k2b-dropdown > .k2b-dropdown__trigger")) - title),
-      ).toBeLessThanOrEqual(2);
+      expect(await page.locator(".k2-fab").getByText("Neuer Termin").isVisible()).toBe(true);
+      // Nothing in the calendar's header leaves it, and the page never scrolls sideways.
       const overflow = await page.evaluate(() => {
         const header = document.querySelector(".k2b-calendar-header")!.getBoundingClientRect();
         return Array.from(document.querySelectorAll(".k2b-calendar-header a, .k2b-calendar-header button")).filter((element) => {
@@ -1158,6 +1246,7 @@ describe(`Spaces month view in ${browserName}`, () => {
         }).length;
       });
       expect(overflow).toBe(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
 
       const url = page.url();
       const point = await emptyPoint(page, "2026-10-16");
@@ -1228,7 +1317,7 @@ describe(`Spaces month view in ${browserName}`, () => {
     60_000,
   );
 
-  test("every view puts the filters after its title; light screenshots of each on a desktop and a phone", async () => {
+  test("every view keeps the filter bar inside its own header; light screenshots of each on a desktop and a phone", async () => {
     for (const [name, view, locale, href] of [
       ["desktop-1440-de", desktop, "de", monthHref()],
       ["phone-390-de", phone, "de", monthHref()],
@@ -1241,13 +1330,14 @@ describe(`Spaces month view in ${browserName}`, () => {
     ] as const) {
       const page = await open(view, { locale, href, scale: 2 });
       try {
-        const order = await page.evaluate(() =>
-          Array.from(document.querySelector(".k2b-calendar-header")!.children, (child) => child.className.split(" ")[0]),
-        );
-        expect({ name, order }).toEqual({
+        const bar = await box(page, '[data-k2-part="FilterBar"]');
+        const header = await box(page, ".k2b-calendar-header");
+        expect({
           name,
-          order: ["k2b-calendar-header__navigation", "k2b-calendar-header__content", "k2b-calendar-header__actions"],
-        });
+          ...(await filterBarLines(page)),
+          inside: bar.y >= header.y && bar.y + bar.height <= header.y + header.height,
+          sideways: await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth),
+        }).toEqual({ name, oneRowOrEndBelow: true, endBesideWhenRoom: true, inside: true, sideways: 0 });
         await shoot(page, name);
         if (!href.includes("cv=month")) continue;
         // The torn end of the setup bar, where it leaves its first week row.

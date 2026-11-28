@@ -25,7 +25,9 @@ export default ssr<AuthContext>(async (c) => {
   const cookieHeader = c.req.raw.headers.get("Cookie") ?? undefined;
 
   const subject = { type: "user" as const, userId: user.id };
-  const work = loadOverviewWork({ userId: user.id, view, dateConfig: getDateConfig(c) });
+  // One moment for the day's reads and the page's times, so "next" and "in 15 min" agree.
+  const now = new Date();
+  const work = loadOverviewWork({ userId: user.id, view, dateConfig: getDateConfig(c), day: { now } });
   const [sidebar, initialWork, activityResult] = await Promise.all([
     loadSpacesSidebar({ userId: user.id, cookieHeader, dateConfig: getDateConfig(c), myWorkCount: work.then((work) => work.counts.mine) }),
     work,
@@ -48,6 +50,8 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout
       c={c}
+      fullWidth
+      ui="v2"
       help={spacesPageHelp.overview}
       title={[{ title: spaceMessages.resolve([getLocale(c)]).t.start, href: "/" }, { title: "Spaces" }]}
     >
@@ -55,6 +59,8 @@ export default ssr<AuthContext>(async (c) => {
         spaces={sidebar.spaces}
         initialView={view}
         initialPinnedSpaceIds={sidebar.pinnedSpaceIds}
+        recentSpaceIds={sidebar.recentSpaceIds}
+        unlistedSpaceCount={sidebar.unlistedSpaceCount}
         initialWork={initialWork}
         initialActivity={{
           items: activityResult.page.items.map((item) => ({
@@ -66,7 +72,7 @@ export default ssr<AuthContext>(async (c) => {
         }}
         initialActivityError={activityResult.error}
         dateConfig={getDateConfig(c)}
-        now={new Date().toISOString()}
+        now={now.toISOString()}
       />
     </Layout>
   );

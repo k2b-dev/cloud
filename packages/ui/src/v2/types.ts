@@ -51,12 +51,31 @@ export type Person = {
   image?: string;
 };
 
-/** The initials of a name: the first letters of its first two words. */
-export const initialsOf = (person: Person): string =>
-  person.initials ??
-  person.name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => word[0]!.toUpperCase())
-    .join("");
+/**
+ * Words after a name that are no name of their own: "Jr.", "Sr.", "II", "III", "IV"; "jun." and "sen." only with
+ * their dot, since Jun and Sen are surnames too ("Li Jun", "Amartya Sen").
+ */
+const SUFFIX = /^(?:jr\.?|sr\.?|jun\.|sen\.|ii|iii|iv)$/i;
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+/** The first character of a word as a person sees it: a whole emoji or a letter with its accent, never half of one. */
+const first = (word: string) => graphemes.segment(word)[Symbol.iterator]().next().value?.segment ?? "";
+/** The first letter or digit of a word with its accent, never half of a character; none in "🎉" or "–". */
+const lead = (word: string) => {
+  for (const { segment } of graphemes.segment(word)) if (/^[\p{L}\p{N}]/u.test(segment)) return segment;
+  return undefined;
+};
+
+/**
+ * The initials of a name: the first letters of its first and its last word ("Charles Montgomery III": "CM"). Words
+ * without a letter (an emoji, a dash) are left out, so two signs always fit the circle; a name of signs alone shows
+ * its first one.
+ */
+export const initialsOf = (person: Person): string => {
+  if (person.initials) return person.initials;
+  const words = person.name.split(/\s+/).filter(Boolean);
+  while (words.length > 1 && SUFFIX.test(words.at(-1)!)) words.pop();
+  const leads = words.map(lead).filter((letter) => letter !== undefined);
+  if (leads.length === 0) return first(words[0] ?? "");
+  // locale-free, so the server and every browser write the same initials
+  return (leads.length > 1 ? [leads[0]!, leads.at(-1)!] : leads).map((letter) => letter.toUpperCase()).join("");
+};
