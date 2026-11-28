@@ -44,7 +44,7 @@ export default ssr<AuthContext>(async (c) => {
   const serviceAccountKindLabel = (kind: ServiceAccountCredentialOverview["serviceAccount"]["kind"]) =>
     kind === "user_delegated" ? t.userBound : kind === "standalone" || kind === "agent" ? t.agent : t.resourceBound;
   const formatNullableDate = (value: string | null) => (value ? dates.formatDateTime(value, { locale }) : "-");
-  const user = expectUserBackedActor(c);
+  expectUserBackedActor(c);
   const modelsAvailable = await coreSettings.get<boolean>("ai.openai_api_enabled");
   const page = parsePage(c.req.query("page"));
   const perPage = 100;

@@ -1904,7 +1904,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         try {
           const done = page.locator("[data-mail-all-done]");
           await done.waitFor({ state: "visible" });
-          expect(await done.getByRole("link").getAttribute("href")).toBe("/app/mail/Box001/automations/log");
+          expect(await done.getByRole("link").getAttribute("href")).toBe("/app/mail/Box001/code?history=1");
           expect(await page.locator("[data-mail-list-count]").count()).toBe(0);
           if (screenshots) await page.screenshot({ path: join(screenshots, "views-all-done-light-1440.png") });
         } finally {

@@ -210,6 +210,11 @@ export type SparkProps = {
    * of the data ("Änderungen der letzten 7 Tage"): a rise, a fall and a flat line would then say the same.
    */
   label: string;
+  /**
+   * The value that fills the height. Sparks side by side that people compare share one `max`, so the same value has the
+   * same height in each; a value above it stands at the top. Without it a spark scales to its own highest value.
+   */
+  max?: number;
 };
 
 /**
@@ -217,11 +222,13 @@ export type SparkProps = {
  * mark's colour), else of the app. 20 px high; only for a trend people glance at, never instead of a number.
  */
 export const Spark = (props: SparkProps) => {
-  const top = () => Math.max(...props.values, 0);
+  const top = () => props.max ?? Math.max(...props.values, 0);
   return (
     <span class="k2-spark" data-k2-part="Spark" role="img" aria-label={props.label}>
       <For each={props.values}>
-        {(value) => <i style={custom({ "--k2-v": `${top() > 0 ? Math.max(8, Math.round((value / top()) * 100)) : 8}%` })} />}
+        {(value) => (
+          <i style={custom({ "--k2-v": `${top() > 0 ? Math.max(8, Math.round((Math.min(value, top()) / top()) * 100)) : 8}%` })} />
+        )}
       </For>
     </span>
   );

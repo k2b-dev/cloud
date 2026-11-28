@@ -47,9 +47,14 @@ export const IdentityScreen = (props: { onChoice?: (name: string) => void; onCre
           label="Offene Aufträge"
           value="41"
           meta="+12 heute"
-          trend={{ values: [22, 30, 27, 36, 31, 38, 41], label: "Offene Aufträge: in 7 Tagen von 22 auf 41 gestiegen" }}
+          trend={{ values: [22, 30, 27, 36, 31, 38, 41], label: "Offene Aufträge: in 7 Tagen von 22 auf 41 gestiegen", max: 41 }}
         />
-        <Cells.Cell icon="calendar-due" label="Heute fällig" value="9" />
+        <Cells.Cell
+          icon="calendar-due"
+          label="Heute fällig"
+          value="9"
+          trend={{ values: [6, 11, 8, 14, 7, 10, 9], label: "Heute fällig: in 7 Tagen zwischen 6 und 14, heute 9", max: 41 }}
+        />
       </Cells>
       <Section title="Bases" count={2}>
         <Tiles

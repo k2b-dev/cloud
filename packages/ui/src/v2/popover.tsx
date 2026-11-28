@@ -54,8 +54,7 @@ const Panel = (props: PopoverPanelProps) => {
         data-variant={(props.variant ?? (iconOnly() ? "ghost" : "secondary")) === "secondary" ? undefined : (props.variant ?? "ghost")}
         data-icon-only={iconOnly() ? "" : undefined}
         data-menu={iconOnly() ? undefined : ""}
-        // like a menu's "…": a button without words stays in a head on the phone, where the other buttons give way
-        data-keep={iconOnly() ? "" : undefined}
+        data-floats={props.floats ? "" : undefined}
         aria-label={iconOnly() ? name() : undefined}
         title={iconOnly() ? name() : undefined}
       >
