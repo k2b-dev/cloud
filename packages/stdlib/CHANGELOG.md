@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.37.0](https://github.com/k2b-dev/cloud/compare/npm-stdlib-v0.36.1...npm-stdlib-v0.37.0) (2026-11-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **stdlib:** @k2b/stdlib no longer exports `charts`, `scatter`, `line`, `bar`, `pie`, `donut`, `sparkline`, `histogram`, `boxplot`, `gauge`, `barGauge`, `stat`, `heatmap`, `map`, `stateTimeline`, `chartDatumSvg`, `svgRoot`, `escapeXml`, `normalizePadding`, `computeDomain`, `niceStep`, `extendDomainToNice`, `mapRange`, `mapLog`, `niceLogTicks`, `linearRegression`, `computeBoxStats`, `autoBin`, `linePathD`, `smoothPathD`, `arcPathD`, `markerPath`, `stepPathD` or the types `Point`, `Series`, `MarkerShape`, `LineStyle`, `MapPoint`, `MapSeries`, `MapViewport`, `MapOptions`, `BarItem`, `SliceItem`, `AxisOptions`, `Padding`, `ChartDatum`, `ChartOptions`, `ReferenceLine`. Replacement: render with `Chart` from `@k2b/ui/charts`, or import the same names from `@k2b/ui/charts/core`, which keeps their signatures and markup.
+
+### Features
+
+* **stdlib:** charts live only in @k2b/ui/charts ([#4143](https://github.com/k2b-dev/cloud/issues/4143)) ([276ef71](https://github.com/k2b-dev/cloud/commit/276ef71df312eaba3f71707914aeb8dd4eb995c8))
+
 ## [0.36.1](https://github.com/k2b-dev/cloud/compare/npm-stdlib-v0.36.0...npm-stdlib-v0.36.1) (2026-11-23)
 
 

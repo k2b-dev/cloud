@@ -1,5 +1,78 @@
 # Changelog
 
+## [0.79.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.78.0...npm-cloud-v0.79.0) (2026-11-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **faq:** Before upgrading, export entries with the old running application using cld --profile ADMIN_PROFILE faq list --json > faq-export.json. Core permanently drops the faq schema and its entries. A restarted old FAQ container recreates an empty schema, so remove its automatic restart/deployment configuration first. After upgrade, recovery requires a pre-upgrade export/backup. Copy content into Notebook notes if needed; review sharing/languages. Help does not import entries automatically. Remove the cached faq CLI plugin after exporting and update old URLs/integrations. Stop/remove app-faq with the previous deployment configuration, remove its workload/service/key mount, and wait at least three minutes before upgrading Core. Core deletes remembered registry/package records, app keys and service accounts with their grants, application access, settings/domains, rail and chooser/consent preferences, notifications and deliveries, approvals and remembered approval grants, Help/search documents and Skill catalogs, app-owned Code, workflow runs/scopes and AI admission/budget state, event subscriptions/outbox data, and the app's own provider execution/idempotency records. Explicit retired-app grants in non-revoked mandates are pruned and affected active mandates are paused and audited. Historical audit events, AI inference/quota and structured-run records, outgoing-mail messages, logging and other providers' capability executions remain, including executions called through the removed app. An app.removed audit is written only when rows are removed or changed, with separate deletion/change counts; fresh installations get no event. Revoked mandates owned by other apps stay unchanged. Dependent cascades are additional. Other apps' data stays. Cleanup can extend Core startup on large installations; wait for Core readiness.
+* **capabilities:** The inspector had no owned schema or authored content, so there is no application export command. Back up the database first if removed operational records are needed. The platform capabilities schema/API/CLI and provider applications stay; update old inspector links and catalog-search integrations. Stop/remove app-capabilities with the previous deployment configuration, remove its workload/service/key mount, and wait at least three minutes before upgrading Core. Core deletes remembered registry/package records, app keys and service accounts with their grants, application access, settings/domains, rail and chooser/consent preferences, notifications and deliveries, approvals and remembered approval grants, Help/search documents and Skill catalogs, app-owned Code, workflow runs/scopes and AI admission/budget state, event subscriptions/outbox data, and the app's own provider execution/idempotency records. Explicit retired-app grants in non-revoked mandates are pruned and affected active mandates are paused and audited. Historical audit events, AI inference/quota and structured-run records, outgoing-mail messages, logging and other providers' capability executions remain, including executions called through the removed app. An app.removed audit is written only when rows are removed or changed, with separate deletion/change counts; fresh installations get no event. Revoked mandates owned by other apps stay unchanged. Dependent cascades are additional. Other apps' data stays. Cleanup can extend Core startup on large installations; wait for Core readiness.
+* **stdlib:** @k2b/stdlib no longer exports `charts`, `scatter`, `line`, `bar`, `pie`, `donut`, `sparkline`, `histogram`, `boxplot`, `gauge`, `barGauge`, `stat`, `heatmap`, `map`, `stateTimeline`, `chartDatumSvg`, `svgRoot`, `escapeXml`, `normalizePadding`, `computeDomain`, `niceStep`, `extendDomainToNice`, `mapRange`, `mapLog`, `niceLogTicks`, `linearRegression`, `computeBoxStats`, `autoBin`, `linePathD`, `smoothPathD`, `arcPathD`, `markerPath`, `stepPathD` or the types `Point`, `Series`, `MarkerShape`, `LineStyle`, `MapPoint`, `MapSeries`, `MapViewport`, `MapOptions`, `BarItem`, `SliceItem`, `AxisOptions`, `Padding`, `ChartDatum`, `ChartOptions`, `ReferenceLine`. Replacement: render with `Chart` from `@k2b/ui/charts`, or import the same names from `@k2b/ui/charts/core`, which keeps their signatures and markup.
+
+### Features
+
+* **accounts:** users and groups filter, sort and group in the URL on v2 ([#4156](https://github.com/k2b-dev/cloud/issues/4156)) ([e07318c](https://github.com/k2b-dev/cloud/commit/e07318c3af4ce02ae863d06008d7ed3d01d10611))
+* **capabilities:** the capabilities app is removed ([#4176](https://github.com/k2b-dev/cloud/issues/4176)) ([d350dee](https://github.com/k2b-dev/cloud/commit/d350deeb0f9bc038866e092d17a0bb87c8e9913d))
+* **cloud:** a panel page can be built with @k2b/ui/v2 (PanelLayout ui="v2") ([#4311](https://github.com/k2b-dev/cloud/issues/4311)) ([63e2aec](https://github.com/k2b-dev/cloud/commit/63e2aec8e478f2c5a086f1cfdd13f0ed96bcd73c))
+* **cloud:** a v2 principal picker, and the v2 permission editor adds with it ([#4415](https://github.com/k2b-dev/cloud/issues/4415)) ([98a7649](https://github.com/k2b-dev/cloud/commit/98a7649b24a742400370f79f40f30c2b1c9314f5))
+* **cloud:** admin pages can run on UI v2 with their sidebar ([#4169](https://github.com/k2b-dev/cloud/issues/4169)) ([21d37ed](https://github.com/k2b-dev/cloud/commit/21d37edce1b88af29f0a1f447b9374b85636583c))
+* **cloud:** applications count the members of the reader's own groups ([#4304](https://github.com/k2b-dev/cloud/issues/4304)) ([d4a03ab](https://github.com/k2b-dev/cloud/commit/d4a03ab641251463b2aa3588874f8cc94271cc6c))
+* **cloud:** islands load one module of @k2b/cloud/shared and no v1 code for their error fallback ([#4242](https://github.com/k2b-dev/cloud/issues/4242)) ([03700a1](https://github.com/k2b-dev/cloud/commit/03700a1b938de5edd6f6d7eeaa8bac7f417f9f38))
+* **cloud:** on the phone a v2 page's search sits in the shell's phone bar ([#4162](https://github.com/k2b-dev/cloud/issues/4162)) ([73e08c0](https://github.com/k2b-dev/cloud/commit/73e08c096c54650e7a3a7edea5326f3444233c06))
+* **cloud:** the access dialog opens on UI v2 from v2 pages ([#4207](https://github.com/k2b-dev/cloud/issues/4207)) ([f7bcbd2](https://github.com/k2b-dev/cloud/commit/f7bcbd2208afe53eddc576e5a0d1c56ac52d26c9))
+* **cloud:** the access summary and dialog show faces and marks on UI v2 ([#4222](https://github.com/k2b-dev/cloud/issues/4222)) ([67a729a](https://github.com/k2b-dev/cloud/commit/67a729a937f9b320fa91dda7eca4430b3491f3e5))
+* **cloud:** v2 visitor pages load Core's v2.css alone ([#4231](https://github.com/k2b-dev/cloud/issues/4231)) ([1be3596](https://github.com/k2b-dev/cloud/commit/1be359605e203e56565233e97ca391502aa0f6fd))
+* **cloud:** visitor pages render on UI v2 with MinimalLayout ui v2 ([#4227](https://github.com/k2b-dev/cloud/issues/4227)) ([29e506b](https://github.com/k2b-dev/cloud/commit/29e506b27a83177e0f30642485325920e6e4482c))
+* **core:** /admin opens the operations overview, or Apps without it, instead of a start page of its own ([#4541](https://github.com/k2b-dev/cloud/issues/4541)) ([7625f20](https://github.com/k2b-dev/cloud/commit/7625f200be51ef66c799d2da103adb0930479ad2))
+* **core:** account pages and pairing run on UI v2 with one account and one activity ([#4173](https://github.com/k2b-dev/cloud/issues/4173)) ([2754b0f](https://github.com/k2b-dev/cloud/commit/2754b0fc702f6595639c6db3fedd1ed1fb0ffc0c))
+* **core:** AI and Code administration run on UI v2 ([#4396](https://github.com/k2b-dev/cloud/issues/4396)) ([af8b9d9](https://github.com/k2b-dev/cloud/commit/af8b9d948932d89a0e31eda877326b1a688c0882))
+* **core:** Core administration runs on UI v2 ([#4174](https://github.com/k2b-dev/cloud/issues/4174)) ([9e1f7b1](https://github.com/k2b-dev/cloud/commit/9e1f7b1d491105630d48873b98a5f8db2710a728))
+* **faq:** the FAQ app is removed ([#4178](https://github.com/k2b-dev/cloud/issues/4178)) ([4964b1f](https://github.com/k2b-dev/cloud/commit/4964b1f40b8cd69648e15fe4967d98e3cd45abc9))
+* **grids:** workflow run stats carry a bounded time series ([#4347](https://github.com/k2b-dev/cloud/issues/4347)) ([3fc6db2](https://github.com/k2b-dev/cloud/commit/3fc6db25d8a02b9d147c18f3af91fd12b10e9b10))
+* **mail:** Mail's list and reader are built on @k2b/ui v2 behind a pilot setting ([#4104](https://github.com/k2b-dev/cloud/issues/4104)) ([d4cddb9](https://github.com/k2b-dev/cloud/commit/d4cddb914fa7452e0cd69737dacc2fdab01057d1))
+* **proxy-auth:** Proxy Auth runs on UI v2 ([#4246](https://github.com/k2b-dev/cloud/issues/4246)) ([1048509](https://github.com/k2b-dev/cloud/commit/10485091dc54ab096d845d54f4311df717223ba5))
+* **ssr:** island props travel in a comment instead of an escaped attribute ([#4510](https://github.com/k2b-dev/cloud/issues/4510)) ([8b24085](https://github.com/k2b-dev/cloud/commit/8b240854cfb5ab2d21175f753cb23768111dcba0))
+* **stdlib:** charts live only in @k2b/ui/charts ([#4143](https://github.com/k2b-dev/cloud/issues/4143)) ([276ef71](https://github.com/k2b-dev/cloud/commit/276ef71df312eaba3f71707914aeb8dd4eb995c8))
+* **ui:** a v2 nav holds a search, a main action and an app's own list, which is the phone's page ([#4443](https://github.com/k2b-dev/cloud/issues/4443)) ([d9714e7](https://github.com/k2b-dev/cloud/commit/d9714e7dcd9cddaef0434766f3bb448a95d322b2))
+* **ui:** a v2 RangeBar shows a range on a shared scale, and a v2 icon takes a data colour ([#4442](https://github.com/k2b-dev/cloud/issues/4442)) ([f34ea3d](https://github.com/k2b-dev/cloud/commit/f34ea3dcfef792aea291ae35f7bbc644cfd58589))
+* **ui:** a v2 sidebar entry shows work that runs in the place of its dot ([#4281](https://github.com/k2b-dev/cloud/issues/4281)) ([e8967cd](https://github.com/k2b-dev/cloud/commit/e8967cd31e00e19dcbfcfe19ef8f399c3763e34d))
+* **ui:** people's faces spread over eleven hues that stay readable and apart, also for colour-blind people ([#4530](https://github.com/k2b-dev/cloud/issues/4530)) ([6a644ae](https://github.com/k2b-dev/cloud/commit/6a644ae24f39c75110c11526d7e71cf34cde9532))
+* **ui:** v2 navigation and tables show trees ([#4187](https://github.com/k2b-dev/cloud/issues/4187)) ([4fca75e](https://github.com/k2b-dev/cloud/commit/4fca75ebda3681c9170b37b31edbddd00938512c))
+* **ui:** v2 rows part with a quiet line, and the open row takes the tint of the app it belongs to ([#4355](https://github.com/k2b-dev/cloud/issues/4355)) ([0190356](https://github.com/k2b-dev/cloud/commit/01903569451c0088cba04fe66356fe20beb3c502))
+* **ui:** v2 rows show they are selected and an open detail on the phone has one way back ([#4111](https://github.com/k2b-dev/cloud/issues/4111)) ([bcf947a](https://github.com/k2b-dev/cloud/commit/bcf947a74e8bce5aedc1ac9398699ba1ee6cc300))
+* **ui:** v2 tabs open their menu, sidebars fold and carry deeds, and a reader's state and phone title stay whole ([#4125](https://github.com/k2b-dev/cloud/issues/4125)) ([d69b391](https://github.com/k2b-dev/cloud/commit/d69b391071273df3a53dc85421f07b45da5a4595))
+* **weather:** weather runs on UI v2 ([#4179](https://github.com/k2b-dev/cloud/issues/4179)) ([4b89441](https://github.com/k2b-dev/cloud/commit/4b894410c73fe340308c8341ce65dc9f71a690f9))
+
+
+### Bug Fixes
+
+* **ci:** unit shards are planned from current test times again ([#4114](https://github.com/k2b-dev/cloud/issues/4114)) ([7af8464](https://github.com/k2b-dev/cloud/commit/7af8464208552a19d52c7be865221d439c07d209))
+* **ci:** unit shards balance by fresh measured times, and the slowest suites split ([#4404](https://github.com/k2b-dev/cloud/issues/4404)) ([723464e](https://github.com/k2b-dev/cloud/commit/723464eb40fde2c9b94247f5296973995f181268))
+* **cloud:** concurrent index builds start in the background and never hold startup ([#4489](https://github.com/k2b-dev/cloud/issues/4489)) ([b6fa259](https://github.com/k2b-dev/cloud/commit/b6fa25903c0899acf3aab8cb0867b48d4de0e0a8))
+* **cloud:** no icon stands as an empty box for a filled Tabler name ([#4560](https://github.com/k2b-dev/cloud/issues/4560)) ([e79bd17](https://github.com/k2b-dev/cloud/commit/e79bd1790c386970d9973923a0047774c471822f))
+* **test:** session origin posts wait for the page they navigate to before the next read ([#4469](https://github.com/k2b-dev/cloud/issues/4469)) ([7a7a454](https://github.com/k2b-dev/cloud/commit/7a7a4548f6f238bd68cce3c91225ab6f75283dd4))
+* **ui:** a v2 nav without a tree and a menu without a panel load none of their code ([#4449](https://github.com/k2b-dev/cloud/issues/4449)) ([89e179c](https://github.com/k2b-dev/cloud/commit/89e179c886739502b065adbcdc954fee1faca9b9))
+* **ui:** status row parts, segments and section actions give way without losing words or names ([#4221](https://github.com/k2b-dev/cloud/issues/4221)) ([70eb6d7](https://github.com/k2b-dev/cloud/commit/70eb6d748a48ebe89b603d6047deb5a43c776a8e))
+* **ui:** the island error fallback loads only its own modules, not the button, marks and states of every app ([#4333](https://github.com/k2b-dev/cloud/issues/4333)) ([35ee1f6](https://github.com/k2b-dev/cloud/commit/35ee1f6e3ded87a8590a9348c77dbebd584527ce))
+* **weather:** one person saves at most 100 places, and a place page asks their forecasts a few at a time ([#4550](https://github.com/k2b-dev/cloud/issues/4550)) ([36f7abb](https://github.com/k2b-dev/cloud/commit/36f7abb84fe93c09bb1fcc36de7b6bd8a23c543c))
+
+
+### Performance Improvements
+
+* **cloud:** a long v2 navigation weighs on a page by its first 40 entries, and on an island only once its menu opens ([#4387](https://github.com/k2b-dev/cloud/issues/4387)) ([31f50f1](https://github.com/k2b-dev/cloud/commit/31f50f167cf838047fc91d5badc0cdf2b50e9ee0))
+* **cloud:** an island takes only what it uses from @k2b/cloud, also through the islands barrel ([#4441](https://github.com/k2b-dev/cloud/issues/4441)) ([1e3788d](https://github.com/k2b-dev/cloud/commit/1e3788d30480d94ab67be430f5ced72d3f61f643))
+* **core:** logs by source and recent workflow runs read through indexes of their own ([#4481](https://github.com/k2b-dev/cloud/issues/4481)) ([f2eaf02](https://github.com/k2b-dev/cloud/commit/f2eaf02ecd65514752ad84622fbee2cecbdaed77))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ssr bumped from 0.23.2 to 0.24.0
+    * @k2b/ui bumped from 0.66.0 to 0.67.0
+    * @k2b/stdlib bumped from 0.36.1 to 0.37.0
+    * @k2b/editor bumped from 0.15.1 to 0.16.0
+
 ## [0.78.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.77.0...npm-cloud-v0.78.0) (2026-11-24)
 
 

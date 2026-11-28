@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.24.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.23.2...npm-ssr-v0.24.0) (2026-11-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **faq:** Before upgrading, export entries with the old running application using cld --profile ADMIN_PROFILE faq list --json > faq-export.json. Core permanently drops the faq schema and its entries. A restarted old FAQ container recreates an empty schema, so remove its automatic restart/deployment configuration first. After upgrade, recovery requires a pre-upgrade export/backup. Copy content into Notebook notes if needed; review sharing/languages. Help does not import entries automatically. Remove the cached faq CLI plugin after exporting and update old URLs/integrations. Stop/remove app-faq with the previous deployment configuration, remove its workload/service/key mount, and wait at least three minutes before upgrading Core. Core deletes remembered registry/package records, app keys and service accounts with their grants, application access, settings/domains, rail and chooser/consent preferences, notifications and deliveries, approvals and remembered approval grants, Help/search documents and Skill catalogs, app-owned Code, workflow runs/scopes and AI admission/budget state, event subscriptions/outbox data, and the app's own provider execution/idempotency records. Explicit retired-app grants in non-revoked mandates are pruned and affected active mandates are paused and audited. Historical audit events, AI inference/quota and structured-run records, outgoing-mail messages, logging and other providers' capability executions remain, including executions called through the removed app. An app.removed audit is written only when rows are removed or changed, with separate deletion/change counts; fresh installations get no event. Revoked mandates owned by other apps stay unchanged. Dependent cascades are additional. Other apps' data stays. Cleanup can extend Core startup on large installations; wait for Core readiness.
+
+### Features
+
+* **faq:** the FAQ app is removed ([#4178](https://github.com/k2b-dev/cloud/issues/4178)) ([4964b1f](https://github.com/k2b-dev/cloud/commit/4964b1f40b8cd69648e15fe4967d98e3cd45abc9))
+* **ssr:** island props travel in a comment instead of an escaped attribute ([#4510](https://github.com/k2b-dev/cloud/issues/4510)) ([8b24085](https://github.com/k2b-dev/cloud/commit/8b240854cfb5ab2d21175f753cb23768111dcba0))
+
 ## [0.23.2](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.23.1...npm-ssr-v0.23.2) (2026-11-24)
 
 

@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.16.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.15.1...npm-editor-v0.16.0) (2026-11-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **stdlib:** @k2b/stdlib no longer exports `charts`, `scatter`, `line`, `bar`, `pie`, `donut`, `sparkline`, `histogram`, `boxplot`, `gauge`, `barGauge`, `stat`, `heatmap`, `map`, `stateTimeline`, `chartDatumSvg`, `svgRoot`, `escapeXml`, `normalizePadding`, `computeDomain`, `niceStep`, `extendDomainToNice`, `mapRange`, `mapLog`, `niceLogTicks`, `linearRegression`, `computeBoxStats`, `autoBin`, `linePathD`, `smoothPathD`, `arcPathD`, `markerPath`, `stepPathD` or the types `Point`, `Series`, `MarkerShape`, `LineStyle`, `MapPoint`, `MapSeries`, `MapViewport`, `MapOptions`, `BarItem`, `SliceItem`, `AxisOptions`, `Padding`, `ChartDatum`, `ChartOptions`, `ReferenceLine`. Replacement: render with `Chart` from `@k2b/ui/charts`, or import the same names from `@k2b/ui/charts/core`, which keeps their signatures and markup.
+
+### Features
+
+* **mail:** Mail's list and reader are built on @k2b/ui v2 behind a pilot setting ([#4104](https://github.com/k2b-dev/cloud/issues/4104)) ([d4cddb9](https://github.com/k2b-dev/cloud/commit/d4cddb914fa7452e0cd69737dacc2fdab01057d1))
+* **stdlib:** charts live only in @k2b/ui/charts ([#4143](https://github.com/k2b-dev/cloud/issues/4143)) ([276ef71](https://github.com/k2b-dev/cloud/commit/276ef71df312eaba3f71707914aeb8dd4eb995c8))
+* **ui:** the Markdown editors' toolbars follow v2 inside a v2 screen ([#4243](https://github.com/k2b-dev/cloud/issues/4243)) ([1c7cdec](https://github.com/k2b-dev/cloud/commit/1c7cdec5fe997738fabc8a30c7abd32a5c96f187))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/stdlib bumped from 0.36.1 to 0.37.0
+    * @k2b/ui bumped from 0.66.0 to 0.67.0
+
 ## [0.15.1](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.15.0...npm-editor-v0.15.1) (2026-11-24)
 
 
