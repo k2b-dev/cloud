@@ -5859,6 +5859,9 @@ test("reply without content opens the existing draft and supplied content fails 
             code: "DRAFT_REPLY_BOX_OCCUPIED",
             message: `Reply draft ${DRAFT_ID} already exists. Open it and apply your content explicitly; no supplied content was saved.`,
             draftId: DRAFT_ID,
+            revision: 2,
+            intent: "reply",
+            nextStep: body.intent === "reply" ? "update" : "intent",
           },
           { status: 409 },
         );
@@ -5877,13 +5880,106 @@ test("reply without content opens the existing draft and supplied content fails 
   expect(occupied.stderr).toContain(DRAFT_ID);
   expect(occupied.stderr).toContain("409");
   expect(occupied.stderr).toContain("no supplied content was saved");
-  expect(occupied.stderr).toContain(`cld mail draft intent ${DRAFT_ID} --intent reply --revision`);
-  expect(occupied.stderr).not.toContain("--intent forward");
+  expect(occupied.stderr).toContain(`cld mail draft update ${DRAFT_ID} --revision 2`);
+  expect(occupied.stderr).not.toContain("draft intent");
   const replyAll = await runCli(origin, ["mail", "reply", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--all", "--body", "Keep my text"]);
   expect(replyAll.exitCode).not.toBe(0);
-  expect(replyAll.stderr).toContain(`cld mail draft intent ${DRAFT_ID} --intent reply_all --revision`);
+  expect(replyAll.stderr).toContain(`cld mail draft intent ${DRAFT_ID} --intent reply_all --revision 2`);
   const forward = await runCli(origin, ["mail", "forward", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--to", "forward@example.test"]);
   expect(forward.exitCode).not.toBe(0);
   expect(forward.stderr).toContain(DRAFT_ID);
-  expect(forward.stderr).toContain(`cld mail draft intent ${DRAFT_ID} --intent forward --revision`);
+  expect(forward.stderr).toContain(`cld mail draft intent ${DRAFT_ID} --intent forward --revision 2`);
+});
+
+test("an occupied reply box names the update at its current revision, and a refused update names it too", async () => {
+  const server = withMailbox(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path.endsWith("/messages")) return api({ items: [sourceMessageFixture], nextCursor: null });
+    if (path.endsWith(`/messages/${MESSAGE_ID}`)) return api(sourceMessageFixture);
+    if (path.endsWith("/sender-identities")) return api([{ id: IDENTITY_ID, isDefault: true, status: "verified" }]);
+    if (path.endsWith("/drafts") && request.method === "POST") {
+      const body = await request.json();
+      // A scheduled occupant takes neither an update nor a mode switch, so Mail names no step.
+      const scheduled = body.body === "For the scheduled reply";
+      return api(
+        {
+          code: "DRAFT_REPLY_BOX_OCCUPIED",
+          message: `Reply draft ${DRAFT_ID} already exists.`,
+          draftId: DRAFT_ID,
+          revision: 3,
+          intent: "reply",
+          ...(scheduled ? {} : { nextStep: body.intent === "reply" ? "update" : "intent" }),
+        },
+        { status: 409 },
+      );
+    }
+    if (path.endsWith(`/drafts/${DRAFT_ID}`) && request.method === "PUT")
+      return api(
+        { code: "CONFLICT", message: "Draft changed; the submitted content was saved as a recovery copy", revision: 4 },
+        { status: 409 },
+      );
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const reply = await runCli(origin, ["mail", "reply", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--body", "Keep my text"]);
+  expect(reply.exitCode).not.toBe(0);
+  expect(reply.stderr).toContain(`cld mail draft update ${DRAFT_ID} --revision 3`);
+  expect(reply.stderr).not.toContain("draft intent");
+  const replyAll = await runCli(origin, ["mail", "reply", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--all", "--body", "Keep my text"]);
+  expect(replyAll.exitCode).not.toBe(0);
+  expect(replyAll.stderr).toContain(`cld mail draft intent ${DRAFT_ID} --intent reply_all --revision 3`);
+  const scheduled = await runCli(origin, ["mail", "reply", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--body", "For the scheduled reply"]);
+  expect(scheduled.exitCode).not.toBe(0);
+  expect(scheduled.stderr).toContain(DRAFT_ID);
+  expect(scheduled.stderr).not.toContain("draft update");
+  expect(scheduled.stderr).not.toContain("draft intent");
+  const update = await runCli(origin, [
+    "mail",
+    "draft",
+    "update",
+    DRAFT_ID,
+    "--mailbox",
+    MAILBOX_ID,
+    "--identity",
+    IDENTITY_ID,
+    "--body",
+    "Keep my text",
+    "--revision",
+    "3",
+  ]);
+  expect(update.exitCode).not.toBe(0);
+  expect(update.stderr).toContain("409");
+  expect(update.stderr).toContain("Current revision: 4");
+  expect(update.stderr).toContain(`cld mail draft recovery list ${DRAFT_ID}`);
+});
+
+test("draft create fails loudly when Mail answers without a draft ID", async () => {
+  const server = withMailbox(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path.endsWith("/drafts") && request.method === "POST") return api({ creationOutcome: "existing" });
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+  const created = await runCli(`http://127.0.0.1:${server.port}`, [
+    "--json",
+    "mail",
+    "draft",
+    "create",
+    "--mailbox",
+    MAILBOX_ID,
+    "--identity",
+    IDENTITY_ID,
+    "--body",
+    "Reply text",
+    "--intent",
+    "reply",
+    "--conversation",
+    CONVERSATION_ID,
+    "--source-message",
+    MESSAGE_ID,
+  ]);
+  expect(created.exitCode).not.toBe(0);
+  expect(created.stdout).toBe("");
+  expect(created.stderr).toContain("without a draft ID");
 });
