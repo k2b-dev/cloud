@@ -3,6 +3,7 @@ import {
   createContext,
   createEffect,
   createMemo,
+  createRenderEffect,
   createSignal,
   createUniqueId,
   For,
@@ -23,6 +24,7 @@ import { type Fold, watchFold } from "./bar-fold";
 import { useDrawer } from "./behavior/overlays";
 import { type GripOptions, useGrip } from "./behavior/resize";
 import { ActionButton } from "./button";
+import { accentStyle } from "./colors";
 import { type Column, ColumnsContext, type DetailEmpty, InnerContext } from "./columns-context";
 import { RowOpen } from "./content";
 import { linkOr } from "./link";
@@ -31,6 +33,7 @@ import { BarFold, Menu, type MenuItem } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 import { ConfirmDialog } from "./overlays";
 import { Empty, PlaceholderValue } from "./states";
+import { StatusToolbarContext } from "./status-toolbar";
 import { Toasts } from "./toast";
 import { type Action, type ColumnWidth, columnPx, draggable, type OnNavigate, type Person, type Status, type Width } from "./types";
 
@@ -176,6 +179,18 @@ export type WorkspaceProps = {
    */
   detailEmpty?: { icon: string; text: string; hero?: JSX.Element };
   /**
+   * The page's own accent, a colour from data (such as the colour a place or a team chose), as `#rrggbb` or `#rgb`. It
+   * takes the place of the app's colour in this workspace: the primary action, the open row's tint, `Text` and `Band`
+   * `tone="app"`, and the bars of a `RangeBar` (the open row's the strongest). Its readable tones are worked out where
+   * the colour arrives, on the server too, so the first paint is final: the primary's words are white or near-black,
+   * whichever keeps 4.5:1 on it (a colour on which neither does is darkened until white does), and the colour as text
+   * is darkened in light and lightened in dark until it keeps 4.5:1 on the surface and on its tint. A bar's quiet tone
+   * keeps 3:1 also on a chosen row's tint, and a primary that would vanish on the surface gets an edge of its colour at
+   * 3:1. Focus rings and the colours of states stay; dialogs and menus rendered outside the Workspace keep the app's
+   * colour. Any other value (an `oklch()`, a custom property, no colour) leaves the app's colour.
+   */
+  accent?: string;
+  /**
    * A `Pane` or `Pane.Split`, written inside the Workspace: its columns tell it their widths, so it knows when the
    * sidebar becomes a drawer. A column made before the Workspace (kept in a variable) is not counted.
    */
@@ -185,6 +200,23 @@ export type WorkspaceProps = {
 const sidebarDefault: Width = { min: 200, default: 248 };
 /** What a column without a width keeps at least: the concept's main column, 400 px (as in v2.css). */
 const flexibleMin = 400;
+
+/**
+ * A pane's head and its toolbar as one block (look rule 30): the pane hands its toolbar to its head's `Bar`, which
+ * stands it between its start and its end, so the bar stays one box (it measures what it folds) and the order of the
+ * Tab key is the order on the screen. The first bar made in the head claims the block, so a bar inside it finds it
+ * taken; it tells the pane what it made of it: `""` (the toolbar under the start and the end, or beside them where the
+ * pane is wide), `"row"` (no start: the toolbar beside the end) or `undefined` (no toolbar). Told while the parts are
+ * made, so the server and the first render agree.
+ */
+type HeadBlock = () =>
+  | {
+      /** The pane's toolbar, while its status is one. */
+      toolbar: () => JSX.Element | undefined;
+      tell: (block: string | undefined) => void;
+    }
+  | undefined;
+const HeadBlockContext = createContext<HeadBlock>();
 
 /**
  * The working surface of an app: a sidebar, a head and the columns below it, with one hairline between columns and
@@ -233,6 +265,7 @@ export const Workspace = (props: WorkspaceProps) => {
     return width().default + 1 + list.reduce((sum, column) => sum + column.need, 0) + detail + Math.max(0, panes - 1);
   };
   const id = createUniqueId();
+  const accent = createMemo(() => accentStyle(props.accent));
   // Below that room (from 768 px on; the phone has its own pages) the sidebar is a drawer: one container query on
   // this workspace's width. It is the one rule here that is made per workspace, since the room is the workspace's own.
   // A sidebar its grip made wider gives way first when the window narrows, so the columns keep their minimum.
@@ -304,7 +337,9 @@ export const Workspace = (props: WorkspaceProps) => {
       data-k2-workspace=""
       data-k2-part="Workspace"
       data-k2-ws={id}
+      data-k2-accent={accent() ? "" : undefined}
       style={custom({
+        ...accent(),
         "--k2-ws-side": `${sideWidth()}px`,
         "--k2-ws-side-min": `${width().min}px`,
         "container-name": sidebar() ? `k2-ws-${id}` : undefined,
@@ -401,7 +436,9 @@ export type PaneProps = {
   head?: JSX.Element;
   /**
    * What stays under the head while the column scrolls: a `StatusRow` (52 px) above a list, or a `Bar` (40 px) with
-   * the state of an open entry, such as "3 Nachrichten · Wartet auf Antwort · Tag" above a reader.
+   * the state of an open entry, such as "3 Nachrichten · Wartet auf Antwort · Tag" above a reader. With a `head` it is
+   * one block: no line between them, close together; from 1200 px of the pane, or under a head of actions only, it
+   * joins the head's row.
    */
   status?: JSX.Element;
   /** A column that can be dragged wider: its minimum and default width; `{ fixed }`: one width, no grip. Only inside `Pane.Split`. */
@@ -518,8 +555,24 @@ export const Pane = (props: PaneProps) => {
       return Boolean(props.side) && (contextual?.() ?? false);
     },
   });
-  const head = resolveChildren(() => props.head);
-  const status = resolveChildren(() => props.status);
+  // whether the status is a toolbar of the list (StatusRow, FilterBar): only a toolbar joins the head as one block
+  const [toolbars, setToolbars] = createSignal(0);
+  const status = resolveChildren(() => <StatusToolbarContext.Provider value={setToolbars}>{props.status}</StatusToolbarContext.Provider>);
+  // the head's bar takes the toolbar between its start and its end, and says what it made of it
+  const [block, setBlock] = createSignal<string>();
+  const head = resolveChildren(() => {
+    let taken = false;
+    const claim: HeadBlock = () => {
+      if (taken) return;
+      taken = true;
+      onCleanup(() => {
+        taken = false;
+        setBlock();
+      });
+      return { toolbar: () => (toolbars() > 0 ? status() : undefined), tell: setBlock };
+    };
+    return <HeadBlockContext.Provider value={claim}>{props.head}</HeadBlockContext.Provider>;
+  });
   let section: HTMLElement | undefined;
   // A detail appears because something opened it, which then has the focus (the row). When the detail goes while the
   // focus is in it (its way back, its close button), the focus returns there instead of falling to the page.
@@ -573,12 +626,17 @@ export const Pane = (props: PaneProps) => {
           </div>
         )}
       </Show>
+      {/* A head and its status row are one block (look rule 30): no line between them, close together, and where
+          the pane is wide, or the head has no start, the status row joins the head's row. Decided while the parts are
+          made, the same on the server. */}
       <Show when={head()}>
-        <div class="k2-slot" data-slot="head">
+        <div class="k2-slot" data-slot="head" data-block={block()}>
           {head()}
         </div>
       </Show>
-      <Show when={status()}>
+      {/* a head with a toolbar in its bar is one block; any other status keeps its own place under the head (the bar
+          that told the block takes it back when it goes) */}
+      <Show when={status() && block() === undefined}>
         <div class="k2-slot" data-slot="status">
           {status()}
         </div>
@@ -806,7 +864,12 @@ export const Bar = (props: BarProps) => {
       waiting.delete(trigger);
     };
   };
+  // the first bar of a pane's head claims its block, before its parts are made (a bar inside them finds it taken)
+  const headBlock = useContext(HeadBlockContext)?.();
   const start = resolveChildren(() => props.start);
+  // the pane's toolbar, which this head bar stands between its start and its end (one block, one box, one Tab order)
+  const toolbar = () => headBlock?.toolbar();
+  createRenderEffect(() => headBlock?.tell(toolbar() === undefined ? undefined : start() === undefined ? "row" : ""));
   // the end is made inside the fold's context, so a menu "…" in it can offer itself to take the folded buttons
   const end = resolveChildren(() => <BarFold.Provider value={{ offer, host, entries: folded }}>{props.end}</BarFold.Provider>);
   const hasEnd = createMemo(() => end() !== undefined);
@@ -835,6 +898,13 @@ export const Bar = (props: BarProps) => {
       <Show when={start() !== undefined}>
         <div class="k2-bar-start">{start()}</div>
       </Show>
+      <Show when={toolbar()}>
+        {(part) => (
+          <div class="k2-slot" data-slot="status">
+            {part()}
+          </div>
+        )}
+      </Show>
       <Show when={hasEnd()}>
         <div class="k2-bar-end">
           {end()}
@@ -854,8 +924,11 @@ export const Bar = (props: BarProps) => {
 // ── Band ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type BandProps = {
-  /** A tone only by meaning: a note, AI, "yours", wrong, waiting. */
-  tone?: "note" | "ai" | "yours" | "bad" | "warn";
+  /**
+   * A tone only by meaning: a note, AI, "yours", wrong, waiting, or `app`: the tint of the app's colour (the page's
+   * own with `Workspace accent`), for the one statement that belongs to it, such as a hero without a picture above it.
+   */
+  tone?: "note" | "ai" | "yours" | "bad" | "warn" | "app";
   /** A name for the band, for assistive technology. */
   label?: string;
   /** `Text`, `Row`s, `Prose`, `Tiles` or fields. */

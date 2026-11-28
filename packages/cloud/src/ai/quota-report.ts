@@ -1,3 +1,4 @@
+import type { SQL } from "bun";
 import { sql } from "../runtime/clients";
 
 import { resolveDisplayNames } from "../server/services/access-display";
@@ -33,55 +34,54 @@ export async function quotaAdminConfig() {
   };
 }
 
-/** One database snapshot: aggregate and filter the cohort before paginating identities. */
-export async function quotaReport(input: Partial<AiQuotaReportQuery> = {}, now = new Date()): Promise<AiQuotaReport> {
+const reportPeriod = (input: Partial<AiQuotaReportQuery>, now: Date) => {
   const query = AiQuotaReportQuerySchema.parse(input);
   const until = new Date(Math.min(Date.parse(query.until ?? now.toISOString()), now.getTime()));
   const days = { "24h": 1, "7d": 7, "30d": 30, "90d": 90 }[query.range];
-  const since = new Date(until.getTime() - days * 86400000);
-  if (query.view === "rules")
-    return {
-      query,
-      since: since.toISOString(),
-      until: until.toISOString(),
-      asOf: now.toISOString(),
-      overview: { cost: null, accounts: 0, input: 0, output: 0, calls: 0, measured: 0, estimated: 0, unknown: 0 },
-      timeline: [],
-      models: [],
-      items: [],
-      selected: null,
-      total: 0,
-      page: 1,
-      perPage: 25,
-    };
-  const pricedModels = (await readAiSettingsState()).profiles.filter((p) => hasBillableAiPricing(p.pricing)).map((p) => p.modelId);
+  return { query, until, since: new Date(until.getTime() - days * 86400000) };
+};
+
+type ReportStatement = { query: AiQuotaReport["query"]; now: Date; since: Date; until: Date; pricedModels: string[] };
+
+/**
+ * The report's one statement. It reads calls only from the earliest moment the report shows: the start of the period
+ * or of the oldest current rule period, whichever is earlier. The last use of each account is one index lookup per
+ * account, so no read grows with the history of calls.
+ */
+const reportStatement = (db: typeof sql, { query, now, since, until, pricedModels }: ReportStatement) => {
   const bucket = query.range === "24h" ? "hour" : "day";
-  const order = query.sort === "label" ? sql`label` : query.sort === "cost" ? sql`cost` : sql`last_used`;
-  const direction = query.direction === "asc" ? sql`ASC` : sql`DESC`;
-  // JSON grant cardinality is unknown to the planner; JIT compilation otherwise
-  // dominates small admin reports. Scope this setting to this read transaction.
-  const [data] = await sql.begin(async (db) => {
-    await db`SET LOCAL jit = off`;
-    return db<Omit<AiQuotaReport, "query" | "since" | "until" | "asOf">[]>`
+  const order = query.sort === "label" ? db`label` : query.sort === "cost" ? db`cost` : db`last_used`;
+  const direction = query.direction === "asc" ? db`ASC` : db`DESC`;
+  // A latest chat call is one backward step on the account's (id, started_at) index, which `max` makes the planner take;
+  // an EXISTS lets it scan the whole call table for an account without chat calls.
+  const lastChat = (identity: SQL.Query<unknown>, bounded: boolean) =>
+    db`(SELECT max(c.started_at) FROM ai.inference_calls c WHERE ${identity} AND c.kind='chat'
+      ${bounded ? db`AND c.started_at<=${now} AND (${query.model}='' OR c.model_id=${query.model})` : db``})`;
+  // num_nulls keeps the planner off the user index for "no user", which holds every background call.
+  const lastUsed = (type: "user" | "service_account") =>
+    lastChat(type === "user" ? db`c.user_id=a.id` : db`c.service_account_id=a.id AND num_nulls(c.user_id)=1`, true);
+  return db<Omit<AiQuotaReport, "query" | "since" | "until" | "asOf">[]>`
     WITH config AS MATERIALIZED (SELECT enabled,rules FROM ai.cost_config WHERE singleton),
     rules AS MATERIALIZED (
       SELECT r->>'scope' AS scope,r->'grants' AS grants,
         (r->>'anchor')::timestamptz + floor(extract(epoch FROM (${now}::timestamptz-(r->>'anchor')::timestamptz)) / ((r->>'hours')::int*3600)) * ((r->>'hours')::int*interval '1 hour') AS starts
       FROM config,jsonb_array_elements(rules) r WHERE (${query.model}='' OR (r->>'scope' IN ('*',${query.model}) AND ${query.model}=ANY(${toPgTextArray(pricedModels)}::text[]))) AND (r->>'scope'='*' OR r->>'scope'=ANY(${toPgTextArray(pricedModels)}::text[]))
+    ), bound AS MATERIALIZED (
+      SELECT least(${since}::timestamptz,(SELECT min(starts) FROM rules)) AS since
     ), accounts AS (
       SELECT 'user'::text AS type,u.id,COALESCE(NULLIF(u.display_name,''),u.uid) AS label,u.id AS user_id,NULL::uuid AS service_id
-      FROM auth.users u WHERE ${query.search}<>'' OR EXISTS(SELECT 1 FROM ai.inference_calls WHERE kind='chat' AND user_id=u.id)
+      FROM auth.users u WHERE ${query.search}<>'' OR ${lastChat(db`c.user_id=u.id`, false)} IS NOT NULL
         OR EXISTS(SELECT 1 FROM ai.conversations c JOIN ai.turns t ON t.conversation_id=c.id WHERE c.created_by_user_id=u.id AND t.run_config->>'assistantChat'='true' AND t.run_config->'mandate' IS NULL)
       UNION ALL SELECT 'service_account',id,name,NULL::uuid,id FROM auth.service_accounts s
-      WHERE ${query.search}<>'' OR EXISTS(SELECT 1 FROM ai.inference_calls WHERE kind='chat' AND service_account_id=s.id)
+      WHERE ${query.search}<>'' OR ${lastChat(db`c.service_account_id=s.id`, false)} IS NOT NULL
     ), identities AS MATERIALIZED (
-      SELECT a.*,ARRAY(SELECT group_id FROM (${recursiveGroupIdsSubquery(sql`a.user_id`)}) groups) AS groups
+      SELECT a.*,ARRAY(SELECT group_id FROM (${recursiveGroupIdsSubquery(db`a.user_id`)}) groups) AS groups
       FROM accounts a WHERE position(lower(${query.search}) in lower(label))>0 OR id::text=${query.search}
     ), calls AS MATERIALIZED (
       SELECT c.*,COALESCE(c.user_id,c.service_account_id) AS identity_id,
         CASE WHEN c.user_id IS NOT NULL THEN 'user' ELSE 'service_account' END AS identity_type,
         (COALESCE((c.pricing->>'inputPerMillion')::numeric,0)>0 OR COALESCE((c.pricing->>'outputPerMillion')::numeric,0)>0) AND c.cost IS NULL AND (c.finished_at IS NOT NULL OR (c.lease_expires_at<=${now} OR (c.turn_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM ai.turns t WHERE t.id=c.turn_id AND t.attempt=c.turn_attempt AND t.status='running' AND t.lease_expires_at>${now})))) AS unknown
-      FROM ai.inference_calls c WHERE c.kind='chat' AND c.started_at<=${now}
+      FROM ai.inference_calls c WHERE c.kind='chat' AND c.started_at<=${now} AND c.started_at>=(SELECT since FROM bound)
     ), periods AS MATERIALIZED (
       SELECT * FROM calls WHERE started_at>=${since} AND started_at<${until}
         AND (${query.model}='' OR model_id=${query.model})
@@ -115,7 +115,7 @@ export async function quotaReport(input: Partial<AiQuotaReportQuery> = {}, now =
       SELECT a.id,a.type,a.label,
         CASE WHEN NOT COALESCE((SELECT enabled FROM config),false) THEN 'disabled' ELSE COALESCE(s.status,'unlimited') END AS status,
         COALESCE(s.scopes,0) AS scopes,CASE WHEN s.status='unlimited' OR NOT COALESCE((SELECT enabled FROM config),false) THEN 0 ELSE COALESCE(s.exhausted,0) END AS exhausted,
-        (SELECT max(started_at) FROM calls c WHERE c.identity_id=a.id AND c.identity_type=a.type AND (${query.model}='' OR c.model_id=${query.model})) AS last_used,
+        CASE WHEN a.type='user' THEN ${lastUsed("user")} ELSE ${lastUsed("service_account")} END AS last_used,
         sum(p.cost)::float8 AS cost,COALESCE(sum(p.input),0)::float8 AS input,COALESCE(sum(p.output),0)::float8 AS output,
         count(p.id)::int AS calls,count(p.id) FILTER(WHERE p.input IS NOT NULL AND p.output IS NOT NULL)::int AS measured,count(p.id) FILTER(WHERE p.estimated)::int AS estimated,count(p.id) FILTER(WHERE p.unknown)::int AS unknown
       FROM identities a LEFT JOIN states s ON s.id=a.id AND s.type=a.type
@@ -149,7 +149,50 @@ export async function quotaReport(input: Partial<AiQuotaReportQuery> = {}, now =
       COALESCE((SELECT jsonb_agg(page_rows) FROM page_rows),'[]') AS items,
       COALESCE((SELECT jsonb_agg(jsonb_build_object('cost',cost,'at',to_char(bucket,'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),'input',input,'output',output,'calls',calls,'measured',measured,'unknown',unknown)) FROM timeline),'[]') AS timeline,
       COALESCE((SELECT jsonb_agg(models) FROM models),'[]') AS models FROM pagination`;
+};
+
+const pricedModelIds = async () =>
+  (await readAiSettingsState()).profiles.filter((p) => hasBillableAiPricing(p.pricing)).map((p) => p.modelId);
+
+/** JSON grant cardinality is unknown to the planner; JIT compilation otherwise dominates small admin reports. */
+const withoutJit = <T>(run: (db: typeof sql) => Promise<T>) =>
+  sql.begin(async (db) => {
+    // Scoped to this read transaction.
+    await db`SET LOCAL jit = off`;
+    return run(db);
   });
+
+/** The plan PostgreSQL runs for the report's statement (`EXPLAIN (ANALYZE, FORMAT JSON)`), for tests that hold its reads. */
+export async function explainQuotaReport(input: Partial<AiQuotaReportQuery> = {}, now = new Date()): Promise<unknown> {
+  const { query, since, until } = reportPeriod(input, now);
+  const pricedModels = await pricedModelIds();
+  const [row] = await withoutJit(
+    (db) =>
+      db<{ "QUERY PLAN": unknown }[]>`EXPLAIN (ANALYZE, FORMAT JSON) ${reportStatement(db, { query, now, since, until, pricedModels })}`,
+  );
+  return row?.["QUERY PLAN"];
+}
+
+/** One database snapshot: aggregate and filter the cohort before paginating identities. */
+export async function quotaReport(input: Partial<AiQuotaReportQuery> = {}, now = new Date()): Promise<AiQuotaReport> {
+  const { query, since, until } = reportPeriod(input, now);
+  if (query.view === "rules")
+    return {
+      query,
+      since: since.toISOString(),
+      until: until.toISOString(),
+      asOf: now.toISOString(),
+      overview: { cost: null, accounts: 0, input: 0, output: 0, calls: 0, measured: 0, estimated: 0, unknown: 0 },
+      timeline: [],
+      models: [],
+      items: [],
+      selected: null,
+      total: 0,
+      page: 1,
+      perPage: 25,
+    };
+  const pricedModels = await pricedModelIds();
+  const [data] = await withoutJit((db) => reportStatement(db, { query, now, since, until, pricedModels }));
   if (!data) throw new Error("Quota report returned no snapshot");
   return {
     ...data,

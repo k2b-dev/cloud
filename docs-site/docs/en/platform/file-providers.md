@@ -5,7 +5,7 @@ section: Platform services
 order: 558
 description: Let people add files from any Cloud application with one chooser, save copies into applications such as Files, and implement the file-provider contract so your application can offer its files.
 tags: [capabilities, files, contracts, streams, upload]
-updated: 2026-11-10
+updated: 2026-11-27
 ---
 
 # Offer and choose files across applications
@@ -633,7 +633,9 @@ declare them.
 hash, so nothing changes for applications that do not offer files.
 
 Files declares `fileProvider`. Update Core before Files, and update every
-other reader of the capability catalog once.
+other reader of the capability catalog once. Mail also declares a read-only
+provider for its attachments; see
+[Mail capabilities](/en/docs/platform/mail-capabilities#offer-attachments-in-the-file-chooser).
 
 Before your own application declares `fileProvider`, update every reader of
 the capability catalog to a release that

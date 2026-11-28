@@ -111,6 +111,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
 | several short values (domains, addresses), an image, a one-time code | `TagsInput`, `ImageInput`, `CodeInput` in a `Field` | `settings.tsx` |
 | a number on a range, a colour | `Slider`, `ColorInput` in a `Field` | `settings.tsx` |
+| stars to rate something (a visit); a given rating shown | `Rating` in a `Field` (`required`, hint, error); `Rating readOnly` | – |
 | a field that goes back to its default | `Field action` ("Auf Standard zurücksetzen") | `settings.tsx` |
 | an answer that opens in place (a question in a FAQ) | `Disclosure` | `settings.tsx` |
 | reading text, an email body, a page of Markdown | `Prose` | `content.tsx`, `mail.tsx` |
@@ -125,7 +126,8 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `states.tsx`, `table.tsx` |
 | data still loading | `Loading` where the list will stand; a table, `Facts` and `Cells.Cell` take `loading` | `states.tsx` |
 | data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only | `states.tsx` |
-| a search in a head or status row | `Input type="search"` with `icon`, `onKeyDown`, `ref`, `end` | – |
+| a search in a head | `HeadSearch` with `label`, `value`, `onInput` (its symbol, "/" and its words come with it); with `end` for a filter | – |
+| a search in a status row | `Input type="search"` with `icon`, `onKeyDown`, `ref`, `end` | – |
 | a link that opens in place | `href` plus `onNavigate` on rows, tabs, nav entries, actions, buttons, chips | – |
 | more deeds behind "…", or a choice of deeds behind a button | `Menu` with `items` (submenus, ticks, `danger`) | `actions.tsx` |
 | the same deeds on a right-click or a long press on a row | `Menu.Context` around the `Row`, plus a `Menu` in its `end` | `actions.tsx` |
@@ -159,7 +161,8 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
    inputs and tiles are round; panes, bands, sections, groups are square.
 9. **Lines separate groups, not entries or the parts of one thing.** No
    line under a section head, none between its entries, none inside a
-   `Group`.
+   `Group`. A list's head and its status row are one block: give the head
+   to the list's `Pane` with its `status`, and the block draws one line.
 
 One primary action per page: the filled `Button variant="primary"` in the
 head, mirrored as `Workspace primary` so the phone shows it. A form page
@@ -186,10 +189,10 @@ a `Notice` that names the deed.
   `Disclosure`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
   body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
-  `Chip`, `Progress`, `Spark`, `Ticks`, `Steps`.
+  `Chip`, `Progress`, `Spark`, `Ticks`, `RangeBar`, `Heat`, `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
   `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`, `ImageInput`,
-  `CodeInput`, `Slider`, `ColorInput`.
+  `CodeInput`, `Slider`, `ColorInput`, `Rating`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,

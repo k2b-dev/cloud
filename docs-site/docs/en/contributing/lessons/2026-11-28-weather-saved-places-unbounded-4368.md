@@ -1,0 +1,6 @@
+### A person could save any number of weather places, and every place page read all of them
+
+- **What happened:** Saving a weather place had no upper limit, and listing them without a page used `LIMIT NULL`. A place page reads every saved place and then asks for one forecast per place, all at once. So the number of reads and provider calls per page grew with whatever one person had saved (#4368).
+- **Root cause:** `weatherLocationsService.create` stored without counting, and `list` without pagination read every row. `placeForecasts` started one `Promise.all` over the whole list.
+- **Error class:** A per-person collection that a page reads in full, with no bound on the writer's side and no limit when the list has no page, so one account decides the work of every request.
+- **Guard:** `WEATHER_SAVED_PLACES_MAX` (100) is checked when saving, under the lock that already serializes creates. Past it, saving returns `CONFLICT` and the API and capability give a localized reason. A list without a page reads at most that many rows. The page asks for at most `PLACE_FORECASTS_AT_ONCE` (20) forecasts at a time. `locations.integration.test.ts` refuses the 101st place and reads no more than 100. `place-forecasts.test.ts` was red with 100 calls in flight before the fix.

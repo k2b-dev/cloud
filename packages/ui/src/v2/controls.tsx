@@ -20,6 +20,7 @@ import { dateKey, isCalendarDay, isDateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
 import { addressKey, scanAddresses } from "./addresses";
 import { useCode } from "./behavior/code";
+import { useRating } from "./behavior/controls";
 import { useFilePick } from "./behavior/files";
 import { usePopover } from "./behavior/overlays";
 import { useColor, useRange } from "./behavior/pickers";
@@ -73,7 +74,7 @@ export type FieldProps = {
    * the label line's 20 px, so the field keeps its height with and without it. It takes the place of `optional`.
    */
   action?: Action;
-  /** The one control: `Input`, `Select`, `DateInput`, `Choice`, `TagsInput`, `ImageInput`, `CodeInput`, `Slider` or `ColorInput`. */
+  /** The one control: `Input`, `Select`, `DateInput`, `Choice`, `Rating`, `TagsInput`, `ImageInput`, `CodeInput`, `Slider` or `ColorInput`. */
   children: JSX.Element;
 };
 
@@ -194,10 +195,11 @@ type InputBase = {
   /** A quiet example while the field is empty. */
   placeholder?: string;
   /**
-   * The kind of text, which picks the phone's keyboard; `text` when not set. A `search` in the head of a workspace
-   * or pane stays on the phone as its symbol (36 px, like an icon button), where the other head actions hide: a tap
-   * goes into the field, which opens over the head while it has the focus and folds back, its words kept, when the
-   * focus leaves or on Escape (unless `onKeyDown` takes Escape itself with `preventDefault`). Where a host offers the
+   * The kind of text, which picks the phone's keyboard; `text` when not set. The search of a head is `HeadSearch`,
+   * which brings its symbol, "/" and its words along. A plain `search` in a head keeps its field from 768 px; on the
+   * phone, where the other head actions hide, it stands as its symbol, and a tap goes into the field, which opens over
+   * the head while it has the focus and folds back, its words kept, when the focus leaves or on Escape (unless
+   * `onKeyDown` takes Escape itself with `preventDefault`). Where a host offers the
    * page's search in a bar of its own (`data-k2-host-search` on the v2 scope, as the Cloud shell's phone bar does),
    * the folded search leaves the head and the order of the Tab key on the phone, and the host focuses it; a head with
    * a path then opens it over the content's first row.
@@ -361,6 +363,14 @@ const useHostedHeadSearch = (input: () => HTMLInputElement | undefined, search: 
   return hosted;
 };
 
+/**
+ * What `HeadSearch` adds to the `Input` it places (`head-search.tsx`): the marks, handlers and `ref` of the field's
+ * box, for the head's search as its symbol, its overlay, "/", its words and its held menu. It comes through this
+ * context, so an `Input` elsewhere carries none of its code.
+ */
+export type HeadSearchKit = (props: InputProps, end: () => unknown) => JSX.HTMLAttributes<HTMLElement> | undefined;
+export const HeadSearchContext = createContext<HeadSearchKit>();
+
 /** A round text field: 36 px, 1 px edge, a blue ring on focus. In a field it takes its name and error. */
 export const Input = (props: InputProps) => {
   const field = useField();
@@ -369,6 +379,8 @@ export const Input = (props: InputProps) => {
     () => input,
     () => props.type === "search",
   );
+  // a head's search takes its kit before its end is made, so a search inside that end finds it taken
+  const head = props.type === "search" ? useContext(HeadSearchContext)?.(props, () => end()) : undefined;
   // the end is made once, here (reading the prop twice would make its JSX twice)
   const end = resolveChildren(() => props.end);
   const shared = () => ({
@@ -396,6 +408,7 @@ export const Input = (props: InputProps) => {
   };
   return (
     <Dynamic
+      {...head}
       component={send() ? "form" : "span"}
       method={send() ? "get" : undefined}
       action={send()?.action}
@@ -1605,5 +1618,106 @@ const ChoiceGroup = (props: ChoiceProps) => {
         }}
       </For>
     </div>
+  );
+};
+
+export type RatingProps =
+  | {
+      /** The chosen stars, 1 to 5; leave out while nobody has rated. */
+      value?: number;
+      /** Called with the stars a person chose. Without it the rating keeps the choice itself. */
+      onChange?: (value: number) => void;
+      /** The name the stars are sent under in a form; the field's name by default. */
+      name?: string;
+      /** The question of the rating when it stands without a Field: shown as the label line of a field of its own. */
+      label?: string;
+      /** The rating cannot be changed now: every star dimmed, the chosen ones still shown. */
+      disabled?: boolean;
+      readOnly?: false;
+    }
+  | {
+      /**
+       * Shows a given rating, such as the stars a person sent or an average of 4.2 (part of a star fills), as one
+       * small picture with its words ("4,2 von 5 Sternen"); it cannot be changed.
+       */
+      readOnly: true;
+      /** The rating shown, 0 to 5. */
+      value: number;
+    };
+
+const STARS = [1, 2, 3, 4, 5] as const;
+/**
+ * The star of Tabler's `star` icon (MIT), drawn by the rating itself: the icon font carries outline glyphs only, so a
+ * filled star is this same path with a fill, never a font glyph that may be missing.
+ */
+const STAR_PATH = "M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z";
+
+/**
+ * Stars from 1 to 5 to rate something, such as a visit: five large stars as one radio group (one Tab stop, the arrows
+ * move and choose, Space and Enter choose), each 56 px high and at least 44 px wide, in one row on the phone too. Each
+ * star is named by its value ("3 von 5 Sternen"); a Field gives the question, `required`, the hint and the error. With
+ * `readOnly` it shows a given rating as small stars in a line, part of a star filled for an average.
+ */
+export const Rating = (props: RatingProps) => {
+  if (!props.readOnly && !useField() && props.label !== undefined)
+    return (
+      <Field label={props.label}>
+        <RatingStars {...props} />
+      </Field>
+    );
+  return <RatingStars {...props} />;
+};
+
+const RatingStars = (props: RatingProps) => {
+  const field = props.readOnly ? undefined : useField();
+  field?.group();
+  const t = useControlMessages();
+  const locale = useLocale();
+  const words = (value: number) =>
+    t().stars({ value: new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(value), max: 5 });
+  const editable = () => (props.readOnly ? undefined : props);
+  // a given rating stays on the scale: never more than 5 stars, never less than none
+  const given = () => (props.readOnly ? (Number.isFinite(props.value) ? Math.max(0, Math.min(5, props.value)) : 0) : props.value);
+  const rating = useRating(() => {
+    const own = editable();
+    return {
+      ...(props.readOnly || own?.onChange ? { value: given() ?? null } : { defaultValue: given() ?? null }),
+      onValueChange: (next: number | null) => {
+        if (next !== null) own?.onChange?.(next);
+      },
+      readOnly: props.readOnly,
+      disabled: own?.disabled,
+      required: field?.required,
+      name: own?.name ?? field?.name,
+      getValueLabel: words,
+    };
+  });
+  return (
+    <rating.Root
+      class="k2-rating"
+      data-k2-part="Rating"
+      aria-labelledby={field?.label}
+      aria-describedby={field?.described}
+      aria-invalid={field?.invalid ? "true" : undefined}
+      data-preview={rating.preview() === null ? undefined : ""}
+    >
+      <For each={STARS}>
+        {(index) => (
+          // the stars up to the choice, whatever a pointer previews (core's own fill follows the preview)
+          <rating.Item class="k2-star" index={index} data-chosen={index <= (rating.chosen() ?? 0) ? "" : undefined}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d={STAR_PATH} />
+            </svg>
+            <svg class="k2-star-fill" viewBox="0 0 24 24" aria-hidden="true">
+              <path d={STAR_PATH} />
+            </svg>
+            <Show when={!props.readOnly}>
+              <rating.Radio class="k2-star-hit" value={String(index)} />
+              <rating.Input value={String(index)} />
+            </Show>
+          </rating.Item>
+        )}
+      </For>
+    </rating.Root>
   );
 };

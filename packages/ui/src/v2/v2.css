@@ -83,6 +83,8 @@
   /* heights by place */
   --k2-h-head: 56px;
   --k2-h-status: 52px;
+  /* the head row of a head block, close above its status row */
+  --k2-h-block: 48px;
   --k2-h-tabs: 44px;
   --k2-h-bar: 40px;
   --k2-h-columns: 36px;
@@ -261,6 +263,12 @@
   --k2-c-soft-dark: initial;
   --k2-c-ink: initial;
   --k2-c-ink-dark: initial;
+  --k2-accent-ink-light: initial;
+  --k2-accent-ink-dark: initial;
+  --k2-accent-soft-light: initial;
+  --k2-accent-soft-dark: initial;
+  --k2-accent-edge-light: initial;
+  --k2-accent-edge-dark: initial;
   --k2-pane-w: initial;
   --k2-pane-min: initial;
   --k2-ws-side: initial;
@@ -352,6 +360,9 @@
 /* a data colour by meaning takes the place of the tone; it comes in as --k2-c, checked to be a colour */
 .k2-ui .k2-icon[data-color] {
   color: var(--k2-c);
+}
+.k2-ui .k2-text[data-tone="app"] {
+  color: var(--k2-app-text);
 }
 .k2-ui .k2-text[data-tone="ok"] {
   color: var(--k2-ok);
@@ -804,6 +815,10 @@
      parts at its end, a closing × among them, the same before and after the page is alive */
   justify-content: flex-end;
 }
+/* a head's search open as an overlay stands over its neighbours, beyond the cut (set by the field, see `Input`) */
+.k2-ui .k2-bar[data-k2-part="Bar"] > .k2-bar-end[data-k2-open-search] {
+  overflow: visible;
+}
 .k2-ui .k2-bar:not([data-k2-measuring]) > .k2-bar-end [data-k2-folded] {
   display: none;
 }
@@ -854,6 +869,87 @@
 }
 .k2-ui .k2-bar[data-status-row] {
   height: var(--k2-h-status);
+}
+/* A pane's head and its toolbar are one block (look rule 30, Valentin 27.11.: "diese Border weg und die Gap bissle
+   weniger groß"). The pane hands its toolbar (StatusRow, FilterBar) to its head's bar, which stands it between its
+   start and its end: the bar stays one box with one line under it, and the order of the Tab key is the order on the
+   screen. Two rows close together: the head's start and end (48 px), then the toolbar. Where the pane is 1200 px wide,
+   all stand in one row, the toolbar between the start and the end; a head without a start shares the toolbar's row
+   always. */
+.k2-ui [data-slot="head"][data-block] > .k2-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: var(--k2-h-block) auto;
+  grid-template-areas: "start end" "status status";
+  row-gap: 0;
+  height: auto;
+  /* in two rows the toolbar comes after the head's end on the screen, but between start and end in the page: the Tab
+     key follows the rows where the browser knows this (Chromium 137); WebKit and Firefox still go start, toolbar, end */
+  reading-flow: grid-rows;
+}
+.k2-ui [data-slot="head"][data-block] > .k2-bar > .k2-bar-start {
+  grid-area: start;
+}
+/* The start's least (`width` beside `flex-basis: content`, above) is for a row of flex; in the block's grid it would
+   be the start's only width, and a path in it would fold into "…" with room to spare. Here the start takes its column.
+   Where that column is as wide as what it holds (one row), a path asks for its whole width (`--k2-path-whole`, set by
+   `Path`), not for what is left of it once folded: so it unfolds again when the room comes back. Where the row is
+   short, the toolbar's column gives way first, then the start, and the path folds there as anywhere; the bar's fold
+   measures it as before. */
+.k2-ui [data-slot="head"][data-block] > .k2-bar:not([data-k2-measuring]) > .k2-bar-start {
+  width: auto;
+  min-width: 0;
+}
+.k2-ui [data-slot="head"][data-block] > .k2-bar:not([data-k2-measuring]) > .k2-bar-start > .k2-path {
+  flex: 1 1 auto;
+  width: var(--k2-path-whole, auto);
+}
+.k2-ui [data-slot="head"][data-block] > .k2-bar > .k2-bar-end {
+  grid-area: end;
+}
+/* the toolbar keeps its own edge and draws no line: the bar's line is the block's one line */
+.k2-ui [data-slot="head"][data-block] > .k2-bar > [data-slot="status"] > :is(.k2-fbar, .k2-bar) {
+  grid-area: status;
+  margin-inline: calc(-1 * var(--k2-edge));
+  border-bottom: 0;
+}
+.k2-ui [data-slot="head"][data-block] > .k2-bar > [data-slot="status"] > .k2-bar[data-status-row] {
+  height: calc(var(--k2-h-status) - 8px);
+  padding-bottom: 8px;
+}
+.k2-ui [data-slot="head"][data-block] > .k2-bar > [data-slot="status"] > .k2-fbar {
+  padding-top: 0;
+}
+.k2-ui [data-slot="head"][data-block="row"] > .k2-bar {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto;
+  grid-template-areas: "status end";
+}
+.k2-ui [data-slot="head"][data-block="row"] > .k2-bar > [data-slot="status"] > :is(.k2-fbar, .k2-bar) {
+  margin-inline-end: 0;
+  padding-top: 6px;
+}
+/* In one row the toolbar shares the room with the head's end: the fold measures it whole, as it does the start, so the
+   end's buttons fold before the toolbar gives way (`bar-fold.ts`). */
+.k2-ui [data-slot="head"][data-block="row"] > .k2-bar[data-k2-measuring] > [data-slot="status"] > :is(.k2-fbar, .k2-bar) {
+  width: max-content;
+}
+@container k2-pane (min-width: 1200px) {
+  .k2-ui [data-slot="head"][data-block=""] > .k2-bar {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-rows: var(--k2-h-status);
+    grid-template-areas: "start status end";
+  }
+  .k2-ui [data-slot="head"][data-block=""] > .k2-bar > [data-slot="status"] > :is(.k2-fbar, .k2-bar) {
+    min-width: 0;
+    margin-inline: 0;
+    padding-inline: 12px;
+    padding-block: 6px;
+    height: auto;
+  }
+  .k2-ui [data-slot="head"][data-block=""] > .k2-bar[data-k2-measuring] > [data-slot="status"] > :is(.k2-fbar, .k2-bar) {
+    width: max-content;
+  }
 }
 .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar {
   padding-right: 12px;
@@ -911,6 +1007,9 @@
 }
 .k2-ui .k2-band[data-tone="bad"] {
   background: var(--k2-bad-tint);
+}
+.k2-ui .k2-band[data-tone="app"] {
+  background: var(--k2-app-tint);
 }
 .k2-ui .k2-band[data-tone="warn"] {
   background: var(--k2-warn-tint);
@@ -1518,9 +1617,13 @@
    The ink as text: the platform may set `--k2-app-ink`, a tone that keeps 4.5:1 on the surfaces (`readableTone`); a
    mix alone does not promise that for every colour. Without it the mix stands, without a colour the blue. v2 never
    sets `--k2-app-ink` itself, so the platform's value reaches every primitive; it belongs to the page's app, so
-   another app's rows drop it. */
+   another app's rows drop it.
+   A page with an accent of its own (`Workspace accent`, a colour from data) is a third such place: `accentStyle` sets
+   the colour as `--k2-app`, the primary's fill and words, and for each theme its ink as text (4.5:1 on the surface and
+   the tint), the quiet tone of a bar (3:1 on the surface and both tints) and the primary's edge (3:1 on the surface, so a
+   pale colour still shows its button), worked out where the colour arrives, so the first paint is final. */
 .k2-ui,
-.k2-ui [data-k2-owner] {
+.k2-ui :is([data-k2-owner], [data-k2-accent]) {
   --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 80%, #000000);
   --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 7%, var(--k2-surface));
   --k2-app-text: var(--k2-app-ink, var(--k2-app-ink-mix, var(--k2-blue-ink)));
@@ -1529,14 +1632,26 @@
 .dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui),
 .k2-ui.dark,
 .k2-ui[data-theme="dark"],
-.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) [data-k2-owner],
-.k2-ui.dark [data-k2-owner],
-.k2-ui[data-theme="dark"] [data-k2-owner] {
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) :is([data-k2-owner], [data-k2-accent]),
+.k2-ui.dark :is([data-k2-owner], [data-k2-accent]),
+.k2-ui[data-theme="dark"] :is([data-k2-owner], [data-k2-accent]) {
   --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 55%, #ffffff);
   --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 18%, var(--k2-surface));
 }
 .k2-ui [data-k2-owner] {
   --k2-app-ink: initial;
+}
+.k2-ui [data-k2-accent] {
+  --k2-app-ink: var(--k2-accent-ink-light);
+  --k2-accent-soft: var(--k2-accent-soft-light);
+  --k2-primary-edge: var(--k2-accent-edge-light);
+}
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) [data-k2-accent],
+.k2-ui.dark [data-k2-accent],
+.k2-ui[data-theme="dark"] [data-k2-accent] {
+  --k2-app-ink: var(--k2-accent-ink-dark);
+  --k2-accent-soft: var(--k2-accent-soft-dark);
+  --k2-primary-edge: var(--k2-accent-edge-dark);
 }
 
 /* ── Row: 40 · 52 · 72 by its lines; roles by line; square, also when it opens something ────────────────────── */
@@ -1685,6 +1800,22 @@
 }
 .k2-ui .k2-row[data-lines="1"] > .k2-row-end {
   grid-area: time;
+}
+/* A row of one line with a time and a deed or an end keeps the row's height (`--k2-h-row`): the time stands at the end
+   of the line and the deed after it, in a column of its own (Valentin 27.11.: no row taller than its neighbours for its
+   deed). On the phone
+   the deed takes the row under the text (the phone's rules below). */
+.k2-ui .k2-row[data-lines="1"][data-time][data-end] {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "lead l1 time end";
+}
+.k2-ui .k2-row[data-lines="1"][data-time][data-end] > .k2-row-end {
+  grid-area: end;
+}
+/* the deed's button (`--k2-h-control-small`) stands in the row's height (`--k2-h-row`, its padding and its line
+   included): it reaches into the row's padding instead of growing the row */
+.k2-ui .k2-row[data-lines="1"][data-end] > .k2-row-end {
+  margin-block: calc((var(--k2-h-row) - 16px - var(--k2-h-control-small)) / 2 - 1px);
 }
 .k2-ui .k2-row-marks {
   grid-area: marks;
@@ -2055,10 +2186,10 @@
   border-bottom-color: transparent;
 }
 /* In dark the quiet text of a tinted row moves 60 % towards the muted text (n500 → n600), so it keeps 4.5:1 on the
-   tint of every app colour, white included. */
-.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected])),
-.k2-ui.dark :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected])),
-.k2-ui[data-theme="dark"] :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected])) {
+   tint of every app colour, white included; so does the quiet text of a band in the app's tint. */
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected]), .k2-band[data-tone="app"]),
+.k2-ui.dark :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected]), .k2-band[data-tone="app"]),
+.k2-ui[data-theme="dark"] :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected]), .k2-band[data-tone="app"]) {
   --k2-subtle: color-mix(in srgb, var(--k2-n500) 40%, var(--k2-n600));
 }
 /* Forced colours drop the tint: the open and the chosen rows stand in a frame of the system's highlight. */
@@ -2963,6 +3094,16 @@
   border-radius: var(--k2-r-round);
   background: var(--k2-range-fill, var(--k2-n600));
 }
+/* In a page with an accent of its own (`Workspace accent`) a bar without stops takes its quiet tone, 3:1 on the
+   surface, and in the open row (today in a week) its ink, the strongest. Forced colours keep their look below. */
+@media (forced-colors: none) {
+  .k2-ui [data-k2-accent] .k2-range > i {
+    background: var(--k2-range-fill, var(--k2-accent-soft));
+  }
+  .k2-ui [data-k2-accent] :is(.k2-row[data-current], .k2-table tbody tr[aria-current]) .k2-range > i {
+    background: var(--k2-range-fill, var(--k2-app-text));
+  }
+}
 /* right to left the colours run from the right, as the scale does */
 .k2-ui .k2-range:dir(rtl) {
   --k2-range-way: to left;
@@ -3252,7 +3393,7 @@
 }
 .k2-ui .k2-btn[data-variant="primary"] {
   background: var(--k2-primary);
-  border-color: var(--k2-primary);
+  border-color: var(--k2-primary-edge, var(--k2-primary));
   color: var(--k2-primary-ink);
 }
 /* An app whose main colour is the assistant's (appearance.primary "ai", which the platform puts on the page as
@@ -3836,6 +3977,112 @@
 }
 .k2-ui .k2-slider[data-disabled] {
   opacity: 0.5;
+}
+/* a rating: five stars of 56 px in one row, each a round box from 44 to 96 px wide, so a thumb meets one on the phone
+   and the row never grows past 520 px. Amber is the choice alone: a chosen star fills in the amber of a toggle that is
+   on (3:1 on its tint in both themes), on a tint of it. The stars under a pointer preview in neutral ink without the
+   tint, and the choice stays amber beneath them. Read-only: a line of small stars, part of one filled for an average. */
+.k2-ui .k2-rating {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(44px, 96px));
+  gap: 8px;
+}
+.k2-ui .k2-star {
+  display: grid;
+  place-items: center;
+  height: 56px;
+  border: 1px solid var(--k2-line-control);
+  border-radius: var(--k2-r-control);
+  background: var(--k2-surface);
+  color: var(--k2-subtle);
+}
+/* the star is drawn (STAR_PATH in controls.tsx) on Tabler's grid with its 2-unit stroke: an outline, and the same star
+   filled above it */
+.k2-ui .k2-star > svg {
+  grid-area: 1 / 1;
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.k2-ui .k2-star > .k2-star-fill {
+  fill: currentColor;
+}
+/* the filled star lies over the outline: shown on the chosen stars (`data-chosen`, never core's fill, which follows
+   the pointer) */
+.k2-ui .k2-star > .k2-star-fill {
+  visibility: hidden;
+  color: var(--k2-pressed);
+}
+.k2-ui .k2-star[data-chosen] > .k2-star-fill {
+  visibility: visible;
+}
+.k2-ui .k2-star[data-chosen] {
+  border-color: color-mix(in srgb, var(--k2-pressed) 45%, var(--k2-surface));
+  background: color-mix(in srgb, var(--k2-pressed) 8%, var(--k2-surface));
+}
+/* the preview under a pointer (core's `data-highlighted`): an edge in neutral ink, and a star not chosen fills in that
+   ink without a tint */
+.k2-ui .k2-rating[data-preview] > .k2-star[data-highlighted] {
+  border-color: var(--k2-muted);
+}
+.k2-ui .k2-rating[data-preview] > .k2-star[data-highlighted]:not([data-chosen]) > .k2-star-fill {
+  visibility: visible;
+  color: var(--k2-muted);
+}
+/* the radio of a star lies over all of it (core places it): the whole box takes the press */
+.k2-ui .k2-star-hit {
+  border-radius: inherit;
+  cursor: pointer;
+}
+.k2-ui .k2-star-hit:focus-visible {
+  outline: none;
+}
+.k2-ui .k2-star:has(> .k2-star-hit:focus-visible) {
+  border-color: var(--k2-blue);
+  box-shadow: 0 0 0 3px var(--k2-blue-ring);
+}
+.k2-ui .k2-rating[aria-invalid="true"] > .k2-star:not([data-chosen]) {
+  border-color: var(--k2-bad);
+}
+.k2-ui .k2-rating[data-disabled] > .k2-star {
+  opacity: 0.5;
+}
+.k2-ui .k2-rating[data-disabled] .k2-star-hit {
+  cursor: default;
+}
+.k2-ui .k2-rating[data-readonly] {
+  display: inline-flex;
+  gap: 1px;
+  vertical-align: middle;
+}
+.k2-ui .k2-rating[data-readonly] > .k2-star {
+  height: auto;
+  border: 0;
+  background: none;
+}
+.k2-ui .k2-rating[data-readonly] > .k2-star > svg {
+  width: 16px;
+  height: 16px;
+}
+/* read-only, the filled star is cut to the share of the star the rating covers (core's --rating-fill) */
+.k2-ui .k2-rating[data-readonly] > .k2-star > .k2-star-fill {
+  visibility: visible;
+  clip-path: inset(0 calc(100% - var(--rating-fill, 0) * 100%) 0 0);
+}
+.k2-ui .k2-rating[data-readonly] > .k2-star:dir(rtl) > .k2-star-fill {
+  clip-path: inset(0 0 0 calc(100% - var(--rating-fill, 0) * 100%));
+}
+@media (forced-colors: active) {
+  .k2-ui .k2-star > .k2-star-fill {
+    color: Highlight;
+  }
+  .k2-ui .k2-star:has(> .k2-star-hit:focus-visible) {
+    outline: 2px solid Highlight;
+  }
 }
 /* a colour: its swatch and code in one line, the surface and the hue under it, the presets last */
 .k2-ui .k2-color {
@@ -4510,6 +4757,9 @@
 .k2-ui .k2-path {
   /* the least of the whole path, set from its words by `Path` (its own inline value wins) */
   --k2-path-least: initial;
+  /* its whole width, every place unfolded, measured by `Path` in the browser (its inline value wins); a head block's
+     start asks for it */
+  --k2-path-whole: initial;
   position: relative;
   display: flex;
   align-items: center;
@@ -5750,6 +6000,49 @@
 }
 
 /* ── Phone: below 768 px. Columns become pages; rows ≥ 60; the main action floats ───────────────────────────── */
+/* The search of a head (`HeadSearch`, which marks its field `data-head-search`) is its symbol on every width (look
+   rule 31, Valentin 27.11.: "die Suchleiste könnte auch einfach nur ein Icon sein"): 36 px like an icon button, the
+   same part as on the phone. A press, a tap or "/" goes into the field. From 768 px the field pressed while empty opens as a short overlay that grows to the left over its
+   36 px place, so nothing beside it moves or folds while the person types; once the focus leaves, its words keep it
+   open at its width in the row (also on the server's page), and empty it folds back. An open menu at its end
+   (`data-held`) keeps it open too. A search with more at its end (a filter) keeps its field. A plain search in a head
+   keeps its field from 768 px and folds on the phone only, as below. */
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-head-search]:not([data-filled], [data-held], [data-with-end], :focus-within) {
+  position: relative;
+  width: var(--k2-h-control);
+  padding: 0;
+  justify-content: center;
+  border-color: transparent;
+  background: transparent;
+}
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-head-search]:not([data-filled], [data-held], [data-with-end], :focus-within) > .k2-icon {
+  color: var(--k2-muted);
+}
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-head-search]:not([data-filled], [data-held], [data-with-end], :focus-within):hover > .k2-icon {
+  color: var(--k2-text);
+}
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-head-search]:not([data-filled], [data-held], [data-with-end], :focus-within) > input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-head-search]:not([data-filled], [data-held], [data-with-end], :focus-within) > .k2-input-end {
+  display: none;
+}
+/* with words and no overlay (also on the server's page) the field takes its width in the flow, and the fold counts it */
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-head-search]:is([data-filled], [data-held], :focus-within):not([data-with-end], [data-overlay]) {
+  width: 184px;
+}
+/* pressed while empty (`data-overlay`, set by the field until the focus leaves it): a short overlay over its neighbours,
+   from its 36 px place to the left; its place lifts its cut for that while (`data-k2-open-search`) */
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-head-search][data-overlay]:not([data-with-end]) {
+  position: relative;
+  z-index: 2;
+  width: 184px;
+  margin-left: calc(var(--k2-h-control) - 184px);
+  background: var(--k2-surface);
+}
 @media not all and (min-width: 768px) {
   .k2-ui .k2-ws {
     border: 0;
@@ -5908,19 +6201,19 @@
     border-color: transparent;
     background: transparent;
   }
-  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within) > .k2-icon {
+  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within, [data-filled], [data-held]) > .k2-icon {
     color: var(--k2-muted);
   }
-  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within) > input {
+  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within, [data-filled], [data-held]) > input {
     position: absolute;
     inset: 0;
     opacity: 0;
   }
-  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within) > .k2-input-end {
+  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within, [data-filled], [data-held]) > .k2-input-end {
     display: none;
   }
   /* the field covers the head's views; the cover draws no line of its own, the bar's line stays the one line */
-  .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-end > .k2-input[data-search]:focus-within)::after {
+  .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-end > .k2-input[data-search]:is(:focus-within, [data-filled], [data-held]))::after {
     content: "";
     position: absolute;
     inset: 0;
@@ -5928,12 +6221,19 @@
     background: var(--k2-surface);
   }
   /* the mark of the current view stands on the head's own line, below the cover: it gives way, the line stays one */
-  .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-end > .k2-input[data-search]:focus-within) .k2-tab[aria-current] {
+  .k2-ui [data-slot="head"][data-block] > .k2-bar:has(> .k2-bar-end > .k2-input[data-search]:is(:focus-within, [data-filled], [data-held]))::after {
+    bottom: auto;
+    height: var(--k2-h-block);
+  }
+  .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-end > .k2-input[data-search]:is(:focus-within, [data-filled], [data-held])) .k2-tab[aria-current] {
     border-bottom-color: transparent;
   }
-  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:focus-within {
+  /* as heavy as the wide screen's open field, and after it: on the phone the field stands over the head */
+  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:is(:focus-within, [data-filled], [data-held]):not([data-with-end]),
+  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search][data-with-end]:is(:focus-within, [data-filled], [data-held]) {
     position: absolute;
     z-index: 2;
+    margin-left: 0;
     top: calc((100% - var(--k2-h-control)) / 2);
     left: var(--k2-edge);
     right: var(--k2-edge);
@@ -5943,17 +6243,21 @@
     border-color: var(--k2-blue);
     background: var(--k2-surface);
   }
+  .k2-ui [data-slot="head"][data-block] > .k2-bar > .k2-bar-end > .k2-input[data-search]:is(:focus-within, [data-filled], [data-held]) {
+    top: calc((var(--k2-h-block) - var(--k2-h-control)) / 2);
+  }
   /* A host that offers the page's search in a bar of its own (the Cloud shell's phone bar) marks the v2 scope with
      `data-k2-host-search` and focuses the field from there. The folded search then leaves the head, so its tabs keep
      the room, but stays in reach of the focus; it opens over the head as above. A head with a path and a search gives
      way as a head with only a path does, also while its search is open: the field then lies over the content's first
      row, so nothing below moves. Only a head that holds nothing else gives way: a control at its end (a menu "…", an
      action) keeps the head at its height, the path leaves and the folded search stays in reach. The main action the
-     floating button repeats (`Button floats`) is not such a control; on the phone it leaves the head. */
+     floating button repeats (`Button floats`) is not such a control; on the phone it leaves the head. A head search's
+     words and its held menu keep it open, as above. */
   .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > [data-floats] {
     display: none;
   }
-  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within) {
+  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within, [data-filled], [data-held]) {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -5963,18 +6267,25 @@
     overflow: hidden;
     clip-path: inset(50%);
   }
-  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path):not(:has(> .k2-bar-end > :not(.k2-input[data-search], [data-floats]))) {
+  .k2-ui[data-k2-host-search] [data-slot="head"]:not([data-block]) > .k2-bar:has(> .k2-bar-start > .k2-path):not(:has(> .k2-bar-end > :not(.k2-input[data-search], [data-floats]))) {
     height: 0;
     padding-block: 0;
     border-bottom: 0;
   }
-  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path):not(:has(> .k2-bar-end > :not(.k2-input[data-search], [data-floats]))):not(:focus-within) {
+  .k2-ui[data-k2-host-search] [data-slot="head"]:not([data-block]) > .k2-bar:has(> .k2-bar-start > .k2-path):not(:has(> .k2-bar-end > :not(.k2-input[data-search], [data-floats]))):not(:focus-within) {
+    overflow: hidden;
+  }
+  .k2-ui[data-k2-host-search] [data-slot="head"][data-block=""] > .k2-bar:has(> .k2-bar-start > .k2-path):not(:has(> .k2-bar-end > :not(.k2-input[data-search], [data-floats]))) {
+    grid-template-rows: 0 auto;
+  }
+  .k2-ui[data-k2-host-search] [data-slot="head"][data-block=""] > .k2-bar:has(> .k2-bar-start > .k2-path):not(:has(> .k2-bar-end > :not(.k2-input[data-search], [data-floats]))):not(:focus-within) > :is(.k2-bar-start, .k2-bar-end) {
+    min-height: 0;
     overflow: hidden;
   }
   .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path):not(:has(> .k2-bar-end > :not(.k2-input[data-search], [data-floats]))):has(> .k2-bar-end > .k2-input[data-search])::after {
     content: none;
   }
-  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path):not(:has(> .k2-bar-end > :not(.k2-input[data-search], [data-floats]))) > .k2-bar-end > .k2-input[data-search]:focus-within {
+  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path):not(:has(> .k2-bar-end > :not(.k2-input[data-search], [data-floats]))) > .k2-bar-end > .k2-input[data-search]:is(:focus-within, [data-filled], [data-held]) {
     top: calc((var(--k2-h-status) - var(--k2-h-control)) / 2);
   }
   .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-tabs-nav) {
@@ -6063,6 +6374,23 @@
     grid-area: time;
     justify-content: flex-start;
     padding: 8px 0 4px;
+  }
+  /* a row with a time and a deed: the time stays top right, the deed gets the row under the text (never one over the
+     other) */
+  .k2-ui .k2-row[data-action][data-time][data-end] {
+    grid-template-areas: "lead l1 time" "lead l2 l2" "lead end end";
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .k2-ui .k2-row[data-action][data-time][data-end]:not(:has(> .k2-row-lead > *)):not(.k2-list:has(> .k2-row > .k2-row-lead > *) > .k2-row) {
+    grid-template-areas: "l1 time" "l2 l2" "end end";
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .k2-ui .k2-row[data-action][data-time][data-end] > .k2-row-end {
+    grid-area: end;
+  }
+  /* on the phone the deed has a row of its own: it needs no room of the row's padding */
+  .k2-ui .k2-row[data-lines="1"][data-end] > .k2-row-end {
+    margin-block: 0;
   }
   /* a finger hits 44 px of the row's deed (PS 26.11.); its look and its place stay. Its words never shrink (a button
      keeps its room), so nothing of them needs the button to clip. */

@@ -135,6 +135,7 @@ const locationsApi = new Hono<AuthContext>()
       responses: {
         201: jsonResponse(LocationSchema, "Location created"),
         401: jsonResponse(ErrorResponseSchema, "Unauthorized"),
+        409: jsonResponse(ErrorResponseSchema, "The person already saved the most places"),
       },
     }),
     localizedV(
@@ -149,7 +150,11 @@ const locationsApi = new Hono<AuthContext>()
       const { name, state, lat, lon, provenance } = c.req.valid("json");
 
       const result = await weatherService.location.saved.create({ userId: user.data.id, data: { name, state, lat, lon, provenance } });
-      return respond(c, result.ok ? result : fail({ ...result.error, message: t.addLocationFailed }), 201);
+      if (result.ok) return respond(c, result, 201);
+      // a full list says so and how to make room; any other failure keeps the general sentence
+      const message =
+        result.error.code === "CONFLICT" ? t.tooManyLocations({ max: weatherService.location.saved.max }) : t.addLocationFailed;
+      return respond(c, fail({ ...result.error, message }));
     },
   )
   .delete(
