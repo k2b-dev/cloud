@@ -190,10 +190,10 @@ describe("Spaces detail for readers and occurrences", () => {
       return itemWrites.filter((write) => labels.some((label) => label.startsWith(write)));
     };
 
-    // The series itself is the writer's to change.
+    // The series itself is the writer's to change, and an event is marked done as a task is, as on main.
     const series = fresh();
     const disposeSeries = await mount(series, { canWrite: true, detail: detailOf(event) });
-    expect(controls(series)).toEqual(expect.arrayContaining(itemControls));
+    expect(controls(series)).toEqual(expect.arrayContaining([...itemControls, "Mark complete"]));
     expect(await itemMenu(series)).toEqual(itemWrites);
     disposeSeries();
     series.cleanup();
@@ -203,7 +203,7 @@ describe("Spaces detail for readers and occurrences", () => {
       canWrite: true,
       detail: detailOf(event, { recurringContext: occurrence, commentTarget: { itemId: task.id, recurrenceId: occurrence.recurrenceId } }),
     });
-    for (const control of itemControls)
+    for (const control of [...itemControls, "Mark complete"])
       expect({ control, shown: controls(generated).includes(control) }).toEqual({ control, shown: false });
     expect(await itemMenu(generated)).toEqual([]);
     // No reactions of its own: not even the ones of the series show.

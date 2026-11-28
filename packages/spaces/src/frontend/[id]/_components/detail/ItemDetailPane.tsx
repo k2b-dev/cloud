@@ -1033,7 +1033,8 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
           }
           end={
             <>
-              <Show when={canEditItem() && !isEvent()}>
+              {/* Tasks and events alike are marked done, as on main; the D key does the same. */}
+              <Show when={canEditItem()}>
                 <Button
                   icon={isCompleted() ? "arrow-back-up" : completionBlocked() ? "lock" : "circle-check"}
                   busy={completeMutation.loading()}
