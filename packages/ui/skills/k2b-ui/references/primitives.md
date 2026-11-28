@@ -278,7 +278,8 @@ content, a list and its detail, one section and the next. A `Row`:
   phone a finger hits 44 px of it, its look unchanged),
   `end` (a few icon buttons, or the state chip of a one- or two-line row).
   `endOnHover`: the end shows only under the pointer or with the focus in
-  the row, its place kept; a touch screen does not draw it, so give the
+  the row, its place kept; a touch screen does not draw it (the second
+  line then takes its column), so give the
   row the same deeds through `Menu.Context` (a long press). Use it for a
   long list whose every row has a "…".
 - states: `unread`, `strong`, `current` (the open one, app tint),

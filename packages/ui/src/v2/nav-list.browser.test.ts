@@ -161,7 +161,33 @@ for (const width of [1440, 390])
         expect(await end.evaluate((element) => getComputedStyle(element).opacity)).toBe("0");
         await hoverInPlace(rows.nth(1));
         await page.waitForFunction(() => getComputedStyle(document.querySelectorAll(".k2-nav-list .k2-row-end")[1]!).opacity === "1");
-      } else expect(await end.isVisible()).toBe(false);
+        // the keys reach it too: Tab from the row lands on the "…" and shows it (focus in the row), and it stays while
+        // its menu is open, though the focus is in the menu then; it hides again once the focus leaves the row
+        const other = rows.nth(2);
+        const opacity = () => other.locator(".k2-row-end").evaluate((element) => getComputedStyle(element).opacity);
+        expect(await opacity()).toBe("0");
+        await other.locator(".k2-row-open").focus();
+        await page.keyboard.press("Tab");
+        const more = other.locator('.k2-row-end button[aria-haspopup="menu"]');
+        expect(await more.evaluate((element) => element === document.activeElement)).toBe(true);
+        expect(await opacity()).toBe("1");
+        await page.keyboard.press("Enter");
+        await page.getByRole("menu").last().waitFor();
+        expect(await more.getAttribute("aria-expanded")).toBe("true");
+        expect(await opacity()).toBe("1");
+        await page.keyboard.press("Escape");
+        await page.waitForFunction(() => document.activeElement?.getAttribute("aria-expanded") === "false");
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        expect(await opacity()).toBe("0");
+      } else {
+        expect(await end.isVisible()).toBe(false);
+        // nothing is drawn in the end's column on a touch screen, so the second line reaches under the time
+        const [second, time] = [
+          await box(page, ".k2-ws-side .k2-nav-list .k2-row:nth-child(2) > .k2-row-l2"),
+          await box(page, ".k2-ws-side .k2-nav-list .k2-row:nth-child(2) > .k2-row-time"),
+        ];
+        expect(second.right).toBeGreaterThan(time.left);
+      }
       // a long name stays on one line, its last message on at most two
       const long = rows.nth(5);
       const title = await long.locator(".k2-row-title").evaluate((element) => ({

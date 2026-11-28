@@ -375,8 +375,8 @@ export type RowProps = {
   end?: JSX.Element;
   /**
    * The end shows only while the pointer is over the row or the focus is in it (its place stays, so nothing moves); a
-   * list of many rows then carries no "…" on each. On a touch screen it is not drawn: give the row the same deeds
-   * through `Menu.Context` (a long press), or reach them where the entry opens.
+   * list of many rows then carries no "…" on each. On a touch screen it is not drawn (the second line takes its
+   * column): give the row the same deeds through `Menu.Context` (a long press), or reach them where the entry opens.
    */
   endOnHover?: boolean;
   /** The row opens this link … */

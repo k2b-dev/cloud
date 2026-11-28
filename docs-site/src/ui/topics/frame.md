@@ -65,7 +65,7 @@ A bar of fixed height with one line below and two places, `start` and `end`; its
 
 ### Nav
 
-The app's places in the sidebar: groups with a heading and a deed, counts, dots, folding entries and a foot.
+The app's places in the sidebar: groups with a heading and a deed, counts, dots, folding entries and a foot. A `search` stands under the app's name, across the column. The `primary` action, such as "Neuer Chat", is an icon button at the end of the name's row, its label its name and tooltip; on the phone it floats as the `Workspace` `primary`. A `list` holds the app's own rows after the groups, such as Chat's conversations: they reach the column's edges, part with a line from their text on, and scroll on their own above the foot. With `phone: "page"` the list with its search is the phone's page.
 
 <Props of="Nav NavGroup NavItem" />
 

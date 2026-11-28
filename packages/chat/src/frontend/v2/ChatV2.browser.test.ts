@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import { nora, pinPageClock, startChatHarness, tobias, viewer } from "../ChatWorkspace.browser-fixture";
 import { chatShellPage } from "../ChatWorkspace.shell-fixture";
 
@@ -199,6 +199,48 @@ for (const [width, height] of [
       await close();
     }
   }, 60_000);
+
+// A touch screen draws no "…" on a chat's row (Row endOnHover): a long press on the row is the phone's only way to the
+// row's deeds, so it must open the same entries as the "…" does under a pointer.
+test("on the phone a long press on a chat's row opens the same deeds as its '…' on a desktop", async () => {
+  const entries = (page: Page) => page.getByRole("menu").last().getByRole("menuitem").allInnerTexts();
+  const desk = await load("/app/chat", 1440, 900);
+  let wide: string[];
+  try {
+    const row = desk.page.locator('[data-k2-part="Row"]', { hasText: "Werkstatt Nord" }).first();
+    await hoverInPlace(row);
+    await row.locator('.k2-row-end button[aria-haspopup="menu"]').click();
+    await desk.page.getByRole("menu").last().waitFor();
+    wide = await entries(desk.page);
+    expect(wide.length).toBeGreaterThan(0);
+    expect(desk.errors).toEqual([]);
+  } finally {
+    await desk.close();
+  }
+  const { page, errors, close } = await load("/app/chat", 390, 844);
+  try {
+    const row = page.locator('[data-k2-part="Row"]', { hasText: "Werkstatt Nord" }).first();
+    // no "…" on the phone; the row carries core's long press binding (its delay is its mark in every engine)
+    expect(await row.locator(".k2-row-end").isVisible()).toBe(false);
+    expect(await row.evaluate((element) => (element as HTMLElement).style.getPropertyValue("--hold-delay"))).toBe("500ms");
+    // Playwright drives WebKit touch only as a whole tap; a held finger needs Chromium's touch input
+    if (browserName === "chromium") {
+      const box = (await row.boundingBox())!;
+      const cdp = await page.context().newCDPSession(page);
+      try {
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x + 60, y: box.y + box.height / 2 }] });
+        await page.getByRole("menu").last().waitFor();
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      } finally {
+        await cdp.detach();
+      }
+      expect(await entries(page)).toEqual(wide);
+    }
+    expect(errors).toEqual([]);
+  } finally {
+    await close();
+  }
+}, 60_000);
 
 test("For you lists who mentioned or answered the reader, and a row opens the message", async () => {
   const it = harness.addChat({ members: [nora, tobias], name: "IT", count: 3, end: new Date(harness.now().getTime() - 3_600_000) });
