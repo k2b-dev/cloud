@@ -68,7 +68,8 @@ pageSwapContract(
     withState: "/tools?q=hash",
     // The tools that hold listeners, intervals, workers, sockets and object URLs while they show.
     tour: ["/tools", "/tools/speedtest", "/tools/image", "/tools/webhooks", "/tools/image-converter", "/tools/markdown-pdf", "/tools/hash"],
-    regions: [".tools-tool-header"],
+    // the v2 parts of the checksum page: sidebar, head, the result's section and facts (the v1 header is gone)
+    regions: ['[data-k2-part="Nav"]', '[data-k2-part="Bar"]', '[data-k2-part="Section"]', '[data-k2-part="Facts"]'],
   },
   failurePath,
 );

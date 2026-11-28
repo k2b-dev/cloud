@@ -7,6 +7,7 @@ import {
   CanvasFillScreen,
   DeepPathScreen,
   EmptyWaysScreen,
+  InvitationScreen,
   LongAddressScreen,
   RowStatesScreen,
   SelectionScreen,
@@ -29,7 +30,12 @@ declare global {
       | "path-chip"
       | "split-canvas"
       | "split-list-canvas"
+      | "split-tall-canvas"
+      | "invitation"
       | "selection"
+      | "selection-four"
+      | "chat-canvas"
+      | "chat-split-canvas"
       | "long"
       | "areas"
       | "empty-ways";
@@ -53,14 +59,26 @@ render(
         <AreasMenuScreen />
       ) : which === "empty-ways" ? (
         <EmptyWaysScreen />
-      ) : which === "selection" ? (
-        <SelectionScreen />
+      ) : which === "selection" || which === "selection-four" ? (
+        <SelectionScreen four={which === "selection-four"} />
       ) : which === "long" ? (
         <LongAddressScreen />
       ) : which === "path" || which === "path-chip" ? (
         <DeepPathScreen chip={which === "path-chip"} />
-      ) : which === "canvas" || which === "split-canvas" || which === "split-list-canvas" ? (
-        <CanvasFillScreen split={which !== "canvas"} list={which === "split-list-canvas"} />
+      ) : which === "invitation" ? (
+        <InvitationScreen />
+      ) : which === "canvas" ||
+        which === "split-canvas" ||
+        which === "split-list-canvas" ||
+        which === "split-tall-canvas" ||
+        which === "chat-canvas" ||
+        which === "chat-split-canvas" ? (
+        <CanvasFillScreen
+          split={which !== "canvas" && which !== "chat-canvas"}
+          list={which === "split-list-canvas"}
+          tall={which === "split-tall-canvas"}
+          chat={which === "chat-canvas" || which === "chat-split-canvas"}
+        />
       ) : (
         <Folder grid={which !== "list"} selected={which === "selecting" ? ["front", "vorher", "granit"] : undefined} />
       )}

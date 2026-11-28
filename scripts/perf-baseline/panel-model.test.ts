@@ -108,7 +108,7 @@ test("--panel selects only the scenario, rejects conflicts before setup, and is 
   ])
     expect(() => parseArgs(args)).toThrow("--panel cannot");
   expect(help).toContain("--panel");
-  expect(help).toContain("all eight");
+  expect(help).toContain("all seven");
 });
 
 test("schema 1 parses new panel fields and old results without a panel section", () => {

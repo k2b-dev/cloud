@@ -17,6 +17,27 @@ state that shows an open menu, panel, dialog or toast is `{ render, press }`:
 the screen, and the names of the buttons and menu entries a person presses,
 in order, to open it.
 
+## The recipes and the look
+
+Every screen must meet [the look](look.md), recipes included. The recipes
+and pictures of this version show the structure of each screen (which
+primitive stands where, the states, the phone), not yet its identity: by
+the wireframe check in look.md, each of them is still a wireframe. Copy
+the structure, then add what look.md asks. Where a part is missing, write
+the gap at its place and name it in your report. Never copy a recipe's
+bare look as the result.
+
+| Recipe | What it still lacks (rule in look.md) |
+| --- | --- |
+| `frame`, `list-detail`, `mail`, `actions` | hero (1), marks and one data picture per row (3), tinted head of the open entry (5), two-column detail on a large screen (12) |
+| `table`, `filtered-table`, `states` | hero with its trend (1), marks and a data column (3), the screen filled with real data, a context column on a large screen (12) |
+| `record`, `record-groups` | tinted object head with sign and key facts (5), people beside what they did (3) |
+| `form`, `form-detail`, `settings` | the object's tinted head (5); settings as `Setting` rows (10) |
+| `dialogs`, `content` | marks and people in rows (3), a large screen that uses its room (12) |
+
+Each rebuilt recipe carries its screen brief (look.md, "Write the screen
+brief") at the top of its section here.
+
 ## frame.tsx: the frame of an app
 
 ![frame at 1440 px](../images/frame-1440.png)
@@ -35,6 +56,41 @@ and a status `Bar` with `Inline` chips.
 - On a tablet the sidebar becomes a drawer behind a button in the head; on
   the phone the open entry is the page and `back` is its one way back.
 - States: `closed`, `empty`, `loading`, `failed`.
+
+## tree.tsx: folders as a tree
+
+![folders as a tree at 1440 px](../images/tree-1440.png)
+![folders as a tree at 390 px](../images/tree-390.png)
+
+`Nav` with a plain group ("Zuletzt", "Favoriten") and a group with `tree`
+(folders; "Website" is `current`, so the way to it is open; "Archiv" and
+"Texte" are `branch` and load on the first open; "Kunden" has `more`); a
+head `Bar` with the `Path` and the one primary; a `Pane` with a
+`StatusRow` and a `Table` with `tree` (folders and files as rows in
+levels; the open file is `current`, so its folder starts open).
+
+- Give the loaded nodes down to the open place; the rest loads through
+  `load` and `loadMore` when a person opens it. Never load the whole tree.
+- On the phone the sidebar is a drawer with the same tree, and the table
+  shows its top level; a folder opens as its own page.
+
+## conversations.tsx: conversations in the sidebar
+
+![conversations in the sidebar at 1440 px](../images/conversations-1440.png)
+![an open conversation at 390 px](../images/conversations-390.png)
+
+`Nav` with the app's name, `search` and `primary` ("Neuer Chat") under it,
+a plain group with the filters ("Ungelesen" with its count, "Für dich",
+"Kanäle entdecken"), its `list` (the conversations as a `List` of
+two-line `Row`s; the open one is `current`) with `phone: "page"`, and
+"Archiv" at the foot; the open conversation is the `Pane detail` beside
+it, with its way back. Two columns: no list pane of its own, no head bar.
+
+- The list scrolls on its own between the filters and the foot; it is
+  made once, so a new count or a new group keeps its rows and its scroll.
+- On the phone the list with its search is the page and "Neuer Chat"
+  floats (`Workspace` `primary`); a conversation that opens is the page in
+  its place, and its way back returns to the list.
 
 ## list-detail.tsx: a list beside the open entry
 
@@ -149,6 +205,10 @@ sender `Row` (avatar, icon buttons in `end`), `Prose`, `Tiles`.
   with a `Field` and `<Input multiline />`, followed by a `Bar` whose `end`
   holds "Senden" as a default button (the page's primary stays "Neue
   Nachricht").
+- State `closed`: no message is open. `detailEmpty` has a `hero`: a `Heat`
+  of the mails per day whose `summary` sums up the year ("… Mails in den
+  letzten 12 Monaten · Ø … pro Tag"). The hero is made once in the
+  component and handed over, never written inside the `detailEmpty` object.
 
 ## overview.tsx: an overview of things with a face
 
@@ -188,7 +248,8 @@ chip in `marks`; then `Digest activity` under "Zuletzt geändert".
 ![files at 390 px](../images/files-390.png)
 
 Two full-width rows above list and detail: a head `Bar` with `Path`, a
-sharing `Chip`, the search, "Neuer Ordner" and the primary "Hochladen";
+sharing `Chip`, the search as its symbol and one create `Menu` "+"
+("Hochladen", "Neuer Ordner");
 then the `FilterBar` with `results` and `end` (`ListOrder`, a `Menu` for
 list or grid). The list is a `Table` with `select`, `group` (folders,
 files), a `mark` column with thumbnails and types, an `avatar` column; the
@@ -197,7 +258,7 @@ sections for sharing and versions. `Nav` shows storages with `color` and
 the storage's `quota`.
 
 - While files are selected, `StatusRow selection` takes the bar's place at
-  the same height; on the phone its actions float at the bottom.
+  the same height.
 - States: `grid` (`Tiles variant="media"`), `selecting` (three photos).
 
 ## settings-page.tsx: a settings page
@@ -280,6 +341,26 @@ answers with a toast with `status` `ok` or `bad`.
 - The open state of the dialog lives in the screen (`open`,
   `onOpenChange`).
 
+## start.tsx: the first start of an app without data
+
+![start at 1440 px](../images/start-1440.png)
+![start at 390 px](../images/start-390.png)
+
+A person opens Notebooks or Grids for the first time. No sidebar and no
+switcher: a `Pane center` with one `Text type="lead"` line ("Leg dein
+erstes Notizbuch an") and `Tiles variant="card" perRow={4}`. Each card
+shows a `preview` of what it makes across its top (`{ page }` for the
+blank way, `{ table }` with a template's first table, `{ icon }` where
+there is nothing to show), its `Mark` in the app's colour, its name and
+`meta` ("6 Seiten"). The whole card opens the dialog that makes it:
+`onOpen`, or `href` to an address that opens the dialog.
+
+- The blank way first, then at most three templates; the rest stay in
+  the dialog's choice.
+- Four in one row on a wide screen, 2 × 2 where four do not fit and on
+  the phone; the line stands centred, on the phone at the start.
+- States: `grids` (the first base: tables and a sign for the blank base).
+
 ## states.tsx: the states of a list
 
 ![states at 1440 px](../images/states-1440.png)
@@ -320,6 +401,11 @@ empty (`Empty` with "Text schreiben"), loading (`Loading` rows) and failed
   overlay. It needs the `@k2b/ui` stylesheet and a `.k2b-ui` ancestor, which
   every Cloud page has; with `v2.css` alone a chart has no size (gap), so
   this recipe draws its plan itself.
+- A state timeline (`kind="stateTimeline"`) takes `now` from the page (the
+  server's request time, never a clock in the component) and draws it as a
+  thin line with "Jetzt" on its time axis; runs of seconds stay 3 units wide, centred on their
+  start; a start still to come has `planned: true` and is an outline that
+  says "geplant".
 - With no data, put `Empty` in place of the `Canvas`. `Loading` and
   `Failed` hold rows, not the height of a drawing, so the page moves while a
   chart loads (gap).

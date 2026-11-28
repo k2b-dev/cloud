@@ -1,7 +1,10 @@
 import { i18n, password as pwdGen } from "@k2b/stdlib";
-import { clipboard } from "@k2b/stdlib/browser";
-import { Button, NoticeCard, SegmentedControl, Slider, Switch, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, type JSX } from "solid-js";
+import { useLocale } from "@k2b/ui";
+import { Button, Canvas, Check, Chip, Choice, Facts, Field, Inline, Progress, Section, Slider } from "@k2b/ui/v2";
+import { createMemo, createSignal, For, onMount, Show } from "solid-js";
+import ToolsScreen, { ToolPane } from "../ToolsScreen";
+import { useToolCopy } from "../tool-copy";
+import { toolsWorkspaceMessages } from "../tools-messages";
 
 type PasswordMode = "random" | "memorable" | "pin";
 
@@ -13,13 +16,10 @@ export const passwordMessages = i18n.define({
       modeRandom: "Random",
       modeMemorable: "Memorable",
       modePin: "PIN",
-      randomTitle: "Random passwords",
       randomBody:
         "Use a longer random password for the strongest general-purpose protection. Add numbers and symbols when the password should be stronger and harder to guess.",
-      memorableTitle: "Memorable passwords",
       memorableBody:
         "Readable word-based passwords are easier to type and remember. You can still add a random number or symbol when password rules require extra variation.",
-      pinTitle: "PIN passwords",
       pinBody: "Use a short numeric PIN when a device or lock screen only allows digits.",
       characters: "Characters",
       uppercase: "Uppercase",
@@ -35,19 +35,25 @@ export const passwordMessages = i18n.define({
       copied: "Copied",
       copyPassword: "Copy password",
       refreshPassword: "Refresh password",
+      strength: "Strength",
+      lengthChip: ({ count }: { count: number }) => `${count} characters`,
+      wordsChip: ({ count }: { count: number }) => `${count} words`,
+      digitsChip: ({ count }: { count: number }) => `${count} digits`,
+      lowercase: "Lowercase",
+      recent: "Generated before",
+      recentHint: "Only in this tab; nothing is stored.",
+      strengthLabel: ({ word, bits }: { word: string; bits: number }) => `${word} · ${bits} bit`,
+      strengthWord: ({ score }: { score: number }) => ["very weak", "weak", "fair", "strong", "very strong"][score] ?? "",
     },
     de: {
       passwordType: "Passworttyp",
       modeRandom: "Zufällig",
       modeMemorable: "Merkbar",
       modePin: "PIN",
-      randomTitle: "Zufällige Passwörter",
       randomBody:
         "Ein langes zufälliges Passwort eignet sich für die meisten Anmeldungen. Aktiviere Zahlen und Symbole, wenn die Passwortregeln sie verlangen.",
-      memorableTitle: "Merkbare Passwörter",
       memorableBody:
         "Passwörter aus Wörtern lassen sich leichter eingeben und merken. Ergänze eine zufällige Zahl oder ein Symbol, wenn die Passwortregeln es verlangen.",
-      pinTitle: "PIN-Passwörter",
       pinBody: "Verwende eine kurze numerische PIN nur, wenn ein Gerät oder Sperrbildschirm ausschließlich Ziffern zulässt.",
       characters: "Zeichen",
       uppercase: "Großbuchstaben",
@@ -63,90 +69,37 @@ export const passwordMessages = i18n.define({
       copied: "Kopiert",
       copyPassword: "Passwort kopieren",
       refreshPassword: "Passwort neu generieren",
+      strength: "Stärke",
+      lengthChip: ({ count }) => `${count} Zeichen`,
+      wordsChip: ({ count }) => `${count} Wörter`,
+      digitsChip: ({ count }) => `${count} Ziffern`,
+      lowercase: "Kleinbuchstaben",
+      recent: "Zuvor erzeugt",
+      recentHint: "Nur in diesem Tab, nichts wird gespeichert.",
+      strengthLabel: ({ word, bits }) => `${word} · ${bits} Bit`,
+      strengthWord: ({ score }) => ["sehr schwach", "schwach", "mittel", "stark", "sehr stark"][score] ?? "",
     },
   },
 });
 
-const randomCharTone = (char: string): string => {
-  if (/\d/.test(char)) return "text-blue-600 dark:text-blue-300";
-  if (/[^A-Za-z0-9]/.test(char)) return "text-amber-600 dark:text-amber-300";
-  return "text-primary";
+const tone = (mode: PasswordMode, char: string): string | undefined => {
+  if (mode === "pin" || /\d/.test(char)) return "var(--k2-blue)";
+  if (mode === "memorable" && char === "-") return "var(--k2-bad)";
+  if (/[^A-Za-z0-9]/.test(char)) return "var(--k2-warn-ink)";
+  return undefined;
 };
 
-const memorableCharTone = (char: string): string => {
-  if (/\d/.test(char)) return "text-blue-600 dark:text-blue-300";
-  if (char === "-") return "text-red-500 dark:text-red-300";
-  if (/[^A-Za-z0-9]/.test(char)) return "text-amber-600 dark:text-amber-300";
-  return "text-primary";
-};
-
-const pinCharTone = (): string => "text-blue-600 dark:text-blue-300";
-
-const RangeField = (props: {
-  label: string;
-  value: () => number;
-  onChange: (value: number) => void;
-  min: number;
-  max: number;
-  step?: number;
-}) => (
-  <Slider
-    label={props.label}
-    value={props.value}
-    onValueChange={props.onChange}
-    min={props.min}
-    max={props.max}
-    step={props.step ?? 1}
-    showValue
-  />
-);
-
-const ToggleRow = (props: { children: JSX.Element; columns?: string }) => (
-  <div class={`grid gap-4 ${props.columns ?? "sm:grid-cols-2"}`}>{props.children}</div>
-);
-
-const InlineToggle = (props: { label: string; value: () => boolean; onChange: (value: boolean) => void }) => (
-  <div class="flex items-center gap-3">
-    <span class="text-sm text-secondary">{props.label}</span>
-    <Switch value={props.value} onValueChange={props.onChange} />
-  </div>
-);
-
-const OutputPreview = (props: { mode: () => PasswordMode; value: () => string }) => {
-  const chars = () => props.value().split("");
-  const tone = (char: string) => {
-    if (props.mode() === "pin") return pinCharTone();
-    if (props.mode() === "memorable") return memorableCharTone(char);
-    return randomCharTone(char);
-  };
-
-  return (
-    <div class="grid min-h-32 place-items-center py-1">
-      <div class="grid min-h-[7rem] w-full place-items-center">
-        <div class="w-full text-center font-mono text-2xl font-semibold leading-[1.15] tracking-[0.02em] whitespace-normal break-all [overflow-wrap:anywhere] sm:text-3xl">
-          <For each={chars()}>{(char) => <span class={tone(char)}>{char}</span>}</For>
-        </div>
-      </div>
-    </div>
-  );
-};
-
+/**
+ * Passwords on v2: the kind as a choice with what it is good for, its settings as fields and switches, and the result
+ * drawn large with digits and symbols in their own colour. Copy is the page's main deed; "Neu" draws another one.
+ */
 export default function PasswordGenerator() {
   const locale = useLocale();
   const t = () => passwordMessages.resolve([locale()]).t;
+  const w = () => toolsWorkspaceMessages.resolve([locale()]).t;
+  const copy = useToolCopy();
   const [mode, setMode] = createSignal<PasswordMode>("random");
-
-  const modeInfo = (): { title: string; body: string } => {
-    const messages = t();
-    switch (mode()) {
-      case "memorable":
-        return { title: messages.memorableTitle, body: messages.memorableBody };
-      case "pin":
-        return { title: messages.pinTitle, body: messages.pinBody };
-      default:
-        return { title: messages.randomTitle, body: messages.randomBody };
-    }
-  };
+  const hint = () => (mode() === "memorable" ? t().memorableBody : mode() === "pin" ? t().pinBody : t().randomBody);
   const [randomLength, setRandomLength] = createSignal(20);
   const [randomUppercase, setRandomUppercase] = createSignal(true);
   const [randomNumbers, setRandomNumbers] = createSignal(true);
@@ -158,10 +111,13 @@ export default function PasswordGenerator() {
   const [memorableSymbol, setMemorableSymbol] = createSignal(false);
   const [pinLength, setPinLength] = createSignal(6);
   const [nonce, setNonce] = createSignal(0);
-  const [copied, setCopied] = createSignal(false);
-
+  // made in the browser only: a password made while the server renders would differ from the one the island makes, and
+  // a secret has no business in the page's markup. Until then the drawing keeps its place empty.
+  const [mounted, setMounted] = createSignal(false);
+  onMount(() => setMounted(true));
   const password = createMemo(() => {
     nonce();
+    if (!mounted()) return "";
     switch (mode()) {
       case "memorable":
         return pwdGen.memorable({
@@ -174,97 +130,164 @@ export default function PasswordGenerator() {
       case "pin":
         return pwdGen.pin({ length: pinLength() });
       default:
-        return pwdGen.random({
-          length: randomLength(),
-          uppercase: randomUppercase(),
-          numbers: randomNumbers(),
-          symbols: randomSymbols(),
-        });
+        return pwdGen.random({ length: randomLength(), uppercase: randomUppercase(), numbers: randomNumbers(), symbols: randomSymbols() });
     }
   });
-
-  createEffect(() => {
-    password();
-    setCopied(false);
+  const strength = createMemo(() => pwdGen.strength(password()));
+  // What the password holds, from its settings, not from the password itself: the server renders the same chips the
+  // island shows after it made the password, so nothing moves on mount. (stdlib puts each chosen kind in.)
+  const contents = createMemo(() => {
+    const kinds = (list: (string | false)[]) => list.filter((kind): kind is string => kind !== false);
+    switch (mode()) {
+      case "memorable":
+        return [
+          t().wordsChip({ count: memorableWords() }),
+          ...kinds([
+            memorableCapitalize() && t().uppercase,
+            t().lowercase,
+            memorableNumber() && t().digits,
+            memorableSymbol() && t().symbols,
+          ]),
+        ];
+      case "pin":
+        return [t().digitsChip({ count: pinLength() })];
+      default:
+        return [
+          t().lengthChip({ count: randomLength() }),
+          ...kinds([randomUppercase() && t().uppercase, t().lowercase, randomNumbers() && t().digits, randomSymbols() && t().symbols]),
+        ];
+    }
   });
-
-  const refresh = () => setNonce((value) => value + 1);
-
-  const setRandomCharset = (key: "uppercase" | "numbers" | "symbols", enabled: boolean) => {
-    if (key === "uppercase") setRandomUppercase(enabled);
-    if (key === "numbers") setRandomNumbers(enabled);
-    if (key === "symbols") setRandomSymbols(enabled);
+  // The passwords left behind, in this tab's memory only (never stored, gone on reload). One enters when it is left
+  // with "Neu" or copied, never on a step of a setting: six presses on the length are no six passwords anyone chose.
+  const [recent, setRecent] = createSignal<{ value: string; time: string }[]>([]);
+  const remember = (value: string) => {
+    if (!value || recent()[0]?.value === value) return;
+    const time = new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
+    setRecent((list) => [{ value, time }, ...list.filter((entry) => entry.value !== value)].slice(0, 5));
   };
-
-  const copyPassword = async () => {
-    await clipboard.copy(password());
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+  const refresh = () => {
+    remember(password());
+    setNonce((value) => value + 1);
   };
-
+  const copyPassword = () => {
+    remember(password());
+    void copy(password());
+  };
+  const copyAction = { label: t().copyPassword, icon: "copy", onClick: copyPassword };
   return (
-    <div class="flex flex-col gap-5">
-      <SegmentedControl
-        value={mode}
-        onValueChange={setMode}
-        ariaLabel={t().passwordType}
-        options={[
-          { value: "random", label: t().modeRandom, icon: "ti ti-arrows-shuffle" },
-          { value: "memorable", label: t().modeMemorable, icon: "ti ti-bulb" },
-          { value: "pin", label: t().modePin, icon: "ti ti-hash" },
-        ]}
+    <ToolsScreen
+      tool="password"
+      primary={copyAction}
+      end={
+        <Button variant="primary" icon="copy" onClick={copyPassword}>
+          {t().copyPassword}
+        </Button>
+      }
+    >
+      <ToolPane
+        lead="result"
+        scrollKey="tools-password"
+        label={t().generatedPassword}
+        result={
+          <>
+            <Section icon="key" title={t().generatedPassword} actions={[{ label: t().refreshPassword, icon: "refresh", onClick: refresh }]}>
+              {/* The password is drawn: large, sign by sign, digits and symbols in their own colour, wrapped anywhere. */}
+              <Canvas label={t().generatedPassword} height={120}>
+                <div
+                  style={{
+                    display: "grid",
+                    "place-items": "center",
+                    height: "100%",
+                    padding: "0 20px",
+                    "container-type": "inline-size",
+                    "overflow-y": "auto",
+                    "text-align": "center",
+                    "overflow-wrap": "anywhere",
+                    // the lines share the signs evenly, so no single sign stands alone on the last line
+                    "text-wrap": "balance",
+                    "user-select": "all",
+                  }}
+                >
+                  {/* three steps by length keep the 120 px drawing whole, the short ones as the figure of the page (30). No
+                        step is wider than the drawing (100cqw) allows for one line of signs at 0.8 em each: room for a
+                        fallback face whose M and W are wider than a mono sign (seen on the test VM), so 20 signs stay on
+                        one line on a phone instead of leaving signs alone; anything longer scrolls inside */}
+                  <span
+                    style={{
+                      "font-family": "var(--k2-font-mono)",
+                      "font-weight": 600,
+                      "line-height": 1.3,
+                      "font-size": `min(${password().length <= 20 ? 30 : password().length <= 40 ? 22 : 16}px, max(16px, calc(100cqw / ${Math.max(1, Math.min(password().length, 20)) * 0.8})))`,
+                    }}
+                  >
+                    <For each={password().split("")}>{(char) => <span style={{ color: tone(mode(), char) }}>{char}</span>}</For>
+                  </span>
+                </div>
+              </Canvas>
+              {/* the strength is a value with a limit: a bar and its word; 128 bits and more fill it */}
+              <Inline>
+                <Progress
+                  value={Math.min(128, Math.round(strength().entropy))}
+                  of={128}
+                  label={
+                    password()
+                      ? `${t().strength}: ${t().strengthLabel({ word: t().strengthWord({ score: strength().score }), bits: Math.round(strength().entropy) })}`
+                      : `${t().strength}: –`
+                  }
+                />
+              </Inline>
+              {/* what the password holds, as quiet chips: its length and its kinds of signs */}
+              <Inline>
+                <For each={contents()}>{(kind) => <Chip>{kind}</Chip>}</For>
+              </Inline>
+            </Section>
+            <Show when={recent().length > 0}>
+              <Section icon="history" title={t().recent} count={recent().length} summary={t().recentHint}>
+                <Facts items={recent().map((entry) => ({ label: entry.time, value: entry.value, mono: true, copy: entry.value }))} />
+              </Section>
+            </Show>
+          </>
+        }
+        input={
+          <Section icon="adjustments-horizontal" title={w().settings} measure>
+            <Field label={t().passwordType} hint={hint()}>
+              <Choice
+                name="password-mode"
+                value={mode()}
+                onChange={(value) => setMode(value as PasswordMode)}
+                options={[
+                  { value: "random", label: t().modeRandom },
+                  { value: "memorable", label: t().modeMemorable },
+                  { value: "pin", label: t().modePin },
+                ]}
+              />
+            </Field>
+            <Show when={mode() === "random"}>
+              <Field label={t().characters} optional="8–64">
+                <Slider min={8} max={64} value={randomLength()} onChange={setRandomLength} />
+              </Field>
+              <Check switch label={t().uppercase} checked={randomUppercase()} onChange={setRandomUppercase} />
+              <Check switch label={t().numbers} checked={randomNumbers()} onChange={setRandomNumbers} />
+              <Check switch label={t().symbols} checked={randomSymbols()} onChange={setRandomSymbols} />
+            </Show>
+            <Show when={mode() === "memorable"}>
+              <Field label={t().words} optional="3–8">
+                <Slider min={3} max={8} value={memorableWords()} onChange={setMemorableWords} />
+              </Field>
+              <Check switch label={t().capitalizeFirstLetter} checked={memorableCapitalize()} onChange={setMemorableCapitalize} />
+              <Check switch label={t().useFullWords} checked={memorableFullWords()} onChange={setMemorableFullWords} />
+              <Check switch label={t().addNumber} checked={memorableNumber()} onChange={setMemorableNumber} />
+              <Check switch label={t().addSymbol} checked={memorableSymbol()} onChange={setMemorableSymbol} />
+            </Show>
+            <Show when={mode() === "pin"}>
+              <Field label={t().digits} optional="4–12">
+                <Slider min={4} max={12} value={pinLength()} onChange={setPinLength} />
+              </Field>
+            </Show>
+          </Section>
+        }
       />
-
-      <NoticeCard tone="info" title={modeInfo().title} detail={modeInfo().body} />
-
-      <section class="paper p-4">
-        <div class="flex flex-col gap-5">
-          {mode() === "random" && (
-            <>
-              <RangeField label={t().characters} value={randomLength} onChange={setRandomLength} min={8} max={64} />
-              <ToggleRow columns="sm:grid-cols-2 xl:grid-cols-3">
-                <InlineToggle label={t().uppercase} value={randomUppercase} onChange={(value) => setRandomCharset("uppercase", value)} />
-                <InlineToggle label={t().numbers} value={randomNumbers} onChange={(value) => setRandomCharset("numbers", value)} />
-                <InlineToggle label={t().symbols} value={randomSymbols} onChange={(value) => setRandomCharset("symbols", value)} />
-              </ToggleRow>
-            </>
-          )}
-
-          {mode() === "memorable" && (
-            <>
-              <RangeField label={t().words} value={memorableWords} onChange={setMemorableWords} min={3} max={8} />
-              <ToggleRow columns="sm:grid-cols-2 xl:grid-cols-4">
-                <InlineToggle label={t().capitalizeFirstLetter} value={memorableCapitalize} onChange={setMemorableCapitalize} />
-                <InlineToggle label={t().useFullWords} value={memorableFullWords} onChange={setMemorableFullWords} />
-                <InlineToggle label={t().addNumber} value={memorableNumber} onChange={setMemorableNumber} />
-                <InlineToggle label={t().addSymbol} value={memorableSymbol} onChange={setMemorableSymbol} />
-              </ToggleRow>
-            </>
-          )}
-
-          {mode() === "pin" && <RangeField label={t().digits} value={pinLength} onChange={setPinLength} min={4} max={12} />}
-        </div>
-      </section>
-
-      <section class="flex flex-col gap-3">
-        <div>
-          <h2 class="text-base font-semibold text-primary">{t().generatedPassword}</h2>
-        </div>
-        <div class="paper p-4">
-          <OutputPreview mode={mode} value={password} />
-        </div>
-      </section>
-
-      <div class="grid gap-3 sm:grid-cols-2">
-        <Button class="justify-center" onClick={copyPassword}>
-          <i class={`ti ${copied() ? "ti-check" : "ti-copy"}`} />
-          {copied() ? t().copied : t().copyPassword}
-        </Button>
-        <Button variant="secondary" class="justify-center" onClick={refresh}>
-          <i class="ti ti-refresh" />
-          {t().refreshPassword}
-        </Button>
-      </div>
-    </div>
+    </ToolsScreen>
   );
 }

@@ -1,20 +1,24 @@
 import {
   createContext,
+  createEffect,
   createRenderEffect,
   createSignal,
   createUniqueId,
   For,
   type JSX,
+  on,
   onCleanup,
   onMount,
   children as resolveChildren,
   Show,
+  untrack,
   useContext,
 } from "solid-js";
 import { Dynamic, isServer } from "solid-js/web";
 import { formatDateInput, parseDateInput } from "../inputs/date-input";
 import { dateKey, isCalendarDay, isDateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
+import { addressKey, scanAddresses } from "./addresses";
 import { useCode } from "./behavior/code";
 import { useFilePick } from "./behavior/files";
 import { usePopover } from "./behavior/overlays";
@@ -24,10 +28,10 @@ import { ActionButton, Button } from "./button";
 import { useControlMessages } from "./control-messages";
 import { useDateMessages } from "./date-messages";
 import { DatePicker } from "./date-picker";
-import { Chip, Icon } from "./marks";
+import { Avatar, Chip, custom, Icon } from "./marks";
 import { useSettingMessages } from "./setting-messages";
 import { textEdge } from "./tokens";
-import type { Action } from "./types";
+import type { Action, Person } from "./types";
 
 type FieldIds = {
   /** The id of the one control the label names. */
@@ -158,7 +162,8 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
   );
   const part = frame.setting ? "Setting" : "Field";
   const setting = frame.setting ? "" : undefined;
-  // the deed stands beside the name, never in it: a button inside a <label> would be pressed with it
+  // the deed stands beside the name, never in it: a button inside a <label> would be pressed with it. It comes before
+  // the control, as it stands, so Tab reaches the name's deed and then the value (the grid places both)
   const deed = (
     <Show when={props.action}>
       {(action) => (
@@ -192,8 +197,8 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       <span class="k2-field-label" id={label}>
         {labelLine}
       </span>
-      {content}
       {deed}
+      {content}
       {was}
       {messageLine}
     </div>
@@ -209,8 +214,8 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       <span class="k2-field-label" id={label} onClick={() => named?.()}>
         {labelLine}
       </span>
-      {content}
       {deed}
+      {content}
       {was}
       {messageLine}
     </div>
@@ -225,8 +230,8 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       <label class="k2-field-label" id={label} for={control}>
         {labelLine}
       </label>
-      {content}
       {deed}
+      {content}
       {was}
       {messageLine}
     </div>
@@ -262,8 +267,10 @@ type InputBase = {
   type?: "text" | "email" | "number" | "search" | "tel" | "url" | "password";
   /** A Tabler icon before the text, such as `search`. */
   icon?: string;
-  /** A text of several lines (80 px). */
+  /** A text of several lines: it shows `rows` lines at least and grows with its words up to ten lines, then scrolls. */
   multiline?: boolean;
+  /** The lines a multi-line field shows at least; 3 (80 px) when not set. */
+  rows?: number;
   /** The smallest number a `number` field takes. */
   min?: number;
   /** The largest number a `number` field takes. */
@@ -302,6 +309,49 @@ type InputBase = {
   spellcheck?: boolean;
   /** Whether a phone's keyboard starts words or sentences with a capital; `off` for names, codes and keys. */
   autocapitalize?: "off" | "none" | "on" | "sentences" | "words" | "characters";
+};
+
+/**
+ * The rows a text of several lines asks for: the lines of its value, at least its `rows` (3) and at most ten. Where
+ * the browser cannot size it to its words, these rows give it its height from the server's page on, so a long value
+ * does not make it grow when the page comes alive; lines that wrap are added by `followText` then.
+ */
+const rowsFor = (value: string | undefined, rows = 3) => Math.max(rows, Math.min(10, (value ?? "").split("\n").length));
+
+/** Whether the browser sizes a text of several lines to its words itself (CSS `field-sizing`, as v2.css asks). */
+const sizesToText = () => typeof CSS !== "undefined" && CSS.supports("field-sizing", "content");
+
+/**
+ * Where the browser cannot, the height of a text of several lines follows its words: as you type, when its value
+ * changes and when its width does (the way core's textarea does it). v2.css bounds it between `rows` and ten lines.
+ */
+const followText = (area: HTMLTextAreaElement, value: () => string | undefined) => {
+  const fit = () => {
+    // For the moment of measuring, the field is at its least height, and a browser would pull every scroll above it
+    // back to fit; each keeps where it was (the page too).
+    const scrolls: [Element, number][] = [];
+    for (let node = area.parentElement; node; node = node.parentElement) if (node.scrollTop > 0) scrolls.push([node, node.scrollTop]);
+    const page = document.scrollingElement;
+    if (page && page.scrollTop > 0 && !scrolls.some(([node]) => node === page)) scrolls.push([page, page.scrollTop]);
+    // measured from its minimum (v2.css: `rows` lines), not from its height now: `auto` would keep the rows the
+    // server asked for its first value, and a field emptied later would stay that high
+    area.style.height = "0px";
+    area.style.height = `${area.scrollHeight}px`;
+    for (const [node, top] of scrolls) node.scrollTop = top;
+  };
+  createEffect(on(value, () => queueMicrotask(fit)));
+  area.addEventListener("input", fit);
+  let width = -1;
+  const sizes = new ResizeObserver(([entry]) => {
+    if (!entry || entry.contentRect.width === width) return;
+    width = entry.contentRect.width;
+    fit();
+  });
+  sizes.observe(area);
+  onCleanup(() => {
+    area.removeEventListener("input", fit);
+    sizes.disconnect();
+  });
 };
 
 /** Where a search sends its text (see `InputProps.send`). */
@@ -422,6 +472,7 @@ export const Input = (props: InputProps) => {
       data-disabled={props.disabled ? "" : undefined}
       data-multiline={props.multiline ? "" : undefined}
       data-search={props.type === "search" ? "" : undefined}
+      style={props.multiline && props.rows !== undefined ? custom({ "--k2-rows": String(props.rows) }) : undefined}
     >
       <Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>
       <For each={kept()}>{([name, value]) => <input type="hidden" name={name} value={value} />}</For>
@@ -451,7 +502,11 @@ export const Input = (props: InputProps) => {
             one before the value: a value that starts with a blank line keeps it. */}
         <textarea
           {...shared()}
-          ref={(element) => forwardRef(props.ref, element)}
+          rows={rowsFor(props.value, props.rows)}
+          ref={(element) => {
+            forwardRef(props.ref, element);
+            if (!sizesToText()) followText(element, () => props.value);
+          }}
           onInput={(event) => props.onInput?.(event.currentTarget.value)}
           onKeyDown={(event) => props.onKeyDown?.(event)}
         >
@@ -501,6 +556,30 @@ export type SelectProps = {
  * its field. The value reaches a form through core's form input: sent under the field's name, validated when the
  * field is required, put back by the form's reset, with a `change` event.
  */
+/**
+ * A value in one line that keeps what tells it apart: an address like `Anna Berg <anna@werkstatt.example>` shows its
+ * start and its domain, and gives way in its middle (`Anna Be…@werkstatt.example>`); any other value gives way at its
+ * end. The whole value is its hint, and its words stay whole for assistive technology.
+ */
+const Ends = (props: { text: string }) => {
+  const at = () => props.text.lastIndexOf("@");
+  return (
+    <Show when={at() > 0} fallback={props.text}>
+      {/* `dir="auto"`: an address keeps its own order (name, then domain) also in a right-to-left page */}
+      <span class="k2-ends" title={props.text} dir="auto">
+        {/* the two parts are boxes, which assistive technology would read with a space between: it reads the whole */}
+        <span class="k2-ends-start" data-start="" aria-hidden="true">
+          {props.text.slice(0, at())}
+        </span>
+        <span class="k2-ends-end" data-end="" aria-hidden="true">
+          {props.text.slice(at())}
+        </span>
+        <span class="k2-hidden-text">{props.text}</span>
+      </span>
+    </Show>
+  );
+};
+
 export const Select = (props: SelectProps) => {
   const field = useField();
   let trigger: HTMLElement | undefined;
@@ -540,7 +619,12 @@ export const Select = (props: SelectProps) => {
         aria-invalid={field?.invalid ? "true" : undefined}
       >
         <span class="k2-input-value" data-placeholder={value() === null ? "" : undefined}>
-          <select.Value placeholder={props.placeholder ?? ""} />
+          {/* the value part of core, with the chosen label in a form that keeps its start and its domain */}
+          <select.Value placeholder={props.placeholder ?? ""}>
+            <Show when={items().find((item) => item.value === value())} fallback={props.placeholder ?? ""}>
+              {(item) => <Ends text={item().label} />}
+            </Show>
+          </select.Value>
         </span>
         <Icon name="chevron-down" />
       </select.Trigger>
@@ -553,7 +637,9 @@ export const Select = (props: SelectProps) => {
         collisionPadding={8}
         option={(item: ChoiceItem) => (
           <select.Item class="k2-mi" value={item.value} label={item.label} disabled={item.disabled}>
-            {item.label}
+            <span class="k2-mi-label">
+              <Ends text={item.label} />
+            </span>
             <select.ItemIndicator item={item.value} class="k2-mi-meta">
               <Icon name="check" />
             </select.ItemIndicator>
@@ -650,6 +736,16 @@ export type TagsInputProps = {
   /** A name when the field stands without a Field. */
   label?: string;
   disabled?: boolean;
+  /**
+   * `email`: e-mail addresses, as the To of a message. A comma, a semicolon or a new line ends an address too, a
+   * paste of several becomes several chips (`Name <address>` and `"Berg, Anna" <address>` as well), and a text that is
+   * no address stays in the field with a sentence why, and keeps the form from being sent. A value is the address in
+   * the form it was given (`Name <address>`); the same address twice, in any case, is one chip. The phone shows its
+   * keyboard for addresses.
+   */
+  type?: "email";
+  /** How many values the field takes; more are not added, and a sentence says so. With `email` 200 (one To of Mail). */
+  max?: number;
 };
 
 /**
@@ -662,21 +758,132 @@ export const TagsInput = (props: TagsInputProps) => {
   const t = useControlMessages();
   const [own, setOwn] = createSignal<string[]>([...(props.value ?? [])]);
   const values = () => (props.onChange ? [...(props.value ?? [])] : own());
+  const email = () => props.type === "email";
+  // the text being typed; with `email` it is held here, so a separator or a paste can turn it into chips
+  const [query, setQuery] = createSignal("");
+  // What the field says under its chips: a text that is no address (it keeps the form from being sent) and values it
+  // left out over `max`, each a sentence of its own; and what assistive technology hears of a change.
+  const [refused, setRefused] = createSignal<string>();
+  const [overflow, setOverflow] = createSignal<string>();
+  const [heard, setHeard] = createSignal("");
+  const rejected = () => refused() !== undefined;
+  const noticeId = createUniqueId();
+  // a status says each change, also the same words twice: it is emptied first, so the new words are a change
+  const say = (words: string) => {
+    setHeard("");
+    queueMicrotask(() => setHeard(words));
+  };
+  const max = () => props.max ?? (email() ? 200 : Number.POSITIVE_INFINITY);
+  const keyOf = (value: string) => (email() ? addressKey(value) : value);
+  // the values as the field holds them: trimmed, each once, at most `max` (for every kind of value)
+  const commit = (next: string[]) => {
+    const seen = new Set<string>();
+    const clean = next
+      .map((value) => value.trim())
+      .filter((value) => {
+        const key = keyOf(value);
+        if (!value || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    const kept = clean.slice(0, max());
+    const left = clean.length - kept.length;
+    setOverflow(left > 0 ? (email() ? t().tooManyAddresses({ max: max(), left }) : t().tooManyValues({ max: max(), left })) : undefined);
+    if (email() && kept.length < values().length) say(t().addressesRemoved({ count: values().length - kept.length }));
+    else if (email() && kept.length > values().length) say(t().addressesAdded({ count: kept.length - values().length }));
+    setOwn(kept);
+    props.onChange?.(kept);
+  };
+  // The addresses in a text become chips. While typing (not `final`) only entries a separator closed are taken, and
+  // a text with no address yet is left as it is typed; Enter, a paste and leaving the field take the last entry too,
+  // and what is no address then stays in the field with a sentence why.
+  const take = (text: string, final: boolean) => {
+    const { found, rest } = scanAddresses(text, { final });
+    if (!found.length && !final) {
+      setQuery(text);
+      setRefused(undefined);
+      return;
+    }
+    if (found.length) commit([...values(), ...found]);
+    setQuery(rest);
+    // cut by characters, so a long text never ends in half an emoji
+    const letters = Array.from(rest);
+    const shown = letters.length > 60 ? `${letters.slice(0, 59).join("")}…` : rest;
+    setRefused(final && rest ? t().notAnAddress({ text: shown }) : undefined);
+  };
   const items = (): ChoiceItem[] => [...new Set([...(props.suggestions ?? []), ...values()])].map((value) => ({ value, label: value }));
   // the core's input owns its id, so the field's label names it through aria-labelledby; a press on the label focuses it
   let input: HTMLInputElement | undefined;
   field?.named(() => input?.focus());
-  // Without `onChange` the given values are where a form's reset returns to; core reports the reset like any change.
+  // a refused text keeps the form from being sent, with the field's own sentence as the reason
+  createRenderEffect(() => {
+    // read before the input is there too, so the effect follows the sentence from the start
+    const reason = refused() ?? "";
+    input?.setCustomValidity(reason);
+  });
+  // Without `onChange` the given values are where a form's reset returns to. The values are held here for every kind
+  // (core only shows them), so `max` holds for what core keeps too, and the field puts them back itself.
   const initial = [...(props.value ?? [])];
+  let chips: HTMLElement | undefined;
+  const ours = (event: Event) => event.target instanceof HTMLFormElement && !!chips && event.target.contains(chips);
+  const onReset = (event: Event) => {
+    if (props.onChange || !ours(event)) return;
+    setOwn(initial);
+    setQuery("");
+    setRefused(undefined);
+    setOverflow(undefined);
+  };
+  // Sending while the focus is still in the field takes the typed addresses first, as leaving it would; a text that
+  // is no address then keeps the form from being sent, with its sentence.
+  const onSubmit = (event: Event) => {
+    if (!email() || !ours(event) || !query().trim()) return;
+    take(query(), true);
+    if (!rejected()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    input?.reportValidity();
+  };
+  // leaving the field and its suggestions takes the last entry, as Enter does (a press outside too: core keeps the text)
+  const onLeave = (event: FocusEvent) => {
+    const to = event.relatedTarget;
+    const list = input?.getAttribute("aria-controls");
+    const popup = list ? document.getElementById(list) : null;
+    if (to instanceof Node && (chips?.contains(to) || popup?.contains(to))) return;
+    if (query().trim()) take(query(), true);
+  };
+  onMount(() => {
+    document.addEventListener("reset", onReset);
+    document.addEventListener("submit", onSubmit, true);
+    onCleanup(() => {
+      document.removeEventListener("reset", onReset);
+      document.removeEventListener("submit", onSubmit, true);
+    });
+  });
   const combo = useCombobox(() => ({
     items: items(),
     multiple: true as const,
     allowCustomValue: true,
-    ...(props.onChange ? { value: values() } : { defaultValue: initial }),
+    // the values are held here: a paste adds several at once, and `max` leaves nothing in core that does not show
+    value: values(),
+    // typing: a separator turns the addresses before it into chips; anything else is typed on, and the sentence of a
+    // refused text goes while it is fixed
+    ...(email()
+      ? {
+          query: query(),
+          keepQuery: true,
+          onQueryChange: (next: string) => {
+            if (/[,;\n]/.test(next)) return take(next, false);
+            setQuery(next);
+            if (rejected()) setRefused(undefined);
+          },
+        }
+      : {}),
     onValueChange: (next: string[]) => {
-      const clean = [...new Set(next.map((value) => value.trim()).filter(Boolean))];
-      setOwn(clean);
-      props.onChange?.(clean);
+      if (!email()) return commit(next);
+      // Enter commits the typed text: as addresses, the rest stays in the field
+      const added = next.filter((value) => !values().includes(value));
+      if (next.length < values().length || !added.length) return commit(next);
+      take(added.join(", "), true);
     },
     disabled: props.disabled,
     required: field?.required,
@@ -685,6 +892,10 @@ export const TagsInput = (props: TagsInputProps) => {
   return (
     <>
       <combo.Chips
+        ref={(element: HTMLElement) => {
+          chips = element;
+          if (email()) element.addEventListener("focusout", onLeave);
+        }}
         class="k2-input"
         data-k2-part="TagsInput"
         data-tags=""
@@ -709,10 +920,33 @@ export const TagsInput = (props: TagsInputProps) => {
           placeholder={values().length ? undefined : props.placeholder}
           aria-labelledby={field?.label}
           aria-label={field ? undefined : props.label}
-          aria-invalid={field?.invalid ? "true" : undefined}
-          aria-describedby={field?.described}
+          aria-invalid={field?.invalid || rejected() ? "true" : undefined}
+          aria-describedby={[field?.described, refused() || overflow() ? noticeId : undefined].filter(Boolean).join(" ") || undefined}
+          inputMode={email() ? "email" : undefined}
+          autocomplete={email() ? "email" : undefined}
+          onPaste={(event: ClipboardEvent) => {
+            const text = event.clipboardData?.getData("text/plain") ?? "";
+            if (!email() || !/[,;\s]/.test(text.trim()) || !input) return;
+            event.preventDefault();
+            // the pasted text stands where the selection was, as a plain paste would put it
+            const typed = input.value;
+            const from = input.selectionStart ?? typed.length;
+            const to = input.selectionEnd ?? from;
+            take(typed.slice(0, from) + text + typed.slice(to), true);
+          }}
         />
       </combo.Chips>
+      {/* why a text was not taken, under the chips; a refused text keeps the form from being sent */}
+      <Show when={refused() || overflow()}>
+        <span class="k2-field-message" id={noticeId} data-error={refused() ? "" : undefined}>
+          {[refused(), overflow()].filter(Boolean).join(" ")}
+        </span>
+      </Show>
+      <Show when={email()}>
+        <span class="k2-hidden-text" role="status">
+          {heard()}
+        </span>
+      </Show>
       {/* core's form input validates and resets the field; the values are sent one entry each under the name */}
       <combo.FormInput />
       <Show when={props.name ?? field?.name}>
@@ -868,6 +1102,8 @@ export type SliderProps = {
   step?: number;
   /** How the number reads at the end and for assistive technology, such as `{ style: "percent" }` or a unit. */
   format?: Intl.NumberFormatOptions;
+  /** A unit the number format has no word for, such as `px`: it reads after the number, also for assistive technology. */
+  unit?: string;
   /** The name the number is sent under in a form; the field's name by default. */
   name?: string;
   /** A name when the slider stands without a Field. */
@@ -885,6 +1121,7 @@ export const Slider = (props: SliderProps) => {
   const field = useField();
   const locale = useLocale();
   const initial = props.value ?? props.min ?? 0;
+  const withUnit = (text: string) => (props.unit && text ? `${text} ${props.unit}` : text);
   const range = useRange(() => ({
     ...(props.onChange ? { value: props.value ?? props.min ?? 0 } : { defaultValue: props.value ?? props.min ?? 0 }),
     onValueChange: (next: number) => props.onChange?.(next),
@@ -914,6 +1151,7 @@ export const Slider = (props: SliderProps) => {
         <range.Thumb
           class="k2-slider-thumb"
           input={{
+            valueText: (attrs: Record<string, unknown>) => withUnit(String(attrs["aria-valuetext"] ?? attrs["aria-valuenow"] ?? "")),
             get "aria-describedby"() {
               return field?.described;
             },
@@ -928,7 +1166,7 @@ export const Slider = (props: SliderProps) => {
           }}
         />
       </range.Control>
-      <range.Value class="k2-slider-value">{(state: { text?: string }) => state.text ?? ""}</range.Value>
+      <range.Value class="k2-slider-value">{(state: { text?: string }) => withUnit(state.text ?? "")}</range.Value>
       <range.Input />
     </range.Root>
   );
@@ -961,6 +1199,8 @@ export const ColorInput = (props: ColorInputProps) => {
   field?.group();
   const t = useControlMessages();
   const picker = usePopover(() => ({}));
+  // the code beside the swatch describes it: the swatch is named for its deed and says which colour it holds
+  const code = field?.control ?? createUniqueId();
   const color = useColor(() => ({
     ...(props.onChange ? { value: props.value ?? "#000000" } : { defaultValue: props.value ?? "#000000" }),
     onValueChange: (next: string) => props.onChange?.(next),
@@ -977,11 +1217,11 @@ export const ColorInput = (props: ColorInputProps) => {
     >
       <span class="k2-color-head">
         {/* the colour as a swatch that opens the picker (area and hue) on a panel: a settings row stays one line */}
-        <picker.Trigger class="k2-color-swatch" disabled={props.disabled} aria-label={t().pickColor}>
+        <picker.Trigger class="k2-color-swatch" disabled={props.disabled} aria-label={t().pickColor} aria-describedby={code}>
           <color.Swatch class="k2-color-fill" aria-hidden="true" />
         </picker.Trigger>
         <span class="k2-input" data-disabled={props.disabled ? "" : undefined}>
-          <color.Input id={field?.control} aria-label={t().colorCode} aria-describedby={field?.described} />
+          <color.Input id={code} aria-label={t().colorCode} aria-describedby={field?.described} />
         </span>
       </span>
       <picker.Popup class="k2-pop k2-color-pop" data-k2-part="Popover" side="bottom" align="start" sideOffset={4} collisionPadding={8}>
@@ -1169,6 +1409,8 @@ export type CheckProps = {
   disabled?: boolean;
   /** Called with the new state when a person changes it. */
   onChange?: (checked: boolean) => void;
+  /** A quiet line under the words, such as what turning it on does; assistive technology reads it with the box. */
+  description?: string;
 };
 
 /**
@@ -1182,6 +1424,9 @@ export const Check = (props: CheckProps) => {
   // With `onChange` the caller holds the state; without, the box keeps it, so the mark always shows what is set.
   const checked = () => (props.onChange ? props.checked : own());
   const set = () => checked() === true || checked() === "mixed";
+  const id = createUniqueId();
+  const described = `${id}-description`;
+  const named = `${id}-label`;
   return (
     <label
       class="k2-choice"
@@ -1197,7 +1442,9 @@ export const Check = (props: CheckProps) => {
           name={props.name ?? field?.name}
           checked={checked() === true}
           ref={(input) => mixed(input, () => checked() === "mixed")}
-          aria-describedby={field?.described}
+          // with a description inside the label, the box takes its name from its words alone: the line describes it
+          aria-labelledby={props.description ? named : undefined}
+          aria-describedby={[field?.described, props.description ? described : undefined].filter(Boolean).join(" ") || undefined}
           required={field?.required || undefined}
           disabled={props.disabled}
           onChange={(event) => {
@@ -1218,7 +1465,18 @@ export const Check = (props: CheckProps) => {
           <span class="k2-switch" data-checked={checked() === true ? "" : undefined} data-k2-mark="" />
         </Show>
       </span>
-      <span class="k2-choice-text">{props.label}</span>
+      <span class="k2-choice-text">
+        <Show when={props.description} fallback={props.label}>
+          {(text) => (
+            <>
+              <span id={named}>{props.label}</span>
+              <span class="k2-choice-description" id={described}>
+                {text()}
+              </span>
+            </>
+          )}
+        </Show>
+      </span>
     </label>
   );
 };
@@ -1241,6 +1499,8 @@ export const MarkCheck = (
   props: ({ label: string; labelledBy?: undefined } | { label?: undefined; labelledBy: string }) & {
     checked?: boolean | "mixed";
     onChange?: (checked: boolean) => void;
+    /** `false`: out of the tab order, where the thing around it takes the focus and Space (a tile of a grid). */
+    focusable?: false;
   },
 ) => (
   <span class="k2-mark">
@@ -1249,6 +1509,7 @@ export const MarkCheck = (
       type="checkbox"
       aria-label={props.label}
       aria-labelledby={props.labelledBy}
+      tabindex={props.focusable === false ? -1 : undefined}
       checked={props.checked === true}
       ref={(input) => mixed(input, () => props.checked === "mixed")}
       onChange={(event) => props.onChange?.(event.currentTarget.checked)}
@@ -1261,24 +1522,41 @@ export const MarkCheck = (
   </span>
 );
 
+/** An option of a `Choice`: words, or a value with its words and, for a person, their face before the words. */
+export type ChoiceOption = string | { value: string; label: string; person?: Person };
+
 export type ChoiceProps = {
   /** The name the choice is sent under in a form. */
   name: string;
-  /** The few options, all visible: words, or a value with its words. */
-  options: readonly (string | { value: string; label: string })[];
-  /** The chosen value. */
-  value?: string;
+  /** The few options, all visible: words, or a value with its words (and a `person` whose face leads them). */
+  options: readonly ChoiceOption[];
   /** The question of the choice when it stands without a Field: shown as the label line of a field of its own. */
   label?: string;
-  /** Called with the value a person chose. */
-  onChange?: (value: string) => void;
   /** The choice cannot be changed now: every option dimmed, the chosen one still shown. */
   disabled?: boolean;
-};
+} & (
+  | {
+      multiple?: false;
+      /** The chosen value. */
+      value?: string;
+      /** Called with the value a person chose. */
+      onChange?: (value: string) => void;
+    }
+  | {
+      /** Several options may be chosen: boxes instead of points; the form sends one entry per chosen value. */
+      multiple: true;
+      /** The chosen values. */
+      value?: readonly string[];
+      /** Called with all chosen values after each change. */
+      onChange?: (values: string[]) => void;
+    }
+);
 
 /**
- * A few visible options, one of which is chosen: round points, each on one 20 px text line. With a `label` and no
- * Field around it, it stands in a field of its own, so its question is visible and names the group.
+ * A few visible options, one of which is chosen: round points, each on one 20 px text line; with `multiple` boxes,
+ * several of which are chosen. An option for a person leads with their face (20 px), and is named by its words alone.
+ * With a `label` and no Field around it, it stands in a field of its own, so its question is visible and names the
+ * group.
  */
 export const Choice = (props: ChoiceProps) => {
   if (!useField() && props.label !== undefined)
@@ -1293,41 +1571,94 @@ export const Choice = (props: ChoiceProps) => {
 const ChoiceGroup = (props: ChoiceProps) => {
   const field = useField();
   field?.group();
+  const t = useControlMessages();
   const options = () => props.options.map((option) => (typeof option === "string" ? { value: option, label: option } : option));
-  const [own, setOwn] = createSignal(props.value);
-  const value = () => (props.onChange ? props.value : own());
+  const given = (): readonly string[] => (props.multiple ? (props.value ?? []) : props.value === undefined ? [] : [props.value]);
+  // the values the choice started with: a form's reset puts them back (the inputs' default, and what the choice holds)
+  const initial = untrack(given);
+  const [own, setOwn] = createSignal<readonly string[]>(initial);
+  const chosen = () => (props.onChange ? given() : own());
+  const choose = (value: string, on: boolean) => {
+    if (props.multiple) {
+      const next = on ? [...chosen().filter((each) => each !== value), value] : chosen().filter((each) => each !== value);
+      const ordered = options()
+        .map((option) => option.value)
+        .filter((each) => next.includes(each));
+      setOwn(ordered);
+      props.onChange?.(ordered);
+    } else {
+      setOwn([value]);
+      props.onChange?.(value);
+    }
+  };
+  let group: HTMLDivElement | undefined;
+  const onReset = (event: Event) => {
+    if (!(event.target instanceof HTMLFormElement) || !group || !event.target.contains(group)) return;
+    setOwn(initial);
+    // A choice the page holds stays as the page holds it: the reset puts the inputs back to their defaults, so one
+    // task later they show the page's choice again, and the form sends what the page holds.
+    const inputs = group;
+    if (props.onChange)
+      setTimeout(() => {
+        for (const input of inputs.querySelectorAll<HTMLInputElement>("input.k2-mark-input"))
+          input.checked = chosen().includes(input.value);
+      });
+  };
+  onMount(() => {
+    document.addEventListener("reset", onReset);
+    onCleanup(() => document.removeEventListener("reset", onReset));
+  });
   return (
+    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: the role is group or radiogroup, and both are named
     <div
+      ref={group}
       class="k2-choices"
       data-k2-part="Choice"
-      role="radiogroup"
+      role={props.multiple ? "group" : "radiogroup"}
       aria-label={field ? undefined : props.label}
       aria-labelledby={field?.label}
       aria-describedby={field?.described}
       aria-disabled={props.disabled ? "true" : undefined}
     >
       <For each={options()}>
-        {(option) => (
-          <label class="k2-choice" data-disabled={props.disabled ? "" : undefined}>
-            <span class="k2-mark">
-              <input
-                class="k2-mark-input"
-                type="radio"
-                name={props.name}
-                value={option.value}
-                checked={option.value === value()}
-                required={field?.required || undefined}
-                disabled={props.disabled}
-                onChange={() => {
-                  setOwn(option.value);
-                  props.onChange?.(option.value);
-                }}
-              />
-              <span class="k2-radio" data-checked={option.value === value() ? "" : undefined} data-k2-mark="" />
-            </span>
-            <span class="k2-choice-text">{option.label}</span>
-          </label>
-        )}
+        {(option, index) => {
+          const on = () => chosen().includes(option.value);
+          return (
+            <label class="k2-choice" data-disabled={props.disabled ? "" : undefined}>
+              <span class="k2-mark">
+                <input
+                  class="k2-mark-input"
+                  type={props.multiple ? "checkbox" : "radio"}
+                  name={props.name}
+                  value={option.value}
+                  checked={on()}
+                  // points: the group is required; boxes: while none is chosen the first one says "choose at least one",
+                  // so the form asks for one, and no box sounds mandatory on its own
+                  required={(field?.required && !props.multiple) || undefined}
+                  ref={(input: HTMLInputElement) => {
+                    input.defaultChecked = initial.includes(option.value);
+                    // the box that is first now: options that change their order hand the sentence on
+                    if (props.multiple)
+                      createRenderEffect(() =>
+                        input.setCustomValidity(index() === 0 && field?.required && chosen().length === 0 ? t().chooseOne : ""),
+                      );
+                  }}
+                  disabled={props.disabled}
+                  onChange={(event) => choose(option.value, event.currentTarget.checked)}
+                />
+                <Show when={props.multiple} fallback={<span class="k2-radio" data-checked={on() ? "" : undefined} data-k2-mark="" />}>
+                  <span class="k2-check" data-checked={on() ? "" : undefined} data-k2-mark="">
+                    <Show when={on()}>
+                      <Icon name="check" />
+                    </Show>
+                  </span>
+                </Show>
+              </span>
+              <Show when={"person" in option && option.person}>{(person) => <Avatar {...person()} decorative />}</Show>
+              <span class="k2-choice-text">{option.label}</span>
+            </label>
+          );
+        }}
       </For>
     </div>
   );

@@ -2,6 +2,7 @@ import {
   type Accessor,
   createContext,
   createEffect,
+  createMemo,
   createSignal,
   createUniqueId,
   For,
@@ -17,6 +18,8 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
+import { Announcer } from "./announce";
+import { type Fold, watchFold } from "./bar-fold";
 import { useDrawer } from "./behavior/overlays";
 import { type GripOptions, useGrip } from "./behavior/resize";
 import { ActionButton } from "./button";
@@ -24,6 +27,8 @@ import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Icon, Mark, Spark, type SparkProps } from "./marks";
+import { BarFold, Menu, type MenuItem } from "./menu";
+import { useOverlayMessages } from "./overlay-messages";
 import { ConfirmDialog } from "./overlays";
 import { Empty, PlaceholderValue } from "./states";
 import { Toasts } from "./toast";
@@ -164,9 +169,10 @@ export type WorkspaceProps = {
   /**
    * What stands in the detail's place while none is open, such as `{ icon: "mail", text: "Keine Nachricht
    * ausgewählt" }`; "Nothing selected" in the language of the page when not set. Not on the phone, where the list is
-   * the page.
+   * the page. `hero` stands above the sentence: a picture of the place as a whole, such as a `Heat` of the mails
+   * received per day with a line that sums it up.
    */
-  detailEmpty?: { icon: string; text: string };
+  detailEmpty?: { icon: string; text: string; hero?: JSX.Element };
   /**
    * A `Pane` or `Pane.Split`, written inside the Workspace: its columns tell it their widths, so it knows when the
    * sidebar becomes a drawer. A column made before the Workspace (kept in a variable) is not counted.
@@ -180,14 +186,17 @@ const flexibleMin = 400;
 
 /**
  * A column of the workspace and what it needs at least: its minimum, or 400 px for a column without a width; a detail
- * says so, since the workspace counts it once, open or closed.
+ * says so, since the workspace counts it once, open or closed. A context column beside a single main column (`away`)
+ * needs no room: where there is none beside, it stands under the main column.
  */
-type Column = { readonly need: number; readonly detail: boolean };
+type Column = { readonly need: number; readonly detail: boolean; readonly away?: boolean };
 /**
  * The columns of a workspace register here: the panes at its top, alone or side by side in a `Pane.Split`. The split
  * at the top also learns what stands in the place of a declared detail while none is open.
  */
-type Columns = { register: (column: Column) => void; empty: () => { icon: string; text: string } | undefined };
+/** What stands in a declared detail's place while none is open. */
+type DetailEmpty = { icon: string; text: string; hero?: JSX.Element };
+type Columns = { register: (column: Column) => void; empty: () => DetailEmpty | undefined };
 const ColumnsContext = createContext<Columns | undefined>();
 
 /**
@@ -209,6 +218,9 @@ export const Workspace = (props: WorkspaceProps) => {
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
   const sidebar = resolveChildren(() => props.sidebar);
   const head = resolveChildren(() => props.head);
+  // `detailEmpty` written as an object in JSX is a getter that makes its hero anew on every read: read it once here.
+  const detailEmpty = createMemo(() => props.detailEmpty);
+  const emptyHero = resolveChildren(() => detailEmpty()?.hero);
   const [columns, setColumns] = createSignal<readonly Column[]>([]);
   const register = (column: Column) => {
     setColumns((list) => [...list, column]);
@@ -216,16 +228,19 @@ export const Workspace = (props: WorkspaceProps) => {
   };
   // the detail the workspace declares, at its minimum; it counts open or closed
   const declared = () => (props.detail === undefined ? undefined : props.detail === true ? flexibleMin : props.detail);
+  // Read where it is drawn, never ahead: on the server the panes register their columns while they render, after this
+  // line, so a value computed here would not know an open detail yet.
   const empty = () =>
     declared() === undefined || columns().some((column) => column.detail)
       ? undefined
-      : (props.detailEmpty ?? { icon: "click", text: t().nothingSelected });
+      : { icon: detailEmpty()?.icon ?? "click", text: detailEmpty()?.text ?? t().nothingSelected, hero: emptyHero() };
   // The room the sidebar needs beside the columns: its default, every column's minimum and the lines between them, in
   // the workspace's content box (inside its edge), which the container query measures. A declared detail counts at
   // its declared minimum, open or closed, so the room stays the same when it opens.
   const room = () => {
-    const list = columns().filter((column) => !column.detail);
-    const open = columns().filter((column) => column.detail);
+    const counted = columns().filter((column) => !column.away);
+    const list = counted.filter((column) => !column.detail);
+    const open = counted.filter((column) => column.detail);
     const detail = declared() ?? (open.length > 0 ? Math.max(...open.map((column) => column.need)) : 0);
     const panes = list.length + (detail ? 1 : 0);
     return width().default + 1 + list.reduce((sum, column) => sum + column.need, 0) + detail + Math.max(0, panes - 1);
@@ -365,6 +380,8 @@ export const Workspace = (props: WorkspaceProps) => {
       <ConfirmDialog host={() => element} />
       {/* the one toaster of the page: every `useToast` shows here, also one called above the Workspace */}
       <Toasts />
+      {/* the page's one live region: `announce` says its news here, also from another island */}
+      <Announcer />
     </div>
   );
 };
@@ -374,6 +391,8 @@ export const Workspace = (props: WorkspaceProps) => {
 type SplitEntry = {
   readonly width?: Width;
   readonly label?: string;
+  /** A context column (`side`): the split lets it give way to the end of the main column where it lacks the room. */
+  readonly side?: PaneProps["side"];
   element?: HTMLElement;
   /** The pane's width in px while its grip has moved it. */
   size?: Accessor<number | undefined>;
@@ -381,6 +400,8 @@ type SplitEntry = {
 };
 /** A pane inside a split registers its width and name for the seam beside it, for as long as it exists. */
 const SplitContext = createContext<(entry: SplitEntry) => void>();
+/** Whether the split is a main column with one context column after it: then the context gives way where there is no room. */
+const ContextualContext = createContext<Accessor<boolean>>();
 
 export type PaneProps = {
   /** The head of this column: a `Bar` (56 px; 52 px for a reader beside a list) or `Tabs`. */
@@ -406,11 +427,28 @@ export type PaneProps = {
    * `href`: the address of the list without the open entry. While it is there, the head of the workspace gives way on
    * the phone, so the way back is the one bar above the detail; it is the part `Back`, which a shell may show in its
    * own bar instead. With `back`, the close × of the detail's head needs no `keep`: like every head action without
-   * it, the × gives way on the phone, so the detail has one way back there.
+   * it, the × gives way on the phone, so the detail has one way back there. A pane without a `head` (an editor, whose
+   * name stood in the workspace's head) names itself after the way back by its `label`: "‹ Werkstatt  Notizen.md".
    */
   back?: Action;
-  /** The side column of a record (the info column): quieter sections. */
-  side?: boolean;
+  /**
+   * The context column (quieter sections): the info column of a record, what a form feeds, a chart beside a table, or
+   * the right half of a detail that grows on a large screen (who and what happened, beside what it is).
+   *
+   * In a `Pane.Split` of exactly one main column and this context column after it, the context stands beside the main
+   * column only where the split holds both at their default widths (a column without a `width` at 400 px). With less
+   * room it gives way to the end of the main column: the split then scrolls in one piece, the main column first and
+   * the context under it at the full width, so the main column is never squeezed and nothing hides; and it needs no
+   * room of the workspace, so the sidebar never becomes a drawer for it. `{ from }` asks for more room, in px of the
+   * split, for a main column that needs it, such as a table (`{ from: 1400 }`: a large screen); never less than the
+   * defaults. The rule is a `<style>` beside the split, made from these widths on the server too; a page whose content
+   * security policy allows no inline style keeps the context column beside, as in any other split.
+   *
+   * In any other split (a list, its reader and an info column) it stands beside as every column does and counts
+   * toward the room of the workspace. Known: the split's rule asks for its panes as its own children, so a pane that
+   * an island wraps on its own gives way only where the island's wrapper is transparent to `>`.
+   */
+  side?: boolean | { from: number };
   /**
    * A name under which the page keeps this column's scroll position, such as "mail-list": back and forward bring
    * the list back where it was (the page restores every `data-scroll-preserve` region, as v1's `ScrollArea` does).
@@ -440,17 +478,25 @@ export const Pane = (props: PaneProps) => {
     get label() {
       return props.label;
     },
+    get side() {
+      return props.side;
+    },
     size,
     resize: setSize,
   };
   useContext(SplitContext)?.(entry);
-  // a column at the top of a workspace tells it what it needs; panes inside this one are not its columns
+  const contextual = useContext(ContextualContext);
+  // a column at the top of a workspace tells it what it needs; panes inside this one are not its columns. A context
+  // column beside a single main column needs nothing: where there is no room beside, it stands under the main column.
   useContext(ColumnsContext)?.register({
     get need() {
       return props.width?.min ?? flexibleMin;
     },
     get detail() {
       return props.detail === true;
+    },
+    get away() {
+      return Boolean(props.side) && (contextual?.() ?? false);
     },
   });
   const head = resolveChildren(() => props.head);
@@ -495,6 +541,15 @@ export const Pane = (props: PaneProps) => {
           <div class="k2-pane-back" data-k2-part="Back">
             {/* a long name is cut with "…"; the whole name is the hint under the pointer */}
             <ActionButton action={{ icon: "chevron-left", ...back() }} variant="text" titled />
+            {/* the workspace's head gives way here: a pane without a head of its own names what stands open */}
+            <Show when={!head() && props.label}>
+              {(label) => (
+                // the page's name for assistive technology too: it heads the pane as its title would
+                <span class="k2-pane-back-name" role="heading" aria-level={2}>
+                  {label()}
+                </span>
+              )}
+            </Show>
           </div>
         )}
       </Show>
@@ -530,11 +585,19 @@ Pane.Split = (props: {
   };
   // at the top of a workspace that declares a detail: what stands in its place while none is open
   const columns = useContext(ColumnsContext);
+  // exactly one main column and one context column after it, and no place of a detail: only then the context gives way
+  // (a list, its reader and an info column keep their own columns and scrollers)
+  const contextual = () => {
+    const [main, context, ...rest] = entries();
+    return rest.length === 0 && main !== undefined && !main.side && Boolean(context?.side) && !columns?.empty();
+  };
   return (
     <SplitContext.Provider value={register}>
-      <SplitBody entries={entries()} empty={columns?.empty()}>
-        {props.children}
-      </SplitBody>
+      <ContextualContext.Provider value={contextual}>
+        <SplitBody entries={entries()} empty={columns?.empty()} contextual={contextual()}>
+          {props.children}
+        </SplitBody>
+      </ContextualContext.Provider>
     </SplitContext.Provider>
   );
 };
@@ -545,7 +608,13 @@ Pane.Split = (props: {
  * of the list is the same two nodes, so nothing in it comes and goes on its own (that would not be removed cleanly
  * after hydration). In the browser a pane's entry is found by its element, on the server by its order.
  */
-const SplitBody = (props: { entries: readonly SplitEntry[]; empty: { icon: string; text: string } | undefined; children: JSX.Element }) => {
+const SplitBody = (props: {
+  entries: readonly SplitEntry[];
+  empty: DetailEmpty | undefined;
+  /** One main column and one context column after it (see `Pane side`). */
+  contextual: boolean;
+  children: JSX.Element;
+}) => {
   const resolved = resolveChildren(() => props.children);
   // a pane hidden by `Show` or `{open && <Pane …/>}` stays in the list as what renders nothing: it gets no seam
   const panes = () => resolved.toArray().filter((pane) => pane !== undefined && pane !== null && typeof pane !== "boolean" && pane !== "");
@@ -583,27 +652,77 @@ const SplitBody = (props: { entries: readonly SplitEntry[]; empty: { icon: strin
       },
     };
   };
+  // The room a context column needs beside its main column: both at their default width (a column without a width at
+  // 400 px; the context's default includes the line before it), or the more its `from` asks. The panes registered while
+  // they rendered above, so the server's page and the first render in the browser make the same rule.
+  const id = createUniqueId();
+  const room = () => {
+    if (!props.contextual) return undefined;
+    const [main, context] = props.entries;
+    const both = (main?.width?.default ?? flexibleMin) + (context?.width?.default ?? flexibleMin);
+    return typeof context?.side === "object" ? Math.max(context.side.from, both) : both;
+  };
+  // Below that room (from 768 px on; the phone stacks every split) the split wraps: the context column and the line
+  // before it take a row each, under the main column at the full width, and the split scrolls in one piece, to the end
+  // of its content. Above it nothing wraps, whatever width a grip gave a column. An element cannot ask its own width:
+  // the split itself asks its place (`k2-host`: the workspace's main column, or the pane the split stands in), which is
+  // as wide as the split. What stands inside the split asks the split, under a name only this split carries: the
+  // nearest `k2-host` of a column's scroller is that column, which is narrower than the room beside its context, so a
+  // rule there would always hold (#4340: the main column could not scroll). The grips' reach (their `::after`) stays
+  // inside its line, so the scroller ends at the content. Made per split, as the room is the split's own.
+  const split = `.k2-ui .k2-split[data-k2-split="${id}"][data-context]`;
+  const own = `k2-split-${id}`;
+  const flowRule = (px: number) =>
+    `.k2-ui .k2-split[data-k2-split="${id}"] { container: ${own} / inline-size; } ` +
+    `@media (min-width: 768px) { @container k2-host (width < ${px}px) { ` +
+    `${split} { flex-wrap: wrap; align-content: flex-start; overflow-x: hidden; overflow-y: auto; scrollbar-width: none; } ` +
+    `${split}::-webkit-scrollbar { display: none; } } ` +
+    `@container ${own} (width < ${px}px) { ` +
+    `${split} > .k2-pane, ${split} > .k2-seam + .k2-pane[data-width] { flex: 0 0 100%; width: auto; min-width: 0; min-height: auto; overflow: visible; } ` +
+    `${split} > .k2-pane > .k2-scroll { flex: none; overflow: visible; -webkit-mask-image: none; mask-image: none; animation: none; } ` +
+    `${split} > .k2-seam { flex: 0 0 100%; width: auto; height: 1px; } ${split} > .k2-seam > .k2-grip { display: none; } ` +
+    // the line across under the main column is the one line there: the last line inside the main column gives way
+    `${split} > .k2-pane:first-child > .k2-scroll > :is(.k2-sec, .k2-row):last-child, ` +
+    `${split} > .k2-pane:first-child > .k2-scroll > .k2-list:last-child > .k2-row:last-child, ` +
+    `${split} > .k2-pane:first-child > .k2-scroll > .k2-table-phone:last-child > .k2-list > .k2-row:last-child { border-bottom: 0; } } }`;
+  // The rule stays once it is made, also while a detail stands in the place of the context (the split then drops its
+  // `data-context`): no `<style>` comes and goes, so the browser does not restyle the page each time.
+  const rule = createMemo<string | undefined>((made) => {
+    const px = room();
+    return px === undefined ? made : flowRule(px);
+  });
   return (
-    <div class="k2-split" data-k2-part="Pane.Split">
-      <For each={panes()}>
-        {(pane, index) => (
-          <>
-            {pane}
-            <Seam grip={grip(index())} />
-          </>
-        )}
-      </For>
-      {/* the place of the declared detail while none is open: the column beside it keeps its width (not on the phone) */}
-      <Show when={props.empty}>
-        {(empty) => (
-          <section class="k2-pane" data-k2-part="Pane" data-detail-empty="" aria-label={empty().text}>
-            <div class="k2-scroll">
-              <Empty icon={empty().icon} text={empty().text} />
-            </div>
-          </section>
-        )}
-      </Show>
-    </div>
+    <>
+      <Show when={rule()}>{(text) => <style data-k2-rule="">{text()}</style>}</Show>
+      <div
+        class="k2-split"
+        data-k2-part="Pane.Split"
+        data-k2-split={rule() === undefined ? undefined : id}
+        data-context={room() === undefined ? undefined : ""}
+      >
+        <For each={panes()}>
+          {(pane, index) => (
+            <>
+              {pane}
+              <Seam grip={grip(index())} />
+            </>
+          )}
+        </For>
+        {/* the place of the declared detail while none is open: the column beside it keeps its width (not on the phone) */}
+        <Show when={props.empty}>
+          {(empty) => (
+            <section class="k2-pane" data-k2-part="Pane" data-detail-empty="" aria-label={empty().text}>
+              <div class="k2-scroll">
+                <Show when={empty().hero}>
+                  <div class="k2-detail-hero">{empty().hero}</div>
+                </Show>
+                <Empty icon={empty().icon} text={empty().text} />
+              </div>
+            </section>
+          )}
+        </Show>
+      </div>
+    </>
   );
 };
 
@@ -622,17 +741,77 @@ export type BarProps = {
  * stylesheet reads the place from the slot the bar stands in, so a bar built ahead and passed on behaves the same.
  * In a column narrower than 480 px, a bar in the flow whose start is an `Inline` wraps instead of cutting: its things
  * and its end flow as one line, one line stays 40, and only a second line makes the bar higher.
+ *
+ * The start keeps a least: its name at `--k2-start-least` (16ch; its whole content, where narrower), or its open
+ * tab. Where the end does not fit beside the whole start (six actions beside tabs on the phone), the end folds first:
+ * its buttons that do not fit move into a menu "…" at its end, in their order, the last first. Where the end's last
+ * `Menu` "…" (no symbol of its own, whatever its `label`) is followed only by parts that never fold (the primary, a
+ * closing ×, a menu with a symbol or words of its own), they are that menu's first section; an end made outside
+ * the bar (an island of its own) gets the bar's own "…" instead. The primary action, a closing ×, a menu and a search
+ * never fold. Only when nothing more can fold does the start shorten its words with "…", down to its least. The
+ * browser measures the fold once the page is alive; before that the bar stands as it does when nothing folds (the end
+ * whole, the start given way down to its least), so the server's page is the live one wherever nothing folds. Only an
+ * end that has to fold cuts, from its start, until the fold takes over.
  */
 export const Bar = (props: BarProps) => {
+  const t = useOverlayMessages();
+  // the entries of the buttons that do not fit, and the menu of the end that holds them; none on the server's page
+  const [folded, setFolded] = createSignal<readonly MenuItem[]>([]);
+  const [host, setHost] = createSignal<HTMLElement>();
+  // the bar's own "…" takes another name where the end holds a menu of the same name that does not take the buttons
+  const [twin, setTwin] = createSignal(false);
+  let bar: HTMLDivElement | undefined;
+  let watch: Fold | undefined;
+  // menus that offered themselves before the bar watched (children mount before the bar's effect runs)
+  const waiting = new Map<HTMLElement, () => void>();
+  const offer = (trigger: HTMLElement) => {
+    if (watch) return watch.offer(trigger);
+    waiting.set(trigger, () => {});
+    return () => {
+      waiting.get(trigger)?.();
+      waiting.delete(trigger);
+    };
+  };
   const start = resolveChildren(() => props.start);
-  const end = resolveChildren(() => props.end);
+  // the end is made inside the fold's context, so a menu "…" in it can offer itself to take the folded buttons
+  const end = resolveChildren(() => <BarFold.Provider value={{ offer, host, entries: folded }}>{props.end}</BarFold.Provider>);
+  const hasEnd = createMemo(() => end() !== undefined);
+  createEffect(() => {
+    if (!bar || !hasEnd()) return;
+    const own = t().moreActions;
+    const fold = watchFold(bar, (entries, menu) => {
+      setFolded(entries);
+      setHost(menu);
+      setTwin(
+        !menu &&
+          [...(bar?.querySelectorAll('.k2-bar-end [aria-haspopup="menu"][data-icon-only]') ?? [])].some(
+            (other) => !other.closest(".k2-bar-fold") && other.getAttribute("aria-label") === own,
+          ),
+      );
+    });
+    watch = fold;
+    for (const trigger of waiting.keys()) waiting.set(trigger, fold.offer(trigger));
+    onCleanup(() => {
+      watch = undefined;
+      fold.stop();
+    });
+  });
   return (
-    <div class="k2-bar" data-k2-part="Bar">
+    <div ref={bar} class="k2-bar" data-k2-part="Bar">
       <Show when={start() !== undefined}>
         <div class="k2-bar-start">{start()}</div>
       </Show>
-      <Show when={end() !== undefined}>
-        <div class="k2-bar-end">{end()}</div>
+      <Show when={hasEnd()}>
+        <div class="k2-bar-end">
+          {end()}
+          <Show when={folded().length > 0 && !host()}>
+            <span class="k2-bar-fold">
+              <BarFold.Provider value={undefined}>
+                <Menu items={folded()} label={twin() ? t().moreInBar : undefined} />
+              </BarFold.Provider>
+            </span>
+          </Show>
+        </div>
       </Show>
     </div>
   );
@@ -758,6 +937,11 @@ export type Tile = {
   href?: string;
   /** … in place on a plain click (see `OnNavigate`). */
   onNavigate?: OnNavigate;
+  /**
+   * Without `href`: the deed of the whole tile, such as opening the dialog that makes a notebook from a template. The
+   * tile's name is then a button, and the whole tile presses it.
+   */
+  onOpen?: () => void;
   /** The data colour of the thing: its symbol becomes its mark on a tint of this colour. */
   color?: string;
   /** Cards only: figures and states under the name, such as tables, forms and "8 knapp". */
@@ -781,16 +965,17 @@ export type Tile = {
    * columns and first rows, as words), a page (its title and first words), or a sign for a thing that holds nothing yet.
    * It is a picture of the content: assistive technology reads the card by its name. Keep its values short: the app
    * chooses columns and rows whose words fit, at most about 12 characters a cell, so nothing is cut with "…" at 1440 or
-   * on the phone (two columns there); leave out what does not fit, such as a book's author. A cut cell reads as cheap.
+   * on the phone; leave out what does not fit, such as a book's author. A cut cell reads as cheap. The phone shows a
+   * table's first two columns, so a column that matters, such as an amount, comes second.
    */
   preview?: TilePreview;
 };
 
 /** What a card's preview shows: the app gives the words, the card draws them. */
 export type TilePreview =
-  | { table: { columns: readonly TilePreviewColumn[]; rows: readonly (readonly string[])[] } }
-  | { page: { title: string; text?: string } }
-  | { icon: string };
+  | { table: { columns: readonly TilePreviewColumn[]; rows: readonly (readonly string[])[] }; page?: never; icon?: never }
+  | { page: { title: string; text?: string }; table?: never; icon?: never }
+  | { icon: string; table?: never; page?: never };
 
 /**
  * A column of a preview's table: its head, or its head and its place. `align: "end"` sets the column at the end with
@@ -806,7 +991,7 @@ const columnAlign = (column: TilePreviewColumn | undefined) =>
 const TILE_PREVIEW_PHONE_COLUMNS = 2;
 
 const TilePreviewView = (props: { preview: TilePreview }) => (
-  <span class="k2-tile-preview" aria-hidden="true">
+  <div class="k2-tile-preview" aria-hidden="true">
     <Switch>
       <Match when={"table" in props.preview && props.preview.table}>
         {(table) => (
@@ -853,7 +1038,7 @@ const TilePreviewView = (props: { preview: TilePreview }) => (
       </Match>
       <Match when={"icon" in props.preview && props.preview.icon}>{(icon) => <Icon name={icon()} />}</Match>
     </Switch>
-  </span>
+  </div>
 );
 
 /** The last card, which makes a new thing: a dashed frame, its name, and optional quick choices such as templates. */
@@ -882,18 +1067,18 @@ export type TilesProps = {
   /** The last tile makes a new thing: a dashed card, or among media a dashed picture with a plus ("Neuer Ordner"). */
   create?: TileCreate;
   /**
+   * Media only: the tiles stand in a selection (pair it with `StatusRow selection`). Each tile has a box on its
+   * picture, named by its title; it shows under the pointer, with the focus, on touch, and on every tile while one is
+   * selected. A selected tile is tinted blue with a line inside its edge.
+   */
+  select?: { selected: readonly string[]; onChange: (key: string, selected: boolean) => void };
+  /**
    * At most this many tiles share a row and grow with its width, such as the four ways to start a notebook across
    * the page. A tile never gets narrower than 240 px for it: where n do not fit, they stand in rows of half of them
    * (four as 2 × 2, never 3 + 1), and below that one under the other. On the phone a row always holds half of them,
    * even below 240 px a tile.
    */
   perRow?: number;
-  /**
-   * Media only: the tiles stand in a selection (pair it with `StatusRow selection`). Each tile has a box on its
-   * picture, named by its title; it shows under the pointer, with the focus, on touch, and on every tile while one is
-   * selected. A selected tile is tinted blue with a line inside its edge.
-   */
-  select?: { selected: readonly string[]; onChange: (key: string, selected: boolean) => void };
   /** One deed after the tiles, such as "Alle herunterladen". */
   more?: Action;
   /** A name for the tiles, for assistive technology. */
@@ -903,7 +1088,7 @@ export type TilesProps = {
 const TileName = (props: { tile: Tile }) => (
   <span class="k2-tile-name">
     <span class="k2-tile-title">
-      <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate}>
+      <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate} onOpen={props.tile.onOpen}>
         {props.tile.title}
       </RowOpen>
     </span>
@@ -917,7 +1102,7 @@ const TileCard = (props: { tile: Tile }) => (
   <div
     class="k2-tile"
     role="listitem"
-    data-open={props.tile.href !== undefined ? "" : undefined}
+    data-open={props.tile.href !== undefined || props.tile.onOpen ? "" : undefined}
     data-preview={props.tile.preview ? "" : undefined}
     style={custom({ "--k2-c": props.tile.color })}
   >
@@ -1056,9 +1241,9 @@ export const Tiles = (props: TilesProps) => (
     class="k2-tiles"
     data-k2-part="Tiles"
     data-variant={props.variant}
+    data-selecting={props.select && props.select.selected.length > 0 ? "" : undefined}
     data-per-row={props.perRow ? "" : undefined}
     style={props.perRow ? perRowStyle(props.perRow) : undefined}
-    data-selecting={props.select && props.select.selected.length > 0 ? "" : undefined}
     role="list"
     aria-label={props.label}
   >
@@ -1071,7 +1256,7 @@ export const Tiles = (props: TilesProps) => (
       fallback={
         <For each={props.variant === undefined ? props.items : []}>
           {(tile) => (
-            <div class="k2-tile" role="listitem" data-open={tile.href !== undefined ? "" : undefined}>
+            <div class="k2-tile" role="listitem" data-open={tile.href !== undefined || tile.onOpen ? "" : undefined}>
               <Show when={tile.color} fallback={<Icon name={tile.icon} />}>
                 {(color) => <Mark icon={tile.icon} color={color()} />}
               </Show>
@@ -1097,7 +1282,10 @@ export type CanvasProps = {
    * The height of the drawing in px; the width comes from its place. `"fill"`: the drawing is the whole pane (an
    * editor, a frame of another page, a map that is the page). It stands directly in its `Pane` and takes the height
    * the pane has left under what stands above it, from the first render on, so nothing is measured and nothing moves;
-   * it scrolls itself, and below 240 px the pane scrolls instead.
+   * it scrolls itself, and below 240 px the pane scrolls instead. It asks its pane for those 240 px only, never for
+   * what the drawing holds: one drawing that asks for no height of its own takes the whole height, and what is taller
+   * scrolls inside it. Give it one child, the drawing: a second child stands in a row of its own under the first and
+   * is cut away.
    */
   height?: number | "fill";
   /** The drawing: an SVG, a map, a chart of `@k2b/ui`; inside it, CSS is free. */

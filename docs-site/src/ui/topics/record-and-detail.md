@@ -22,7 +22,7 @@ The deliveries of the same customer. A `Band` in a tone carries the one statemen
 
 ### Section
 
-- A titled part of the page: "Anstehend", "Vorgänge", "Kontakt".
+- A titled part of the page: "Anstehend", "Vorgänge", "Kontakt". A long title, such as a question, wraps.
 - Rows, `Facts`, a `Digest` or groups stand directly in it.
 - One line at its end, none under its head or between its entries.
 
@@ -38,7 +38,7 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 ### RecordHead
 
-The identity of the record in the head `Bar start`: picture, name, kinds and identifiers that give way when room is short.
+The identity of the record in the head `Bar start`: picture, name, kinds and identifiers that give way when room is short. On the phone, picture, name and the head's actions stay in one row and the name is cut with "…". Kinds sum up; whatever a kind says also stands in the facts, because on the phone kinds give way to the name: a kind that finds no room beside the name leaves the head.
 
 <Props of="RecordHead RecordId" />
 

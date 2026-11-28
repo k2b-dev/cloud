@@ -95,7 +95,8 @@ export function ObjectListInput(props: {
       value,
       column.type,
       column.config,
-      column.type === "number" && !column.formula ? { kind: "decimal" } : undefined,
+      // an entered number stands exact without its storage padding, grouped in the reader's language
+      column.type === "number" && !column.formula ? { kind: "decimal", thousandsSeparator: true } : undefined,
       props.dateConfig,
       locale(),
     );

@@ -127,6 +127,7 @@ export default ssr<AuthContext>(async (c) => {
     showDetailPanel,
     panelAttachments,
     backlinks,
+    backlinksTotal,
     relations,
     accessVisible,
     initialCommentsPage,
@@ -249,6 +250,7 @@ export default ssr<AuthContext>(async (c) => {
                     taskProgress: selectedRouteState?.taskProgress ?? { done: 0, total: 0 },
                     attachments: panelAttachments,
                     backlinks,
+                    backlinksTotal,
                     relations,
                     namedBlocks,
                   }}
@@ -282,6 +284,7 @@ export default ssr<AuthContext>(async (c) => {
               taskProgress={selectedRouteState?.taskProgress ?? { done: 0, total: 0 }}
               attachments={panelAttachments}
               backlinks={backlinks}
+              backlinksTotal={backlinksTotal}
               relations={relations}
               accessVisible={accessVisible}
               canManageAccess={data.permission === "admin"}

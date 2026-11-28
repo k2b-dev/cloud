@@ -1033,6 +1033,8 @@ const Options = (props: {
 /** A plain number or text field of the editor, which applies on Enter or when it is left, never per key. */
 const EditField = (props: {
   label: string;
+  /** The editor's head or the phone sheet already names the field: the label stays the field's name, unseen. */
+  labelHidden?: boolean;
   value: string;
   type: "text" | "number";
   unit?: string;
@@ -1041,7 +1043,7 @@ const EditField = (props: {
   onCommit: (value: string, unreadable: boolean) => void;
 }) => (
   <label class="k2-fed-field">
-    <span class="k2-fed-label">{props.label}</span>
+    <span class={props.labelHidden ? "k2-hidden-text" : "k2-fed-label"}>{props.label}</span>
     <span class="k2-input">
       <input
         type={props.type}
@@ -1375,6 +1377,7 @@ const TextEditor = (props: { label: string; value: string; onChange: (value: unk
     <div class="k2-fed-body">
       <EditField
         label={props.label}
+        labelHidden
         type="text"
         value={props.value}
         invalid={rejected()}
