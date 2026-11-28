@@ -366,7 +366,7 @@ suite("Mail workspace list pages", () => {
 
   test("work guard: list pages never rebuild the workspace or read the selection", async () => {
     const spies = [
-      spyOn(messages, "getConversationViewCounts"),
+      spyOn(messages, "getConversationViewCountsBy"),
       spyOn(senderIdentities, "listSenderIdentities"),
       spyOn(scheduledSends, "countScheduledSends"),
       spyOn(mailboxes, "getMailboxReceivingAddress"),
@@ -427,7 +427,7 @@ suite("Mail workspace list pages", () => {
 
   test("switch work guard: HTTP page 1 never rebuilds the frame or reads selection detail", async () => {
     const spies = [
-      spyOn(messages, "getConversationViewCounts"),
+      spyOn(messages, "getConversationViewCountsBy"),
       spyOn(senderIdentities, "listSenderIdentities"),
       spyOn(scheduledSends, "countScheduledSends"),
       spyOn(mailboxes, "getMailboxReceivingAddress"),

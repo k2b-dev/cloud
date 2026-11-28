@@ -65,6 +65,7 @@ import * as savedViews from "./saved-views";
 import * as scheduledSends from "./scheduled-sends";
 import * as search from "./search";
 import * as senderIdentities from "./sender-identities";
+import { FIRST_RENDER_COUNT_WAIT_MS } from "./view-count-cache";
 
 const log = logger("mail:workspace");
 
@@ -223,6 +224,11 @@ export type MailboxPageData = {
   listMode: MailListMode;
   folderId: string | null;
   viewCounts: ConversationViewCounts;
+  /**
+   * The counts were still cold when the snapshot's wait ran out (`FIRST_RENDER_COUNT_WAIT_MS`): `viewCounts` holds no
+   * numbers yet, and the browser loads them once from the cache the count fills.
+   */
+  viewCountsPending?: true;
   query: string;
   /** The search of the public request URL, with public folder and tag IDs; the browser reads it instead of parsing the URL. */
   search: ResolvedMailSearchRoute;
@@ -737,10 +743,18 @@ const loadListItems = async (params: {
 };
 
 /** Assigned to me's group counts from the cached view counts, never from the page: later pages keep the same headings. */
-const loadAssignedGroups = async (params: { context: MailRequestContext; mailboxId: string }): Promise<MailAssignedGroups | null> => {
+const loadAssignedGroups = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  countsBy: number;
+}): Promise<MailAssignedGroups | null> => {
   try {
-    const counts = await messages.getMailboxConversationCounts({ context: params.context, mailboxId: params.mailboxId, cached: true });
-    if (!counts.ok) return null;
+    const counts = await messages.getMailboxConversationCountsBy({
+      context: params.context,
+      mailboxId: params.mailboxId,
+      until: params.countsBy,
+    });
+    if (!counts.ok || !counts.data) return null;
     const waiting = Math.min(counts.data.mineWaiting, counts.data.views.mine);
     return { needsAction: counts.data.views.mine - waiting, waiting };
   } catch (error) {
@@ -762,6 +776,7 @@ const loadHiddenDone = async (params: {
   folderId: string | null;
   list: MailListPage;
   excludedFolderIds: readonly string[];
+  countsBy: number;
 }): Promise<MailHiddenDone | null> => {
   if (!params.list.openOnly || params.list.error || params.list.nextCursor !== null) return null;
   try {
@@ -774,8 +789,12 @@ const loadHiddenDone = async (params: {
       });
       return counted.ok ? counted.data : { count: null, more: false };
     }
-    const counts = await messages.getMailboxConversationCounts({ context: params.context, mailboxId: params.mailboxId, cached: true });
-    if (!counts.ok) return { count: null, more: false };
+    const counts = await messages.getMailboxConversationCountsBy({
+      context: params.context,
+      mailboxId: params.mailboxId,
+      until: params.countsBy,
+    });
+    if (!counts.ok || !counts.data) return { count: null, more: false };
     return { count: params.folderId ? (counts.data.doneByFolder[params.folderId] ?? 0) : counts.data.views.done, more: false };
   } catch (error) {
     log.warn("Failed to count the done conversations a Mail list leaves out", {
@@ -880,6 +899,8 @@ type MailboxListParams = {
   publicSearch: ResolvedMailSearchRoute;
   listMode?: MailListMode;
   locale?: string | null;
+  /** Until when (epoch ms) the list waits for cold counts; the loaders set it once per request. */
+  countsBy?: number;
 };
 
 /**
@@ -910,6 +931,20 @@ const loadEventsPage = async (
       ? people.data.map((person) => ({ id: person.id, displayName: person.displayName, avatarHash: person.avatarHash, type: person.type }))
       : [],
   });
+};
+
+/**
+ * Which counts of the cached snapshot a route shows: the groups of Assigned to me (its tab without a search, in the
+ * conversation list) and the done conversations a folder or All mail leaves out (no search or saved view, whose done
+ * count is a search of its own). The snapshot and the browser's later ask for pending counts follow the same rule.
+ */
+export const workspaceRouteCounts = (requestUrl: URL, search: Pick<ResolvedMailSearchRoute, "expression" | "error">) => {
+  const plainList =
+    !search.expression && !search.error && requestUrl.searchParams.get("scheduled") !== "1" && !isMailEventsRoute(requestUrl);
+  return {
+    groups: plainList && requestUrl.searchParams.get("view") === "mine",
+    doneLeftOut: plainList && !requestUrl.searchParams.get("savedView"),
+  };
 };
 
 const buildMailboxListView = async (
@@ -982,11 +1017,13 @@ const buildMailboxListView = async (
     eventsMode ? loadEventsPage(params.context, params.mailboxId, readMailEventsFilter(params.requestUrl)) : Promise.resolve(null),
   ]);
   // The same listing the service sorts by group: the Assigned to me tab without a search or another list mode.
-  const grouped =
-    activeView === "mine" && !searchExpression && !resolvedSearch.error && listMode === "conversations" && !scheduledMode && !eventsMode;
+  const grouped = workspaceRouteCounts(params.requestUrl, resolvedSearch).groups && listMode === "conversations";
+  const countsBy = params.countsBy ?? Date.now() + FIRST_RENDER_COUNT_WAIT_MS;
   const [hiddenDone, assignedGroups] = await Promise.all([
-    "openOnly" in list ? loadHiddenDone({ context: params.context, mailboxId: params.mailboxId, folderId, list, excludedFolderIds }) : null,
-    grouped && !list.error ? loadAssignedGroups({ context: params.context, mailboxId: params.mailboxId }) : null,
+    "openOnly" in list
+      ? loadHiddenDone({ context: params.context, mailboxId: params.mailboxId, folderId, list, excludedFolderIds, countsBy })
+      : null,
+    grouped && !list.error ? loadAssignedGroups({ context: params.context, mailboxId: params.mailboxId, countsBy }) : null,
   ]);
   return {
     scheduledMode,
@@ -1029,7 +1066,8 @@ const buildMailboxListView = async (
 };
 
 export const loadMailboxListView = async (listParams: MailboxListParams): Promise<Result<MailboxListView>> => {
-  const params = { ...listParams, context: withOneAccessRead(listParams.context) };
+  // cold counts may hold the list only for a fixed wait from the start of the request
+  const params = { ...listParams, context: withOneAccessRead(listParams.context), countsBy: Date.now() + FIRST_RENDER_COUNT_WAIT_MS };
   const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!permission.ok) return fail(permission.error);
   const [mailboxResult, folderResult, savedViewResult] = await Promise.all([
@@ -1118,7 +1156,8 @@ export const loadMailboxPageData = async (pageParams: {
   receivedPerDay?: "load" | "keep";
   timeZone?: string;
 }): Promise<Result<MailboxPageData>> => {
-  const params = { ...pageParams, context: withOneAccessRead(pageParams.context) };
+  // cold counts may hold the page only for a fixed wait from the start of the request
+  const params = { ...pageParams, context: withOneAccessRead(pageParams.context), countsBy: Date.now() + FIRST_RENDER_COUNT_WAIT_MS };
   const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!permission.ok) return fail(permission.error);
 
@@ -1158,11 +1197,7 @@ export const loadMailboxPageData = async (pageParams: {
     mailboxes.getMailbox(params.context, params.mailboxId),
     folders,
     senderIdentities.listSenderIdentities(params.context, params.mailboxId),
-    messages.getConversationViewCounts({
-      context: params.context,
-      mailboxId: params.mailboxId,
-      cached: true,
-    }),
+    messages.getConversationViewCountsBy({ context: params.context, mailboxId: params.mailboxId, until: params.countsBy }),
     saved,
     localTags.listLocalTags(params.context, params.mailboxId),
     scheduledSends.countScheduledSends({
@@ -1233,7 +1268,8 @@ export const loadMailboxPageData = async (pageParams: {
     dropAssignees: dropAssigneesResult ?? null,
     receivedPerDay,
     savedViews: savedViewResult.ok ? savedViewResult.data : [],
-    viewCounts: viewCountsResult.ok ? viewCountsResult.data : EMPTY_VIEW_COUNTS,
+    viewCounts: viewCountsResult.ok && viewCountsResult.data ? viewCountsResult.data : EMPTY_VIEW_COUNTS,
+    ...(viewCountsResult.ok && !viewCountsResult.data ? { viewCountsPending: true as const } : {}),
     selectedConversationId,
     selectedMessageId,
     ...selection,
