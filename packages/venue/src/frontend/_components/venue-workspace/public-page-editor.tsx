@@ -20,6 +20,7 @@ import {
 import { createEffect, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import {
+  isExternalMenuImage,
   MAX_PUBLIC_MENU_ITEMS,
   MAX_PUBLIC_SECTIONS,
   type PublicSection,
@@ -183,7 +184,10 @@ export function PublicPageEditor(props: {
     if (atSectionLimit()) return t().sectionLimitHint({ count: sectionTotal(), max: MAX_PUBLIC_SECTIONS });
     const items = publicMenuItemCount(section);
     const total = menuItemTotal() + items;
-    return items > 0 && total > MAX_PUBLIC_MENU_ITEMS ? t().copyMenuItemsTooMany({ count: total, max: MAX_PUBLIC_MENU_ITEMS }) : null;
+    if (items > 0 && total > MAX_PUBLIC_MENU_ITEMS) return t().copyMenuItemsTooMany({ count: total, max: MAX_PUBLIC_MENU_ITEMS });
+    // A new section takes no image from another address, so a copy waits until those images are uploaded again.
+    const images = Array.isArray(section.content.items) ? section.content.items.map((item) => (item as { image?: unknown })?.image) : [];
+    return images.some((image) => isExternalMenuImage(image, venue().id)) ? t().copyExternalImages : null;
   };
 
   /** Adding, copying, deleting, and reordering change the set of sections, so they wait for each other. */
@@ -308,6 +312,7 @@ export function PublicPageEditor(props: {
               nextPosition={intent.nextPosition}
               publicPageEnabled={intent.publicPageEnabled}
               otherMenuItems={intent.otherMenuItems}
+              venueId={intent.venueId}
               submit={async (input) => {
                 const response = await apiClient.venues[":id"].sections.$post({ param: { id: intent.venueId }, json: input });
                 return response.ok ? null : await readError(response, t().addSectionFailed);
@@ -340,6 +345,7 @@ export function PublicPageEditor(props: {
               nextPosition={intent.section.position}
               publicPageEnabled={intent.publicPageEnabled}
               otherMenuItems={intent.otherMenuItems}
+              venueId={intent.venueId}
               title={t().editPublicSection}
               submitLabel={t().saveSection}
               submit={async ({ position: _position, ...patch }) => {

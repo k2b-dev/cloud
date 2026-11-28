@@ -63,6 +63,7 @@ import {
   FEEDBACK_PAGE_SIZE,
   MAX_PUBLIC_MENU_ITEMS,
   MAX_PUBLIC_SECTIONS,
+  MENU_IMAGE_INVALID,
   MENU_ITEM_LIMIT,
   PUBLIC_EXCEPTION_DAYS,
   PUBLIC_SECTION_LIMIT,
@@ -75,6 +76,20 @@ import {
 import { withShortIdDb } from "./lib/short-id";
 import { venueMessages } from "./messages";
 import { capPublicSections, filterPublicMenuSections } from "./public-menu";
+import {
+  enqueueMenuImageCleanup,
+  foreignMenuImageIndex,
+  keepMenuImageUploads,
+  type MenuImageLocation,
+  menuImageLocation,
+  menuImagePrefix,
+  notifyMenuImageCleanup,
+  releaseMenuImages,
+  sectionImageKeys,
+  storeMenuImages,
+  unreferencedMenuImageKeys,
+  withMenuImageAddresses,
+} from "./service/menu-images";
 import * as publicProjection from "./service/public-projection";
 import { resolvePublicId, resolvePublicIds, resolveVenuePublicId } from "./service/public-resources";
 import { getVenueTemplate, listVenueTemplates as localizedVenueTemplates } from "./templates";
@@ -841,6 +856,43 @@ const lockSectionTotals = async (tx: SqlClient, venueId: string, exceptId: strin
   return row ?? { sections: 0, items: 0 };
 };
 
+const venueShortIdOf = async (venueId: string): Promise<string | null> => {
+  const [row] = await sql<{ short_id: string }[]>`SELECT short_id FROM venue.venues WHERE id = ${venueId}::uuid`;
+  return row?.short_id ?? null;
+};
+
+/** The images a save wrote that its saved content shows; the saving transaction keeps them. */
+const keptUploads = (location: MenuImageLocation, uploaded: readonly string[], content: Record<string, unknown>): string[] => {
+  const shown = new Set(sectionImageKeys(location, content));
+  return uploaded.filter((key) => shown.has(key));
+};
+
+/**
+ * Runs a save that may have written menu images. The save keeps the images it shows in its own transaction
+ * ({@link keepMenuImageUploads}); a refused or failed save, and images a concurrent edit dropped, are deleted at once.
+ * A process that stops before that still deletes them once their grace time ends.
+ */
+const withStoredImages = async <T>(
+  location: MenuImageLocation,
+  uploaded: readonly string[],
+  save: () => Promise<Result<T>>,
+  kept: (value: T) => Record<string, unknown>,
+): Promise<Result<T>> => {
+  let result: Result<T>;
+  try {
+    result = await save();
+  } catch (error) {
+    await releaseMenuImages(uploaded);
+    throw error;
+  }
+  if (!result.ok) await releaseMenuImages(uploaded);
+  else if (uploaded.length > 0) {
+    const used = new Set(keptUploads(location, uploaded, kept(result.data)));
+    await releaseMenuImages(uploaded.filter((key) => !used.has(key)));
+  }
+  return result;
+};
+
 const sectionLimitReached = (locale?: string) =>
   fail({
     code: PUBLIC_SECTION_LIMIT,
@@ -907,12 +959,15 @@ const updateVenue = async (id: string, input: VenueInput): Promise<Result<Venue>
   return row ? ok(mapVenue(row)) : fail(err.notFound("Venue"));
 };
 
+/** Deletes a Venue with its data and, once that commits, every menu image below its prefix. */
 const deleteVenue = async (id: string): Promise<Result<void>> => {
-  const result = await sql`
-    DELETE FROM venue.venues
-    WHERE id = ${id}::uuid
-  `;
-  if (result.count === 0) return fail(err.notFound("Venue"));
+  const deleted = await sql.begin(async (tx) => {
+    const [venue] = await tx<{ short_id: string | null }[]>`DELETE FROM venue.venues WHERE id = ${id}::uuid RETURNING short_id`;
+    if (venue?.short_id) await enqueueMenuImageCleanup(tx, { venueShortId: venue.short_id }, [menuImagePrefix(venue.short_id)], true);
+    return Boolean(venue);
+  });
+  if (!deleted) return fail(err.notFound("Venue"));
+  notifyMenuImageCleanup();
 
   await serviceAccounts.deleteForResource({
     appId: VENUE_APP_ID,
@@ -1623,15 +1678,71 @@ const listSections = async (venueId: string, onlyEnabled = false): Promise<Publi
   return rows.map(mapSection);
 };
 
-const createSection = async (venueId: string, input: PublicSectionInput, locale?: string): Promise<Result<PublicSection>> =>
-  sql.begin((tx) => createSectionInTx(tx, venueId, input, locale));
+/**
+ * Saves a new section with its menu images moved to the object store, within the Venue's section and menu item
+ * caps.
+ */
+const createSection = async (venueId: string, input: PublicSectionInput, locale?: string): Promise<Result<PublicSection>> => {
+  const venueShortId = await venueShortIdOf(venueId);
+  if (!venueShortId) return fail(err.notFound("Venue"));
+  const images = await storeMenuImages({ id: venueId, shortId: venueShortId }, input, [], locale);
+  if (!images.ok) return images;
+  const { addresses, uploaded } = images.data;
+  const location = await menuImageLocation(venueShortId);
+  const prepared = { ...input, content: withMenuImageAddresses(input.content, addresses) };
+  return withStoredImages(
+    location,
+    uploaded,
+    () =>
+      sql.begin(async (tx) => {
+        const created = await createSectionInTx(tx, venueId, prepared, locale);
+        if (created.ok) await keepMenuImageUploads(tx, keptUploads(location, uploaded, created.data.content));
+        return created;
+      }),
+    (section) => section.content,
+  );
+};
 
 /**
  * Applies only the fields `patch` names; visibility and position stay as stored unless the patch sets them. A menu
  * may gain items only within {@link MAX_PUBLIC_MENU_ITEMS}; a change that adds none always saves, so a page saved
- * before the limits can still be edited down.
+ * before the limits can still be edited down. Every save moves the section's image data to the object store, and
+ * images it no longer uses are deleted once it commits.
  */
-const updateSection = async (venueId: string, id: string, patch: PublicSectionPatch, locale?: string): Promise<Result<PublicSection>> =>
+const updateSection = async (venueId: string, id: string, patch: PublicSectionPatch, locale?: string): Promise<Result<PublicSection>> => {
+  const [stored] = await sql<{ kind: PublicSection["kind"]; content: unknown; venue_short_id: string }[]>`
+    SELECT s.kind, s.content, v.short_id AS venue_short_id
+    FROM venue.public_sections s JOIN venue.venues v ON v.id = s.venue_id
+    WHERE s.venue_id = ${venueId}::uuid AND s.id = ${id}::uuid
+  `;
+  if (!stored) return fail(err.notFound("Public section"));
+  const kind = patch.kind ?? stored.kind;
+  const storedContent = parsePgJsonRecord(stored.content) ?? {};
+  const content = patch.content ?? storedContent;
+  const venueShortId = stored.venue_short_id;
+  const location = await menuImageLocation(venueShortId);
+  const storedItems = Array.isArray(storedContent.items) ? storedContent.items : [];
+  const images = await storeMenuImages({ id: venueId, shortId: venueShortId }, { kind, content }, storedItems, locale);
+  if (!images.ok) return images;
+  const { addresses, uploaded } = images.data;
+  const result = await withStoredImages(
+    location,
+    uploaded,
+    () => updateSectionInTx(venueId, id, patch, { addresses, location, uploaded }, locale),
+    (saved) => saved.section.content,
+  );
+  if (!result.ok) return result;
+  if (result.data.removedImages > 0) notifyMenuImageCleanup();
+  return ok(result.data.section);
+};
+
+const updateSectionInTx = async (
+  venueId: string,
+  id: string,
+  patch: PublicSectionPatch,
+  images: { addresses: ReadonlyMap<string, string>; location: MenuImageLocation; uploaded: readonly string[] },
+  locale?: string,
+): Promise<Result<{ section: PublicSection; removedImages: number }>> =>
   sql.begin(async (tx) => {
     const others = await lockSectionTotals(tx, venueId, id);
     const [row] = await tx<DbPublicSection[]>`
@@ -1642,12 +1753,21 @@ const updateSection = async (venueId: string, id: string, patch: PublicSectionPa
     const merged = PublicSectionInputSchema.safeParse({
       kind: patch.kind ?? current.kind,
       title: patch.title ?? current.title,
-      content: patch.content ?? current.content,
+      content: withMenuImageAddresses(patch.content ?? current.content, images.addresses),
       enabled: patch.enabled ?? current.enabled,
       position: patch.position ?? current.position,
     });
     if (!merged.success) {
       return fail(err.badInput(merged.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join(", ")));
+    }
+    // The external-image check before the uploads read the section without a lock; repeat it on the locked row, so
+    // an edit that changed an item meanwhile cannot carry another address through.
+    const mergedItems = Array.isArray(merged.data.content.items) ? merged.data.content.items : [];
+    const currentItems = Array.isArray(current.content.items) ? current.content.items : [];
+    const foreign = foreignMenuImageIndex(images.location, mergedItems, currentItems);
+    if (foreign !== null) {
+      const { t } = venueMessages.resolve(locale ? [locale] : []);
+      return fail({ code: MENU_IMAGE_INVALID, status: 422 as const, message: t.menuImageExternal({ position: foreign + 1 }) });
     }
     const addedItems = publicMenuItemCount(merged.data) - publicMenuItemCount(current);
     const items = others.items + publicMenuItemCount(merged.data);
@@ -1664,7 +1784,13 @@ const updateSection = async (venueId: string, id: string, patch: PublicSectionPa
       WHERE venue_id = ${venueId}::uuid AND id = ${id}::uuid
       RETURNING *
     `;
-    return updated ? ok(mapSection(updated)) : fail(err.notFound("Public section"));
+    if (!updated) return fail(err.notFound("Public section"));
+    const saved = mapSection(updated);
+    await keepMenuImageUploads(tx, keptUploads(images.location, images.uploaded, saved.content));
+    const before = sectionImageKeys(images.location, current.content);
+    const removed = await unreferencedMenuImageKeys(tx, venueId, images.location, before);
+    await enqueueMenuImageCleanup(tx, images.location, removed);
+    return ok({ section: saved, removedImages: removed.length });
   });
 
 /**
@@ -1695,8 +1821,23 @@ const reorderSections = async (venueId: string, ids: string[]): Promise<Result<P
     return ok(updated.map(mapSection));
   });
 
+/** Deletes a section and, once that commits, the menu images no other section of the Venue uses. */
 const deleteSection = async (venueId: string, id: string): Promise<Result<void>> => {
-  await sql`DELETE FROM venue.public_sections WHERE venue_id = ${venueId}::uuid AND id = ${id}::uuid`;
+  const venueShortId = await venueShortIdOf(venueId);
+  if (!venueShortId) return ok();
+  const location = await menuImageLocation(venueShortId);
+  const removed = await sql.begin(async (tx) => {
+    await lockSectionTotals(tx, venueId);
+    const [deleted] = await tx<{ content: unknown }[]>`
+      DELETE FROM venue.public_sections WHERE venue_id = ${venueId}::uuid AND id = ${id}::uuid RETURNING content
+    `;
+    if (!deleted) return [];
+    const before = sectionImageKeys(location, parsePgJsonRecord(deleted.content) ?? {});
+    const keys = await unreferencedMenuImageKeys(tx, venueId, location, before);
+    await enqueueMenuImageCleanup(tx, location, keys);
+    return keys;
+  });
+  if (removed.length > 0) notifyMenuImageCleanup();
   return ok();
 };
 

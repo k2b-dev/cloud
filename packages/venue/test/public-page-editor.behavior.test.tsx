@@ -346,6 +346,18 @@ describe("Venue public page view behavior", () => {
     expect(noticeCopy.disabled).toBe(false);
     expect(noticeCopy.text).not.toContain("A copy would make");
 
+    // A menu that still shows an image from another address waits until it is uploaded again; its own images copy.
+    const imageMenu = (image: string): PublicSection => ({
+      ...section("Menu02", "Cake menu", 1),
+      kind: "menu",
+      content: { items: [{ name: "Cheesecake", image }] },
+    });
+    const externalCopy = await duplicateEntry([imageMenu("https://images.example.org/cake.webp")], "Cake menu");
+    expect(externalCopy).toMatchObject({ disabled: true });
+    expect(externalCopy.text).toContain("Upload the external images again first");
+    const ownImage = `https://cloud.example.org/public/storage/venue/menu/${venue.id}/${"c".repeat(32)}.webp`;
+    expect((await duplicateEntry([imageMenu(ownImage)], "Cake menu")).disabled).toBe(false);
+
     const full = Array.from({ length: MAX_PUBLIC_SECTIONS }, (_, index) =>
       section(`Note${String(index).padStart(2, "0")}`, `Note ${index}`, index),
     );

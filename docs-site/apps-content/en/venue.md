@@ -5,7 +5,7 @@ section: Everyday
 order: 200
 description: Opening hours, staffing shifts, public pages, calendars, and visitor feedback for staffed places.
 tags: [venues, shifts, schedules, public-pages, cli]
-updated: 2026-10-07
+updated: 2026-11-28
 ---
 
 # Venues
@@ -172,13 +172,36 @@ Opening-hour exceptions stay separate: they change only the hours and never
 create a shift. A one-off shift counts toward the staffed opening logic like a
 weekly shift on that date.
 
-## Image privacy
+## Menu images and image privacy
 
-Venue logos, banners, and menu item images are inline image data. When an
-admin saves them through the workspace, the API, or `cld venue`, JPEG, PNG,
-and WebP images lose location and device metadata before storage, without
-changing image quality. Saving Venue settings or a section processes every
-image it contains, also unchanged ones. A malformed JPEG, PNG, or WebP answers
+Venue logos and banners are inline image data. Menu item images live in the
+platform's [object store](/en/docs/platform/object-store): saving a section
+stores a new image there under a random name and keeps only the image's
+permanent address in the item. **Anyone who has that address can see the
+image**, also the image of a draft or hidden section; the random name keeps it
+from being guessed. Removing or replacing an image, deleting its section, or
+deleting the venue deletes the image once the change commits. Another section
+that shows the same image, such as a copy, keeps it. The public page and the
+status API carry the address once an image has moved, not the image data. A
+new image is a WebP, PNG, JPEG, or GIF of at most 256 KiB whose content matches
+its declared format; it is stored as uploaded, without re-encoding.
+
+A menu item's image is either uploaded image data or an address of this
+venue's own menu images, which the save stores in the object store's own form
+whatever host the address named. An item whose stored image has another address keeps
+showing it and keeps saving while the item stays unchanged; the section dialog
+marks it with "External image – please upload it again". Once the item changes,
+its image has to be uploaded again or removed: the save answers HTTP 422 with
+code `MENU_IMAGE_INVALID`, as it does for other image values.
+
+Menu images saved before this release as inline image data stay as they are
+until their section is saved again; that save moves them to the object store.
+Reading never changes them.
+
+When an admin saves images through the workspace, the API, or `cld venue`,
+JPEG, PNG, and WebP images lose location and device metadata before storage,
+without changing image quality. Saving Venue settings or a section processes
+every image it contains, also unchanged ones. A malformed JPEG, PNG, or WebP answers
 HTTP 422 with code `MALFORMED_IMAGE`. Other formats stay unchanged. See
 [Image upload privacy](/en/docs/platform/image-upload-privacy).
 
@@ -226,6 +249,14 @@ and the public page preview are available in the workspace and the API
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
+
+Menu images need the platform object store, connected under **Administration
+→ Storage**. Without it, a save that carries a new menu image answers HTTP 503
+with code `storage_not_configured` and stores nothing; everything else works,
+including menus without images and inline images saved before this release.
+Startup creates the table `venue.menu_image_cleanup`, which holds image
+deletions until they have run; without an object store they wait until one is
+connected.
 
 Startup adds the nullable shift date, its weekday constraint, and a date index
 idempotently. Existing templates keep `date: null` and continue weekly; no new

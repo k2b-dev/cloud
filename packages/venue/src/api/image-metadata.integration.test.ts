@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
-import { z } from "zod";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
@@ -46,11 +45,10 @@ databaseSuite()("Venue content image privacy", () => {
       await checkVenue();
       expect((await call("PATCH", path, input, cookie)).status).toBe(200);
       await checkVenue();
-      const sectionInput = PublicSectionInputSchema.parse({
-        kind: "menu",
-        title: "Menu",
-        content: { items: [{ name: "Coffee", image: camera }] },
-      });
+      // New menu images go to the object store, which this suite leaves unconfigured; `menu-images.integration.test.ts`
+      // checks that the stored object loses its metadata. Image data stored inline before images moved stays inline
+      // here and is sanitized on every save, also of an omitted content patch.
+      const sectionInput = PublicSectionInputSchema.parse({ kind: "menu", title: "Menu", content: { items: [{ name: "Coffee" }] } });
       const section = await venueService.sections.create(venue.id, sectionInput);
       if (!section.ok) throw section.error;
       const [sectionIds] = await sql<{ short_id: string }[]>`SELECT short_id FROM venue.public_sections WHERE id=${section.data.id}::uuid`;
@@ -59,18 +57,13 @@ databaseSuite()("Venue content image privacy", () => {
         const [stored] = await sql<{ content: unknown }[]>`SELECT content FROM venue.public_sections WHERE id=${section.data.id}::uuid`;
         expect(stored?.content).toMatchObject({ items: [{ name: "Coffee", image: clean }] });
       };
-      await checkSection();
-      expect((await call("PATCH", sectionPath, { content: sectionInput.content }, cookie)).status).toBe(200);
-      await checkSection();
-      // An omitted content patch sanitizes legacy images in the merged stored content too.
-      await sql`UPDATE venue.public_sections SET content=${JSON.stringify(sectionInput.content)}::text::jsonb WHERE id=${section.data.id}::uuid`;
+      const olderContent = { items: [{ name: "Coffee", image: camera }] };
+      await sql`UPDATE venue.public_sections SET content=${JSON.stringify(olderContent)}::text::jsonb WHERE id=${section.data.id}::uuid`;
       expect((await call("PATCH", sectionPath, { title: "New menu" }, cookie)).status).toBe(200);
       await checkSection();
-      const apiCreated = await call("POST", `${path}/sections`, sectionInput, cookie);
-      expect(apiCreated.status).toBe(201);
-      expect(z.object({ content: z.unknown() }).parse(await apiCreated.json()).content).toMatchObject({
-        items: [{ name: "Coffee", image: clean }],
-      });
+      await sql`UPDATE venue.public_sections SET content=${JSON.stringify(olderContent)}::text::jsonb WHERE id=${section.data.id}::uuid`;
+      expect((await call("PATCH", sectionPath, { content: olderContent }, cookie)).status).toBe(200);
+      await checkSection();
       const malformed = dataUrl(new Uint8Array([255, 216, 255, 219, 0]));
       for (const [method, url, body] of [
         ["POST", "/venues", { ...input, slug: `${input.slug}-invalid`, logoBase64: malformed }],
