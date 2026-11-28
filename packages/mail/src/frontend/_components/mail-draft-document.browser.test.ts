@@ -59,6 +59,7 @@ let revision = 1,
   seq = 1,
   saveFails = false,
   streamFull = false,
+  refuseInput = false,
   lifecycle: MailDraft["state"] = "draft",
   denied = false;
 let frozen: Uint8Array | null = null;
@@ -176,6 +177,9 @@ const server = Bun.serve<{ document: boolean }>({
         Y.applyUpdate(doc, encoding.fromBase64(body.state));
         if (frozen && JSON.stringify(readDraftDocument(doc)) === JSON.stringify(snapshot(frozen).content))
           return Response.json({ status: "unchanged", durableSourceState: encoding.toBase64(frozen) });
+        // An open draft keeps refused input as its own recovery copy, as Mail does for a reply.
+        if (!frozen && lifecycle === "draft" && body.generation === generation)
+          return Response.json({ status: "kept", draft: { ...draft(), recoveryCopyCount: 1 }, durableSourceState: body.state });
         return Response.json({
           status: "recovered",
           draft: { ...draft(), ...readDraftDocument(doc), id: "Rest01", state: "draft" },
@@ -213,6 +217,17 @@ const server = Bun.serve<{ document: boolean }>({
         });
         packet(socket, "replayReady", { docId: "Draft1", generation: "1", cursor: cursor(), peerId: "fixture" });
       } else if (type === "syncPublish") {
+        if (refuseInput) {
+          // The room's answer to input it cannot admit, e.g. a base behind the pruned log prefix.
+          packet(socket, "error", {
+            docId: "Draft1",
+            code: "RESYNC_REQUIRED",
+            message: mailDraftDocumentMessages.resolve(["de"]).t.reopen,
+            reopen: true,
+          });
+          socket.close(1012, "RESYNC_REQUIRED");
+          return;
+        }
         if (streamFull) {
           packet(socket, "error", {
             docId: "Draft1",
@@ -257,6 +272,7 @@ const reset = () => {
   seq = 1;
   saveFails = false;
   streamFull = false;
+  refuseInput = false;
   denied = false;
   lifecycle = "draft";
   frozen = null;
@@ -268,6 +284,18 @@ const reset = () => {
 const open = async (width = 1440) => {
   reset();
   const context = await browser.newContext({ viewport: { width, height: 900 } });
+  // Shared drafts bound an external edit's body diff by wall-clock time. Each document pins its clock to the fixtures'
+  // instant, so load on the runner cannot reject an edit. Tests that assert an edit stall every clock read meanwhile.
+  await context.addInitScript((frozen: number) => {
+    let stall = false;
+    Date.now = () => {
+      if (stall) for (const end = performance.now() + 20; performance.now() < end; );
+      return frozen;
+    };
+    window.stallClockReads = (on) => {
+      stall = on;
+    };
+  }, Date.parse(now));
   const page = await context.newPage();
   page.setDefaultTimeout(10_000);
   const errors = pageErrors(page);
@@ -420,8 +448,10 @@ for (const width of [1440, 390])
       expect(await page.evaluate((body) => window.mailSharedFixture.rejectProposal(body), proposal)).toBe(true);
       await page.reload();
       await page.waitForFunction(() => window.mailSharedFixture?.state()?.ready);
+      await page.evaluate(() => window.stallClockReads?.(true));
       await page.getByRole("button", { name: "Vorschlag übernehmen", exact: true }).click();
       await page.waitForFunction((body) => window.mailSharedFixture.content().body === body, proposal);
+      await page.evaluate(() => window.stallClockReads?.(false));
       expect(await page.evaluate(() => window.mailSharedFixture.state()?.rejectedEdit)).toBeNull();
       await page.getByRole("button", { name: "Speichern", exact: true }).click();
       await page.waitForFunction(() => window.mailSharedFixture.savedRevision() === 2);
@@ -508,6 +538,49 @@ test("a full stream keeps pending text on device and shows an error with a worki
     await page.getByRole("button", { name: "Speichern", exact: true }).click();
     await page.waitForFunction(() => window.mailSharedFixture.savedRevision() === 2);
     await waitStored(page, 0);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+}, 30_000);
+
+test("input the open draft refuses becomes its recovery copy once, and the reloaded draft is editable again", async () => {
+  const { page, context, errors } = await open();
+  try {
+    refuseInput = true;
+    const editor = page.locator(".cm-content").first();
+    await editor.click();
+    await page.keyboard.press("Control+Home");
+    await page.keyboard.insertText("Refused ");
+    // Recovery settles either as a recovery copy or, before the fix, failed with "Dieser Entwurf hat sich geändert …".
+    const settled = () =>
+      page.waitForFunction(() => {
+        const state = window.mailSharedFixture?.state();
+        return Boolean(
+          state && ((state.ready && !window.mailSharedFixture.unsent()) || (state.terminal && (state.restCopied || state.restFailed))),
+        );
+      });
+    await settled();
+    const refusal = await page.evaluate(() => window.mailSharedFixture.state()?.message);
+    await page.reload();
+    await settled();
+    // Before the fix the reload sent the stored input again and the room refused it again: terminal with the reopen prompt.
+    expect(await page.evaluate(() => window.mailSharedFixture.state()?.terminal)).toBe(false);
+    expect(await page.evaluate(() => window.mailSharedFixture.state()?.error)).toBe(false);
+    expect(refusal).toContain("Wiederherstellungskopie des offenen Entwurfs");
+    expect(recoveries).toHaveLength(1);
+    expect(recoveries[0]?.generation).toBe("1");
+    await waitStored(page, 0);
+    expect(await page.evaluate(() => window.mailSharedFixture.content().body)).toBe(base.body);
+    expect(await page.locator(".cm-content").first().getAttribute("contenteditable")).toBe("true");
+    refuseInput = false;
+    await page.locator(".cm-content").first().click();
+    await page.keyboard.press("Control+Home");
+    await page.keyboard.insertText("After ");
+    await page.waitForFunction(() => !window.mailSharedFixture.unsent());
+    expect(readDraftDocument(document).body).toBe(`After ${base.body}`);
+    // One request for one refusal: the copy is idempotent and nothing loops.
+    expect(recoveries).toHaveLength(1);
     expect(errors).toEqual([]);
   } finally {
     await context.close();

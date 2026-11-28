@@ -34,6 +34,8 @@ export type MarkdownRenderOptions = {
   inlineTokens?: readonly string[];
   /** Whether to render images. False renders alt text without resource requests. Defaults to true. */
   allowImages?: boolean;
+  /** Whether to render tables. False renders each row as a line of text, its cells joined by " · ". Defaults to true. */
+  allowTables?: boolean;
   /** Optional protocol allowlist, including trailing colons. Relative URLs resolve as HTTPS. */
   linkProtocols?: readonly string[];
   linkTarget?: "_blank";
@@ -71,7 +73,16 @@ export const createSafeRenderer = (options: MarkdownRenderOptions = {}): Rendere
   // HTML. The tag is escaped here, so the text after it is escaped as well.
   const renderText: Renderer["text"] = (token) => baseText(token.type === "text" && token.escaped ? { ...token, escaped: false } : token);
   const renderTable = renderer.table.bind(renderer);
-  renderer.table = (token: Tokens.Table) => {
+  renderer.table = function (token: Tokens.Table) {
+    if (options.allowTables === false)
+      return [token.header, ...token.rows]
+        .map((row) => row.map((cell) => this.parser.parseInline(cell.tokens)).filter((cell) => cell.trim()))
+        .filter((cells) => cells.length)
+        .map(
+          (cells) => `<p>${cells.join(" · ")}</p>
+`,
+        )
+        .join("");
     const table = renderTable(token);
     const content = token.header.every((cell) => !cell.text.trim()) ? table.replace(/<thead>[\s\S]*?<\/thead>\n?/, "") : table;
     return `<div class="k2b-content-markdown__table" tabindex="0">${content}</div>`;

@@ -1064,10 +1064,11 @@ function notebooksCommands(locale?: string) {
       command("backlinks", {
         summary: t({ en: "List notes that link to a note", de: "Notizen auflisten, die auf eine Notiz verlinken" }),
         args: noteArg,
-        async run({ ctx, args }) {
+        flags: pageFlags,
+        async run({ ctx, args, flags }) {
           const target = await resolveNote(ctx, args.note);
-          const payload = await ctx.readJson<{ data: Array<{ noteId: string; title: string; notebookName: string }> }>(
-            await ctx.fetch(noteApi(target, "/backlinks")),
+          const payload = await ctx.readJson<Page<{ noteId: string; title: string; notebookName: string }>>(
+            await ctx.fetch(withQuery(noteApi(target, "/backlinks"), { page: flags.page, per_page: flags.perPage })),
           );
           printRows(
             ctx,

@@ -18,7 +18,6 @@ type Props = {
   view: "list" | "table" | "kanban" | "calendar";
   source: string;
   overview: boolean;
-  hint: string | null;
   columns: SpaceColumn[];
   tags: SpaceTag[];
   itemsResult: ItemListResult;
@@ -58,11 +57,6 @@ export default function SpaceHeadFixture(props: Props) {
               myWorkCount={1}
               canCreate
               current={props.overview ? { kind: "overview" } : { kind: "space", id: "Space1" }}
-              hint={
-                props.overview
-                  ? { id: "spaces.overview-sidebar", open: props.hint === "spaces.overview-sidebar" }
-                  : { id: "spaces.sidebar-switch", open: props.hint === "spaces.sidebar-switch" }
-              }
             />
           </AppWorkspace.SidebarDesktop>
         </AppWorkspace.Sidebar>
@@ -79,12 +73,7 @@ export default function SpaceHeadFixture(props: Props) {
                 ]}
               />
             ) : (
-              <SpaceViewTabs
-                spaceId="Space1"
-                query={source.search.slice(1)}
-                currentView={props.view}
-                hintOpen={props.hint === "spaces.view-tabs"}
-              />
+              <SpaceViewTabs spaceId="Space1" query={source.search.slice(1)} currentView={props.view} />
             )
           }
           filters={
@@ -108,7 +97,6 @@ export default function SpaceHeadFixture(props: Props) {
               currentView={props.view}
               canWrite
               people={props.people}
-              hintOpen={props.hint === "spaces.space-menu"}
             />
           }
           primary={{
@@ -180,7 +168,6 @@ export function OverviewFixture(props: ComponentProps<typeof SpacesOverview>) {
       {/* Islands serialize only explicit props, so nothing is spread. */}
       <SpacesOverview
         spaces={props.spaces}
-        sidebarHint={props.sidebarHint}
         initialView={props.initialView}
         initialPinnedSpaceIds={props.initialPinnedSpaceIds}
         initialWork={props.initialWork}

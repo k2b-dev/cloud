@@ -457,6 +457,51 @@ export const GridFixture = () =>
     <Bar start={<Path label="Ort" items={[{ label: "Werkstatt", href: "#werkstatt" }, { label: "Aufträge" }]} />} />,
   );
 
+const sources = Array.from({ length: 16 }, (_, index) => ({
+  name: ["Werkstatt Nord", "Montage Süd", "Lager Haus am Hang", "Büro"][index % 4]!,
+  endpoint: `https://pulse.example/ingest/${index + 1}/events?stream=werkstatt`,
+}));
+
+/**
+ * A list whose table is wider than its pane, beside a reader (W5, Pulse): the table scrolls sideways inside the list,
+ * its cut text reaches the line between the panes at the grip's height, and the grip's pill stays on its line.
+ */
+export const SplitWideTableFixture = () =>
+  shell(
+    <Pane.Split>
+      <Pane label="Breite der Quellen" width={{ min: 360, default: 720 }}>
+        <Table
+          label="Quellen"
+          rows={sources}
+          phone={(source) => ({ lines: [source.name, source.endpoint] })}
+          columns={[
+            { title: "Quelle", width: { min: 200, default: 380 }, cell: (source) => source.name },
+            { title: "Status", width: { min: 110, default: 120 }, cell: () => <Chip status="ok">Aktiv</Chip> },
+            { title: "Zuletzt", width: { min: 140, default: 170 }, cell: () => "vor 3 Minuten" },
+            { title: "Endpunkt", width: { min: 120, default: 200 }, cell: (source) => source.endpoint },
+            { title: "Ereignisse", align: "end", cell: () => "12.345" },
+          ]}
+        />
+      </Pane>
+      <Pane label="Quelle" detail back={{ label: "Quellen", href: "#quellen" }}>
+        <Band>
+          <Text type="lead">Werkstatt Nord</Text>
+        </Band>
+        <Section title="Angaben">
+          <Facts
+            items={[
+              { label: "Endpunkt", value: "https://pulse.example/ingest/1/events" },
+              { label: "Status", value: "Aktiv" },
+              { label: "Zuletzt", value: "vor 3 Minuten" },
+              { label: "Ereignisse", value: "12.345" },
+              { label: "Aufbewahrung", value: "30 Tage" },
+            ]}
+          />
+        </Section>
+      </Pane>
+    </Pane.Split>,
+  );
+
 /** Field, Field.Row, Input, Select, DateInput, Check (box, switch; empty, set, mixed), Choice, Button variants. */
 export const ControlsFixture = () =>
   shell(
@@ -606,6 +651,37 @@ export const fixtures = {
         </Pane>
       </Pane.Split>,
     ),
+  // break-ui: a name without breaks far longer than the bar, after a way back of one long word, beside its list
+  namedBackLong: () =>
+    shell(
+      <Pane.Split>
+        <Pane label="Breite der Liste" width={{ min: 320, default: 432 }}>
+          <List label="Dateien">
+            {[
+              "Protokoll.md",
+              "Aufmaß Küche.pdf",
+              "Materialliste.xlsx",
+              "Angebot 2026-118.pdf",
+              "Ansicht Front.jpg",
+              "Budget 2027.xlsx",
+            ].map((name, index) => (
+              <Row lines={[name, `Geändert vor ${index + 2} Stunden · Mira Sommer`]} />
+            ))}
+          </List>
+        </Pane>
+        <Pane
+          detail
+          label={`${"Benachrichtigungseinstellungen-".repeat(4)}Protokoll.md`}
+          back={{ label: "Sehr-langer-Ordnername-ohne-Leerzeichen", href: "#ordner" }}
+        >
+          <Prose
+            markdown={
+              "Zuschnitt Küchenfront bis Freitag. Eiche geölt, 19 mm.\n\n- Maße prüfen\n- Kanten bestellen\n- Arbeitsplatte Granit, 38 mm\n- Spüle als Unterbau\n- Sockel 100 mm\n- Lüftungsgitter unter dem Backofen\n- Topfbänder 110°\n- Montage am Donnerstag"
+            }
+          />
+        </Pane>
+      </Pane.Split>,
+    ),
   structure: StructureFixture,
   // head actions of sections: with a leading symbol, with only a trailing "forward" chevron, and words only
   headActions: () => (
@@ -653,6 +729,7 @@ export const fixtures = {
   ),
   table: TableFixture,
   grid: GridFixture,
+  splitWideTable: SplitWideTableFixture,
   controls: ControlsFixture,
   messages: MessagesFixture,
   // a picture, heads that sort, busy and disabled, and a side column under the table on the phone

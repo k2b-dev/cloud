@@ -176,7 +176,7 @@ export const CalendarDayView = (props: TimeViewProps) => {
     if (key === view.nowKey()) {
       const top = topFor(key, view.nowMinute());
       // Now in the upper third, but never showing the end of the day before above the day's own heading.
-      if (top !== null) scroller.scrollTop = Math.max(topFor(key) ?? 0, top - scroller.clientHeight / 3);
+      if (top !== null) scroller.scrollTop = clearHours(key, Math.max(topFor(key) ?? 0, top - scroller.clientHeight / 3));
       lastScrollTop = scroller.scrollTop;
       return;
     }
@@ -189,8 +189,30 @@ export const CalendarDayView = (props: TimeViewProps) => {
     const start = topFor(key);
     if (start === null) return;
     const entry = Number.isFinite(first) && first > 120 ? topFor(key, first - 60) : null;
-    scroller.scrollTop = entry === null ? start : Math.max(start, entry - 44);
+    scroller.scrollTop = entry === null ? start : clearHours(key, Math.max(start, entry - 44));
     lastScrollTop = scroller.scrollTop;
+  };
+
+  /**
+   * A place where an hour's label would stand half under the day's sticky heading moves up until the label stands
+   * whole below it; the day's own start is the highest it goes.
+   */
+  const clearHours = (key: string, top: number) => {
+    const section = sectionOf(key);
+    const start = topFor(key);
+    const head = section?.querySelector<HTMLElement>(".k2b-calendar-days__head");
+    if (!scroller || !section || start === null || !head) return top;
+    const origin = scroller.getBoundingClientRect().top - scroller.scrollTop;
+    const height = head.getBoundingClientRect().height;
+    // the heading sticks at the view's top: below it, the day shows from `top + height` on
+    const edge = top + height;
+    for (const label of section.querySelectorAll<HTMLElement>(".k2b-calendar-days__hour")) {
+      const box = label.getBoundingClientRect();
+      if (box.height === 0) continue;
+      const labelTop = box.top - origin;
+      if (labelTop < edge - 0.5 && box.bottom - origin > edge + 0.5) return Math.max(start, labelTop - height - 2);
+    }
+    return top;
   };
 
   // Input: the wheel brakes at day starts; a resting scroll glides onto a near one.

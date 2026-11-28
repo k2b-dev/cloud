@@ -145,6 +145,13 @@
   box-shadow: none;
 }
 
+/* In a v2 screen the calendar is the content of its Canvas: it lies flat, without an edge or rounded corners of its
+   own, so the lines of the structure around it stand once (no box in a box). Elsewhere, as on v1 pages, it is a card. */
+.k2b-ui :is([data-k2-canvas] .k2b-content-calendar) {
+  border: 0;
+  border-radius: 0;
+}
+
 /* Entries: a light neutral surface with a thin edge in the entry's color and
    neutral text, so the color names the category without tinting the page.
    The edge keeps 3:1 against the surface in both themes: engines with
@@ -4012,6 +4019,24 @@
 
 .k2b-ui .k2b-calendar-week__slot > .k2b-calendar-event {
   font-size: 0.6875rem;
+}
+
+/* A bar that began before the first day on screen keeps its title beside the all-day label: the title sticks to the
+   days' scroll edge, and the bar clips without becoming a scroll container of its own, which would hold it. */
+.k2b-ui .k2b-calendar-week__slot > .k2b-calendar-event[data-bar="true"] {
+  overflow: clip;
+}
+
+.k2b-ui .k2b-calendar-week__slot > .k2b-calendar-event[data-bar="true"] > .k2b-calendar-event__title {
+  position: sticky;
+  left: calc(var(--k2b-calendar-gutter) + 0.5rem);
+}
+
+/* Right to left the label and the gutter stand on the right. The build turns :dir() and logical properties into
+   languages, so a page that sets dir="rtl" itself is matched by its attribute too. */
+.k2b-ui .k2b-calendar-week__slot > .k2b-calendar-event[data-bar="true"] > .k2b-calendar-event__title:is(:dir(rtl), [dir="rtl"] *):not([dir="rtl"] [dir="ltr"] *) {
+  right: calc(var(--k2b-calendar-gutter) + 0.5rem);
+  left: auto;
 }
 
 .k2b-ui .k2b-calendar-week__slot[data-checkbox="true"] {

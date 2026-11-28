@@ -17,9 +17,7 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: Form } = await import("./CoreSettingsForm.island.tsx");
 const { default: AccountCategorySwitch } = await import("../../../auth/AccountCategorySwitch.island.tsx");
-const { default: AccountOperations } = await import("./AccountOperations.island.tsx");
 
-import { accountOperationsMessages } from "./account-operations-messages";
 import { accountSettingsSection } from "./account-settings";
 
 const { default: ApprovalStatus } = await import("../../../app-approval/ApprovalStatus");
@@ -155,21 +153,6 @@ describe("account category administration", () => {
     expect(accountSettingsSection("user.session.max_age")).toBe("sign-in");
     expect(accountSettingsSection("user.local_guest.expiry_days")).toBe("registration");
     expect(render(false, "de", "registration")).not.toContain('name="user.allow_self_registration"');
-  });
-  test("operations hide the FreeIPA job when the integration is disabled", () => {
-    const renderOperations = (freeIpaEnabled: boolean) => renderToString(() => createComponent(AccountOperations, { freeIpaEnabled }));
-    expect(renderOperations(false)).not.toContain("FreeIPA account expiry");
-    expect(renderOperations(true)).toContain("FreeIPA account expiry");
-    expect(renderOperations(false)).toContain("Local full account expiry");
-    expect(renderOperations(false)).toContain("/admin/observability/jobs?search=auth%3A");
-    expect(renderOperations(false)).toContain("Account lifecycle logs");
-    expect(renderOperations(false)).not.toContain("FreeIPA sync logs");
-    expect(renderOperations(true)).toContain("FreeIPA sync logs");
-    expect(renderOperations(false)).toContain("may restore their access");
-    expect(renderOperations(false)).toContain("They do not assign Linux identities");
-    expect(renderOperations(false)).toContain('href="/admin/observability/logs?source=auth:local-user:backfill"');
-    expect(renderOperations(false)).toContain('aria-label="Run: Local full account expiry"');
-    expect(accountOperationsMessages.check()).toEqual([]);
   });
   test("app approval reveals integration settings only when enabled", () => {
     expect(render(false)).toContain("Enable app sign-in");

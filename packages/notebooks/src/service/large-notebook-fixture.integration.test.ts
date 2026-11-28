@@ -34,5 +34,5 @@ postgresTest("the 20,000-page fixture holds its tree, links and tags as the serv
   expect(folder!.children).toBe(5000);
   // Links resolve to public IDs the services read back.
   const target = notebook.notes[0]!;
-  expect((await listBacklinks({ noteId: target.id, userId: null, bypassAccess: true })).length).toBeGreaterThan(0);
+  expect((await listBacklinks({ noteId: target.id, userId: null, bypassAccess: true, limit: 100 })).items.length).toBeGreaterThan(0);
 });

@@ -263,14 +263,12 @@ beforeAll(async () => {
             : withArrivedMails(mailboxData(target, stored, largeMailbox)),
         );
       }
-      // The person's list share and seen hints, kept per browser like Mail keeps them per person and mailbox.
-      if (url.pathname.endsWith("/workspace-preference") || url.pathname.endsWith("/workspace-preference/seen-hints")) {
+      // The person's list share, kept per browser like Mail keeps it per person and mailbox.
+      if (url.pathname.endsWith("/workspace-preference")) {
         const target = new URL(request.headers.get("referer") ?? boxPath, server.url);
         const current = mailboxData(target, storedWorkspace(request.headers.get("cookie"))).workspacePreference;
-        const body: { listShare?: number | null; hintId?: MailWorkspacePreference["seenHints"][number] } = await request.json();
-        const next = url.pathname.endsWith("/seen-hints")
-          ? { ...current, seenHints: [...new Set([...current.seenHints, body.hintId!])] }
-          : { ...current, listShare: body.listShare ?? null };
+        const body: { listShare?: number | null } = await request.json();
+        const next = { ...current, listShare: body.listShare ?? null };
         return Response.json(next, {
           headers: { "set-cookie": `${WORKSPACE_COOKIE}=${encodeURIComponent(JSON.stringify(next))}; Path=/` },
         });
@@ -720,30 +718,6 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               await close(page);
             }
           });
-
-      for (const width of [1440, 390])
-        test(`F9 at ${width}: the moved filters show once at the button, move nothing, and Show filters opens them`, async () => {
-          const page = await open(`${boxPath}?folder=Filed1&hints=filters-moved`, width, width === 390 ? 844 : 900);
-          try {
-            const hint = page.locator(".k2b-moved-hint");
-            await hint.waitFor({ state: "visible" });
-            expect(await hint.textContent()).toContain("The filters are here now. The views stay as tabs.");
-            // The hint floats: the server frame, with the hint's room nowhere, equals the page with the hint.
-            const recorded = JSON.parse((await page.locator("html").getAttribute("data-server-geometry"))!) as Frame;
-            expect(await geometry(page)).toEqual(recorded);
-            const seen = page.waitForRequest((request) => request.url().endsWith("/workspace-preference/seen-hints"));
-            await hint.getByRole("button", { name: "Show filters" }).click();
-            expect((await seen).postDataJSON()).toEqual({ hintId: "filters-moved" });
-            await page.getByRole("menuitem", { name: /More filters/ }).waitFor({ state: "visible" });
-            await page.keyboard.press("Escape");
-            await page.reload();
-            await ready(page);
-            await settled(page);
-            expect(await hint.count()).toBe(0);
-          } finally {
-            await close(page);
-          }
-        });
 
       test("F9: reload and traversal keep the same scoped search on the filter button", async () => {
         const expression: MailSearchExpression = {
@@ -1913,36 +1887,6 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-      test("F2: V, which switched the view, shows once at the handle that the list's width decides", async () => {
-        const page = await open(`${boxPath}?conversation=Conv02&hints=density-by-width`, 1440, 900);
-        try {
-          const hint = page.locator(".k2b-moved-hint");
-          await page.locator("[data-mail-reader-heading]").focus();
-          await settled(page);
-          const before = await split(page);
-          const seen = page.waitForRequest((request) => request.url().endsWith("/workspace-preference/seen-hints"));
-          await page.keyboard.press("v");
-          await hint.waitFor({ state: "visible" });
-          expect(await hint.textContent()).toContain("The list's width decides how it shows. Drag here.");
-          // The hint stands beside the handle and moves nothing.
-          const handle = (await page.locator(".mail-list-handle").boundingBox())!;
-          const shown = (await hint.boundingBox())!;
-          expect(shown.x).toBeGreaterThanOrEqual(handle.x + handle.width - 1);
-          expect(await split(page)).toEqual(before);
-          await hint.getByRole("button", { name: "Got it" }).click();
-          expect((await seen).postDataJSON()).toEqual({ hintId: "density-by-width" });
-          await hint.waitFor({ state: "hidden" });
-          await page.reload();
-          await ready(page);
-          await page.locator("[data-mail-reader-heading]").focus();
-          await page.keyboard.press("v");
-          await settled(page);
-          expect(await hint.count()).toBe(0);
-        } finally {
-          await close(page);
-        }
-      });
-
       test("views: the day's done line above the list", async () => {
         const page = await open(`${boxPath}?done=19,14`, 1440, 900);
         try {
@@ -2921,26 +2865,6 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await page.keyboard.press("Escape");
             await note.locator("textarea").waitFor({ state: "detached" });
             if (screenshots) await page.screenshot({ path: join(screenshots, `notes-light-1440.png`) });
-          } finally {
-            await close(page);
-          }
-        });
-
-        test("hint: once at the chip row, where notes and the details went; Got it stores it as seen", async () => {
-          const page = await open(`${boxPath}?conversation=Conv01&hints=reader-head-moved`, 1440, 900);
-          try {
-            const hint = page.locator(".k2b-moved-hint:popover-open");
-            await hint.waitFor();
-            expect(await hint.textContent()).toContain("Notes are now in the timeline, everything else is here in the head.");
-            const seen = page.waitForRequest(
-              (request) => request.method() === "PUT" && request.url().endsWith("/workspace-preference/seen-hints"),
-            );
-            await page.route("**/workspace-preference/seen-hints", (route) =>
-              route.fulfill({ json: { listShare: null, seenHints: ["reader-head-moved"] } }),
-            );
-            await hint.getByRole("button", { name: "Got it" }).click();
-            expect((await seen).postDataJSON()).toEqual({ hintId: "reader-head-moved" });
-            await hint.waitFor({ state: "detached" });
           } finally {
             await close(page);
           }

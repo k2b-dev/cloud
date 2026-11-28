@@ -25,6 +25,8 @@ export const gridsCrudMessages = i18n.define({
       invalidFieldConfig: ({ type, detail }: { type: string; detail: string }) =>
         `The configuration for field type “${type}” is invalid: ${detail}`,
       invalidFieldConfigDetail: "The configuration is invalid.",
+      invalidSelectColor: ({ value, names }: { value: string; names: string }) =>
+        `A select option colour is a hex colour such as #2563eb or one of: ${names}, not ${value}.`,
       objectListSchemaInvalidatesValues: ({ field, detail }: { field: string; detail: string }) =>
         `Existing values in “${field}” do not meet these settings: ${detail}. Update those values first.`,
       objectListColumnMeaningChanged: ({ field }: { field: string }) =>
@@ -196,6 +198,8 @@ export const gridsCrudMessages = i18n.define({
       unknownFieldType: ({ type }) => `Unbekannter Feldtyp „${type}“.`,
       invalidFieldConfig: ({ type, detail }) => `Die Konfiguration für den Feldtyp „${type}“ ist ungültig: ${detail}`,
       invalidFieldConfigDetail: "Die Konfiguration ist ungültig.",
+      invalidSelectColor: ({ value, names }) =>
+        `Die Farbe einer Auswahloption ist eine Hex-Farbe wie #2563eb oder eine von: ${names}, nicht ${value}.`,
       objectListSchemaInvalidatesValues: ({ field, detail }) =>
         `Vorhandene Werte in „${field}“ erfüllen diese Einstellungen nicht: ${detail}. Passe zuerst diese Werte an.`,
       objectListColumnMeaningChanged: ({ field }) =>

@@ -251,6 +251,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     accessVisible,
     panelAttachments: selected.routeState?.panelAttachments ?? [],
     backlinks: selected.routeState?.backlinks ?? [],
+    backlinksTotal: selected.routeState?.backlinksTotal ?? 0,
     relations: selected.routeState?.relations ?? { outgoing: [], tags: [] },
     initialCommentsPage,
     initialAnnotations,

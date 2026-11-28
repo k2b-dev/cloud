@@ -2,11 +2,11 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { weatherService } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
-import { AppOverview, ScrollArea } from "@k2b/ui";
 import { ssr } from "../config";
 import { weatherMessages } from "../messages";
-import AddLocationButton from "./AddLocation.island";
+import WeatherScreen from "./WeatherScreen.island";
 
+/** The first saved location opens at once; without one, the page says so and offers to add a city. */
 export default ssr<AuthContext>(async (c) => {
   const { t } = weatherMessages.resolve([getLocale(c)]);
   const user = expectUserBackedActor(c);
@@ -16,19 +16,8 @@ export default ssr<AuthContext>(async (c) => {
   }
 
   return () => (
-    <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.appName }]}>
-      <ScrollArea class="min-h-0 min-w-0 flex-1">
-        <AppOverview
-          title={t.appName}
-          subtitle={t.overviewSubtitle}
-          icon="ti ti-temperature-celsius"
-          actions={<AddLocationButton variant="overview" />}
-        >
-          <AppOverview.Main title={t.locations}>
-            <AppOverview.EmptyState title={t.noLocationsTitle} description={t.noLocationsDescription} icon="ti ti-map-pin" />
-          </AppOverview.Main>
-        </AppOverview>
-      </ScrollArea>
+    <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.appName }]}>
+      <WeatherScreen places={[]} open={null} weather={null} />
     </Layout>
   );
 });

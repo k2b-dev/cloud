@@ -5,8 +5,11 @@ non-modal callout. It never shifts the surrounding layout.
 
 ## Use MovedHint
 
-Use it when a familiar path moves. Name the new place and offer a link or
-an action that takes the person there. Render the hint directly after its
+Do not add it to new screens. A familiar path that moves gets a redirect from
+its old URL and stays reachable in place, not a popover; built-in Cloud
+applications no longer render `MovedHint`. It stays exported for applications
+that already use it. There, name the new place and offer a link or an action
+that takes the person there. Render the hint directly after its
 target so its controls follow the target in keyboard order.
 
 The owner stores whether the person has seen the hint and decides `open` on

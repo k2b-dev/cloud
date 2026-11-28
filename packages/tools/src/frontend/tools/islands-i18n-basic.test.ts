@@ -12,7 +12,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { uuidMessages } = await import("./UuidGenerator.island.tsx");
 const { hashMessages } = await import("./HashGenerator.island.tsx");
 const { loremMessages } = await import("./LoremIpsumGenerator.island.tsx");
-const { colorMessages } = await import("./ColorConverter.island.tsx");
+const { colorMessages, contrast, luminance } = await import("./ColorConverter.island.tsx");
 const { encodingMessages } = await import("./EncodingTool.island.tsx");
 const { mailtoMessages } = await import("./MailtoGenerator.island.tsx");
 
@@ -40,7 +40,7 @@ describe("tool island catalogs", () => {
   });
 
   test("English base stays intact", () => {
-    expect(uuidMessages.resolve(["en"]).t.uuidCount({ count: 3 })).toBe("3 UUIDs");
+    expect(uuidMessages.resolve(["en"]).t.copyAll).toBe("Copy all");
     expect(encodingMessages.resolve(["en"]).t.formatOutputLabel({ format: "Base32" })).toBe("Base32 Output");
   });
 
@@ -48,5 +48,15 @@ describe("tool island catalogs", () => {
     const { locale, t } = uuidMessages.resolve(["de-CH"]);
     expect(locale).toBe("de");
     expect(t.count).toBe("Anzahl");
+  });
+});
+
+describe("colour contrast", () => {
+  test("follows WCAG: black on white is 21 : 1, a mid blue reaches AA on white only", () => {
+    expect(contrast(luminance([0, 0, 0]), 1).ratio).toBeCloseTo(21, 5);
+    expect(contrast(luminance([255, 255, 255]), 1)).toEqual({ ratio: 1, grade: "–" });
+    // #2563eb: 5.17 : 1 on white (AA), 4.06 : 1 on black (below AA)
+    expect(contrast(luminance([37, 99, 235]), 1).grade).toBe("AA");
+    expect(contrast(luminance([37, 99, 235]), 0).grade).toBe("–");
   });
 });
