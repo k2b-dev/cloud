@@ -1,11 +1,10 @@
-import { Dropdown, type DropdownItem, MovedHint, useLocale, ViewTabs } from "@k2b/ui";
+import { Dropdown, type DropdownItem, useLocale, ViewTabs } from "@k2b/ui";
 import { createMemo } from "solid-js";
 import type { MailSearchState } from "../../contracts";
 import { mailFolderNames } from "../../folder-names";
 import { DEFAULT_MAIL_QUICK_SEARCH_FIELDS, type ResolvedMailSearchRoute } from "../../search-url";
 import type { LocalTag } from "../../service/local-tags";
 import type { MailFolderView } from "../../service/messages";
-import { mailWorkspaceMessages } from "../mail-workspace-messages";
 import { mailConversationListMessages } from "./mail-conversation-list-messages";
 import {
   emptyMailHeadFilters,
@@ -63,15 +62,13 @@ type MailSearchFilterProps = {
   >;
   onOpenHref: (href: string) => void;
   onEditSearch: (state: MailSearchState, source: URL) => void;
-  /** The one-time note that the filters moved here from the head's chips. */
-  hint: { open: boolean; onDismiss: () => void };
 };
 
 /**
  * The filter menu's entries, its count of active filters and its button's name: one builder for v1's filter button
  * and the v2 pilot's, so both offer the same.
  */
-export function createMailSearchFilterMenu(props: Omit<MailSearchFilterProps, "hint">) {
+export function createMailSearchFilterMenu(props: MailSearchFilterProps) {
   const locale = useLocale();
   const messages = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
   const listText = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
@@ -258,11 +255,9 @@ export function createMailSearchFilterMenu(props: Omit<MailSearchFilterProps, "h
 export function MailSearchFilter(props: MailSearchFilterProps) {
   const locale = useLocale();
   const listText = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
-  const workspaceText = createMemo(() => mailWorkspaceMessages.resolve([locale()]).t);
   const { items, activeCount, label } = createMailSearchFilterMenu(props);
-  let trigger: HTMLElement | undefined;
   return (
-    <span class="mail-search-filter" ref={(element) => (trigger = element)} data-mail-search-filter>
+    <span class="mail-search-filter" data-mail-search-filter>
       <Dropdown.Root position="bottom-right" width="18rem" items={items()} label={listText().filters} phone="sheet">
         <Dropdown.Trigger
           iconOnly
@@ -284,17 +279,6 @@ export function MailSearchFilter(props: MailSearchFilterProps) {
           </span>
         </Dropdown.Trigger>
       </Dropdown.Root>
-      <MovedHint
-        open={props.hint.open}
-        onDismiss={props.hint.onDismiss}
-        target={() => trigger?.querySelector<HTMLElement>("[data-mail-filter-button]") ?? undefined}
-        action={{
-          label: workspaceText().showFilters,
-          onClick: () => queueMicrotask(() => trigger?.querySelector<HTMLElement>("[data-mail-filter-button]")?.click()),
-        }}
-      >
-        {workspaceText().filtersHint}
-      </MovedHint>
     </span>
   );
 }

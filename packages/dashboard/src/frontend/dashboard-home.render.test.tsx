@@ -73,7 +73,10 @@ test("the page renders every widget of the board at its final size and loading, 
   // Each frame fills the cell its size reserves, with its declared title until the app answers.
   expect(html.match(/data-size="fill"/g)).toHaveLength(3);
   expect(html).toContain("Heute");
-  expect(html).toContain("Wird geladen …");
+  // Nothing on screen says "loading": the body stays calm, and only assistive technology hears it.
+  expect(html.match(/<span class="k2b-sr-only">Wird geladen …<\/span>/g)).toHaveLength(3);
+  expect(html.match(/class="dashboard-widget-pending" aria-busy="true"/g)).toHaveLength(3);
+  expect(html).not.toContain("k2b-placeholder");
   // The slow notice and the edit hint already have their lines, so neither moves anything when it appears.
   expect(html).toContain("spaces braucht länger als sonst.");
   expect(html).toMatch(/class="dashboard-edit-hint" aria-hidden="true"/);

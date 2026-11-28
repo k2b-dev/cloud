@@ -186,12 +186,12 @@ test("the overview line leads to the flow in both languages", () => {
       createComponent(LocaleProvider, {
         locale,
         get children() {
-          return createComponent(MailCodeBackfillLink, { href: "/app/mail/Mb4kd2/code/catch-up" });
+          return createComponent(MailCodeBackfillLink, { href: "/app/mail/Mb4kd2/code?catchUp=1" });
         },
       }),
     );
     expect(text(html)).toBe(`${lead} ${link}`);
-    expect(html).toContain('href="/app/mail/Mb4kd2/code/catch-up"');
+    expect(html).toContain('href="/app/mail/Mb4kd2/code?catchUp=1"');
   }
 });
 
@@ -207,7 +207,7 @@ test("only an editor of a switched-on Code with the whole mailbox gets the line"
 test("the address keeps selection, preview, and operation, and ignores what it does not know", () => {
   const read = readCatchUpAddress(
     new URL(
-      "http://cloud.test/app/mail/Mb4kd2/code/catch-up?folder=Fold01&from=2026-11-01&to=2026-11-13&preview=00000000-0000-4000-8000-000000000004&page=2026-11-14T09:00:00.000Z_2026-11-12T08:00:00.000Z_00000000-0000-4000-8000-000000000111",
+      "http://cloud.test/app/mail/Mb4kd2/code?catchUp=1&folder=Fold01&from=2026-11-01&to=2026-11-13&preview=00000000-0000-4000-8000-000000000004&page=2026-11-14T09:00:00.000Z_2026-11-12T08:00:00.000Z_00000000-0000-4000-8000-000000000111",
     ),
   );
   expect(read.pick).toEqual({ folder: "Fold01", from: "2026-11-01", to: "2026-11-13" });

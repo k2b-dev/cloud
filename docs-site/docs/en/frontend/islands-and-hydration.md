@@ -220,6 +220,16 @@ change does not stop it. An entry that re-exports a single module, such as
 `@k2b/ui/hover-card`, may load on demand. Inside the Cloud repository, the
 `no-barrel-dynamic-import` rule makes this an error.
 
+A static import narrows only when the entry holds nothing but re-exports and
+its package names, in `sideEffects`, the modules whose import does something.
+Otherwise the bundler keeps every module behind the entry for its possible
+effects. Code splitting then puts what other islands use into chunks this
+island loads too. `@k2b/cloud` lists its few such modules, so an island that
+takes `V2WorkspaceNavigation` from `@k2b/cloud/ssr/islands` weighs what the
+direct import weighs. Bundlers outside Cloud read the same field. A package of
+yours that offers a barrel needs both conditions too. Inside the Cloud
+repository, the `cloud-side-effects` rule keeps the list exact.
+
 ## Preserve the server result
 
 Render the initial answer on the server. The island starts from serialized

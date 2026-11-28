@@ -36,7 +36,7 @@ const buildIslands = () =>
     return join(root, "islands", "_ssr");
   })());
 
-const { default: Fixture, mailV2Data, MAIL_V2_SIGNATURE } = await import("./mail-v2.browser-fixture");
+const { default: Fixture, mailV2Data, mailV2ReceivedPerDay, MAIL_V2_SIGNATURE } = await import("./mail-v2.browser-fixture");
 const ui = resolve(import.meta.dir, "../../../ui/dist");
 const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", resolve(import.meta.dir, "../../../cloud")))).default;
 
@@ -130,8 +130,13 @@ document.documentElement.dataset.mailV2Ready='true';
         });
       if (url.pathname.endsWith("/workspace-route") || url.pathname.endsWith("/workspace-list")) {
         const target = new URL(url.searchParams.get("href") ?? MAIL_V2_PATH, server.url);
-        return Response.json(data(target));
+        // as Mail's API: the year of mail only when the request asks for it
+        return Response.json({
+          ...data(target),
+          receivedPerDay: url.searchParams.get("receivedPerDay") === "load" ? data(target).receivedPerDay : null,
+        });
       }
+      if (url.pathname.endsWith("/received-per-day")) return Response.json(mailV2ReceivedPerDay(url, now()));
       // The open conversation's part of the page, as Mail's detail route answers it.
       const detail = /\/workspace-detail\/([^/]+)$/.exec(url.pathname);
       if (detail) {

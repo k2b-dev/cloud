@@ -1,3 +1,5 @@
+import { trackLoad } from "../internal/pending-loads";
+
 type PromptForm = typeof import("./prompt-form");
 let promptForm: PromptForm | undefined;
 let promptFormLoading: Promise<PromptForm> | undefined;
@@ -11,12 +13,14 @@ export const loadedPromptForm = (): PromptForm | undefined => promptForm;
  * failed chunk request may succeed on the next open.
  */
 export const loadPromptForm = (): Promise<PromptForm> =>
-  (promptFormLoading ??= import("./prompt-form").then(
-    (module) => (promptForm = module),
-    (error: unknown) => {
-      promptFormLoading = undefined;
-      // The person sees a message; the cause stays findable for whoever looks into it.
-      console.error("@k2b/ui: the form fields could not load", error);
-      throw error;
-    },
+  (promptFormLoading ??= trackLoad(
+    import("./prompt-form").then(
+      (module) => (promptForm = module),
+      (error: unknown) => {
+        promptFormLoading = undefined;
+        // The person sees a message; the cause stays findable for whoever looks into it.
+        console.error("@k2b/ui: the form fields could not load", error);
+        throw error;
+      },
+    ),
   ));

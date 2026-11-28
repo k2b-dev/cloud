@@ -68,7 +68,8 @@ test("the island error fallback brings no v1 module of @k2b/ui and of v2 only it
   const v2 = inputs
     .filter((path) => /packages\/ui\/(?:dist\/browser|src)\/v2\//.test(path))
     .map((path) => basename(path).replace(/\.\w+$/, ""));
-  expect(v2.sort()).toEqual(["failed", "icon"]);
+  // `colors` is the check of an icon's data colour (a few regular expressions, no component)
+  expect(v2.sort()).toEqual(["colors", "failed", "icon"]);
 }, 60_000);
 
 test("one module of @k2b/cloud/shared brings neither the barrel nor its libraries", async () => {
