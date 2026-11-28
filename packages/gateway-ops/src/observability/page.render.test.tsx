@@ -116,7 +116,6 @@ test("a quiet window says so; failing routes stand with their app and lead to th
     expect(text).toContain("Apps online 1/1");
     // the volumes of the window beside the hero, and every app with its state beside the page
     expect(text).toContain("Läufe 3.482");
-    expect(text).toContain("Logeinträge 1.204");
     expect(text).toContain("1 von 1 online");
     expect(text).toContain("/api/mail/send");
     expect(text).toContain("5 %");

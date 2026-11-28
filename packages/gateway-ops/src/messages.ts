@@ -175,7 +175,6 @@ export const gatewayOpsMessages = i18n.define({
       shareOfRequests: ({ rate, requests }: { rate: string; requests: string }) => `${rate} of ${requests} requests`,
       serverErrorsTrend: ({ total, peak }: { total: string; peak: string }) =>
         `Server errors per interval of the window: ${total} in all, at most ${peak} in one interval`,
-      logEntries: "Log entries",
       appsOnlineOf: ({ online, total }: { online: string; total: string }) => `${online} of ${total} online`,
       online: "Online",
       postgresDiagnosticsUnavailable: "Postgres diagnostics unavailable",
@@ -1097,7 +1096,6 @@ export const gatewayOpsMessages = i18n.define({
       shareOfRequests: ({ rate, requests }) => `${rate} von ${requests} Anfragen`,
       serverErrorsTrend: ({ total, peak }) =>
         `Serverfehler je Abschnitt des Zeitraums: ${total} insgesamt, höchstens ${peak} in einem Abschnitt`,
-      logEntries: "Logeinträge",
       appsOnlineOf: ({ online, total }) => `${online} von ${total} online`,
       online: "Online",
       postgresDiagnosticsUnavailable: "Postgres-Diagnose nicht verfügbar",
