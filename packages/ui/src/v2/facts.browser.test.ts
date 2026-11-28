@@ -110,6 +110,15 @@ test("a kind makes the link and the copy button; a scheme that may not open stay
     // a number keeps its plus behind a space, and calls the line before its extension
     expect(byLabel.Leerzeichen!.links).toEqual(["tel:+4930555"]);
     expect(byLabel.Durchwahl!.links).toEqual(["tel:+49305550"]);
+    for (const label of ["Dw", "Strichpunkt-Durchwahl", "Komma-Durchwahl"])
+      expect([label, byLabel[label]!.links]).toEqual([label, ["tel:+49305550"]]);
+    expect(byLabel.Striche!.links).toEqual(["tel:+49305550"]);
+    // a fax number is a number; words before or between numbers, and letters for digits, stay words
+    expect(byLabel.Telefax!.links).toEqual(["tel:+49305551"]);
+    for (const label of ["Zwei Nummern", "Vorwort", "Buchstaben"]) expect([label, byLabel[label]!.links]).toEqual([label, []]);
+    // an invisible format sign stays words; spaces around an address leave it
+    expect(byLabel.Unsichtbar!.links).toEqual([]);
+    expect(byLabel["Mit Rand"]!.links).toEqual(["mailto:anna@example.org"]);
     // a port is no scheme; the trunk zero "(0)" leaves an international number
     expect(byLabel.Port!.links).toEqual(["https://example.org:8080/status"]);
     expect(byLabel.Zentrale!.links).toEqual(["tel:+49301234567"]);
@@ -126,7 +135,10 @@ test("a kind makes the link and the copy button; a scheme that may not open stay
     // the new tab is named for assistive technology, hidden from sight
     expect(url.text?.endsWith("(öffnet in einem neuen Tab)")).toBe(true);
     expect(
-      await page.locator(".k2-fact-entry[data-url] .k2-hidden-text").first().evaluate((element) => element.getBoundingClientRect().width),
+      await page
+        .locator(".k2-fact-entry[data-url] .k2-hidden-text")
+        .first()
+        .evaluate((element) => element.getBoundingClientRect().width),
     ).toBeLessThanOrEqual(1);
   });
 });
@@ -170,6 +182,15 @@ for (const answer of ["ok", "refused"] as const)
       1440,
       async (page) => {
         const button = page.getByRole("button", { name: "Kopieren: E-Mail", exact: true });
+        // every text a live region takes, to count what is said
+        await page.evaluate(() => {
+          const said: string[] = [];
+          (window as unknown as { __said: string[] }).__said = said;
+          new MutationObserver(() => {
+            for (const region of document.querySelectorAll("[data-k2-news]"))
+              if (region.textContent?.trim()) said.push(region.textContent.trim());
+          }).observe(document.body, { subtree: true, childList: true, characterData: true });
+        });
         await button.click();
         const symbol = () => button.locator(".k2-icon").getAttribute("data-name");
         await page.waitForFunction(
@@ -184,6 +205,10 @@ for (const answer of ["ok", "refused"] as const)
         );
         await page.waitForTimeout(2100);
         expect(await symbol()).toBe("copy");
+        // said once, and its name was never the news
+        const said = await page.evaluate(() => (window as unknown as { __said: string[] }).__said);
+        expect(new Set(said.filter((words) => words.includes(news))).size).toBe(1);
+        expect(said.filter((words) => words.includes("Kopieren: E-Mail"))).toEqual([]);
       },
       { clipboard: answer },
     );

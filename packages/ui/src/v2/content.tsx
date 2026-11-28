@@ -226,14 +226,19 @@ const hrefOf = (kind: "email" | "phone" | "url", value: string): string | undefi
   // an address is one local part and one domain and nothing a mail program reads as more: no query or fragment
   // (`?bcc=`, `&body=`), no second address (`,` `;`), no escapes (`%2C`, `%0D%0A`), no space or control sign
   if (kind === "email") {
-    const part = "[^\\s?#&@/%,;\\p{Cc}]+";
-    return new RegExp(`^${part}@${part}$`, "u").test(value) ? `mailto:${value}` : undefined;
+    const address = value.trim();
+    const part = "[^\\s?#&@/%,;\\p{Cc}\\p{Cf}]+";
+    return new RegExp(`^${part}@${part}$`, "u").test(address) ? `mailto:${address}` : undefined;
   }
   if (kind === "phone") {
-    // the number up to an extension ("ext. 12", "Durchwahl 3"): the link calls the line, the words keep the extension
-    const line = value.trim().split(/\s*(?:ext\.?|extension|x|durchwahl|dw|app\.?|#)\s*\d/i)[0]!;
-    // the trunk zero written `+49 (0) 30 …` after a country code belongs to no international number
-    const plain = line.replace(/^(\+\d{1,3})\s*\(0\)/, "$1");
+    // The line before an extension ("ext. 12", "Dw. 3", ";ext=12", ",12", "x 12", "#12"): the link calls the line, the
+    // words keep the extension. A word that is no extension ("Fax", "Box") does not count.
+    const line = value.trim().split(/\s*(?:[,;]\s*(?:ext\.?|extension)?|ext\.?|extension|(?<![a-z])x|durchwahl|dw\.?|app\.?|#)\s*=?\s*\d/i)[0]!;
+    // a number is only digits with a leading plus, spaces, dashes, slashes, dots and brackets; anything else
+    // ("Tel:", "oder 0151 …", letters for digits) stays words
+    if (!/^\+?[\d\s\-/.()]+$/.test(line)) return undefined;
+    // the trunk zero written `+49 (0) 30 …` or `+49-(0)-30-…` after a country code belongs to no international number
+    const plain = line.replace(/^(\+\d{1,3})[\s-]*\(0\)/, "$1");
     const digits = plain.replace(/(?!^\+)[^\d]/g, "");
     return /^\+?\d{3,}$/.test(digits) ? `tel:${digits}` : undefined;
   }
