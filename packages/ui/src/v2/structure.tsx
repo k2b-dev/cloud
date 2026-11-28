@@ -12,6 +12,8 @@ const HeadActions = (props: { actions?: TwoActions }) => (
       <Button
         variant="text"
         icon={action.icon}
+        // on the phone the head keeps only the symbol: the words stay the button's name and hint
+        title={action.icon ? action.label : undefined}
         forward={action.forward}
         href={action.href}
         onNavigate={action.onNavigate}
@@ -37,20 +39,55 @@ export type SectionProps = {
   actions?: TwoActions;
   /** One sentence under the head that sums the section up. */
   summary?: JSX.Element;
-  /** The way to all of it, at the end ("All deliveries ›"). */
+  /**
+   * Its head, its sentence and its rows stay at the reading measure of `Prose` (720 px of text), so in a wide pane a
+   * short list stays together instead of its words standing at the left edge and its deeds at the right. The section's
+   * line still reaches the edges of its column. Below the measure it changes nothing.
+   */
+  measure?: boolean;
+  /**
+   * The way to all of it ("All deliveries ›"): under the rows, its words on their text edge (after the symbol where the
+   * section has one), never at the right. In a side column it is a row of its own.
+   */
   more?: Action;
   /** `Row`s, a `Digest`, `Facts` or `Group`s. */
   children?: JSX.Element;
+  /**
+   * Whether the section is open. With `onOpenChange` the section can fold: a chevron at the end of its head opens and
+   * closes it (a button that says whether it is open), and the caller holds the state, so it can keep it (without
+   * `open` the section starts open and keeps its own state, told by `onOpenChange`). Folded, only the head stands,
+   * with the section's line below it.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 /**
  * A section: a head with symbol, title, count and at most two text buttons. Rule 9: no line under the head, none
- * between the entries, one line at the end.
+ * between the entries, one line at the end. A section that can fold keeps the same head, rhythm and lines; the
+ * server and the first render show it as `open` says.
  */
 export const Section = (props: SectionProps) => {
   const summary = resolveChildren(() => props.summary);
+  // a section folds only where the caller holds its state; the others stay as they were, without a toggle or a body
+  const fold = props.onOpenChange
+    ? useDisclosure(() => ({
+        // with `open` the caller holds the state; without, the section starts open and keeps its own
+        ...(props.open === undefined ? { defaultOpen: true } : { open: props.open }),
+        onOpenChange: (open: boolean) => props.onOpenChange?.(open),
+      }))
+    : undefined;
+  const body = () => (
+    <>
+      <Show when={summary() !== undefined}>
+        <p class="k2-sec-summary">{summary()}</p>
+      </Show>
+      {props.children}
+      <SectionMore more={props.more} />
+    </>
+  );
   return (
-    <section class="k2-sec" data-k2-part="Section" aria-label={props.title}>
+    <section class="k2-sec" data-k2-part="Section" aria-label={props.title} data-measure={props.measure ? "" : undefined}>
       <div class="k2-sh">
         <Show when={props.icon}>
           {(name) => (
@@ -65,43 +102,57 @@ export const Section = (props: SectionProps) => {
         <Show when={props.count !== undefined}>
           <span class="k2-sh-count">{props.count}</span>
         </Show>
-        <Show when={props.actions?.length}>
+        <Show when={props.actions?.length || fold}>
           <span class="k2-sh-end">
             <HeadActions actions={props.actions} />
+            {fold && (
+              <fold.Trigger
+                class="k2-btn"
+                data-k2-part="Button"
+                data-variant="ghost"
+                data-icon-only=""
+                data-fold=""
+                aria-label={props.title}
+                title={props.title}
+              >
+                <Icon name="chevron-down" />
+              </fold.Trigger>
+            )}
           </span>
         </Show>
       </div>
-      <Show when={summary() !== undefined}>
-        <p class="k2-sec-summary">{summary()}</p>
-      </Show>
-      {props.children}
-      <Show when={props.more}>
-        {(more) => (
-          // One link: a quiet text button at the end of a section; a row with its summary in a side column. A disabled
-          // link is an anchor without an address, as in `Button`.
-          <Dynamic
-            component={more().disabled && more().href !== undefined ? "a" : linkOr(more().href, "button")}
-            type={more().href !== undefined ? undefined : "button"}
-            class="k2-sec-link"
-            href={more().disabled ? undefined : more().href}
-            onNavigate={more().href !== undefined && !more().disabled ? more().onNavigate : undefined}
-            disabled={more().href === undefined ? more().disabled : undefined}
-            aria-disabled={more().href !== undefined && more().disabled ? "true" : undefined}
-            onClick={() => {
-              if (!more().disabled) more().onClick?.();
-            }}
-          >
-            <b>{more().label}</b>
-            <Show when={more().meta}>
-              <span class="k2-sec-link-meta">{more().meta}</span>
-            </Show>
-            <Icon name="chevron-right" />
-          </Dynamic>
-        )}
-      </Show>
+      {fold ? <fold.Panel class="k2-sec-body">{body()}</fold.Panel> : body()}
     </section>
   );
 };
+
+/** The way to all of a section, at its end: one quiet link. */
+const SectionMore = (props: { more?: Action }) => (
+  <Show when={props.more}>
+    {(more) => (
+      // One link: a quiet text button at the end of a section; a row with its summary in a side column. A disabled
+      // link is an anchor without an address, as in `Button`.
+      <Dynamic
+        component={more().disabled && more().href !== undefined ? "a" : linkOr(more().href, "button")}
+        type={more().href !== undefined ? undefined : "button"}
+        class="k2-sec-link"
+        href={more().disabled ? undefined : more().href}
+        onNavigate={more().href !== undefined && !more().disabled ? more().onNavigate : undefined}
+        disabled={more().href === undefined ? more().disabled : undefined}
+        aria-disabled={more().href !== undefined && more().disabled ? "true" : undefined}
+        onClick={() => {
+          if (!more().disabled) more().onClick?.();
+        }}
+      >
+        <b>{more().label}</b>
+        <Show when={more().meta}>
+          <span class="k2-sec-link-meta">{more().meta}</span>
+        </Show>
+        <Icon name="chevron-right" />
+      </Dynamic>
+    )}
+  </Show>
+);
 
 export type GroupProps = {
   /** A Tabler icon before the title. */

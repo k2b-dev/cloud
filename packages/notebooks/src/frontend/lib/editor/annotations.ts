@@ -1,5 +1,6 @@
 import { type ChangeSet, type EditorState, type Extension, RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
+import { hexColor } from "../color";
 
 /**
  * Inline comments in the note editor: the commented passages in each author's color, the dot of a comment whose
@@ -123,7 +124,7 @@ const decorationsFor = ({ marks, focus, preview, draft, flash }: AnnotationState
           ...(mark.resolved ? { "data-resolved": "" } : {}),
           ...(strong ? { "data-strong": "" } : {}),
           ...(focus.active === mark.id ? { "data-active": "" } : {}),
-          style: `--annotation-color: ${mark.color}`,
+          style: `--annotation-color: ${hexColor(mark.color) ?? "transparent"}`,
           "aria-description": mark.label,
         },
       }),
@@ -139,7 +140,10 @@ const decorationsFor = ({ marks, focus, preview, draft, flash }: AnnotationState
     ranges.push({
       from: draft.from,
       to: draft.to,
-      decoration: Decoration.mark({ class: "cm-annotation-draft", attributes: { style: `--annotation-color: ${draft.color}` } }),
+      decoration: Decoration.mark({
+        class: "cm-annotation-draft",
+        attributes: { style: `--annotation-color: ${hexColor(draft.color) ?? "transparent"}` },
+      }),
     });
   if (flash && flash.length > 0 && flash.from < length)
     ranges.push({

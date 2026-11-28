@@ -14,6 +14,7 @@ import {
   selectSuites,
   shardTargetMinutes,
   shardTimeNotice,
+  suiteTimeNotice,
   suiteWeight,
   type TestSuite,
   type TestWeights,
@@ -444,17 +445,15 @@ for (const mode of ["unit", "webkit", "integration"] as const) {
       // 11 min * 1.61 + 2 min < the unchanged 20-minute execution budget (#1998).
       const targetMinutes = mode === "webkit" ? options.maxMinutes! * 0.55 : 15;
       expect(shard.reduce((sum, suite) => sum + suiteWeight(suite.name, weights), 0)).toBeLessThanOrEqual(targetMinutes * 60);
-      if (mode === "unit") {
-        // Completed CI timings from #3189; the following Pulse page was closed by the shard deadline.
-        const observed = {
-          ...weights,
-          "@k2b/cloud-app-core": 491.3,
-          "@k2b/cloud-app-filesv2": 257.7,
-          "@k2b/cloud-app-filesv2 behavior": 71.2,
-          "@k2b/cloud-app-pulse": 187.9,
-        };
-        expect(shard.reduce((sum, suite) => sum + suiteWeight(suite.name, observed), 0)).toBeLessThanOrEqual(targetMinutes * 60);
-      }
+    }
+    if (mode === "unit") {
+      // One suite as large as the target fills a shard alone and leaves no room for a slow night: @k2b/ui rest was
+      // weighted 693 s, ran 1000 s in green runs and stopped its shard at the 20-minute budget (#4386). A suite at the
+      // cap still fits the target when it runs as much over its weight as a suite's maximum is over its median run
+      // (ui rest 900 -> 1000 s, 1.11x). A larger suite splits into `test:part:*` scripts.
+      const cap = 0.9 * shardTargetMinutes() * 60;
+      const heavy = all.filter((suite) => suiteWeight(suite.name, weights) > cap);
+      expect(heavy.map((suite) => suite.name)).toEqual([]);
     }
     if (mode === "integration") {
       // A suite above two thirds of the target leaves a shard no room to balance: Mail as one suite
@@ -540,6 +539,15 @@ test("CI unit shards run every UI test file exactly once, including the fixture 
   expect(new Set(selected).size).toBe(expected.length);
 });
 
+test("a suite well above its weight is named, so the weights are refreshed before its shard reaches the budget", () => {
+  expect(suiteTimeNotice("@k2b/ui rest", 830, 693)).toBeUndefined();
+  expect(suiteTimeNotice("@k2b/ui rest", 1000.2, 692.6)).toBe(
+    "::warning title=Test suite above its weight::@k2b/ui rest took 1000.2 s, 1.44x its 692.6 s in scripts/test-weights.json; refresh it with `bun scripts/test-weights.ts --run <id>` or split it",
+  );
+  // a suite without its own measurement counts as the median; that is no drift of a weight
+  expect(suiteTimeNotice("new suite", 1000, undefined)).toBeUndefined();
+});
+
 test("a shard's time asks for fresh weights before it fails", () => {
   expect(shardTimeNotice("shard 1/5", 14.9, 20)).toBeUndefined();
   expect(shardTimeNotice("shard 1/5", 16, undefined)).toBeUndefined();
@@ -555,6 +563,7 @@ test("a package's test parts run every file: the rest part excludes exactly what
   for (const [workspace, name] of [
     ["packages/cloud", "@k2b/cloud"],
     ["packages/mail", "@k2b/cloud-app-mail"],
+    ["packages/notebooks", "@k2b/cloud-app-notebooks"],
     ["packages/ui", "@k2b/ui"],
   ] as const) {
     const { scripts } = (await Bun.file(join(workspaceRoot, workspace, "package.json")).json()) as { scripts: Record<string, string> };

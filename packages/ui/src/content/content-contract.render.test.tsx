@@ -284,9 +284,10 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(html).not.toContain("k2b-calendar-month");
     expect(html).not.toContain("Review");
 
-    // Never rendered: without custom views, JSX keeps the built-in view type in the callbacks.
+    // Never rendered: without custom views, the props keep the built-in view type in the callbacks. Written without
+    // JSX: Bun would compile this file's own JSX before registerSsrTestPlugin above runs (test-solid-plugins).
     const builtIn = (view: CalendarView) => view;
-    void (() => <Calendar date="2026-07-15" events={[]} onViewChange={(view) => builtIn(view)} />);
+    void (() => createComponent(Calendar, { date: "2026-07-15", events: [], onViewChange: (view) => builtIn(view) }));
   });
 
   test("indexes year-view events once instead of rescanning them for every day", () => {
