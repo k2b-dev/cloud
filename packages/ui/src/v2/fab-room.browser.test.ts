@@ -50,7 +50,12 @@ const withPage = async (options: { width: number; split?: boolean }, run: (page:
  */
 const atEnd = async (page: Page) => {
   await page.mouse.move(195, 400);
-  const lastRow = () => page.locator('[data-k2-part="Row"]').last().evaluate((row) => row.getBoundingClientRect().bottom);
+  await settled(page);
+  const lastRow = () =>
+    page
+      .locator('[data-k2-part="Row"]')
+      .last()
+      .evaluate((row) => row.getBoundingClientRect().bottom);
   let before = Number.NaN;
   for (let now = await lastRow(); now !== before; now = await lastRow()) {
     before = now;
