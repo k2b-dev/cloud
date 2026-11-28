@@ -345,7 +345,6 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
           />
         </Cells>
         <Section
-          icon="cube"
           title={t().variantsModels}
           count={factsOf(detail.entry.id).models}
           actions={[{ label: t().addModels, icon: "plus", onClick: () => setAdding("models") }]}
@@ -354,7 +353,7 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
           {modelTable(detail.entry, false)}
           <CappedNote total={data().list.matching} />
         </Section>
-        <Section icon="plug-connected" title={t().connection}>
+        <Section title={t().connection}>
           <Facts
             items={[
               { label: t().type, value: aiProviderTypeLabel(t(), detail.full.type) },

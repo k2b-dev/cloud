@@ -487,34 +487,28 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
             {(view) => (
               <>
                 {figures(view().overview)}
-                <Section
-                  icon="chart-line"
-                  color={AI_COLOR}
-                  title={t().costOverTime}
-                  count={unit()}
-                  summary={usageRangeLabel(t(), q().range)}
-                >
+                <Section title={t().costOverTime} count={unit()} summary={usageRangeLabel(t(), q().range)}>
                   <Canvas label={t().costOverTime} height={220}>
                     <Show when={hasPoints(costSeries())} fallback={<Empty icon="chart-line" text={t().noCosts} />}>
                       <TimeChart series={costSeries()} step={STEP[q().range]} format={(value) => cost(value)} axis={axis} />
                     </Show>
                   </Canvas>
                 </Section>
-                <Section icon="activity" title={t().usageOverTime}>
+                <Section title={t().usageOverTime}>
                   <Canvas label={t().usageOverTime} height={180}>
                     <Show when={hasPoints(useSeries())} fallback={<Empty icon="chart-line" text={t().noTurns} />}>
                       <TimeChart series={useSeries()} step={STEP[q().range]} format={(value) => n(value)} axis={axis} />
                     </Show>
                   </Canvas>
                 </Section>
-                <Section icon="stack-2" title={t().tokenVolume}>
+                <Section title={t().tokenVolume}>
                   <Canvas label={t().tokenVolume} height={180}>
                     <Show when={hasPoints(tokenSeries())} fallback={<Empty icon="chart-line" text={t().noTokens} />}>
                       <TimeChart series={tokenSeries()} step={STEP[q().range]} format={(value) => n(value)} axis={axis} />
                     </Show>
                   </Canvas>
                 </Section>
-                <Section icon="arrows-split" title={t().byKind}>
+                <Section title={t().byKind}>
                   <For each={kinds}>
                     {(kind) => (
                       <Row
@@ -724,7 +718,7 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
                   </Notice>
                 )}
               </Show>
-              <Section icon="list-details" title={t().details}>
+              <Section title={t().details}>
                 <Facts items={runFacts(row())} />
               </Section>
             </Pane>
@@ -761,12 +755,12 @@ export default function UsageScreen(props: { nav: NavProps; data: AiUsageData })
             >
               <Show when={row().comment}>
                 {(comment) => (
-                  <Section icon="message" title={t().comment}>
+                  <Section title={t().comment}>
                     <Text type="body">{comment()}</Text>
                   </Section>
                 )}
               </Show>
-              <Section icon="list-details" title={t().details}>
+              <Section title={t().details}>
                 <Facts items={feedbackFacts(row())} />
               </Section>
             </Pane>

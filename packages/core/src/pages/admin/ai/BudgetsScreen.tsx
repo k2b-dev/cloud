@@ -165,7 +165,6 @@ export default function BudgetsScreen(props: { nav: NavProps; data: AiBudgetsDat
             <Notice tone="warn">{t().spendUnknown({ p: spend()!.unknown })}</Notice>
           </Show>
           <Section
-            icon="gauge"
             title={t().rules}
             count={config().rules.length}
             summary={t().unitLine({ p: unit() })}
@@ -222,7 +221,7 @@ export default function BudgetsScreen(props: { nav: NavProps; data: AiBudgetsDat
               ]}
             />
           </Section>
-          <Section icon="clock-bolt" title={t().jobs}>
+          <Section title={t().jobs}>
             <Row
               mark={{ icon: "user-cog", color: AI_COLOR }}
               lines={[
@@ -472,7 +471,7 @@ function BudgetDetail(props: { config: AiBudgetConfig; rule: string; models: Mod
         }
       >
         <Show when={!missing()} fallback={<Notice tone="bad">{t().ruleMissing}</Notice>}>
-          <Section icon="settings" title={t().ruleSettings}>
+          <Section title={t().ruleSettings}>
             {/* slot for #4208/#4223 (DP): the fields of this rule and its grants become Setting rows (name left, value at a fixed width) */}
             <Field label={t().ruleScope} error={!scopeAvailable() ? t().scopeUsed : undefined}>
               <Select
@@ -491,7 +490,7 @@ function BudgetDetail(props: { config: AiBudgetConfig; rule: string; models: Mod
               />
             </Field>
           </Section>
-          <Section icon="users" title={t().ruleGrants} count={rule().grants.length}>
+          <Section title={t().ruleGrants} count={rule().grants.length}>
             <For each={rule().grants}>
               {(grant, index) => (
                 <Field
@@ -539,7 +538,7 @@ function BudgetDetail(props: { config: AiBudgetConfig; rule: string; models: Mod
             </Field>
           </Section>
           <Show when={!isNew()}>
-            <Section icon="activity" title={t().usageNow}>
+            <Section title={t().usageNow}>
               <Cells>
                 <Cells.Cell icon="users" label={t().peopleExhausted} value={String(original()?.peopleAtLimit ?? 0)} />
                 <Cells.Cell

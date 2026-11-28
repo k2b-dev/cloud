@@ -122,7 +122,6 @@ function Reports(props: { codeId: string; page: CodePageReportPage; dateConfig: 
   };
   return (
     <Section
-      icon="flag"
       title={t().title}
       count={cursor() ? t().openMore({ n: items().length }) : items().length}
       summary={t().description}
@@ -157,7 +156,7 @@ function Database(props: {
   const exported: Action = { label: t().databaseExport, icon: "download", href: databaseExportHref(props.codeId) };
   const actions = (): TwoActions => (remove ? [exported, remove.action()] : [exported]);
   return (
-    <Section icon="database" title={t().database} actions={actions()}>
+    <Section title={t().database} actions={actions()}>
       <Facts
         items={[
           {
@@ -378,7 +377,7 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
             </Notice>
           )}
         </Show>
-        <Section icon="info-circle" title={t().facts}>
+        <Section title={t().facts}>
           <Facts
             items={[
               { label: t().owner, value: owner(code) },
@@ -400,7 +399,7 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
           {(shown) => {
             const run = detail.runs.find((entry) => entry.id === shown().refusal.runId);
             return (
-              <Section icon="alert-triangle" title={t().lastRunTitle} count={run ? when(run.createdAt) : undefined}>
+              <Section title={t().lastRunTitle} count={run ? when(run.createdAt) : undefined}>
                 <Canvas label={t().lastRunTitle}>
                   <CodeRefusal refusal={shown().refusal} account={account!} handle={code.serviceAccountHandle} editor={shown().editor} />
                 </Canvas>
@@ -419,7 +418,7 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
         <Show when={detail.database}>
           {(database) => <Database codeId={code.id} database={database()} dateConfig={props.dateConfig} />}
         </Show>
-        <Section icon="git-commit" title={t().versions} count={detail.versions.length || undefined}>
+        <Section title={t().versions} count={detail.versions.length || undefined}>
           <Show when={detail.versions.length} fallback={<Row icon="circle-off" lines={[t().noVersions]} />}>
             <For each={detail.versions}>
               {(entry) => (
@@ -435,7 +434,7 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
             </For>
           </Show>
         </Section>
-        <Section icon="player-play" title={t().runs} count={detail.runs.length || undefined}>
+        <Section title={t().runs} count={detail.runs.length || undefined}>
           <Show when={detail.runs.length} fallback={<Row icon="circle-off" lines={[t().noRuns]} />}>
             <For each={detail.runs}>
               {(run) => (
@@ -459,7 +458,7 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
           </Show>
         </Section>
         <Show when={detail.cleanup.length}>
-          <Section icon="recycle" title={t().cleanup} count={detail.cleanup.length}>
+          <Section title={t().cleanup} count={detail.cleanup.length}>
             <For each={detail.cleanup}>
               {(job) => (
                 <Row

@@ -590,7 +590,7 @@ function ReviewApproval(props: { review: CodeReview }) {
       </Band>
       <Show when={review.closed() && message()}>
         {(note) => (
-          <Section icon="message-2" title={note().label}>
+          <Section title={note().label}>
             <Row
               avatar={{ name: note().who }}
               lines={[note().text, note().at ? `${note().who} · ${formatRelative(note().at!, p.dateConfig)}` : note().who]}
@@ -726,11 +726,7 @@ function ReviewChanges(props: { review: CodeReview }) {
         const rows = () => changes().rows.items;
         const same = () => rows().filter((row) => row.kind === "same");
         return (
-          <Section
-            icon="arrows-diff"
-            title={p.comparison ? t().changesFrom({ n: p.comparison }) : t().detailsFirst}
-            summary={changes().assurance}
-          >
+          <Section title={p.comparison ? t().changesFrom({ n: p.comparison }) : t().detailsFirst} summary={changes().assurance}>
             <For each={rows().filter((row) => row.kind !== "same")}>
               {(row) => <Row icon={row.kind === "add" ? "plus" : "minus"} lines={row.note ? [row.text, row.note] : [row.text]} />}
             </For>
@@ -797,7 +793,7 @@ function ReviewOverview(props: { review: CodeReview }) {
       </Show>
       <Show when={model()}>
         {(readModel) => (
-          <Section icon="list-check" title={t().mayDo({ n: p.number })}>
+          <Section title={t().mayDo({ n: p.number })}>
             <For each={dedupe(readModel().timing.items)}>
               {(row) => <Row icon="clock" lines={row.note ? [row.text, row.note] : [row.text]} />}
             </For>
@@ -812,7 +808,7 @@ function ReviewOverview(props: { review: CodeReview }) {
       </Show>
       <Show when={examples()}>
         {(value) => (
-          <Section icon="test-pipe" title={t().examples} count={value().summary} summary={value().explanation}>
+          <Section title={t().examples} count={value().summary} summary={value().explanation}>
             <For each={value().items}>
               {(example) => (
                 <Row
@@ -827,7 +823,6 @@ function ReviewOverview(props: { review: CodeReview }) {
       </Show>
       <Show when={review.threads().length}>
         <Section
-          icon="message-2"
           title={t().commentsTitle}
           count={review.total()}
           actions={[{ label: t().seeInCode, icon: "code", onClick: () => review.setTab("code") }]}
@@ -858,7 +853,7 @@ export function ReviewBody(props: { review: CodeReview }) {
   const t = review.t;
   const p = review.props;
   const code = () => (
-    <Section icon="file-code" title={t().codeLabel} summary={review.closed() ? t().footDecided : t().footOpen}>
+    <Section title={t().codeLabel} summary={review.closed() ? t().footDecided : t().footOpen}>
       {/* k2b-ui gap: no v2 code view with line threads yet; the @k2b/ui code field stands inside a Canvas */}
       <Canvas label={t().codeLabel}>
         <ReviewCode

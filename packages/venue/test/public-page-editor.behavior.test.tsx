@@ -2,7 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../ui/test/dom";
-import type { PublicSection, PublicStatus, Venue, VenueDashboard } from "../src/contracts";
+import {
+  MAX_PUBLIC_MENU_ITEMS,
+  MAX_PUBLIC_SECTIONS,
+  type PublicSection,
+  type PublicStatus,
+  type Venue,
+  type VenueDashboard,
+} from "../src/contracts";
 
 const flush = async () => {
   for (let index = 0; index < 20; index += 1) await Promise.resolve();
@@ -302,6 +309,49 @@ describe("Venue public page view behavior", () => {
       editor.cleanup();
       dom.cleanup();
     }
+  });
+
+  test("a copy the server would refuse is unavailable and says why; any other copy stays available", async () => {
+    /** The Duplicate entry in the menu of the section titled `title`: whether it is unavailable, and what it says. */
+    const duplicateEntry = async (sections: PublicSection[], title: string) => {
+      const dom = createDomTestHarness();
+      const editor = await mountEditor(dom, { sections, respond: () => Response.json({}) });
+      try {
+        buttonNamed(editor.list(), `More actions for “${title}”`).click();
+        await flush();
+        // Every row's menu is in the document, in the order of the rows.
+        const entries = [...dom.document.querySelectorAll<HTMLElement>("[role='menuitem']")].filter((item) =>
+          item.textContent?.includes("Duplicate section"),
+        );
+        const entry = entries[sections.findIndex((candidate) => candidate.title === title)]!;
+        return { disabled: entry.getAttribute("aria-disabled") === "true", text: entry.textContent ?? "" };
+      } finally {
+        editor.cleanup();
+        dom.cleanup();
+      }
+    };
+    const half = MAX_PUBLIC_MENU_ITEMS / 2 + 1;
+    const lunch: PublicSection = {
+      ...section("Menu01", "Lunch menu", 1),
+      kind: "menu",
+      content: { items: Array.from({ length: half }, (_, index) => ({ name: `Dish ${index}` })) },
+    };
+    const page = [lunch, section("Open01", "Opening week", 2)];
+
+    const menuCopy = await duplicateEntry(page, "Lunch menu");
+    expect(menuCopy.disabled).toBe(true);
+    expect(menuCopy.text).toContain(`A copy would make ${half * 2} of ${MAX_PUBLIC_MENU_ITEMS} menu items.`);
+    // A notice holds no menu items, so its copy fits below the section limit.
+    const noticeCopy = await duplicateEntry(page, "Opening week");
+    expect(noticeCopy.disabled).toBe(false);
+    expect(noticeCopy.text).not.toContain("A copy would make");
+
+    const full = Array.from({ length: MAX_PUBLIC_SECTIONS }, (_, index) =>
+      section(`Note${String(index).padStart(2, "0")}`, `Note ${index}`, index),
+    );
+    const atLimit = await duplicateEntry(full, "Note 0");
+    expect(atLimit.disabled).toBe(true);
+    expect(atLimit.text).toContain(`${MAX_PUBLIC_SECTIONS} of ${MAX_PUBLIC_SECTIONS} sections: delete one to add another.`);
   });
 
   test("a failed reorder falls back to the order the server confirmed", async () => {
