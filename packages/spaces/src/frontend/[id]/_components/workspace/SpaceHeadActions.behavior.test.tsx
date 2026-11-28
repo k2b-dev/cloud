@@ -22,9 +22,8 @@ if (isServer) {
     dispose?.();
     dispose = undefined;
     dom.root.replaceChildren();
-    dom.document.cookie = "cloud_seen_hints=; Max-Age=0; Path=/";
   });
-  const mount = (options: { view?: "kanban" | "list"; token?: string | null; hintOpen?: boolean; locale?: string } = {}) => {
+  const mount = (options: { view?: "kanban" | "list"; token?: string | null; locale?: string } = {}) => {
     dispose = render(
       () =>
         createComponent(LocaleProvider, {
@@ -37,7 +36,6 @@ if (isServer) {
               canWrite: true,
               currentView: options.view ?? "kanban",
               icalToken: options.token === undefined ? "calendar-token" : options.token,
-              hintOpen: options.hintOpen,
               people: [
                 { id: "11111111-1111-4111-8111-111111111111", uid: "mara", displayName: "Mara Lind", avatarHash: null, kind: "user" },
                 {
@@ -114,38 +112,6 @@ if (isServer) {
       expect(menu).toContain("Space settings");
       expect(menu).not.toContain("Copy iCal URL");
       expect(menu).not.toContain("Keyboard shortcuts");
-    });
-
-    test.each(["en", "de"])("dismisses the menu hint and persists seen state (%s)", (locale) => {
-      mount({ hintOpen: true, locale });
-      expect(dom.root.querySelector(".k2b-moved-hint")).not.toBeNull();
-      clickText(locale === "de" ? "Verstanden" : "Got it");
-      expect(dom.root.querySelector(".k2b-moved-hint")).toBeNull();
-      expect(dom.document.cookie).toContain("spaces.space-menu");
-    });
-
-    test.each([
-      { view: "kanban" as const, token: "calendar-token", text: "Space settings, the iCal URL, and keyboard shortcuts are now under “…”." },
-      { view: "list" as const, token: "calendar-token", text: "Space settings and the iCal URL are now under “…”." },
-      { view: "kanban" as const, token: null, text: "Space settings and keyboard shortcuts are now under “…”." },
-      { view: "list" as const, token: null, text: "Space settings are now under “…”." },
-    ])("the menu hint names only the items the menu has ($view, iCal $token)", ({ view, token, text }) => {
-      mount({ hintOpen: true, view, token });
-      expect(dom.root.querySelector(".k2b-moved-hint")?.textContent).toContain(text);
-    });
-
-    test("using the menu dismisses and persists its hint", () => {
-      mount({ hintOpen: true });
-      openMenu();
-      expect(dom.root.querySelector(".k2b-moved-hint")).toBeNull();
-      expect(dom.document.cookie).toContain("spaces.space-menu");
-    });
-
-    test("hint action opens the menu", () => {
-      mount({ hintOpen: true });
-      clickText("Open menu");
-      expect(dom.document.querySelector('[role="menu"]')?.textContent).toContain("Space settings");
-      expect(dom.document.cookie).toContain("spaces.space-menu");
     });
   });
 }

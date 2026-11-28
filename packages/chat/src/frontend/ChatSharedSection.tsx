@@ -19,12 +19,8 @@ const KINDS = [
   { kind: "elements", icon: "ti ti-box", label: "sharedElements" },
 ] as const satisfies readonly { kind: Kind; icon: string; label: string }[];
 
-/**
- * What the chat shared, newest first: links and Cloud elements, filtered by kind and, in a chat with threads, by thread.
- * The list comes from the messages, so a deleted message or an element without access leaves it or shows as not
- * available. A row jumps to its message.
- */
-export default function ChatSharedSection(props: {
+/** What the shared list reads and where a row leads. */
+export type ChatSharedSectionProps = {
   chatId: string;
   /** Changes when the history grows, so the list follows new messages while it is open. */
   /** Changes when a message arrives, changes or leaves, or the loaded history is replaced; absent until the chat is open. */
@@ -36,7 +32,15 @@ export default function ChatSharedSection(props: {
   cards: ResourceCards | undefined;
   load: (query: z.input<typeof SharedQuerySchema>) => Promise<SharedPage>;
   onJump: (item: SharedItem) => void;
-}): JSX.Element {
+};
+
+export const SHARED_KINDS = KINDS;
+
+/**
+ * The shared list's state: the kind and thread chosen, pages read in order (a refresh keeps the depth read, "Show more"
+ * appends), and a refresh after a burst of new messages. Both v1's section and v2's info use it.
+ */
+export function createSharedList(props: ChatSharedSectionProps) {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
   const [kind, setKind] = createSignal<Kind>("all");
@@ -151,7 +155,17 @@ export default function ChatSharedSection(props: {
     const place = thread() === "all" && (props.threads?.items.length ?? 0) > 0 ? threadName(item.thread) : "";
     return [who, place, listTime(item.createdAt, props.now(), { ...props.dateConfig, locale: locale() })].filter(Boolean).join(" · ");
   };
+  return { t, kind, setKind, thread, setThread, items, incomplete, cursor, status, loadingMore, refresh, more, threadOptions, meta };
+}
 
+/**
+ * What the chat shared, newest first: links and Cloud elements, filtered by kind and, in a chat with threads, by thread.
+ * The list comes from the messages, so a deleted message or an element without access leaves it or shows as not
+ * available. A row jumps to its message.
+ */
+export default function ChatSharedSection(props: ChatSharedSectionProps): JSX.Element {
+  const { t, kind, setKind, thread, setThread, items, incomplete, cursor, status, loadingMore, refresh, more, threadOptions, meta } =
+    createSharedList(props);
   return (
     <Section title={t().shared}>
       <div class="chat-shared">
@@ -258,7 +272,8 @@ export default function ChatSharedSection(props: {
   );
 }
 
-function SharedRow(props: { item: SharedItem; meta: string; cards: ResourceCards | undefined; onJump: () => void }): JSX.Element {
+/** What a shared row says of its item: title, symbol and whether it is out of reach; an element reads its card. */
+export function sharedRowView(props: { item: SharedItem; cards: ResourceCards | undefined }) {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
   const view = useResourceCard(
@@ -282,6 +297,11 @@ function SharedRow(props: { item: SharedItem; meta: string; cards: ResourceCards
         : unavailable()
           ? "ti ti-lock"
           : (view()?.icon ?? "ti ti-box");
+  return { t, view, unavailable, title, icon };
+}
+
+function SharedRow(props: { item: SharedItem; meta: string; cards: ResourceCards | undefined; onJump: () => void }): JSX.Element {
+  const { t, view, unavailable, title, icon } = sharedRowView(props);
   return (
     <li>
       <button type="button" class="chat-shared__row" data-unavailable={unavailable() ? "" : undefined} onClick={() => props.onJump()}>

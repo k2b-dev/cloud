@@ -215,6 +215,10 @@ const navigation = createNavigation({
 <WorkspaceNavigationProvider label="Inventory" navigation={navigation} />
 ```
 
+With `entries={40}` the page carries only the first 40 rows and the way to the
+open one for a menu opened before the island runs, and the browser writes no
+snapshot at all: the live island answers the menu itself.
+
 A page on `@k2b/ui/v2` puts its sidebar away on phones. Render
 `V2WorkspaceNavigation` once inside the application island with the same groups
 and foot as its v2 `Nav`; the phone bar's title becomes the menu and lists them:
@@ -234,6 +238,12 @@ deeds of a group's "…" (`action` with `items`) follow the group's entries; a
 group's single icon button and a submenu stay in the sidebar. A tap opens an
 entry the way the sidebar does: in place through its `onNavigate`, otherwise
 as a page; an entry without a link runs its `onClick`.
+
+A long navigation stays light. The page carries the first 40 entries and the
+way to the open one, for a menu opened before the island runs; the island
+gives the menu every entry once it runs, and builds them only when the menu
+first opens. Outside an island the menu keeps those 40 entries, so render
+`V2WorkspaceNavigation` inside the application island.
 
 Keep permission filtering, labels, counts, URLs, and actions application-owned.
 The provider emits an SSR snapshot, binds handlers on mount, and unregisters on

@@ -1,4 +1,4 @@
-import { MovedHint, ResizeSeparator, useLocale } from "@k2b/ui";
+import { ResizeSeparator, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { mailWorkspaceMessages } from "../mail-workspace-messages";
 
@@ -35,15 +35,13 @@ export function MailListShareStyle(props: { percent: number }) {
 
 /**
  * The handle between list and reader: drag, arrow keys (Shift for larger steps), Home and End, and a double click or
- * Enter back to the default. The share is saved when a move ends and cleared by a reset. `hint` shows the one-time
- * note for the old view key at the handle itself.
+ * Enter back to the default. The share is saved when a move ends and cleared by a reset.
  */
 export function MailListHandle(props: {
   percent: number;
   onResize: (percent: number) => void;
   onResizeEnd: (percent: number) => void;
   onReset: () => void;
-  hint: { open: boolean; onDismiss: () => void };
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailWorkspaceMessages.resolve([locale()]).t);
@@ -58,7 +56,6 @@ export function MailListHandle(props: {
     onCleanup(() => observer.disconnect());
   });
   const range = createMemo(() => mailListPercentRange(width()));
-  const target = () => slot?.querySelector<HTMLElement>(".mail-list-handle") ?? undefined;
   return (
     <span ref={slot} class="contents">
       <ResizeSeparator
@@ -77,15 +74,6 @@ export function MailListHandle(props: {
         onResizeEnd={props.onResizeEnd}
         onReset={props.onReset}
       />
-      <MovedHint
-        open={props.hint.open}
-        onDismiss={props.hint.onDismiss}
-        target={target}
-        placement="right"
-        action={{ label: t().resetListWidth, onClick: props.onReset }}
-      >
-        {t().densityHint}
-      </MovedHint>
     </span>
   );
 }

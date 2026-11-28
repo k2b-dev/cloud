@@ -57,7 +57,7 @@ describe("FieldValue helpers", () => {
     });
     const price = field({ id: "price", tableId: "books", name: "Price", type: "number", config: { unit: "EUR" } });
 
-    expect(formatFieldValueText({ field: lookup, value: "12", fieldsByTable: { tbl: [relation, lookup], books: [price] } })).toBe("12 EUR");
+    expect(formatFieldValueText({ field: lookup, value: "12", fieldsByTable: { tbl: [relation, lookup], books: [price] } })).toBe("€12.00");
   });
 
   test("prefers explicit view format over field config format", () => {
@@ -175,7 +175,7 @@ describe("FieldValue helpers", () => {
 
     expect(resolveFieldDisplay({ field: due, value: "2026-07-12T14:30:00.000Z" })).toEqual({
       kind: "text",
-      text: "2026-07-12",
+      text: "07/12/2026",
     });
     expect(resolveFieldDisplay({ field: code, value: "ITEM-42", format: { kind: "barcode", bcid: "code128" } })).toEqual({
       kind: "barcode",
