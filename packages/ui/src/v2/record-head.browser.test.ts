@@ -8,12 +8,12 @@ import type {} from "../../test/v2-record-head.client";
 import { measureV2Layout } from "./testing";
 
 // A record's head on the phone (W8, Weather at 390 px with a long place name; W7, the Kundenakte with four symbols):
-// avatar, name and the head's actions stand in one row, as the approved mockup's 57 px head. A name too long for one
-// line takes a second (G7, the visitor head's mockup), and the head grows to 73 px; after it the name is cut with "…".
-// The name comes before the kinds: it keeps at least 8ch; a kind without room beside it leaves the head, it never
-// takes a row of its own. Before #4373, avatar, name and "…" took a row each (about 140 px), then the name shrank to
-// 40 px beside the kinds. A place leads with its square mark instead of the round avatar. The fixture is
-// test/v2-record-head.client.tsx.
+// avatar, name and the head's actions stand in one row, as the approved mockup's 57 px head, and a long name is cut
+// with "…". With `wrap` (G7, the visitor head's mockup) a name too long for one line takes a second, and the head grows
+// to 73 px; after it the name is cut. The name comes before the kinds: it keeps at least 8ch; a kind without room
+// beside it leaves the head, it never takes a row of its own. Before #4373, avatar, name and "…" took a row each
+// (about 140 px), then the name shrank to 40 px beside the kinds. A place leads with its square mark instead of the
+// round avatar. The fixture is test/v2-record-head.client.tsx.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss = "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; }";
@@ -30,7 +30,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-type Fixture = { kinds: boolean; width: number; name?: string; mark?: boolean; dark?: boolean };
+type Fixture = { kinds: boolean; width: number; name?: string; mark?: boolean; wrap?: boolean; dark?: boolean };
 
 const withPage = async (fixture: Fixture, run: (page: Page) => Promise<void>) => {
   const page = await browser.newPage({ viewport: { width: fixture.width, height: 800 } });
@@ -41,7 +41,7 @@ const withPage = async (fixture: Fixture, run: (page: Page) => Promise<void>) =>
       `<!doctype html><html lang="de"${fixture.dark ? ' class="dark"' : ""}><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
     );
     await page.addScriptTag({
-      content: `window.__k2Kinds = ${fixture.kinds}; window.__k2Mark = ${fixture.mark === true}; window.__k2Name = ${JSON.stringify(fixture.name ?? long)};`,
+      content: `window.__k2Kinds = ${fixture.kinds}; window.__k2Mark = ${fixture.mark === true}; window.__k2Wrap = ${fixture.wrap === true}; window.__k2Name = ${JSON.stringify(fixture.name ?? long)};`,
     });
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
@@ -100,69 +100,76 @@ const shape = (page: Page) =>
 const aligned = (found: Awaited<ReturnType<typeof shape>>) =>
   expect([found.lead, ...found.actions, ...found.kinds]).toEqual([found.lead, ...found.actions, ...found.kinds].map(() => found.name));
 
-test("390 px, a very long name with two kinds and four symbols: two lines in a head of 73 px, cut after them, at least 8ch, the kinds without room left out", async () => {
-  await withPage({ kinds: true, width: 390 }, async (page) => {
-    const found = await shape(page);
-    expect([found.height, found.lines]).toEqual([73, 2]);
-    expect(found.nameWidth).toBeGreaterThanOrEqual(found.least - 0.5);
-    expect(found.actions).toHaveLength(4);
-    aligned(found);
-    expect([found.halfCut, found.cut, found.overflows, found.inside]).toEqual([0, true, false, true]);
-  });
-});
+// The default (as the approved record and deliveries mockups): one line, cut with "…", 57 px. With `wrap` (the visitor
+// head's mockup): two lines, 73 px, then cut. A short name stands the same in both.
+for (const wrap of [false, true]) {
+  const form = wrap ? "wrap" : "default";
+  const [height, lines] = wrap ? [73, 2] : [57, 1];
 
-test("390 px, a very long name without kinds: the same two lines in 73 px", async () => {
-  await withPage({ kinds: false, width: 390 }, async (page) => {
-    const found = await shape(page);
-    expect([found.height, found.lines]).toEqual([73, 2]);
-    aligned(found);
-    expect([found.cut, found.overflows, found.inside]).toEqual([true, false, true]);
-  });
-});
-
-test("390 px, a short name: one row of 57 px, the kinds without room beside its 8ch left out", async () => {
-  await withPage({ kinds: true, width: 390, name: "Ostbad" }, async (page) => {
-    const found = await shape(page);
-    expect([found.height, found.lines]).toEqual([57, 1]);
-    aligned(found);
-    expect([found.halfCut, found.cut, found.inside]).toEqual([0, false, true]);
-  });
-});
-
-test("700 px, a short name with its kinds: one row of 57 px, the kinds beside the name on its middle", async () => {
-  await withPage({ kinds: true, width: 700, name: "Ostbad" }, async (page) => {
-    const found = await shape(page);
-    expect([found.height, found.lines]).toEqual([57, 1]);
-    expect(found.kinds).toHaveLength(2);
-    aligned(found);
-    expect([found.halfCut, found.cut, found.inside]).toEqual([0, false, true]);
-  });
-});
-
-for (const dark of [false, true])
-  test(`390 px, ${dark ? "dark" : "light"}, worst case: a place's square mark and one word wider than the line, two lines, nothing runs out, the layout clean`, async () => {
-    await withPage({ kinds: true, width: 390, name: unbroken, mark: true, dark }, async (page) => {
+  test(`390 px, ${form}, a very long name with two kinds and four symbols: ${lines} line(s) in a head of ${height} px, cut, at least 8ch, the kinds without room left out`, async () => {
+    await withPage({ kinds: true, width: 390, wrap }, async (page) => {
       const found = await shape(page);
-      expect([found.height, found.lines]).toEqual([73, 2]);
-      expect(found.leadShape).toEqual({ kind: "mark", width: 32, height: 32 });
-      expect(found.leadRadius).toBe("8px");
+      expect([found.height, found.lines]).toEqual([height, lines]);
+      expect(found.nameWidth).toBeGreaterThanOrEqual(found.least - 0.5);
+      expect(found.actions).toHaveLength(4);
       aligned(found);
-      expect([found.halfCut, found.overflows, found.inside]).toEqual([0, false, true]);
-      const layout = await measureV2Layout(page);
-      expect(layout.problems).toEqual([]);
+      expect([found.halfCut, found.cut, found.overflows, found.inside]).toEqual([0, true, false, true]);
     });
   });
 
-test("1440 px, unchanged: the head's 56 px, the name on one line cut beside both kinds and the actions", async () => {
-  await withPage({ kinds: true, width: 1440 }, async (page) => {
-    const found = await shape(page);
-    expect([found.height, found.lines]).toEqual([56, 1]);
-    expect(found.kinds).toEqual([found.name, found.name]);
-    expect(found.leadShape).toEqual({ kind: "avatar", width: 32, height: 32 });
-    aligned(found);
-    expect(found.inside).toBe(true);
+  test(`390 px, ${form}, a very long name without kinds: the same ${lines} line(s) in ${height} px`, async () => {
+    await withPage({ kinds: false, width: 390, wrap }, async (page) => {
+      const found = await shape(page);
+      expect([found.height, found.lines]).toEqual([height, lines]);
+      aligned(found);
+      expect([found.cut, found.overflows, found.inside]).toEqual([true, false, true]);
+    });
   });
-});
+
+  test(`390 px, ${form}, a short name: one row of 57 px, the kinds without room beside its 8ch left out`, async () => {
+    await withPage({ kinds: true, width: 390, name: "Ostbad", wrap }, async (page) => {
+      const found = await shape(page);
+      expect([found.height, found.lines]).toEqual([57, 1]);
+      aligned(found);
+      expect([found.halfCut, found.cut, found.inside]).toEqual([0, false, true]);
+    });
+  });
+
+  test(`700 px, ${form}, a short name with its kinds: one row of 57 px, the kinds beside the name on its middle`, async () => {
+    await withPage({ kinds: true, width: 700, name: "Ostbad", wrap }, async (page) => {
+      const found = await shape(page);
+      expect([found.height, found.lines]).toEqual([57, 1]);
+      expect(found.kinds).toHaveLength(2);
+      aligned(found);
+      expect([found.halfCut, found.cut, found.inside]).toEqual([0, false, true]);
+    });
+  });
+
+  for (const dark of [false, true])
+    test(`390 px, ${form}, ${dark ? "dark" : "light"}, worst case: a place's square mark and one word wider than the line, ${lines} line(s), nothing runs out, the layout clean`, async () => {
+      await withPage({ kinds: true, width: 390, name: unbroken, mark: true, wrap, dark }, async (page) => {
+        const found = await shape(page);
+        expect([found.height, found.lines]).toEqual([height, lines]);
+        expect(found.leadShape).toEqual({ kind: "mark", width: 32, height: 32 });
+        expect(found.leadRadius).toBe("8px");
+        aligned(found);
+        expect([found.halfCut, found.cut, found.overflows, found.inside]).toEqual([0, true, false, true]);
+        const layout = await measureV2Layout(page);
+        expect(layout.problems).toEqual([]);
+      });
+    });
+
+  test(`1440 px, ${form}: the head's 56 px, the name on one line cut beside both kinds and the actions`, async () => {
+    await withPage({ kinds: true, width: 1440, wrap }, async (page) => {
+      const found = await shape(page);
+      expect([found.height, found.lines]).toEqual([56, 1]);
+      expect(found.kinds).toEqual([found.name, found.name]);
+      expect(found.leadShape).toEqual({ kind: "avatar", width: 32, height: 32 });
+      aligned(found);
+      expect(found.inside).toBe(true);
+    });
+  });
+}
 
 for (const dark of [false, true])
   test(`1440 px, ${dark ? "dark" : "light"}: a place's square mark of 32 px leads the head's one line, the layout clean`, async () => {

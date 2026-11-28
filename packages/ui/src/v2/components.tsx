@@ -1149,11 +1149,15 @@ export type RecordId = {
 };
 
 export type RecordHeadProps = {
-  /**
-   * The name of the record, the page's heading. One line, cut with "…" where the head has no room; on the phone it
-   * takes a second line before it is cut.
-   */
+  /** The name of the record, the page's heading. One line, cut with "…" where the head has no room. */
   name: string;
+  /**
+   * On the phone a long name takes a second line before it is cut with "…", as a column's `wrap` lets its text take
+   * more lines: the head grows from 57 to 73 px, so a rename from one line to two moves the content below by 16 px.
+   * For a head whose name is the page's whole identity, such as a place's visitor page. Without it the phone head
+   * keeps one line. From 768 px the name keeps one line either way.
+   */
+  wrap?: boolean;
   /**
    * Kinds of the record, such as "Private". Kinds sum up: whatever a kind says also stands in the record's `Facts`,
    * because on the phone kinds give way to the name.
@@ -1185,7 +1189,7 @@ export const RecordHead = (props: RecordHeadProps) => (
   <>
     <Show when={props.avatar}>{(person) => <Avatar {...person()} decorative />}</Show>
     <Show when={props.mark}>{(mark) => <Mark {...mark()} />}</Show>
-    <h1 class="k2-record-name" data-k2-part="RecordHead">
+    <h1 class="k2-record-name" data-k2-part="RecordHead" data-wrap={props.wrap ? "" : undefined}>
       {props.name}
     </h1>
     <For each={props.kinds}>{(kind) => <Chip>{kind}</Chip>}</For>

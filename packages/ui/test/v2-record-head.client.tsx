@@ -4,7 +4,8 @@ import { Bar, Button, Menu, Pane, RecordHead, Text, Workspace } from "../src/v2"
 // A record's head on the phone, as Weather shows a place: an avatar, a very long name, its kinds and the head's
 // actions (three kept symbols and "…", as a record head with #4373's kept actions shows them on the phone).
 // `window.__k2Kinds = false` leaves the kinds out, `window.__k2Name` gives another name, and `window.__k2Mark = true`
-// leads with a place's square mark (its symbol on its colour) instead of the round avatar.
+// leads with a place's square mark (its symbol on its colour) instead of the round avatar; `window.__k2Wrap = true`
+// lets a long name take a second line on the phone (`RecordHead wrap`).
 
 declare global {
   interface Window {
@@ -12,6 +13,7 @@ declare global {
     __k2Kinds?: boolean;
     __k2Name?: string;
     __k2Mark?: boolean;
+    __k2Wrap?: boolean;
   }
 }
 
@@ -26,9 +28,9 @@ render(
         <Bar
           start={
             window.__k2Mark ? (
-              <RecordHead mark={{ icon: "building-carousel", color: "#ca8a04" }} name={name} kinds={kinds} />
+              <RecordHead mark={{ icon: "building-carousel", color: "#ca8a04" }} name={name} kinds={kinds} wrap={window.__k2Wrap} />
             ) : (
-              <RecordHead avatar={{ name: "Sankt Johann im Pongau", color: "#0284c7" }} name={name} kinds={kinds} />
+              <RecordHead avatar={{ name: "Sankt Johann im Pongau", color: "#0284c7" }} name={name} kinds={kinds} wrap={window.__k2Wrap} />
             )
           }
           end={

@@ -430,4 +430,8 @@ test("a record head sends a place's mark or a person's avatar before its heading
   expect(person.match(/<span class="k2-av"[^>]*>/)?.[0]).toContain('aria-hidden="true"');
   expect(person.indexOf('class="k2-av"')).toBeLessThan(person.indexOf('class="k2-record-name"'));
   expect(person).not.toContain("k2-mk");
+  // a name that may take a second line on the phone says so in the server's markup; one line is the default
+  expect(person).not.toContain("data-wrap");
+  const wrapped = renderToString(() => createComponent(RecordHead, { name: "Stadtteilcafé Lindenhof", wrap: true }));
+  expect(wrapped.match(/<h1 class="k2-record-name"[^>]*>/)?.[0]).toContain('data-wrap=""');
 });
