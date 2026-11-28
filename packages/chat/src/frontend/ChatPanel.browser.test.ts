@@ -179,7 +179,9 @@ for (const width of [1440, 390]) {
       await back.click();
       await shows(header, "Lager Ost").waitFor();
       expect(new URL(chatFrame().url()).pathname).toBe(`/app/chat/panel/c/${shelf}`);
-      // The host page moves to another resource, as a page swap does: the panel follows from the old discussion.
+      // The host page moves to another resource, as a page swap does: the panel follows from the old discussion. Its
+      // context messages count once the panel's receiver is in place (#4538).
+      await panel.locator("html[data-cloud-panel-ready]").waitFor();
       const move = (id: string, seq: number) =>
         page.evaluate(
           ({ pageId, id, seq }) => {
@@ -317,6 +319,8 @@ for (const known of [true, false]) {
       await page.locator("#open-chat").click();
       const panel = page.frameLocator("[data-cloud-panel-frame]");
       await panel.locator('html[data-fixture-ready="true"]').waitFor();
+      // the shell shares the place by message below; it counts once the panel's receiver is in place (#4538)
+      await panel.locator("html[data-cloud-panel-ready]").waitFor();
       const frame = () => page.frames().find((candidate) => candidate.url().includes("/app/chat/panel"))!;
       expect(new URL(frame().url()).pathname).toBe("/app/chat/panel");
       // From here on, count every chat list the panel builds, also one replaced within the same task.
@@ -382,10 +386,26 @@ test("Chat follows only the latest host place when earlier places answer late", 
       gates.set(place, resolve);
     });
   const held = new Map<string, Promise<void>>();
+  // The test knows each read it holds from its own route: when it arrives, and when its answer has been handed to the
+  // page or the page dropped it. A wait for the page's response event misses a read the page cancels (#4538).
+  const reached = new Map<string, () => void>();
+  const handled = new Map<string, () => void>();
+  const once = (marks: Map<string, () => void>, place: string) => new Promise<void>((resolve) => marks.set(place, resolve));
+  // a step that does not come fails by its name within the page's 8 s, not as the test's 30 s timeout
+  const within = (step: string, done: Promise<void>) =>
+    Promise.race([done, new Promise<never>((_, fail) => setTimeout(() => fail(new Error(`${step} did not happen within 8 s`)), 8_000))]);
   // The panel follows by locating the new place; that read is what the test holds back.
   await page.route("**/api/chat/system-chats/for-resource?**", async (route) => {
-    await held.get(new URL(route.request().url()).searchParams.get("id") ?? "");
-    await route.continue();
+    const place = new URL(route.request().url()).searchParams.get("id") ?? "";
+    reached.get(place)?.();
+    try {
+      await held.get(place);
+      await route.fulfill({ response: await route.fetch() });
+    } catch {
+      // the page dropped the read while it was held: no answer comes back, which is as late as an answer gets
+    } finally {
+      handled.get(place)?.();
+    }
   });
   try {
     await page.goto(fixture.url + "app/fixture/board/Shelf-7");
@@ -395,6 +415,9 @@ test("Chat follows only the latest host place when earlier places answer late", 
     const header = panel.locator(".chat-conversation__header");
     await shows(header, "Lager Ost").waitFor();
     await panel.locator('html[data-fixture-ready="true"]').waitFor();
+    // The panel takes context messages once its receiver is in place, which it marks as the shell's controller reads it;
+    // a message posted before that is lost, and the panel never asks for the place it names (#4538).
+    await panel.locator("html[data-cloud-panel-ready]").waitFor();
     const frame = () => page.frames().find((candidate) => candidate.url().includes("/app/chat/panel"))!;
     const shared = JSON.parse(new URL(frame().url()).searchParams.get("cloud_panel_context")!) as { pageId: string; seq: number };
     let seq = shared.seq;
@@ -417,13 +440,14 @@ test("Chat follows only the latest host place when earlier places answer late", 
     const drawn = () =>
       frame().evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     held.set("Yard-2", hold("Yard-2"));
-    const late = page.waitForResponse(
-      (response) => response.url().includes("/api/chat/system-chats/for-resource?") && response.url().includes("Yard-2"),
-    );
+    const asked = once(reached, "Yard-2");
+    const late = once(handled, "Yard-2");
     await move("Yard-2");
+    // the read for B is on its way and held before the panel moves back to A
+    await within("the read for B arrives", asked);
     await move("Shelf-7");
     gates.get("Yard-2")!();
-    await late;
+    await within("the answer for B is handed over or dropped", late);
     await drawn();
     expect(new URL(frame().url()).pathname).toBe(`/app/chat/panel/c/${ids["Shelf-7"]}`);
     expect(await header.getByRole("link", { name: /^Chat about/ }).count()).toBe(0);
