@@ -401,6 +401,8 @@ export const spaceMessages = i18n.define({
       workspaceRefreshFailed: "Could not refresh workspace view",
       liveUpdatesUnavailable: "Live updates are unavailable right now",
       reload: "Reload",
+      settingsChangedElsewhere:
+        "Someone changed this Space while you were editing. Reload to see the current settings; your unsaved changes here will be lost.",
       noItemsYet: "No items yet",
       noItemsWritableDescription: "Create a task to start organizing work in this space.",
       noItemsReadonlyDescription: "This space does not contain any items yet.",
@@ -1288,6 +1290,8 @@ export const spaceMessages = i18n.define({
       workspaceRefreshFailed: "Die Ansicht des Arbeitsbereichs konnte nicht aktualisiert werden",
       liveUpdatesUnavailable: "Live-Updates sind gerade nicht verfügbar",
       reload: "Neu laden",
+      settingsChangedElsewhere:
+        "Jemand hat diesen Space geändert, während du bearbeitest. Lade neu, um die aktuellen Einstellungen zu sehen; deine nicht gespeicherten Änderungen hier gehen dabei verloren.",
       noItemsYet: "Noch keine Einträge",
       noItemsWritableDescription: "Erstelle eine Aufgabe, um die Arbeit in diesem Space zu organisieren.",
       noItemsReadonlyDescription: "Dieser Space enthält noch keine Einträge.",

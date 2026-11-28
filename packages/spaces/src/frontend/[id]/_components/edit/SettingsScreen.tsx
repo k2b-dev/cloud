@@ -1,9 +1,12 @@
+import { liveConnection } from "@k2b/cloud/browser/live";
+import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { listenPopState, navigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
-import { Bar, confirm, Pane, Path, Tabs, Workspace } from "@k2b/ui/v2";
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { Bar, confirm, Notice, Pane, Path, Tabs, useToast, Workspace } from "@k2b/ui/v2";
+import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { SpaceLiveEventSchema } from "@/live-events";
 import type { SpaceSettingsContext } from "@/settings-context";
 import SpacesNav, { useSpacesNav } from "../../../_components/spaces-nav";
 import { useSpaceMessages } from "../../messages";
@@ -56,7 +59,9 @@ export const visibleTabs = (permission: SpaceSettingsContext["permission"]): Set
 
 /**
  * The settings of a Space on v2, a page of its own: its areas as tabs (the address keeps the open one), each area
- * saving on its own. Leaving an area with unsaved changes asks first.
+ * saving on its own. Leaving an area with unsaved changes asks first, also by Back and forward. A change of the Space
+ * elsewhere refreshes the settings in place; while the person has unsaved changes, it says so and offers the reload
+ * instead, so nothing replaces what they are typing.
  */
 export default function SettingsScreen(props: SettingsScreenProps) {
   const m = useSpaceMessages();
@@ -80,6 +85,13 @@ export default function SettingsScreen(props: SettingsScreenProps) {
   };
   const [tab, setTab] = createSignal<SettingsTab>(props.tab);
   const [dirty, setDirty] = createSignal(false);
+  const toast = useToast();
+  /** The Space changed elsewhere while the person had unsaved changes; saving or discarding them clears it. */
+  const [changedElsewhere, setChangedElsewhere] = createSignal(false);
+  createEffect(() => {
+    if (!dirty()) setChangedElsewhere(false);
+  });
+  const discardQuestion = () => confirm({ title: m.discardChanges, description: m.discardChangesConfirm, confirm: m.discard });
   const tabs = () => visibleTabs(current().permission);
   const tabHref = (id: SettingsTab) => `${spaceHref}/settings${id === tabs()[0] ? "" : `?tab=${id}`}`;
   const label = (id: SettingsTab) =>
@@ -113,19 +125,61 @@ export default function SettingsScreen(props: SettingsScreenProps) {
   /** Another area opens in place; unsaved changes are discarded only after the person agrees. */
   const open = async (id: SettingsTab) => {
     if (id === tab()) return;
-    if (dirty() && !(await confirm({ title: m.discardChanges, description: m.discardChangesConfirm, confirm: m.discard }))) return;
+    if (dirty() && !(await discardQuestion())) return;
     setDirty(false);
     setTab(id);
     navigate(tabHref(id), { scroll: "preserve" });
   };
   onMount(() =>
     onCleanup(
-      listenPopState(({ url }) => {
+      listenPopState(async ({ url }) => {
         const next = SETTINGS_TABS.find((entry) => entry === url.searchParams.get("tab")) ?? tabs()[0];
-        if (next) setTab(next);
+        if (!next || next === tab()) return;
+        // Back and forward leave an area as a tab does: unsaved changes go only after the person agrees, and
+        // otherwise the address returns to the area that stays open.
+        if (dirty() && !(await discardQuestion())) {
+          navigate(tabHref(tab()), { scroll: "preserve" });
+          return;
+        }
+        setDirty(false);
+        setTab(next);
       }),
     ),
   );
+
+  // The Space's name, colour, statuses, tags, templates, wormholes and access change on other pages and devices too.
+  onMount(() => {
+    let stopped = false;
+    const changed = () => {
+      if (stopped) return;
+      if (dirty()) setChangedElsewhere(true);
+      else void refresh().catch(() => setChangedElsewhere(true));
+    };
+    const subscription = liveConnection("/api/spaces/live").subscribe(
+      "space",
+      { space: props.settings.space.id },
+      {
+        cursor: null,
+        parse: (data) => SpaceLiveEventSchema.parse(data),
+        apply: async (events) => {
+          // Items are not settings; everything else of the Space is.
+          if (events.some((event) => !event.data.type.startsWith("item."))) changed();
+        },
+        resync: async () => changed(),
+        // Access to the Space changed for this person: the page as it is may no longer be theirs to see.
+        revoked: () => {
+          if (dirty()) setChangedElsewhere(true);
+          else if (!reloadOnce(`spaces:settings:${props.settings.space.id}`)) setChangedElsewhere(true);
+        },
+        // k2b-ui gap: a v2 toast cannot stay until it is answered; it offers the reload for its five seconds.
+        unavailable: () => toast(m.liveUpdatesUnavailable, { status: "bad", retry: () => window.location.reload() }),
+      },
+    );
+    onCleanup(() => {
+      stopped = true;
+      subscription.close();
+    });
+  });
   const space = () => current().space;
   const isAdmin = () => current().permission === "admin";
 
@@ -150,6 +204,11 @@ export default function SettingsScreen(props: SettingsScreenProps) {
           />
         }
       >
+        <Show when={changedElsewhere()}>
+          <Notice tone="warn" primary={{ label: m.reload, icon: "refresh", onClick: () => window.location.reload() }}>
+            {m.settingsChangedElsewhere}
+          </Notice>
+        </Show>
         <Show when={tab() === "general"}>
           <GeneralSection space={space()} onDirtyChange={setDirty} />
         </Show>

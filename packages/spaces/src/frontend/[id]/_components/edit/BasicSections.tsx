@@ -17,7 +17,7 @@ import {
   Text,
   useToast,
 } from "@k2b/ui/v2";
-import { createEffect, createSignal, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, on, onCleanup, Show, untrack } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceDetail } from "@/contracts";
 import { SPACE_SWATCHES, spaceColorOptions } from "../../../_components/space-colors";
@@ -45,6 +45,20 @@ export function GeneralSection(props: { space: SpaceDetail; onDirtyChange: (dirt
   const changes = () => Number(name() !== base().name) + Number(description() !== base().description) + Number(color() !== base().color);
   createEffect(() => props.onDirtyChange(changes() > 0));
   onCleanup(() => props.onDirtyChange(false));
+  // A form without unsaved changes shows the Space as it is now, also after a change elsewhere.
+  createEffect(
+    on(
+      () => ({ name: props.space.name, description: props.space.description ?? "", color: props.space.color }),
+      (current) => {
+        if (untrack(changes) > 0) return;
+        setBase(current);
+        setName(current.name);
+        setDescription(current.description);
+        setColor(current.color);
+      },
+      { defer: true },
+    ),
+  );
   type Intent = { name: string; description: string; color: string };
   const save = mutations.create<void, Intent, Intent>({
     onBefore: (intent) => intent,
