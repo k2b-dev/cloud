@@ -7,10 +7,12 @@ import {
   createUniqueId,
   For,
   type JSX,
+  Match,
   onCleanup,
   onMount,
   children as resolveChildren,
   Show,
+  Switch,
   splitProps,
   useContext,
 } from "solid-js";
@@ -959,6 +961,11 @@ export type Tile = {
   href?: string;
   /** … in place on a plain click (see `OnNavigate`). */
   onNavigate?: OnNavigate;
+  /**
+   * Without `href`: the deed of the whole tile, such as opening the dialog that makes a notebook from a template. The
+   * tile's name is then a button, and the whole tile presses it.
+   */
+  onOpen?: () => void;
   /** The data colour of the thing: its symbol becomes its mark on a tint of this colour. */
   color?: string;
   /** Cards only: figures and states under the name, such as tables, forms and "8 knapp". */
@@ -969,7 +976,86 @@ export type Tile = {
   foot?: string;
   /** Cards only: a short history at the top end, in the thing's colour (`Spark`). */
   trend?: SparkProps;
+  /**
+   * Cards only: a glance of what the thing holds, across the top of the card above its name: a small table (its
+   * columns and first rows, as words), a page (its title and first words), or a sign for a thing that holds nothing yet.
+   * It is a picture of the content: assistive technology reads the card by its name. Keep its values short: the app
+   * chooses columns and rows whose words fit, at most about 12 characters a cell, so nothing is cut with "…" at 1440 or
+   * on the phone; leave out what does not fit, such as a book's author. A cut cell reads as cheap. The phone shows a
+   * table's first two columns, so a column that matters, such as an amount, comes second.
+   */
+  preview?: TilePreview;
 };
+
+/** What a card's preview shows: the app gives the words, the card draws them. */
+export type TilePreview =
+  | { table: { columns: readonly TilePreviewColumn[]; rows: readonly (readonly string[])[] }; page?: never; icon?: never }
+  | { page: { title: string; text?: string }; table?: never; icon?: never }
+  | { icon: string; table?: never; page?: never };
+
+/**
+ * A column of a preview's table: its head, or its head and its place. `align: "end"` sets the column at the end with
+ * figures of one width, for amounts and counts.
+ */
+export type TilePreviewColumn = string | { label: string; align?: "end" };
+
+const columnLabel = (column: TilePreviewColumn) => (typeof column === "string" ? column : column.label);
+const columnAlign = (column: TilePreviewColumn | undefined) =>
+  column !== undefined && typeof column !== "string" ? column.align : undefined;
+
+/** The columns of a preview's table that the phone's narrow card shows; the rest are marked `data-past`. */
+const TILE_PREVIEW_PHONE_COLUMNS = 2;
+
+const TilePreviewView = (props: { preview: TilePreview }) => (
+  <div class="k2-tile-preview" aria-hidden="true">
+    <Switch>
+      <Match when={"table" in props.preview && props.preview.table}>
+        {(table) => (
+          <table class="k2-tile-pv-table">
+            <thead>
+              <tr>
+                <For each={table().columns}>
+                  {(column, index) => (
+                    <th data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined} data-align={columnAlign(column)}>
+                      {columnLabel(column)}
+                    </th>
+                  )}
+                </For>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={table().rows}>
+                {(row) => (
+                  <tr>
+                    <For each={row}>
+                      {(cell, index) => (
+                        <td
+                          data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined}
+                          data-align={columnAlign(table().columns[index()])}
+                        >
+                          {cell}
+                        </td>
+                      )}
+                    </For>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        )}
+      </Match>
+      <Match when={"page" in props.preview && props.preview.page}>
+        {(page) => (
+          <span class="k2-tile-pv-page">
+            <b>{page().title}</b>
+            <Show when={page().text}>{(text) => <span>{text()}</span>}</Show>
+          </span>
+        )}
+      </Match>
+      <Match when={"icon" in props.preview && props.preview.icon}>{(icon) => <Icon name={icon()} />}</Match>
+    </Switch>
+  </div>
+);
 
 /** The last card, which makes a new thing: a dashed frame, its name, and optional quick choices such as templates. */
 export type TileCreate = {
@@ -1011,8 +1097,9 @@ export type TilesProps = {
 
 const TileName = (props: { tile: Tile }) => (
   <span class="k2-tile-name">
-    <span class="k2-tile-title">
-      <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate}>
+    {/* a name of one word cannot take a second line without breaking inside it: it stays one line and ends in "…" */}
+    <span class="k2-tile-title" data-one-word={/\s/.test(props.tile.title.trim()) ? undefined : ""}>
+      <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate} onOpen={props.tile.onOpen}>
         {props.tile.title}
       </RowOpen>
     </span>
@@ -1026,9 +1113,11 @@ const TileCard = (props: { tile: Tile }) => (
   <div
     class="k2-tile"
     role="listitem"
-    data-open={props.tile.href !== undefined ? "" : undefined}
+    data-open={props.tile.href !== undefined || props.tile.onOpen ? "" : undefined}
+    data-preview={props.tile.preview ? "" : undefined}
     style={custom({ "--k2-c": props.tile.color })}
   >
+    <Show when={props.tile.preview}>{(preview) => <TilePreviewView preview={preview()} />}</Show>
     <span class="k2-tile-top">
       <Mark icon={props.tile.icon} color={props.tile.color} />
       <TileName tile={props.tile} />
@@ -1109,7 +1198,7 @@ export const Tiles = (props: TilesProps) => (
       fallback={
         <For each={props.items}>
           {(tile) => (
-            <div class="k2-tile" role="listitem" data-open={tile.href !== undefined ? "" : undefined}>
+            <div class="k2-tile" role="listitem" data-open={tile.href !== undefined || tile.onOpen ? "" : undefined}>
               <Show when={tile.color} fallback={<Icon name={tile.icon} />}>
                 {(color) => <Mark icon={tile.icon} color={color()} />}
               </Show>
