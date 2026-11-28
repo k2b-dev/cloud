@@ -79,7 +79,9 @@ Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`:
 A page without the Cloud shell, rendered with `MinimalLayout ui="v2"`: the brand
 in the head, one task as the primary, today first, and every entry with its type
 colour and its state in colour, sign and word. The `kiosk` state is the same page
-on a wall screen.
+on a wall screen. With `measure="page"` the page stands as one centred card of at
+most 1200 px on a large screen, and with `measure="task"` a page of one task,
+such as a feedback form, at most 560 px; on the phone it keeps the full width.
 
 <Example recipe="public-page" height="720" default="Programm" />
 

@@ -274,8 +274,10 @@ a rolling upgrade. An application on this `@k2b/cloud` that finds an older
 Core in the registry, which does not declare `/public/v2.css`, keeps linking
 that Core's `global.css`. That sheet has neither the v2 frame of a visitor page
 nor its v2 footer, so such a page shows the v1 footer and brings its frame
-inline; it stays usable until Core is upgraded. Nothing else changes: no
-environment variable, no external service.
+inline; it stays usable until Core is upgraded. The centered card of a page
+with `measure` is a rule of the same sheet: until Core serves it, such a page
+spans the window. Nothing else changes: no environment variable, no external
+service.
 
 ## App-paid capabilities
 
