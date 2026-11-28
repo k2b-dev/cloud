@@ -1,26 +1,27 @@
 import { createComponent, type JSX } from "solid-js";
 import { render } from "solid-js/web";
-import * as actions from "../skills/k2b-ui/recipes/actions";
-import * as content from "../skills/k2b-ui/recipes/content";
-import * as conversations from "../skills/k2b-ui/recipes/conversations";
-import * as dialogs from "../skills/k2b-ui/recipes/dialogs";
-import * as filteredTable from "../skills/k2b-ui/recipes/filtered-table";
-import * as form from "../skills/k2b-ui/recipes/form";
-import * as formDetail from "../skills/k2b-ui/recipes/form-detail";
-import * as frame from "../skills/k2b-ui/recipes/frame";
 import * as home from "../skills/k2b-ui/recipes/home";
-import * as listDetail from "../skills/k2b-ui/recipes/list-detail";
-import * as mail from "../skills/k2b-ui/recipes/mail";
 import * as overview from "../skills/k2b-ui/recipes/overview";
-import * as record from "../skills/k2b-ui/recipes/record";
-import * as recordGroups from "../skills/k2b-ui/recipes/record-groups";
-import * as settings from "../skills/k2b-ui/recipes/settings";
-import * as states from "../skills/k2b-ui/recipes/states";
-import * as table from "../skills/k2b-ui/recipes/table";
-import * as tree from "../skills/k2b-ui/recipes/tree";
+import * as actions from "./v2-screens/actions";
+import * as content from "./v2-screens/content";
+import * as conversations from "./v2-screens/conversations";
+import * as dialogs from "./v2-screens/dialogs";
+import * as filteredTable from "./v2-screens/filtered-table";
+import * as form from "./v2-screens/form";
+import * as formDetail from "./v2-screens/form-detail";
+import * as frame from "./v2-screens/frame";
+import * as listDetail from "./v2-screens/list-detail";
+import * as mail from "./v2-screens/mail";
+import * as record from "./v2-screens/record";
+import * as recordGroups from "./v2-screens/record-groups";
+import * as settings from "./v2-screens/settings";
+import * as states from "./v2-screens/states";
+import * as table from "./v2-screens/table";
+import * as tree from "./v2-screens/tree";
 
-// The recipes of the k2b-ui skill in the browser, as Fibel's Example shows them: the page names a recipe and one of its
-// states before this bundle runs; the bundle mounts it in #root. The test then presses what a `press` state names.
+// The recipes of the k2b-ui skill and the test screens of v2-screens in the browser, as Fibel's Example shows them: the
+// page names a screen and one of its states before this bundle runs; the bundle mounts it in #root. The test then
+// presses what a `press` state names.
 
 type State = (() => JSX.Element) | { render: () => JSX.Element; press: string | readonly string[] };
 type Recipe = { default: (props: Record<string, never>) => JSX.Element; states?: Record<string, State> };

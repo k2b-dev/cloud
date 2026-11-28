@@ -1,20 +1,14 @@
----
-thumbnail: frame
----
-
 # Frame
 
 The working surface of an app: its places in the sidebar, its views and the one main action in the head, and the columns below. Every v2 screen is one `Workspace`; everything else stands in its slots.
 
-## The frame of an app
+## Reference look
 
-Open orders of a workshop: the sidebar holds the app's places, the head holds the views as tabs and "Neuer Auftrag", the list has its status row, and the open order stands beside it. What is open is in the address, so reload and back show the same. Switch the state: with nothing open, the detail's place says so, and nothing moves when an order opens.
-
-<Example recipe="frame" height="560" default="Open" />
+No example meets the reference look yet; build to the rules R1–R13 in `references/look.md` of the skill `k2b-ui`.
 
 ## Tablet and phone
 
-The workspace decides from its own width, on the server's page too, so nothing jumps when the page comes alive. Switch the example to 1024 and 390 px to see each.
+The workspace decides from its own width, on the server's page too, so nothing jumps when the page comes alive.
 
 - **Tablet:** where the sidebar at its default width does not fit beside every column at its minimum, it becomes a drawer behind a button at the start of the head. A declared `detail` counts also while it is closed, so the sidebar does not jump when an entry opens.
 - **Context column:** in a split of one main column and a `Pane side` after it, the context stands beside only where the split holds both at their default widths. With less it gives way to the end of the main column at its full width, and the split scrolls in one piece: the main column is never squeezed, and nothing hides. `side={{ from: 1400 }}` asks for a large screen (a table that needs its room). It needs no room of the workspace, so the sidebar never becomes a drawer for it. A list, its reader and an info column stay beside each other as before.

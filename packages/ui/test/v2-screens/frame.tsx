@@ -1,4 +1,5 @@
-// Recipe: the frame of an app. A sidebar with the app's places, a head with the views as tabs and the one main action,
+// Test screen of the v2 browser tests, not an example to copy: its look is bare. Reference: the k2b-ui look.
+// the frame of an app. A sidebar with the app's places, a head with the views as tabs and the one main action,
 // a list with its status row beside the open entry. Where the sidebar does not fit beside the columns (a tablet), it
 // becomes a drawer behind a button at the start of the head. On the phone the list is the page; an open entry is a page
 // of its own with one way back to the list.

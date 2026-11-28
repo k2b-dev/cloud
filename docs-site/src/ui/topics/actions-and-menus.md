@@ -1,21 +1,10 @@
----
-thumbnail: actions
----
-
 # Actions and menus
 
 Where deeds stand: the page's deeds in the head, an entry's deeds in its row and behind its "…", the same deeds on a right-click, and a small panel behind a button. A deed is a `Button`; more deeds wait in a `Menu`.
 
-## Deeds in the head and in the rows
+## Reference look
 
-Offers of a workshop. The head holds the views, a hint on the refresh button, a filter menu with two toggles, a view menu with one choice and two toggles, and the one main action, "Neues Angebot", a menu of its own. Each row has a star that is pressed or not and its deeds behind "…"; a right-click or a long press on the row opens the same menu. Switch the state: "Open" shows the offer the address names beside the list with its own deeds, "Sending" turns "Senden" while it sends, and "Menu" and "View" open the menus.
-
-<Example recipe="actions" height="560" default="List" />
-
-- One main action per page: the filled `primary` in the head, mirrored as `Workspace primary` so the phone shows it.
-- A deed that cannot be taken now is `disabled`, and a sentence beside it says why, such as the `Notice` "Freigabe fehlt".
-- A deed under way is `busy`: the button keeps its width, its look and the focus, and takes no second press.
-- A toggle is `pressed`: `true` on, `false` off. Never on a link or on the primary action.
+No example meets the reference look yet; build to the rules R1–R13 in `references/look.md` of the skill `k2b-ui`.
 
 ## Menu or popover?
 

@@ -1,4 +1,5 @@
-// Recipe: dialogs and toasts on the members of a space. "Einladen" opens a dialog with its fields (a sheet from the
+// Test screen of the v2 browser tests, not an example to copy: its look is bare. Reference: the k2b-ui look.
+// dialogs and toasts on the members of a space. "Einladen" opens a dialog with its fields (a sheet from the
 // bottom on the phone) and its own one primary. Removing a member asks first with Dialog.confirm and then answers with
 // a toast and "Rückgängig"; sending an invitation again answers with a toast that says whether it worked.
 import {

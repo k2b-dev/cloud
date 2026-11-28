@@ -1,4 +1,5 @@
-// Recipe: a settings page with the controls beyond text: a field that goes back to its default, a choice the person
+// Test screen of the v2 browser tests, not an example to copy: its look is bare. Reference: the k2b-ui look.
+// a settings page with the controls beyond text: a field that goes back to its default, a choice the person
 // may not change, a list of values as tags, an image, a colour, a number on a range, a code from another device, and
 // questions that open in place.
 // The values live in the app; the primitives only show them.

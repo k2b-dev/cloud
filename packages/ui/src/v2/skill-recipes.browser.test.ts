@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { Browser } from "playwright";
@@ -7,25 +7,25 @@ import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser } from "../../test/browser";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
+import { v2ScreenFiles } from "../../test/v2-screen-files";
 import { describeV2Page, measureV2Layout } from "./testing";
 
 // The recipes of the k2b-ui skill are what agents copy. Each one must keep the v2 rules and show no outline problem at
-// 1440 and 390 px, so a recipe and its picture never teach a mistake.
+// 1440 and 390 px, so a recipe and its picture never teach a mistake. The test screens of test/v2-screens keep the
+// same rules, so every primitive stays covered in a whole screen.
 const root = mkdtempSync(resolve(tmpdir(), "k2-v2-recipes-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const recipesDir = resolve(import.meta.dir, "../../skills/k2b-ui/recipes");
-const recipes = readdirSync(recipesDir)
-  .filter((name) => name.endsWith(".tsx"))
-  .sort();
+const screenFiles = v2ScreenFiles();
+const recipes = [...screenFiles.keys()];
 // Each recipe once as its default screen, and once per state it exports in `states` (empty, loading, failed …), which
 // Fibel's Example offers beside it. A state of the form `{ render, press }` opens an overlay after hydration; its
 // server markup is the screen before the press, so it is rendered from `render` here.
 type RecipeState = (() => JSX.Element) | { render: () => JSX.Element; press: string | readonly string[] };
 const markup = new Map<string, string>();
 for (const name of recipes) {
-  const screen = (await import(resolve(recipesDir, name))) as {
+  const screen = (await import(screenFiles.get(name)!)) as {
     default: Parameters<typeof createComponent>[0];
     states?: Record<string, RecipeState>;
   };

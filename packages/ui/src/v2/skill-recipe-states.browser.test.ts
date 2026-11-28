@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { demoBundle } from "../../test/v2-behavior/harness";
 import type {} from "../../test/v2-recipes.entry";
+import { v2ScreenFiles } from "../../test/v2-screen-files";
 import { describeV2Page, measureV2Layout } from "./testing";
 
 // Every state of every k2b-ui recipe, mounted in the browser as Fibel's Example shows it. A state with `press` opens an
@@ -15,10 +16,8 @@ import { describeV2Page, measureV2Layout } from "./testing";
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
   "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; } .ti { display: inline-block; width: 1em; height: 1em; }";
-const recipesDir = resolve(import.meta.dir, "../../skills/k2b-ui/recipes");
-const files = readdirSync(recipesDir)
-  .filter((name) => name.endsWith(".tsx"))
-  .sort();
+const screenFiles = v2ScreenFiles();
+const files = [...screenFiles.keys()];
 const surfaces = "[data-k2-part='Dialog'], [data-k2-part='Menu'], .k2-pop";
 
 let browser: Browser;
@@ -71,7 +70,7 @@ describe("k2b-ui recipe states keep the v2 rules in the browser", () => {
     // the bundle lists none still fails.
     test(`${name}: states`, async () => {
       const states = Object.keys(listed[name] ?? {});
-      const exportsStates = /^export const states\b/m.test(readFileSync(resolve(recipesDir, name), "utf8"));
+      const exportsStates = /^export const states\b/m.test(readFileSync(screenFiles.get(name)!, "utf8"));
       expect(states.length > 0).toBe(exportsStates);
       for (const state of states)
         for (const width of [1440, 390]) {

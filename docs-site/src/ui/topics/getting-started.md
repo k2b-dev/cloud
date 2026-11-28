@@ -20,7 +20,7 @@ import { Bar, List, Pane, Row, Workspace } from "@k2b/ui/v2";
 
 A screen is a component that returns one `Workspace`. Do not compose it from scratch:
 
-1. Find the job on a [topic page](/en/ui) and open its example. The code tab is the whole recipe file, the same file the skill `k2b-ui` ships in `packages/ui/skills/k2b-ui/recipes/`.
+1. Find the job on a [topic page](/en/ui). Where it has an example, its code tab is the whole recipe file, the same file the skill `k2b-ui` ships in `packages/ui/skills/k2b-ui/recipes/`. Where it has none, build to the rules R1–R13 in `references/look.md` of the skill `k2b-ui`.
 2. Copy the recipe, keep its structure, replace the data. Strings come from the app's message catalog; recipes write German sample text only to look like the real thing.
 3. Something has no part? Use the nearest one and write `// k2b-ui gap: <what is missing>` at that place. Each topic's "Not in v2 yet" lists the known gaps.
 

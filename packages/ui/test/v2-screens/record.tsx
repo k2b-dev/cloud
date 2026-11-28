@@ -1,4 +1,5 @@
-// Recipe: a record (customer file), first tab. RecordHead in the head bar, the record's areas as tabs over the pane,
+// Test screen of the v2 browser tests, not an example to copy: its look is bare. Reference: the k2b-ui look.
+// a record (customer file), first tab. RecordHead in the head bar, the record's areas as tabs over the pane,
 // the main column beside a side column with the details. What needs a person comes first ("Anstehend").
 import {
   Bar,

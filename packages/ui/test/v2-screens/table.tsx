@@ -1,4 +1,5 @@
-// Recipe: a table with a status row. The lead says the one main fact, key figures follow, filters sit at the end.
+// Test screen of the v2 browser tests, not an example to copy: its look is bare. Reference: the k2b-ui look.
+// a table with a status row. The lead says the one main fact, key figures follow, filters sit at the end.
 // Each row opens its invoice and has one deed; on the phone the table becomes two-line rows that open the invoice.
 // Empty, loading and failed stand where the rows would stand, and nothing above them moves (see `states` at the end).
 import { Bar, Button, Chip, Failed, Pane, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";

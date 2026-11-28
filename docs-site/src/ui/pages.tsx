@@ -240,7 +240,7 @@ export const uiPages = [
     content: topicMarkdown(screensMarkdown),
     component: (context) => (
       <MarkdownArticle parsed={screens} context={context} eyebrow={<>@k2b/ui/v2 · provisional</>}>
-        <V2DemoScreens names={["mail", "record", "deliveries", "table", "form", "keys", "menus", "articles", "logs", "people"]} />
+        <V2DemoScreens names={["mail", "record", "deliveries", "table", "articles", "logs", "people"]} />
       </MarkdownArticle>
     ),
   }),

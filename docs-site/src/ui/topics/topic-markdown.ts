@@ -3,7 +3,7 @@
  *
  * A topic page is one Markdown file. Two lines stand for live parts:
  *
- * - `<Example recipe="table" height="440" default="Rows" />` shows a recipe of the skill `k2b-ui` live;
+ * - `<Example recipe="overview" height="720" default="Bases" />` shows a recipe of the skill `k2b-ui` live;
  * - `<Props of="Table Column" />` shows the props of parts of `@k2b/ui/v2`, generated from their types.
  *
  * The page in the browser draws them as Fibel's `Example` and `Props`. Search, `read_doc` and llms.txt get the twin:
@@ -165,7 +165,8 @@ export const topicParts = (topic: ParsedTopic) =>
   (topic.front.parts?.split("·").map((part) => part.trim()) || []);
 
 /**
- * The fixed shape of a finished topic page, in this order: examples (at least one `Example`), at most one choice,
+ * The fixed shape of a finished topic page, in this order: examples (at least one `Example`, or the section "Reference
+ * look" that points to the reference look), at most one choice,
  * "Parts" (each part with a line), "Not in v2 yet", "Do and don't" (a `### Do` and a `### Don't` list, at most four
  * points each) and "Next". A stub is exempt.
  */
@@ -181,8 +182,10 @@ export const topicShapeProblems = (topic: ParsedTopic): string[] => {
     last = Math.max(last, at);
   }
   const count = (kind: TopicSectionKind) => topic.sections.filter((section) => section.kind === kind).length;
-  if (!topic.sections.some((section) => section.kind === "example" && section.blocks.some((block) => block.kind === "example")))
-    problems.push("no live example: an example section needs an <Example recipe=… />");
+  // "Reference look" stands in for examples that showed a bare look, until rebuilt recipes replace them
+  const live = topic.sections.some((section) => section.kind === "example" && section.blocks.some((block) => block.kind === "example"));
+  if (!live && !topic.sections.some((section) => section.heading === "Reference look"))
+    problems.push('no live example: an example section needs an <Example recipe=… />, or a section "Reference look"');
   if (count("choice") > 1) problems.push("more than one choice section");
   for (const kind of ["parts", "missing", "rules", "next"] as const)
     if (count(kind) !== 1)

@@ -1,16 +1,10 @@
----
-thumbnail: content
----
-
 # Content
 
 What people read and look at: reading text, a key or code to copy, files and media, and drawings such as a plan, a map or a chart. Text takes a type role, reading text is `Prose`, files are `Tiles`, and everything drawn stands in a `Canvas`.
 
-## A page to read
+## Reference look
 
-A guide of Warenfluss: the title and the one deed "Bearbeiten" in the head, the text as Markdown in `Prose`, a device key to copy, the attachments as tiles and a plan of the yard in a `Canvas`. Switch the state: empty, loading and failed stand where the text would stand, and the head stays.
-
-<Example recipe="content" height="560" default="Text" />
+No example meets the reference look yet; build to the rules R1–R13 in `references/look.md` of the skill `k2b-ui`.
 
 ## A chart in a screen
 

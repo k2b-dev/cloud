@@ -1,4 +1,5 @@
-// Recipe: a form with a required field, a range limit, an error from the server at its field, and a conflict that
+// Test screen of the v2 browser tests, not an example to copy: its look is bare. Reference: the k2b-ui look.
+// a form with a required field, a range limit, an error from the server at its field, and a conflict that
 // blocks saving. The form state lives in the app; the primitives only show it. This form has a page of its own; a
 // form over the page is a `Dialog`.
 import { Band, Bar, Button, Check, Choice, Field, Input, Notice, Pane, Select, Text, Workspace } from "@k2b/ui/v2";

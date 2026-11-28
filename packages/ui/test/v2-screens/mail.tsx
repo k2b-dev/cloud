@@ -1,4 +1,5 @@
-// Recipe: a list with a reader (mail). Three-line rows on the left; the reader shows the thread: a bar with its state,
+// Test screen of the v2 browser tests, not an example to copy: its look is bare. Reference: the k2b-ui look.
+// a list with a reader (mail). Three-line rows on the left; the reader shows the thread: a bar with its state,
 // an AI summary, one Band per message with the sender row, the text in Prose and the attachments as Tiles. While no
 // message is open, the reader's place shows the mails of the last 53 weeks as a Heat above its sentence.
 import {

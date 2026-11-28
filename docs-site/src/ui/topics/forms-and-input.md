@@ -1,28 +1,10 @@
----
-thumbnail: form
----
-
 # Forms and input
 
 Fields people fill in and send. Every control stands in a `Field` that names it; an error stands at its field, a conflict blocks saving, and each page has one primary button.
 
-## A form on its own page
+## Reference look
 
-A new source with required fields, a range limit, an option and a switch. The server answered the last save with an error at the address and at the interval, and someone else changed the source meanwhile: the conflict is a `Notice` with a way out, and "Speichern" stays dimmed until it is solved. Switch the state: a fresh form, errors at their fields, and the save under way.
-
-<Example recipe="form" height="600" default="Conflict" />
-
-## A form beside a list
-
-A new appointment, opened from the head's "Neuer Termin" as a `Pane detail`, so the week's appointments stay in view while it is filled in. The page keeps that one primary, so the form saves with a default button in its own footer. On the phone the form is the page, with one way back to the list. A form that opens over the page is a `Dialog`; see [Dialogs and overlays](/en/ui/v2/dialogs-and-overlays).
-
-<Example recipe="form-detail" height="640" default="Filled" />
-
-## Settings with more than text
-
-The sign-in settings of an app: a field that goes back to its default through the deed at the end of its label line, a choice the operator fixed (a dimmed `Select`), allowed domains as tags, a logo, an accent colour, how dark the background is, a code from another device, and questions that open in place. Switch the state: nothing set yet, and every control locked while a save runs or for a person who may only read.
-
-<Example recipe="settings" height="760" />
+No example meets the reference look yet; build to the rules R1–R13 in `references/look.md` of the skill `k2b-ui`.
 
 ## Errors, conflicts and saving
 

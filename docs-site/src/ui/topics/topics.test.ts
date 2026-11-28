@@ -32,13 +32,13 @@ describe("recipes", () => {
   test("a name an object inherits is no recipe and no state", () => {
     for (const name of ["__proto__", "constructor", "toString", "hasOwnProperty"]) {
       expect(isRecipeName(name)).toBe(false);
-      expect(resolveRecipeState("table", name)).toBeUndefined();
+      expect(resolveRecipeState("overview", name)).toBeUndefined();
     }
   });
 
-  test("the recipes of topic 2 offer their states", () => {
-    expect(Object.keys(recipeStates("table"))).toEqual(["empty", "loading", "failed"]);
-    expect(Object.keys(recipeStates("list-detail"))).toEqual(["closed", "loading"]);
+  test("the recipes offer their states", () => {
+    expect(Object.keys(recipeStates("overview"))).toEqual(["empty"]);
+    expect(Object.keys(recipeStates("home"))).toEqual(["quiet"]);
   });
 });
 
@@ -76,7 +76,7 @@ describe("topic pages", () => {
     expect(topicShapeProblems(parsed)).toEqual(
       expect.arrayContaining([
         '"A table" stands after a later section; the order is example, choice, parts, missing, rules, next',
-        "no live example: an example section needs an <Example recipe=… />",
+        'no live example: an example section needs an <Example recipe=… />, or a section "Reference look"',
         "part List has no line that says what it is",
       ]),
     );
@@ -102,14 +102,18 @@ describe("the Markdown twin for search and read_doc", () => {
 
   test("replaces every placeholder", () => {
     expect(twin).not.toMatch(/^<(Example|Props)\b/m);
-    expect(twin).not.toStartWith("---");
-    expect(twin).toStartWith("\n# Lists and tables");
+    // the front matter (Identity keeps its thumbnail) stays out of the twin
+    const identity = topics.find((topic) => topic.slug === "identity")?.markdown ?? "";
+    expect(identity).not.toMatch(/^<(Example|Props)\b/m);
+    expect(identity).not.toStartWith("---");
+    expect(identity).toStartWith("\n# Things and people");
   });
 
   test("carries each recipe's path, states and whole file", () => {
-    expect(twin).toContain("`packages/ui/skills/k2b-ui/recipes/table.tsx` (states: empty, loading, failed)");
-    expect(twin).toContain(`\`\`\`tsx\n${recipeSource.table?.trimEnd()}\n\`\`\``);
-    expect(twin).toContain("`packages/ui/skills/k2b-ui/recipes/list-detail.tsx` (states: closed, loading)");
+    const identity = topics.find((topic) => topic.slug === "identity")?.markdown ?? "";
+    expect(identity).toContain("`packages/ui/skills/k2b-ui/recipes/overview.tsx` (states: empty)");
+    expect(identity).toContain(`\`\`\`tsx\n${recipeSource.overview?.trimEnd()}\n\`\`\``);
+    expect(identity).toContain("`packages/ui/skills/k2b-ui/recipes/home.tsx` (states: quiet)");
   });
 
   test("carries the props as tables, with a group per variant", () => {
@@ -126,7 +130,7 @@ describe("the Markdown twin for search and read_doc", () => {
   });
 
   test("a code fence in a recipe never ends the twin's code block", () => {
-    expect(topicMarkdown('# T\n\nLead.\n\n## A\n\n<Example recipe="table" />\n')).toContain("```tsx\n");
+    expect(topicMarkdown('# T\n\nLead.\n\n## A\n\n<Example recipe="overview" />\n')).toContain("```tsx\n");
   });
 });
 

@@ -1,4 +1,5 @@
-// Recipe: a table people filter, sort and group. The list is declared once with `defineListQuery` (shared with the
+// Test screen of the v2 browser tests, not an example to copy: its look is bare. Reference: the k2b-ui look.
+// a table people filter, sort and group. The list is declared once with `defineListQuery` (shared with the
 // server), the filters stand as statements in a `FilterBar` above the `StatusRow`, the sort and the grouping in words in
 // its `filters`. The address holds the whole state: the server reads it with `parse`, filters its own data, and renders
 // this page; the bar writes the address and calls `onChange`, and the app loads its rows again.

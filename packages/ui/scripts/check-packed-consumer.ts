@@ -82,11 +82,13 @@ try {
   for (const file of [
     "skills/k2b-ui/SKILL.md",
     "skills/k2b-ui/references/recipes.md",
-    "skills/k2b-ui/recipes/mail.tsx",
-    "skills/k2b-ui/images/mail-1440.png",
+    "skills/k2b-ui/recipes/overview.tsx",
+    "skills/k2b-ui/images/overview-1440.png",
   ]) {
     if (!existsSync(join(installedUi, file))) throw new Error(`packed @k2b/ui misses its skill file: ${file}`);
   }
+  // The bare test screens are never shipped, so no consumer copies them as an example.
+  if (existsSync(join(installedUi, "test/v2-screens"))) throw new Error("packed @k2b/ui ships the test screens of test/v2-screens");
   for (const asset of ["IBM Plex Sans Medium/0-255.pbf", "OFL.txt"]) {
     const resolved = import.meta.resolve(`@k2b/ui/map-glyphs/${asset}`, join(consumer, "index.ts"));
     const path = realpathSync(resolved.startsWith("file:") ? new URL(resolved) : resolved);

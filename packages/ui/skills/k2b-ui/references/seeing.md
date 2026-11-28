@@ -91,4 +91,4 @@ linkedom), call `describeV2(element)` from `@k2b/ui/v2` without `layout`.
 Ask for one only when the outline cannot answer the question: does the
 drawing in a `Canvas` fit, does a long name read well, is the phone layout
 what the task meant. Light mode, 1440 and 390 px. Compare it with the
-recipe pictures in `images/`.
+rules R1–R13 of [the look](look.md) and the recipe pictures in `images/`.

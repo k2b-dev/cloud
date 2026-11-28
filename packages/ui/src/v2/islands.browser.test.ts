@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
@@ -8,6 +8,7 @@ import { renderToString } from "solid-js/web";
 import { shippedV2Css } from "../../scripts/v2-island-css";
 import { launchBrowser, settled } from "../../test/browser";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
+import { v2ScreenFiles } from "../../test/v2-screen-files";
 import { describeV2Page, measureV2Layout } from "./testing";
 
 // A small island can stand wherever a v2 primitive stands. @k2b/ssr renders every island in a `<solid-island>` (a
@@ -18,13 +19,11 @@ const root = mkdtempSync(resolve(tmpdir(), "k2-v2-islands-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const recipesDir = resolve(import.meta.dir, "../../skills/k2b-ui/recipes");
-const recipes = readdirSync(recipesDir)
-  .filter((name) => name.endsWith(".tsx"))
-  .sort();
+const screenFiles = v2ScreenFiles();
+const recipes = [...screenFiles.keys()];
 const markup = new Map<string, string>();
 for (const name of recipes) {
-  const screen = (await import(resolve(recipesDir, name))) as { default: Parameters<typeof createComponent>[0] };
+  const screen = (await import(screenFiles.get(name)!)) as { default: Parameters<typeof createComponent>[0] };
   markup.set(
     name,
     renderToString(() => createComponent(screen.default, {})),

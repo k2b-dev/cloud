@@ -1,22 +1,10 @@
----
-thumbnail: record
----
-
 # Record and detail
 
 One thing with everything about it: a customer, a contract, a delivery. The record's name stands in the head, its areas are tabs, and what needs a person comes before its history.
 
-## A record, first tab
+## Reference look
 
-A customer file: `RecordHead` in the head, the areas as `Tabs` over the pane, a pinned note and the key statements in `Cells` across both columns, then the main column beside an info column. "Anstehend" comes first, the history after. Switch the state: the history loads on its own, so its state stands in its section and the rest of the record stays.
-
-<Example recipe="record" height="640" default="Customer" />
-
-## A tab with groups
-
-The deliveries of the same customer. A `Band` in a tone carries the one statement of the tab; each delivery is a `Group` with its way as `Steps`, a small table and its facts. A finished delivery is folded to its head.
-
-<Example recipe="record-groups" height="640" default="Deliveries" />
+No example meets the reference look yet; build to the rules R1–R13 in `references/look.md` of the skill `k2b-ui`.
 
 ## Section or group?
 

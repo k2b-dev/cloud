@@ -1,4 +1,5 @@
-// Recipe: the states of a list, each in the place where the rows stand, so the head and the status row never move.
+// Test screen of the v2 browser tests, not an example to copy: its look is bare. Reference: the k2b-ui look.
+// the states of a list, each in the place where the rows stand, so the head and the status row never move.
 // Nothing yet and nothing behind a filter are two different sentences with their own way out; loading holds the place
 // of the rows that will come; data that failed to load once offers "Erneut versuchen" there and nowhere else. A problem
 // a person must fix is a Notice that names the deed; a connection that retries on its own says so in the status row.

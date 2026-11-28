@@ -31,14 +31,17 @@ large screen that uses its room; dense, not busy: each thing has its mark
 for problems, people stand beside what they did. Run its wireframe check on
 your pictures: a screen that fails it is not done, however clean it is.
 
+**Reference:** the rules R1–R13 of [the look](references/look.md), with
+their numbers. Never copy a bare screen from an app, an older picture or a
+test screen (`test/v2-screens`).
+
 ## Start here
 
-1. Find the screen in the task table below and open its recipe in
-   `recipes/` (code) and `images/` (picture at 1440 and 390 px). Read
-   [recipes](references/recipes.md) for what each one shows. The same
-   recipes stand live, with their states and generated props, on the topic
-   pages of the UI section in Fibel (`/en/ui/v2/<topic>`; `read_doc`
-   returns each as Markdown with the code).
+1. Find the screen in the task table below. Where it names a recipe, open
+   it in `recipes/` (code) and `images/` (picture at 1440 and 390 px), and
+   read [recipes](references/recipes.md). Recipes also stand live on the
+   topic pages of the UI section in Fibel (`/en/ui/v2/<topic>`). A `–`
+   means no recipe meets the look yet: build to R1–R13.
 2. Copy the recipe, keep its structure, replace the data. Change the
    arrangement only where the task really differs.
 3. Check it, cheapest first (see "See what you built"). Fix every finding
@@ -77,63 +80,63 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 
 ## What to use for what
 
-| You want to show | Use | Recipe |
+| You want to show | Use | Recipe (– = build to the look) |
 | --- | --- | --- |
-| an app's frame: sidebar, head, columns | `Workspace` with `sidebar`, `head`, `primary` | all |
-| the app's sections in the sidebar | `Nav` | `list-detail.tsx` |
-| folders or pages in levels: in the sidebar; as rows (a folder's content) | a `Nav` group with `tree` (`load`, `loadMore` for what opens); `Table` with `rowKey` and `tree` | `tree.tsx` |
-| the app's own rows in the sidebar (conversations), the phone's page | `Nav` `list` with `phone: "page"`, `search` and `primary` | `conversations.tsx` |
-| views of the page, or areas of a record | `Tabs` (in the head `Bar`, or as `Pane` head) | `mail.tsx`, `record.tsx` |
+| an app's frame: sidebar, head, columns | `Workspace` with `sidebar`, `head`, `primary` | `overview.tsx`, `home.tsx` |
+| the app's sections in the sidebar | `Nav` | – |
+| folders or pages in levels: in the sidebar; as rows (a folder's content) | a `Nav` group with `tree` (`load`, `loadMore` for what opens); `Table` with `rowKey` and `tree` | – |
+| the app's own rows in the sidebar (conversations), the phone's page | `Nav` `list` with `phone: "page"`, `search` and `primary` | – |
+| views of the page, or areas of a record | `Tabs` (in the head `Bar`, or as `Pane` head) | – |
 | where a sub-page stands | `Path` in the head `Bar start` | – |
-| the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |
+| the one main statement and key figures | `StatusRow` in `Pane status` | – |
 | an exception in the statement ("1 ohne Zugriff") | `StatusRow marks` with a `Chip status` | – |
-| many like things, one per line | `List` of `Row` | `mail.tsx` |
+| many like things, one per line | `List` of `Row` | – |
 | a thing with a face (a base, a file, a table); an overview of such things with figures, people and a history | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`); `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
 | who did what; several people at once (a team, who has access) | `Digest activity`; `Avatar.Stack` | `overview.tsx`, `home.tsx` |
 | a short history beside a number | `Spark`; in a cell `Cells.Cell trend` | `home.tsx` |
-| many like things with columns | `Table` | `table.tsx` |
+| many like things with columns | `Table` | – |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
 | rows the person sorts by a column | a column's `sort` (`href` to the sorted page) and the table's `sort` (the column sorted now) | – |
-| a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`), then `FilterBar` in `Pane status` above the `StatusRow` and `ListOrder` in its `filters` | `filtered-table.tsx` |
-| filter values that load (people, customers) | a `lookup` field: `FilterBar` opens `Lookup`; in a form, `Lookup` itself | `filtered-table.tsx` |
+| a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`), then `FilterBar` in `Pane status` above the `StatusRow` and `ListOrder` in its `filters` | – |
+| filter values that load (people, customers) | a `lookup` field: `FilterBar` opens `Lookup`; in a form, `Lookup` itself | – |
 | saved views of a list | `FilterBar views` with the app's `ViewStore`s (cookie, own table, none); leave it out and nothing is saved | – |
-| a list beside the open entry | `Pane.Split` with a `Pane detail` | `list-detail.tsx` |
-| a record (customer, contact) | `RecordHead` in the head, `Tabs`, `Pane side`; what its `kinds` say also stands in `Facts` (on the phone kinds give way to the name) | `record.tsx` |
-| 2–4 key numbers side by side | `Cells` with `Cells.Cell` | `record.tsx` |
-| a titled part of a page | `Section` (title, count, ≤ 2 actions, `more`) | `record.tsx` |
-| what belongs together (a delivery, a thread) | `Group`; `folded` when done | `record-groups.tsx` |
-| the way of a thing (arrived → … → paid) | `Steps` | `record-groups.tsx` |
-| the newest few on a first page | `Digest` | `record.tsx` |
-| labels with values | `Facts` (`inline` for one line) | `record.tsx` |
-| something wrong, waiting, a person's note, an AI summary | `Notice` with `tone` (`bad`, `warn`, `note`, `ai`) | `list-detail.tsx` |
+| a list beside the open entry | `Pane.Split` with a `Pane detail` | – |
+| a record (customer, contact) | `RecordHead` in the head, `Tabs`, `Pane side`; what its `kinds` say also stands in `Facts` (on the phone kinds give way to the name) | – |
+| 2–4 key numbers side by side | `Cells` with `Cells.Cell` | – |
+| a titled part of a page | `Section` (title, count, ≤ 2 actions, `more`) | – |
+| what belongs together (a delivery, a thread) | `Group`; `folded` when done | – |
+| the way of a thing (arrived → … → paid) | `Steps` | – |
+| the newest few on a first page | `Digest` | – |
+| labels with values | `Facts` (`inline` for one line) | – |
+| something wrong, waiting, a person's note, an AI summary | `Notice` with `tone` (`bad`, `warn`, `note`, `ai`) | – |
 | one statement that stands out in a column (not a message) | `Band tone` with `Text` | – |
-| something that needs this person | `Row yours` or `Chip yours` | `record-groups.tsx` |
-| a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
-| several short values (domains, addresses), an image, a one-time code | `TagsInput`, `ImageInput`, `CodeInput` in a `Field` | `settings.tsx` |
-| a number on a range, a colour | `Slider`, `ColorInput` in a `Field` | `settings.tsx` |
-| a field that goes back to its default | `Field action` ("Auf Standard zurücksetzen") | `settings.tsx` |
-| an answer that opens in place (a question in a FAQ) | `Disclosure` | `settings.tsx` |
-| reading text, an email body, a page of Markdown | `Prose` | `content.tsx`, `mail.tsx` |
-| attachments, media files, like things to press | `Tiles` | `content.tsx`, `mail.tsx` |
-| a state, tag, amount, count | `Chip` | `table.tsx` |
+| something that needs this person | `Row yours` or `Chip yours` | – |
+| a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | – |
+| several short values (domains, addresses), an image, a one-time code | `TagsInput`, `ImageInput`, `CodeInput` in a `Field` | – |
+| a number on a range, a colour | `Slider`, `ColorInput` in a `Field` | – |
+| a field that goes back to its default | `Field action` ("Auf Standard zurücksetzen") | – |
+| an answer that opens in place (a question in a FAQ) | `Disclosure` | – |
+| reading text, an email body, a page of Markdown | `Prose` | – |
+| attachments, media files, like things to press | `Tiles` | – |
+| a state, tag, amount, count | `Chip` | – |
 | a person's or agent's picture | `Person image` on `Avatar`, `RecordHead avatar`, `Row avatar` (initials stay while it loads or fails) | – |
-| a deed under way (saving, sending) | `Button busy`; a deed that cannot be taken now: `disabled` | `actions.tsx` |
-| a toggle that is on or off (favourite, reply to all) | `Button pressed` (`true` on, `false` off) | `actions.tsx` |
+| a deed under way (saving, sending) | `Button busy`; a deed that cannot be taken now: `disabled` | – |
+| a toggle that is on or off (favourite, reply to all) | `Button pressed` (`true` on, `false` off) | – |
 | a token, key or ID to read and copy | `Facts` item with `mono` and `copy` | – |
-| a free drawing (map, plan) | `Canvas` inside a primitive | `content.tsx`, `record.tsx` |
+| a free drawing (map, plan) | `Canvas` inside a primitive | – |
 | a chart in a v2 screen | `Chart` from `@k2b/ui` (data types in `@k2b/ui/charts`) with `style={{ height: "100%" }}` in a `Canvas` with `height`, directly in its `Section`; no data: `Empty` in place of the `Canvas` | – |
-| nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `states.tsx`, `table.tsx` |
-| data still loading | `Loading` where the list will stand; a table, `Facts` and `Cells.Cell` take `loading` | `states.tsx` |
-| data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only | `states.tsx` |
+| nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | – |
+| data still loading | `Loading` where the list will stand; a table, `Facts` and `Cells.Cell` take `loading` | – |
+| data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only | – |
 | a search in a head or status row | `Input type="search"` with `icon`, `onKeyDown`, `ref`, `end` | – |
 | a link that opens in place | `href` plus `onNavigate` on rows, tabs, nav entries, actions, buttons, chips | – |
-| more deeds behind "…", or a choice of deeds behind a button | `Menu` with `items` (submenus, ticks, `danger`) | `actions.tsx` |
-| the same deeds on a right-click or a long press on a row | `Menu.Context` around the `Row`, plus a `Menu` in its `end` | `actions.tsx` |
-| a small panel behind a button (a preview, details) | `Popover` with `title` and `content` | `actions.tsx` |
-| a short hint on a button | `Popover tip` around the `Button` | `actions.tsx` |
-| "done" after a deed, with a way back | `useToast()`, then `toast(text, { undo })` | `dialogs.tsx` |
-| a short task above the page (invite, save as a template) | `Dialog` with `title`, `foot`, `open`; a sheet on the phone | `dialogs.tsx` |
-| a question before something that cannot be taken back | `await Dialog.confirm({ title, confirm })` | `dialogs.tsx` |
+| more deeds behind "…", or a choice of deeds behind a button | `Menu` with `items` (submenus, ticks, `danger`) | – |
+| the same deeds on a right-click or a long press on a row | `Menu.Context` around the `Row`, plus a `Menu` in its `end` | – |
+| a small panel behind a button (a preview, details) | `Popover` with `title` and `content` | – |
+| a short hint on a button | `Popover tip` around the `Button` | – |
+| "done" after a deed, with a way back | `useToast()`, then `toast(text, { undo })` | – |
+| a short task above the page (invite, save as a template) | `Dialog` with `title`, `foot`, `open`; a sheet on the phone | – |
+| a question before something that cannot be taken back | `await Dialog.confirm({ title, confirm })` | – |
 
 ## The rules, and why
 
@@ -148,8 +151,8 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
    waiting, wrong, AI, yours. Size comes from the place.
 5. **Wrong fails at once.** Types reject a missing label; the rule and
    `describeV2` name the fix.
-6. **Recipes for whole screens.** Copy one instead of composing from
-   scratch.
+6. **Whole screens from a recipe or the reference.** Copy a recipe where
+   one exists; else build to R1–R13, never from bare parts.
 7. **Rows and columns stay dense.** In a table with column `width`s, long
    text is cut with "…" and the row keeps its height; columns that matter
    less `drop` on the phone, and a table wider than a phone gets
@@ -239,7 +242,7 @@ Details, the outline format and use outside the monorepo:
 | --- | --- |
 | `class on <div> in a v2 screen` | delete it; pick the primitive that owns that look |
 | a segmented control (or a row of pressed buttons or chips) that switches views or panels | `Tabs`; a segmented control only chooses a value, such as a state or a width |
-| own `URLSearchParams`, filter state beside the address, a row of filter `Chip`s or a filter `Popover` | declare the list with `defineListQuery`; show it with `FilterBar` and `ListOrder` (`filtered-table.tsx`) |
+| own `URLSearchParams`, filter state beside the address, a row of filter `Chip`s or a filter `Popover` | declare the list with `defineListQuery`; show it with `FilterBar` and `ListOrder` ([list queries](references/list-queries.md)) |
 | `plain <div> in Pane` | put the content in `Band`, `Section`, `Group`, `List`, `Table` or `Notice` |
 | `loose text in Pane` | wrap it in `<Text>` |
 | `Button … stands alone in Pane` | move it into a `Bar end`, `Row action`, `Section actions` or `Notice actions` |

@@ -1,4 +1,5 @@
-// Recipe: folders as a tree. The sidebar's `Nav` group holds the folder tree, the table shows the open folder's
+// Test screen of the v2 browser tests, not an example to copy: its look is bare. Reference: the k2b-ui look.
+// folders as a tree. The sidebar's `Nav` group holds the folder tree, the table shows the open folder's
 // content as rows in levels. Both load a folder's children the first time it opens and page a long level.
 // The open folder comes from the address: its way stands open in the tree, on the server's page too.
 import { Bar, Button, Nav, type NavTreeNode, navTree, Pane, Path, StatusRow, Table, Workspace } from "@k2b/ui/v2";
