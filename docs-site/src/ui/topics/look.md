@@ -2,14 +2,14 @@
 
 Every v2 screen has the same look: a clear head, content at a measure, five type steps with hard contrast, real controls, a sign for every thing and lines in two weights. The primitives carry this look by default, so a screen built from them gets it without work. This page states the rules, why they exist, and how to keep the same look where a screen needs a part that v2 does not have.
 
-The reference is the taste study (`v2-taste-study` and `v2-taste-parts` on the Cloud Dev artifacts): three screens before and after, and every part on its own. When this page and an older picture disagree, this page and the study win.
+This page is the reference. When it and an older picture disagree, this page wins.
 
 ## How a screen is made
 
 1. **Fewer screens, but better ones.** Before you add a page, check that no tab, panel, dialog or filter of an existing page can do the job. Each screen that stays has one clear job, a visible hierarchy and nothing that does not earn its place.
-2. **Mockup first.** Draw the screen as a static mockup in the style of the taste parts, with real, dense example data, at 1440 and 390 px, inside the Cloud shell. Write a short brief beside it: who uses the screen for what, the three most important pieces of information in order, and the one hero.
+2. **Mockup first.** Draw the screen as a static mockup in this look, with real, dense example data, at 1440 and 390 px, inside the Cloud shell. Write a short brief beside it: who uses the screen for what, the three most important pieces of information in order, and the one hero.
 3. **Then build it from v2.** Find the nearest recipe, keep its structure and fill it with data. Use only `@k2b/ui/v2` parts. Where a part is missing, compose it from the tokens below inside a `Canvas`, and write `// k2b-ui gap:` at that place.
-4. **Compare.** Put your 1440 and 390 px pictures beside the mockup and the study and fix every difference in rhythm, hierarchy and density before anyone reviews it.
+4. **Compare.** Put your 1440 and 390 px pictures beside the mockup and fix every difference in rhythm, hierarchy and density before anyone reviews it.
 
 ## Rhythm, clarity, intention
 
@@ -37,7 +37,7 @@ The reference is the taste study (`v2-taste-study` and `v2-taste-parts` on the C
 - **Do:** use 12 (meta), 13 (row, text, control), 15 (section title), 18 (object name) and 30 (the one key figure of a screen). Use the weights 400, 500 and 600 only. Long reading text (an email, a page of Markdown) is the one place for 14.
 - **Don't:** use two sizes less than 2 px apart in one block, or make a counter the largest text.
 - **Why:** contrast makes hierarchy. Four sizes within 2 px look like one size that is slightly wrong.
-- **In v2:** the type roles `meta`, `row`, `title` and `lead`, `body` for reading text, and the figure once per screen. Counters are always 12 meta.
+- **In v2:** the type roles `meta`, `row`, `title` and `lead`, `body` for reading text, and the figure once per screen. A count is 12 meta; after a section title it is 13 in n500.
 
 ### 4. Section head A and B
 

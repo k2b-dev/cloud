@@ -13,8 +13,8 @@ const HeadActions = (props: { actions?: TwoActions; variant: "text" | "secondary
       <Button
         variant={props.variant}
         icon={action.icon}
-        // where a head keeps only the symbol (a group's on the phone), the words stay the button's name and hint
-        title={action.icon ? action.label : undefined}
+        // a group's head keeps only the symbol on the phone: its words stay the button's name and hint there
+        title={props.variant === "text" && action.icon ? action.label : undefined}
         forward={action.forward}
         href={action.href}
         onNavigate={action.onNavigate}
