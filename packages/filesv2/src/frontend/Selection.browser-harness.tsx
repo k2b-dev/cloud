@@ -40,7 +40,6 @@ render(() => {
               bases={[base]}
               source="/app/filesv2"
               uploads={uploads}
-              selectionPillHint={new URLSearchParams(location.search).has("hint")}
               onShare={(paths) => host.setAttribute("data-shared", JSON.stringify(paths))}
               onChanged={async () => {
                 setDirectory(await listing());

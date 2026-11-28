@@ -651,13 +651,13 @@ name wraps in a small table and ends with "…" in one with column widths.
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`, each with an `icon`; below 600 px of row
-  they keep only their symbols, the words stay their names; leave on the
-  phone),
+  they keep only their symbols, the words stay their names; on the phone
+  they stay in the row, and what has no room folds into one "+n" menu),
   `selection: { count, actions, clear }` (while rows are selected the row
   becomes the bar of what can be done with them; the count stands in 14 px
   600 and is never cut, and actions without room go whole into a "…" menu
   from the end, right after the last one in sight; the way out stays at the
-  end of the bar; on the phone the actions float at the bottom).
+  end of the bar).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
   head `Bar start` instead of `Tabs`. The last item is the page itself;
   without room the places before it shorten to their own width or 12
@@ -709,8 +709,7 @@ name wraps in a small table and ends with "…" in one with column widths.
   one menu "Ansicht" at the end of the bar. Give every choice that changes
   how the list shows to `display`, never to `end` alone, so the phone keeps
   it. While entries are selected a
-  `StatusRow selection` takes its place at the same height; on the phone the
-  selection's actions float at the bottom, symbol over word.
+  `StatusRow selection` takes its place at the same height.
 - `ListOrder`: `query`, `state`, `onChange`; the sort and the grouping in
   words, for `StatusRow filters`.
 - `Lookup`: `label`, `value`, `onChange`, `load`, `resolve?`, `known?`,

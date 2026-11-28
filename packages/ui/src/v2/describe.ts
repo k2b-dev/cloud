@@ -595,10 +595,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     const surface = surfaceOf(button);
     bySurface.set(surface, [...(bySurface.get(surface) ?? []), button]);
   }
-  // While entries are selected the floating main action gives way to the selection's actions on purpose.
   if (
     options.layout &&
-    !root.querySelector(".k2-bar[data-selecting]") &&
     !bySurface.get(root)!.length &&
     allPrimaries.some((button) => surfaceOf(button) === root && !button.classList.contains("k2-fab"))
   )
