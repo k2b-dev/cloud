@@ -608,6 +608,9 @@
   padding: 0 var(--k2-edge);
   border-bottom: var(--k2-hairline);
 }
+.k2-ui .k2-pane[data-wide-back] > .k2-pane-back {
+  display: flex;
+}
 /* a long name of the list (a search, a folder deep down) is cut at its end with "…": the button never leaves its bar
    and never runs under what stands beside it; the whole name stays its accessible name and its hint */
 .k2-ui .k2-pane-back > .k2-btn[data-variant="text"] {
@@ -1110,6 +1113,105 @@
 .k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-open]:hover {
   background: var(--k2-n50);
 }
+/* A card's preview: a glance of what it holds across its top, edge to edge above its name, on the quiet surface with a
+   line under it; a small table or page stands in it on the card's surface, its top corners round, its foot cut off by
+   the line, as a sheet seen from above. 112 px, 84 px and two columns on the phone. */
+.k2-ui .k2-tile > .k2-tile-preview {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  height: 112px;
+  margin: -12px -12px 0;
+  padding: 12px 12px 0;
+  overflow: hidden;
+  background: var(--k2-n50);
+  border-bottom: var(--k2-hairline);
+  /* the card's own top corners, inside its hairline, so the card needs no clipping */
+  border-radius: calc(var(--k2-r-control) - 1px) calc(var(--k2-r-control) - 1px) 0 0;
+}
+.k2-ui .k2-tile-pv-table,
+.k2-ui .k2-tile-pv-page {
+  flex: none;
+  width: 100%;
+  background: var(--k2-surface);
+  border: var(--k2-hairline);
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  overflow: hidden;
+}
+.k2-ui .k2-tile-pv-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font: var(--k2-t-meta);
+}
+.k2-ui .k2-tile-pv-table :is(th, td) {
+  padding: 5px 6px;
+  text-align: start;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-bottom: var(--k2-hairline);
+}
+/* a column of amounts or counts stands at the end, its figures of one width */
+.k2-ui .k2-tile-pv-table :is(th, td)[data-align="end"] {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+/* the line under the preview closes the table: its last row draws none of its own */
+.k2-ui .k2-tile-pv-table tr:last-child td {
+  border-bottom: 0;
+}
+.k2-ui .k2-tile-pv-table th {
+  font-weight: 500;
+  color: var(--k2-text-2);
+}
+.k2-ui .k2-tile-pv-table td {
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-tile-pv-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-tile-pv-page > b {
+  font: var(--k2-t-row);
+  font-weight: 600;
+  color: var(--k2-text);
+}
+.k2-ui .k2-tile-preview > .k2-icon {
+  margin: auto;
+  font-size: 28px;
+  color: var(--k2-subtle);
+}
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-tile > .k2-tile-preview {
+    height: 84px;
+    padding: 10px 10px 0;
+  }
+  /* the phone's foot of a start card has the mockup's room for its words: 10 px inside, a sign of 32, 8 px beside it */
+  .k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-preview] {
+    padding: 10px;
+  }
+  .k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-preview] > .k2-tile-preview {
+    margin: -10px -10px 0;
+  }
+  .k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-preview] > .k2-tile-top {
+    gap: 8px;
+  }
+  .k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-preview] .k2-mk {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+  }
+  .k2-ui .k2-tile-pv-table :is(th, td)[data-past] {
+    display: none;
+  }
+}
 .k2-ui .k2-tile > .k2-tile-top {
   display: flex;
   flex-direction: row;
@@ -1123,6 +1225,32 @@
 .k2-ui .k2-tiles[data-variant="card"] .k2-tile-title {
   font: var(--k2-t-body);
   font-weight: 600;
+}
+/* a card with a preview is a way to start, not a thing with a face: its name stands medium, as the approved first
+   start draws it, so it is quieter than its preview's heads and leaves room for its words on the phone */
+.k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-preview] .k2-tile-title {
+  font-weight: 500;
+}
+/* a name that opens with `onOpen` is a button, which the name around it cannot cut like a link's text: the button cuts
+   itself with "…", so it reads like a link's (the name around a link still does the cutting) */
+.k2-ui .k2-tile-title > .k2-row-open[type="button"] {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* on the phone, where cards share a row of half (2 × 2), a card's name takes a second line before it is cut: a name
+   such as "Leeres Notizbuch" reads whole, as the approved first start draws it. It breaks between words only, never
+   inside one; a name of one word that does not fit stays one line and ends in "…". The quiet line stays one line. */
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-tiles[data-variant="card"][data-per-row] .k2-tile-title:not([data-one-word]),
+  .k2-ui .k2-tiles[data-variant="card"][data-per-row] .k2-tile-title:not([data-one-word]) > .k2-row-open {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+  }
 }
 .k2-ui .k2-tile-top > .k2-tile-name > .k2-tile-title > .k2-row-open::after,
 .k2-ui .k2-tile-name > .k2-tile-title > .k2-row-open::after {
@@ -1779,6 +1907,39 @@
     min-width: 0;
   }
 }
+/* a small symbol on the lead's bottom right (Row badge), such as a pin on a pinned chat's face: on the surface, with
+   a ring of it, so it stands clear of the face under it */
+.k2-ui .k2-row-lead:has(> .k2-row-badge) {
+  position: relative;
+}
+.k2-ui .k2-row-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--k2-surface);
+  box-shadow: 0 0 0 1px var(--k2-line);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-row-badge > .k2-icon {
+  font-size: 11px;
+}
+/* an end that shows on hover (Row endOnHover): it keeps its place unseen until the pointer is over the row, the focus
+   is in it or its menu is open; a touch screen does not draw it (the row's deeds are a long press away) */
+@media (hover: hover) {
+  .k2-ui .k2-row[data-end-hover]:not(:hover, :focus-within, :has(> .k2-row-end [aria-expanded="true"])) > .k2-row-end {
+    opacity: 0;
+  }
+}
+@media (hover: none) {
+  .k2-ui .k2-row[data-end-hover] > .k2-row-end {
+    display: none;
+  }
+}
 .k2-ui .k2-row[data-avatar] > .k2-row-lead {
   width: 32px;
 }
@@ -1896,6 +2057,13 @@
   height: var(--k2-h-row2);
   padding-block: 8px;
   vertical-align: top;
+}
+/* a group's head row is one short line in every table, as high as the column heads, its words in the middle; it never
+   takes the height of two-line rows */
+.k2-ui .k2-table tr[data-group] > td {
+  height: var(--k2-h-columns);
+  padding-block: 0;
+  vertical-align: middle;
 }
 .k2-ui .k2-table th:first-child,
 .k2-ui .k2-table td:first-child {
@@ -2953,6 +3121,12 @@
   height: 100%;
   width: var(--k2-p);
   background: var(--k2-ok);
+}
+.k2-ui .k2-progress[data-status="warn"] .k2-progress-track > i {
+  background: var(--k2-warn-dot);
+}
+.k2-ui .k2-progress[data-status="bad"] .k2-progress-track > i {
+  background: var(--k2-bad-dot);
 }
 
 /* A range on a shared scale: a quiet track the width of its place, the range on it from its start to its end, in the
@@ -4325,20 +4499,22 @@
   outline: none;
   box-shadow: 0 0 0 3px var(--k2-blue-ring);
 }
-/* The nav's search and main action stand under the app's name, each across the column, before the groups */
-.k2-ui .k2-nav-search,
-.k2-ui .k2-nav-primary {
+/* The nav's search stands under the app's name, across the column, before the groups */
+.k2-ui .k2-nav-search {
   display: flex;
   flex: none;
   min-width: 0;
 }
-.k2-ui .k2-nav-search > .k2-input,
-.k2-ui .k2-nav-primary > .k2-btn {
+/* the main action at the end of the name's row, as an icon button (its label is its name and tooltip) */
+.k2-ui .k2-nav-primary {
+  display: flex;
+  flex: none;
+  margin-inline-start: auto;
+  font-weight: normal;
+}
+.k2-ui .k2-nav-search > .k2-input {
   flex: 1;
   min-width: 0;
-}
-.k2-ui .k2-nav-primary {
-  margin-bottom: 8px;
 }
 /* The groups: they scroll between the head and the foot, so many places never push the foot out of the sidebar. A tree
    in a group still gives way first and scrolls on its own (the area is a column it can shrink in); the area scrolls
@@ -4374,6 +4550,36 @@
   margin: 0 -12px;
   /* no bar of its own, as a pane's column: Cloud's 0.5rem one (WebKit) would cut the rows' lines short of the edge */
   scrollbar-width: none;
+}
+/* the rows of a nav's list part with a subtle line from their text on, not across the column (Valentin, v8): the line
+   is the row's last grid cell after its lead, reaching the row's end and bottom; the last row draws none */
+.k2-ui .k2-nav-list .k2-row:has(> .k2-row-lead > *) {
+  border-bottom: 0;
+}
+.k2-ui .k2-nav-list .k2-row:has(> .k2-row-lead > *)::after {
+  content: "";
+  grid-column: 2 / -1;
+  grid-row: 3;
+  align-self: end;
+  margin: 0 calc(-1 * var(--k2-edge)) -8px 0;
+  border-bottom: var(--k2-hairline-subtle);
+}
+.k2-ui .k2-nav-list .k2-row:last-child::after {
+  display: none;
+}
+/* a nav's list is narrow: its rows keep their shape with any name, the title on one line and the second line on at
+   most two, each cut with "…" (the whole text stays the row's name and its open entry's) */
+.k2-ui .k2-nav-list .k2-row > .k2-row-l1 > .k2-row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2-ui .k2-nav-list .k2-row[data-lines="2"] > .k2-row-l2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
 .k2-ui .k2-nav-list::-webkit-scrollbar {
   display: none;
@@ -5875,7 +6081,7 @@
   .k2-ui
     .k2-ws-side
     > .k2-nav:has(> .k2-nav-list[data-phone="page"])
-    > :is(.k2-nav-title, .k2-nav-primary, .k2-nav-groups, .k2-nav-foot) {
+    > :is(.k2-nav-title, .k2-nav-groups, .k2-nav-foot) {
     display: none;
   }
   .k2-ui .k2-ws-side > .k2-nav:has(> .k2-nav-list[data-phone="page"]) > .k2-nav-search {

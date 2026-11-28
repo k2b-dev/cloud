@@ -79,7 +79,8 @@ levels; the open file is `current`, so its folder starts open).
 ![conversations in the sidebar at 1440 px](../images/conversations-1440.png)
 ![an open conversation at 390 px](../images/conversations-390.png)
 
-`Nav` with the app's name, `search` and `primary` ("Neuer Chat") under it,
+`Nav` with the app's name and `primary` ("Neuer Chat", an icon button at the
+end of the name's row), `search` under it,
 a plain group with the filters ("Ungelesen" with its count, "Für dich",
 "Kanäle entdecken"), its `list` (the conversations as a `List` of
 two-line `Row`s; the open one is `current`) with `phone: "page"`, and
@@ -309,6 +310,26 @@ answers with a toast with `status` `ok` or `bad`.
 - The open state of the dialog lives in the screen (`open`,
   `onOpenChange`).
 
+## start.tsx: the first start of an app without data
+
+![start at 1440 px](../images/start-1440.png)
+![start at 390 px](../images/start-390.png)
+
+A person opens Notebooks or Grids for the first time. No sidebar and no
+switcher: a `Pane center` with one `Text type="lead"` line ("Leg dein
+erstes Notizbuch an") and `Tiles variant="card" perRow={4}`. Each card
+shows a `preview` of what it makes across its top (`{ page }` for the
+blank way, `{ table }` with a template's first table, `{ icon }` where
+there is nothing to show), its `Mark` in the app's colour, its name and
+`meta` ("6 Seiten"). The whole card opens the dialog that makes it:
+`onOpen`, or `href` to an address that opens the dialog.
+
+- The blank way first, then at most three templates; the rest stay in
+  the dialog's choice, which a quiet line under the cards says.
+- Four in one row on a wide screen, 2 × 2 where four do not fit and on
+  the phone; the line stands centred, on the phone at the start.
+- States: `grids` (the first base: tables and a sign for the blank base).
+
 ## states.tsx: the states of a list
 
 ![states at 1440 px](../images/states-1440.png)
@@ -357,3 +378,41 @@ empty (`Empty` with "Text schreiben"), loading (`Loading` rows) and failed
 - With no data, put `Empty` in place of the `Canvas`. `Loading` and
   `Failed` hold rows, not the height of a drawing, so the page moves while a
   chart loads (gap).
+
+## public-page.tsx: a page for visitors
+
+![public-page at 1440 px](../images/public-page-1440.png)
+![public-page at 390 px](../images/public-page-390.png)
+
+A page that people open without signing in, without the Cloud shell (a
+venue's programme, a public form, a share). In Cloud it stands in
+`MinimalLayout ui="v2"`. A head `Bar` with the brand as `RecordHead` (its
+initials on its colour) and the one task as the primary with `keep` and short
+words, so on a phone the brand and the task share one row and nothing floats
+over a row; the status row names what asks to act as toned chips ("1 fast
+voll", "1 ausgebucht"), and only on a quiet day the day's count, never the
+figures a group head or a column repeats. The programme is one
+`Table` grouped by day: the event with when, where and its type (the title
+keeps the room at 1024), its host as `Avatar` (every event has one, so every
+phone row leads with a mark and the text edge never jumps), the seats taken
+as `Progress` (a value with a limit gets a meter), and the seats: a `Chip`
+with colour, sign and word only for the exceptions (booked out, almost full),
+quiet words for the rest. A page to read has no grips: its columns and its
+side column keep a width `{ fixed }`. On the phone each event is a row of two
+lines with its seats. A `Pane side` holds the visit and only what the table
+does not say: free places today as one meter, the way in as `Facts`, and
+access as a `Section` of its own (good news is no notice). The status row
+names its reference ("Bis Sonntag"), so its chips count the rows the list
+shows. Seats read one way everywhere: free seats in words beside the meter of
+what is taken. The host shows as a face and a name. Each date is said once.
+`states` exports kiosk (the same page on a wall screen: no task, what runs now
+marked "läuft" on its row, "aktualisiert sich jede Minute" in the head), empty
+and failed.
+
+- A visitor page has no rail and no sidebar: the brand stands in the head.
+- A kiosk refreshes itself and says so in words, never with a button.
+- A long title wraps (`wrap`) before it is cut, and a range of numbers in it
+  (1920–1960) stays on one line.
+- Gaps: the brand mark (`Mark`) and a larger kiosk type come with the
+  identity primitives; a phone row of a table may still wrap a long title; a
+  longer brand name or task still gives the phone head a second row.

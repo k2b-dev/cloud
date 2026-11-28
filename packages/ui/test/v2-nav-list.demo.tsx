@@ -1,5 +1,5 @@
 import { createSignal, For, Show } from "solid-js";
-import { List, Nav, type NavGroup, Pane, Row, Text, Workspace } from "../src/v2";
+import { List, Menu, Nav, type NavGroup, Pane, Row, Text, Workspace } from "../src/v2";
 
 // A messenger's sidebar (Valentin's Chat, v8): the app's name, the search and "Neuer Chat" under it, the filters as
 // entries, then the conversations as the nav's own rows (`list`), which scroll on their own above "Archiv" at the foot.
@@ -28,6 +28,11 @@ const chats = Array.from({ length: 40 }, (_, index) => ({
   line: index % 3 === 0 ? "Lena: Kannst du die Fotos an den Lieferanten schicken?" : "Du: Ja, um 7. Zwei Kisten sind beschädigt.",
   time: `${String(11 - (index % 10)).padStart(2, "0")}:${String((index * 7) % 60).padStart(2, "0")}`,
 }));
+// the worst case of a narrow list: a name and a last message far longer than the column
+const long = chats[5]!;
+long.name = "Ankündigungen der Geschäftsführung für alle Standorte, Werkstätten und Außenlager";
+long.line =
+  "Hier stehen alle Ankündigungen der Geschäftsführung: Termine der Betriebsversammlungen, Änderungen bei Arbeitszeiten, Urlaubsplanung und neue Regeln für Fahrzeuge.";
 
 export function Demo() {
   const [open, setOpen] = createSignal<number>();
@@ -52,8 +57,11 @@ export function Demo() {
           {(chat, index) => (
             <Row
               avatar={{ name: chat.name }}
+              badge={index() === 0 ? { icon: "pin", label: "Angeheftet" } : undefined}
               lines={[chat.name, chat.line]}
               time={chat.time}
+              end={<Menu label={`Aktionen für ${chat.name}`} items={[{ label: "Anheften", icon: "pin", onClick: () => undefined }]} />}
+              endOnHover
               current={open() === index()}
               unread={index() < 2}
               onOpen={() => setOpen(index())}
