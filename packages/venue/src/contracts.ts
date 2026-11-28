@@ -30,6 +30,20 @@ export const VenueSchema = z.object({
 });
 export type Venue = z.infer<typeof VenueSchema>;
 
+/** Venues per page of the venue list, as many as the Venue list capability returns. */
+export const VENUE_PAGE_MAX = 100;
+export const VenuePageQuerySchema = z.object({
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(VENUE_PAGE_MAX)
+    .optional()
+    .describe(`Venues per page, ${VENUE_PAGE_MAX} at most and by default`),
+  offset: z.coerce.number().int().min(0).optional().describe("Venues to skip, for the next page"),
+  q: z.string().trim().max(200).optional().describe("Only venues whose name or slug contains these words"),
+});
+
 /** A venue slug: 2 to 80 lowercase letters or digits, with single dashes between them. */
 export const VENUE_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const VENUE_SLUG_MIN_LENGTH = 2;

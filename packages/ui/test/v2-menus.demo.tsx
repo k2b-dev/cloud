@@ -88,11 +88,12 @@ export function Demo() {
           }
           end={
             <>
-              <Popover tip="Neu laden">
-                <Button variant="ghost" icon="refresh" label="Aktualisieren" onClick={did("reload")} />
-              </Popover>
+              {/* k2b-ui gap: a Bar cannot fold its end into "…" when it has no room (the phone keeps every head control
+                  now). The head therefore holds what the phone needs; the list's own actions stand in its status bar. */}
+              {/* on the phone the head is narrow: the filter is its symbol alone, as the other head controls */}
               <Popover
                 icon="filter"
+                label="Filter"
                 title="Filter"
                 content={
                   <>
@@ -100,48 +101,8 @@ export function Demo() {
                     <Check name="open" label="Nur offene" checked={openOnly()} onChange={setOpenOnly} />
                   </>
                 }
-              >
-                Filter
-              </Popover>
-              <Button
-                onClick={() => {
-                  did("save")();
-                  toast("Auftrag gespeichert", { status: "ok", undo: did("undo") });
-                }}
-              >
-                Speichern
-              </Button>
-              <Menu
-                icon="arrow-back-up"
-                items={[
-                  {
-                    title: "Antwortart",
-                    choice: kind(),
-                    onChoose: (value) => {
-                      setKind(value);
-                      did(`kind:${value}`)();
-                    },
-                    items: [
-                      { label: "Antworten", value: "reply", icon: "arrow-back-up" },
-                      { label: "Allen antworten", value: "all", icon: "arrow-back-up-double" },
-                      { label: "Weiterleiten", value: "forward", icon: "arrow-forward-up" },
-                    ],
-                  },
-                  {
-                    title: "Absender",
-                    choice: sender(),
-                    onChoose: (value) => {
-                      setSender(value);
-                      did(`sender:${value}`)();
-                    },
-                    items: [{ label: "anna@werkstatt.example" }, { label: "info@werkstatt.example" }],
-                  },
-                  { title: "Entwurf", items: [{ label: "Verwerfen", icon: "trash", danger: true, onClick: did("draft:discard") }] },
-                ]}
-              >
-                Antwort
-              </Menu>
-              {/* a panel behind a button without words: it stays in the head on the phone, as the "…" does */}
+              />
+              {/* a panel behind a button without words */}
               <Popover
                 icon="eye"
                 label="Vorschau"
@@ -166,6 +127,56 @@ export function Demo() {
     >
       <Pane
         label="Aufträge"
+        // the list's own actions: reload, save, how to answer
+        status={
+          <Bar
+            end={
+              <>
+                <Popover tip="Neu laden">
+                  <Button variant="ghost" icon="refresh" label="Aktualisieren" onClick={did("reload")} />
+                </Popover>
+                <Button
+                  onClick={() => {
+                    did("save")();
+                    toast("Auftrag gespeichert", { status: "ok", undo: did("undo") });
+                  }}
+                >
+                  Speichern
+                </Button>
+                <Menu
+                  icon="arrow-back-up"
+                  items={[
+                    {
+                      title: "Antwortart",
+                      choice: kind(),
+                      onChoose: (value) => {
+                        setKind(value);
+                        did(`kind:${value}`)();
+                      },
+                      items: [
+                        { label: "Antworten", value: "reply", icon: "arrow-back-up" },
+                        { label: "Allen antworten", value: "all", icon: "arrow-back-up-double" },
+                        { label: "Weiterleiten", value: "forward", icon: "arrow-forward-up" },
+                      ],
+                    },
+                    {
+                      title: "Absender",
+                      choice: sender(),
+                      onChoose: (value) => {
+                        setSender(value);
+                        did(`sender:${value}`)();
+                      },
+                      items: [{ label: "anna@werkstatt.example" }, { label: "info@werkstatt.example" }],
+                    },
+                    { title: "Entwurf", items: [{ label: "Verwerfen", icon: "trash", danger: true, onClick: did("draft:discard") }] },
+                  ]}
+                >
+                  Antwort
+                </Menu>
+              </>
+            }
+          />
+        }
         head={
           <Tabs
             label="Ansichten"
