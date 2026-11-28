@@ -156,7 +156,8 @@ tint, and its facts wrap with 20 px between them.
   primitive: the label 13 px in n500 in a 116 px column, 16 px to its
   value in ink, each pair 34 px high, space and no line between pairs.
   Dense in a side column (`Pane side`): the label 12 px in a 96 px
-  column, 12 px to the value, pairs 28 px. On the phone the label (12 px)
+  column, 12 px to the value, pairs 28 px. One line of facts (`inline`)
+  keeps its 12 px labels and 32 px height. On the phone the label (12 px)
   stands over its value (13 px).
 
 ### R5. Actions are buttons
