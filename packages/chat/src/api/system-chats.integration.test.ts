@@ -495,7 +495,7 @@ suite("system chats use caller-authorized readers", () => {
     const unreadShort = ThreadListSchema.parse(await (await f.request(person.headers, `/${chat.id}/threads?short=true`)).json());
     expect(unreadShort.items.map((item) => item.id)).toEqual(["p00000"]);
   });
-  test("General and a selected thread do not read unrelated items, including snapshots and shared history", async () => {
+  test("General and a selected thread do not read the directory, including snapshots and shared history", async () => {
     const person = await f.person(),
       space = testShortId(),
       item = testShortId();
@@ -512,7 +512,9 @@ suite("system chats use caller-authorized readers", () => {
         await expire(person, "spaces.item", item);
         calls.length = 0;
         expect((await f.request(person.headers, `/${chat.id}/${endpoint}?thread=${selector}`)).status).toBe(200);
-        expect(calls.length).toBe(selector === "general" ? 1 : 2);
+        // General reads its place and, in the snapshot, at most its four most recent discussions, its cards; never
+        // the directory. A selected discussion reads its place and itself.
+        expect(calls.length).toBe(selector === "general" ? (endpoint === "snapshot" ? 1 + 4 : 1) : 2);
       }
     }
   });

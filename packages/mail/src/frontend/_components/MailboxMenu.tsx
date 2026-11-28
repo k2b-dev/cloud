@@ -3,6 +3,7 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Dropdown, type DropdownSection, prompts, toast, useLocale } from "@k2b/ui";
 import { createMemo, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
+import { automationLogHref } from "../automation-log-href";
 import { readApiError } from "./api-response";
 import { registerMailtoHandler } from "./mail-compose-route";
 import { mailSidebarMessages } from "./mail-sidebar-messages";
@@ -78,7 +79,7 @@ export function createMailboxMenu(options: () => MailboxMenuOptions) {
             id: "automations",
             label: t.automationLog,
             icon: "ti ti-route",
-            action: () => documentNavigate(`/app/mail/${current.mailboxId}/automations/log`),
+            action: () => documentNavigate(automationLogHref(current.mailboxId)),
           },
           ...(current.canAdmin
             ? [
