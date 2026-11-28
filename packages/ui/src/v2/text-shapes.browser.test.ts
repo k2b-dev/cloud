@@ -71,7 +71,8 @@ for (const width of [1440, 390])
           };
         }),
       );
-      // A in a narrow pane keeps its 52 px; B (a pane of 960 px and more) is its title column, one line of 22 px
+      // at 390 px the pane is narrow, so A keeps its 52 px; at 1440 px the pane is 960 px and more, so B is its title
+      // column, one line of 22 px
       expect(heads[0]).toEqual({ height: width < 768 ? heights.status : 22, whole: true, lines: 1, inside: true });
       expect(heads[1]!.whole).toBe(true);
       expect(heads[1]!.inside).toBe(true);
