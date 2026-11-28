@@ -1144,6 +1144,21 @@
     height: 84px;
     padding: 10px 10px 0;
   }
+  /* the phone's foot of a start card has the mockup's room for its words: 10 px inside, a sign of 32, 8 px beside it */
+  .k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-preview] {
+    padding: 10px;
+  }
+  .k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-preview] > .k2-tile-preview {
+    margin: -10px -10px 0;
+  }
+  .k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-preview] > .k2-tile-top {
+    gap: 8px;
+  }
+  .k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-preview] .k2-mk {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+  }
   .k2-ui .k2-tile-pv-table :is(th, td)[data-past] {
     display: none;
   }
@@ -1162,6 +1177,11 @@
   font: var(--k2-t-body);
   font-weight: 600;
 }
+/* a card with a preview is a way to start, not a thing with a face: its name stands medium, as the approved first
+   start draws it, so it is quieter than its preview's heads and leaves room for its words on the phone */
+.k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-preview] .k2-tile-title {
+  font-weight: 500;
+}
 /* a name that opens (a link, or a button with `onOpen`) is cut with "…" like a plain one: a button would cut hard */
 .k2-ui .k2-tile-title > .k2-row-open {
   display: block;
@@ -1169,21 +1189,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* on the phone, where cards share a row of half (2 × 2), a card's name and its quiet line take a second line before
-   they are cut: a name such as "Leeres Notizbuch" reads whole, as the approved first start draws it. Lines break
-   between words; a word too long for the card is hyphenated in the page's language ("Rechnungs-wesen"), and only
-   where no hyphenation is known does it break at a letter, never past the card's edge. */
+/* on the phone, where cards share a row of half (2 × 2), a card's name takes a second line before it is cut: a name
+   such as "Leeres Notizbuch" reads whole, as the approved first start draws it. It breaks between words only, never
+   inside one; a name of one word that does not fit stays one line and ends in "…". The quiet line stays one line. */
 @media not all and (min-width: 768px) {
-  .k2-ui .k2-tiles[data-variant="card"][data-per-row] .k2-tile-title,
-  .k2-ui .k2-tiles[data-variant="card"][data-per-row] .k2-tile-title > .k2-row-open,
-  .k2-ui .k2-tiles[data-variant="card"][data-per-row] .k2-tile-meta {
+  .k2-ui .k2-tiles[data-variant="card"][data-per-row] .k2-tile-title:not([data-one-word]),
+  .k2-ui .k2-tiles[data-variant="card"][data-per-row] .k2-tile-title:not([data-one-word]) > .k2-row-open {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     line-clamp: 2;
     white-space: normal;
-    overflow-wrap: break-word;
-    hyphens: auto;
   }
 }
 .k2-ui .k2-tile-top > .k2-tile-name > .k2-tile-title > .k2-row-open::after,
