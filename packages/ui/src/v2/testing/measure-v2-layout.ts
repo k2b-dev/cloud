@@ -422,11 +422,13 @@ function measureInPage(options: InPage): DomResult {
     const edge: string[] = [];
     // Collinear pieces of one line (the cells of a row) merge first.
     // A section that stands beside its head column (B, a pane of 960 px and more) has its own measure: its rows' lines
-    // start at its content column and its own line ends at 1040 px, where its content ends (taste rule 1).
+    // start at its content column and its own line ends at 1040 px, where its content ends.
     const besideHead = (element: Element) => {
       const section = element.closest(".k2-sec");
       const head = section?.querySelector(":scope > .k2-sh");
-      return !!head && !head.contains(element) && getComputedStyle(head).float === "left";
+      if (!!head && !head.contains(element) && getComputedStyle(head).float === "left") return true;
+      // the hair between the rows of a section at the reading measure ends with its rows, where their content ends
+      return !!section && element !== section && section.hasAttribute("data-measure");
     };
     const dividers = hairlines(horizontal)
       .filter((line) => !line.frame && !besideHead(line.element))
@@ -466,6 +468,8 @@ function measureInPage(options: InPage): DomResult {
       const style = getComputedStyle(element);
       const color = style.backgroundColor;
       if (clear(color) || color === fillBelow(element) || control(element) || Number.parseFloat(style.borderTopLeftRadius) > 0) continue;
+      // a tinted row in a section's own column (B, or at the reading measure) ends with that column
+      if (besideHead(element)) continue;
       let box = element.getBoundingClientRect();
       // A table row is tinted cell by cell (a sticky cell must be opaque), so a tinted row is measured as the band of
       // all its cells, once; a single tinted cell (an error, the cell under edit) is a state of that cell, no band.

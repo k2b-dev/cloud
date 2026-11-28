@@ -37,9 +37,10 @@ export type SectionProps = {
   /** One sentence that says what the section is for: the quiet line right under the title. */
   summary?: JSX.Element;
   /**
-   * Its head, its sentence and its rows stay at the reading measure of `Prose` (720 px of text), so in a wide pane a
-   * short list stays together instead of its words standing at the left edge and its deeds at the right. The section's
-   * line still reaches the edges of its column. Below the measure it changes nothing.
+   * In a pane narrower than 960 px, its head, its sentence and its rows stay at the reading measure of `Prose` (720 px
+   * of text), so a short list stays together instead of its words standing at the left edge and its deeds at the right;
+   * the section's line still reaches the edges of its column. In a pane of 960 px and more every section keeps the
+   * measure of 1040 px with its head in a column, so this changes nothing there; below the measure it changes nothing.
    */
   measure?: boolean;
   /**

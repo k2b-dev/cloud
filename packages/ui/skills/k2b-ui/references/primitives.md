@@ -211,9 +211,10 @@ of 960 px and more, title, summary and buttons stand in a column of 232 px and
 the content 48 px beside it, and the section with its line ends at 1040 px
 (the measure); a section that holds a large table (with selection or a sticky column), tiles, groups or a drawing keeps its full
 width, and a narrower pane stacks head and content.
-`measure` (its head, sentence and rows keep the reading measure of `Prose`,
-720 px of text, so a short list in a wide pane stays together; its line
-still reaches the column's edges), `more` (one link under the rows, its
+`measure` (below a 960 px pane only: its head, sentence and rows keep the
+reading measure of `Prose`, 720 px of text, so a short list stays together;
+its line still reaches the column's edges; a wider pane has the 1040 px
+measure of every section), `more` (one link under the rows, its
 words on their text edge, never at the right: "All deliveries ›"; its
 `meta` shows only in a
 `Pane side`, where the link becomes a row), children. No line under

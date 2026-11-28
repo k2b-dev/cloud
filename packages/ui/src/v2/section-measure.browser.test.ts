@@ -43,8 +43,10 @@ const withPage = async (width: number, run: (page: Page) => Promise<void>) => {
   }
 };
 
-for (const width of [1440, 1024, 390])
-  test(`a section with measure keeps its content to the reading measure, its line to the edges, at ${width} px`, async () => {
+// 1440 and 1024: the pane is 960 px and more, so every section is B with its measure of 1040 px; 900: A, and `measure`
+// keeps the reading measure of 720 px of text; 390: A, and the measure is the pane
+for (const width of [1440, 1024, 900, 390])
+  test(`a section keeps its measure at ${width} px: B in a wide pane, the reading measure below 960 px`, async () => {
     await withPage(width, async (page) => {
       const found = await page.evaluate(() => {
         const [held, free] = Array.from(document.querySelectorAll<HTMLElement>(".k2-sec"));
@@ -69,6 +71,8 @@ for (const width of [1440, 1024, 390])
         for (const row of found.rows) expect(row - found.left).toBe(section);
         expect(found.head - found.left).toBe(232);
         expect(found.freeRow - found.left).toBe(section);
+        // a reading text beside them keeps its own measure from the pane's edge
+        expect(found.prose - found.left).toBe(720 + edge);
       } else {
         // the reading measure in a narrower pane: 720 px of text between the two text edges, as Prose
         const measure = Math.min(found.pane, 720 + 2 * edge);
