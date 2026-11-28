@@ -143,9 +143,9 @@ test("a preview column with align end sets its head and cells at the end with fi
         cell: [...table.querySelectorAll("tbody tr:first-child td")].map(style),
       };
     });
-    expect(found.head.map((cell) => cell.align)).toEqual(["start", "start", "end"]);
-    expect(found.cell.map((cell) => cell.align)).toEqual(["start", "start", "end"]);
-    expect(found.cell[2]?.figures).toBe("tabular-nums");
+    expect(found.head.map((cell) => cell.align)).toEqual(["start", "end", "start"]);
+    expect(found.cell.map((cell) => cell.align)).toEqual(["start", "end", "start"]);
+    expect(found.cell[1]?.figures).toBe("tabular-nums");
   });
 });
 

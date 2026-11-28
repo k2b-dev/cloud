@@ -1060,9 +1060,6 @@
 /* A card's preview: a glance of what it holds across its top, edge to edge above its name, on the quiet surface with a
    line under it; a small table or page stands in it on the card's surface, its top corners round, its foot cut off by
    the line, as a sheet seen from above. 112 px, 84 px and two columns on the phone. */
-.k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-preview] {
-  overflow: hidden;
-}
 .k2-ui .k2-tile > .k2-tile-preview {
   display: flex;
   flex-direction: column;
@@ -1073,6 +1070,8 @@
   overflow: hidden;
   background: var(--k2-n50);
   border-bottom: var(--k2-hairline);
+  /* the card's own top corners, inside its hairline, so the card needs no clipping */
+  border-radius: calc(var(--k2-r-control) - 1px) calc(var(--k2-r-control) - 1px) 0 0;
 }
 .k2-ui .k2-tile-pv-table,
 .k2-ui .k2-tile-pv-page {

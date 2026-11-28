@@ -177,7 +177,8 @@ the card's colour), `preview` (a glance of what it holds across its top,
 table of words (a column `{ label, align: "end" }` for amounts), two columns on the phone, `{ page: { title, text? } }`, or
 `{ icon }` for a thing that holds nothing yet; it is a picture, the card
 keeps its name; keep its values short, about 12 characters a cell, so
-nothing is cut at 1440 or on the phone: leave out what does not fit). The whole card opens its `href`. `create` adds the last
+nothing is cut at 1440 or on the phone: leave out what does not fit; the
+phone shows a table's first two columns, so an amount comes second). The whole card opens its `href`. `create` adds the last
 card that makes a new thing: dashed, `title`, `meta`, `href` or `onClick`,
 and `choices` as round chips (templates). Cards hold no box and no line.
 
