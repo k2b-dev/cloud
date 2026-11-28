@@ -201,6 +201,63 @@ export const Mark = (props: MarkProps) => {
   );
 };
 
+export type CoverProps = {
+  /** The address of the picture, such as the banner of a place. Without one there is no cover, and no empty band. */
+  src?: string;
+  /**
+   * What the picture shows, for people who cannot see it; `""` when it is decoration, such as a banner right above the
+   * name of its place.
+   */
+  alt: string;
+  /**
+   * The cover stands above a task, such as a form, and only says where the person is: 72 to 88 px high instead of 120
+   * to 180 px.
+   */
+  slim?: boolean;
+};
+
+/**
+ * A picture across its place, such as a place's banner at the top of its page or detail: from edge to edge, cut to its
+ * height. The height follows the width of the place alone (a third of it, 120 to 180 px; `slim` a sixth, 72 to 88 px),
+ * so the server's page already holds the room and nothing moves when the picture comes. While it loads, and when it
+ * fails, a quiet tint fills the room. Without a picture the cover is not there at all.
+ */
+export const Cover = (props: CoverProps) => {
+  const picture = createPicture(() => props.src);
+  return (
+    <Show when={props.src}>
+      {/* with words the cover is one picture named by them; as decoration it is hidden and has no role */}
+      <Show
+        when={props.alt}
+        fallback={
+          <div
+            class="k2-cover"
+            data-k2-part="Cover"
+            data-slim={props.slim ? "" : undefined}
+            data-image={picture.state() ?? ""}
+            aria-hidden="true"
+          >
+            <picture.Picture />
+          </div>
+        }
+      >
+        {(alt) => (
+          <div
+            class="k2-cover"
+            data-k2-part="Cover"
+            data-slim={props.slim ? "" : undefined}
+            data-image={picture.state() ?? ""}
+            role="img"
+            aria-label={alt()}
+          >
+            <picture.Picture />
+          </div>
+        )}
+      </Show>
+    </Show>
+  );
+};
+
 export type SparkProps = {
   /** The values in their order, oldest first; the last one (today, this hour) stands in full colour. */
   values: readonly number[];

@@ -43,6 +43,12 @@ What a thing looks like: its symbol on a tint of its colour, or its picture with
 
 <Props of="Mark" />
 
+### Cover
+
+A picture across its place, such as the banner of a place at the top of its page or detail: directly in the `Pane`, from edge to edge, cut to its height with nothing distorted. The height follows the width of the place alone, a third of it from 120 to 180 px, so the server's page already holds the room and nothing moves when the picture comes. `slim` is for a cover above a task, such as a form, that only says where the person is: a sixth of the width, from 72 to 88 px. While the picture loads, and when it fails, a quiet tint fills the room in light and dark. Without a `src` there is no cover at all, never an empty band. Its `alt` says what the picture shows; give `""` when it is decoration, such as a banner right above the name of its place.
+
+<Props of="Cover" />
+
 ### Avatar.Stack
 
 People over each other with "+n" for the rest, as one picture with one name.

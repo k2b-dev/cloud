@@ -3007,6 +3007,34 @@
   background: var(--k2-c-ink-dark, var(--k2-app-text));
 }
 
+/* ── Cover: a picture across its place, from edge to edge, cut to a height that follows the place's width ─────── */
+/* A third of the width, 120 to 180 px (a sixth, 72 to 88 px, when slim): CSS alone, so the server's page holds the
+   room before the picture comes and nothing moves. The quiet tint fills the room while it loads and when it fails;
+   a picture that is not there leaves no cover at all. Square, as what structures is, and without a line of its own:
+   the picture's edge parts it from what follows. */
+.k2-ui .k2-cover {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  width: 100%;
+  aspect-ratio: 3 / 1;
+  min-height: 120px;
+  max-height: 180px;
+  background: var(--k2-n100);
+}
+.k2-ui .k2-cover[data-slim] {
+  aspect-ratio: 6 / 1;
+  min-height: 72px;
+  max-height: 88px;
+}
+.k2-ui .k2-cover > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 /* ── Controls: round. Button, field, select, check, switch, radio ───────────────────────────────────────────── */
 .k2-ui .k2-btn {
   height: var(--k2-h-control);
