@@ -39,24 +39,27 @@ export const findThread = async (db: typeof sql, conversationId: string, id: str
   return row && (!context || (await canReadThread(db, context, row.id))) ? row : undefined;
 };
 export const threadNotFound = (context: ChatContext) => fail({ code: "NOT_FOUND", status: 404, message: messages(context).threadNotFound });
+/** A place's most recent discussions: the short list's, and the cards of its General stream. */
+const RECENT_THREADS = 4;
 const projectList = async (
   db: typeof sql,
   input: Input,
   conversationId: string,
   onlyId?: string,
+  limit?: number,
 ): Promise<z.infer<typeof ThreadListSchema>> => {
   const query = ThreadQuerySchema.parse(input.query ?? {});
   const [conversation] = await db<
     { kind: string; resource_type: string; resource_id: string }[]
   >`SELECT kind, resource_type, resource_id FROM chat.conversations WHERE id = ${conversationId}::uuid`;
   const system = conversation?.kind === "system";
-  const pageLimit = system ? SUMMARY_TRAVERSAL_BUDGET : MAX_THREADS;
+  const pageLimit = limit ?? (system ? SUMMARY_TRAVERSAL_BUDGET : MAX_THREADS);
   // The opaque thread ID identifies the activity boundary. Page candidates before reader checks and filters,
   // so empty visible pages still advance without scanning an unbounded number of resources.
   // Keep the timestamp in Postgres: converting it to Date would truncate the cursor's microseconds.
   const after = db`(SELECT boundary.last_activity_at FROM chat.threads boundary
     WHERE boundary.conversation_id = ${conversationId}::uuid AND boundary.short_id = ${query.cursor ?? ""})`;
-  const recent = db`SELECT id FROM chat.threads WHERE conversation_id = ${conversationId}::uuid ORDER BY last_activity_at DESC, short_id LIMIT 4`;
+  const recent = db`SELECT id FROM chat.threads WHERE conversation_id = ${conversationId}::uuid ORDER BY last_activity_at DESC, short_id LIMIT ${RECENT_THREADS}`;
   const self = subjectPrincipal(input.accessSubject);
   const rows = await db<
     (ThreadRow & { recent: boolean; following: boolean })[]
@@ -175,13 +178,13 @@ const read = async (input: Input, db: typeof sql) => {
   if (!ThreadQuerySchema.safeParse(input.query ?? {}).success) return fail(err.badInput(messages(input).invalidInput));
   const allowed = await requireConversation({ ...input, required: "read" }, db);
   if (!allowed.ok) return allowed;
+  const selected = allowed.data.kind === "system" && !ThreadQuerySchema.parse(input.query ?? {}).short ? input.selectedThread : undefined;
+  // A place's General stream shows its most recent discussions as cards: those only, never the directory; one
+  // discussion brings only itself.
   return ok(
-    await projectList(
-      db,
-      input,
-      allowed.data.id,
-      allowed.data.kind === "system" && !ThreadQuerySchema.parse(input.query ?? {}).short ? input.selectedThread : undefined,
-    ),
+    selected === "general"
+      ? await projectList(db, input, allowed.data.id, undefined, RECENT_THREADS)
+      : await projectList(db, input, allowed.data.id, selected),
   );
 };
 /** The chat's threads; inside a caller's transaction with `db`, for example the snapshot's. */

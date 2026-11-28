@@ -130,6 +130,8 @@ describe("loadGridsWorkspaceState — GQL-backed views", () => {
         ({
           tables: catalogTables,
           tableLevels: catalogTableLevels,
+          workflows: [],
+          customApps: [],
           fieldsByTable: catalogFieldsByTable,
           viewsByTable: catalogViewsByTable,
           formsByTable: { [table.id]: [] },
@@ -152,7 +154,6 @@ describe("loadGridsWorkspaceState — GQL-backed views", () => {
     spyOn(publicResources, "resolveStoredPublicId").mockImplementation(async (_kind, publicId) =>
       publicId === selectedRecordPublicId ? selectedRecordId : null,
     );
-    spyOn(gridsService.workflow, "listForBase").mockImplementation(async () => []);
     spyOn(gridsService.workflow, "listEnabledForBase").mockImplementation(async () => []);
     spyOn(gridsService.workflow.launcher, "listForBase").mockImplementation(async () => []);
     spyOn(gridsService.record, "list").mockImplementation(async (params) => {

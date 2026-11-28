@@ -10,7 +10,7 @@ import { aiFixtureCatalog } from "./AiArea.fixture-data";
 
 const root = mkdtempSync(join(tmpdir(), "core-ai-model-price-render-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
-const { default: AiModelDetail } = await import("./AiModelDetail.island");
+const { default: ModelDetail } = await import("./ModelDetail");
 beforeAll(() => setSystemTime(new Date("2026-11-19T09:00:00.000Z")));
 afterAll(() => setSystemTime());
 
@@ -68,14 +68,16 @@ for (const locale of ["de", "en"]) {
         createComponent(LocaleProvider, {
           locale,
           get children() {
-            return createComponent(AiModelDetail, {
-              provider: { ...provider, models: [model] },
+            return createComponent(ModelDetail, {
+              provider,
               model,
               usage: null,
               slots: [],
               assignments: {},
               accountingUnit: "EUR",
-              budgetRules: [],
+              back: { label: provider.label, href: "/admin/ai?sec=providers&p=cortecs" },
+              onVariant: () => {},
+              onDelete: () => {},
             });
           },
         }),
@@ -85,7 +87,8 @@ for (const locale of ["de", "en"]) {
           ? "Ohne einen Preis über 0 können Automationen mit diesem Modell keinen Gustav-Zug starten."
           : "Without a price above zero, automations cannot start a Gustav turn with this model.";
       expect(html.includes(hint)).toBe(scenario.hint);
-      if (scenario.hint) expect(html).toContain(`class="k2b-notice-card__body "><p>${hint}</p>`);
+      // the hint is a quiet note of its own (a v2 Notice), not a warning
+      if (scenario.hint) expect(html).toMatch(new RegExp(`data-k2-part="Notice" data-tone="note"[^]*?${hint}`));
       expect(
         html.includes(
           locale === "de" ? "Trage vor dem Speichern die dokumentierten Grenzen" : "Enter the limits documented by the provider",

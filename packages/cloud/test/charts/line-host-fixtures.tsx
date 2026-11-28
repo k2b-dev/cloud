@@ -1,7 +1,7 @@
 import { Chart, LocaleProvider } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
 import { render } from "solid-js/web";
-import AiUsageCharts from "../../../core/src/pages/admin/settings/_components/AiUsageCharts";
+import { TimeChart } from "../../../core/src/pages/admin/ai/insight-chart";
 import { chartKinds } from "../../../editor/src/charts";
 import { renderNotebookChartFigure } from "../../../editor/src/markdown/lib/chart-blocks";
 import { enhanceNotebookCharts } from "../../../editor/src/markdown/notebook-charts";
@@ -51,7 +51,26 @@ export function LineHostFixtures() {
       </section>
       <section class="line-forecast-panel" data-line-host="core">
         <h2>Core · AI usage</h2>
-        <AiUsageCharts timeline={timeline} range="7d" unit="EUR" />
+        {/* Nutzung draws runs and costs over time as two charts, each in its own canvas */}
+        <div style={{ height: "230px" }}>
+          <TimeChart
+            series={[
+              { label: "Runs", points: timeline.map((point) => ({ at: Date.parse(point.bucket), value: point.turns })) },
+              { label: "Failed", points: timeline.map((point) => ({ at: Date.parse(point.bucket), value: point.failed })) },
+            ]}
+            step={86_400_000}
+            format={(value) => String(value)}
+            axis={(at) => new Date(at).toISOString().slice(5, 10)}
+          />
+        </div>
+        <div style={{ height: "230px" }}>
+          <TimeChart
+            series={[{ label: "Cost", points: timeline.map((point) => ({ at: Date.parse(point.bucket), value: point.cost })) }]}
+            step={86_400_000}
+            format={(value) => `${value.toFixed(2)} €`}
+            axis={(at) => new Date(at).toISOString().slice(5, 10)}
+          />
+        </div>
       </section>
       <section class="line-forecast-panel" data-line-host="gateway">
         <h2>Gateway Ops · Network traffic</h2>

@@ -192,8 +192,8 @@ export const mailConversationUiMessages = i18n.define({
       summary: "Summary",
       summaryDescription: "Keep the current conversation context concise. Leave empty to remove the summary.",
       saveSummary: "Save summary",
-      localDraftFailed: "The browser could not keep this message locally. Free some site storage and try again.",
       startMessageFailed: "Could not start message",
+      preparingMessage: "Preparing message...",
       existingDrafts: ({ count }: { count: number }) =>
         count === 1
           ? "This conversation already has a draft. Continue it or start a separate message."
@@ -606,9 +606,8 @@ export const mailConversationUiMessages = i18n.define({
       summary: "Zusammenfassung",
       summaryDescription: "Halte den aktuellen Kontext der Unterhaltung knapp. Leere das Feld, um die Zusammenfassung zu entfernen.",
       saveSummary: "Zusammenfassung speichern",
-      localDraftFailed:
-        "Der Browser konnte diese Nachricht nicht lokal speichern. Gib Speicherplatz für diese Website frei und versuche es erneut.",
       startMessageFailed: "Die Nachricht konnte nicht begonnen werden",
+      preparingMessage: "Nachricht wird vorbereitet…",
       existingDrafts: ({ count }) =>
         count === 1
           ? "Für diese Unterhaltung gibt es bereits einen Entwurf. Setze ihn fort oder beginne eine eigene Nachricht."
