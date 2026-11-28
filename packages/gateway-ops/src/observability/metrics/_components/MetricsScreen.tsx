@@ -116,7 +116,7 @@ export default function MetricsScreen(props: MetricsScreenProps) {
                   if (event.key === "Escape" && input.value) search("");
                 }}
               />
-              <Button variant="primary" icon="plus" onClick={() => setCreating(true)}>
+              <Button variant="primary" icon="plus" floats onClick={() => setCreating(true)}>
                 {t().newToken}
               </Button>
             </>

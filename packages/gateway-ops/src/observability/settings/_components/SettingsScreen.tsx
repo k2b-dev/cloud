@@ -100,7 +100,7 @@ export default function SettingsScreen(props: SettingsScreenProps) {
         <Bar
           start={<SettingsTabs current="alerts" />}
           end={
-            <Button variant={props.open ? undefined : "primary"} icon="plus" href={webhookHref("new")}>
+            <Button variant={props.open ? undefined : "primary"} floats={!props.open} icon="plus" href={webhookHref("new")}>
               {t().addWebhook}
             </Button>
           }
