@@ -15,8 +15,9 @@ import {
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
+import { adminShellRuntime } from "../admin-v2.shell-fixture";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
-import type { StorageSelection } from "./view";
+import type { StorageSelection } from "./StorageScreen";
 
 const lea = { id: "11111111-1111-4111-8111-111111111111", name: "Lea Schulz" };
 const mara = { id: "22222222-2222-4222-8222-222222222222", name: "Mara Beispiel" };
@@ -153,6 +154,24 @@ const defaultEntries = (): SettingFieldDef[] => {
 export const STORAGE_SCENARIOS = {
   liste: () => [defaultBucket(), ...furtherBuckets()],
   leer: () => [defaultBucket()],
+  // break-ui: a long name with an unbreakable endpoint and bucket, a one-letter name, non-Latin and emoji names
+  worst: () => [
+    defaultBucket(),
+    ...furtherBuckets().map((item, index) =>
+      index === 0
+        ? {
+            ...item,
+            name: "Archiv Rechnungen und Lieferscheine Werkstatt Nord-Ost 2019–2026",
+            endpoint: "https://s3.eu-central-1.objekt-anbieter.northwind-industries-holdings.example.com",
+            bucket: "cloud-archiv-rechnungen-lieferscheine-werkstatt-nord-ost-2019-2026",
+          }
+        : index === 1
+          ? { ...item, name: "Ö" }
+          : index === 2
+            ? { ...item, name: "Αρχείο πελατών 📦" }
+            : item,
+    ),
+  ],
   fehler: () => null,
 } satisfies Record<string, () => AdminStorageBucket[] | null>;
 export type StorageScenario = keyof typeof STORAGE_SCENARIOS;
@@ -169,7 +188,9 @@ export async function storageAreaBrowserFixture(options: { port?: number } = {})
   registerSsrTestPlugin({ dev: true, rootDir: root });
   const { renderToString } = await import("solid-js/web");
   const { createComponent } = await import("solid-js");
-  const { StorageView } = await import("./view");
+  const { AdminLayout } = await import("@k2b/cloud/ssr");
+  const { default: StorageScreen } = await import("./StorageScreen");
+  const { adminNavFixture } = await import("../admin-v2.fixture");
   const ui = resolve(import.meta.dir, "../../../../../ui");
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", `${ui}/`));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", `${ui}/`))).default;
@@ -325,7 +346,7 @@ export async function storageAreaBrowserFixture(options: { port?: number } = {})
     const scenario = Object.entries(STORAGE_SCENARIOS).find(([name]) => name === c.req.query("state"));
     if (scenario) items = scenario[1]();
     c.req.raw.headers.set("x-cloud-locale", locale);
-    c.set("runtime", { apps: [{ id: "core", name: "Cloud", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
+    c.set("runtime", adminShellRuntime());
     c.set("user", user);
     c.set("settings", { app: { name: "Cloud", locale } });
     c.set("page", { title: locale === "de" ? "Speicher" : "Storage", theme });
@@ -339,9 +360,19 @@ export async function storageAreaBrowserFixture(options: { port?: number } = {})
           : found
             ? { kind: "bucket", bucket: found }
             : { kind: "unknown" };
-    const body = renderToString(() => createComponent(StorageView, { c, locale, items, selection, defaultEntries: defaultEntries() }));
+    const props = { nav: adminNavFixture("/admin/storage"), items, selection, defaultEntries: defaultEntries(), timeZone: "Europe/Berlin" };
+    const body = renderToString(() =>
+      createComponent(AdminLayout, {
+        c,
+        ui: "v2",
+        title: locale === "de" ? "Speicher" : "Storage",
+        get children() {
+          return createComponent(StorageScreen, props);
+        },
+      }),
+    );
     return c.html(
-      `<!doctype html><html lang="${locale}" class="${theme}" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><style>${css}</style></head><body class="k2b-ui${theme === "dark" ? " k2b-dark" : ""}">${body}<script src="/fixture.js"></script></body></html>`,
+      `<!doctype html><html lang="${locale}" class="${theme}" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><style>${css}</style></head><body class="k2b-ui${theme === "dark" ? " k2b-dark" : ""}">${body}<script type="application/json" id="screen-props">${JSON.stringify(props).replaceAll("<", "\\u003c")}</script><script src="/fixture.js"></script></body></html>`,
     );
   });
 

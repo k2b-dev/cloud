@@ -7,37 +7,10 @@ export async function renderPublicPage(locale: SiteLocale, publicUrl: string, st
   const response = await html(
     () => (
       <LocaleProvider locale={locale}>
-        <main class="speedtest-site">
-          <header class="speedtest-site-header">
-            <div>
-              <p class="speedtest-site-eyebrow">Cloud · Speedtest</p>
-              <h1>{text.title}</h1>
-              <p>{text.introduction}</p>
-            </div>
-            <nav aria-label={locale === "de" ? "Sprache" : "Language"}>
-              <a href="/de" lang="de" hreflang="de" aria-current={locale === "de" ? "page" : undefined}>
-                Deutsch
-              </a>
-              <a href="/en" lang="en" hreflang="en" aria-current={locale === "en" ? "page" : undefined}>
-                English
-              </a>
-            </nav>
-          </header>
-          <Speedtest server={publicUrl} />
-          <noscript>
-            <p>{text.noScript}</p>
-          </noscript>
-          <footer class="speedtest-site-footer">
-            <p>{text.limits}</p>
-            <p>{text.privacy}</p>
-            <p>
-              <a href="https://cloud.k2b.dev" rel="noreferrer">
-                {text.promotion}
-              </a>
-              <span> · {text.promotionDetail}</span>
-            </p>
-          </footer>
-        </main>
+        <Speedtest server={publicUrl} locale={locale} />
+        <noscript>
+          <p>{text.noScript}</p>
+        </noscript>
       </LocaleProvider>
     ),
     { locale, publicUrl, stylesheet },

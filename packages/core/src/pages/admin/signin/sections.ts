@@ -1,4 +1,4 @@
-import type { RegistryFormSection } from "../_area/RegistryForm.island";
+import type { RegistryFormSection } from "../_area/RegistryForm";
 import { settingsMessages } from "../settings/_components/messages";
 import { settingsDocumentationHref } from "../settings/documentation";
 import { signinText } from "./area";

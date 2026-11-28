@@ -55,8 +55,9 @@ const baseline: Record<string, string> = {
   // Bar charts draw with @k2b/ui's own renderer since every category keeps its label and printed value; column labels
   // and ticks keep their distance from the axis as a pixel offset (`dy`).
   bar: "435b52bc34ba6166d3205a1ecc5ab8660c1e8d18c4cb5086a2a31eebaa1a454a",
-  line: "e189323e0c3c48cc5a49be8fb797a6e50b8b3ab51f490c33d4d6b10f995a7047",
-  lineWithGap: "613b883fc561e8dd0e80f5a77e864d0665abaf40eb1f9833372f7b0b0a447ce3",
+  // A stretched line's first X label begins at its tick, so it never meets the lowest Y label at the corner.
+  line: "d41bc69163800470f8416760cc7e439b2a3b62226938b516e514c9bf3710854c",
+  lineWithGap: "c2658503033ddd659a6823f621b0f435b2363ba79468ef4c1c0762f1350c47d6",
   // Lane names start at the left edge and the label gutter cuts them off (a clip and a fade), so they never leave a
   // stretched box.
   stateTimeline: "9b35f042e14bc95fd5e5f95ebcd0262fe2e86cef204e5c7a3495b8c29f0aa550",

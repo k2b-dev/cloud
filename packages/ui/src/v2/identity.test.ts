@@ -12,12 +12,11 @@ const root = mkdtempSync(resolve(tmpdir(), "k2-v2-identity-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Avatar, Mark, Spark } = await import("./marks");
-const { Tiles } = await import("./layout");
+const { Cells, Tiles } = await import("./layout");
 const { Digest } = await import("./components");
 const { Row } = await import("./content");
 
-const html = <P extends object>(component: (props: P) => JSX.Element, props: P) =>
-  renderToString(() => createComponent(component, props));
+const html = <P extends object>(component: (props: P) => JSX.Element, props: P) => renderToString(() => createComponent(component, props));
 
 test("a mark is decoration beside its name, names itself with a label, and sends its picture over its symbol", () => {
   const plain = html(Mark, { icon: "table", color: "#008f4c" });
@@ -42,8 +41,15 @@ test("a stack shows three people and '+n', named once with every name", () => {
   const stack = html(Avatar.Stack, { people });
   expect(stack).toContain('aria-label="Felix Thal, Jonas Kern, Mira Solberg, Tom Oswald, Sami Yilmaz"');
   expect(stack.match(/class="k2-av"/g)?.length).toBe(3);
-  expect(stack).toContain('<span class="k2-avs-rest" aria-hidden="true">+2</span>');
-  expect(html(Avatar.Stack, { people, max: 5 })).not.toContain("k2-avs-rest");
+  // a count for each number of faces a narrow place may leave: the stylesheet shows the one that matches
+  expect(stack.match(/data-visible="(\d)" aria-hidden="true">(\+\d+)</g)).toEqual([
+    'data-visible="1" aria-hidden="true">+4<',
+    'data-visible="2" aria-hidden="true">+3<',
+    'data-visible="3" aria-hidden="true">+2<',
+  ]);
+  expect(stack).toContain('data-k="3"');
+  // with every face shown no count belongs to the full stack
+  expect(html(Avatar.Stack, { people, max: 5 })).not.toContain('data-visible="5"');
   expect(html(Avatar.Stack, { people, label: "Werkstatt-Team" })).toContain('aria-label="Werkstatt-Team"');
 });
 
@@ -54,6 +60,15 @@ test("a spark scales its bars to the highest value and keeps a sliver for a zero
   expect(spark.match(/--k2-v:(\d+)%/g)).toEqual(["--k2-v:8%", "--k2-v:50%", "--k2-v:100%"]);
   // nothing at all: every bar a sliver, never a division by zero
   expect(html(Spark, { values: [0, 0], label: "Nichts" }).match(/--k2-v:(\d+)%/g)).toEqual(["--k2-v:8%", "--k2-v:8%"]);
+});
+
+test("sparks that share a max give the same value the same height, and a value above it stands at the top", () => {
+  const bars = (values: number[], max?: number) => html(Spark, { values, label: "Änderungen", max }).match(/--k2-v:(\d+)%/g);
+  expect(bars([10, 20], 40)).toEqual(["--k2-v:25%", "--k2-v:50%"]);
+  expect(bars([20, 5], 40)).toEqual(["--k2-v:50%", "--k2-v:13%"]);
+  expect(bars([30, 80], 40)).toEqual(["--k2-v:75%", "--k2-v:100%"]);
+  // a max of nothing is a spark with nothing to show: slivers, never a division by zero
+  expect(bars([3, 4], 0)).toEqual(["--k2-v:8%", "--k2-v:8%"]);
 });
 
 test("a card sends its mark, figures, people, history and the card that makes a new thing", () => {
@@ -110,4 +125,16 @@ test("an activity sends the person, the sentence as the link of the thing, and w
   expect(activity).toContain('href="/t/auftraege"');
   expect(activity).toContain("Werkstatt · 09:42");
   expect(activity.match(/data-activity/g)?.length).toBe(2);
+});
+
+test("a key number with its history that is loading: the bar on the value, the history keeps its place", () => {
+  const trend = { values: [3, 5, 8], label: "Änderungen: von 3 auf 8 gestiegen" };
+  const loading = html(Cells.Cell, { icon: "table", label: "Änderungen", value: "8", trend, loading: true });
+  expect(loading).toContain('aria-busy="true"');
+  expect(loading).toContain("k2-spark");
+  // the value lies under the bar, not beside it
+  expect(loading).not.toMatch(/<span class="k2-cell-value">8</);
+  const shown = html(Cells.Cell, { icon: "table", label: "Änderungen", value: "8", trend });
+  expect(shown).not.toContain("aria-busy");
+  expect(shown).toContain("k2-spark");
 });

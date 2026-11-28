@@ -20,7 +20,7 @@ import { audit } from "../audit";
 import { escapeLikePattern, parsePgJsonValue, toPgTextArray, toPgUuidArray } from "../postgres";
 import type { UploadedAttachments } from "./attachments";
 import { mailActorSnapshot, mailMessageId } from "./message";
-import { type MailAuditContext, mailAppIdSha256, OutgoingMailError } from "./store";
+import { countsTowardQuota, type MailAuditContext, mailAppIdSha256, OutgoingMailError } from "./store";
 
 export type MessageRow = {
   id: string;
@@ -258,7 +258,7 @@ export class MailQuotaError extends OutgoingMailError {
 }
 export const mailQuotaUsed = async (db: SQL, appId: string, profileId: string): Promise<number> => {
   const [usage] = await db<{ used: number }[]>`SELECT COALESCE(sum(recipient_count), 0)::int AS used FROM outgoing_mail.messages
-    WHERE app_id = ${appId} AND profile_id = ${profileId}::uuid AND status <> 'cancelled' AND created_at > now() - INTERVAL '24 hours'`;
+    WHERE app_id = ${appId} AND profile_id = ${profileId}::uuid AND ${countsTowardQuota(db)}`;
   return usage?.used ?? 0;
 };
 /** Internal acceptance metadata; never accepted by the public mail schemas. */

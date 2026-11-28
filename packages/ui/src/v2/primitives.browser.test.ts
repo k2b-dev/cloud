@@ -201,10 +201,11 @@ describe("v2 primitives keep the numbers of the mockup", () => {
           expect(numbers.head).toBe(width < textEdge.phoneBelow ? heights.tabs : heights.head);
           expect(numbers.status).toBe(heights.status);
           // The rows as the mockup measures them: one line 40; two lines 53 and three lines 73 (their content of 36 and
-          // 56 px, 8 px above and below, and the line); with a button at the end 61. On the phone one line takes 60.
+          // 56 px, 8 px above and below, and the line); with a button at the end 60, as the last row of the list, which
+          // ends without a line (look rule 4). On the phone one line takes 60.
           if (width >= textEdge.phoneBelow) {
             expect(numbers.bar).toBe(heights.bar);
-            expect(numbers.rows).toEqual([heights.row, heights.row2 + hairline.width, heights.row3 + hairline.width, 61]);
+            expect(numbers.rows).toEqual([heights.row, heights.row2 + hairline.width, heights.row3 + hairline.width, 60]);
           } else expect(numbers.rows.slice(0, 3)).toEqual([60, heights.row2 + hairline.width, heights.row3 + hairline.width]);
           expect(numbers.title).toEqual(["ellipsis", true]);
           expect(numbers.iconText).toBe(edge + textEdge.afterIcon);
@@ -422,6 +423,30 @@ describe("v2 primitives keep the numbers of the mockup", () => {
         const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
         expect(layout.cut).toEqual([]);
         expect(layout.problems).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // break-ui: an endless name never takes the way back's words to nothing; the way back keeps a few letters and "…"
+  test(
+    "390 px: a detail named far longer than its bar keeps a few letters of its way back",
+    async () => {
+      const page = await open("namedBackLong", { width: 390 });
+      try {
+        const found = await page.evaluate(() => {
+          const bar = document.querySelector('.k2-pane[data-detail] > [data-k2-part="Back"]')!;
+          const label = bar.querySelector<HTMLElement>(".k2-btn .k2-btn-label")!;
+          const name = bar.querySelector<HTMLElement>(".k2-pane-back-name")!;
+          return {
+            backShown: label.getBoundingClientRect().width >= 40,
+            nameCut: name.scrollWidth > name.clientWidth,
+          };
+        });
+        expect(found).toEqual({ backShown: true, nameCut: true });
+        expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
       } finally {
         await page.close();
       }
