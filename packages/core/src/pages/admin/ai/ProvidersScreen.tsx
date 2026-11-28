@@ -10,7 +10,6 @@ import {
   Empty,
   Facts,
   Failed,
-  Icon,
   Input,
   type NavProps,
   Pane,
@@ -23,7 +22,7 @@ import {
 } from "@k2b/ui/v2";
 import { createSignal, onMount, Show } from "solid-js";
 import { CappedNote, ROW_CAP } from "../_area/capped";
-import StateWord from "../_area/StateWord";
+import StateWord, { StateDot } from "../_area/StateWord";
 import { AI_AREA_PATH, aiAreaHref } from "./area";
 import ConnectionDetail from "./ConnectionDetail";
 import type { AiProvidersData } from "./catalog-data";
@@ -55,7 +54,7 @@ export const ProviderState = (props: { t: AiAreaMessages; state: AiProviderState
     fallback={<StateWord muted={props.state === "off"}>{aiProviderStateLabel(props.t, props.state)}</StateWord>}
   >
     <Text tone={props.state === "nokey" ? "warn" : "bad"} weight="medium">
-      <Icon name="point-filled" /> {aiProviderStateLabel(props.t, props.state)}
+      <StateDot /> {aiProviderStateLabel(props.t, props.state)}
     </Text>
   </Show>
 );

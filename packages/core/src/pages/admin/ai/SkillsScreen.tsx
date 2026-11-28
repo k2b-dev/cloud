@@ -12,7 +12,6 @@ import {
   Empty,
   Facts,
   Failed,
-  Icon,
   List,
   Loading,
   Menu,
@@ -29,6 +28,7 @@ import {
   useToast,
 } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { StateDot } from "../_area/StateWord";
 import { settingsMessages } from "../settings/_components/messages";
 import { diffSkillVersions } from "../settings/_components/skill-diff";
 import { openSkillAccess, readError } from "./content-access";
@@ -110,7 +110,7 @@ export default function SkillsScreen(props: { nav: NavProps; data: AiSkillsData 
       <>
         {quiet} ·{" "}
         <Text tone="warn" weight="medium">
-          <Icon name="point-filled" /> {s().appSkillUpdate}
+          <StateDot /> {s().appSkillUpdate}
         </Text>
       </>
     ) : (
@@ -124,7 +124,7 @@ export default function SkillsScreen(props: { nav: NavProps; data: AiSkillsData 
   const adminsCell = (skill: AiSkillRow) =>
     orphan(skill) ? (
       <Text tone="bad" weight="medium">
-        <Icon name="point-filled" /> {s().noAdmins}
+        <StateDot /> {s().noAdmins}
       </Text>
     ) : (
       <Text muted={skill.adminCount === 0}>{adminsText(skill)}</Text>
@@ -179,7 +179,7 @@ export default function SkillsScreen(props: { nav: NavProps; data: AiSkillsData 
             <>
               <Show when={orphan(skill)} fallback={adminsText(skill)}>
                 <Text tone="bad">
-                  <Icon name="point-filled" /> {s().noAdmins}
+                  <StateDot /> {s().noAdmins}
                 </Text>
               </Show>
               {skill.source ? ` · ${appName(skill.source)}` : ""}

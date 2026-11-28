@@ -17,7 +17,6 @@ import {
   Button,
   Canvas,
   Facts,
-  Icon,
   Menu,
   type MenuEntry,
   type NavProps,
@@ -32,6 +31,7 @@ import {
   useLocale,
 } from "@k2b/ui/v2";
 import { createSignal, For, Show } from "solid-js";
+import { StateDot } from "../_area/StateWord";
 import { aiAreaHref } from "./area";
 import type { AiClassesData } from "./catalog-data";
 import { type AiAdminConflict, aiAdminApi, asAiConflict, readAiAdmin, reloadAiArea } from "./client";
@@ -205,7 +205,7 @@ export default function ClassesScreen(props: { nav: NavProps; data: AiClassesDat
                   const problem = issue(slot);
                   return problem ? (
                     <Text tone="bad" weight="medium">
-                      <Icon name="point-filled" /> {`${found.provider.label} · ${problem}`}
+                      <StateDot /> {`${found.provider.label} · ${problem}`}
                     </Text>
                   ) : (
                     found.provider.label

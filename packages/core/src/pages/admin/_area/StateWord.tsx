@@ -16,3 +16,9 @@ export default function StateWord(props: { muted?: boolean; children: JSX.Elemen
     </Text>
   );
 }
+
+/**
+ * The dot before the word of a state that needs someone, such as "Kein Admin" in red: small, in the colour of the word
+ * around it. It is a character, as in `StateWord`: the icon font has no filled point (#4558).
+ */
+export const StateDot = () => <Text type="meta">●</Text>;
