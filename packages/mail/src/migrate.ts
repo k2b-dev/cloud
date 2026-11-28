@@ -20,6 +20,7 @@ import {
   dropConcurrentIndex,
   ensureConcurrentIndexes,
 } from "@k2b/cloud/services/concurrent-index";
+import { backgroundWork } from "@k2b/cloud/services/runtime-quiesce";
 import automationLogSchema from "./automation-log-schema.sql" with { type: "text" };
 import { migrateAiDailyBudget } from "./migrate-ai-daily-budget";
 import { applySchemaScript, replaceTrigger } from "./migrate-catalog";
@@ -1052,10 +1053,11 @@ const indexBuildMutex = lazySync((sync) => sync.mutex({ id: "mail:index-build", 
 /**
  * One Mail index build or drop at a time across every replica and the minute jobs, on top of the helper's lease per
  * table: concurrent builds of partial and expression indexes wait for each other's snapshots, and Postgres cancels one
- * of them. `busy` while another one runs. Never throws.
+ * of them. `busy` while another one runs, and while the Cloud is in maintenance stage "Ruhe". Never throws.
  */
 const oneAtATime = async (work: () => Promise<ConcurrentIndexOutcome>): Promise<ConcurrentIndexOutcome> => {
   try {
+    if (backgroundWork.paused()) return "busy";
     const mutex = indexBuildMutex();
     const lease = await mutex.acquire({ resource: "mail-indexes" });
     if (!lease) return "busy";
