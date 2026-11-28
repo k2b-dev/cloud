@@ -2,7 +2,7 @@ import SettingsSaveStatus from "@k2b/cloud/ssr/SettingsSaveStatus.island";
 import { Button, LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import { previewViews } from "../../../../../../../scripts/fixtures/unreadable-admin/views";
-import RetentionForm from "../../../../../../gateway-ops/src/observability/retention/RetentionForm.island";
+import GeneralForm from "../../../../../../gateway-ops/src/observability/settings/GeneralForm";
 import { openMailContactDirectoryDialog } from "../../../../../../mail/src/frontend/_components/MailContactDirectoryDialog";
 import { adminNavFixture } from "../../admin-v2.fixture";
 import RetentionDialog from "../../outgoing-mail/RetentionDialog";
@@ -38,10 +38,13 @@ render(
         {surface === "logs" && (
           <>
             <SettingsSaveStatus />
-            <RetentionForm
-              values={{ logs: views.logs.retentionDays, events: 14, rollups: 90 }}
-              unreadable={{ logs: views.logs.unreadable }}
-            />
+            {/* The log retention stands in the v2 form of operations settings, beside the health check. */}
+            <div class="k2-ui">
+              <GeneralForm
+                values={{ schedule: "*/5 * * * *", targets: [], logs: views.logs.retentionDays, events: 14, rollups: 90 }}
+                unreadable={{ logs: views.logs.unreadable }}
+              />
+            </div>
           </>
         )}
         {surface === "directory" && (

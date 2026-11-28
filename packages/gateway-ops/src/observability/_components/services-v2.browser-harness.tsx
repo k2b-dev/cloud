@@ -23,8 +23,7 @@ const state = params.get("state");
 const settingsState = state === "empty" || state === "loadfail" || state === "unreadable" ? state : "normal";
 const screens: Record<string, () => JSX.Element> = {
   alerts: () => <SettingsScreenFixture {...options} open={params.get("webhook")} state={settingsState} />,
-  health: () => <SettingsScreenFixture {...options} area="health" state={settingsState} />,
-  retention: () => <SettingsScreenFixture {...options} area="retention" state={settingsState} />,
+  general: () => <SettingsScreenFixture {...options} area="general" state={settingsState} />,
   nats: () => <NatsScreenFixture {...options} />,
   access: () => (
     <LocaleProvider locale={locale}>

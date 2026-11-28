@@ -51,8 +51,7 @@ const render = (screen: () => JSX.Element) => {
 
 const screens = {
   alerts: () => createComponent(SettingsScreenFixture, { open: BEREITSCHAFT }),
-  health: () => createComponent(SettingsScreenFixture, { area: "health" }),
-  retention: () => createComponent(SettingsScreenFixture, { area: "retention" }),
+  general: () => createComponent(SettingsScreenFixture, { area: "general" }),
   nats: () => createComponent(NatsScreenFixture, { search: "state=problems&stream=MAIL_DLQ" }),
   sync: () => createComponent(SyncScreenFixture, { entry: true }),
   valkey: () => createComponent(ValkeyScreenFixture, { search: "depth=2" }),
@@ -111,9 +110,12 @@ describe("the service pages of Observability on the server", () => {
     expect(render(() => createComponent(SettingsScreenFixture, { open: "new" })).text).toContain("Alarm anlegen");
     expect(render(() => createComponent(SettingsScreenFixture, { state: "empty" })).text).toContain("Alarm anlegen");
     expect(render(() => createComponent(SettingsScreenFixture, { state: "loadfail" })).text).toContain("Erneut versuchen");
-    const health = render(() => createComponent(SettingsScreenFixture, { area: "health", state: "unreadable" })).text;
-    expect(health).toContain("Gespeicherten Wert ersetzen: Prüfplan");
-    expect(render(screens.retention).text).toContain("Aufbewahrung");
+    const general = render(() => createComponent(SettingsScreenFixture, { area: "general", state: "unreadable" })).text;
+    expect(general).toContain("Gespeicherten Wert ersetzen: Prüfplan");
+    expect(general).toContain("Gespeicherten Wert ersetzen: Anfragen");
+    // the health check and the retention stand in one form, as two sections
+    expect(render(screens.general).text).toContain("Gesundheitsprüfung");
+    expect(render(screens.general).text).toContain("Aufbewahrung");
   });
 
   test("a browser read that failed keeps the switch and offers a retry in place of the data", () => {
