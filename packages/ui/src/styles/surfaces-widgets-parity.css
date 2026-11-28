@@ -101,14 +101,17 @@
   max-width: none;
   max-height: none;
 }
-.k2b-ui .k2b-avatar[data-tint="0"] { --k2b-avatar-hue: #3b82f6; }
-.k2b-ui .k2b-avatar[data-tint="1"] { --k2b-avatar-hue: #6366f1; }
-.k2b-ui .k2b-avatar[data-tint="2"] { --k2b-avatar-hue: #8b5cf6; }
-.k2b-ui .k2b-avatar[data-tint="3"] { --k2b-avatar-hue: #0891b2; }
-.k2b-ui .k2b-avatar[data-tint="4"] { --k2b-avatar-hue: #0d9488; }
-.k2b-ui .k2b-avatar[data-tint="5"] { --k2b-avatar-hue: #e11d48; }
-.k2b-ui .k2b-avatar[data-tint="6"] { --k2b-avatar-hue: #f97316; }
-.k2b-ui .k2b-avatar[data-tint="7"] { --k2b-avatar-hue: #16a34a; }
+.k2b-ui .k2b-avatar[data-tint="0"] { --k2b-avatar-hue: #dc2626; }
+.k2b-ui .k2b-avatar[data-tint="1"] { --k2b-avatar-hue: #9a3412; }
+.k2b-ui .k2b-avatar[data-tint="2"] { --k2b-avatar-hue: #4d7c0f; }
+.k2b-ui .k2b-avatar[data-tint="3"] { --k2b-avatar-hue: #15803d; }
+.k2b-ui .k2b-avatar[data-tint="4"] { --k2b-avatar-hue: #065f46; }
+.k2b-ui .k2b-avatar[data-tint="5"] { --k2b-avatar-hue: #0e7490; }
+.k2b-ui .k2b-avatar[data-tint="6"] { --k2b-avatar-hue: #075985; }
+.k2b-ui .k2b-avatar[data-tint="7"] { --k2b-avatar-hue: #475569; }
+.k2b-ui .k2b-avatar[data-tint="8"] { --k2b-avatar-hue: #2563eb; }
+.k2b-ui .k2b-avatar[data-tint="9"] { --k2b-avatar-hue: #3730a3; }
+.k2b-ui .k2b-avatar[data-tint="10"] { --k2b-avatar-hue: #6d28d9; }
 .k2b-ui .k2b-avatar[data-size="xs"] { width: 1.5rem; height: 1.5rem; font-size: 0.625rem; }
 .k2b-ui .k2b-avatar[data-size="sm"] { width: 2rem; height: 2rem; font-size: 0.75rem; }
 .k2b-ui .k2b-avatar[data-size="md"] { width: 2.5rem; height: 2.5rem; font-size: 0.875rem; }
