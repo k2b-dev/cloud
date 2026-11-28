@@ -21,7 +21,7 @@ import { invalidateSettingsCache, SettingUnreadableError } from "./store";
  * Redact secret-kind setting values before they leave the server.
  *
  * Secret values are encrypted at rest and decrypted on read for runtime use,
- * but the admin UI receives them via SSR `data-props` (visible in HTML
+ * but the admin UI receives them as SSR island props (visible in HTML
  * source, browser caches, devtools). For secrets we hide the actual value
  * and rely on the form's change-tracking: if the admin doesn't type a new
  * value, no PUT is sent and the stored value stays. The placeholder hint in

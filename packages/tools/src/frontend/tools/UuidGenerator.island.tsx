@@ -55,7 +55,7 @@ export default function UuidGenerator() {
           <Button icon="refresh" onClick={() => setNonce((value) => value + 1)}>
             {t().regenerate}
           </Button>
-          <Button variant="primary" icon="copy" onClick={copyAll.onClick}>
+          <Button variant="primary" icon="copy" floats onClick={copyAll.onClick}>
             {t().copyAll}
           </Button>
         </>

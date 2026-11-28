@@ -15,7 +15,7 @@ export type AdminLink = {
   match?: string[];
   waiting?: { count: number; label: string };
 };
-/** A group without `label` stands at the top without a heading, such as the overview. */
+/** A group without `label` stands without a heading. */
 export type AdminGroup = { label?: string; links: AdminLink[] };
 
 const normalizeAdminHref = (href: string | undefined): string | undefined => {
@@ -24,8 +24,9 @@ const normalizeAdminHref = (href: string | undefined): string | undefined => {
 };
 
 /**
- * The admin bar: the overview, then what an operator sets up once, then what they run every day, then one entry per
- * app with settings of its own. Only the links are grouped here; no page and no address moves.
+ * The admin bar: what an operator sets up once, then what they run every day, then one entry per app with settings of
+ * its own. Only the links are grouped here; no page and no address moves. `/admin` itself has no entry: it opens the
+ * operations overview, or Apps without it.
  */
 export const buildAdminGroups = (
   apps: readonly RuntimeContext["apps"][number][],
@@ -66,7 +67,6 @@ export const buildAdminGroups = (
   const observabilityPaths = contributed("observability").map((link) => link.href);
 
   return [
-    { links: [{ href: "/admin", icon: "ti-dashboard", label: t.overview }] },
     {
       label: t.adminSetup,
       links: [

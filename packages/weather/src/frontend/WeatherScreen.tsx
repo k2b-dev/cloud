@@ -133,7 +133,7 @@ export default function WeatherScreen(props: WeatherScreenProps) {
                     <Menu label={t().locationOptions} items={menu(open())} />
                   )}
                 </Show>
-                <Button variant="primary" icon="map-pin-plus" onClick={() => setAdding(true)}>
+                <Button variant="primary" icon="map-pin-plus" floats onClick={() => setAdding(true)}>
                   {t().addLocation}
                 </Button>
               </>

@@ -62,7 +62,7 @@ export default function LogEntryPane(props: Props) {
                   }
                 />
               </Show>
-              <Button variant="ghost" icon="x" label={t().close} href={props.closeHref} />
+              <Button variant="ghost" icon="x" label={t().close} href={props.closeHref} closes />
             </>
           }
         />
