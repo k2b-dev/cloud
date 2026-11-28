@@ -2128,10 +2128,8 @@
   overflow: visible;
 }
 
-/* ── Facts: label quiet 12, value 13, 32 px per row, copy at the value ──────────────────────────────────────── */
-/* the label column takes the longest label, at least 80 px (short labels keep the values on one edge) and at most
-   160 px, where a longer label wraps */
-/* Facts (taste parts 4, Angaben): the label in a column of 116 px and 16 px to its value, so the facts of one page stand
+/* ── Facts: the key-value detail, label column 116 px, pairs of 34 px, copy at the value ───────────────────── */
+/* Facts: the label in a column of 116 px and 16 px to its value, so the facts of one page stand
    in one line from section to section; a long label wraps in its column. Pairs of 34 px in 13: label n500, value in
    ink. Dense in a side column (96 px, 12, pairs of 28), the label over its value on the phone. Space parts the pairs,
    no line. */
@@ -2192,7 +2190,7 @@
   text-decoration-color: var(--k2-n300);
   text-underline-offset: 3px;
 }
-.k2-ui .k2-fact-link[href]:hover {
+.k2-ui .k2-fact-link:hover {
   text-decoration-color: currentColor;
 }
 .k2-ui .k2-fact-link:focus-visible {

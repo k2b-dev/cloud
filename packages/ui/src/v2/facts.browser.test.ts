@@ -6,7 +6,7 @@ import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/bro
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-facts.client";
 
-// Facts as the key-value detail (v2-kv-angaben v1, taste parts 4 "Angaben"): the label in a column of 116 px and 16 px
+// Facts as the key-value detail: the label in a column of 116 px and 16 px
 // to its value, pairs of 34 px in the main column and of 28 px in a side column, the label over its value on the
 // phone. A kind makes the link and the copy button; a value that is not set is a quiet dash with a name. The fixture
 // is test/v2-facts.client.tsx, with the worst case in the same list.
@@ -91,7 +91,12 @@ test("a kind makes the link and the copy button; a scheme that may not open stay
     expect(byLabel.Telefon).toMatchObject({ links: ["tel:+49305550142", "tel:+49305550990"], copy: 0 });
     expect(byLabel.Anschrift).toMatchObject({ links: [], copy: 1 });
     expect(byLabel.Website!.links).toEqual(["https://www.beispiel-verwaltung.example.org/kunden/portal/rechnungen?jahr=2026"]);
-    expect(byLabel.Skript!.links).toEqual([null]);
+    // a scheme that may not open, and an address with a query that would add to the mail, stay words without a link
+    expect(byLabel.Skript!.links).toEqual([]);
+    expect(byLabel.Kopie).toMatchObject({ links: [], copy: 1 });
+    // a port is no scheme; the trunk zero "(0)" leaves an international number
+    expect(byLabel.Port!.links).toEqual(["https://example.org:8080/status"]);
+    expect(byLabel.Zentrale!.links).toEqual(["tel:+49301234567"]);
     expect(byLabel["Steuer-ID"]).toMatchObject({ empty: "nicht angegeben", copy: 0 });
     expect(byLabel.Fax).toMatchObject({ empty: "nicht angegeben", links: [], copy: 0 });
     // the web address stands on one line without its scheme, cut with "…", its whole address as its hint

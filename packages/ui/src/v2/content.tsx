@@ -220,14 +220,21 @@ const isSet = (item: Fact) => {
  * `data:`) gets no link and stays words, as in `Prose`.
  */
 const hrefOf = (kind: "email" | "phone" | "url", value: string): string | undefined => {
-  if (kind === "email") return `mailto:${value}`;
-  if (kind === "phone") return `tel:${value.replace(/[^+\d]/g, "")}`;
-  if (!/^[a-z][a-z\d+.-]*:/i.test(value)) return `https://${value}`;
-  return /^https?:/i.test(value) ? value : undefined;
+  // an address is one local part and one domain, without a query: `?bcc=` or `&body=` would add to the mail
+  if (kind === "email") return /^[^\s?#&@/]+@[^\s?#&@/]+$/.test(value) ? `mailto:${value}` : undefined;
+  if (kind === "phone") {
+    // the trunk zero of a national number written `+49 (0) 30 …` belongs to no international number
+    const digits = value.replace(/\(0\)/g, "").replace(/(?!^\+)[^\d]/g, "");
+    return /^\+?\d{3,}$/.test(digits) ? `tel:${digits}` : undefined;
+  }
+  // a scheme is letters before `:` that are not a port (`example.org:8080`), or anything before `://`
+  if (!/^[a-z][a-z\d+.-]*:(?!\d)/i.test(value) && !value.includes("://")) return `https://${value}`;
+  return /^https?:\/\//i.test(value) ? value : undefined;
 };
 
 /** The value of a fact: as given, or with a kind its links, lines or note. */
 const FactValue = (props: { item: Fact }) => {
+  const said = useControlMessages();
   const item = props.item;
   if (item.kind === undefined) return <>{item.value}</>;
   if (item.kind === "address" || item.kind === "note")
@@ -241,15 +248,22 @@ const FactValue = (props: { item: Fact }) => {
     <For each={entriesOf(item.value)}>
       {(entry) => (
         <span class="k2-fact-entry" data-url={kind === "url" ? "" : undefined}>
-          <a
-            class="k2-fact-link"
-            href={hrefOf(kind, entry.value)}
-            target={kind === "url" ? "_blank" : undefined}
-            rel={kind === "url" ? "noopener noreferrer" : undefined}
-            title={kind === "url" ? entry.value : undefined}
-          >
-            {kind === "url" ? entry.value.replace(/^https?:\/\//i, "").replace(/\/$/, "") : entry.value}
-          </a>
+          <Show when={hrefOf(kind, entry.value)} fallback={<span class="k2-fact-plain">{entry.value}</span>}>
+            {(href) => (
+              <a
+                class="k2-fact-link"
+                href={href()}
+                target={kind === "url" ? "_blank" : undefined}
+                rel={kind === "url" ? "noopener noreferrer" : undefined}
+                title={kind === "url" ? entry.value : undefined}
+              >
+                {kind === "url" ? entry.value.replace(/^https?:\/\//i, "").replace(/\/$/, "") : entry.value}
+                <Show when={kind === "url"}>
+                  <span class="k2-hidden-text"> {said().opensInNewTab}</span>
+                </Show>
+              </a>
+            )}
+          </Show>
           <Show when={entry.note}>
             <span class="k2-fact-note">{entry.note}</span>
           </Show>
@@ -279,8 +293,8 @@ export type FactsProps = {
 /**
  * Values with their labels, such as the contact data of a person. The label stands in a column of 116 px and wraps
  * there; the value beside it keeps its lines, and a kind gives it its link and its copy button. In a main column the
- * pairs stand 34 px apart with a hair between them; in a side column they are dense, without lines; on the phone the
- * label stands over its value. Nothing to set: the place decides.
+ * pairs stand 34 px apart; in a side column they are dense (28 px); on the phone the label stands over its value. No
+ * line parts the pairs. Nothing to set: the place decides.
  */
 export const Facts = (props: FactsProps) => {
   const said = useControlMessages();
@@ -295,7 +309,7 @@ export const Facts = (props: FactsProps) => {
               <span class="k2-fact-value" data-mono={item.mono ? "" : undefined} data-kind={item.kind}>
                 <Show
                   when={!props.loading}
-                  fallback={<PlaceholderValue>{item.kind === undefined ? item.value : undefined}</PlaceholderValue>}
+                  fallback={<PlaceholderValue>{isSet(item) ? <FactValue item={item} /> : undefined}</PlaceholderValue>}
                 >
                   <Show
                     when={isSet(item)}

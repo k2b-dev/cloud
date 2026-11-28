@@ -306,7 +306,7 @@ export default function EncryptionTool() {
               </Notice>
             </Show>
             <Section icon="file-code" title={t().output} summary={output() ? undefined : w().nothingYet} measure>
-              <Facts items={[{ label: t().output, value: output() || "–", mono: true, copy: output() || undefined }]} />
+              <Facts items={[{ label: t().output, value: output(), mono: true, copy: output() || undefined }]} />
             </Section>
           </>
         }

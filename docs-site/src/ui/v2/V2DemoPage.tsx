@@ -164,7 +164,7 @@ export const v2Screens = {
     title: "Angaben · Kontakt einer Kundin",
     description:
       "A person's details as label and value: e-mail and phone as links with a copy button, an address in its lines, a web address on one line, an ID in monospace, a dash for what is not set, a note at a reading measure. Roomy with a hair in the main column, dense in the side column, the label over its value on the phone.",
-    mockup: "v2-kv-angaben v1",
+    mockup: "key-value detail mockup",
     app: "#2563eb",
     phone: { back: "Kunden" },
     rail: kundenRail,
@@ -174,7 +174,7 @@ export const v2Screens = {
     title: "Angaben · schlimmster Fall",
     description:
       "The same details with a label of six words, an e-mail address that cannot break, an address of six lines, a web address with a query, empty values, a label of one sign and a long note.",
-    mockup: "v2-kv-angaben v1 (2)",
+    mockup: "key-value detail mockup (worst case)",
     app: "#2563eb",
     phone: { back: "Kunden" },
     rail: kundenRail,

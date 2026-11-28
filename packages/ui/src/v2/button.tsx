@@ -1,6 +1,9 @@
-import { createUniqueId, type JSX, children as resolveChildren, Show } from "solid-js";
+import { copyToClipboard } from "@k2b/stdlib/browser";
+import { createSignal, createUniqueId, type JSX, onCleanup, children as resolveChildren, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
+import { announce } from "./announce";
+import { useControlMessages } from "./control-messages";
 import { linkOr } from "./link";
 import { Face, Icon } from "./marks";
 import type { Action, OnNavigate, Person } from "./types";
@@ -185,17 +188,34 @@ export const ActionButton = (props: {
   </Show>
 );
 
-/** The copy button beside a value (internal to Facts); `disabled` while the value is on its way. */
+/**
+ * The copy button beside a value (internal to Facts); `disabled` while the value is on its way. It says what happened
+ * for two seconds, in its symbol and its name, and aloud: copied, or that the browser refused (a page without the
+ * permission, an old browser), so a copy never fails in silence.
+ */
 export const CopyButton = (props: { label: string; value: string; disabled?: boolean }) => {
   const t = useUiMessages();
+  const said = useControlMessages();
+  const [state, setState] = createSignal<"idle" | "copied" | "failed">("idle");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(timer));
+  const show = (next: "copied" | "failed") => {
+    setState(next);
+    announce(next === "copied" ? t().copied : said().copyFailed, { assertive: next === "failed" });
+    clearTimeout(timer);
+    timer = setTimeout(() => setState("idle"), 2000);
+  };
   return (
     <Button
       variant="ghost"
-      icon="copy"
-      label={`${t().copy}: ${props.label}`}
+      icon={state() === "copied" ? "check" : state() === "failed" ? "alert-circle" : "copy"}
+      label={`${state() === "copied" ? t().copied : state() === "failed" ? said().copyFailed : t().copy}: ${props.label}`}
       disabled={props.disabled}
       onClick={() => {
-        void navigator.clipboard?.writeText(props.value);
+        copyToClipboard(props.value).then(
+          () => show("copied"),
+          () => show("failed"),
+        );
       }}
     />
   );

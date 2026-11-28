@@ -1,7 +1,7 @@
 import { render } from "solid-js/web";
 import { Facts, Pane, Section, Workspace } from "../src/v2";
 
-// Facts as the key-value detail (v2-kv-angaben v1): contact data with kinds in the main column, bank data in a side
+// Facts as the key-value detail: contact data with kinds in the main column, bank data in a side
 // column, and the worst case in the same places (a label of six words, an address that cannot break, six lines of an
 // address, a web address with a query and one with a scheme that may not open, nothing set, a long note).
 
@@ -33,6 +33,9 @@ render(
                 { label: "Anschrift", kind: "address", value: ["Am Beispielhang 12", "12345 Beispielstadt"] },
                 { label: "Website", kind: "url", value: "https://www.beispiel-verwaltung.example.org/kunden/portal/rechnungen?jahr=2026" },
                 { label: "Skript", kind: "url", value: "javascript:alert(1)" },
+                { label: "Port", kind: "url", value: "example.org:8080/status" },
+                { label: "Kopie", kind: "email", value: "anna@example.org?bcc=mallory@example.org" },
+                { label: "Zentrale", kind: "phone", value: "+49 (0) 30 1234567" },
                 { label: "Steuer-ID", value: undefined },
                 { label: "Fax", kind: "phone", value: "" },
                 {
