@@ -1,3 +1,4 @@
+import { cloudAvatarSource } from "@k2b/cloud/account/ui";
 import { cloudIdMessages, useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { listenPopState } from "@k2b/ssr/nav";
@@ -294,7 +295,14 @@ export default function SpaceScreen(props: SpaceScreenProps) {
               <Show when={props.people.length > 0}>
                 {/* The first people and "+n" for the rest; the Space menu names all of them. */}
                 {/* k2b-ui gap: initials take the first two words ("CA" for "Christopher Alexander Montgomery III") and split an emoji. */}
-                <Avatar.Stack people={props.people.map((person) => ({ name: person.displayName }))} max={4} label={t.headPeople} />
+                <Avatar.Stack
+                  people={props.people.map((person) => ({
+                    name: person.displayName,
+                    image: person.kind === "user" ? cloudAvatarSource(person.id, person.avatarHash) : undefined,
+                  }))}
+                  max={4}
+                  label={t.headPeople}
+                />
               </Show>
               <Menu label={t.headSpaceMenu} items={spaceMenu()} />
               <Show when={state.canWrite}>

@@ -484,7 +484,8 @@ export const spaceScreenProps = (href: string, state: SpaceFixtureState = "usual
       state === "worst"
         ? worstPeople
         : [
-            { id: robin.id, uid: "robin", displayName: robin.displayName, kind: "user", avatarHash: null },
+            // Robin has a picture; Kim shows her initials.
+            { id: robin.id, uid: "robin", displayName: robin.displayName, kind: "user", avatarHash: "r0b1n" },
             { id: kim.id, uid: "kim", displayName: kim.displayName, kind: "user", avatarHash: null },
           ],
     state: okState,

@@ -90,6 +90,27 @@ describe("a Space on v2", () => {
     }
   }, 60_000);
 
+  test("the people in the head show their pictures, as main's head did, and initials where there is none", async () => {
+    // A one-pixel PNG answers for Robin's picture, as Core's avatar route would.
+    const png = Uint8Array.from(
+      atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="),
+      (char) => char.charCodeAt(0),
+    );
+    const { context, tab, errors } = await open(wide, "/app/spaces/Space1?view=list", "usual", {
+      api: (url) => (url.pathname.endsWith("/avatar") ? new Response(png, { headers: { "content-type": "image/png" } }) : undefined),
+    });
+    try {
+      const stack = tab.locator('[data-k2-workspace] [data-k2-part="Avatar.Stack"]').first();
+      await stack.locator("img").first().waitFor();
+      const pictures = await stack.locator("img").evaluateAll((images) => images.map((image) => image.getAttribute("src")));
+      expect(pictures).toEqual(["/api/accounts/users/11111111-1111-4111-8111-111111111111/avatar?rev=r0b1n"]);
+      expect(await stack.locator('[data-k2-part="Avatar"]').count()).toBe(2);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
   test("on the phone an open item with three people names the first and +2 on one line", async () => {
     const { context, tab, errors } = await open(phone, "/app/spaces/Space1?view=list&item=Item01", "worst");
     try {
