@@ -240,21 +240,21 @@ for (const width of [1024, 390])
         const parts = await page.evaluate(() =>
           [...document.querySelectorAll<HTMLElement>(".k2-row")].map((row) => {
             const box = (selector: string) => row.querySelector(`:scope > ${selector}`)?.getBoundingClientRect();
-            const marks = box(".k2-row-marks")!;
-            const lines = [box(".k2-row-l2"), box(".k2-row-l3")].filter((line) => line !== undefined);
+            const marks = box(".k2-row-marks");
+            const [l2, l3] = [box(".k2-row-l2"), box(".k2-row-l3")];
+            const lines = [l2, l3].filter((line) => line !== undefined);
             const meets = (a: DOMRect, b: DOMRect) =>
               Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 4;
             const outer = row.getBoundingClientRect();
+            if (!marks) return { l3AsWideAsL2: !!l2 && !!l3 && Math.abs(l3.width - l2.width) <= 0.5 };
             return {
               marksShow: marks.width > 0 && marks.right <= outer.right + 0.5,
               underMarks: lines.some((line) => meets(line, marks)),
             };
           }),
         );
-        expect(parts).toEqual([
-          { marksShow: true, underMarks: false },
-          { marksShow: true, underMarks: false },
-        ]);
+        // a row of three lines without marks gives line 3 the whole width, as line 2 (review of c19981f9f2)
+        expect(parts).toEqual([{ marksShow: true, underMarks: false }, { marksShow: true, underMarks: false }, { l3AsWideAsL2: true }]);
         expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
       },
       "deeds",

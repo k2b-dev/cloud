@@ -99,6 +99,16 @@ else if (scenario === "deeds")
               action={{ label: "Prüfen", icon: "refresh", onClick: () => undefined }}
               end={<Menu label="Aktionen für shop.example.test" items={[{ label: "Entfernen", onClick: () => undefined }]} />}
             />
+            <Row
+              icon="world"
+              lines={[
+                "archiv.example.test",
+                "Weiterleitung auf lager.example.test",
+                "geprüft vor 3 Minuten, alle drei Schritte ohne Befund",
+              ]}
+              action={{ label: "Prüfen", icon: "refresh", onClick: () => undefined }}
+              end={<Menu label="Aktionen für archiv.example.test" items={[{ label: "Entfernen", onClick: () => undefined }]} />}
+            />
           </List>
         </Pane>
       </Workspace>
