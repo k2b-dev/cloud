@@ -83,19 +83,6 @@
   }
 }
 
-.k2b-ui .k2b-dialog.app-pairing-dialog {
-  width: min(96vw, 32rem);
-}
-
-/* Pairing a phone on /me/app walks through steps of different length; one
-   height, fitted to its tallest step, keeps the frame still between them:
-   the QR code, longest in German, with a line to spare.
-   app.browser.test.ts checks that no step scrolls, in English and German,
-   on computers and phones. */
-.k2b-ui .k2b-dialog.app-pairing-dialog.is-fixed {
-  height: min(35rem, var(--k2b-dialog-available-height));
-}
-
 /* AdminLayout owns scrolling; this report grows with its tables. */
 .k2b-ui .ai-usage-page { height: auto; flex: none; overflow: visible; }
 
@@ -165,33 +152,6 @@
    make it uneven. */
 .k2b-ui .account-page .k2b-settings-section + .k2b-settings-section {
   margin-top: 0;
-}
-
-/* Account sections are view tabs, and the notification views are a segment on
-   a grey track: the current tab takes the selected fill in the app ink like
-   `ViewTabs`, the current segment also its 1 px edge like `SegmentedControl`.
-   No shadow, and the box stays. */
-.k2b-ui .account-tabs [aria-current="page"] {
-  color: var(--k2b-app-workspace-active);
-  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
-}
-.k2b-ui .account-tabs--segment [aria-current="page"] {
-  box-shadow: inset 0 0 0 var(--k2b-edge-width) color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface));
-}
-.k2b-ui .account-tabs--segment {
-  gap: 2px;
-  padding: 3px;
-  border-radius: calc(var(--ui-radius-control) + 3px);
-  background: var(--k2b-tray);
-}
-
-/* Forced colours replace the fill that marks the current account tab, so the
-   tab keeps an outline that does not move its neighbours. */
-@media (forced-colors: active) {
-  .account-tabs [aria-current="page"] {
-    outline: 2px solid Highlight;
-    outline-offset: -2px;
-  }
 }
 
 /* Keep the compact map settings heading within its available workspace width. */

@@ -129,8 +129,8 @@ for (const code of ["BROWSER_SIGN_IN_REQUIRED", "REAUTHENTICATE"]) {
     const f = fixture(["api-keys", "create", "Client"], {}, "text", { creationCode: code });
     await expect(account.run(f.ctx)).rejects.toThrow(
       code === "BROWSER_SIGN_IN_REQUIRED"
-        ? "Create API keys in the browser: http://cloud.test/me/developer"
-        : "Sign in again in the browser, then create the API key: http://cloud.test/me/developer",
+        ? "Create API keys in the browser: http://cloud.test/me/security"
+        : "Sign in again in the browser, then create the API key: http://cloud.test/me/security",
     );
     expect(f.calls).toHaveLength(1);
     expect(f.lines).toHaveLength(0);

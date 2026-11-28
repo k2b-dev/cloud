@@ -345,8 +345,8 @@ or passkey, so starting registration before the window ends is not enough.
 
 OAuth access tokens, personal API keys, background mandates, and Cloud app
 sessions cannot create these credentials. The account API answers `403` with
-`BROWSER_SIGN_IN_REQUIRED`. Create API keys in **Developer → API keys**
-(`/me/developer`) and passkeys in **Sign-in → Passkeys** using a browser.
+`BROWSER_SIGN_IN_REQUIRED`. Create API keys and passkeys in **Security & devices**
+(`/me/security`) using a browser.
 
 An older or no longer valid browser sign-in returns `403` with
 `REAUTHENTICATE`. Sign in again with the same account, then repeat the action.
@@ -370,7 +370,7 @@ refresh token does not require another browser sign-in.
 > change until it is, without counting as a breaking change.
 
 A device pairs with the [Cloud app](/en/docs/frontend/layout-and-navigation#use-the-responsive-profile-menu)
-through `/me/app`; it never sees a password. A paired device holds two
+through **Security & devices** (`/me/security`); it never sees a password. A paired device holds two
 credentials:
 
 - a **device key** in the HTTP-only `pwa_device` cookie with the path
@@ -424,7 +424,7 @@ creates such authority with `auth.rejectAppSession`, which answers the `403`
 above. In services and capabilities, check `isAppSessionActor(actor)` from
 `@k2b/cloud/server`.
 
-A device's sessions end when the person removes it in `/me/app` or signs out of
+A device's sessions end when the person removes it in `/me/security` or signs out of
 the app, when an administrator removes it, when a password changes or
 `revokeAllForUser` runs, when the account expires or is deleted, and after 150
 days without use. A disabled

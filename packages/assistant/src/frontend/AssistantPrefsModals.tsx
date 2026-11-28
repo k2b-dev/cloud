@@ -158,7 +158,7 @@ function ApiAccessPanel(props: { access: OpenAiApiAccess }) {
             <p class="text-sm font-medium text-primary">{text("API key")}</p>
             <p class="text-xs text-dimmed">{text("In your profile, create a key with the access “AI models only”.")}</p>
           </div>
-          <ButtonLink href="/me/developer" size="sm" variant="secondary" class="shrink-0">
+          <ButtonLink href="/me/security" size="sm" variant="secondary" class="shrink-0">
             <i class="ti ti-key" aria-hidden="true" /> {text("Create API key")}
           </ButtonLink>
         </div>

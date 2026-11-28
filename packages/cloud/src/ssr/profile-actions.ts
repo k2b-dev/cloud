@@ -75,7 +75,7 @@ export function createSharedWorkstationSwitch(userId: string | undefined, locale
   return { shared, pending, toggle, messages };
 }
 
-/** `appHref` is set while the installation offers the mobile app; the item then leads to `/me/app`. */
+/** `appHref` is set while the installation offers the mobile app; the item then leads to `/me/security`, where the phones are. */
 export function createProfileActions(initialTheme: CloudThemePreference, appHref?: string, userId?: string) {
   const locale = useLocale();
   const preferences = createPreferenceController(initialTheme, locale);

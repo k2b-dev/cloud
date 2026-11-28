@@ -20,6 +20,7 @@ import { dateKey, isCalendarDay, isDateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
 import { addressKey, scanAddresses } from "./addresses";
 import { useCode } from "./behavior/code";
+import { useRating } from "./behavior/controls";
 import { useFilePick } from "./behavior/files";
 import { usePopover } from "./behavior/overlays";
 import { useColor, useRange } from "./behavior/pickers";
@@ -73,7 +74,7 @@ export type FieldProps = {
    * the label line's 20 px, so the field keeps its height with and without it. It takes the place of `optional`.
    */
   action?: Action;
-  /** The one control: `Input`, `Select`, `DateInput`, `Choice`, `TagsInput`, `ImageInput`, `CodeInput`, `Slider` or `ColorInput`. */
+  /** The one control: `Input`, `Select`, `DateInput`, `Choice`, `Rating`, `TagsInput`, `ImageInput`, `CodeInput`, `Slider` or `ColorInput`. */
   children: JSX.Element;
 };
 
@@ -1617,5 +1618,106 @@ const ChoiceGroup = (props: ChoiceProps) => {
         }}
       </For>
     </div>
+  );
+};
+
+export type RatingProps =
+  | {
+      /** The chosen stars, 1 to 5; leave out while nobody has rated. */
+      value?: number;
+      /** Called with the stars a person chose. Without it the rating keeps the choice itself. */
+      onChange?: (value: number) => void;
+      /** The name the stars are sent under in a form; the field's name by default. */
+      name?: string;
+      /** The question of the rating when it stands without a Field: shown as the label line of a field of its own. */
+      label?: string;
+      /** The rating cannot be changed now: every star dimmed, the chosen ones still shown. */
+      disabled?: boolean;
+      readOnly?: false;
+    }
+  | {
+      /**
+       * Shows a given rating, such as the stars a person sent or an average of 4.2 (part of a star fills), as one
+       * small picture with its words ("4,2 von 5 Sternen"); it cannot be changed.
+       */
+      readOnly: true;
+      /** The rating shown, 0 to 5. */
+      value: number;
+    };
+
+const STARS = [1, 2, 3, 4, 5] as const;
+/**
+ * The star of Tabler's `star` icon (MIT), drawn by the rating itself: the icon font carries outline glyphs only, so a
+ * filled star is this same path with a fill, never a font glyph that may be missing.
+ */
+const STAR_PATH = "M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z";
+
+/**
+ * Stars from 1 to 5 to rate something, such as a visit: five large stars as one radio group (one Tab stop, the arrows
+ * move and choose, Space and Enter choose), each 56 px high and at least 44 px wide, in one row on the phone too. Each
+ * star is named by its value ("3 von 5 Sternen"); a Field gives the question, `required`, the hint and the error. With
+ * `readOnly` it shows a given rating as small stars in a line, part of a star filled for an average.
+ */
+export const Rating = (props: RatingProps) => {
+  if (!props.readOnly && !useField() && props.label !== undefined)
+    return (
+      <Field label={props.label}>
+        <RatingStars {...props} />
+      </Field>
+    );
+  return <RatingStars {...props} />;
+};
+
+const RatingStars = (props: RatingProps) => {
+  const field = props.readOnly ? undefined : useField();
+  field?.group();
+  const t = useControlMessages();
+  const locale = useLocale();
+  const words = (value: number) =>
+    t().stars({ value: new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(value), max: 5 });
+  const editable = () => (props.readOnly ? undefined : props);
+  // a given rating stays on the scale: never more than 5 stars, never less than none
+  const given = () => (props.readOnly ? (Number.isFinite(props.value) ? Math.max(0, Math.min(5, props.value)) : 0) : props.value);
+  const rating = useRating(() => {
+    const own = editable();
+    return {
+      ...(props.readOnly || own?.onChange ? { value: given() ?? null } : { defaultValue: given() ?? null }),
+      onValueChange: (next: number | null) => {
+        if (next !== null) own?.onChange?.(next);
+      },
+      readOnly: props.readOnly,
+      disabled: own?.disabled,
+      required: field?.required,
+      name: own?.name ?? field?.name,
+      getValueLabel: words,
+    };
+  });
+  return (
+    <rating.Root
+      class="k2-rating"
+      data-k2-part="Rating"
+      aria-labelledby={field?.label}
+      aria-describedby={field?.described}
+      aria-invalid={field?.invalid ? "true" : undefined}
+      data-preview={rating.preview() === null ? undefined : ""}
+    >
+      <For each={STARS}>
+        {(index) => (
+          // the stars up to the choice, whatever a pointer previews (core's own fill follows the preview)
+          <rating.Item class="k2-star" index={index} data-chosen={index <= (rating.chosen() ?? 0) ? "" : undefined}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d={STAR_PATH} />
+            </svg>
+            <svg class="k2-star-fill" viewBox="0 0 24 24" aria-hidden="true">
+              <path d={STAR_PATH} />
+            </svg>
+            <Show when={!props.readOnly}>
+              <rating.Radio class="k2-star-hit" value={String(index)} />
+              <rating.Input value={String(index)} />
+            </Show>
+          </rating.Item>
+        )}
+      </For>
+    </rating.Root>
   );
 };

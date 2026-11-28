@@ -263,6 +263,12 @@
   --k2-c-soft-dark: initial;
   --k2-c-ink: initial;
   --k2-c-ink-dark: initial;
+  --k2-accent-ink-light: initial;
+  --k2-accent-ink-dark: initial;
+  --k2-accent-soft-light: initial;
+  --k2-accent-soft-dark: initial;
+  --k2-accent-edge-light: initial;
+  --k2-accent-edge-dark: initial;
   --k2-pane-w: initial;
   --k2-pane-min: initial;
   --k2-ws-side: initial;
@@ -354,6 +360,9 @@
 /* a data colour by meaning takes the place of the tone; it comes in as --k2-c, checked to be a colour */
 .k2-ui .k2-icon[data-color] {
   color: var(--k2-c);
+}
+.k2-ui .k2-text[data-tone="app"] {
+  color: var(--k2-app-text);
 }
 .k2-ui .k2-text[data-tone="ok"] {
   color: var(--k2-ok);
@@ -999,6 +1008,9 @@
 .k2-ui .k2-band[data-tone="bad"] {
   background: var(--k2-bad-tint);
 }
+.k2-ui .k2-band[data-tone="app"] {
+  background: var(--k2-app-tint);
+}
 .k2-ui .k2-band[data-tone="warn"] {
   background: var(--k2-warn-tint);
 }
@@ -1605,9 +1617,13 @@
    The ink as text: the platform may set `--k2-app-ink`, a tone that keeps 4.5:1 on the surfaces (`readableTone`); a
    mix alone does not promise that for every colour. Without it the mix stands, without a colour the blue. v2 never
    sets `--k2-app-ink` itself, so the platform's value reaches every primitive; it belongs to the page's app, so
-   another app's rows drop it. */
+   another app's rows drop it.
+   A page with an accent of its own (`Workspace accent`, a colour from data) is a third such place: `accentStyle` sets
+   the colour as `--k2-app`, the primary's fill and words, and for each theme its ink as text (4.5:1 on the surface and
+   the tint), the quiet tone of a bar (3:1 on the surface and both tints) and the primary's edge (3:1 on the surface, so a
+   pale colour still shows its button), worked out where the colour arrives, so the first paint is final. */
 .k2-ui,
-.k2-ui [data-k2-owner] {
+.k2-ui :is([data-k2-owner], [data-k2-accent]) {
   --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 80%, #000000);
   --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 7%, var(--k2-surface));
   --k2-app-text: var(--k2-app-ink, var(--k2-app-ink-mix, var(--k2-blue-ink)));
@@ -1616,14 +1632,26 @@
 .dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui),
 .k2-ui.dark,
 .k2-ui[data-theme="dark"],
-.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) [data-k2-owner],
-.k2-ui.dark [data-k2-owner],
-.k2-ui[data-theme="dark"] [data-k2-owner] {
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) :is([data-k2-owner], [data-k2-accent]),
+.k2-ui.dark :is([data-k2-owner], [data-k2-accent]),
+.k2-ui[data-theme="dark"] :is([data-k2-owner], [data-k2-accent]) {
   --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 55%, #ffffff);
   --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 18%, var(--k2-surface));
 }
 .k2-ui [data-k2-owner] {
   --k2-app-ink: initial;
+}
+.k2-ui [data-k2-accent] {
+  --k2-app-ink: var(--k2-accent-ink-light);
+  --k2-accent-soft: var(--k2-accent-soft-light);
+  --k2-primary-edge: var(--k2-accent-edge-light);
+}
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) [data-k2-accent],
+.k2-ui.dark [data-k2-accent],
+.k2-ui[data-theme="dark"] [data-k2-accent] {
+  --k2-app-ink: var(--k2-accent-ink-dark);
+  --k2-accent-soft: var(--k2-accent-soft-dark);
+  --k2-primary-edge: var(--k2-accent-edge-dark);
 }
 
 /* ── Row: 40 · 52 · 72 by its lines; roles by line; square, also when it opens something ────────────────────── */
@@ -2158,10 +2186,10 @@
   border-bottom-color: transparent;
 }
 /* In dark the quiet text of a tinted row moves 60 % towards the muted text (n500 → n600), so it keeps 4.5:1 on the
-   tint of every app colour, white included. */
-.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected])),
-.k2-ui.dark :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected])),
-.k2-ui[data-theme="dark"] :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected])) {
+   tint of every app colour, white included; so does the quiet text of a band in the app's tint. */
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected]), .k2-band[data-tone="app"]),
+.k2-ui.dark :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected]), .k2-band[data-tone="app"]),
+.k2-ui[data-theme="dark"] :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected]), .k2-band[data-tone="app"]) {
   --k2-subtle: color-mix(in srgb, var(--k2-n500) 40%, var(--k2-n600));
 }
 /* Forced colours drop the tint: the open and the chosen rows stand in a frame of the system's highlight. */
@@ -3066,6 +3094,16 @@
   border-radius: var(--k2-r-round);
   background: var(--k2-range-fill, var(--k2-n600));
 }
+/* In a page with an accent of its own (`Workspace accent`) a bar without stops takes its quiet tone, 3:1 on the
+   surface, and in the open row (today in a week) its ink, the strongest. Forced colours keep their look below. */
+@media (forced-colors: none) {
+  .k2-ui [data-k2-accent] .k2-range > i {
+    background: var(--k2-range-fill, var(--k2-accent-soft));
+  }
+  .k2-ui [data-k2-accent] :is(.k2-row[data-current], .k2-table tbody tr[aria-current]) .k2-range > i {
+    background: var(--k2-range-fill, var(--k2-app-text));
+  }
+}
 /* right to left the colours run from the right, as the scale does */
 .k2-ui .k2-range:dir(rtl) {
   --k2-range-way: to left;
@@ -3355,7 +3393,7 @@
 }
 .k2-ui .k2-btn[data-variant="primary"] {
   background: var(--k2-primary);
-  border-color: var(--k2-primary);
+  border-color: var(--k2-primary-edge, var(--k2-primary));
   color: var(--k2-primary-ink);
 }
 /* An app whose main colour is the assistant's (appearance.primary "ai", which the platform puts on the page as
@@ -3939,6 +3977,112 @@
 }
 .k2-ui .k2-slider[data-disabled] {
   opacity: 0.5;
+}
+/* a rating: five stars of 56 px in one row, each a round box from 44 to 96 px wide, so a thumb meets one on the phone
+   and the row never grows past 520 px. Amber is the choice alone: a chosen star fills in the amber of a toggle that is
+   on (3:1 on its tint in both themes), on a tint of it. The stars under a pointer preview in neutral ink without the
+   tint, and the choice stays amber beneath them. Read-only: a line of small stars, part of one filled for an average. */
+.k2-ui .k2-rating {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(44px, 96px));
+  gap: 8px;
+}
+.k2-ui .k2-star {
+  display: grid;
+  place-items: center;
+  height: 56px;
+  border: 1px solid var(--k2-line-control);
+  border-radius: var(--k2-r-control);
+  background: var(--k2-surface);
+  color: var(--k2-subtle);
+}
+/* the star is drawn (STAR_PATH in controls.tsx) on Tabler's grid with its 2-unit stroke: an outline, and the same star
+   filled above it */
+.k2-ui .k2-star > svg {
+  grid-area: 1 / 1;
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.k2-ui .k2-star > .k2-star-fill {
+  fill: currentColor;
+}
+/* the filled star lies over the outline: shown on the chosen stars (`data-chosen`, never core's fill, which follows
+   the pointer) */
+.k2-ui .k2-star > .k2-star-fill {
+  visibility: hidden;
+  color: var(--k2-pressed);
+}
+.k2-ui .k2-star[data-chosen] > .k2-star-fill {
+  visibility: visible;
+}
+.k2-ui .k2-star[data-chosen] {
+  border-color: color-mix(in srgb, var(--k2-pressed) 45%, var(--k2-surface));
+  background: color-mix(in srgb, var(--k2-pressed) 8%, var(--k2-surface));
+}
+/* the preview under a pointer (core's `data-highlighted`): an edge in neutral ink, and a star not chosen fills in that
+   ink without a tint */
+.k2-ui .k2-rating[data-preview] > .k2-star[data-highlighted] {
+  border-color: var(--k2-muted);
+}
+.k2-ui .k2-rating[data-preview] > .k2-star[data-highlighted]:not([data-chosen]) > .k2-star-fill {
+  visibility: visible;
+  color: var(--k2-muted);
+}
+/* the radio of a star lies over all of it (core places it): the whole box takes the press */
+.k2-ui .k2-star-hit {
+  border-radius: inherit;
+  cursor: pointer;
+}
+.k2-ui .k2-star-hit:focus-visible {
+  outline: none;
+}
+.k2-ui .k2-star:has(> .k2-star-hit:focus-visible) {
+  border-color: var(--k2-blue);
+  box-shadow: 0 0 0 3px var(--k2-blue-ring);
+}
+.k2-ui .k2-rating[aria-invalid="true"] > .k2-star:not([data-chosen]) {
+  border-color: var(--k2-bad);
+}
+.k2-ui .k2-rating[data-disabled] > .k2-star {
+  opacity: 0.5;
+}
+.k2-ui .k2-rating[data-disabled] .k2-star-hit {
+  cursor: default;
+}
+.k2-ui .k2-rating[data-readonly] {
+  display: inline-flex;
+  gap: 1px;
+  vertical-align: middle;
+}
+.k2-ui .k2-rating[data-readonly] > .k2-star {
+  height: auto;
+  border: 0;
+  background: none;
+}
+.k2-ui .k2-rating[data-readonly] > .k2-star > svg {
+  width: 16px;
+  height: 16px;
+}
+/* read-only, the filled star is cut to the share of the star the rating covers (core's --rating-fill) */
+.k2-ui .k2-rating[data-readonly] > .k2-star > .k2-star-fill {
+  visibility: visible;
+  clip-path: inset(0 calc(100% - var(--rating-fill, 0) * 100%) 0 0);
+}
+.k2-ui .k2-rating[data-readonly] > .k2-star:dir(rtl) > .k2-star-fill {
+  clip-path: inset(0 0 0 calc(100% - var(--rating-fill, 0) * 100%));
+}
+@media (forced-colors: active) {
+  .k2-ui .k2-star > .k2-star-fill {
+    color: Highlight;
+  }
+  .k2-ui .k2-star:has(> .k2-star-hit:focus-visible) {
+    outline: 2px solid Highlight;
+  }
 }
 /* a colour: its swatch and code in one line, the surface and the hue under it, the presets last */
 .k2-ui .k2-color {

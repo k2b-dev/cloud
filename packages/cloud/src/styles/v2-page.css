@@ -1,0 +1,27 @@
+/* Core's v2.css: the one shared stylesheet of a page built only with @k2b/ui/v2 and without the Cloud shell
+   (`MinimalLayout ui="v2"`, a visitor page, a form, a kiosk screen). It holds v2 and Cloud's v2 additions, without
+   v1, Tailwind and the shell, so such a page loads a fraction of global.css. Every rule here also reaches global.css
+   through the same files, so a v2 page looks the same under both. */
+@import "@k2b/ui/v2.css";
+@import "./v2-app-ink.css";
+@import "./minimal-layout.css";
+
+/* v2.css brings no reset of its own. The body of such a page is a v2 scope (`pageScopeClass`): no margin, the theme's
+   surface and colour scheme from the v2 tokens; the browser paints the body's background over the whole canvas, so a
+   dark page has dark scrollbars and a dark overscroll. */
+body {
+  margin: 0;
+}
+
+body.k2-ui {
+  background-color: var(--k2-surface);
+}
+
+/* The window's scrollbars follow the root's colour scheme. */
+html:has(> body.k2-ui) {
+  color-scheme: light;
+}
+
+html.dark:has(> body.k2-ui) {
+  color-scheme: dark;
+}

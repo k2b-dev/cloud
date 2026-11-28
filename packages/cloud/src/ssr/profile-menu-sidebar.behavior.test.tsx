@@ -55,7 +55,7 @@ const mount = async (hidden = false) => {
       createComponent(LocaleProvider, {
         locale: "de",
         get children() {
-          return createComponent(ProfilePreferences, { name: "Test user", initialTheme: "system", appHref: "/me/app" });
+          return createComponent(ProfilePreferences, { name: "Test user", initialTheme: "system", appHref: "/me/security" });
         },
       }),
     canvas,

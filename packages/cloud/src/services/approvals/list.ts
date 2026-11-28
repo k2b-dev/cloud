@@ -6,7 +6,7 @@ import { approvalMessages } from "../../approvals/messages";
 import { presentReview } from "../../capabilities/legacy-review-view";
 import { restoreReviewSnapshot } from "../../capabilities/review-storage";
 import type { RuntimeAppMeta } from "../../contracts/app";
-import { APPROVALS_PAGE_SIZE, type ApprovalCounts, type PendingApproval } from "../../contracts/approvals";
+import { APPROVALS_PAGE_PATH, APPROVALS_PAGE_SIZE, type ApprovalCounts, type PendingApproval } from "../../contracts/approvals";
 import { type CapabilityActionPolicy, CapabilityActionReviewPresentationSchema } from "../../contracts/capabilities";
 import { sql } from "../../runtime/clients";
 import { DEFAULT_LOCALE } from "../../server/locale";
@@ -173,7 +173,7 @@ export const presentPendingApproval = (
           kind: "code_version",
           appId: row.requesterAppId,
           title: row.requesterTitle,
-          href: row.requesterHref ?? "/me/approvals",
+          href: row.requesterHref ?? APPROVALS_PAGE_PATH,
         }
       : {
           kind: "chat",
