@@ -180,7 +180,7 @@ suiteFor(
     expect(result.data.data.apps[0]?.links).toEqual([
       { kind: "logs", label: "Protokolle", href: "/admin/observability/logs" },
       { kind: "metrics", label: "Metriken", href: "/admin/observability/telemetry?app=traffic&range=24h" },
-      { kind: "routes", label: "Alle Routen", href: "/admin/observability/gateway/routes?search=traffic" },
+      { kind: "routes", label: "Alle Routen", href: "/admin/observability/gateway/routes?q=traffic" },
       { kind: "capabilities", label: "Capabilities", href: "/admin/observability/capabilities?app=traffic" },
     ]);
     for (const locale of ["en-GB", "fr"]) {

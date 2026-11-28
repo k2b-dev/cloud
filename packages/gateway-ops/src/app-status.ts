@@ -61,7 +61,7 @@ export const readGatewayAppStatusSummary = async (
           {
             kind: "routes",
             label: t.allRoutes,
-            href: `/admin/observability/gateway/routes?search=${encodeURIComponent(appId)}`,
+            href: `/admin/observability/gateway/routes?q=${encodeURIComponent(appId)}`,
           },
           {
             kind: "capabilities",

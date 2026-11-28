@@ -600,7 +600,7 @@
     "@k2b/cloud-app-filesv2": 285.9,
     "@k2b/cloud-app-filesv2 behavior": 70.4,
     "@k2b/cloud-app-gateway": 33.4,
-    "@k2b/cloud-app-gateway-ops": 76.6,
+    "@k2b/cloud-app-gateway-ops": 241.5,
     "@k2b/cloud-app-gateway-ops behavior": 3.6,
     "@k2b/cloud-app-grids": 98,
     "@k2b/cloud-app-grids behavior": 68.4,
@@ -644,7 +644,7 @@
     "@k2b/ui layout": 379.2,
     "@k2b/ui rest": 632.1,
     "@k2b/ui styles-inputs-chat": 562.5,
-    "@k2b/ui v2": 441.9,
+    "@k2b/ui v2": 679.7,
     "@k2b/ui-ssr-fixture": 15,
     "workspace root scripts": 62.5,
     "workspace root tests": 166.8

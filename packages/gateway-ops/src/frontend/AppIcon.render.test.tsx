@@ -33,7 +33,9 @@ test("missing and invalid app accents use neutral ink without a style", () => {
 });
 
 test("gateway overview uses semantic metadata ink and the shared app icon component", () => {
-  const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
-  expect(source).not.toMatch(/text-zinc-[3-6]00/);
-  expect(source).not.toContain("APP_ICON_CLASSES");
+  for (const file of ["../observability/gateway/page.tsx", "../observability/gateway/_components/RoutesScreen.tsx"]) {
+    const source = readFileSync(new URL(file, import.meta.url), "utf8");
+    expect(source).not.toMatch(/text-zinc-[3-6]00/);
+    expect(source).not.toContain("APP_ICON_CLASSES");
+  }
 });

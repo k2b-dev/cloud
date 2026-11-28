@@ -131,6 +131,23 @@ describe("the operations overview on v2", () => {
     }
   }, 60_000);
 
+  test("the three services stand with their state, each leading to its area of the infrastructure record", async () => {
+    const { context, tab, errors } = await open(desktop, "/admin/observability", "worst");
+    try {
+      const services = tab.getByRole("list", { name: "Infrastruktur" });
+      expect(await services.innerText()).toMatch(
+        /Postgres\s+Prüfung erforderlich[\s\S]*Valkey\s+Eingriff erforderlich[\s\S]*NATS\s+nicht verfügbar/,
+      );
+      expect(await services.getByRole("link", { name: /^Postgres/ }).getAttribute("href")).toBe(
+        "/admin/observability/infrastructure/postgres",
+      );
+      expect(await services.getByRole("link", { name: /^NATS/ }).getAttribute("href")).toBe("/admin/observability/infrastructure/nats");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
   test("the screen keeps the v2 rules at 1440, 1024 and 390 px, quiet, busy and with the worst real data", async () => {
     const cases: [string, string, View][] = [
       ["normal", "normal", desktop],

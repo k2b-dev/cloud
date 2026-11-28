@@ -1,12 +1,11 @@
 /**
- * Capability execution console.
+ * Capability execution console on v2.
  *
- * One history for every surface that can call a capability — the assistant,
- * MCP, HTTP and app-to-app mandates — so an operator answers "what did an agent
- * do, on whose behalf, and did it work" in one place. The page is read-only:
- * the dispatcher owns every row.
+ * One history for every surface that can call a capability – the assistant, MCP, HTTP and app-to-app mandates – so an
+ * operator answers "what did an agent do, on whose behalf, and did it work" in one place. The page is read only: the
+ * dispatcher owns every row.
  */
-
+import { listApps } from "@k2b/cloud";
 import {
   type CapabilityExecution,
   type CapabilityExecutionGroup,
@@ -15,25 +14,18 @@ import {
   summarizeCapabilityExecutions,
 } from "@k2b/cloud/capabilities/store";
 import { type AuthContext, getDateConfig, getLocale, resolveDisplayNames } from "@k2b/cloud/server";
-import { aiUsageHref, formatDateTime, formatDurationMs, formatNumber, principalLabel } from "@k2b/cloud/shared";
-import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
+import { aiUsageHref, formatDateTime, formatDurationMs, principalLabel } from "@k2b/cloud/shared";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
-import { areaText, ObservabilityArea, ObservabilityPane, readAttention } from "../_components/ObservabilityArea";
-import CapabilitiesFilterBar from "./_components/CapabilitiesFilterBar.island";
-import ExecutionDetail from "./_components/ExecutionDetail";
-import {
-  type CapabilitiesFilterState,
-  capabilitiesFilter,
-  EXECUTIONS_PER_PAGE,
-  executionFilter,
-  ORIGIN_FILTERS,
-  STATUS_FILTERS,
-  WINDOWS,
-  windowStart,
-} from "./filters";
+import { observabilityAdminNav } from "../_components/admin-nav";
+import type { KeyCell } from "../_components/KeyCells";
+import { areaText, readAttention } from "../_components/ObservabilityArea";
+import CapabilitiesScreen from "./_components/CapabilitiesScreen.island";
+import { executionDetail } from "./detail";
 import { statusLabel } from "./labels";
 import { capabilityOpsMessages } from "./ops-messages";
-import { ORIGIN_ICON, SLOW_DURATION_MS, STATUS_TONE } from "./presentation";
+import { ORIGIN_ICON, SLOW_DURATION_MS } from "./presentation";
+import { capabilitiesQuery, EXECUTIONS_PER_PAGE, executionFilter, parseCapabilitiesAddress, windowStart } from "./query";
 
 const EMPTY_SUMMARY: CapabilityExecutionSummary = {
   executions: 0,
@@ -46,45 +38,51 @@ const EMPTY_SUMMARY: CapabilityExecutionSummary = {
   capabilities: [],
 };
 
-/** One place decides which links reset paging, so a filter change never lands on a stale cursor. */
-const reset = { cursor: "", request: "" } as const;
-
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const dateConfig = getDateConfig(c);
   const { t } = capabilityOpsMessages.resolve([locale]);
-  const state = capabilitiesFilter.parse(new URL(c.req.url));
-  const since = windowStart(state.window);
-  const number = (value: number | null) => formatNumber(value, { locale });
+  const params = new URL(c.req.url).searchParams;
+  const number = (value: number) => value.toLocaleString(locale);
   const duration = (value: number | null) => (value === null ? "—" : formatDurationMs(Math.round(value), { locale }));
+  // The window and its scope come first: the filter offers the apps and capabilities called in it.
+  const bare = parseCapabilitiesAddress(
+    capabilitiesQuery(locale, undefined, { app: params.get("app"), capability: params.get("capability") }),
+    params,
+  );
+  const now = Date.now();
 
   let failure: string | null = null;
-  let summary = EMPTY_SUMMARY;
   let scope = EMPTY_SUMMARY;
+  let summary = EMPTY_SUMMARY;
   let executions: CapabilityExecution[] = [];
-  let nextCursor: string | undefined;
+  let nextCursor: string | null = null;
   let detail: CapabilityExecution[] = [];
   const userNames = new Map<string, string | undefined>();
+  const [registered, attention] = await Promise.all([listApps().catch(() => []), readAttention()]);
   try {
     const [scopeResult, summaryResult, page, detailPage] = await Promise.all([
-      // Filter options come from the whole window, so narrowing to one app does
-      // not hide every other app from the chip that selected it.
-      summarizeCapabilityExecutions({ since }),
-      summarizeCapabilityExecutions(executionFilter(state)),
+      summarizeCapabilityExecutions({ since: windowStart(bare.state, now) }),
+      summarizeCapabilityExecutions(executionFilter(bare.state, now)),
       listCapabilityExecutions({
-        ...executionFilter(state),
+        ...executionFilter(bare.state, now),
         limit: EXECUTIONS_PER_PAGE,
-        ...(state.cursor ? { cursor: state.cursor } : {}),
+        ...(bare.cursor ? { cursor: bare.cursor } : {}),
       }),
-      state.request ? listCapabilityExecutions({ requestId: state.request, limit: 50 }) : Promise.resolve({ items: [] }),
+      bare.request ? listCapabilityExecutions({ requestId: bare.request, limit: 50 }) : Promise.resolve({ items: [] }),
     ]);
     scope = scopeResult;
     summary = summaryResult;
     executions = page.items;
-    nextCursor = page.nextCursor;
+    nextCursor = page.nextCursor ?? null;
     detail = detailPage.items;
-    // Execution userId is the person or delegated user; the service account is actorId.
-    const userIds = [...new Set([...executions.flatMap((row) => (row.userId ? [row.userId] : [])), ...(state.user ? [state.user] : [])])];
+    // An execution's userId is the person or the delegating user; a service account is the actor.
+    const userIds = [
+      ...new Set([
+        ...executions.flatMap((row) => (row.userId ? [row.userId] : [])),
+        ...(bare.state.filters.user ? [bare.state.filters.user] : []),
+      ]),
+    ];
     const users = await resolveDisplayNames(userIds.map((userId) => ({ principal: { type: "user" as const, userId } })));
     for (const entry of users) userNames.set(entry.principal.userId, entry.displayName);
   } catch (error) {
@@ -92,280 +90,84 @@ export default ssr<AuthContext>(async (c) => {
   }
 
   const userLabel = (userId: string) => principalLabel({ principal: { type: "user", userId }, displayName: userNames.get(userId) }, locale);
-  const href = (updates: Partial<CapabilitiesFilterState>) => capabilitiesFilter.build(state, { ...reset, ...updates });
-  const hrefFor = {
-    app: Object.fromEntries([["", href({ app: "" })], ...scope.apps.map((group) => [group.id, href({ app: group.id })] as const)]),
-    capability: Object.fromEntries([
-      ["", href({ capability: "" })],
-      ...scope.capabilities.map((group) => [group.id, href({ capability: group.id })] as const),
-    ]),
-    origin: Object.fromEntries(ORIGIN_FILTERS.map((value) => [value, href({ origin: value })] as const)),
-    status: Object.fromEntries(STATUS_FILTERS.map((value) => [value, href({ status: value })] as const)),
-    window: Object.fromEntries(WINDOWS.map((value) => [value, href({ window: value })] as const)),
-    destructive: { off: href({ destructive: false }), on: href({ destructive: true }) },
+  const appOf = (id: string) => {
+    const app = registered.find((candidate) => candidate.id === id);
+    return { id, label: app?.name || id, icon: app?.icon?.replace(/^ti\s+(ti-)?/, "") || "apps" };
   };
+  const originLabel = { assistant: t.originAssistant, mcp: t.originMcp, http: t.originHttp, app: t.originApp, choice: t.originChoice };
+  const group = (row: CapabilityExecutionGroup, kind: "app" | "capability") => ({
+    id: row.id,
+    label: kind === "app" ? appOf(row.id).label : row.id,
+    icon: kind === "app" ? appOf(row.id).icon : "plug",
+    executions: number(row.executions),
+    failed: row.failed,
+    denied: row.denied,
+    destructive: row.destructive,
+  });
+  const user = bare.state.filters.user;
 
-  const groupColumns = (header: string): DataTableColumn<CapabilityExecutionGroup>[] => [
-    { id: "id", header, value: (row) => row.id, cellClass: "font-mono text-[11px]" },
-    { id: "executions", header: t.executions, value: (row) => row.executions, align: "right" },
-    { id: "failed", header: t.failed, value: (row) => row.failed, align: "right" },
-    { id: "denied", header: t.denied, value: (row) => row.denied, align: "right" },
-    { id: "destructive", header: t.destructive, value: (row) => row.destructive, align: "right" },
-  ];
-
-  const groupTable = (rows: CapabilityExecutionGroup[], header: string, onSelect: (id: string) => string) => (
-    <DataTable
-      rows={rows}
-      columns={groupColumns(header)}
-      getRowId={(row) => row.id}
-      density="compact"
-      hoverRows
-      class="max-h-[22rem] overflow-auto"
-      empty={t.noGroups}
-      renderCell={({ row, col, value, render }) => {
-        if (col.id === "id")
-          return (
-            <a class="link" href={onSelect(row.id)}>
-              {row.id}
-            </a>
-          );
-        if (col.id === "failed" && row.failed > 0) return <span class="tabular-nums font-semibold text-red-500">{number(row.failed)}</span>;
-        if (col.id === "denied" && row.denied > 0)
-          return <span class="tabular-nums font-semibold text-amber-600 dark:text-amber-400">{number(row.denied)}</span>;
-        if (typeof value === "number") return <span class="tabular-nums">{number(value)}</span>;
-        return render(value);
-      }}
-    />
-  );
-
-  const executionColumns: DataTableColumn<CapabilityExecution>[] = [
-    { id: "startedAt", header: t.startedAt, value: (row) => row.startedAt },
-    { id: "app", header: t.app, value: (row) => row.appId },
-    { id: "capability", header: t.capability, value: (row) => row.capability, cellClass: "font-mono text-[11px]" },
-    { id: "origin", header: t.origin, value: (row) => row.origin },
-    { id: "kind", header: t.kind, value: (row) => row.kind },
-    { id: "status", header: t.status, value: (row) => row.status },
-    { id: "duration", header: t.duration, value: (row) => row.durationMs, align: "right" },
+  const cells: KeyCell[] = [
+    { icon: "plug", label: t.executions, value: number(summary.executions), meta: `${t.avgDuration}: ${duration(summary.avgDurationMs)}` },
     {
-      id: "user",
-      header: t.user,
-      value: (row) => (row.userId ? userLabel(row.userId) : ""),
-      cellClass: "text-[11px] max-w-[10rem] truncate",
+      icon: "alert-circle",
+      label: t.failed,
+      value: number(summary.failed),
+      meta: t.failedSub,
+      tone: summary.failed > 0 ? "bad" : undefined,
     },
-    { id: "details", header: t.details, value: () => null, align: "right" },
+    {
+      icon: "ban",
+      label: t.denied,
+      value: number(summary.denied),
+      meta: `${t.destructive}: ${number(summary.destructive)}`,
+      tone: summary.denied > 0 ? "warn" : undefined,
+    },
+    {
+      icon: "hourglass",
+      label: t.p95Duration,
+      value: duration(summary.p95DurationMs),
+      meta: t.inSelectedRange,
+      tone: (summary.p95DurationMs ?? 0) > SLOW_DURATION_MS ? "warn" : undefined,
+    },
   ];
 
-  const attention = await readAttention();
   return () => (
-    <ObservabilityArea c={c} locale={locale} section="capabilities" attention={attention}>
-      <ObservabilityPane label={areaText(locale).capabilities} description={t.description}>
-        {failure ? <NoticeCard tone="danger" title={t.loadFailed} detail={failure} /> : null}
-
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <CapabilitiesFilterBar
-            apps={scope.apps.map((group) => group.id)}
-            capabilities={scope.capabilities.map((group) => group.id)}
-            app={state.app}
-            capability={state.capability}
-            origin={state.origin}
-            status={state.status}
-            window={state.window}
-            destructive={state.destructive}
-            hrefFor={hrefFor}
-          />
-          <div class="flex items-center gap-2">
-            {capabilitiesFilter.isActive(state, ["window"]) ? (
-              <ButtonLink variant="ghost" size="sm" href={capabilitiesFilter.clear(state, ["window"])}>
-                <i class="ti ti-filter-off" />
-                {t.clear}
-              </ButtonLink>
-            ) : null}
-            <ButtonLink variant="ghost" size="sm" href={capabilitiesFilter.build(state)}>
-              <i class="ti ti-refresh" />
-              {t.refresh}
-            </ButtonLink>
-          </div>
-        </div>
-
-        {state.user ? (
-          <NoticeCard
-            tone="info"
-            title={`${t.user}: ${userLabel(state.user)}`}
-            detail={
-              <span class="flex flex-wrap gap-2">
-                <a class="font-medium hover:underline" href={aiUsageHref({ view: "runs", userId: state.user })}>
-                  {t.aiUsage}
-                </a>
-                <a class="font-medium hover:underline" href={href({ user: "" })}>
-                  {t.clearUser}
-                </a>
-              </span>
-            }
-          />
-        ) : null}
-
-        <StatGrid columns={6}>
-          <StatCell label={t.executions} value={number(summary.executions)} sub={t.inSelectedRange} />
-          <StatCell
-            label={t.failed}
-            value={number(summary.failed)}
-            sub={t.failedSub}
-            valueClass={summary.failed > 0 ? "text-red-600 dark:text-red-400" : undefined}
-            accent={summary.failed > 0 ? { tone: "red", icon: "ti ti-alert-triangle" } : undefined}
-          />
-          <StatCell
-            label={t.denied}
-            value={number(summary.denied)}
-            sub={t.deniedSub}
-            valueClass={summary.denied > 0 ? "text-amber-600 dark:text-amber-400" : undefined}
-          />
-          <StatCell
-            label={t.destructive}
-            value={number(summary.destructive)}
-            sub={t.destructiveSub}
-            valueClass={summary.destructive > 0 ? "text-amber-600 dark:text-amber-400" : undefined}
-          />
-          <StatCell label={t.avgDuration} value={duration(summary.avgDurationMs)} sub={t.inSelectedRange} />
-          <StatCell
-            label={t.p95Duration}
-            value={duration(summary.p95DurationMs)}
-            sub={t.inSelectedRange}
-            valueClass={(summary.p95DurationMs ?? 0) > SLOW_DURATION_MS ? "text-amber-600 dark:text-amber-400" : undefined}
-          />
-        </StatGrid>
-
-        <div class="grid gap-3 lg:grid-cols-2">
-          <section class="paper overflow-hidden">
-            <div class="px-3 py-2">
-              <h2 class="text-xs font-semibold text-primary">{t.byApp}</h2>
-              <p class="text-[10px] text-dimmed">{`${t.byAppHint} ${t.groupsCapped}`}</p>
-            </div>
-            {groupTable(summary.apps, t.app, (id) => href({ app: id }))}
-          </section>
-          <section class="paper overflow-hidden">
-            <div class="px-3 py-2">
-              <h2 class="text-xs font-semibold text-primary">{t.byCapability}</h2>
-              <p class="text-[10px] text-dimmed">{`${t.byCapabilityHint} ${t.groupsCapped}`}</p>
-            </div>
-            {groupTable(summary.capabilities, t.capability, (id) => href({ capability: id }))}
-          </section>
-        </div>
-
-        <section id="capability-executions" class="paper overflow-hidden">
-          <div class="px-3 py-2">
-            <h2 class="text-xs font-semibold text-primary">{t.executions}</h2>
-            <p class="text-[10px] text-dimmed">{`${t.executionsHint} ${t.retention}`}</p>
-          </div>
-          <DataTable
-            rows={executions}
-            columns={executionColumns}
-            getRowId={(row) => row.id}
-            density="compact"
-            hoverRows
-            class="max-h-[34rem] overflow-auto"
-            empty={t.noExecutions}
-            renderCell={({ row, col, value, render }) => {
-              if (col.id === "startedAt") return <span class="tabular-nums">{formatDateTime(row.startedAt, dateConfig)}</span>;
-              if (col.id === "app")
-                return (
-                  <a class="link" href={href({ app: row.appId })}>
-                    {row.appId}
-                  </a>
-                );
-              if (col.id === "capability")
-                return (
-                  <a class="link" href={href({ capability: row.capability })}>
-                    {row.capability}
-                  </a>
-                );
-              if (col.id === "origin")
-                return (
-                  <span class="inline-flex items-center gap-1 text-secondary">
-                    <i class={ORIGIN_ICON[row.origin]} />
-                    {row.origin}
-                  </span>
-                );
-              if (col.id === "kind")
-                return row.destructive ? (
-                  <StatusBadge tone="warning" label={t.destructive} variant="dot" />
-                ) : (
-                  <span class="text-secondary">{row.kind === "action" ? t.kindAction : t.kindQuery}</span>
-                );
-              if (col.id === "status")
-                return (
-                  <StatusBadge
-                    tone={STATUS_TONE[row.status]}
-                    label={statusLabel(row.status, t)}
-                    variant="dot"
-                    title={row.errorCode ?? undefined}
-                  />
-                );
-              if (col.id === "duration")
-                return (
-                  <span
-                    class={
-                      row.durationMs > SLOW_DURATION_MS ? "tabular-nums text-amber-600 dark:text-amber-400" : "tabular-nums text-secondary"
-                    }
-                  >
-                    {formatDurationMs(row.durationMs, { locale })}
-                  </span>
-                );
-              if (col.id === "user")
-                return row.userId ? (
-                  <a class="link" href={href({ user: row.userId })}>
-                    {userLabel(row.userId)}
-                  </a>
-                ) : (
-                  <span class="text-dimmed">—</span>
-                );
-              if (col.id === "details")
-                return (
-                  <ButtonLink
-                    href={`${capabilitiesFilter.build(state, { request: row.requestId })}#capability-execution-detail`}
-                    size="xs"
-                    variant="secondary"
-                  >
-                    {t.details}
-                  </ButtonLink>
-                );
-              return render(value);
-            }}
-          />
-        </section>
-
-        {state.cursor || nextCursor ? (
-          <div class="flex gap-2">
-            <ButtonLink href={capabilitiesFilter.build(state, reset)} variant="secondary" size="sm">
-              {t.first}
-            </ButtonLink>
-            {nextCursor ? (
-              <ButtonLink href={capabilitiesFilter.build(state, { cursor: nextCursor, request: "" })} variant="secondary" size="sm">
-                {t.next}
-              </ButtonLink>
-            ) : null}
-          </div>
-        ) : null}
-
-        {state.request ? (
-          detail.length > 0 ? (
-            <ExecutionDetail
-              executions={detail}
-              dateConfig={dateConfig}
-              closeHref={`${capabilitiesFilter.build(state, { request: "" })}#capability-executions`}
-            />
-          ) : (
-            <NoticeCard
-              tone="danger"
-              title={t.notFound}
-              detail={
-                <a class="font-medium hover:underline" href={capabilitiesFilter.build(state, { request: "" })}>
-                  {t.backToList}
-                </a>
-              }
-            />
-          )
-        ) : null}
-      </ObservabilityPane>
-    </ObservabilityArea>
+    <AdminLayout c={c} ui="v2" title={areaText(locale).capabilities}>
+      <CapabilitiesScreen
+        nav={observabilityAdminNav(c, locale, attention, "capabilities")}
+        state={bare.state}
+        tab={bare.tab}
+        scope={{ apps: scope.apps.map((row) => row.id), capabilities: scope.capabilities.map((row) => row.id) }}
+        names={user ? { user: [{ value: user, label: userLabel(user) }] } : undefined}
+        lead={t.callCount({ count: summary.executions })}
+        ignored={bare.issues.length > 0 ? bare.issues.map((issue) => `${issue.param}=${issue.value}`).join(", ") : null}
+        failure={failure}
+        cells={cells}
+        rows={executions.map((row) => ({
+          id: row.id,
+          requestId: row.requestId,
+          app: appOf(row.appId),
+          capability: row.capability,
+          origin: { label: originLabel[row.origin], icon: ORIGIN_ICON[row.origin].replace(/^ti\s+(ti-)?/, "") },
+          status: row.status,
+          statusLabel: statusLabel(row.status, t),
+          destructive: row.destructive,
+          kind: row.kind === "action" ? t.kindAction : t.kindQuery,
+          duration: formatDurationMs(row.durationMs, { locale }),
+          slow: row.durationMs > SLOW_DURATION_MS,
+          started: formatDateTime(row.startedAt, dateConfig),
+          user: row.userId ? { id: row.userId, label: userLabel(row.userId) } : null,
+        }))}
+        groups={{
+          apps: summary.apps.map((row) => group(row, "app")),
+          capabilities: summary.capabilities.map((row) => group(row, "capability")),
+        }}
+        cursor={bare.cursor}
+        nextCursor={nextCursor}
+        request={bare.request}
+        detail={bare.request && detail.length > 0 ? executionDetail(detail, locale, dateConfig) : null}
+        user={user ? { label: userLabel(user), aiUsageHref: aiUsageHref({ view: "runs", userId: user }) } : null}
+      />
+    </AdminLayout>
   );
 });

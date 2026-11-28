@@ -773,8 +773,8 @@ export default function RunsScreen(props: RunsScreenProps) {
                 label={t().moreActions}
                 items={[
                   { label: t().workflowDefinitions, icon: "binary-tree", href: "/admin/observability/workflows" },
-                  { label: t().notificationDefinitions, icon: "bell-cog", href: "/admin/observability/deliveries?view=registry" },
-                  { label: t().earlierNotifications, icon: "mail", href: "/admin/observability/deliveries?view=legacy" },
+                  { label: t().notificationDefinitions, icon: "bell-cog", href: "/admin/observability/deliveries?tab=registry" },
+                  { label: t().earlierNotifications, icon: "mail", href: "/admin/observability/deliveries?tab=legacy" },
                 ]}
               />
             </>

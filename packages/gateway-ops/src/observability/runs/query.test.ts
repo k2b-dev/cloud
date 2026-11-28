@@ -83,6 +83,7 @@ describe("addresses of the Jobs and Deliveries pages", () => {
     ["status=delivered", "/admin/observability/runs?kind=delivery&status=succeeded"],
     ["view=registry", null],
     ["view=legacy&search=x", null],
+    ["tab=registry", null],
   ];
   for (const [before, after] of deliveries)
     test(`deliveries ?${before} → ${after ?? "stays"}`, () => expect(legacyDeliveriesHref(new URLSearchParams(before))).toBe(after));
