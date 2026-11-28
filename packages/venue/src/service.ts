@@ -30,6 +30,7 @@ import { stripImageDataUrlMetadata } from "@k2b/cloud/services/image-metadata";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { dates } from "@k2b/stdlib";
+import type { SQLQuery } from "bun";
 import type { z } from "zod";
 import { permissionFromVenueScopes, type VenueAccessScope } from "./access-control";
 import { buildPublicAvailability, templateOccursOn } from "./availability";
@@ -64,6 +65,7 @@ import {
   PublicSectionInputSchema,
   SCHEDULE_OUTLOOK_DAYS,
   ShiftTemplateInputSchema,
+  VENUE_PAGE_MAX,
 } from "./contracts";
 import { withShortIdDb } from "./lib/short-id";
 import { venueMessages } from "./messages";
@@ -481,9 +483,30 @@ const getPermission = async (venueId: string, subjectInput: UserLike | VenueAcce
   return grantedPermission(venueId, subject);
 };
 
-const listVenues = async (subjectInput: UserLike | VenueAccessSubject): Promise<Venue[]> => {
+const venueSearchPattern = (query: string | null | undefined): string | null => {
+  const value = query?.trim();
+  return value ? `%${value.replace(/([\\%_])/g, "\\$1")}%` : null;
+};
+
+/**
+ * One page of the venues the subject can read, each with the subject's permission on it, in one statement
+ * whatever the page size. The permission is the highest of the subject's grants on the venue, capped by a service
+ * account's scopes, as `getPermission()` answers for one venue.
+ */
+const readAccessibleVenues = async (
+  subjectInput: UserLike | VenueAccessSubject,
+  page: {
+    search: (pattern: string) => SQLQuery;
+    order: () => SQLQuery;
+    summary: boolean;
+    query?: string | null;
+    limit: number;
+    offset: number;
+  },
+): Promise<Venue[]> => {
   const subject = toAccessSubject(subjectInput);
-  if (!(await mayReadAcrossVenues(subject))) return [];
+  const cap = subject.subject.type === "service_account" ? permissionFromVenueScopes(subject.serviceAccountScopes) : "admin";
+  if (cap === "none" || !(await mayReadAcrossVenues(subject))) return [];
 
   const principalMatch = buildAccessPrincipalCondition({
     subject: subject.subject,
@@ -498,25 +521,47 @@ const listVenues = async (subjectInput: UserLike | VenueAccessSubject): Promise<
     subject.subject.type === "service_account" && subject.serviceAccountResourceId
       ? sql`v.id = ${subject.serviceAccountResourceId}::uuid`
       : sql`true`;
-
-  const rows = await sql<DbVenue[]>`
-    SELECT DISTINCT v.*
-    FROM venue.venues v
-    JOIN venue.venue_access va ON va.venue_id = v.id
-    JOIN auth.access a ON a.id = va.access_id
-    WHERE
-      a.permission <> 'none'
-      AND ${principalMatch}
-      AND ${bindingMatch}
-    ORDER BY v.name
+  const pattern = venueSearchPattern(page.query);
+  const images = page.summary ? sql`NULL::text AS logo_base64, NULL::text AS banner_base64` : sql`v.logo_base64, v.banner_base64`;
+  const rows = await sql<(DbVenue & { permission: PermissionLevel })[]>`
+    WITH granted AS (
+      SELECT va.venue_id, max(CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 END) AS rank
+      FROM venue.venue_access va
+      JOIN auth.access a ON a.id = va.access_id
+      WHERE a.permission <> 'none' AND ${principalMatch}
+      GROUP BY va.venue_id
+    )
+    SELECT
+      v.id, v.slug, v.name, v.icon, v.description, v.timezone, v.open_mode, v.signup_mode,
+      v.public_enabled, v.feedback_enabled, v.accent_color, ${images}, v.created_at, v.updated_at,
+      (ARRAY['read', 'write', 'admin'])[g.rank] AS permission
+    FROM granted g
+    JOIN venue.venues v ON v.id = g.venue_id
+    WHERE ${bindingMatch}
+      AND ${pattern === null ? sql`true` : page.search(pattern)}
+    ORDER BY ${page.order()}
+    LIMIT ${page.limit}
+    OFFSET ${page.offset}
   `;
-
-  const venues: Venue[] = [];
-  for (const row of rows) {
-    venues.push(mapVenue(row, await getPermission(row.id, subject)));
-  }
-  return venues.filter((venue) => venue.permission && venue.permission !== "none");
+  return rows.map((row) => mapVenue(row, minPermission(row.permission, cap)));
 };
+
+/**
+ * One page of the venues the subject can read, newest first. The order rests on what never changes, so paging
+ * with `offset` misses and repeats no venue while venues are renamed or edited. `summary` leaves out the images.
+ */
+const listVenues = (
+  subject: UserLike | VenueAccessSubject,
+  page: { limit: number; offset?: number; query?: string | null; summary?: boolean },
+): Promise<Venue[]> =>
+  readAccessibleVenues(subject, {
+    search: (pattern) => sql`(v.name ILIKE ${pattern} ESCAPE '\\' OR v.slug ILIKE ${pattern} ESCAPE '\\')`,
+    order: () => sql`v.created_at DESC, v.id`,
+    summary: page.summary ?? false,
+    query: page.query,
+    limit: Math.min(VENUE_PAGE_MAX, Math.max(1, page.limit)),
+    offset: Math.max(0, page.offset ?? 0),
+  });
 
 type VenueDiscoveryOptions = {
   query?: string | null;
@@ -524,54 +569,16 @@ type VenueDiscoveryOptions = {
   offset?: number;
 };
 
-const venueSearchPattern = (query: string | null | undefined): string | null => {
-  const value = query?.trim();
-  return value ? `%${value.replace(/([\\%_])/g, "\\$1")}%` : null;
-};
-
-const discoverVenues = async (subjectInput: UserLike | VenueAccessSubject, options: VenueDiscoveryOptions = {}): Promise<Venue[]> => {
-  const subject = toAccessSubject(subjectInput);
-  if (!(await mayReadAcrossVenues(subject))) return [];
-
-  const principalMatch = buildAccessPrincipalCondition({
-    subject: subject.subject,
-    columns: {
-      userId: sql`a.user_id`,
-      groupId: sql`a.group_id`,
-      serviceAccountId: sql`a.service_account_id`,
-      authenticatedOnly: sql`a.authenticated_only`,
-    },
+const discoverVenues = (subject: UserLike | VenueAccessSubject, options: VenueDiscoveryOptions = {}): Promise<Venue[]> =>
+  readAccessibleVenues(subject, {
+    search: (pattern) =>
+      sql`(v.name ILIKE ${pattern} ESCAPE '\\' OR v.slug ILIKE ${pattern} ESCAPE '\\' OR COALESCE(v.description, '') ILIKE ${pattern} ESCAPE '\\')`,
+    order: () => sql`v.name, v.id`,
+    summary: true,
+    query: options.query,
+    limit: Math.min(101, Math.max(1, options.limit ?? 25)),
+    offset: Math.max(0, options.offset ?? 0),
   });
-  const bindingMatch =
-    subject.subject.type === "service_account" && subject.serviceAccountResourceId
-      ? sql`v.id = ${subject.serviceAccountResourceId}::uuid`
-      : sql`true`;
-  const pattern = venueSearchPattern(options.query);
-  const limit = Math.min(101, Math.max(1, options.limit ?? 25));
-  const offset = Math.max(0, options.offset ?? 0);
-  const rows = await sql<DbVenue[]>`
-    SELECT DISTINCT
-      v.id, v.slug, v.name, v.icon, v.description, v.timezone, v.open_mode, v.signup_mode,
-      v.public_enabled, v.feedback_enabled, v.accent_color,
-      NULL::text AS logo_base64, NULL::text AS banner_base64,
-      v.created_at, v.updated_at
-    FROM venue.venues v
-    JOIN venue.venue_access va ON va.venue_id = v.id
-    JOIN auth.access a ON a.id = va.access_id
-    WHERE a.permission <> 'none'
-      AND ${principalMatch}
-      AND ${bindingMatch}
-      AND (${pattern}::text IS NULL OR v.name ILIKE ${pattern} ESCAPE '\\' OR v.slug ILIKE ${pattern} ESCAPE '\\'
-        OR COALESCE(v.description, '') ILIKE ${pattern} ESCAPE '\\')
-    ORDER BY v.name, v.id
-    LIMIT ${limit}
-    OFFSET ${offset}
-  `;
-
-  const venues: Venue[] = [];
-  for (const row of rows) venues.push(mapVenue(row, await getPermission(row.id, subject)));
-  return venues.filter((venue) => venue.permission && venue.permission !== "none");
-};
 
 const discoverPublicVenues = async (options: VenueDiscoveryOptions = {}): Promise<Venue[]> => {
   const pattern = venueSearchPattern(options.query);
