@@ -135,6 +135,28 @@ describe("a pane's head and its status row are one block", () => {
       });
 });
 
+// A head with tabs takes the tabs' height on the phone; in a block that height cut the toolbar's row, which then lay over
+// the pane's first row (gateway-ops Läufe, 28.11.). The block keeps both rows, and the content starts under it.
+describe("a head with tabs above a toolbar", () => {
+  for (const live of [false, true])
+    for (const width of [390, 1440])
+      test(`keeps the toolbar's row in the block at ${width}px (${live ? "hydrated" : "server"})`, async () => {
+        await withPage(width, "tabs", live, async (page) => {
+          // the head slot is display: contents; its bar is the block's box
+          const block = await boxOf(page, '.k2-pane > [data-slot="head"] > .k2-bar');
+          const tabs = await boxOf(page, '.k2-pane > [data-slot="head"] .k2-tabs-nav');
+          const lead = await boxOf(page, filter);
+          const first = await boxOf(page, ".k2-pane .k2-list > *");
+          if (!block || !tabs || !lead || !first) throw new Error("the fixture lacks a part");
+          // the toolbar stands in the block, under the tabs where they do not share a row, and nothing lies over the list
+          expect(lead.y + lead.height).toBeLessThanOrEqual(block.y + block.height);
+          if (width === 390) expect(lead.y).toBeGreaterThanOrEqual(tabs.y + tabs.height - 1);
+          expect(first.y).toBeGreaterThanOrEqual(block.y + block.height - 1);
+          expect(await linesOf(page)).toBe(1);
+        });
+      });
+});
+
 describe("a line of state under a head is no toolbar", () => {
   for (const width of [1440, 1920])
     test(`a plain bar under the head keeps its own row and line at ${width}px`, async () => {
