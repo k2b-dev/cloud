@@ -22,6 +22,7 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { hexColor } from "@/frontend/lib/color";
 import { formatDeadline } from "@/presentation/deadline";
 import { spaceCommandMessages } from "../commands";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
@@ -30,7 +31,6 @@ import {
   createNewSpace,
   createPinnedSpaces,
   createSpacesNavigationItems,
-  listenSpacesNavigationHints,
   type SidebarSpace,
 } from "./[id]/_components/sidebar/spaces-navigation";
 import { subscribeToSpacesDataInvalidation } from "./[id]/_components/workspace/workspace-events";
@@ -55,7 +55,6 @@ type ActivityPage = { data: ActivityItem[]; nextCursor: string | null };
 type Props = {
   spaces: SidebarSpace[];
   canCreate?: boolean;
-  sidebarHint?: boolean;
   initialView: OverviewView;
   initialPinnedSpaceIds: string[];
   initialWork: OverviewWork;
@@ -216,7 +215,6 @@ export default function SpacesOverview(props: Props) {
     };
     tabsHost?.addEventListener("click", onTabClick);
     onCleanup(() => tabsHost?.removeEventListener("click", onTabClick));
-    onCleanup(listenSpacesNavigationHints(document, props.spaces));
     onCleanup(
       listenPopState(({ url }) => {
         const value = url.searchParams.get("view");
@@ -360,7 +358,7 @@ export default function SpacesOverview(props: Props) {
             <a class="spaces-overview-work-row" href={`/app/spaces/${item.spaceShortId}?item=${item.shortId}`}>
               <span
                 class="spaces-overview-space-mark"
-                style={{ "background-color": item.spaceColor ?? "var(--ui-app-accent-border)" }}
+                style={{ "background-color": hexColor(item.spaceColor) ?? "var(--ui-app-accent-border)" }}
                 aria-hidden="true"
               />
               <span class="spaces-overview-work-copy">
@@ -397,7 +395,6 @@ export default function SpacesOverview(props: Props) {
             myWorkCount={counts().mine}
             current={{ kind: "overview" }}
             canCreate={canCreate()}
-            hint={{ id: "spaces.overview-sidebar", open: Boolean(props.sidebarHint) && canCreate() }}
           />
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>

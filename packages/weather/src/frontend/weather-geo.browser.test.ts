@@ -140,6 +140,10 @@ for (const width of [390, 768, 1440])
         ] as const) {
           const link = dialog.getByRole("link", { name, exact: true });
           expect(await link.getAttribute("href")).toBe(href);
+          // on the phone the sheet's body scrolls: the link is read where a person sees it, after the sheet came to rest
+          // (WebKit sampled it below the viewport, at y 1414 of 1000, where nothing is "at" a point, #4444)
+          await link.scrollIntoViewIfNeeded();
+          await settled(page);
           expect(
             await link.evaluate((element) => {
               const box = element.getBoundingClientRect();

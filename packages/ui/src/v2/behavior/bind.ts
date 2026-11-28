@@ -11,7 +11,14 @@ import type { Primitive, SlotName } from "@ui-sdk/core";
 import { attrs as partAttrs, ref, subscribe } from "@ui-sdk/core/renderer";
 import type { Handle, Props } from "./adapter";
 
-export function bindSlot<P extends Primitive>(handle: Handle<P>, slot: SlotName<P>, props: Props, element: HTMLElement): () => void {
+export function bindSlot<P extends Primitive>(
+  handle: Handle<P>,
+  slot: SlotName<P>,
+  props: Props,
+  element: HTMLElement,
+  /** Attributes core would write that this element keeps out, such as the names a visual-only tip would give it. */
+  omit: readonly string[] = [],
+): () => void {
   const part = handle.instance.part(slot, props);
   const own = new Set(element.getAttributeNames());
   const written = new Set<string>();
@@ -24,7 +31,7 @@ export function bindSlot<P extends Primitive>(handle: Handle<P>, slot: SlotName<
       }
     }
     for (const [name, value] of Object.entries(next)) {
-      if (own.has(name) || value == null) continue;
+      if (own.has(name) || value == null || omit.includes(name)) continue;
       element.setAttribute(name, String(value));
       written.add(name);
     }

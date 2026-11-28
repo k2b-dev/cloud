@@ -1,10 +1,10 @@
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
-import Maintenance from "./Maintenance.island.tsx";
+import Maintenance from "./Maintenance";
 
 const data = document.querySelector<HTMLScriptElement>("#maintenance-fixture-data")!;
 const props: Parameters<typeof Maintenance>[0] = JSON.parse(data.textContent!);
-const root = document.querySelector<HTMLElement>("#maintenance-fixture")!;
+const root = document.querySelector<HTMLElement>("main.k2-ui")!;
 root.replaceChildren();
 render(
   () => (

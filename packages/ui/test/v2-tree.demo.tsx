@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import { Nav, type NavTreeNode, Pane, Table, Workspace } from "../src/v2";
+import { Nav, type NavTreeNode, navTree, Pane, Table, Workspace } from "../src/v2";
 
 // Files as a tree, with invented folders: the sidebar's folder tree and the same folders as rows of a table.
 // - "Entwürfe" (level 4) is the open folder, so the way to it starts open, also in the server's markup;
@@ -154,13 +154,13 @@ export function Demo() {
             { items: [{ label: "Zuletzt", icon: "clock", href: "#zuletzt" }] },
             {
               label: "Ordner",
-              tree: {
+              tree: navTree({
                 label: "Ordner",
                 items: folders().map(node),
                 current: current(),
                 load: (key) => load(key),
                 loadMore,
-              },
+              }),
             },
           ]}
         />
