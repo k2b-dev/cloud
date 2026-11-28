@@ -23,7 +23,7 @@ import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { Input, MarkCheck } from "./controls";
 import { linkOr } from "./link";
-import { Avatar, Chip, custom, Dot, Icon, Mark } from "./marks";
+import { Avatar, Chip, custom, Dot, Icon, Mark, type MarkProps } from "./marks";
 import { Menu, type MenuEntry, type MenuItem, MenuTab } from "./menu";
 import type { NavTreeGroup } from "./nav-tree";
 import { useOverlayMessages } from "./overlay-messages";
@@ -1141,10 +1141,11 @@ export type RecordId = {
 };
 
 export type RecordHeadProps = {
-  /** The name of the record, the page's heading. */
+  /**
+   * The name of the record, the page's heading. One line, cut with "…" where the head has no room; on the phone it
+   * takes a second line before it is cut.
+   */
   name: string;
-  /** The picture or initials before the name. */
-  avatar?: Person;
   /**
    * Kinds of the record, such as "Private". Kinds sum up: whatever a kind says also stands in the record's `Facts`,
    * because on the phone kinds give way to the name.
@@ -1155,12 +1156,27 @@ export type RecordHeadProps = {
    * the phone), before the name is cut with "…"; the head's actions keep their place.
    */
   ids?: readonly RecordId[];
-};
+} & (
+  | {
+      /** A person's picture or initials before the name, round. */
+      avatar?: Person;
+      mark?: never;
+    }
+  | {
+      avatar?: never;
+      /**
+       * A place's or thing's sign before the name, square with rounded corners: its symbol on a tint of its colour, or
+       * its picture (a logo), as `Mark` draws it. The name beside it names it.
+       */
+      mark?: Omit<MarkProps, "label">;
+    }
+);
 
-/** The identity of a record in its head: avatar, name, kinds, identifiers. Put it in the start of the head `Bar`. */
+/** The identity of a record in its head: avatar or mark, name, kinds, identifiers. Put it in the start of the head `Bar`. */
 export const RecordHead = (props: RecordHeadProps) => (
   <>
     <Show when={props.avatar}>{(person) => <Avatar {...person()} decorative />}</Show>
+    <Show when={props.mark}>{(mark) => <Mark {...mark()} />}</Show>
     <h1 class="k2-record-name" data-k2-part="RecordHead">
       {props.name}
     </h1>

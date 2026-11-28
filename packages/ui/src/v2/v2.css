@@ -4981,6 +4981,16 @@
   background: color-mix(in srgb, var(--k2-c, var(--k2-n500)) 16%, var(--k2-surface));
   color: var(--k2-c, var(--k2-n600));
 }
+/* a place or thing leads its head with its mark (`RecordHead mark`): the same 32 px, square with rounded corners, as
+   a mark leading a row of two or three lines */
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-mk:has(+ .k2-record-name) {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-mk:has(+ .k2-record-name) > .k2-icon {
+  font-size: 18px;
+}
 
 /* A section's way to all of it stands under its rows, its words on their text edge (Valentin 26.11.: at the start, not
    the end; logical margins, so a page written right to left has it at the right), after a symbol where the section has
@@ -5980,33 +5990,51 @@
   .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-tabs-nav) {
     height: var(--k2-h-tabs);
   }
-  /* On the phone a record's head is one row, as the approved mockup's 57 px: the avatar's 32 px with 12 px above and
-     below. The name comes before the kinds: it keeps its words where it can and is cut with "…", never below 8ch of
-     its own type (about 100 px: what is left beside the avatar and four symbols on a phone of 360 px). A kind without
-     room beside the name leaves the head; it wraps below the row, where the start cuts it, and never takes a second row.
-     The actions stay on the name's row and reach 2 px into the space above and below it. */
+  /* On the phone a record's head is one row, as the approved mockup's 57 px: the avatar's (or mark's) 32 px with 12 px
+     above and below. A name too long for one line takes a second (the visitor head's mockup), and the head grows to
+     73 px; after the second line it is cut with "…". It breaks between words, inside a word only where one word alone
+     is wider than the line. The name comes before the kinds and never goes below 8ch of its own type (about 100 px:
+     what is left beside the avatar and four symbols on a phone of 360 px). A kind without room beside the name leaves
+     the head: it wraps below the name's row, where the start cuts it, and never takes a row of its own. The avatar and
+     the actions stand on the name's middle; the actions reach 2 px into the space above and below a row of 32 px. */
   .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-record-name) {
     height: auto;
     padding-block: 12px;
-    align-items: flex-start;
   }
   .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-start:has(> .k2-record-name) {
     flex: 1 1 0;
     flex-wrap: wrap;
     align-content: flex-start;
-    height: 32px;
+    row-gap: 0;
     overflow: hidden;
+  }
+  /* the row is never lower than the avatar's 32 px, also without one; the head's gap (12 px) after it is taken back */
+  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-start:has(> .k2-record-name)::before {
+    content: "";
+    flex: none;
+    height: 32px;
+    margin-inline-end: -12px;
   }
   .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-start:has(> .k2-record-name) > .k2-record-name {
     flex: 1 1 auto;
     min-width: 8ch;
     /* at most the row beside the avatar, so the name itself never wraps below it, only the kinds after it */
     max-width: 100%;
-    /* as tall as the avatar (its type keeps its own line), so its middle is the avatar's */
-    padding-block: 4px;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: break-word;
   }
-  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-av + .k2-record-name {
+  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-start > :is(.k2-av, .k2-mk) + .k2-record-name {
     max-width: calc(100% - 32px - 12px);
+  }
+  /* a kind takes no height of its own: on the name's row it stands on the middle of its 32 px, and one that wrapped
+     stands below the start's edge, so the start is as tall as the name's row */
+  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-start:has(> .k2-record-name) > .k2-chip {
+    align-self: flex-start;
+    margin-block: 4px -28px;
   }
   .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-record-name) > .k2-bar-end {
     margin-block: calc((32px - var(--k2-h-control)) / 2);

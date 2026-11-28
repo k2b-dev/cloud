@@ -691,10 +691,15 @@ name wraps in a small table and ends with "…" in one with column widths.
 - `Lookup`: `label`, `value`, `onChange`, `load`, `resolve?`, `known?`,
   `limit?`, `minChars?`; values that load while the person types, in a
   filter (the bar opens it) or in a form.
-- `RecordHead`: `name`, `avatar`, `kinds`, `ids: { label?, value, icon?,
-  copy? }[]`. Put it in the head `Bar start`. When the head has no room, the
-  ids give way first (always on the phone), then the name is cut with "…";
-  the head's actions keep their place.
+- `RecordHead`: `name`, `avatar` or `mark`, `kinds`, `ids: { label?, value,
+  icon?, copy? }[]`. Put it in the head `Bar start`. A person leads with
+  `avatar` (round); a place or thing with `mark` (a `Mark` without `label`:
+  its symbol on its colour, or its picture such as a logo, square with
+  rounded corners), never both. When the head has no room, the ids give way
+  first (always on the phone), then the name is cut with "…"; the head's
+  actions keep their place. On the phone a name too long for one line takes
+  a second line before it is cut (the head grows from 57 to 73 px), and
+  kinds without room beside it leave the head.
 
 ## Overlays: Dialog, Menu, Popover, Toast
 
