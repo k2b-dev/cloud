@@ -25,5 +25,11 @@ export async function buildFontAssets(publicDir: string): Promise<void> {
     );
   }
 
-  await writeFile(resolve(publicDir, "fonts.css"), css.join("\n"));
+  // Cloud preloads the Latin Sans faces (packages/cloud font-preloads), so they are there for the first frame. Every face
+  // Cloud serves is `optional` instead of the presets' `swap`: one that misses the first frame never replaces the fallback
+  // on a page already shown, so no text and no button changes its width; the next page finds it in the cache. The
+  // `@k2b/ui` preset keeps `swap` for apps that do not preload (font-assets.browser.test.ts).
+  const served = css.join("\n").replace(/font-display:\s*swap/g, "font-display:optional");
+  if (/font-display:\s*(?!optional)/.test(served)) throw new Error("A face Cloud serves is not font-display: optional");
+  await writeFile(resolve(publicDir, "fonts.css"), served);
 }

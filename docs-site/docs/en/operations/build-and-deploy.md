@@ -205,7 +205,7 @@ The build precompresses supported static files with Brotli and gzip.
 
 The application's `app.css` and `favicon.svg` URLs carry `?v=<content hash>`.
 Core minifies the workspace-wide `global.css` during the production build. The template
-preloads the three regular text faces; Tabler icons request their font through CSS when
+preloads the four Latin text faces (400 to 700); Tabler icons request their font through CSS when
 used.
 
 The shared stylesheets (`fonts.css`, `tabler-icons.css`, and `global.css`)

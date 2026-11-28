@@ -10,16 +10,9 @@ export async function buildPlexFonts(outdir: string): Promise<void> {
     minify: true,
   });
   if (!result.success) throw new AggregateError(result.logs, "Plex stylesheet build failed");
-  // `optional` instead of Fontsource's `swap`: a face that is not there for the first frame (Cloud preloads the Latin Sans
-  // faces) never replaces the fallback on a page already shown, so no text and no button changes its width; the next page
-  // finds the face in the cache (src/fonts/plex-late.browser.test.ts)
-  let css = (await result.outputs[0]!.text())
-    .replace(/,url\([^)]+\.woff\)format\(woff\)/g, "")
-    .replaceAll("font-display:swap", "font-display:optional");
+  let css = (await result.outputs[0]!.text()).replace(/,url\([^)]+\.woff\)format\(woff\)/g, "");
   const assets = new Set([...css.matchAll(/url\(\.\/files\/([^()]+\.woff2)\)/g)].map((match) => match[1]!));
   if (!assets.size || css.includes("data:") || /\.woff\)/.test(css)) throw new Error("Unexpected Plex font sources");
-  if (css.match(/@font-face\{/g)?.length !== css.match(/font-display:optional/g)?.length)
-    throw new Error("A Plex face without font-display: optional");
   await mkdir(resolve(outdir, "fonts"), { recursive: true });
   for (const asset of assets) {
     const family = asset.startsWith("ibm-plex-sans-") ? "ibm-plex-sans" : "ibm-plex-mono";

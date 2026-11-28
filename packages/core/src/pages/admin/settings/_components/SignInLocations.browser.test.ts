@@ -9,6 +9,7 @@ import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser } from "../../../../../../ui/test/browser";
+import { plexPreloads } from "../../../../../../ui/test/plex-preloads";
 import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 import type { SignInLocationPhase } from "./SignInLocations";
 import { bundledStatus, emptyStatus, staleStatus, uploadedStatus } from "./sign-in-locations-fixture";
@@ -101,10 +102,13 @@ const open = async (width: number, dark: boolean, locale: string, status: GeoIpA
     isMobile: phone,
     hasTouch: phone,
   });
-  await tab.route(`${origin}/public/**`, (route) => route.fulfill({ path: join(root, new URL(route.request().url()).pathname) }));
-  await tab.setContent(
+  const plex = plexPreloads(`${origin}/public/fonts/`);
+  await tab.route(`${origin}/public/**`, (route) => plex.fulfill(route, join(root, new URL(route.request().url()).pathname)));
+  await plex.show(
+    tab,
+    `${origin}/`,
     `<!doctype html><html lang="${locale}" class="${dark ? "dark" : "light"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
-      `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
+      `${plex.links}<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
       `<body class="k2b-ui"><div class="cloud-app-canvas relative flex min-h-dvh w-full" data-app-id="core">` +
       `<main class="layout-content-main min-h-0 min-w-0 flex-1 p-4"><div class="app-rows"><div>${body}</div></div></main></div></body></html>`,
   );

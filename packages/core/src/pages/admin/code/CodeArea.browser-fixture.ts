@@ -7,6 +7,7 @@ import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
+import { plexPreloads } from "../../../../../ui/test/plex-preloads";
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 import {
   CODE_FIXTURE_STATES,
@@ -161,7 +162,7 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
       }),
     );
     return c.html(
-      `<!doctype html><html lang="${locale}" class="${theme}" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><style>${css}</style></head><body class="k2b-ui">${body}<script src="/fixture.js"></script></body></html>`,
+      `<!doctype html><html lang="${locale}" class="${theme}" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${plexPreloads("/public/fonts/").links}<link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><style>${css}</style></head><body class="k2b-ui">${body}<script src="/fixture.js"></script></body></html>`,
     );
   });
 

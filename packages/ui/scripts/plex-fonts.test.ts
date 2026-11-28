@@ -15,11 +15,9 @@ test("Plex preset ships every font source separately and preserves face selectio
     const original = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../src/fonts/plex.css")], minify: true });
     expect(original.success).toBe(true);
     const declarations = (value: string) => value.replace(/src:(?:url\([^)]*\)format\([^)]*\),?)+;/g, "");
-    // the same faces as Fontsource's, each with `optional` for its `swap`
-    const fontsource = (await original.outputs[0]!.text()).replaceAll("font-display:swap", "font-display:optional");
-    expect(declarations(css)).toBe(declarations(fontsource));
+    expect(declarations(css)).toBe(declarations(await original.outputs[0]!.text()));
     for (const face of faces) {
-      expect(face).toContain("font-display:optional");
+      expect(face).toContain("font-display:swap");
       expect(face).toContain("unicode-range:");
       const url = face.match(/url\(([^)]+)\)/)![1]!;
       expect(url).toMatch(/-[a-f0-9]{16}\.woff2$/);
@@ -27,8 +25,8 @@ test("Plex preset ships every font source separately and preserves face selectio
       expect(bytes.subarray(0, 4).toString()).toBe("wOF2");
     }
     for (const family of ["IBM Plex Sans", "IBM Plex Mono"]) {
-      expect(css).toContain(`font-family:${family};font-style:italic;font-display:optional;font-weight:400`);
-      expect(css).toContain(`font-family:${family};font-style:normal;font-display:optional;font-weight:600`);
+      expect(css).toContain(`font-family:${family};font-style:italic;font-display:swap;font-weight:400`);
+      expect(css).toContain(`font-family:${family};font-style:normal;font-display:swap;font-weight:600`);
     }
   } finally {
     await rm(directory, { recursive: true, force: true });

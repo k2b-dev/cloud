@@ -14,6 +14,7 @@ import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { launchBrowser } from "../../../../ui/test/browser";
+import { plexPreloads } from "../../../../ui/test/plex-preloads";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import { accountMessages } from "./messages";
 
@@ -164,10 +165,10 @@ const request = (apps: (typeof shell)[]) =>
 type View = { width: number; height: number; touch: boolean };
 const phone: View = { width: 390, height: 844, touch: true };
 const desktop: View = { width: 1440, height: 900, touch: false };
-const head = (lang: string, dark = false) =>
+const head = (lang: string, plex: ReturnType<typeof plexPreloads>, dark = false) =>
   // Playwright's WebKit ignores the charset of a routed response, so the page names it, as a Cloud page does.
   `<!doctype html><html lang="${lang}" class="${dark ? "dark" : "light"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
-  `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>`;
+  `${plex.links}<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>`;
 
 const open = async (view: View, dark = false) => {
   const response = await request([shell]);
@@ -180,9 +181,12 @@ const open = async (view: View, dark = false) => {
     isMobile: view.touch,
     hasTouch: view.touch,
   });
-  await tab.route(`${origin}/public/**`, (route) => route.fulfill({ path: join(root, new URL(route.request().url()).pathname) }));
-  await tab.setContent(
-    head("en", dark) +
+  const plex = plexPreloads(`${origin}/public/fonts/`);
+  await tab.route(`${origin}/public/**`, (route) => plex.fulfill(route, join(root, new URL(route.request().url()).pathname)));
+  await plex.show(
+    tab,
+    `${origin}/`,
+    head("en", plex, dark) +
       `<body class="k2b-ui"><div class="cloud-app-canvas relative flex min-h-dvh w-full" style="${CORE_CANVAS}" data-app-id="core">` +
       `<div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col"><main class="layout-content-main min-h-0 min-w-0 flex-1">` +
       `${body}</main></div></div></body></html>`,
@@ -288,16 +292,17 @@ describe("the pairing dialog in a browser", () => {
           reducedMotion: "reduce",
         });
         const tab = await context.newPage();
+        const plex = plexPreloads(`${origin}/public/fonts/`);
         await tab.route(`${origin}/**`, async (route) => {
           const { pathname } = new URL(route.request().url());
           const post = route.request().method() === "POST";
           if (pathname === "/me/app")
             return route.fulfill({
               contentType: "text/html; charset=utf-8",
-              body: `${head(lang)}<body class="k2b-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`,
+              body: `${head(lang, plex)}<body class="k2b-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`,
             });
           if (pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
-          if (pathname.startsWith("/public/")) return route.fulfill({ path: join(root, pathname) });
+          if (pathname.startsWith("/public/")) return plex.fulfill(route, join(root, pathname));
           if (post && pathname === api) {
             // Held, so the test sees the step that prepares the pairing.
             await started;

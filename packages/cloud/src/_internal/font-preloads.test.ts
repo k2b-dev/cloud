@@ -11,7 +11,7 @@ test("preloads the Latin IBM Plex Sans faces the preset declares for regular, me
   const hrefs = [...FONT_PRELOAD_LINKS.matchAll(/<link rel="preload" href="([^"]+)" as="font" type="font\/woff2" crossorigin>/g)].map(
     (match) => match[1]!,
   );
-  expect(hrefs).toHaveLength(3);
+  expect(hrefs).toHaveLength(4);
   const faces = hrefs.map((href) => {
     const file = href.replace("/public/fonts/", "");
     // Core copies the preset's files to /public/fonts under the same names.
@@ -26,5 +26,5 @@ test("preloads the Latin IBM Plex Sans faces the preset declares for regular, me
       latin: /unicode-range:U\+(\?\?|0*0-0*ff),/i.test(rule!),
     };
   });
-  expect(faces).toEqual(["400", "500", "600"].map((weight) => ({ family: "IBM Plex Sans", style: "normal", weight, latin: true })));
+  expect(faces).toEqual(["400", "500", "600", "700"].map((weight) => ({ family: "IBM Plex Sans", style: "normal", weight, latin: true })));
 });

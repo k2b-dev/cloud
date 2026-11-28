@@ -333,13 +333,15 @@ focus-mode surfaces. Switching between short and long pages or tabs therefore
 does not shift the content sideways where scrollbars take layout space.
 
 Every Cloud page, with any layout, preloads the Latin IBM Plex Sans faces at
-weights 400, 500, and 600 next to its stylesheets, and every Plex face uses
-`font-display: optional`. A face that is ready for the first frame is the one
-the page shows. A face that arrives later never replaces the fallback on a page
-already shown, so text does not re-wrap and no button changes its width; the
-next page finds the face in the browser cache. Other faces load when a page
-first uses them: bold (700), italic, IBM Plex Mono, and scripts outside Latin.
-On a first visit they can stay in the fallback font until the next page.
+weights 400, 500, 600, and 700 next to its stylesheets, and Core serves every face
+with `font-display: optional`. A face that is ready for the first frame is the
+one the page shows. A face that arrives later never replaces the fallback on a
+page already shown, so text does not re-wrap and no button changes its width;
+the next page finds the face in the browser cache. Other faces load when a page
+first uses them: italic, IBM Plex Mono, IBM Plex Sans Condensed, and scripts
+outside Latin. On a first visit they can stay in the fallback font until
+the next page. The `@k2b/ui` preset itself keeps `font-display: swap` for
+applications outside Cloud that do not preload its faces.
 
 The Tabler icon font loads when a page uses icons, after its stylesheet is read. The template does not preload the full icon font. The icon preset reserves a one-em box before the font arrives, so the label beside an icon keeps its position.
 
