@@ -70,19 +70,71 @@ const weightClass = { medium: "k2-medium", strong: "k2-strong" } as const;
  * block that carries the text edge itself; anywhere else (a bar, a row, a sentence) it runs inline, and in a bar it is
  * cut to one line with "…". The stylesheet decides by place, so text passed as data behaves the same.
  */
-export const Text = (props: TextProps) => (
-  <Dynamic
-    component={props.href ? "a" : "span"}
-    href={props.href}
-    title={props.title}
-    class={`k2-text${props.type ? ` ${typeClass[props.type]}` : ""}${props.weight ? ` ${weightClass[props.weight]}` : ""}${props.muted ? " k2-muted" : ""}${props.href ? " k2-link" : ""}`}
-    data-k2-part="Text"
-    data-type={props.type}
-    data-tone={props.tone}
-  >
-    {props.children}
-  </Dynamic>
-);
+export const Text = (props: TextProps) => {
+  // made once and read from here: reading `children` again would make its JSX again
+  const words = resolveChildren(() => props.children);
+  return (
+    <Dynamic
+      component={props.href ? "a" : "span"}
+      href={props.href}
+      class={`k2-text${props.type ? ` ${typeClass[props.type]}` : ""}${props.weight ? ` ${weightClass[props.weight]}` : ""}${props.muted ? " k2-muted" : ""}${props.href ? " k2-link" : ""}`}
+      data-k2-part="Text"
+      data-type={props.type}
+      data-tone={props.tone}
+      // the full words the app gives; a title (the lead of a head) may be cut where it has no room, so it says all of
+      // its words on hover without them
+      title={props.title ?? (props.type === "lead" && typeof words() === "string" ? String(words()) : undefined)}
+    >
+      {words()}
+    </Dynamic>
+  );
+};
+
+export type CutProps = {
+  /** The words, such as an address or a file name. */
+  text: string;
+  /**
+   * What stays whole at the end when the words have no room: an address keeps its domain ("@example.com"), a file
+   * name its last letters and extension ("v12.3.pdf").
+   */
+  keep: "domain" | "extension";
+};
+
+/** How many characters at the end of `text` stay whole (see `CutProps.keep`). */
+export const cutTail = (text: string, keep: CutProps["keep"]): number => {
+  if (keep === "domain") {
+    const at = text.lastIndexOf("@");
+    return at > 0 ? text.length - at : 0;
+  }
+  const extension = /\.[\p{L}\p{N}]{1,8}$/u.exec(text);
+  if (!extension) return 0;
+  // the extension and a few letters before it (whole characters), so a version ("v12.3") survives the cut
+  const before = Array.from(text.slice(0, text.length - extension[0].length))
+    .slice(-6)
+    .join("");
+  return extension[0].length + before.length;
+};
+
+/**
+ * Words cut in the middle where they have no room, so their end stays readable: "bob.lange-adr…@example.com",
+ * "Angebot_Holzwerk…nal_v3.pdf". Their whole words show on hover. Use it for addresses and file names in a row,
+ * a tile or a head; other text is cut at its end by the place it stands in.
+ */
+export const Cut = (props: CutProps) => {
+  const split = () => props.text.length - cutTail(props.text, props.keep);
+  const head = () => props.text.slice(0, split());
+  return (
+    <span class="k2-midcut" title={props.text}>
+      {/* a start of a few letters is never cut: "…" would stand for nearly all of it */}
+      <Show when={head()}>
+        <span data-whole={Array.from(head()).length <= 4 ? "" : undefined}>{head()}</span>
+      </Show>
+      <Show when={split() < props.text.length}>
+        <span>{props.text.slice(split())}</span>
+      </Show>
+    </span>
+  );
+};
 
 /** The links reading text may carry; any other target shows as text. */
 const proseLinks = ["https:", "http:", "mailto:"] as const;
@@ -430,6 +482,12 @@ export const Row = (props: RowProps) => {
   // Parts passed as JSX are made once and read from here: reading a prop again would make its JSX again.
   const text = createMemo(() => props.lines);
   const lines = () => text().length;
+  // a row of three lines cuts each line with "…", a row of two its second line: a cut line of words says all on hover
+  const cut = (index: number) => {
+    const line = text()[index];
+    const cuts = lines() === 3 || (lines() === 2 && index === 1);
+    return cuts && typeof line === "string" && line.trim() ? line : undefined;
+  };
   const meta = resolveChildren(() => props.meta);
   const time = resolveChildren(() => props.time);
   const end = resolveChildren(() => props.end);
@@ -524,7 +582,7 @@ export const Row = (props: RowProps) => {
         </Show>
       </span>
       <span class="k2-row-l1">
-        <span class="k2-row-title" id={title}>
+        <span class="k2-row-title" id={title} title={cut(0)}>
           {text()[0]}
         </span>
         <Show when={meta() !== undefined}>
@@ -532,10 +590,14 @@ export const Row = (props: RowProps) => {
         </Show>
       </span>
       <Show when={lines() > 1}>
-        <span class="k2-row-l2">{text()[1]}</span>
+        <span class="k2-row-l2" title={cut(1)}>
+          {text()[1]}
+        </span>
       </Show>
       <Show when={lines() > 2}>
-        <span class="k2-row-l3">{text()[2]}</span>
+        <span class="k2-row-l3" title={cut(2)}>
+          {text()[2]}
+        </span>
       </Show>
       <Show when={time() !== undefined}>
         <span class="k2-row-time">{time()}</span>
@@ -617,7 +679,8 @@ type TableBase<T> = {
   open?: (row: T) => OpenTarget;
   /**
    * On the phone each row becomes a row of two lines instead (rule 7): `time` stands top right, `marks` at the end of
-   * the second line, such as the state of the entry as a chip.
+   * the second line, such as the state of the entry as a chip; `end` holds the row's deeds (as `Row end`), such as its
+   * "…": what a column of deeds offers on the desktop.
    */
   phone?: (row: T) => {
     lines: readonly [JSX.Element, JSX.Element];
@@ -626,6 +689,7 @@ type TableBase<T> = {
     mark?: MarkProps;
     time?: JSX.Element;
     marks?: JSX.Element;
+    end?: JSX.Element;
   };
   /**
    * While the rows load: the head stays and square placeholders hold the place of the rows, so nothing moves when they
@@ -1121,6 +1185,22 @@ export const Table = <T,>(props: TableProps<T>) => {
     const width = props.columns[index]?.width;
     return sizes()[index] ?? (width ? columnPx(width) : undefined);
   };
+  // In a small table with widths one column takes the rest of the row: here the last one. With the decided grow default
+  // (#4391) it is the growing column: one named `grow`, else one without a `width`, else the widest that is neither a
+  // number nor a column that may drop. That column never takes less than its floor: its own `min`, else the narrowest
+  // `min` of the others. Where the other columns take more, the table grows and scrolls sideways, so the growing column
+  // never stands at 0 px with its words gone (break-ui of #4291 with #4210).
+  const restFloor = () => {
+    if (!sized() || grid()) return undefined;
+    const last = props.columns.at(-1);
+    const others = props.columns.slice(0, -1);
+    // a fixed column's least is its fixed width (#4227)
+    const least = (width: ColumnWidth | undefined) => (width === undefined ? undefined : "fixed" in width ? width.fixed : width.min);
+    const mins = others.map((column) => least(column.width)).filter((min): min is number => min !== undefined);
+    const floor = least(last?.width) ?? (mins.length > 0 ? Math.min(...mins) : undefined);
+    if (floor === undefined) return undefined;
+    return others.reduce((sum, _, index) => sum + (columnWidth(index) ?? 0), floor);
+  };
   const sizeOf = (px: number | undefined) => (px === undefined ? undefined : { width: `${px}px` });
   // The sticky first data column stands after the box column (44 px).
   const stickyLeft = () => (props.select ? "44px" : "0px");
@@ -1165,6 +1245,7 @@ export const Table = <T,>(props: TableProps<T>) => {
           data-lines={lines()}
           data-sized={sized() ? "" : undefined}
           data-grid={grid() ? "" : undefined}
+          style={custom({ "--k2-table-min": restFloor() === undefined ? undefined : `${restFloor()}px` })}
           aria-label={props.label}
           aria-busy={loading() ? "true" : undefined}
           role={props.tree ? "treegrid" : undefined}
@@ -1225,10 +1306,11 @@ export const Table = <T,>(props: TableProps<T>) => {
                     <Show
                       when={column.sort}
                       fallback={
-                        <>
+                        // the words in a box of their own, cut with "…" there: a head with a grip lets the grip stand out
+                        <span class="k2-th-label">
                           {column.title}
                           <SortArrow sorted={props.sort?.column === index() ? props.sort.direction : undefined} />
-                        </>
+                        </span>
                       }
                     >
                       {(target) => (
@@ -1478,6 +1560,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                             mark={form().mark}
                             time={form().time}
                             marks={form().marks}
+                            end={form().end}
                             strong
                             href={target()?.href}
                             onNavigate={target()?.onNavigate}

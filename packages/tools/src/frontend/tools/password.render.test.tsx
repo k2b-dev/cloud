@@ -29,6 +29,7 @@ test("the server renders no password, and the chips the browser shows after it m
   expect(html).toMatch(/font-size:min\([^"]*"><\/span>/);
   expect(html).toContain("Stärke: –");
   // the chips come from the settings (20 signs with upper case, lower case and digits), as after mount
-  const chips = [...html.matchAll(/data-k2-part="Chip"[^>]*>([^<]+)</g)].map((match) => match[1]);
+  // a chip holds its words in a part of its own, which cuts them where the chip has no room
+  const chips = [...html.matchAll(/class="k2-chip-text"[^>]*>([^<]+)</g)].map((match) => match[1]);
   expect(chips).toEqual(["20 Zeichen", "Großbuchstaben", "Kleinbuchstaben", "Ziffern"]);
 });

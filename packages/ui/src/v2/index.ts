@@ -48,6 +48,8 @@ export {
 export {
   type CellValue,
   type Column,
+  Cut,
+  type CutProps,
   type Fact,
   Facts,
   type FactsProps,

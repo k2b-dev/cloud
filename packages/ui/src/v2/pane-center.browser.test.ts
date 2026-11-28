@@ -105,6 +105,11 @@ for (const variant of ["plain", "card"] as const)
         for (const tile of found.tile) rows.set(Math.round(tile.top), (rows.get(Math.round(tile.top)) ?? 0) + 1);
         expect([...rows.values()]).toEqual([2, 2]);
         for (const tile of found.tile) expect(tile.width).toBeGreaterThanOrEqual(240);
+        // each tile fills its half of the row (merge of #4210: the 320 px cap of a lone tile holds none narrower)
+        const [first, second] = found.tile;
+        const gap = await page.evaluate(() => Number.parseFloat(getComputedStyle(document.querySelector(".k2-tiles")!).columnGap) || 0);
+        expect(Math.abs(second!.left - first!.right - gap)).toBeLessThanOrEqual(1);
+        expect(Math.round(first!.width)).toBe(Math.round(second!.width));
         expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
       });
     });

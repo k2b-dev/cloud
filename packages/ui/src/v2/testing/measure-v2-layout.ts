@@ -33,6 +33,9 @@
  *   cells of a table with column widths) never wraps, it ends with "…"; a box that clips its text shows every line
  *   whole and cuts a line at its end only with "…"; text never runs out of a box that does not clip it, where it would
  *   run under what stands beside it and look cut mid-word.
+ * - **squeezed** (`measure-v2-squeezed.ts`): no text is pressed by its neighbours to a box of a few px or to one
+ *   letter per line; a visually hidden name is no finding.
+ * - **past** (`measure-v2-squeezed.ts`): no row runs past its column or the screen, no part of a row past the row.
  * - **out:** a control stays inside every bar and pane around it (`frames`); one that sticks out (the actions of a
  *   head squeezed by a long subject) is a finding. A scroller or a layer of its own (a menu, a popover, a dialog)
  *   between them ends the search.
@@ -51,6 +54,7 @@
 import type { Page } from "playwright";
 import { foldable } from "../bar-fold";
 import { fontWeights, gripTolerance, hairline, typeRoles } from "../tokens";
+import { measurePastInPage, measureSqueezedInPage } from "./measure-v2-squeezed";
 import { settled } from "./settled";
 
 export type V2LayoutOptions = {
@@ -95,6 +99,10 @@ export type V2Layout = {
   inside: string[];
   /** Cut control labels and one-line texts that wrap. */
   cut: string[];
+  /** Text pressed to a box of a few px or to one letter per line (see `measure-v2-squeezed.ts`). */
+  squeezed: string[];
+  /** Rows past their column or the screen, and parts of a row past the row (see `measure-v2-squeezed.ts`). */
+  past: string[];
   /** Controls that stick out of a bar or pane around them, such as a head's actions squeezed by a long subject. */
   out: string[];
   type: string[];
@@ -859,10 +867,10 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     unbroken: options.unbroken ?? "[data-k2-part='Band'], [data-k2-part='Group']",
     controls: options.controls ?? ".k2-btn, .k2-chip, .k2-tab",
     frames: options.frames ?? ".k2-bar, .k2-pane",
-    // A row of three lines cuts each line; in a row of one or two lines the title may wrap (it is what the row is about).
+    // A row of three lines cuts each line, a row of two its second; the title of one or two lines may wrap (the row is about it).
     oneLine:
       options.oneLine ??
-      ".k2-row[data-lines='3'] > :is(.k2-row-l1, .k2-row-l2, .k2-row-l3), .k2-row-meta, .k2-table[data-sized] .k2-cell-line:not([data-wrap])",
+      ".k2-row[data-lines='3'] > :is(.k2-row-l1, .k2-row-l2, .k2-row-l3), .k2-row[data-lines='2'] > .k2-row-l2, .k2-row-meta, .k2-table[data-sized] .k2-cell-line:not([data-wrap])",
     folds: foldable,
     sizes: roles.map((role) => role.size),
     lineHeights: [...new Set(roles.map((role) => role.lineHeight))],
@@ -927,13 +935,28 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
       if (JSON.stringify(now) !== JSON.stringify(then))
         grip.push("the grips moved between the DOM measurement and the screenshots; measure a page that holds still");
     }
-    const problems = [...dom.pseudo, ...dom.edge, ...dom.double, ...dom.inside, ...dom.cut, ...dom.out, ...dom.type, ...grip];
+    const text = await page.evaluate(measureSqueezedInPage, { root: limits.root, skip: limits.skip });
+    const edges = await page.evaluate(measurePastInPage, { root: limits.root, skip: limits.skip });
+    const problems = [
+      ...dom.pseudo,
+      ...dom.edge,
+      ...dom.double,
+      ...dom.inside,
+      ...dom.cut,
+      ...dom.out,
+      ...text.squeezed,
+      ...edges.past,
+      ...dom.type,
+      ...grip,
+    ];
     return {
       edge: dom.edge,
       double: dom.double,
       inside: dom.inside,
       cut: dom.cut,
       out: dom.out,
+      squeezed: text.squeezed,
+      past: edges.past,
       type: dom.type,
       grip,
       grips,

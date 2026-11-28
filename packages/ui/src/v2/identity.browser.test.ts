@@ -258,11 +258,11 @@ test("a card holds its mark, figures, people and history without a box inside, a
         ?.getAttribute("href");
     });
     expect(target).toBe("#werkstatt");
-    // a long name is cut on one line and never widens its card
+    // a long name is cut on one line and never widens its card (in the middle, by `Cut`: its parts hold the "…")
     const long = page.locator(".k2-tiles[data-variant='card'] > .k2-tile").nth(1);
     const cut = await long.locator(".k2-tile-title").evaluate((element) => ({
       lines: Math.round(element.getBoundingClientRect().height / 20),
-      wider: element.scrollWidth > element.clientWidth,
+      wider: [element, ...element.querySelectorAll(".k2-midcut > span")].some((part) => part.scrollWidth > part.clientWidth),
     }));
     expect(cut).toEqual({ lines: 1, wider: true });
   });

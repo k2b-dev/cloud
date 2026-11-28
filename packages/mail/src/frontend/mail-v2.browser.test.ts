@@ -650,7 +650,7 @@ describe("Mail on the v2 pilot", () => {
           const composer = Array.from(document.querySelectorAll('[data-k2-part="Composer"]')).at(-1)!;
           const head = composer.querySelector(".k2-composer-head")!;
           const x = (element: Element | null | undefined) => (element ? Math.round(element.getBoundingClientRect().x * 10) / 10 : null);
-          const name = head.querySelector(".mail-recipient-pill") ?? head.querySelector(":scope > .k2-text:not(.k2-t-meta)");
+          const name = head.querySelector(".mail-recipient-pill") ?? head.querySelector(".k2-composer-to > .k2-text:not(.k2-t-meta)");
           const from = Array.from(head.querySelectorAll('[data-k2-part="Button"]')).find((button) =>
             button.textContent?.startsWith("von "),
           );
@@ -659,8 +659,8 @@ describe("Mail on the v2 pilot", () => {
             composer.querySelector('[data-k2-part="Composer"] .k2-composer-start, .k2-composer-start');
           const style = words ? getComputedStyle(words) : null;
           return {
-            mode: x(head.querySelector(":scope > .k2-icon")),
-            to: x(head.querySelector(":scope > .k2-t-meta")),
+            mode: x(head.querySelector(".k2-composer-to > .k2-icon")),
+            to: x(head.querySelector(".k2-composer-to > .k2-t-meta")),
             name: x(name),
             nameText: name?.textContent?.trim(),
             from: x(from),

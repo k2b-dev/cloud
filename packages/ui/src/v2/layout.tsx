@@ -26,7 +26,7 @@ import { type GripOptions, useGrip } from "./behavior/resize";
 import { ActionButton } from "./button";
 import { accentStyle } from "./colors";
 import { type Column, ColumnsContext, type DetailEmpty, InnerContext } from "./columns-context";
-import { RowOpen } from "./content";
+import { Cut, RowOpen } from "./content";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Icon, Mark, Spark, type SparkProps } from "./marks";
 import { BarFold, Menu, type MenuItem } from "./menu";
@@ -1180,10 +1180,13 @@ export type TilesProps = {
 
 const TileName = (props: { tile: Tile }) => (
   <span class="k2-tile-name">
-    {/* a name of one word cannot take a second line without breaking inside it: it stays one line and ends in "…" */}
+    {/* a name of one word cannot take a second line without breaking inside it: it stays one line and ends in "…";
+        such a name (a file name) is cut in the middle, so its extension and version stay readable */}
     <span class="k2-tile-title" data-one-word={/\s/.test(props.tile.title.trim()) ? undefined : ""}>
       <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate} onOpen={props.tile.onOpen}>
-        {props.tile.title}
+        <Show when={!/\s/.test(props.tile.title.trim())} fallback={props.tile.title}>
+          <Cut text={props.tile.title} keep="extension" />
+        </Show>
       </RowOpen>
     </span>
     <Show when={props.tile.meta}>

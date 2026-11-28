@@ -1,4 +1,5 @@
 import {
+  batch,
   type ChildrenReturn,
   createComputed,
   createEffect,
@@ -377,7 +378,7 @@ const TabFace = (props: { tab: Tab }) => {
   return (
     <>
       <Show when={props.tab.icon}>{(name) => <Icon name={name()} />}</Show>
-      {props.tab.label}
+      <span class="k2-tab-label">{props.tab.label}</span>
       <Show when={props.tab.count !== undefined}>
         <span class="k2-tab-count">{countIn(props.tab.count ?? "", locale())}</span>
       </Show>
@@ -413,6 +414,8 @@ const countWith = (count: Tab["count"], hidden: number): Tab["count"] => {
  * tab is a link or a button the Tab key reaches; a tab with `menu` is the button of a menu of further views and
  * stands at the end. A tab is never cut: one that has no room hides whole and is an entry of that menu (without a
  * menu tab a tab "More" opens them), opened from there as its tab opens it, and the menu tab itself always stays whole.
+ * Only the open tab never hides (break-ui 25.11.): when it has no room, it takes the place after the tabs that fit,
+ * cut with "…" (its whole name on hover), and the tabs between join the menu.
  * A tab that holds the focus and hides hands it to the menu tab; a "More" that goes hands it to the last tab.
  * Known: while tabs hide, a gap of less than one tab may stand before the menu tab (closing it would move the menu tab
  * after the page loads).
@@ -425,14 +428,20 @@ export const Tabs = (props: TabsProps) => {
   // How many plain tabs have room, from the start; the rest wrap below the line of the tabs, where nothing shows.
   // Measured in the browser; the server sends every tab, and the stylesheet already hides what wraps.
   const [fit, setFit] = createSignal(Number.POSITIVE_INFINITY);
+  // The open tab, when it would hide: it stands after the tabs that fit, at most this wide.
+  const [kept, setKept] = createSignal<{ index: number; room: number }>();
   let row: HTMLDivElement | undefined;
   let nav: HTMLElement | undefined;
   // A tab that holds the focus and hides for lack of room hands it to the menu tab ("Mehr" or the views' own), so it
   // never falls to the page; a "Mehr" that holds it and goes, as every tab has room again, hands it to the last tab.
-  const place = (next: number) => {
+  // The focus is read before either count changes: a kept open tab can empty "Mehr" as well (review of #4210).
+  const place = (next: number, keep?: { index: number; room: number }) => {
     const held = document.activeElement;
     const fromMore = held !== null && nav?.querySelector(":scope > .k2-tab[data-k2-more]")?.contains(held) === true;
-    setFit(next);
+    batch(() => {
+      setKept(keep);
+      setFit(next);
+    });
     if (!row || !nav || !held) return;
     if (row.contains(held) && held.closest(".k2-tab")?.hasAttribute("data-overflow"))
       [...nav.querySelectorAll<HTMLElement>(":scope > .k2-tab[data-menu]")].at(-1)?.focus();
@@ -442,21 +451,44 @@ export const Tabs = (props: TabsProps) => {
     if (!row) return;
     const measure = () => {
       const tabs = [...(row?.children ?? [])].filter((child): child is HTMLElement => child instanceof HTMLElement);
-      const first = tabs[0]?.offsetTop ?? 0;
-      const index = tabs.findIndex((tab) => tab.offsetTop > first + 1);
+      if (!row || tabs.length === 0) return;
+      // each tab's own width, also of a tab cut now: its name's whole width in place of the cut one
+      const widths = tabs.map((tab) => {
+        const label = tab.querySelector<HTMLElement>(".k2-tab-label");
+        return tab.getBoundingClientRect().width + (label ? label.scrollWidth - label.clientWidth : 0);
+      });
+      const gap = Number.parseFloat(getComputedStyle(row).columnGap) || 0;
+      const room = row.clientWidth;
+      const until = (count: number) => widths.slice(0, count).reduce((sum, width, index) => sum + width + (index > 0 ? gap : 0), 0);
       // the "Mehr" that holds the hidden tabs takes their room itself: where every tab fits in the room it and its gap
       // take, all of them show and it goes (otherwise it keeps itself, once a bar's end gave the room back)
-      const more = row?.parentElement?.querySelector<HTMLElement>(":scope > .k2-tab[data-k2-more]");
-      if (index >= 0 && more && row) {
-        const gap = Number.parseFloat(getComputedStyle(row).columnGap) || 0;
+      const more = row.parentElement?.querySelector<HTMLElement>(":scope > .k2-tab[data-k2-more]");
+      if (more && until(tabs.length) > room + 0.5) {
         const navGap = Number.parseFloat(getComputedStyle(row.parentElement!).columnGap) || 0;
-        const need = tabs.reduce((sum, tab) => sum + tab.getBoundingClientRect().width, 0) + gap * (tabs.length - 1);
-        if (need <= row.getBoundingClientRect().width + navGap + more.getBoundingClientRect().width) {
+        if (until(tabs.length) <= room + navGap + more.getBoundingClientRect().width + 0.5) {
           place(Number.POSITIVE_INFINITY);
           return;
         }
       }
-      place(index < 0 ? Number.POSITIVE_INFINITY : index);
+      // the first tab always stands in the line (a wrapping line holds at least one), as the server sent it
+      let fits = 1;
+      while (fits < tabs.length && until(fits + 1) <= room + 0.5) fits += 1;
+      const open = plain().findIndex((tab) => tab.current);
+      if (open < 0 || open < fits) {
+        place(fits >= tabs.length ? Number.POSITIVE_INFINITY : fits);
+        return;
+      }
+      // the open tab keeps at least the room of a short name, or its whole width when that is less
+      const least = Math.min(widths[open]!, 96);
+      let before = Math.min(fits, open);
+      while (before > 0 && until(before) + gap + least > room + 0.5) before -= 1;
+      const left = Math.floor(room - until(before) - (before > 0 ? gap : 0));
+      // without room even for a short name the open tab hides like the others (a cut to nothing says nothing)
+      if (left < least) {
+        place(fits);
+        return;
+      }
+      place(before, { index: open, room: left });
     };
     // What the measurement changes (the count of the menu tab, "+8" to "+12") can change the room of the tabs again.
     // So it runs in the next frame, once per frame, never inside the observer's own turn (WebKit reports that as a
@@ -481,13 +513,16 @@ export const Tabs = (props: TabsProps) => {
     });
     watchAll();
     parts.observe(row, { childList: true });
+    // Another tab becoming the open one changes no size: the place of the open tab is measured again for it.
+    createEffect(on(() => plain().findIndex((tab) => tab.current), later, { defer: true }));
     onCleanup(() => {
       cancelAnimationFrame(frame);
       sizes.disconnect();
       parts.disconnect();
     });
   });
-  const hidden = () => plain().slice(fit());
+  const isKept = (index: number) => kept()?.index === index;
+  const hidden = () => plain().filter((_, index) => index >= fit() && !isKept(index));
   const more = () => hidden().map((tab) => asEntry(tab, locale()));
   return (
     <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label} ref={nav}>
@@ -502,7 +537,10 @@ export const Tabs = (props: TabsProps) => {
               onNavigate={tab().href !== undefined ? tab().onNavigate : undefined}
               onClick={() => tab().onClick?.()}
               aria-current={tab().current ? "page" : undefined}
-              data-overflow={index >= fit() ? "" : undefined}
+              data-overflow={index >= fit() && !isKept(index) ? "" : undefined}
+              data-kept={isKept(index) ? "" : undefined}
+              title={isKept(index) ? tab().label : undefined}
+              style={isKept(index) ? custom({ "--k2-tab-room": `${kept()?.room ?? 0}px` }) : undefined}
             >
               <TabFace tab={tab()} />
             </Dynamic>
@@ -706,7 +744,7 @@ export const Path = (props: PathProps) => {
 export type StatusFact = {
   /** Words before the value, such as "Summe". */
   before?: string;
-  /** The value itself, in 600. */
+  /** The value itself, in 600; a number is written in the language of the page (12.847). */
   value?: string | number;
   /** Words after the value, such as "überfällig". */
   after?: string;
@@ -772,6 +810,9 @@ const holdsContent = (resolved: ChildrenReturn) =>
 export const StatusRow = (props: StatusRowProps) => {
   useStatusToolbar();
   const t = useUiMessages();
+  const locale = useLocale();
+  // a count is said in the reader's language: 12.847 in German, 12,847 in English
+  const said = (value: string | number) => (typeof value === "number" ? value.toLocaleString(locale()) : value);
   const filters = resolveChildren(() => props.filters);
   const marks = resolveChildren(() => props.marks);
   // The bar's fold watches the row while entries are selected (the actions without room fold into "…" from the end,
@@ -834,7 +875,7 @@ export const StatusRow = (props: StatusRowProps) => {
                         {fact.before ?? ""}
                         {fact.before && fact.value !== undefined ? " " : ""}
                         <Show when={fact.value !== undefined}>
-                          <b>{fact.value}</b>
+                          <b>{said(fact.value!)}</b>
                         </Show>
                         {fact.after ? ` ${fact.after}` : ""}
                       </span>
@@ -925,34 +966,72 @@ export type NoticeProps = NoticeBase &
 
 const toneIcon = { note: "note", ai: "sparkles", bad: "alert-circle", warn: "alert-triangle" } as const;
 
-/** A band with a sign, a sentence and its consequence, and at most two deeds. The tint is its edge. */
-export const Notice = (props: NoticeProps) => (
-  <div
-    class="k2-notice"
-    data-k2-part="Notice"
-    data-tone={props.tone}
-    data-title={props.title ? "" : undefined}
-    role={props.tone === "bad" ? "alert" : "note"}
-  >
-    <Icon name={props.icon ?? toneIcon[props.tone]} />
-    <Show when={props.title}>
-      <span class="k2-notice-title">
-        {props.title}
-        <Show when={props.meta}>
-          {" "}
-          <span class="k2-notice-meta">· {props.meta}</span>
-        </Show>
+/** The tones whose long text shows its first lines and "Show more" (the stylesheet: a summary 4, a note 8). */
+const clampedTones: ReadonlySet<NoticeProps["tone"]> = new Set(["ai", "note"]);
+
+/**
+ * A band with a sign, a sentence and its consequence, and at most two deeds. The tint is its edge. A person's note
+ * and an AI summary keep their line breaks; a long one shows its first lines (a summary 4, a note 8) and "Show more"
+ * over the end of the last one, so nothing moves when the page comes alive.
+ */
+export const Notice = (props: NoticeProps) => {
+  const t = useUiMessages();
+  const clamped = () => clampedTones.has(props.tone);
+  const [long, setLong] = createSignal(false);
+  const [open, setOpen] = createSignal(false);
+  let text: HTMLSpanElement | undefined;
+  onMount(() => {
+    if (!text || !clamped() || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      if (text && !open()) setLong(text.scrollHeight > text.clientHeight + 1);
+    };
+    // its box keeps the height of its lines while new words come in (a summary that grows): what it holds is watched too
+    const sizes = new ResizeObserver(measure);
+    sizes.observe(text);
+    const words = new MutationObserver(measure);
+    words.observe(text, { childList: true, subtree: true, characterData: true });
+    measure();
+    onCleanup(() => {
+      sizes.disconnect();
+      words.disconnect();
+    });
+  });
+  return (
+    <div
+      class="k2-notice"
+      data-k2-part="Notice"
+      data-tone={props.tone}
+      data-title={props.title ? "" : undefined}
+      data-open={open() ? "" : undefined}
+      role={props.tone === "bad" ? "alert" : "note"}
+    >
+      <Icon name={props.icon ?? toneIcon[props.tone]} />
+      <Show when={props.title}>
+        <span class="k2-notice-title">
+          {props.title}
+          <Show when={props.meta}>
+            {" "}
+            <span class="k2-notice-meta">· {props.meta}</span>
+          </Show>
+        </span>
+      </Show>
+      <span class="k2-notice-text" ref={text}>
+        {props.children}
       </span>
-    </Show>
-    <span class="k2-notice-text">{props.children}</span>
-    <Show when={props.actions?.length || props.primary}>
-      <span class="k2-notice-end">
-        <For each={props.actions}>{(action) => <ActionButton action={action} variant="text" />}</For>
-        <Show when={props.primary}>{(primary) => <ActionButton action={primary()} variant="secondary" />}</Show>
-      </span>
-    </Show>
-  </div>
-);
+      <Show when={long()}>
+        <button type="button" class="k2-notice-more" aria-expanded={open() ? "true" : "false"} onClick={() => setOpen(!open())}>
+          {open() ? t().showLess : t().showMore}
+        </button>
+      </Show>
+      <Show when={props.actions?.length || props.primary}>
+        <span class="k2-notice-end">
+          <For each={props.actions}>{(action) => <ActionButton action={action} variant="text" />}</For>
+          <Show when={props.primary}>{(primary) => <ActionButton action={primary()} variant="secondary" />}</Show>
+        </span>
+      </Show>
+    </div>
+  );
+};
 
 // ── Digest ───────────────────────────────────────────────────────────────────────────────────────────────────────
 

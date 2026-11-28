@@ -53,7 +53,10 @@ The working surface of an app: one per screen.
 - Tablet: where the sidebar at its default does not fit beside every column
   at its minimum, it becomes a drawer with a button at the start of the head.
 - Phone (< 768 px): the sidebar leaves, every head action stays; only the
-  `floats` twin of `primary` leaves the head.
+  `floats` twin of `primary` leaves the head. In a head with `Tabs` the open
+  tab keeps its whole name; buttons that do not fit beside the tabs fold into
+  the bar's "…" (see `Bar`). A column with a `width` fills the screen; its
+  minimum counts only on the desktop.
   A search in the head (`Input type="search"`) stays as its symbol; a tap
   goes into the field, which opens over the head while it has the focus
   and folds back, its words kept, on blur or Escape. A host that offers the
@@ -186,7 +189,9 @@ key statements of a record or the home of a place.
 
 Like things to press, such as attachments: `items: { icon, title, meta?,
 href?, onNavigate?, color? }[]`, `more` (an action after them), `label`.
-Never nested. With `color` the symbol becomes the thing's `Mark`.
+Never nested. With `color` the symbol becomes the thing's `Mark`. A long
+title of one word (a file name) is cut in the middle and keeps its extension
+("Angebot_Holz…nal_v3.pdf"), whole on hover. A tile is at most 320 px wide;
 `perRow={n}`: at most n tiles share a row and grow with its width; a tile
 never gets narrower than 240 px for it. Where n do not fit, a row holds
 half of them (four as 2 × 2, never 3 + 1), and below that one under the
@@ -278,6 +283,9 @@ content, a list and its detail, one section and the next. A `Row`:
 
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
+  The second line of two or three is one line, cut with "…" before what
+  stands beside it (an address or JSON without a break never runs under the
+  marks or a deed); a cut line of words says all of it on hover.
 - lead: `mark` (the thing's `Mark`: a base, a file with its thumbnail, a
   table; 24 px on one line, 32 px on two or three), or `avatar`, or a
   quiet `icon` for a plain place or deed, or a dot when `unread`.
@@ -290,6 +298,17 @@ content, a list and its detail, one section and the next. A `Row`:
 - `marks` (chips, icons, avatars bottom right): use them with 3 lines; on a
   2-line row they add a third line. The third line shares its width with
   the marks, so keep it a preview text that may be cut, never an amount.
+  Marks take at most half of the row; what does not fit gives way whole, in
+  this order: a tag chip is cut to about 12 letters first, then lone `Icon`s
+  leave (they stand last), then the marks at the end. So pass them in the
+  order of their weight: words of a state (as `Text`, never loose text),
+  then the tag, then the person, then symbols. Marks are things to see,
+  never to press: a mark that leaves is out of view but still in the page,
+  so a button or link there would be reached by Tab unseen. Put a deed in
+  `action` or `end`.
+- A line of three is cut with "…" and says its words on hover. An address
+  or a file name as a line: `<Cut text={address} keep="domain" />` cuts it in
+  the middle, so the domain or extension stays readable.
 - `action` (one framed button at the end; under the text on the phone; its
   name is its words and then the row's title, "Ansehen Angebot Küche", so
   rows with the same deed are told apart: name nothing yourself; on the
@@ -344,9 +363,11 @@ column; pair it with `StatusRow selection`), `current` (the open row's key,
 tinted), `sticky` (first column stays while scrolling sideways), `group(row)
 => { key, head: () => JSX, meta?, count? }` (tinted group rows), `sort: { column,
 direction }` (the column sorted now: an arrow and darker words in its head,
-`aria-sort` on it), `phone(row) => { lines, avatar?, time?, marks?
+`aria-sort` on it), `phone(row) => { lines, avatar?, time?, marks?, end?
 }` (on the phone each row becomes a two-line row instead: `time` top right,
-`marks` at the end of the second line, such as the entry's state chip).
+`marks` at the end of the second line, such as the entry's state chip, `end`
+the row's deeds as on a `Row`, such as its "…": give it whatever a column of
+deeds offers on the desktop, or the phone loses them).
 
 Give every table whose column widths add up to more than a phone (about
 350 px after the dropped ones) a `phone(row)`; otherwise its last columns
@@ -655,7 +676,10 @@ name wraps in a small table and ends with "…" in one with column widths.
   opening from there as it does as a tab; without a menu tab a tab "Mehr"
   holds them. A tab that holds the focus and hides hands it to the menu tab,
   and a "Mehr" that goes hands it to the last tab. Known: while tabs hide, a
-  gap of less than one tab may stand before the menu tab.
+  gap of less than one tab may stand before the menu tab. The open tab never
+  hides: without room it stands after the tabs that fit, cut with "…" (whole
+  on hover), and is not named in the menu again (leave it out of your `menu`
+  entries too).
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"; cut with "…"
   first where it does not fit, its whole words as a hint on hover),
   `loading` (results
@@ -667,7 +691,7 @@ name wraps in a small table and ends with "…" in one with column widths.
   width and the lead is cut; where both are long the lead keeps 40 % (60 %
   below 600 px, where the controls fold) and the later figures give way
   whole, so the filters keep their words; they go on the phone; put what must
-  stay in `lead`),
+  stay in `lead`; a number `value` is written in the page's language, 12.847),
   `marks` (tinted chips of the statement, an exception such as
   `<Chip status="bad">1 ohne Zugriff</Chip>`: after the lead, they keep their
   width while the lead is cut, stay on the phone, and give way whole only
@@ -678,7 +702,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`, each with an `icon`; below 600 px of row
   they keep only their symbols, the words stay their names; on the phone
-  they stay in the row, and what has no room folds into one "+n" menu),
+  they stay in the row, and what has no room folds into one "+n" menu; the
+  lead keeps about a word beside them; controls only: a chip that only says
+  something cannot fold and belongs in `marks`),
   `selection: { count, actions, clear }` (while rows are selected the row
   becomes the bar of what can be done with them; the count is never cut, and
   actions without room go whole into a "…" menu from the end, right after the
@@ -697,7 +723,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   now, and the sentence says why), `primary` (the one thing to do, such as
   "Neu laden": a framed button after one quiet text button at most; it is
   no primary of the page), children (the sentence and its
-  consequence). Use it for errors with a way out instead of "try again"
+  consequence). A `note` and an `ai` summary keep their line breaks; a long
+  one shows its first 8 (note) or 4 (summary) lines and "Mehr anzeigen".
+  Use it for errors with a way out instead of "try again"
   buttons of your own.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
   title, state: { icon, label, tone? }, text, href? }[]`, or `activity`:
