@@ -422,7 +422,9 @@ name wraps in a small table and ends with "…" in one with column widths.
 - `Spark`: `values` (oldest first), `label`: what the bars say as one
   sentence ("Werkstatt: in 7 Tagen von 12 auf 41 Änderungen gestiegen"),
   never only the title of the data. A few bars of a short history, the
-  last strongest; beside a number, never instead of it.
+  last strongest; beside a number, never instead of it. Sparks side by
+  side that compare should share `max`: the same value then has the same
+  height, and a value above it stands at the top.
 - Data colours (`color` of `Mark`, `Avatar`, `Chip tag`, `Nav`, `Tiles`,
   `Section`, `Cells.Cell`, `Digest`) are validated: a hex colour, an
   `oklch()` or `var(--…)`; anything else renders neutral. For a hex colour
