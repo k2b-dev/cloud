@@ -604,6 +604,16 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     for (const control of root.querySelectorAll(".k2-btn, .k2-chip, .k2-tab")) {
       if (hidden(control)) continue;
       const box = control.getBoundingClientRect();
+      // a button past the row it stands in (a long deed beside a title on the phone), unless that row scrolls sideways
+      const row = control.closest(".k2-sh, .k2-bar, .k2-row, .k2-gh, .k2-facts-line, .k2-cells");
+      if (control.matches(".k2-btn") && row && !control.parentElement?.closest(".k2-table-scroll")) {
+        const edge = row.getBoundingClientRect();
+        const over = Math.max(box.right - edge.right, edge.left - box.left);
+        if (over > 0.5)
+          problems.push(
+            `${part(control) || "control"} ${quote(control.getAttribute("aria-label") ?? control.textContent, 30)} runs ${Math.round(over)} px past its row: let the row wrap or give the button room`,
+          );
+      }
       const label = control.querySelector(".k2-btn-label") ?? control;
       // the way back beside the name of what is open gives it the room and is cut on purpose; its whole name is its hint
       if (control.parentElement?.querySelector(":scope > .k2-pane-back-name") && control.getAttribute("title")) continue;

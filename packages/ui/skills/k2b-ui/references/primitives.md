@@ -206,12 +206,14 @@ drawing: a second child stands in a row of its own under it and is cut away.
 ### Section
 
 A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
-`actions` (≤ 2 text buttons in the head), `summary` (one sentence),
-`measure` (its head, sentence and rows keep the reading measure of `Prose`,
-720 px of text, so a short list in a wide pane stays together; its line
-still reaches the column's edges), `more` (one link under the rows, its
-words on their text edge, never at the right: "All deliveries ›"; its
-`meta` shows only in a
+`actions` (≤ 2 text buttons in the head; on the phone one with an `icon`
+shows only the symbol and keeps its words as its name and hint, and the
+deeds go under the title where they do not fit beside it), `summary` (one
+sentence), `measure` (its head, sentence and rows keep the reading measure
+of `Prose`, 720 px of text, so a short list in a wide pane stays together;
+its line still reaches the column's edges), `more` (one link under the
+rows, its words on their text edge, never at the right: "All deliveries
+›"; its `meta` shows only in a
 `Pane side`, where the link becomes a row), children. No line under
 the head or between entries, one line at the end. A long title (a
 question, a name) wraps onto more lines and the head grows with it; no word
@@ -591,7 +593,8 @@ name wraps in a small table and ends with "…" in one with column widths.
   you give (`"99+"`, `"+8"`) stay as they are.
 - `Tabs`: `label`, `items: { label, icon?, count?, href?, onClick?,
   current?, menu? }[]`. In a head `Bar start` they share the bar with actions; as a `Pane`
-  head they are their own 44 px bar. `menu` takes the entries of a `Menu`:
+  head they are their own 44 px bar; in a `Pane` `status` (the areas of an
+  open entry under its head) they start on the text edge too. `menu` takes the entries of a `Menu`:
   the tab ("Weitere +8") opens the views that have no tab of their own; it
   stands at the end and its `count` counts its own entries. A tab is never
   cut: one without room hides whole and joins that menu (and its count),

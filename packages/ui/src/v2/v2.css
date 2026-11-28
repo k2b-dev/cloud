@@ -4233,6 +4233,10 @@
   padding: 0 var(--k2-edge);
   box-shadow: inset 0 -1px 0 var(--k2-line);
 }
+/* tabs in a pane's status slot (the areas of an open entry, S2 26.11.) start on the text edge as in its head */
+.k2-ui [data-slot="status"] > .k2-tabs-nav {
+  padding-inline: var(--k2-edge);
+}
 .k2-ui .k2-tabs {
   display: flex;
   flex: 0 1 auto;
@@ -5885,6 +5889,17 @@
     padding: 4px 0 0;
     flex-wrap: wrap;
   }
+  /* a section's deeds that do not fit beside its title go under it, by layout alone (nothing is measured, so the server
+     already sends the final head); the head is one line while they fit (review of #4287) */
+  .k2-ui .k2-sh {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: var(--k2-h-status);
+    row-gap: 4px;
+  }
+  .k2-ui .k2-sh > .k2-sh-end {
+    max-width: 100%;
+  }
   /* a head action with a leading symbol keeps only the symbol; its words stay its title and name (not `display: none`,
      which took them). One without a leading symbol keeps its words, also with a trailing chevron (forward, menu) */
   .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn:has(> .k2-icon:first-child) > .k2-btn-label {
@@ -5894,6 +5909,20 @@
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+  /* a finger hits 44 px of such a deed, around its symbol; nothing in the layout moves */
+  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn:has(> .k2-icon:first-child):has(> .k2-btn-label) {
+    position: relative;
+    overflow: visible;
+  }
+  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn:has(> .k2-icon:first-child):has(> .k2-btn-label)::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
   }
   .k2-ui .k2-facts {
     grid-template-columns: minmax(0, 1fr);
