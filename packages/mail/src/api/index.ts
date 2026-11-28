@@ -2027,7 +2027,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
       until: Date.now() + FIRST_RENDER_COUNT_WAIT_MS,
     });
     if (!counts.ok) return respondPublic(c, counts);
-    if (!counts.data) return c.json({ pending: true as const }, 202);
+    if (!counts.data) return respond(c, ok({ pending: true as const }), 202);
     const folderId = request.requestUrl.searchParams.get("folder");
     const mine = counts.data.views.mine;
     const waiting = Math.min(counts.data.mineWaiting, mine);

@@ -355,7 +355,10 @@ export function createMailboxController(props: MailboxControllerProps) {
       }
       if (request.signal.aborted) return;
       setCountsUnavailable(true);
-      toast.error(t().countsUnavailable, { action: { label: t().tryAgain, onClick: () => setCountsRound((round) => round + 1) } });
+      toast.error(t().countsUnavailable, {
+        title: t().countsUnavailableTitle,
+        action: { label: t().tryAgain, onClick: () => setCountsRound((round) => round + 1) },
+      });
     })();
   });
   const userPreferences = createMemo(() => observeMailUserPreferences(mailboxId, props.initialUserPreferences));

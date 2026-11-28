@@ -227,6 +227,14 @@ class FakeWebSocket {
 const path = `/app/mail/${MAILBOX_ID}`;
 /** Long enough for a refresh through the mocked API to finish. */
 const settle = () => Bun.sleep(60);
+/** Waits until `condition` holds, at most `ms`: the counts' retry pauses are real time. */
+const until = async (condition: () => boolean, ms = 5_000) => {
+  const deadline = Date.now() + ms;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error("Condition did not hold in time");
+    await Bun.sleep(25);
+  }
+};
 
 type RecordedRequest = {
   route: string;
@@ -473,15 +481,15 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     mount(path, { ...snapshotFor(path), viewCounts: zero, viewCountsPending: true });
     await settle();
     expect(asked).toHaveLength(1);
-    await Bun.sleep(1_100);
-    expect(asked).toHaveLength(2);
+    await until(() => asked.length === 2);
+    await settle();
     expect(needsActionTab()).toContain("5");
   });
 
   test("counts that never come end in a dash and a toast that tries again", async () => {
     const asked = countsServer([503, "network", 503, 9]);
     mount(path, { ...snapshotFor(path), viewCounts: zero, viewCountsPending: true });
-    await Bun.sleep(3_300);
+    await until(() => needsActionTab().includes("–"));
     expect(asked).toHaveLength(3);
     expect(needsActionTab()).toContain("–");
     const retry = [...document.querySelectorAll("button")].find((button) => button.textContent?.includes("Try again"));
@@ -508,7 +516,12 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
 
   test("the done line keeps its ring in place, unnamed while the counts are pending", async () => {
     countsServer([3]);
-    mount(path, { ...snapshotFor(path), doneTodayCounts: { doneToday: 4, doneByAutomation: 0 }, viewCounts: zero, viewCountsPending: true });
+    mount(path, {
+      ...snapshotFor(path),
+      doneTodayCounts: { doneToday: 4, doneByAutomation: 0 },
+      viewCounts: zero,
+      viewCountsPending: true,
+    });
     const ring = () => dom.root.querySelector("[data-mail-done-line] .k2b-progress-ring");
     expect(ring()).not.toBeNull();
     expect(ring()?.getAttribute("role")).toBeNull();
@@ -523,6 +536,7 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     expect(asked).toHaveLength(1);
     dispose();
     dispose = () => {};
+    // fixed wait: past the first pause, when a live page would ask again; nothing may ask
     await Bun.sleep(1_200);
     expect(asked).toHaveLength(1);
   });
