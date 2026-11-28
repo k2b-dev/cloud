@@ -1909,6 +1909,10 @@
   .k2-ui .k2-row[data-end-hover] > .k2-row-end {
     display: none;
   }
+  /* the end is not drawn there, so the second line takes its column too (as in a row without an end) */
+  .k2-ui .k2-row[data-end-hover][data-time]:not([data-lines="1"]):has(> .k2-row-end) > .k2-row-l2 {
+    grid-column-end: -1;
+  }
 }
 .k2-ui .k2-row[data-avatar] > .k2-row-lead {
   width: 32px;
