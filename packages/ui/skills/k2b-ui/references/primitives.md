@@ -294,7 +294,7 @@ open row in the tint of the app it belongs to, a chosen row blue; rows part
 with the quiet line, the column head with the clear one). A column: `title`, `cell(row)`
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
-never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer, on focus and while dragged; on touch screens it stays), `wrap` (one text column may take 3
+never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer or holds the focus, and while dragged; on touch screens it stays, and after a touch on the head it takes a 44 px target), `wrap` (one text column may take 3
 lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
@@ -622,8 +622,8 @@ name wraps in a small table and ends with "…" in one with column widths.
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`, each with an `icon`; below 600 px of row
-  they keep only their symbols, the words stay their names; leave on the
-  phone),
+  they keep only their symbols, the words stay their names; on the phone
+  they stay in the row, and what has no room folds into one "+n" menu),
   `selection: { count, actions, clear }` (while rows are selected the row
   becomes the bar of what can be done with them; the count is never cut, and
   actions without room go whole into a "…" menu from the end, right after the

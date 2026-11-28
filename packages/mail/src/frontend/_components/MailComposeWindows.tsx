@@ -56,8 +56,6 @@ export type MailComposeWindowsProps = {
   returnHref: string;
   /** Where the reply box stands in the reader; the large composer's conversation reads in the same order (F4). */
   replyPosition: () => MailReplyPosition;
-  /** The one-time hint that the large composer's panes can be arranged; the mailbox stores that it was seen. */
-  arrangeHint?: { open: () => boolean; dismiss: () => void };
   /** A draft was sent, discarded, or saved: Drafts, the list, and the outbox show it. */
   onDraftsChanged: () => void;
   /** Whether a minimized bar lies over the bottom of the area, so the list keeps its last row reachable. */
@@ -159,7 +157,6 @@ export default function MailComposeWindows(props: MailComposeWindowsProps) {
     toggleFullscreen: () => changeState(entry, entry.state() === "maximized" ? "normal" : "maximized"),
     initialSelection: entry.selection,
     replyPosition: props.replyPosition,
-    arrangeHint: props.arrangeHint,
     register: (next) => controls.set(entry.key, next),
     messageSource: () => null,
     summary: (value) => title(value.subject),
