@@ -1,5 +1,5 @@
-import { createSignal, For } from "solid-js";
-import { Bar, Button, Check, List, Menu, type MenuEntry, Pane, Popover, Row, Section, Tabs, useToast, Workspace } from "../src/v2";
+import { createSignal, For, Show } from "solid-js";
+import { Bar, Button, Check, List, Menu, type MenuEntry, Pane, Popover, Row, Section, Tabs, Text, useToast, Workspace } from "../src/v2";
 
 // Menu, Popover and Toast of v2 in the places the mockup puts them: the "…" of a head (07-formular-menue), a filter
 // panel and a hint in the same head, a context menu and a "…" on rows, a tab "Weitere" that opens the views without a
@@ -83,11 +83,12 @@ export function Demo() {
           }
           end={
             <>
-              <Popover tip="Neu laden">
-                <Button variant="ghost" icon="refresh" label="Aktualisieren" onClick={did("reload")} />
-              </Popover>
+              {/* k2b-ui gap: a Bar cannot fold its end into "…" when it has no room (the phone keeps every head control
+                  now). The head therefore holds what the phone needs; the list's own actions stand in its status bar. */}
+              {/* on the phone the head is narrow: the filter is its symbol alone, as the other head controls */}
               <Popover
                 icon="filter"
+                label="Filter"
                 title="Filter"
                 content={
                   <>
@@ -95,53 +96,23 @@ export function Demo() {
                     <Check name="open" label="Nur offene" checked={openOnly()} onChange={setOpenOnly} />
                   </>
                 }
-              >
-                Filter
-              </Popover>
-              <Button
-                onClick={() => {
-                  did("save")();
-                  toast("Auftrag gespeichert", { status: "ok", undo: did("undo") });
-                }}
-              >
-                Speichern
-              </Button>
-              <Menu
-                icon="arrow-back-up"
-                items={[
-                  {
-                    title: "Antwortart",
-                    choice: kind(),
-                    onChoose: (value) => {
-                      setKind(value);
-                      did(`kind:${value}`)();
-                    },
-                    items: [
-                      { label: "Antworten", value: "reply", icon: "arrow-back-up" },
-                      { label: "Allen antworten", value: "all", icon: "arrow-back-up-double" },
-                      { label: "Weiterleiten", value: "forward", icon: "arrow-forward-up" },
-                    ],
-                  },
-                  {
-                    title: "Absender",
-                    choice: sender(),
-                    onChoose: (value) => {
-                      setSender(value);
-                      did(`sender:${value}`)();
-                    },
-                    items: [{ label: "anna@werkstatt.example" }, { label: "info@werkstatt.example" }],
-                  },
-                  { title: "Entwurf", items: [{ label: "Verwerfen", icon: "trash", danger: true, onClick: did("draft:discard") }] },
-                ]}
-              >
-                Antwort
-              </Menu>
-              {/* a panel behind a button without words: it stays in the head on the phone, as the "…" does */}
+              />
+              {/* a panel behind a button without words */}
               <Popover
                 icon="eye"
                 label="Vorschau"
                 title="Vorschau"
-                content={<Check name="images" label="Bilder zeigen" checked={urgent()} onChange={setUrgent} />}
+                content={
+                  <>
+                    <Check name="images" label="Bilder zeigen" checked={urgent()} onChange={setUrgent} />
+                    {/* the panel gets shorter when the box is ticked: its sheet must keep its place on the bottom */}
+                    <Show when={!urgent()}>
+                      <Text>Bilder in Nachrichten werden erst nach einem Klick geladen.</Text>
+                      <Text>So erfährt kein Absender, wann eine Nachricht geöffnet wurde.</Text>
+                      <Text>Absender, denen du vertraust, lassen sich einzeln freigeben.</Text>
+                    </Show>
+                  </>
+                }
               />
               <Menu label="Weitere Aktionen" items={head()} />
             </>
@@ -151,6 +122,56 @@ export function Demo() {
     >
       <Pane
         label="Aufträge"
+        // the list's own actions: reload, save, how to answer
+        status={
+          <Bar
+            end={
+              <>
+                <Popover tip="Neu laden">
+                  <Button variant="ghost" icon="refresh" label="Aktualisieren" onClick={did("reload")} />
+                </Popover>
+                <Button
+                  onClick={() => {
+                    did("save")();
+                    toast("Auftrag gespeichert", { status: "ok", undo: did("undo") });
+                  }}
+                >
+                  Speichern
+                </Button>
+                <Menu
+                  icon="arrow-back-up"
+                  items={[
+                    {
+                      title: "Antwortart",
+                      choice: kind(),
+                      onChoose: (value) => {
+                        setKind(value);
+                        did(`kind:${value}`)();
+                      },
+                      items: [
+                        { label: "Antworten", value: "reply", icon: "arrow-back-up" },
+                        { label: "Allen antworten", value: "all", icon: "arrow-back-up-double" },
+                        { label: "Weiterleiten", value: "forward", icon: "arrow-forward-up" },
+                      ],
+                    },
+                    {
+                      title: "Absender",
+                      choice: sender(),
+                      onChoose: (value) => {
+                        setSender(value);
+                        did(`sender:${value}`)();
+                      },
+                      items: [{ label: "anna@werkstatt.example" }, { label: "info@werkstatt.example" }],
+                    },
+                    { title: "Entwurf", items: [{ label: "Verwerfen", icon: "trash", danger: true, onClick: did("draft:discard") }] },
+                  ]}
+                >
+                  Antwort
+                </Menu>
+              </>
+            }
+          />
+        }
         head={
           <Tabs
             label="Ansichten"

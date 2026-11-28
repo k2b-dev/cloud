@@ -2,13 +2,14 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { CloudRuntime, User } from "@k2b/cloud/contracts";
+import type { CloudRuntime, RuntimeAppMeta, User } from "@k2b/cloud/contracts";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { checkFixtureSessionOrigin } from "../../../../../../scripts/fixtures/session-origin";
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
+import { adminShellAsset, adminShellRuntime } from "../admin-v2.shell-fixture";
 import {
   ADMIN_ID,
   FIXTURE_NOW,
@@ -19,6 +20,7 @@ import {
   fixtureRejection,
   fixtureReplacementKey,
 } from "./AdminApps.fixture-data";
+import type { AppInput } from "./model";
 
 /** States the captures and tests switch with `?state=`, next to the page's own `app`, `view`, `window` and `moved`. */
 export type AdminAppsFixtureState =
@@ -40,7 +42,11 @@ export type AdminAppsFixtureState =
   | "slow"
   | "domains-empty"
   | "domains-error"
-  | "domains-partial";
+  | "domains-partial"
+  | "revoke-fail"
+  // break-ui: realistic worst-case values in the first rows, and an installation with very many apps
+  | "worst"
+  | "many";
 
 const rejectionFor = (state: AdminAppsFixtureState, id: string) =>
   fixtureRejection(id, state === "start-disabled" ? "disabled" : "revoked");
@@ -72,8 +78,9 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
   registerSsrTestPlugin({ dev: true, rootDir: root });
   const { AdminLayout } = await import("@k2b/cloud/ssr");
-  const { AppsView } = await import("./view");
-  const { appsFormat } = await import("./format");
+  const { default: AppsScreen } = await import("./AppsScreen");
+  const { adminNavFixture } = await import("../admin-v2.fixture");
+  const { toJSON } = await import("seroval");
   const { deriveApp, parseAppsQuery, sortApps } = await import("./model");
   const ui = resolve(import.meta.dir, "../../../../../ui");
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", `${ui}/`));
@@ -138,16 +145,30 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
     const theme = c.req.query("theme") === "dark" ? "dark" : "light";
     const state = (c.req.query("state") ?? "normal") as AdminAppsFixtureState;
     c.req.raw.headers.set("x-cloud-locale", locale);
+    // the shell as in a running Cloud: Core's own meta first (it tints the page), then the live apps in the rail
     c.set("runtime", {
-      apps: fixtureApps()
-        .filter((app) => app.live)
-        .map((app) => ({ id: app.id, name: app.name, description: app.description, icon: app.icon, routes: [...app.routes] })),
+      apps: [
+        adminShellRuntime().apps[0]!,
+        ...fixtureApps()
+          .filter((app) => app.live)
+          .map(
+            (app) =>
+              ({
+                id: app.id,
+                name: app.name,
+                description: app.description,
+                icon: app.icon,
+                routes: [...app.routes],
+                nav: { href: app.routes[0] ?? `/${app.id}`, section: "primary" as const },
+                ...(app.accent ? { appearance: { accent: app.accent, background: { from: app.accent, to: app.accent, angle: 135 } } } : {}),
+              }) as RuntimeAppMeta,
+          ),
+      ],
     });
     c.set("user", user);
     c.set("settings", { app: { name: "Cloud", locale } });
     c.set("page", { title: "Apps", theme });
     const query = parseAppsQuery(c.req.query());
-    const format = appsFormat({ locale, timeZone: "Europe/Berlin" }, FIXTURE_NOW);
     const inputs = fixtureApps()
       // Without its provider, an app only the provider knows is not listed at all.
       .filter((app) => !removed.has(app.id) && !(state === "removed" && app.id === "pulse") && !(state === "provider" && !app.coreKnows))
@@ -159,7 +180,34 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
             ? { ...app, keys: { ...app.keys, active: 1 } }
             : app,
       );
-    const apps = sortApps(inputs.map(deriveApp), locale);
+    const worst = (app: AppInput): AppInput =>
+      app.id === "chat"
+        ? {
+            ...app,
+            name: "Zeiterfassung und Abwesenheitsplanung Werkstatt Nord-Ost",
+            routes: [
+              "/zeiterfassung-und-abwesenheitsplanung",
+              "/api/zeiterfassung-und-abwesenheitsplanung/v2/export/csv",
+              "/public/zeiterfassung",
+            ],
+            numbers: [{ ...app.numbers[0]!, traffic: { requests: 12_345_678, errors: 98_765, avgMs: 12_840 } }],
+          }
+        : app.id === "files"
+          ? { ...app, name: "Ö", accent: null, release: null, instances: null }
+          : app.id === "grids"
+            ? { ...app, name: "📊 Kennzahlen 2027 – Vertrieb & Controlling" }
+            : app.id === "lager"
+              ? { ...app, name: "Λογιστήριο" }
+              : app;
+    // the realistic upper bound of deployed services; the list is not virtualized (k2b-ui gap, lane MW)
+    const many = Array.from({ length: 150 }, (_, index) => ({
+      ...fixtureApps()[index % 3]!,
+      id: `app-${String(index + 1).padStart(4, "0")}`,
+      name: `Werkstatt-App ${index + 1}`,
+      routes: [`/app-${index + 1}`],
+    }));
+    const listed = state === "worst" ? inputs.map(worst) : state === "many" ? [...inputs, ...many] : inputs;
+    const apps = sortApps(listed.map(deriveApp), locale);
     const entry = apps.find((app) => app.id === query.app);
     const details = entry && state !== "core-fail" && entry.coreKnows && !entry.neverStarted ? fixtureDetails(entry.id, entry.name) : null;
     const keys = entry ? keysFor(state, entry.id) : [];
@@ -308,57 +356,63 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
         logsHref: "/admin/observability/logs",
       } as const;
     })();
+    const props = {
+      nav: adminNavFixture("/admin/apps", [
+        { label: "Registrierte Apps", icon: "apps", href: "/admin/apps", nested: true, current: true },
+        { label: "Navigation", icon: "layout-sidebar", href: "/admin/apps/navigation", nested: true },
+      ]),
+      data: {
+        locale,
+        dateConfig: { locale, timeZone: "Europe/Berlin" },
+        now: FIXTURE_NOW,
+        query,
+        list:
+          state === "failed"
+            ? { state: "failed" }
+            : {
+                state: "ok",
+                // "added": the open app was just added under "Add app" and is not in any list yet.
+                apps: state === "empty" ? [] : state === "added" ? apps.filter((app) => app.id !== query.app) : apps,
+                issues: state === "rejected" ? [{ key: "apps/maps", reason: "routes fehlt" }] : [],
+                unchecked: 0,
+                logsHref: "/admin/observability/logs",
+              },
+        app: entry
+          ? {
+              entry,
+              details,
+              revokedKeyName: keys.find((item) => item.status === "revoked")?.name ?? null,
+              startKeyReady: keys.some((item) => item.status === "active" && item.keyId !== rejectionFor(state, entry.id)?.keyId),
+              providerFailures: state === "provider" ? ["Gateway"] : [],
+              keysSupported: entry.id !== "core",
+              docs: {
+                recover: "/docs/en/operations/app-keys#rotate-or-recover-a-key",
+                migrate: "/docs/en/operations/app-keys#use-the-key-at-start",
+              },
+              accessRule: entry.accessKind === "noGuests" ? "Alle außer Gästen" : "Alle angemeldeten Personen",
+              domains: entry.id !== "lager" ? null : state === "domains-error" ? "failed" : state === "domains-empty" ? [] : domains,
+              appNames: new Map([
+                ["contacts", "Kontakte"],
+                ["files", "Dateien"],
+                ["core", "Cloud"],
+              ]),
+            }
+          : null,
+        detail,
+      },
+    } satisfies Parameters<typeof AppsScreen>[0];
     const body = renderToString(() =>
       createComponent(AdminLayout, {
         c,
+        ui: "v2",
         title: entry?.name ?? "Apps",
-        ownMain: true,
         get children() {
-          return createComponent(AppsView, {
-            data: {
-              locale,
-              format,
-              query,
-              list:
-                state === "failed"
-                  ? { state: "failed" }
-                  : {
-                      state: "ok",
-                      // "added": the open app was just added under "Add app" and is not in any list yet.
-                      apps: state === "empty" ? [] : state === "added" ? apps.filter((app) => app.id !== query.app) : apps,
-                      issues: state === "rejected" ? [{ key: "apps/maps", reason: "routes fehlt" }] : [],
-                      unchecked: 0,
-                      logsHref: "/admin/observability/logs",
-                    },
-              app: entry
-                ? {
-                    entry,
-                    details,
-                    revokedKeyName: keys.find((item) => item.status === "revoked")?.name ?? null,
-                    startKeyReady: keys.some((item) => item.status === "active" && item.keyId !== rejectionFor(state, entry.id)?.keyId),
-                    providerFailures: state === "provider" ? ["Gateway"] : [],
-                    keysSupported: entry.id !== "core",
-                    docs: {
-                      recover: "/docs/en/operations/app-keys#rotate-or-recover-a-key",
-                      migrate: "/docs/en/operations/app-keys#use-the-key-at-start",
-                    },
-                    accessRule: entry.accessKind === "noGuests" ? "Alle außer Gästen" : "Alle angemeldeten Personen",
-                    domains: entry.id !== "lager" ? null : state === "domains-error" ? "failed" : state === "domains-empty" ? [] : domains,
-                    appNames: new Map([
-                      ["contacts", "Kontakte"],
-                      ["files", "Dateien"],
-                      ["core", "Cloud"],
-                    ]),
-                  }
-                : null,
-              detail,
-            },
-          });
+          return createComponent(AppsScreen, props);
         },
       }),
     );
     return c.html(
-      `<!doctype html><html lang="${locale}" class="${theme}" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><style>${css}</style></head><body class="k2b-ui">${body}<script src="/fixture.js"></script></body></html>`,
+      `<!doctype html><html lang="${locale}" class="${theme}" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><style>${css}</style></head><body class="k2b-ui">${body}<script type="application/json" id="screen-props">${JSON.stringify(toJSON(props)).replaceAll("<", "\\u003c")}</script><script src="/fixture.js"></script></body></html>`,
     );
   });
 
@@ -432,7 +486,10 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
         status: "active",
         accountStatus: "active",
       });
-    if (/^\/api\/admin\/apps\/[^/]+\/keys\/[^/]+$/.test(url.pathname) && request.method === "DELETE") return Response.json(null);
+    if (/^\/api\/admin\/apps\/[^/]+\/keys\/[^/]+$/.test(url.pathname) && request.method === "DELETE")
+      return state === "revoke-fail" ? Response.json({ message: "Synthetic fixture: refused" }, { status: 500 }) : Response.json(null);
+    if (/^\/api\/admin\/identity\/workloads\/[^/]+\/credentials$/.test(url.pathname) && request.method === "POST")
+      return Response.json({ token: "cloud-credential-v1.fixture.0000000000000000000000000000000000000000" }, { status: 201 });
     if (/^\/api\/admin\/identity\/workloads\/[^/]+\/credentials$/.test(url.pathname) && request.method === "GET")
       return Response.json({ items: [], page: 1, perPage: 20, total: 0, hasNext: false });
     return Response.json({ message: "Synthetic fixture: not available" }, { status: 503 });
@@ -445,6 +502,8 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
       const refused = await checkFixtureSessionOrigin(request);
       if (refused) return refused;
       const url = new URL(request.url);
+      const shellAsset = adminShellAsset(url.pathname);
+      if (shellAsset) return shellAsset;
       if (url.pathname === "/fixture.js") return new Response(script, { headers: { "Content-Type": "text/javascript" } });
       if (url.pathname.startsWith("/public/")) {
         const path = resolve(root, `.${url.pathname}`);

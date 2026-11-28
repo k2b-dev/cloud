@@ -19,13 +19,16 @@ export const NOTIFICATION_SETTINGS_HREF = "/me/notifications";
  * where browser, email, and quiet hours live. A choice saves at once; a failed save returns to the saved level and says
  * so in a fixed place below, with a retry, so nothing moves.
  */
-export default function ChatNotificationSettings(props: {
+export type ChatNotificationSettingsProps = {
   conversation: Pick<Conversation, "kind" | "channel">;
   notifications: Notifications;
   dateConfig: DateContext;
   now: () => Date;
   save: (input: Update) => Promise<unknown>;
-}): JSX.Element {
+};
+
+/** The level's state: what shows while a save runs, the duration of "Off", a failed save with its retry, and the words. */
+export function createNotificationChoice(props: ChatNotificationSettingsProps) {
   const t = useChatMessages();
   const locale = useLocale();
   const [pending, setPending] = createSignal<Level | null>(null);
@@ -105,7 +108,12 @@ export default function ChatNotificationSettings(props: {
       ? t().mutedUntil({ time: untilLabel(until, props.now(), config), level: label(props.notifications.defaultLevel) })
       : t().mutedForever;
   };
+  return { t, value, pending, failed, blocked, muteFor, choose, chooseDuration, save, label, description, untilSentence };
+}
 
+export default function ChatNotificationSettings(props: ChatNotificationSettingsProps): JSX.Element {
+  const { t, value, pending, failed, blocked, muteFor, choose, chooseDuration, save, label, description, untilSentence } =
+    createNotificationChoice(props);
   return (
     <Section title={t().notificationsLabel}>
       <div class="chat-notifications">

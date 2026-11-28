@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-11-19
+updated: 2026-11-26
 ---
 
 # Testing
@@ -104,7 +104,7 @@ To run one file directly:
 ```bash
 bun --no-env-file test --isolate --conditions=browser \
   --preload ./packages/ui/test/solid-dom-preload.ts \
-  ./packages/core/src/pages/admin/CacheNotice.behavior.test.ts
+  ./packages/core/test/consent.behavior.test.tsx
 ```
 
 Guard browser-only tests with `isServer` from `solid-js/web`, so a plain
@@ -210,7 +210,13 @@ scroll-restore test does, because a check after a real-time wait that the delay
 has not fired yet fails on a slow runner. Wait for the state you assert, not
 for a step before it: the continuous month test waits until the grid rests at
 the week and the header names the month, because the view names the month in
-an animation frame after the scroll event.
+an animation frame after the scroll event. A wait after an action names
+something only the action changes: a condition that already held before it
+returns at once, and the next step races the action. When an action loads the
+same address again, mark the old document first and wait for a new document
+without the mark, as the Storage and outgoing mail admin tests do. The
+`test-waits` check cannot see this: whether a condition already holds depends
+on the page's state before the action, not on the test's text.
 
 A live region that a component fills after a timer is read with a bounded
 wait, such as `waitForFunction` on its text, never once after `settled()`.
@@ -1327,6 +1333,11 @@ try {
 }
 ```
 
+A test file can open and close any number of meters, also overlapping ones.
+The proxy stays for the whole process, and the last `close()` binds the
+handle to the database directly again. A pool that a module creates while a
+meter is open keeps the proxy and still works after `close()`.
+
 Warm the caches with one event before the measured window. Keep the window to
 the events under test, because timers that fire inside it count too. Pin the
 number you measured, and name the issue when it is above the target. A fix
@@ -1362,7 +1373,28 @@ through their own runner with disposable containers. See
 
 ## What CI runs
 
-The pull request `gate` runs `bun run check`, `bun run test`, and the
+Draft pull requests run only `changes`, the shared UI build in `setup`,
+`check` (`bun run check` and PR metadata checks), and `gate`. They skip all
+test shards and path-filtered jobs, including browser tests, integration,
+Grids certification, documentation builds, production bundles, images, and
+the image mirror. The `check` job reports the light checks. The required
+`gate` deliberately fails with "Draft: light checks only - the full gate
+runs after ready for review", even when all light checks pass. Run focused
+tests locally while the PR is a draft.
+
+Marking a PR ready for review (`ready_for_review`) starts the full gate,
+even without a new commit. Wait for the **new full gate run** to pass before
+merging or enabling auto-merge: its `gate` job appears only after its
+dependencies finish, and the previous draft gate remains red until then.
+Opening, reopening, or pushing to a non-draft PR
+also runs the full gate. Every `merge_group` and manual workflow run uses
+the full gate, regardless of draft state. New PR runs cancel older runs of
+the same PR; merge queue runs each have a unique concurrency group and are
+never cancelled by this concurrency policy.
+This reduces draft runner demand but does not give merge queue jobs a
+scheduler priority over other jobs already queued.
+
+The full `gate` runs `bun run check`, `bun run test`, and the
 integration suites against PostgreSQL 17, NATS JetStream, Valkey,
 Gotenberg, and Stalwart 1.0.0 for JMAP. Path-filtered jobs, such as the Grids
 certification, the WebKit browser tests, the documentation checks, and the image
@@ -1370,20 +1402,32 @@ boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
-Unit tests run in thirteen shards, WebKit tests in twenty-two, and integration tests
-in six. Each mode uses its own measured seconds per suite in
+`gate` runs with `always()` and rejects draft PR events before aggregation,
+so a light result for the same head SHA cannot authorize a PR after it becomes
+ready. Full runs aggregate every job and require `mirror`, `unit`, and
+`integration` to succeed. Existing path filters still control the other
+optional jobs; failed or cancelled jobs fail the full gate. The `ci-gate`
+rule and its tests check the job list, exact draft and path conditions,
+the red draft gate, skip allowances, event triggers, and concurrency policy.
+
+Unit tests run in fourteen shards, WebKit tests in twenty-six, and integration
+tests in six. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
 suite counts as the median of its table. The browser table contains WebKit
 measurements; Chromium runs inside the unit suites. Equal weights use the suite
 name to order suites; the least-loaded shard wins, with suite count and shard
-index breaking load ties. Integration keeps the Grids exclusion;
-Grids certification runs in its own path-filtered job. Every integration shard
-gets fresh service containers, and `gate` requires the whole matrix to succeed.
-Stalwart starts on every integration shard because suite assignment changes with
-the weights and file set. Its startup overlaps installation; immediately before
-the tests, CI waits up to 90 seconds for `/jmap/session` to return `200` (the
-measured 60-second startup plus 30 seconds of reserve). Nightly uses the same
-server and readiness check in each Postgres matrix entry.
+index breaking load ties. No unit suite weighs more than nine tenths of the
+15-minute target; a larger one splits into `test:part:*` scripts of its package.
+A shard names each suite that ran more than 1.2 times its weight, so the table
+is refreshed before the shard reaches its budget. Integration keeps the Grids
+exclusion; Grids certification runs in its own path-filtered job. Every
+integration shard gets fresh service containers, and `gate` requires the whole
+matrix to succeed. Stalwart starts on every integration shard because suite
+assignment changes with the weights and file set. Its startup overlaps
+installation; immediately before the tests, CI waits up to 90 seconds for
+`/jmap/session` to return `200` (the measured 60-second startup plus 30 seconds
+of reserve). Nightly uses the same server and readiness check in each Postgres
+matrix entry.
 
 The path-filtered `stdlib` job runs when `packages/stdlib` changed. It checks
 the finance generators of `@k2b/stdlib` against independent validators: the
@@ -1766,7 +1810,7 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
 
 `bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
-them again in WebKit in twenty-two shards with `bun run test --browser`, against
+them again in WebKit in twenty-six shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
 or `scripts/` changed. At its end, it lists every process that crashed on the

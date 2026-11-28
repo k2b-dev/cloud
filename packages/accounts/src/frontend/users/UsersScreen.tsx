@@ -249,13 +249,15 @@ export default function UsersScreen(props: UsersScreenProps) {
               <Input
                 type="search"
                 icon="search"
+                name="q"
                 label={t().searchUsers}
                 placeholder={t().searchUsers}
                 value={state().search ?? ""}
+                // Enter sends `q` with the rest of the address also without JavaScript; the island searches in place
+                send={{ action: USERS_PAGE_PATH, params: query().serialize({ ...state(), search: undefined }), onSearch: search }}
                 onKeyDown={(event) => {
                   if (event.isComposing) return;
                   const input = event.currentTarget as HTMLInputElement;
-                  if (event.key === "Enter") search(input.value);
                   if (event.key === "Escape" && input.value) {
                     input.value = "";
                     search("");
@@ -263,7 +265,7 @@ export default function UsersScreen(props: UsersScreenProps) {
                 }}
               />
               <Menu label={t().more} items={[{ label: t().duplicateEmails, icon: "copy", href: "/app/accounts/duplicate-emails" }]} />
-              <Button variant="primary" icon="user-plus" href="/app/accounts/users/new">
+              <Button variant="primary" floats icon="user-plus" href="/app/accounts/users/new">
                 {t().newUser}
               </Button>
             </>

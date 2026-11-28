@@ -27,7 +27,7 @@ type Core = "with v2.css" | "older";
 const declare = (core: Core) =>
   coreRoutes.mockReturnValue(core === "with v2.css" ? ["/public/global.css", "/public/v2.css"] : ["/public/global.css"]);
 
-const legalApp = { id: "legal-probe", legalLinks: [{ label: "Imprint", href: "/impressum" }] };
+const legalApp = { id: "legal-probe", routes: [], legalLinks: [{ label: "Imprint", href: "/impressum" }] };
 const render = (kiosk: boolean, core: Core = "with v2.css") => {
   declare(core);
   const page: { appUi?: "v2"; stylesheets?: "v2" } = {};

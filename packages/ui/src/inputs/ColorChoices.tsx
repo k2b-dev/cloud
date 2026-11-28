@@ -1,4 +1,5 @@
 import { For, type JSX } from "solid-js";
+import { cssColor } from "../internal/color";
 import { createFieldMeta, Field, fieldDescribedBy } from "../internal/field";
 import { radioKeyTarget } from "../internal/radio-keys";
 import type { ValueFieldProps } from "./field-contract";
@@ -62,7 +63,7 @@ export function ColorChoices<T extends string = string>(props: ColorChoicesProps
               type="button"
               role="radio"
               class="k2b-color-choices__swatch"
-              style={{ "--k2b-color-choice": option.color }}
+              style={{ "--k2b-color-choice": cssColor(option.color) }}
               aria-checked={value() === option.value}
               aria-label={option.label}
               title={option.label}

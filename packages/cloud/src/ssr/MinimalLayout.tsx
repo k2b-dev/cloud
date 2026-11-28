@@ -5,6 +5,7 @@ import { registeredCoreRoutes } from "../_internal/runtime-watcher";
 import { getLocale } from "../server/locale";
 import { resolveAppPresentations } from "../shared/app-presentation";
 import { readThemePreferenceFromCookieHeader } from "../shared/theme";
+import { resolveCurrentApp } from "./app-appearance";
 import type { MinimalLayoutContext } from "./layout-context";
 import MinimalLayoutPreferences from "./MinimalLayoutPreferences.island";
 import MinimalLayoutPreferencesV2 from "./MinimalLayoutPreferencesV2.island";
@@ -43,13 +44,20 @@ export default function MinimalLayout(props: MinimalLayoutProps) {
   const cookie = props.c.req.raw.headers.get("Cookie") ?? "";
   const theme = readThemePreferenceFromCookieHeader(cookie);
   const locale = getLocale(props.c);
-  // A v2 page's content is the v2 scope; its app colours sit on the body (see `page.appUi`).
+  // A v2 page's content is the v2 scope; its app colours sit on the body (see `page.appUi`), from the app that owns the
+  // address, as in Layout. A page without the runtime middleware knows no apps and keeps v2's own colour.
   // It links Core's v2.css alone: v2 and Cloud's v2 additions, without v1 and the shell (see `pageStylesheetLinks`).
   // A Core from before that sheet serves no v2.css, and its global.css has neither the v2 frame of this page nor its
   // v2 footer: beside it the page keeps global.css and the v1 footer, and its frame comes inline.
   const v2 = props.ui === "v2";
   const v2Sheet = v2 && servedStylesheets("v2", registeredCoreRoutes()) === "v2";
-  if (v2) Object.assign(props.c.get("page"), v2Sheet ? { appUi: "v2", stylesheets: "v2" } : { appUi: "v2" });
+  if (v2) {
+    const page = props.c.get("page");
+    const app = resolveCurrentApp(props.c.get("runtime")?.apps ?? [], new URL(props.c.req.raw.url).pathname);
+    page.appAccent = app?.appearance?.accent;
+    page.appPrimary = app?.appearance?.primary;
+    Object.assign(page, v2Sheet ? { appUi: "v2", stylesheets: "v2" } : { appUi: "v2" });
+  }
   // Without the footer the main area is the v2 scope; with it, the whole page is (see below), or beside an older Core
   // the main area alone.
   // (A `style` is written only where it is set: Solid's server writes an empty one for `undefined`.)

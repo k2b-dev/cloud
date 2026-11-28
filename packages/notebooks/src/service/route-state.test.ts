@@ -64,7 +64,7 @@ test("the authorized route snapshot carries authors, outgoing links, and tags in
     hasChildren: false,
     yjsSnapshotAt: null,
   });
-  const backlinks = spyOn(notebooksService.note.backlinks, "list").mockResolvedValue([]);
+  const backlinks = spyOn(notebooksService.note.backlinks, "list").mockResolvedValue({ items: [], total: 0 });
   const linked = { noteId: "note02", title: "Glossary", notebookId: "book02", notebookName: "Private", updatedAt: timestamp };
   const outgoing = spyOn(notebooksService.note.outgoingLinks, "list").mockResolvedValue([linked]);
   const authorsRead = spyOn(notebooksService.activity, "noteAuthors").mockResolvedValue(authors);
@@ -77,6 +77,9 @@ test("the authorized route snapshot carries authors, outgoing links, and tags in
     expect(result.state.detail.relations).toEqual({ outgoing: [linked], tags: ["cold-chain"] });
     // Outgoing links follow the backlinks' access rule, including the admin bypass.
     expect(outgoing).toHaveBeenCalledWith({ noteId, userId: base.userId, bypassAccess: base.bypassAccess, limit: 100 });
+    // Backlinks are bounded the same way: the first page and the total (#4417).
+    expect(backlinks).toHaveBeenCalledWith({ noteId, userId: base.userId, bypassAccess: base.bypassAccess, limit: 100 });
+    expect(result.state.detail.backlinksTotal).toBe(0);
   } finally {
     note.mockRestore();
     backlinks.mockRestore();

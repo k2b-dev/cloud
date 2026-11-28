@@ -121,8 +121,10 @@
     "fixture:build": "bun run build && NODE_ENV=production bun run fixture/scripts/build.ts",
     "fixture:typecheck": "tsc -p fixture/tsconfig.json --noEmit --pretty false",
     "test": "bun run build && bun test --path-ignore-patterns '**/*.behavior.test.*' ./src ./scripts ./test/browser.browser.test.ts ./fixture/fixture.render.test.tsx && bun run scripts/check-packed-consumer.ts",
-    "test:part:layout-content": "bun run build && bun test --path-ignore-patterns '**/*.behavior.test.*' ./src/layout ./src/content",
-    "test:part:rest": "bun run build && bun test --path-ignore-patterns '**/*.behavior.test.*' --path-ignore-patterns 'src/layout/**' --path-ignore-patterns 'src/content/**' --path-ignore-patterns 'src/styles/**' --path-ignore-patterns 'src/inputs/**' --path-ignore-patterns 'src/chat/**' ./src ./scripts ./test/browser.browser.test.ts ./fixture/fixture.render.test.tsx && bun run scripts/check-packed-consumer.ts",
+    "test:part:layout": "bun run build && bun test --path-ignore-patterns '**/*.behavior.test.*' ./src/layout",
+    "test:part:content": "bun run build && bun test --path-ignore-patterns '**/*.behavior.test.*' ./src/content",
+    "test:part:rest": "bun run build && bun test --path-ignore-patterns '**/*.behavior.test.*' --path-ignore-patterns 'src/layout/**' --path-ignore-patterns 'src/content/**' --path-ignore-patterns 'src/styles/**' --path-ignore-patterns 'src/inputs/**' --path-ignore-patterns 'src/chat/**' --path-ignore-patterns 'src/v2/**' ./src ./scripts ./test/browser.browser.test.ts ./fixture/fixture.render.test.tsx && bun run scripts/check-packed-consumer.ts",
+    "test:part:v2": "bun run build && bun test --path-ignore-patterns '**/*.behavior.test.*' ./src/v2",
     "test:part:styles-inputs-chat": "bun run build && bun test --path-ignore-patterns '**/*.behavior.test.*' ./src/styles ./src/inputs ./src/chat",
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false && bun run check:declarations && bun run typecheck:dom",
     "typecheck:dom": "tsc -p test/tsconfig.json --noEmit --pretty false",
@@ -148,7 +150,7 @@
     "qr-scanner": "1.4.2"
   },
   "peerDependencies": {
-    "@k2b/ssr": "^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 || ^0.18.0 || ^0.19.0 || ^0.20.0 || ^0.21.0 || ^0.22.0 || ^0.23.0",
+    "@k2b/ssr": "^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 || ^0.18.0 || ^0.19.0 || ^0.20.0 || ^0.21.0 || ^0.22.0 || ^0.23.0 || ^0.24.0",
     "solid-js": "^1.9.10",
     "playwright": "^1.50.0"
   },

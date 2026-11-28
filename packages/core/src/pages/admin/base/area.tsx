@@ -1,5 +1,4 @@
-import { AdminArea } from "@k2b/cloud/ssr";
-import type { JSX } from "solid-js";
+import { adminNavigation } from "@k2b/cloud/ssr";
 import { type BaseAreaMessages, baseAreaMessages } from "./messages";
 
 export const BASE_SECTIONS = ["general", "legal", "pdf", "places", "cli"] as const;
@@ -14,38 +13,25 @@ export const BASE_SECTION_HREF: Record<BaseSection, string> = {
 };
 
 const ICON: Record<BaseSection, string> = {
-  general: "ti ti-adjustments",
-  legal: "ti ti-gavel",
-  pdf: "ti ti-file-type-pdf",
-  places: "ti ti-map-pin",
-  cli: "ti ti-terminal-2",
+  general: "adjustments",
+  legal: "gavel",
+  pdf: "file-type-pdf",
+  places: "map-pin",
+  cli: "terminal-2",
 };
 
 export const baseText = (locale: string): BaseAreaMessages => baseAreaMessages.resolve([locale]).t;
 
-/** The Base settings area: its sections as the first column and the open section beside it. */
-export function BaseArea(props: { c: Parameters<typeof AdminArea>[0]["c"]; locale: string; section: BaseSection; children: JSX.Element }) {
-  const t = baseText(props.locale);
-  return (
-    <AdminArea
-      c={props.c}
-      label={t.area}
-      sectionsLabel={t.sections}
-      href={BASE_SECTION_HREF.general}
-      groups={[
-        {
-          items: BASE_SECTIONS.map((section) => ({
-            id: section,
-            label: t[section],
-            href: BASE_SECTION_HREF[section],
-            icon: ICON[section],
-          })),
-        },
-      ]}
-      current={props.section}
-      title={t[props.section]}
-    >
-      {props.children}
-    </AdminArea>
+/** The admin bar with the Base settings sections one level in under its entry, the open one current. */
+export const baseNav = (c: Parameters<typeof adminNavigation>[0], locale: string, current: BaseSection) => {
+  const t = baseText(locale);
+  return adminNavigation(
+    c,
+    BASE_SECTIONS.map((section) => ({
+      label: t[section],
+      icon: ICON[section],
+      href: BASE_SECTION_HREF[section],
+      current: section === current,
+    })),
   );
-}
+};

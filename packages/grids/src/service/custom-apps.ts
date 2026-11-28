@@ -128,7 +128,7 @@ const mapRow = (row: DbRow): CustomApp => {
   };
 };
 
-const mapSummaryRow = (row: DbRow): CustomAppSummary => ({
+export const mapSummaryRow = (row: DbRow): CustomAppSummary => ({
   id: row.id as string,
   shortId: row.short_id as string,
   baseId: row.base_id as string,
@@ -1566,10 +1566,14 @@ export const listByBase = async (baseId: string): Promise<CustomApp[]> => {
   return rows.map(mapRow);
 };
 
+/** The columns `mapSummaryRow` reads; the base catalog reads the same in its one statement. */
+export const CUSTOM_APP_SUMMARY_COLUMNS = () =>
+  sql.unsafe(`id, short_id, base_id, name, icon, draft_definition, draft_capabilities,
+           published_definition, published_capabilities, published_at, updated_at`);
+
 export const listSummariesByBase = async (baseId: string): Promise<CustomAppSummary[]> => {
   const rows = await sql<DbRow[]>`
-    SELECT id, short_id, base_id, name, icon, draft_definition, draft_capabilities,
-           published_definition, published_capabilities, published_at, updated_at
+    SELECT ${CUSTOM_APP_SUMMARY_COLUMNS()}
     FROM grids.custom_apps
     WHERE base_id = ${baseId}::uuid AND deleted_at IS NULL
     ORDER BY name, id

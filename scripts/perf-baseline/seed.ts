@@ -3,7 +3,7 @@ import type { BrowserContext, Cookie } from "playwright";
 import { fromJSON } from "seroval";
 import { z } from "zod";
 import { PwaClaimResultSchema, PwaCompleteResultSchema, PwaPairingStartResultSchema } from "../../packages/cloud/src/contracts/pwa";
-import { decodeAttribute, type PageId, type PageResult } from "./model";
+import { islandPropsTexts, type PageId, type PageResult } from "./model";
 import { localTls, type Runtime, waitFor } from "./runtime";
 
 const resourceSchema = z.object({ id: z.string().min(1) });
@@ -11,23 +11,18 @@ const resourceSchema = z.object({ id: z.string().min(1) });
 /** Read only island props; parse props as JSON data, never evaluate them. */
 async function consentVersions(html: string) {
   const versions: string[] = [];
-  await new HTMLRewriter()
-    .on("solid-island, solid-client", {
-      element(element) {
-        const props: unknown = fromJSON(JSON.parse(decodeAttribute(element.getAttribute("data-props") ?? "")));
-        // ConsentForm's version is a string property of its props object.
-        if (props && typeof props === "object" && "version" in props) {
-          versions.push(
-            z
-              .string()
-              .regex(/^[a-f0-9]{64}$/)
-              .parse(props.version),
-          );
-        }
-      },
-    })
-    .transform(new Response(html))
-    .text();
+  for (const text of await islandPropsTexts(html)) {
+    const props: unknown = fromJSON(JSON.parse(text ?? ""));
+    // ConsentForm's version is a string property of its props object.
+    if (props && typeof props === "object" && "version" in props) {
+      versions.push(
+        z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .parse(props.version),
+      );
+    }
+  }
   return versions;
 }
 
@@ -296,7 +291,6 @@ export async function removePhone(api: Api, deviceId: string) {
 
 export const defaultPaths: Record<PageId, string> = {
   document: "/legal/privacy",
-  faq: "/faq",
   "mail-mailbox": "/app/mail",
   "assistant-chat": "/app/assistant",
   "notebooks-editor": "/app/notebooks",
@@ -352,22 +346,6 @@ export async function seed(api: Api, runtime: Runtime, selected: PageId[], userI
         page.notes.push(
           "Spaces fixture: one Space with 12 open tasks assigned to the administrator (Perf task 01–12), verified in the mine overview; check-off is undone after each sample.",
         );
-      } else if (page.id === "faq") {
-        for (const [question, answer] of [
-          [
-            "How is the performance baseline measured?",
-            "Production bundles are served through a fresh gateway. Three cold browser loads are measured per profile.",
-          ],
-          [
-            "What does time to interactive mean?",
-            "The latest of first contentful paint, the end of each initial island mount, the last script response and, in Chromium, the last long task.",
-          ],
-          [
-            "Can these numbers predict a real phone?",
-            "The phone profile emulates network and CPU limits on the local machine. Compare runs on the same host.",
-          ],
-        ])
-          await api.request("/api/faq", "POST", { translations: { en: { question, answer } }, audience: ["user", "guest", "anonymous"] });
       } else if (page.id === "notebooks-editor") {
         const book = resourceSchema.parse(
           await api.request("/api/notebooks", "POST", {
@@ -438,10 +416,9 @@ export async function seed(api: Api, runtime: Runtime, selected: PageId[], userI
 export async function waitForRoutes(api: Api, apps: string[], runtime: Runtime) {
   // Gateway health exposes a count, not app names. Confirm each app's public route
   // separately with the session. Core must prove authentication even when only
-  // public pages (FAQ or legal documents) are selected. Never follow auth redirects.
+  // public legal documents are selected. Never follow auth redirects.
   const routes: Record<string, string> = {
     core: "/api/me",
-    faq: "/faq",
     mail: "/app/mail",
     assistant: "/app/assistant",
     notebooks: "/app/notebooks",

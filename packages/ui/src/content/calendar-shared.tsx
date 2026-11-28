@@ -1,6 +1,7 @@
 import { dates as calendar, type DateContext } from "@k2b/stdlib";
 import type { JSX } from "solid-js";
 import { createMemo, Show } from "solid-js";
+import { cssColor } from "../internal/color";
 import { AvatarFaces } from "../surfaces/AvatarStack";
 import type { CalendarEvent, CalendarProps } from "./Calendar";
 import { useCalendarMessages } from "./calendar-messages";
@@ -118,6 +119,11 @@ export const EventChip = (props: {
   trailing?: JSX.Element;
   /** Day and week views: the time as they write it, such as "10:30–11:15", shown whatever the length. */
   timeLabel?: string;
+  /**
+   * Day and week views: the end after `timeLabel`, such as "–11:15". The start, the end and what is left of a running
+   * entry are then pieces of their own: a narrow band drops a piece whole instead of cutting a time inside its digits.
+   */
+  timeEnd?: string;
   /** Day view: a band tall enough shows its place below the time. */
   showLocation?: boolean;
   /** Week view: the grid's one tab stop decides which chip takes Tab. */
@@ -136,7 +142,8 @@ export const EventChip = (props: {
   const dateConfig = createMemo(() => ownerDateConfig(props.owner));
   const color = () => props.event.color ?? "blue";
   const selected = () => Boolean(props.owner.selectedEventId) && props.owner.selectedEventId === props.event.id;
-  const style = () => (props.event.colorHex ? { "--k2b-calendar-accent": props.event.colorHex } : undefined);
+  const accent = () => cssColor(props.event.colorHex);
+  const style = () => (accent() ? { "--k2b-calendar-accent": accent() } : undefined);
   const activate = (anchor: HTMLElement) => {
     if (props.owner.onEventActivate) props.owner.onEventActivate(props.event);
     else props.owner.openEventDetail?.(props.event, anchor);
@@ -190,7 +197,7 @@ export const EventChip = (props: {
       end: props.event.endDate,
       allDay: props.event.allDay ?? false,
       durationHours: durationHours(),
-      timeLabel: timeLabel(),
+      timeLabel: `${timeLabel()}${props.timeEnd ?? ""}`,
       leadingTime: props.leadingTime,
       remaining: props.remaining,
       checkbox: props.checkbox ?? false,
@@ -200,9 +207,18 @@ export const EventChip = (props: {
   const icon = () => (props.event.icon ? <i class={`k2b-calendar-event__icon ${props.event.icon}`} aria-hidden="true" /> : undefined);
   const metaText = () => (
     <>
-      <Show when={showTime()}>{timeLabel()}</Show>
+      <Show when={showTime()}>
+        <Show when={props.timeEnd} fallback={timeLabel()}>
+          {/* a zero-width space: a place to wrap before the start, so a band too narrow for it shows no time */}
+          {"​"}
+          <span class="k2b-calendar-event__piece">{timeLabel()}</span>
+          <span class="k2b-calendar-event__piece">{props.timeEnd}</span>
+        </Show>
+      </Show>
       <Show when={props.remaining}>
-        <span class="k2b-calendar-event__remaining">{showTime() ? ` · ${props.remaining}` : props.remaining}</span>
+        <span class="k2b-calendar-event__remaining" classList={{ "k2b-calendar-event__piece": Boolean(props.timeEnd) }}>
+          {showTime() ? ` · ${props.remaining}` : props.remaining}
+        </span>
       </Show>
     </>
   );
@@ -236,13 +252,17 @@ export const EventChip = (props: {
         when={hasExtras()}
         fallback={
           <Show when={showTime() || props.remaining}>
-            <span class="k2b-calendar-event__meta">{metaText()}</span>
+            <span class="k2b-calendar-event__meta" data-pieces={props.timeEnd ? "" : undefined}>
+              {metaText()}
+            </span>
           </Show>
         }
       >
         <span class="k2b-calendar-event__row">
           <Show when={showTime() || props.remaining}>
-            <span class="k2b-calendar-event__meta">{metaText()}</span>
+            <span class="k2b-calendar-event__meta" data-pieces={props.timeEnd ? "" : undefined}>
+              {metaText()}
+            </span>
           </Show>
           {extras()}
         </span>
@@ -314,7 +334,7 @@ export const EventChip = (props: {
   const attributes = () => ({
     class: "k2b-calendar-event",
     "data-calendar-event": "",
-    "data-color": props.event.colorHex ? undefined : color(),
+    "data-color": accent() ? undefined : color(),
     "data-selected": selected() ? "true" : undefined,
     "data-compact": props.compact ? "true" : undefined,
     "data-fill": props.fill ? "true" : undefined,

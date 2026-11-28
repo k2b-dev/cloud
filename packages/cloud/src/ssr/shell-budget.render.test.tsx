@@ -34,8 +34,9 @@ const { default: PwaLayout } = await import("./PwaLayout");
 const apps: RuntimeAppMeta[] = Array.from({ length: 12 }, (_, index) => ({
   id: `app-${index}`,
   name:
-    ["Dashboard", "Mail", "Contacts", "Grids", "Files", "Notebooks", "Calendar", "Assistant", "FAQ", "Pulse", "Tasks", "Tools"][index] ??
-    `App ${index}`,
+    ["Dashboard", "Mail", "Contacts", "Grids", "Files", "Notebooks", "Calendar", "Assistant", "Catalog", "Pulse", "Tasks", "Tools"][
+      index
+    ] ?? `App ${index}`,
   icon: "ti ti-box",
   description: "Manage projects, documents and daily work in your team.",
   routes: [`/app/app-${index}`, `/admin/app-${index}`],
@@ -125,15 +126,7 @@ const server = new Hono<Environment>()
   )
   .get("/pwa", ...app.ssr<Environment>((c) => () => createComponent(PwaLayout, { c, title: "Projects", children: "Phone page" })));
 
-const decodedProps = (html: string) =>
-  [...html.matchAll(/\bdata-props="([^"]*)"/g)].map((match) =>
-    (match[1] ?? "")
-      .replace(/&quot;/g, '"')
-      .replace(/&#x27;|&#39;|&apos;/g, "'")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&amp;/g, "&"),
-  );
+const decodedProps = (html: string) => [...html.matchAll(/<!--ssr-props:([^>]*)-->/g)].map((match) => match[1] ?? "");
 
 for (const path of [
   "/admin/app-0?signed=true",

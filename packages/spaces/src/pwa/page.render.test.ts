@@ -12,6 +12,7 @@ import { createDomTestHarness } from "../../../ui/test/dom";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
 import * as overview from "../service/overview";
+import { reachableSpaces } from "../service/reach";
 import * as pwaSpace from "./space";
 import * as pwaTask from "./task";
 
@@ -168,6 +169,7 @@ const pageSpy = spyOn(pwaSpace, "loadPwaGroupPage").mockImplementation(async ({ 
 );
 const taskSpy = spyOn(pwaTask, "loadPwaTask").mockImplementation(async ({ taskShortId }) => (taskShortId === task.shortId ? task : null));
 const loadSpy = spyOn(overview, "loadOverviewWork").mockImplementation(async ({ view }) => ({ view, counts, items: work[view] }));
+const reachSpy = spyOn(overview, "loadReachableSpaces").mockResolvedValue(reachableSpaces([]));
 const tokenSpy = spyOn(session, "getToken").mockReturnValue(null);
 const sessionSpy = spyOn(session, "authenticateRequest").mockResolvedValue(null);
 const spies = [
@@ -176,6 +178,7 @@ const spies = [
   pageSpy,
   taskSpy,
   loadSpy,
+  reachSpy,
   tokenSpy,
   sessionSpy,
   stubRailSnapshot(),

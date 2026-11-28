@@ -31,7 +31,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { connections, createSql, sql } from "@k2b/cloud";
 import { jetstreamManager } from "@nats-io/jetstream";
-import { assertVerificationReport, localVerificationUrl, selectPhases } from "./verification";
+import { assertVerificationReport, localVerificationUrl, selectPhases, verificationSource } from "./verification";
 import { verificationPhases } from "./verification-phases";
 
 const root = resolve(import.meta.dir, "../../..");
@@ -101,15 +101,14 @@ if (argv.includes("--bootstrap")) {
       throw new Error("Gotenberg version check failed", { cause });
     });
     if (!renderer.ok) throw new Error(`Gotenberg version check failed (${renderer.status})`);
-    const commit = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: root });
-    if (commit.exitCode !== 0) throw new Error("Cannot record verification commit");
+    const source = verificationSource(root);
     const poppler = Bun.which(pdftotext) ? Bun.spawnSync([pdftotext, "-v"]) : undefined;
     await Bun.write(
       join(reports, "environment.json"),
       JSON.stringify(
         {
-          commit: commit.stdout.toString().trim(),
-          dirty: Bun.spawnSync(["git", "status", "--porcelain"], { cwd: root }).stdout.toString().trim() !== "",
+          commit: source.commit,
+          dirty: source.dirty,
           bun: Bun.version,
           platform: process.platform,
           arch: process.arch,
