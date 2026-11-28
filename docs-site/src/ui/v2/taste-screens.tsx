@@ -152,9 +152,9 @@ export const GridsAccessScreen = () => (
           label="Zugriff per Link"
           value="invited"
           options={[
-            { value: "invited", label: "Nur Eingeladene" },
-            { value: "org", label: "Alle in der Organisation" },
-            { value: "public", label: "Jeder mit dem Link" },
+            { value: "invited", label: "Nur Eingeladene", hint: "Personen und Gruppen oben", icon: "lock" },
+            { value: "org", label: "Alle in der Organisation", hint: "Nach Anmeldung, nur ansehen", icon: "building" },
+            { value: "public", label: "Jeder mit dem Link", hint: "Ohne Anmeldung, nur ansehen", icon: "world" },
           ]}
         />
         <Field label="Link">
