@@ -1,12 +1,14 @@
 import { CapabilityActionReviewDataSchema } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
 import { APPROVAL_MAX_WAIT_MS, approvalAssurance, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
+import { addMissingColumns, buildConcurrentIndexesInBackground } from "../services/concurrent-index";
+import { logger } from "../services/logging";
 import { migrateAiCapabilityTargets } from "./capability-targets-migrate";
 import { migrateAiMaps } from "./map-store";
 import { migrateAiMessageQueue } from "./message-queue";
 import { migrateAiModelAccess } from "./model-access-migrate";
 import { migrateAiNextMessages } from "./next-message-store";
-import { migrateAiQuotas } from "./quotas-migrate";
+import { AI_INFERENCE_TURN_INDEX, migrateAiQuotas } from "./quotas-migrate";
 import { retireChatRoutines } from "./retired-routines-migrate";
 import { withAiShortId } from "./short-id";
 import { migrateAiWakeups } from "./wakeup-store";
@@ -2479,6 +2481,8 @@ export const migrateCloudAi = async (): Promise<void> => {
     ON ai.messages (conversation_id, (meta->>'submittedDraftRevision')) WHERE role = 'user'`.simple();
   console.log("  ✓ ai conversation tables");
   await migrateAiNextMessages();
+  // Built next to live writes after the migration; startup never waits for them, and queries run without them meanwhile.
+  void buildConcurrentIndexesInBackground([AI_INFERENCE_TURN_INDEX], { log: logger("ai:migrate"), purpose: "AI" });
 };
 
 const backfillApprovalRequests = async (): Promise<void> => {
@@ -2630,5 +2634,6 @@ export const migrateAiModelClassesInTransaction = async (db: typeof sql): Promis
   await db`ALTER TABLE ai.model_assignments ADD CONSTRAINT model_assignments_slot_check CHECK(slot IN ('fast','balanced','thorough','maximum','vision','audio','liveAudio','decision'))`;
   for (const slot of ["fast", "balanced", "thorough", "maximum", "vision", "audio", "liveAudio", "decision"])
     await db`INSERT INTO ai.model_assignments(slot) VALUES(${slot}) ON CONFLICT DO NOTHING`;
-  await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS requested_class TEXT, ADD COLUMN IF NOT EXISTS resolved_class TEXT, ADD COLUMN IF NOT EXISTS model_id TEXT`;
+  // A background build may hold this table (`AI_INFERENCE_TURN_INDEX`); only what is missing takes a lock.
+  await addMissingColumns(db, "ai.inference_calls", { requested_class: "TEXT", resolved_class: "TEXT", model_id: "TEXT" });
 };

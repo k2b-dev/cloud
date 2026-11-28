@@ -129,9 +129,15 @@ test("initials come from the first and the last word of a name, skip suffixes, a
   expect(of("Li Jun")).toBe("LJ");
   expect(of("Amartya Sen")).toBe("AS");
   expect(of("Karl Weber sen.")).toBe("KW");
-  // an emoji first is one character, not half of one
-  expect(of("🦊 Fuchs Bau")).toBe("🦊B");
-  expect(of("👩‍🔧 Jana Berger")).toBe("👩‍🔧B");
+  // words without a letter give none, so two signs always fit the circle; a name of signs alone shows its first one,
+  // whole, never half of it
+  expect(of("🦊 Fuchs Bau")).toBe("FB");
+  expect(of("👩‍🔧 Jana Berger")).toBe("JB");
+  expect(of("🎉🎉🎉 Festkomitee Sommerfest – Planung 🎉🎉🎉")).toBe("FP");
+  expect(of("„Mira“ Solberg")).toBe("MS");
+  expect(of("👩‍🔧 🦊")).toBe("👩‍🔧");
+  expect(of("Éva Ångström")).toBe("ÉÅ");
+  expect(of("Éva Nagy")).toBe("ÉN");
   expect(initialsOf({ name: "Felix Thal", initials: "FX" })).toBe("FX");
 });
 

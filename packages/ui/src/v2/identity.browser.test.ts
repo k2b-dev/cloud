@@ -281,7 +281,8 @@ test("a stack whose people all show ends at its last face, faces overlap at most
         expect(stack.overlap).toBeLessThanOrEqual(0.25);
         expect(stack.ring).toBe(true);
       }
-      expect(found[0]!.initials).toEqual(["CM", "🦊B"]);
+      // a word without a letter (the fox) gives no initial: letters only, so two always fit the circle
+      expect(found[0]!.initials).toEqual(["CM", "FB"]);
     }, width);
 });
 
