@@ -72,11 +72,11 @@ beforeAll(async () => {
       // does not render, before the others.
       const prefill = url.searchParams.get("prefill") ?? "";
       const note = url.searchParams.has("note") ? `<input type="text" aria-label="Note" id="note">` : "";
-      const props = JSON.stringify(toJSON({}));
+      const props = `<!--ssr-props:${JSON.stringify(toJSON({}))}-->`;
       return new Response(
         `<!doctype html><html><body><script>${TYPED_INPUT_SCRIPT}</script>
-        <solid-island data-id="${formId}" data-props='${props}'><form>${note}<textarea aria-label="Message" id="message">${prefill}</textarea><input type="search" aria-label="Search" id="search" value="Lager"><input type="password" aria-label="Password" id="password"><input type="text" aria-label="Code" id="code"></form></solid-island>
-        <solid-island data-id="${nameId}" data-props='${props}'><input type="text" aria-label="Name" id="name"></solid-island>
+        <solid-island data-id="${formId}">${props}<form>${note}<textarea aria-label="Message" id="message">${prefill}</textarea><input type="search" aria-label="Search" id="search" value="Lager"><input type="password" aria-label="Password" id="password"><input type="text" aria-label="Code" id="code"></form></solid-island>
+        <solid-island data-id="${nameId}">${props}<input type="text" aria-label="Name" id="name"></solid-island>
         <script type="module">window.mountIslands = () => Promise.all([import('/_ssr/v1/${formId}.js'), import('/_ssr/v1/${nameId}.js')]);</script>
         </body></html>`,
         { headers: { "content-type": "text/html" } },

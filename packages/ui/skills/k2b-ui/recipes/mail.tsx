@@ -123,7 +123,7 @@ export default function MailScreen(props: Props) {
             />
           }
           end={
-            <Button variant="primary" icon="pencil">
+            <Button variant="primary" floats icon="pencil">
               Neue Nachricht
             </Button>
           }
