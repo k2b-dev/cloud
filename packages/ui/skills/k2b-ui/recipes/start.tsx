@@ -69,11 +69,11 @@ const bases: Tile[] = [
     color: GRIDS,
     preview: {
       table: {
-        columns: ["Datum", "Text", { label: "Betrag", align: "end" }],
+        columns: ["Datum", { label: "Betrag", align: "end" }, "Text"],
         rows: [
-          ["03.11.", "Miete", "−980,00"],
-          ["05.11.", "Gehalt", "2.640,00"],
-          ["08.11.", "Strom", "−64,20"],
+          ["03.11.", "−980,00", "Miete"],
+          ["05.11.", "2.640,00", "Gehalt"],
+          ["08.11.", "−64,20", "Strom"],
         ],
       },
     },
@@ -103,11 +103,11 @@ const bases: Tile[] = [
     color: GRIDS,
     preview: {
       table: {
-        columns: ["Nr.", "Kunde", { label: "Betrag", align: "end" }],
+        columns: ["Nr.", { label: "Betrag", align: "end" }, "Kunde"],
         rows: [
-          ["041", "Brandt", "1.240,00"],
-          ["042", "Oswald", "380,00"],
-          ["043", "Lindqvist", "96,00"],
+          ["041", "1.240,00", "Brandt"],
+          ["042", "380,00", "Oswald"],
+          ["043", "96,00", "Lindqvist"],
         ],
       },
     },

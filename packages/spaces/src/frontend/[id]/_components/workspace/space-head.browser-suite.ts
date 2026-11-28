@@ -2,14 +2,13 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { parseSeenHintsCookieHeader } from "@k2b/cloud/contracts/seen-hints";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { ItemListResult, SpaceAssignableUser, SpaceColumn, SpaceItem, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import { SpaceSettingsContextSchema } from "@/settings-context";
-import { browserName, launchBrowser, settled, storedCookie } from "../../../../../../ui/test/browser";
+import { browserName, launchBrowser, settled } from "../../../../../../ui/test/browser";
 import { headOverlaps } from "../../../../../../ui/test/head-overlap";
 import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 import type { KanbanBucketInitial } from "../kanban/types";
@@ -309,7 +308,6 @@ const snapshot = (view: View): SpacesViewSnapshot =>
   view === "kanban"
     ? { kind: "kanban", buckets, wormholes: [] }
     : { kind: "list", currentView: view === "table" ? "table" : "list", itemsResult };
-const hintIds = ["spaces.sidebar-switch", "spaces.view-tabs", "spaces.space-menu", "spaces.overview-sidebar"];
 let css = "";
 let controller = "";
 let browser: Browser;
@@ -332,14 +330,11 @@ const shell = (url: URL, html: string) => {
 };
 const pageHtml = (url: URL, cookie: string | undefined) => {
   const view = resolveView(url, cookie);
-  const wanted = url.searchParams.get("hint");
-  const hint = wanted && hintIds.includes(wanted) && !parseSeenHintsCookieHeader(cookie).includes(wanted) ? wanted : null;
   const html =
     url.pathname === "/app/spaces"
       ? renderToString(() =>
           createComponent(OverviewFixture, {
             spaces: overviewSpaces,
-            sidebarHint: hint === "spaces.overview-sidebar",
             initialView: "mine",
             initialPinnedSpaceIds: ["Space1"],
             initialWork: overviewWork,
@@ -354,7 +349,6 @@ const pageHtml = (url: URL, cookie: string | undefined) => {
             view,
             source: `${url.pathname}${url.search}`,
             overview: false,
-            hint,
             columns,
             tags,
             itemsResult,
@@ -729,30 +723,6 @@ describe(`Spaces shared head in ${browserName}`, () => {
       await page.context().close();
     }
   }, 30_000);
-  for (const id of hintIds)
-    for (const usePath of [false, true]) {
-      test(`${id}: ${usePath ? "using the path" : "Got it"} persists across reload`, async () => {
-        const path = id === "spaces.overview-sidebar" ? "/app/spaces" : "/app/spaces/Space1";
-        const page = await open(`${path}?view=list&hint=${id}`);
-        try {
-          const hint = page.locator(".k2b-moved-hint");
-          await hint.waitFor({ state: "visible" });
-          expect(await hint.count()).toBe(1);
-          if (!usePath) await hint.getByRole("button", { name: "Got it", exact: true }).click();
-          else if (id === "spaces.space-menu") await page.getByRole("button", { name: "Space menu", exact: true }).click();
-          else if (id === "spaces.view-tabs") await page.locator('[data-spaces-view-tabs] a[aria-current="page"]').click();
-          else await page.locator('.spaces-sidebar-list .spaces-overview-space a[href="/app/spaces/Space2"]').click();
-          await ready(page);
-          expect(await page.locator(".k2b-moved-hint").count()).toBe(0);
-          await page.reload();
-          await ready(page);
-          expect(await page.locator(".k2b-moved-hint").count()).toBe(0);
-          expect((await storedCookie(page, "cloud_seen_hints"))?.value).toContain(id);
-        } finally {
-          await page.context().close();
-        }
-      }, 30_000);
-    }
   /** Resolves with the handle's value once it passes `than` in the given direction. */
   const resizedPast = (target: ReturnType<Page["locator"]>, direction: "above" | "below", than: number) =>
     target.evaluate(
