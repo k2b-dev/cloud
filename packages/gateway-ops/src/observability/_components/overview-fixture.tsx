@@ -174,8 +174,20 @@ export const OverviewScreenFixture = (props: { search: string; locale?: string; 
           href: "/admin/observability/telemetry?range=24h&only=errors",
         }}
         services={[
-          { key: "postgres", label: "Postgres", icon: "database", href: "/admin/observability/infrastructure/postgres", status: "ok" },
-          { key: "valkey", label: "Valkey", icon: "database", href: "/admin/observability/infrastructure/valkey", status: "ok" },
+          {
+            key: "postgres",
+            label: "Postgres",
+            icon: "database",
+            href: "/admin/observability/infrastructure/postgres",
+            status: worst ? "warn" : "ok",
+          },
+          {
+            key: "valkey",
+            label: "Valkey",
+            icon: "database",
+            href: "/admin/observability/infrastructure/valkey",
+            status: worst ? "bad" : "ok",
+          },
           {
             key: "nats",
             label: "NATS",
