@@ -54,7 +54,7 @@ const open = async (held: Promise<void> | null, run: (page: Page, served: Promis
   const errors = pageErrors(page);
   let count = 0;
   let allServed = () => {};
-  // the four preloaded Latin faces of Plex Sans
+  // the three preloaded Latin faces of Plex Sans
   const served = new Promise<void>((resolve) => {
     allServed = resolve;
   });
@@ -66,7 +66,7 @@ const open = async (held: Promise<void> | null, run: (page: Page, served: Promis
       if (!path.startsWith("/public/fonts/") || held === null) return route.abort();
       await held;
       await route.fulfill({ contentType: "font/woff2", body: await readFile(join(output!, "fonts", basename(path))) });
-      if (++count >= 4) allServed();
+      if (++count >= 3) allServed();
     });
     await page.goto(`${origin}/`, { waitUntil: "domcontentloaded" });
     // settled: two painted frames are the first frame; settled would wait for the faces the first test holds back

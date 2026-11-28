@@ -30,6 +30,9 @@ export async function buildFontAssets(publicDir: string): Promise<void> {
   // on a page already shown, so no text and no button changes its width; the next page finds it in the cache. The
   // `@k2b/ui` preset keeps `swap` for apps that do not preload (font-assets.browser.test.ts).
   const served = css.join("\n").replace(/font-display:\s*swap/g, "font-display:optional");
-  if (/font-display:\s*(?!optional)/.test(served)) throw new Error("A face Cloud serves is not font-display: optional");
+  const faces = served.match(/@font-face\s*\{/g)?.length ?? 0;
+  const optional = served.match(/font-display:\s*optional\b/g)?.length ?? 0;
+  if (/font-display:(?!\s*optional\b)/.test(served) || faces !== optional)
+    throw new Error(`Every face Cloud serves must be font-display: optional; ${optional} of ${faces} faces are`);
   await writeFile(resolve(publicDir, "fonts.css"), served);
 }

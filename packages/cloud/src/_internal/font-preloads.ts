@@ -3,8 +3,8 @@ import plexPreset from "@k2b/ui/fonts/plex.css" with { type: "text" };
 
 /**
  * Preload tags for the IBM Plex Sans faces that every page sets in its first
- * frame: Latin text at 400, 500 (list titles, medium text), 600 (headings,
- * buttons, labels) and 700 (bold text, prose headings, widget values).
+ * frame: Latin text at 400, 500 (list titles, medium text) and 600 (headings,
+ * buttons, labels).
  *
  * Core serves the faces with `font-display: optional`
  * (`packages/core/scripts/font-assets.ts`): a face that misses the first frame
@@ -18,7 +18,7 @@ import plexPreset from "@k2b/ui/fonts/plex.css" with { type: "text" };
  * content-hashed file names (`packages/core/scripts/font-assets.ts`). The
  * preset is bundled as text, so production servers need no `node_modules`.
  */
-export const FONT_PRELOAD_LINKS = ["400", "500", "600", "700"]
+export const FONT_PRELOAD_LINKS = ["400", "500", "600"]
   .map((weight) => {
     const file = new RegExp(`url\\(\\./fonts/(ibm-plex-sans-latin-${weight}-normal-[0-9a-f]+\\.woff2)\\)`).exec(plexPreset)?.[1];
     if (!file) throw new Error(`The @k2b/ui Plex preset has no Latin IBM Plex Sans ${weight} face`);

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import type { Page, Route } from "playwright";
 
 const preset = readFileSync(resolve(import.meta.dir, "../dist/plex.css"), "utf8");
-const files = ["400", "500", "600", "700"].map((weight) => {
+const files = ["400", "500", "600"].map((weight) => {
   const file = new RegExp(`url\\(\\./fonts/(ibm-plex-sans-latin-${weight}-normal-[0-9a-f]+\\.woff2)\\)`).exec(preset)?.[1];
   if (!file) throw new Error(`The @k2b/ui Plex preset has no Latin IBM Plex Sans ${weight} face`);
   return file;
@@ -11,7 +11,7 @@ const files = ["400", "500", "600", "700"].map((weight) => {
 
 /**
  * The Plex faces as Cloud's page head preloads them (packages/cloud font-preloads): the Latin IBM Plex Sans faces at
- * 400, 500, 600 and 700, the same files, under `fonts` (the address a fixture serves the font files at, ending in `/`).
+ * 400, 500 and 600, the same files, under `fonts` (the address a fixture serves the font files at, ending in `/`).
  * Core copies the preset's files under their own names, so these are also the files of Core's `fonts.css`.
  *
  * Core's `fonts.css` serves the faces with `font-display: optional` (packages/core/scripts/font-assets.ts): a face that
