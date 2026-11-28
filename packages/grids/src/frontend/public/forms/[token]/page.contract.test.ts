@@ -9,7 +9,7 @@ describe("public form page boundary", () => {
     expect(source).toContain("const fields = await toPublicFields(internalFields)");
     expect(source).toContain("const safeForm = await toPublicForm(materializeFormRenderDefaults(form, internalFields, { dateConfig }))");
     expect(source).toContain("inlineTargetFields[publicTargetTableId] = await toPublicFields");
-    expect(source).toContain("<MinimalLayout c={c}>");
+    expect(source).toContain('<MinimalLayout c={c} ui="v2">');
     expect(source).not.toContain("toPublicRenderableForm(form)");
     expect(source).not.toContain("PublicTimezoneCookie");
     expect(source).not.toContain("themeMatch");

@@ -1,88 +1,14 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { MinimalLayout } from "@k2b/cloud/ssr";
-import { ButtonLink, NoticeCard, Paper, useLocale } from "@k2b/ui";
-import { type JSX, Show } from "solid-js";
 import { ssr } from "../../../../config";
 import { gridsService } from "../../../../service";
 import { resolveGridsMessages } from "../../../messages";
-
-const remainingTime = (expiresAt: string, locale: string, now = Date.now()): string => {
-  const { t } = resolveGridsMessages(locale);
-  const remainingMs = Math.max(0, new Date(expiresAt).getTime() - now);
-  const minutes = Math.ceil(remainingMs / 60_000);
-  if (minutes < 60) return minutes <= 1 ? t.lessThanMinute : t.minutes({ count: minutes });
-  const hours = Math.ceil(remainingMs / 3_600_000);
-  if (hours < 48) return t.hours({ count: hours });
-  const days = Math.ceil(remainingMs / 86_400_000);
-  return t.days({ count: days });
-};
-
-const fileIcon = (mimeType: string | undefined): string => {
-  switch (mimeType) {
-    case "application/pdf":
-      return "ti ti-file-type-pdf";
-    case "text/csv":
-      return "ti ti-file-type-csv";
-    case "application/xml":
-      return "ti ti-file-type-xml";
-    default:
-      return "ti ti-file";
-  }
-};
-
-export function PublicDocumentShare(props: {
-  filename?: string;
-  mimeType?: string;
-  expiresAt?: string;
-  expiresAtLabel?: string;
-  downloadHref?: string;
-}): JSX.Element {
-  const locale = useLocale();
-  const t = () => resolveGridsMessages(locale()).t;
-  const available = () => Boolean(props.filename && props.expiresAt && props.expiresAtLabel && props.downloadHref);
-
-  return (
-    // No background of its own: the page body runs behind the card and the
-    // MinimalLayout footer alike, so the two never meet at a visible edge.
-    <div class="flex flex-1 items-center justify-center px-4 py-8 text-primary sm:py-12">
-      <main class="w-full max-w-xl">
-        <Paper as="article" elevated class="standalone-card w-full p-6 sm:p-8">
-          <Show
-            when={available()}
-            fallback={<NoticeCard tone="warning" title={t().linkUnavailable} detail={t().documentLinkUnavailable} />}
-          >
-            <div class="flex items-center gap-3">
-              <span class="k2b-icon-tile app-accent-text h-10 w-10">
-                <i class={`${fileIcon(props.mimeType)} text-lg`} aria-hidden="true" />
-              </span>
-              <div class="min-w-0 flex-1">
-                <h1 class="break-words text-base font-semibold leading-snug sm:text-lg">{props.filename}</h1>
-              </div>
-            </div>
-
-            <NoticeCard
-              class="mt-6"
-              tone="info"
-              title={t().linkExpiresIn({ duration: remainingTime(props.expiresAt!, locale()) })}
-              detail={<span>{t().availableUntil({ date: props.expiresAtLabel! })}</span>}
-            />
-
-            <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
-              <ButtonLink href={props.downloadHref} navigation="document" size="md" variant="primary" download="">
-                <i class="ti ti-download" aria-hidden="true" />
-                {t().downloadFile}
-              </ButtonLink>
-              <p class="text-xs text-dimmed">{t().sharedThroughGrids}</p>
-            </div>
-          </Show>
-        </Paper>
-      </main>
-    </div>
-  );
-}
+import { PublicDocumentShare } from "./PublicDocumentShare";
 
 export default ssr<AuthContext>(async (c) => {
   const token = c.req.param("token") ?? "";
+  // the page carries the link's download address, so no cache keeps it (found or not), like a missing form
+  c.header("Cache-Control", "private, no-store");
   const locale = getLocale(c);
   const { t } = resolveGridsMessages(locale);
   const resolved = await gridsService.document.resolveDocumentLinkDownload(token);
@@ -90,7 +16,7 @@ export default ssr<AuthContext>(async (c) => {
     c.status(404);
     c.get("page").title = t.linkUnavailable;
     return () => (
-      <MinimalLayout c={c}>
+      <MinimalLayout c={c} ui="v2">
         <PublicDocumentShare />
       </MinimalLayout>
     );
@@ -108,7 +34,7 @@ export default ssr<AuthContext>(async (c) => {
   c.get("page").description = t.sharedDocumentDescription;
 
   return () => (
-    <MinimalLayout c={c}>
+    <MinimalLayout c={c} ui="v2">
       <PublicDocumentShare
         filename={resolved.data.document.filename}
         mimeType={resolved.data.document.artifacts.find((artifact) => artifact.key === resolved.data.document.primaryArtifactKey)?.mimeType}
