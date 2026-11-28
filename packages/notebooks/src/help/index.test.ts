@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { parseNotebookChartBlocks } from "@k2b/editor/markdown/lib/chart-blocks";
 import { extractNamedDataProperties } from "@k2b/editor/markdown/lib/named-blocks";
-import { notebooksPageMessages } from "../frontend/messages";
+import { notebookApiMessages } from "../api/messages";
+import { notebookWorkspaceMessages } from "../frontend/[id]/messages";
 import { renderNotebookBook } from "../lib/book-renderer";
 import { notebookChartOptions } from "../lib/chart-options";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "../lib/query-blocks";
@@ -38,13 +39,17 @@ describe("notebookHelp", () => {
     expect(notebookHelp.getMarkdown("notebooks-start", "fr")).toBe(notebookHelp.getMarkdown("notebooks-start", "en")!);
   });
 
-  test("points to the recent notes the overview shows, with its label", () => {
+  test("leads to other and new notebooks through the switcher, with its labels, and names no overview", () => {
     for (const locale of ["en", "de"] as const) {
       const start = notebookHelp.getMarkdown("notebooks-start", locale)!;
-      expect(start).toContain(`**${notebooksPageMessages.resolve([locale]).t.recentlyEdited}**`);
+      const workspace = notebookWorkspaceMessages.resolve([locale]).t;
+      expect(start).toContain(`**${workspace.newNotebook}**`);
+      expect(start).toContain(`**${workspace.fromTemplate}**`);
+      // the notes edited last across notebooks live in the start page widget
+      expect(start).toContain(`**${notebookApiMessages.resolve([locale]).t.recentNotes}**`);
     }
-    expect(notebookHelp.getMarkdown("notebooks-start", "en")).not.toContain("**Recents**");
-    expect(notebookHelp.getMarkdown("notebooks-start", "de")).not.toContain("**Zuletzt verwendet**");
+    expect(notebookHelp.getMarkdown("notebooks-start", "en")).not.toMatch(/the overview/i);
+    expect(notebookHelp.getMarkdown("notebooks-start", "de")).not.toMatch(/Übersicht/);
   });
 
   test("keeps German articles structurally complete", () => {

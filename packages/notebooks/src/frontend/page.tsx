@@ -1,87 +1,49 @@
 import type { AuthContext } from "@k2b/cloud/server";
-import { expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { notebooksService } from "@/service";
 import { ssr } from "../config";
-import { parseLastNotebookId, parsePinnedNotebookIds } from "./[id]/_components/settings/NotebookSettingsStore";
-import { projectNotebook } from "./[id]/page-data";
+import NotebooksStart from "./_components/overview/NotebooksStart.island";
 import { notebooksPageMessages } from "./messages";
-import NotebooksOverview from "./NotebooksOverview.island";
+import { startTarget } from "./start-target";
+
+/** The templates a first start offers as cards, in this order: a diary, recipes, a reading list. */
+const START_ORDER = ["daily-notes", "recipe-collector", "reading-list"];
+const rank = (id: string) => (START_ORDER.includes(id) ? START_ORDER.indexOf(id) : START_ORDER.length);
 
 /**
- * Notebooks list page - shows all notebooks the user has access to
+ * Notebooks opens a notebook: the one this person used last while they still reach it, else the first they reach.
+ * There is no overview page (the maintainer: it added nothing). Only a person without any notebook sees a page here,
+ * which starts the first one.
  */
 export default ssr<AuthContext>(async (c) => {
   const user = expectUserBackedActor(c);
   const { t } = notebooksPageMessages.resolve([getLocale(c)]);
-  const url = new URL(c.req.raw.url);
-  const cookieHeader = c.req.raw.headers.get("Cookie") ?? undefined;
-
-  const [notebookPage, recentNotes, activityResult] = await Promise.all([
-    notebooksService.notebook.list({ userId: user.id }),
-    notebooksService.note.recentForUser({ userId: user.id, limit: 12 }),
-    notebooksService.activity
-      .list({ userId: user.id, limit: 30 })
-      .then((page) => ({ page, error: null }))
-      .catch((error: unknown) => ({
-        page: { items: [], nextCursor: null },
-        error: error instanceof Error ? error.message : t.activityLoadFailed,
-      })),
-  ]);
-  const notebooks = notebookPage.items;
-
-  // Redirect to last opened notebook if ?recent=true
-  if (url.searchParams.get("recent") === "true" && notebooks.length > 0) {
-    const lastId = parseLastNotebookId(cookieHeader);
-    if (lastId && notebooks.some((n) => n.shortId === lastId)) {
-      return c.redirect(`/app/notebooks/${lastId}`);
-    }
+  const target = await startTarget(user.id, c.req.raw.headers.get("Cookie") ?? undefined);
+  if (target) {
+    // A command link ("New note" from another app) lands here; the notebook page takes it over. `recent` is the
+    // rail's former link, still in bookmarks, and means what this redirect does anyway.
+    const query = new URL(c.req.url).searchParams;
+    query.delete("recent");
+    return c.redirect(`/app/notebooks/${target}${query.size > 0 ? `?${query}` : ""}`);
   }
-  const templates = notebooksService.template.list(getLocale(c));
-  const overviewStats = new Map(
-    (await notebooksService.notebook.overviewStats({ notebookIds: notebooks.map((notebook) => notebook.id) })).map((stats) => [
-      stats.notebookId,
-      stats,
-    ]),
-  );
-
+  // the ways to start with how many pages each makes and its preview, the three most useful first (they stand as cards; the rest stay in
+  // the dialog's choice); the open dialog comes from the address, so a reload shows the same
+  const locale = getLocale(c);
+  const templates = notebooksService.template
+    .list(locale)
+    .map((template) => ({
+      ...template,
+      pageCount: notebooksService.template.outline(template.id, locale)?.length ?? 0,
+      preview: notebooksService.template.preview(template.id, locale) ?? undefined,
+    }))
+    .sort((a, b) => rank(a.id) - rank(b.id));
+  const blankPageCount = notebooksService.template.welcomeOutline(locale).length;
+  const blankPreview = notebooksService.template.welcomePreview(locale);
+  const open = c.req.query("new") ?? null;
   return () => (
-    <Layout printHint={t.printHint} c={c} title={[{ title: t.start, href: "/" }, { title: t.notebooks }]}>
-      <NotebooksOverview
-        notebooks={notebooks.map((notebook) => {
-          const { id, name, description, icon } = projectNotebook(notebook);
-          const stats = overviewStats.get(notebook.id);
-          return {
-            id,
-            name,
-            description,
-            icon,
-            noteCount: stats?.noteCount ?? 0,
-            lastEditedAt: stats?.lastNoteAt ?? null,
-          };
-        })}
-        templates={templates}
-        recentNotes={recentNotes.map((note) => ({
-          id: note.shortId,
-          notebookId: note.notebookShortId,
-          notebookName: note.notebookName,
-          notebookIcon: note.notebookIcon,
-          title: note.title,
-          updatedAt: note.updatedAt,
-        }))}
-        initialActivity={{
-          items: activityResult.page.items.map((item) => ({
-            ...item,
-            notebook: { id: item.notebook.shortId, name: item.notebook.name, icon: item.notebook.icon },
-            note: item.note ? { id: item.note.shortId, title: item.note.title } : null,
-          })),
-          nextCursor: activityResult.page.nextCursor,
-        }}
-        initialActivityError={activityResult.error}
-        initialPinnedNotebookIds={parsePinnedNotebookIds(cookieHeader)}
-        dateConfig={getDateConfig(c)}
-        now={new Date().toISOString()}
-      />
+    <Layout printHint={t.printHint} c={c} fullPage fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.notebooks }]}>
+      <NotebooksStart templates={templates} blankPageCount={blankPageCount} blankPreview={blankPreview} open={open} />
     </Layout>
   );
 });

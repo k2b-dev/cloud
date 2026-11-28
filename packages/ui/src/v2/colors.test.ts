@@ -11,7 +11,7 @@ import { colorStyle, contrast, safeColor } from "./colors";
 const root = mkdtempSync(resolve(tmpdir(), "k2-v2-colors-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { Avatar, Chip, Mark, custom } = await import("./marks");
+const { Avatar, Chip, Mark, Preview, custom } = await import("./marks");
 const { Tiles, Cells } = await import("./layout");
 const { Digest, Nav } = await import("./components");
 const { Section } = await import("./structure");
@@ -54,6 +54,7 @@ describe("a data colour", () => {
     const evil = notColours[0]!;
     const markups = [
       html(Mark, { icon: "table", color: evil }),
+      html(Preview, { icon: "photo", color: evil, label: "Vorschau" }),
       html(Avatar, { name: "Jana Berger", color: evil }),
       html(Avatar.Stack, { people: [{ name: "Jana Berger", color: evil }] }),
       html(Chip, { tag: true, color: evil, children: "Kunde" }),

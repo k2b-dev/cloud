@@ -1,5 +1,6 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import * as Y from "yjs";
+import { deriveNoteTitle, normalizeNoteTitle } from "../lib/note-title";
 import {
   getTemplate,
   materializeTemplate,
@@ -12,6 +13,7 @@ import { notebookServiceMessages } from "./messages";
 import type { Notebook } from "./notebooks";
 import * as notebooks from "./notebooks";
 import * as notes from "./notes";
+import { welcomeMarkdown } from "./welcome";
 import { invalidated, workspaceTransaction } from "./workspace-events";
 
 export type TemplateSummary = {
@@ -63,6 +65,129 @@ export const list = (locale = "en"): TemplateSummary[] =>
     const materialized = materializeTemplate(template, new Date(), locale);
     return { id: template.id, name: materialized.name, description: materialized.description, icon: materialized.icon };
   });
+
+/** One page a template makes: its title, and the title of the page it stands under. */
+export type TemplatePage = { title: string; parent: string | null };
+
+/** A template's page as it is made: its key, the page it stands under, its title and its Markdown. */
+type MadePage = { key: string; parentKey: string | null; title: string; content: string };
+
+/** The pages a template makes, materialized in the person's language; links read as their words, nothing is written. */
+const madePages = (id: string, locale: string): MadePage[] | null => {
+  const template = getTemplate(id);
+  if (!template) return null;
+  const now = new Date();
+  const materialized = materializeTemplate(template, now, locale);
+  const stamp = now.toISOString();
+  const notebook: Notebook = {
+    id: template.id,
+    shortId: template.id,
+    name: materialized.notebookName,
+    description: materialized.notebookDescription ?? null,
+    icon: materialized.icon,
+    homepageNoteId: null,
+    homepageNoteShortId: null,
+    defaultPresentationMode: "write",
+    defaultNoteTitleTemplate: "",
+    noteDeletePermission: "write",
+    createdBy: null,
+    createdAt: stamp,
+    updatedAt: stamp,
+  };
+  const ctx: TemplateNoteContentContext = {
+    now,
+    locale,
+    notebook,
+    notes: new Map(),
+    link: (_key, label) => label,
+    noteId: (key) => key,
+  };
+  return materialized.notes.map((item) => {
+    const content = item.content === undefined ? "" : typeof item.content === "function" ? item.content(ctx) : item.content;
+    return { key: item.key, parentKey: item.parentKey ?? null, title: deriveNoteTitle(content), content };
+  });
+};
+
+/**
+ * The pages a template makes, in their order, with the titles they get (the first heading, as on save) in the person's
+ * language: what a person sees before choosing it. Bounded by the template itself.
+ */
+export const outline = (id: string, locale = "en"): TemplatePage[] | null => {
+  const pages = madePages(id, locale);
+  if (!pages) return null;
+  const titles = new Map(pages.map((page) => [page.key, page.title]));
+  return pages.map((page) => ({ title: page.title, parent: page.parentKey ? (titles.get(page.parentKey) ?? null) : null }));
+};
+
+/** The one page a blank notebook starts with, in the language it is made in. */
+export const welcomeOutline = (locale = "en"): TemplatePage[] => [{ title: deriveNoteTitle(welcomeMarkdown(locale)), parent: null }];
+
+/** What a start card shows of a template: its first table, or its first page. */
+export type TemplatePreview =
+  | { table: { columns: (string | { label: string; align?: "end" })[]; rows: string[][] } }
+  | { page: { title: string; text?: string } };
+
+/** How much of a table a preview shows: three columns of its first three rows, as a card has room for. */
+const PREVIEW_COLUMNS = 3;
+const PREVIEW_ROWS = 3;
+
+const cells = (line: string) =>
+  line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => normalizeNoteTitle(cell, ""));
+
+/** The first Markdown table of a page that has a row under its head, cut to what a preview shows. */
+const firstTable = (content: string) => {
+  const lines = content.split("\n");
+  for (const [index, line] of lines.entries()) {
+    if (!line.trim().startsWith("|") || !/^\s*\|?\s*:?-{3,}/.test(lines[index + 1] ?? "")) continue;
+    const rows: string[][] = [];
+    for (const row of lines.slice(index + 2)) {
+      if (!row.trim().startsWith("|") || rows.length === PREVIEW_ROWS) break;
+      rows.push(cells(row).slice(0, PREVIEW_COLUMNS));
+    }
+    if (rows.length > 0) return { columns: cells(line).slice(0, PREVIEW_COLUMNS), rows };
+  }
+  return null;
+};
+
+/** A page's title and its first line of plain text: no heading, tag, list, table, quote or directive. */
+const pagePreview = (title: string, content: string) => {
+  const text = content
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line && !/^(#|@|:::|\||[-*+>]\s|\d+[.)]\s|[a-z_]+:\s)/i.test(line));
+  return { page: { title, text: text ? normalizeNoteTitle(text, "") || undefined : undefined } };
+};
+
+/**
+ * What a template's start card shows, in the person's language: the first table it makes (its head and first rows, as
+ * words), or else its first page (its title and first line); a template that asks for its page (`startPreview`) shows
+ * it. Bounded: three columns of three rows, one line.
+ */
+export const preview = (id: string, locale = "en"): TemplatePreview | null => {
+  const pages = madePages(id, locale);
+  if (!pages?.length) return null;
+  const [first] = pages;
+  const template = getTemplate(id);
+  const chosen = template ? materializeTemplate(template, new Date(), locale).startPreview : undefined;
+  if (chosen === "page" && first) return pagePreview(first.title, first.content);
+  if (chosen && chosen !== "page") return { table: { columns: [...chosen.columns], rows: chosen.rows.map((row) => [...row]) } };
+  for (const page of pages) {
+    const table = firstTable(page.content);
+    if (table) return { table };
+  }
+  return first ? pagePreview(first.title, first.content) : null;
+};
+
+/** What a blank notebook's start card shows: its welcome page. */
+export const welcomePreview = (locale = "en"): TemplatePreview => {
+  const markdown = welcomeMarkdown(locale);
+  return pagePreview(deriveNoteTitle(markdown), markdown);
+};
 
 export const get = (id: string, locale = "en"): TemplateSummary | null => {
   const template = getTemplate(id);

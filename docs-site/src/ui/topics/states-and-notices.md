@@ -24,7 +24,7 @@ Every state keeps these rules:
 ### Empty
 
 - The data loaded, and there is nothing (yet), or nothing that matches the filter.
-- One sentence and one way out.
+- One sentence and one way out; a second, quieter one only when a person often needs it, such as "Ganzes Notizbuch zeigen" after "Filter zurücksetzen".
 - A place that holds nothing because something went wrong or waits, and that cannot be loaded again from there, such as an error page: `tone="bad"` or `tone="warn"` colours its sign. It shows no retry; that is `Failed`.
 
 ### Failed
@@ -43,7 +43,7 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 ### Empty
 
-Nothing to show (yet): a round sign, one sentence, the one way out.
+Nothing to show (yet): a round sign, one sentence, the way out, and at most a second, quieter one after it.
 
 <Props of="Empty" />
 

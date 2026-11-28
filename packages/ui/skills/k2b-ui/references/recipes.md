@@ -242,6 +242,38 @@ chip in `marks`; then `Digest activity` under "Zuletzt geändert".
   in its row and as a `dot` on its sidebar entry.
 - States: `quiet` (a day without anything that needs a person).
 
+## files.tsx: a folder with list, grid and selection
+
+![files at 1440 px](../images/files-1440.png)
+![files at 390 px](../images/files-390.png)
+
+Two full-width rows above list and detail: a head `Bar` with `Path`, a
+sharing `Chip`, the search as its symbol and one create `Menu` "+"
+("Hochladen", "Neuer Ordner");
+then the `FilterBar` with `results` and `end` (`ListOrder`, a `Menu` for
+list or grid). The list is a `Table` with `select`, `group` (folders,
+files), a `mark` column with thumbnails and types, an `avatar` column; the
+open file is a `Pane detail` with `Preview`, a bar of deeds, `Facts` and
+sections for sharing and versions. `Nav` shows storages with `color` and
+the storage's `quota`.
+
+- While files are selected, `StatusRow selection` takes the bar's place at
+  the same height.
+- States: `grid` (`Tiles variant="media"`), `selecting` (three photos).
+
+## settings-page.tsx: a settings page
+
+![settings-page at 1440 px](../images/settings-page-1440.png)
+![settings-page at 390 px](../images/settings-page-390.png)
+
+The state first as `Cells` (a `trend`, chips with tone); a `Table` for the
+one setting with a value per kind (a switch per row); `Setting` rows for
+everything else, one `Section` per topic; a `Pane side` with the methods
+as rows with `mark` and state, and `Digest activity` of who changed what.
+The head says "1 Änderung" and saves the page as a whole.
+
+- States: `saved` (nothing to save: the deeds are disabled).
+
 ## table.tsx: a table with a status row
 
 ![table at 1440 px](../images/table-1440.png)
@@ -308,6 +340,26 @@ answers with a toast with `status` `ok` or `bad`.
   the menu closes while the question asks.
 - The open state of the dialog lives in the screen (`open`,
   `onOpenChange`).
+
+## start.tsx: the first start of an app without data
+
+![start at 1440 px](../images/start-1440.png)
+![start at 390 px](../images/start-390.png)
+
+A person opens Notebooks or Grids for the first time. No sidebar and no
+switcher: a `Pane center` with one `Text type="lead"` line ("Leg dein
+erstes Notizbuch an") and `Tiles variant="card" perRow={4}`. Each card
+shows a `preview` of what it makes across its top (`{ page }` for the
+blank way, `{ table }` with a template's first table, `{ icon }` where
+there is nothing to show), its `Mark` in the app's colour, its name and
+`meta` ("6 Seiten"). The whole card opens the dialog that makes it:
+`onOpen`, or `href` to an address that opens the dialog.
+
+- The blank way first, then at most three templates; the rest stay in
+  the dialog's choice.
+- Four in one row on a wide screen, 2 × 2 where four do not fit and on
+  the phone; the line stands centred, on the phone at the start.
+- States: `grids` (the first base: tables and a sign for the blank base).
 
 ## states.tsx: the states of a list
 

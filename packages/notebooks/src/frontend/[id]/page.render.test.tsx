@@ -282,6 +282,18 @@ test.each(["write", "book"] as const)(
   },
 );
 
+test.each(["write", "book"] as const)("a notebook shown in %s mode owns the new-note command once", async (mode) => {
+  // Notebooks opens the notebook used last, so "New note" from another app arrives on whatever this notebook shows
+  const html = await renderEmptyNotebook(mode);
+  const owners = [
+    ...(await select(html, 'solid-island[data-file="NotebookCommands.island.tsx"]')),
+    ...(await select(html, 'solid-island[data-file="NoteComposeCommand.island.tsx"]')),
+  ];
+  expect(owners).toHaveLength(1);
+  // reading asks which notebook too, with this one first when it may be written
+  expect(islandProps(owners[0]?.attributes["data-props"])).toMatchObject({ notebookId: "book01", canWrite: true });
+});
+
 test.each([
   ["attachments", "/app/notebooks/:id/attachments", "/app/notebooks/book01/attachments?search=x&page=2", attachmentsHandler, false],
   ["tag", "/app/notebooks/:id/tags/:tag", "/app/notebooks/book01/tags/ideas?search=x&page=2", tagHandler, false],

@@ -1,0 +1,109 @@
+import { expect, test } from "bun:test";
+import { deriveNoteTitle } from "../lib/note-title";
+import { materializeTemplate, templates } from "../templates";
+import { outline, preview, welcomeOutline, welcomePreview } from "./templates";
+
+test("a template's outline names every page it makes, in its order, with its parent, in the person's language", () => {
+  for (const locale of ["en", "de"]) {
+    for (const template of templates) {
+      const pages = outline(template.id, locale);
+      const notes = materializeTemplate(template, new Date(), locale).notes;
+      expect(pages?.length).toBe(notes.length);
+      expect(pages?.every((page) => page.title.length > 0)).toBe(true);
+      // a child names the page it stands under, and that page comes before it
+      for (const [index, page] of (pages ?? []).entries()) {
+        if (page.parent === null) continue;
+        expect(pages?.slice(0, index).some((earlier) => earlier.title === page.parent)).toBe(true);
+      }
+    }
+  }
+  expect(outline("no-such-template")).toBeNull();
+});
+
+test("a German outline reads in German", () => {
+  const [first] = templates;
+  const en = outline(first?.id ?? "", "en")?.map((page) => page.title);
+  const de = outline(first?.id ?? "", "de")?.map((page) => page.title);
+  expect(en?.length).toBeGreaterThan(0);
+  expect(de).not.toEqual(en);
+});
+
+test("a blank notebook's outline is its welcome page", () => {
+  const [page, ...more] = welcomeOutline();
+  expect(more).toEqual([]);
+  expect(page?.parent).toBeNull();
+  expect(page?.title).toBe(deriveNoteTitle(page?.title ? `# ${page.title}` : ""));
+  expect(page?.title.length).toBeGreaterThan(0);
+});
+
+// The start page's cards (W2): each shows what its template makes, from the template itself, in the person's language.
+test("a template's preview is its first table with rows, three columns of three rows, in the person's language", () => {
+  for (const locale of ["en", "de"]) {
+    for (const template of templates) {
+      const shown = preview(template.id, locale);
+      expect(shown).not.toBeNull();
+      if (!shown || !("table" in shown)) continue;
+      expect(shown.table.columns.length).toBeGreaterThan(0);
+      expect(shown.table.columns.length).toBeLessThanOrEqual(3);
+      expect(shown.table.rows.length).toBeGreaterThan(0);
+      expect(shown.table.rows.length).toBeLessThanOrEqual(3);
+      // plain words: no Markdown and no table syntax left in a cell
+      for (const cell of [
+        ...shown.table.columns.map((column) => (typeof column === "string" ? column : column.label)),
+        ...shown.table.rows.flat(),
+      ])
+        expect(cell).not.toMatch(/[|*]|^-+$/);
+    }
+  }
+  // the card templates choose short values of their own content, so the card cuts nothing: the reading list its titles
+  // and states without the authors, the recipes the pantry's shortest rows with the amount at the end
+  expect(preview("reading-list", "de")).toEqual({
+    table: {
+      columns: ["Titel", "Status"],
+      rows: [
+        ["Momo", "Lese ich"],
+        ["Faust", "Gelesen"],
+        ["Altes Land", "Gelesen"],
+      ],
+    },
+  });
+  expect(preview("recipe-collector", "de")).toEqual({
+    table: {
+      columns: ["Zutat", { label: "Menge", align: "end" }, "Einheit"],
+      rows: [
+        ["Zwiebel", "1,2", "kg"],
+        ["Eier", "8", "Stück"],
+        ["Mehl", "1,5", "kg"],
+      ],
+    },
+  });
+  // an English reading list has long titles: its card shows its first page
+  expect(preview("reading-list", "en")).toMatchObject({ page: { title: "Reading Dashboard" } });
+  // a diary shows its daily page, not its inbox table (`startPreview`, mockup empty-start-tiles v4)
+  expect(preview("daily-notes", "de")).toEqual({ page: { title: "Tagebuch", text: expect.stringMatching(/^Beginne hier\./) } });
+  expect(preview("no-such-template")).toBeNull();
+});
+
+test("a blank notebook's preview is its welcome page: its title and first line as plain words", () => {
+  const shown = welcomePreview();
+  expect(shown).toEqual({ page: { title: welcomeOutline()[0]?.title ?? "-", text: expect.any(String) } });
+  if ("page" in shown) expect(shown.page.text).not.toMatch(/[*#]/);
+});
+
+test("a blank notebook's welcome page previews in the language it is made in (#4460)", () => {
+  expect(welcomePreview("de")).toEqual({ page: { title: welcomeOutline("de")[0]?.title ?? "-", text: expect.any(String) } });
+  expect(welcomeOutline("de")[0]?.title).not.toBe(welcomeOutline("en")[0]?.title);
+});
+
+test("the start previews the templates choose keep every value short enough that a card cuts nothing", () => {
+  for (const locale of ["de", "en"])
+    for (const template of templates) {
+      const shown = preview(template.id, locale);
+      if (!shown || !("table" in shown) || !template.startPreview) continue;
+      const cells = [
+        ...shown.table.columns.map((column) => (typeof column === "string" ? column : column.label)),
+        ...shown.table.rows.flat(),
+      ];
+      for (const cell of cells) expect(cell.length).toBeLessThanOrEqual(12);
+    }
+});

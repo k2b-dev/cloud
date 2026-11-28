@@ -37,12 +37,29 @@ export const recipeCollectorTemplate: NotebookTemplate = {
   icon: "ti ti-tools-kitchen-2",
   notebookName: "Recipes & Pantry",
   notebookDescription: "An automatic recipe index, pantry inventory, and readable recipe pages.",
+  // the pantry's shortest rows: the card cuts nothing (Amount stands at the end)
+  startPreview: {
+    columns: ["Item", { label: "Amount", align: "end" }, "Unit"],
+    rows: [
+      ["Onion", "1.2", "kg"],
+      ["Eggs", "8", "pcs"],
+      ["Flour", "1.5", "kg"],
+    ],
+  },
   translations: {
     de: {
       name: "Rezepte und Vorräte",
       description: "Rezepte, Vorratsbestand, Einkaufsliste und Anregungen für den Einstieg.",
       notebookName: "Rezepte und Vorräte",
       notebookDescription: "Automatisches Rezeptverzeichnis, Vorratsbestand und lesbare Rezeptseiten.",
+      startPreview: {
+        columns: ["Zutat", { label: "Menge", align: "end" }, "Einheit"],
+        rows: [
+          ["Zwiebel", "1,2", "kg"],
+          ["Eier", "8", "Stück"],
+          ["Mehl", "1,5", "kg"],
+        ],
+      },
     },
   },
   homepageNoteKey: "dashboard",

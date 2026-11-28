@@ -16,6 +16,7 @@ export const notebookCommandMessages = i18n.define({
       choose: "Choose a notebook",
       search: "Find a writable notebook…",
       empty: "No writable notebooks",
+      lastUsed: "Last used",
       failed: "The note could not be created.",
     },
     de: {
@@ -26,6 +27,7 @@ export const notebookCommandMessages = i18n.define({
       choose: "Notizbuch auswählen",
       search: "Beschreibbares Notizbuch finden…",
       empty: "Keine beschreibbaren Notizbücher",
+      lastUsed: "Zuletzt genutzt",
       failed: "Die Notiz konnte nicht erstellt werden.",
     },
   },

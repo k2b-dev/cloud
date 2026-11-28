@@ -28,8 +28,9 @@ code, one hero with its real trend, the app's colour where it means
 something, one data picture per row, a tinted head for the open object, a
 large screen that uses its room; dense, not busy: each thing has its mark
 (`Mark`, a person's `Avatar`), a state is a dot and its word, colour only
-for problems, people stand beside what they did. Run its wireframe check on
-your pictures: a screen that fails it is not done, however clean it is.
+for problems, people stand beside what they did; two head rows at most,
+settings as `Setting` rows. Run its wireframe check on your pictures: a
+screen that fails it is not done, however clean it is.
 
 ## Start here
 
@@ -88,13 +89,15 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |
 | an exception in the statement ("1 ohne Zugriff") | `StatusRow marks` with a `Chip status` | – |
 | many like things, one per line | `List` of `Row` | `mail.tsx` |
-| a thing with a face (a base, a file, a table); an overview of such things with figures, people and a history | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`); `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
+| a thing with a face (a base, a file, a table); an overview of such things with figures, people and a history; the first start of an app without data | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`); `Tiles variant="card"` (+ `create` for the new one); first start: `Pane center`, `Tiles perRow={4}` with `preview` and `onOpen` | `overview.tsx`, `start.tsx` |
 | who did what; several people at once (a team, who has access) | `Digest activity`; `Avatar.Stack` | `overview.tsx`, `home.tsx` |
 | a short history beside a number | `Spark`; in a cell `Cells.Cell trend` | `home.tsx` |
 | many like things with columns | `Table` | `table.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
 | rows the person sorts by a column | a column's `sort` (`href` to the sorted page) and the table's `sort` (the column sorted now) | – |
-| a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`), then `FilterBar` in `Pane status` above the `StatusRow` and `ListOrder` in its `filters` | `filtered-table.tsx` |
+| a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`), then `FilterBar` in `Pane status` with `results` and `ListOrder` in its `end` (one row; a `StatusRow selection` takes its place while selecting) | `files.tsx`, `filtered-table.tsx` |
+| files, photos, pages: a list, a grid, the open one | `Table` column `mark` (thumbnail), `Tiles variant="media"` with `select`, `Preview` in the detail, `Nav quota` | `files.tsx` |
+| a settings page | `Cells` for the state, `Setting` rows (`was` for an unsaved change) | `settings-page.tsx` |
 | filter values that load (people, customers) | a `lookup` field: `FilterBar` opens `Lookup`; in a form, `Lookup` itself | `filtered-table.tsx` |
 | saved views of a list | `FilterBar views` with the app's `ViewStore`s (cookie, own table, none); leave it out and nothing is saved | – |
 | a list beside the open entry | `Pane.Split` with a `Pane detail` | `list-detail.tsx` |
@@ -187,9 +190,9 @@ a `Notice` that names the deed.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
   body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
   `Chip`, `Progress`, `Spark`, `Ticks`, `Steps`.
-- **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
-  `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`, `ImageInput`,
-  `CodeInput`, `Slider`, `ColorInput`.
+- **Controls:** `Button`, `Field`, `Field.Row`, `Setting`, `Input`,
+  `Select`, `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`,
+  `ImageInput`, `CodeInput`, `Slider`, `ColorInput`. **Media:** `Preview`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,

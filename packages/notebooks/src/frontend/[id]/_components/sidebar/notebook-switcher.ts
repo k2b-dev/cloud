@@ -1,8 +1,7 @@
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { AppWorkspaceSidebarSwitcherProps, AppWorkspaceSwitcherOption } from "@k2b/ui";
 import { useLocale } from "@k2b/ui";
-import { type Accessor, createSignal, getOwner, runWithOwner } from "solid-js";
-import { notebooksPageMessages } from "../../../messages";
+import { type Accessor, createSignal, onCleanup } from "solid-js";
 import { notebookWorkspaceMessages } from "../../messages";
 import { listAccessibleNotebooks } from "./notebooks";
 import type { Notebook } from "./types";
@@ -23,16 +22,16 @@ export function createNotebookSwitcher(
   const [failed, setFailed] = createSignal(false);
   let requested = false;
   const [creating, setCreating] = createSignal(false);
-  const owner = getOwner();
-  let creation: ReturnType<typeof import("../../../create-notebook-dialog").createNotebookCreation> | undefined;
-  const create = async () => {
+  // the start page's dialog, blank or from a template: one way to make a notebook; it closes with this switcher
+  const closing = new AbortController();
+  onCleanup(() => closing.abort());
+  const create = async (from: "blank" | "template") => {
     if (!canCreate || creating()) return;
     setCreating(true);
     try {
       const dialog = await importOnDemand(() => import("../../../create-notebook-dialog"));
       if (!dialog) return;
-      creation ??= runWithOwner(owner, () => dialog.createNotebookCreation(() => notebooksPageMessages.resolve([locale()]).t));
-      await creation?.createBlank();
+      await dialog.openNewNotebookDialog({ kind: from }, locale(), closing.signal);
     } finally {
       setCreating(false);
     }
@@ -60,9 +59,13 @@ export function createNotebookSwitcher(
     options: options(),
     error: failed() ? t().failedLoadNotebooks : undefined,
     onLoad: load,
-    actions: [
-      ...(canCreate ? [{ id: "new", label: t().newNotebook, icon: "ti ti-plus", action: () => void create(), disabled: creating() }] : []),
-      { id: "all", label: t().allNotebooks, icon: "ti ti-layout-grid", href: "/app/notebooks" },
-    ],
+    // No way to an overview: Notebooks has none, `/app/notebooks` opens the notebook used last. The list above is
+    // every notebook.
+    actions: canCreate
+      ? [
+          { id: "new", label: t().newNotebook, icon: "ti ti-plus", action: () => void create("blank"), disabled: creating() },
+          { id: "template", label: t().fromTemplate, icon: "ti ti-template", action: () => void create("template"), disabled: creating() },
+        ]
+      : [],
   });
 }

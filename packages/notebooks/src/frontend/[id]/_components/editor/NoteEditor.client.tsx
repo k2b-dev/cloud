@@ -280,7 +280,7 @@ export default function NoteEditor(props: Props) {
         layout.update({
           breadcrumbs: [
             { title: t().start, href: "/" },
-            { title: t().notebooks, href: "/app/notebooks" },
+            { title: t().notebooks },
             { title: loaded.props.notebookName, href: `/app/notebooks/${props.notebookId}` },
             { title: loaded.props.noteTitle },
           ],
@@ -1064,7 +1064,7 @@ function EditorInstance(
       layout.update({
         breadcrumbs: [
           { title: t().start, href: "/" },
-          { title: t().notebooks, href: "/app/notebooks" },
+          { title: t().notebooks },
           { title: props.notebookName, href: `/app/notebooks/${props.notebookId}` },
           { title },
         ],

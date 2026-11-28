@@ -70,7 +70,6 @@ export const notebooksService = {
         hasNext: page * perPage < result.total,
       };
     },
-    overviewStats: notebooks.overviewStats,
     get: notebooks.get,
     getByShortId: notebooks.getByShortId,
     create: notebooks.create,
@@ -156,6 +155,10 @@ export const notebooksService = {
   template: {
     list: templates.list,
     get: templates.get,
+    outline: templates.outline,
+    welcomeOutline: templates.welcomeOutline,
+    preview: templates.preview,
+    welcomePreview: templates.welcomePreview,
     instantiate: templates.instantiate,
   },
   note: {

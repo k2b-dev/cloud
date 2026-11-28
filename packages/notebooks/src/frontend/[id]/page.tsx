@@ -15,6 +15,7 @@ import NoteEditor from "./_components/editor/NoteEditor.client";
 import NotePreview from "./_components/editor/NotePreview";
 import NotebookGraph from "./_components/graph/NotebookGraph.island";
 import NotebookCommands from "./_components/NotebookCommands.island";
+import NoteComposeCommand from "./_components/NoteComposeCommand.island";
 import RememberNotebook from "./_components/RememberNotebook.island";
 import NotebookSidebar from "./_components/sidebar/NotebookSidebar.island";
 import WorkspaceEventBridge from "./_components/sidebar/WorkspaceEventBridge.island";
@@ -80,6 +81,7 @@ export default ssr<AuthContext>(async (c) => {
         title={data.notebook.name}
       >
         <RememberNotebook notebookId={data.notebook.id} />
+        <NoteComposeCommand notebookId={data.notebook.id} canWrite={data.canWrite} />
         <BookSurface
           userId={data.ctx.userId}
           notebookId={data.notebook.id}
@@ -143,7 +145,7 @@ export default ssr<AuthContext>(async (c) => {
       fullPage
       title={[
         { title: t.start, href: "/" },
-        { title: t.notebooks, href: "/app/notebooks" },
+        { title: t.notebooks },
         // Version history and the graph carry their own way back to the note, so the shell adds none there.
         { title: notebook.name, ...(isVersionsMode || isGraphMode ? {} : { href: `/app/notebooks/${notebook.id}` }) },
         ...(selectedNote ? [{ title: selectedNote.title }] : []),
