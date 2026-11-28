@@ -302,12 +302,11 @@ const Hours = (props: { status: PublicStatus; t: VenueMessages; locale: string }
           },
           {
             title: props.t.guestScale({ from: from(), to: 24 }),
-            // k2b-ui gap: G5 (W5, RangeBar with several ranges): a split day draws from its first start to its last end
+            // each window of the day on the one track, a break as the gap between them; a closed day keeps an empty track
             // k2b-ui gap: G2 (coordinator, after #4227): the bars in the venue's colour, today's strongest; neutral until then
             cell: (row) => (
               <RangeBar
-                from={row.closedToday || row.windows.length === 0 ? Number.NaN : hours(row.windows[0]!.startTime)}
-                to={row.closedToday || row.windows.length === 0 ? Number.NaN : hours(row.windows.at(-1)!.endTime)}
+                ranges={row.closedToday ? [] : row.windows.map((window) => ({ from: hours(window.startTime), to: hours(window.endTime) }))}
                 domain={[from(), 24]}
                 decorative
               />

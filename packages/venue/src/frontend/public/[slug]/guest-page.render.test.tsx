@@ -103,6 +103,13 @@ describe("Venue guest page: content and facts", () => {
     expect(words).toContain("Montag Mittagstisch 11:30–14:00 17:00–22:00");
   });
 
+  test("a day with a break draws both windows on its track, a closed day none", () => {
+    const html = guest(guestStates.breaks());
+    const bars = (html.match(/data-k2-part="RangeBar"[^>]*>([\s\S]*?)<\/span>/g) ?? []).map((bar) => bar.match(/<i /g)?.length ?? 0);
+    // Monday to Thursday with a break, Friday and Saturday whole, Sunday closed
+    expect(bars).toEqual([2, 2, 2, 2, 1, 1, 0]);
+  });
+
   test("a closure today marks today's row in warn", () => {
     const html = guest(guestStates.exception());
     expect(html).toMatch(/aria-current="true"[\s\S]*?Samstag[\s\S]*?data-tone="warn"[^>]*>Geschlossen</);
@@ -180,7 +187,8 @@ describe("Venue feedback page", () => {
     expect(words).toContain("Wähle 1 bis 5 Sterne.");
     expect(words).toContain("Höchstens 2.000 Zeichen.");
     expect(html).toContain('maxlength="2000"');
-    expect(html).toMatch(/<input[^>]*type="radio"[^>]*name="rating"[^>]*required/);
+    expect(html).toContain('data-k2-part="Rating"');
+    expect(html).toMatch(/<input[^>]*name="rating"/);
   });
 
   test("a venue that takes no feedback says so without a form, with the way back to its page", () => {

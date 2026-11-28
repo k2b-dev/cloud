@@ -91,7 +91,6 @@ const feedbackHtml = (status: PublicStatus | null) =>
 
 let browser: Browser;
 let css: string;
-let icons: { css: string; font: string };
 let island: string;
 
 /** The feedback form's island as the browser runs it: rendered into the server's island in place of hydration. */
@@ -127,11 +126,6 @@ const buildIsland = async (): Promise<string> => {
 
 beforeAll(async () => {
   island = await buildIsland();
-  const iconCssUrl = import.meta.resolve("@k2b/ui/icons/tabler.css");
-  const iconCss = await Bun.file(fileURLToPath(iconCssUrl)).text();
-  const fontAsset = iconCss.match(/url\((\.\/[^)"']+\.woff2(?:[?#][^)"']*)?)\)/)?.[1];
-  if (!fontAsset) throw new Error("@k2b/ui Tabler preset does not reference a WOFF2 asset");
-  icons = { css: iconCss.replace(fontAsset, "/tabler-icons.woff2"), font: fileURLToPath(new URL(fontAsset, iconCssUrl)) };
   const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", ui))).default;
   const styles = [resolve(import.meta.dir, "../../../styles/app.css"), resolve(import.meta.dir, "../../../../../../styles.css")];
   const built = await Promise.all(styles.map((entry) => Bun.build({ entrypoints: [entry], plugins: [tailwind] })));
@@ -173,8 +167,7 @@ const open = async (view: View, page: { html: string; style: string }, options: 
   await tab.route(`${origin}/**`, async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/island.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: island });
-    if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
-    if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
+    // the fonts and the Tabler preset with every one of its font faces, as @k2b/ui builds them
     if (url.pathname.startsWith("/ui/")) return route.fulfill({ path: resolve(ui, "dist", url.pathname.slice(4)) });
     if (url.pathname.startsWith("/api/venue/public/") && url.pathname.endsWith("/feedback")) {
       sends.push(JSON.parse(route.request().postData() ?? "null"));
@@ -191,7 +184,7 @@ const open = async (view: View, page: { html: string; style: string }, options: 
       contentType: "text/html; charset=utf-8",
       body:
         `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
-        `<link rel="stylesheet" href="${origin}/ui/plex.css"><link rel="stylesheet" href="${origin}/tabler-icons.css"><style>${css}</style></head>` +
+        `<link rel="stylesheet" href="${origin}/ui/plex.css"><link rel="stylesheet" href="${origin}/ui/tabler.css"><style>${css}</style></head>` +
         `<body class="k2b-ui" style="${page.style}">${page.html}${script}</body></html>`,
     });
   });
@@ -226,7 +219,7 @@ const box = (tab: Page, selector: string) =>
     );
 
 describe("Venue guest page on v2", () => {
-  const states: GuestState[] = ["open", "later", "closed", "exception", "nosections", "nobrand", "nofeedback", "bar", "worst"];
+  const states: GuestState[] = ["open", "later", "closed", "exception", "nosections", "nobrand", "nofeedback", "bar", "worst", "breaks"];
   for (const state of states)
     for (const view of [phone, tablet, desktop, wide])
       test(`${state} at ${view.name} px keeps the layout rules`, async () => {
@@ -397,6 +390,8 @@ describe("Venue feedback page on v2", () => {
         expect(await tab.getByText("Wie war dein Besuch?").isVisible()).toBe(true);
         expect(await tab.getByText("Wähle 1 bis 5 Sterne.").isVisible()).toBe(true);
         expect(await tab.getByRole("button", { name: "Feedback senden" }).isDisabled()).toBe(true);
+        // nothing is chosen before the guest chooses
+        expect(await tab.getByRole("radio", { checked: true }).count()).toBe(0);
         expect(await tab.getByRole("textbox", { name: "Kommentar" }).getAttribute("maxlength")).toBe("2000");
         expect(await tab.getByRole("link", { name: "Campus-Café Nord ansehen" }).getAttribute("href")).toBe("/app/venue/public/Cafe01");
         await shoot(tab, `feedback-empty-${view.name}`);
@@ -413,13 +408,13 @@ describe("Venue feedback page on v2", () => {
         answers: ["abort", "hold"],
       });
       try {
-        await tab.getByRole("radio", { name: "4 · Gut" }).check();
+        await tab.getByRole("radio", { name: "4 von 5 Sternen" }).click();
         expect(await tab.getByText("4 von 5 · Gut").isVisible()).toBe(true);
         await tab.getByRole("textbox", { name: "Kommentar" }).fill(comment);
         await send(tab);
         await tab.getByText("Nicht gesendet").waitFor();
         expect(await tab.getByText("Die Verbindung ist abgebrochen. Deine Sterne und dein Kommentar sind noch da.").isVisible()).toBe(true);
-        expect(await tab.getByRole("radio", { name: "4 · Gut" }).isChecked()).toBe(true);
+        expect(await tab.getByRole("radio", { name: "4 von 5 Sternen" }).isChecked()).toBe(true);
         expect(await tab.getByRole("textbox", { name: "Kommentar" }).inputValue()).toBe(comment);
         await expectClean(tab, view.width);
         await shoot(tab, `feedback-failed-${view.name}`);
@@ -434,6 +429,8 @@ describe("Venue feedback page on v2", () => {
         const thanks = (await tab.locator("main").innerText()).replace(/\s+/g, " ");
         expect(thanks).toContain("Es ist anonym angekommen.");
         expect(thanks).toContain("4 von 5 · Gut");
+        // the stars that were sent, as one picture with their words
+        expect(await tab.getByRole("img", { name: "4 von 5 Sternen" }).count()).toBe(1);
         expect(thanks).toContain(comment);
         expect(await tab.getByRole("link", { name: "Campus-Café Nord ansehen" }).getAttribute("href")).toBe("/app/venue/public/Cafe01");
         expect(sends).toEqual([
@@ -449,13 +446,31 @@ describe("Venue feedback page on v2", () => {
     }
   }, 90_000);
 
+  test("a chosen rating fills its stars and says its words under them", async () => {
+    for (const view of [phone, desktop]) {
+      const { context, tab, errors } = await open(view, feedbackHtml(cafe()), { island: islandProps() });
+      try {
+        await tab.getByRole("radio", { name: "4 von 5 Sternen" }).click();
+        await tab.getByText("4 von 5 · Gut").waitFor();
+        expect(await tab.getByRole("button", { name: "Feedback senden" }).isEnabled()).toBe(true);
+        await expectClean(tab, view.width);
+        await shoot(tab, `feedback-chosen-${view.name}`);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }
+  }, 60_000);
+
   test("too many ratings from one network say so in the same place, and the form stays", async () => {
-    const { context, tab } = await open(desktop, feedbackHtml(cafe()), { island: islandProps(), answers: [{ status: 429 }] });
+    const { context, tab, sends } = await open(desktop, feedbackHtml(cafe()), { island: islandProps(), answers: [{ status: 429 }] });
     try {
-      await tab.getByRole("radio", { name: "5 · Sehr gut" }).check();
+      await tab.getByRole("radio", { name: "5 von 5 Sternen" }).click();
       await send(tab);
       await tab.getByText("Zu viele Bewertungen aus diesem Netz in kurzer Zeit. Versuch es in einer Minute noch mal.").waitFor();
       expect(await tab.getByRole("button", { name: "Erneut senden" }).isEnabled()).toBe(true);
+      // a rating without a comment sends the chosen stars and no comment
+      expect(sends).toEqual([{ rating: 5, comment: null }]);
     } finally {
       await context.close();
     }
@@ -464,7 +479,7 @@ describe("Venue feedback page on v2", () => {
   test("feedback that closed between loading and sending shows the closed page in place", async () => {
     const { context, tab } = await open(desktop, feedbackHtml(cafe()), { island: islandProps(), answers: [{ status: 400 }] });
     try {
-      await tab.getByRole("radio", { name: "3 · In Ordnung" }).check();
+      await tab.getByRole("radio", { name: "3 von 5 Sternen" }).click();
       await send(tab);
       await tab.getByText("Feedback ist gerade geschlossen: Campus-Café Nord nimmt im Moment keine Bewertungen an.").waitFor();
       expect(await tab.getByRole("link", { name: "Campus-Café Nord ansehen" }).getAttribute("href")).toBe("/app/venue/public/Cafe01");

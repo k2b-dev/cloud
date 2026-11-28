@@ -1,4 +1,4 @@
-import { announce, Band, Bar, Button, Choice, Empty, Facts, Field, Input, Notice, Text, useLocale } from "@k2b/ui/v2";
+import { announce, Band, Bar, Button, Empty, Facts, Field, Inline, Input, Notice, Rating, Text, useLocale } from "@k2b/ui/v2";
 import { createSignal, Match, Show, Switch } from "solid-js";
 import { apiClient } from "../../../../api/client";
 import { venueMessages } from "../../../../messages";
@@ -70,18 +70,9 @@ export default function GuestFeedback(props: GuestFeedbackProps) {
             <Text muted>{t().feedbackStored}</Text>
           </Band>
           <Band>
-            {/* k2b-ui gap: G6 (W5, feat/ui-v2-star-rating): five stars as one radio group; until then a choice of 1 to 5 */}
+            {/* five stars as one radio group; the field gives their name, `required` and the words of the choice */}
             <Field label={t().rating} name="rating" required hint={rating() === null ? t().chooseStars : reading(rating()!)}>
-              <Choice
-                name="rating"
-                options={[1, 2, 3, 4, 5].map((count) => ({
-                  value: String(count),
-                  label: t().ratingOption({ count, word: t().ratingWord({ count }) }),
-                }))}
-                value={rating() === null ? undefined : String(rating())}
-                onChange={(value) => setRating(Number(value))}
-                disabled={sending()}
-              />
+              <Rating value={rating() ?? undefined} onChange={setRating} disabled={sending()} />
             </Field>
             <Field label={t().comment} name="comment" optional={t().commentOptional} hint={t().commentLimit}>
               <Input
@@ -133,7 +124,15 @@ export default function GuestFeedback(props: GuestFeedbackProps) {
             <Band>
               <Facts
                 items={[
-                  { label: t().rating, value: reading(arrived().rating) },
+                  {
+                    label: t().rating,
+                    value: (
+                      <Inline>
+                        <Rating readOnly value={arrived().rating} />
+                        <Text muted>{reading(arrived().rating)}</Text>
+                      </Inline>
+                    ),
+                  },
                   ...(arrived().comment ? [{ label: t().comment, value: arrived().comment }] : []),
                 ]}
               />

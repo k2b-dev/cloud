@@ -328,5 +328,22 @@ export const guestStates = {
   nofeedback: () => statusAt({ ...cafe, venue: { ...cafe.venue, feedbackEnabled: false } }, saturdayAt("12:00")),
   bar: () => statusAt(bar, saturdayAt("18:00")),
   worst: () => statusAt(worst, saturdayAt("19:00")),
+  /** A week with a break on four days and a closed Sunday, at lunch on a Saturday without a break. */
+  breaks: () =>
+    statusAt(
+      {
+        ...cafe,
+        rules: week(cafe.venue.id, [
+          ["08:00–12:00", "14:00–18:00"],
+          ["08:00–12:00", "14:00–18:00"],
+          ["08:00–12:00", "14:00–18:00"],
+          ["08:00–12:00", "14:00–18:00"],
+          ["08:00–16:00"],
+          ["10:00–15:00"],
+          [],
+        ]),
+      },
+      saturdayAt("12:00"),
+    ),
 } as const;
 export type GuestState = keyof typeof guestStates;

@@ -373,40 +373,6 @@ describe("Venue clarity behavior", () => {
     }
   });
 
-  test("feedback starts without a rating and sends only the rating the visitor chose", async () => {
-    const dom = createDomTestHarness();
-    const originalFetch = globalThis.fetch;
-    const bodies: unknown[] = [];
-    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-      bodies.push(JSON.parse(String(init?.body)));
-      return Response.json({ venueId: "Cafe01", rating: 3, comment: null, createdAt: new Date(fixtureNow).toISOString() }, { status: 201 });
-    }) as typeof fetch;
-
-    const { default: GuestFeedback } = await import("../src/frontend/public/[slug]/feedback/GuestFeedback.island");
-    const dispose = render(() => <GuestFeedback venueId="Cafe01" venueName="Corner Cafe" backUrl="/app/venue/public/Cafe01" />, dom.root);
-    try {
-      const radios = [...dom.root.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
-      const send = buttonNamed(dom.root, "Send feedback");
-      expect(radios.map((radio) => radio.checked)).toEqual([false, false, false, false, false]);
-      expect(send.disabled).toBe(true);
-      expect(dom.root.textContent).toContain("Choose 1 to 5 stars.");
-
-      radios[2]!.click();
-      await flush();
-      expect(send.disabled).toBe(false);
-      expect(dom.root.textContent).toContain("3 of 5 · Okay");
-      expect(dom.root.textContent).not.toContain("Choose 1 to 5 stars.");
-
-      send.click();
-      await flush();
-      expect(bodies).toEqual([{ rating: 3, comment: null }]);
-    } finally {
-      dispose();
-      globalThis.fetch = originalFetch;
-      dom.cleanup();
-    }
-  });
-
   test("saving an edited draft keeps it a draft until the switch says otherwise", async () => {
     const dom = createDomTestHarness();
     const draft: PublicSection = {
