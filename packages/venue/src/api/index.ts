@@ -47,9 +47,11 @@ import {
   ShiftTemplateSchema,
   TemplateSignupInputSchema,
   UpcomingSlotSchema,
+  VENUE_PAGE_MAX,
   VenueDashboardQuerySchema,
   VenueDashboardSchema,
   VenueInputSchema,
+  VenuePageQuerySchema,
   VenueResourceIdSchema,
   VenueSchema,
   VenueTemplateCreateInputSchema,
@@ -175,8 +177,8 @@ export const venueTodayWidgetHandler = async (c: Context<AuthContext>) => {
   const userResult = requireUserBackedActor(c);
   if (!userResult.ok) return c.body(null, 403);
   const user = userResult.data;
-  const venues = await venueService.venues.list(user);
-  const venue = venues[0];
+  // The widget shows one venue: the first by name the person can read.
+  const [venue] = await venueService.venues.discover(user, { limit: 1 });
   if (!venue) return c.body(null, 204);
 
   const dashboard = await venueService.dashboard(venue, user);
@@ -367,12 +369,20 @@ const venueRoutes = new Hono<AuthContext>()
     describeRoute({
       tags: ["Venues"],
       summary: "List accessible venues",
-      responses: { 200: jsonResponse(z.object({ venues: z.array(VenueSchema) }), "Accessible venues") },
+      description: `One page of the venues the caller can read, newest first: \`limit\` (${VENUE_PAGE_MAX} at most and by default) and \`offset\` page through them, \`q\` searches names and slugs. A page shorter than \`limit\` is the last.`,
+      responses: { 200: jsonResponse(z.object({ venues: z.array(VenueSchema).max(VENUE_PAGE_MAX) }), "One page of accessible venues") },
     }),
+    v("query", VenuePageQuerySchema),
     async (c) => {
       const subject = getVenueAccessSubject(c);
       if (!subject.ok) return respond(c, subject);
-      return respond(c, ok({ venues: await venueService.publicResources.projectVenues(await venueService.venues.list(subject.data)) }));
+      const page = c.req.valid("query");
+      const venues = await venueService.venues.list(subject.data, {
+        limit: page.limit ?? VENUE_PAGE_MAX,
+        offset: page.offset,
+        query: page.q,
+      });
+      return respond(c, ok({ venues: await venueService.publicResources.projectVenues(venues) }));
     },
   )
   .post(

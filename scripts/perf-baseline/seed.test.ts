@@ -6,38 +6,35 @@ import { Api, extractConsentVersion, noteContent, PhoneSession, pairPhone, remov
 const legalVersion = "abcdef0123456789".repeat(4);
 function consentHtml(version = legalVersion) {
   const props = JSON.stringify(toJSON({ version, redirectTo: "/app/mail?example=one&other=two" }));
-  return `<solid-island data-id="consent" data-props="${props.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}"></solid-island>`;
+  return `<solid-island data-id="consent"><!--ssr-props:${props}--></solid-island>`;
 }
 
-const propsAttribute = (props: unknown) => Bun.escapeHTML(JSON.stringify(toJSON(props)));
+const propsComment = (props: unknown, text = JSON.stringify(toJSON(props)).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e")) =>
+  `<!--ssr-props:${text}-->`;
 
 test("consent version comes from decoded island props, ignoring document text and other attributes", async () => {
   const decoy = "0".repeat(64);
-  const html = `<script>const version="${decoy}";</script><div data-props="${propsAttribute({ version: decoy })}">${decoy}</div>
-    <solid-island data-id="other" data-props="${propsAttribute({ text: decoy })}"></solid-island>${consentHtml()}`;
+  const html = `<script>const version="${decoy}";</script><div>${propsComment({ version: decoy })}${decoy}</div>
+    <solid-island data-id="other">${propsComment({ text: decoy })}</solid-island>${consentHtml()}`;
   expect(await extractConsentVersion(html)).toBe(legalVersion);
-  expect(
-    await extractConsentVersion(
-      `<solid-client data-props="${propsAttribute({ redirectTo: "/", version: legalVersion }).replaceAll("&quot;", "&#34;")}"></solid-client>`,
-    ),
-  ).toBe(legalVersion);
+  expect(await extractConsentVersion(`<solid-client>${propsComment({ redirectTo: "/", version: legalVersion })}</solid-client>`)).toBe(
+    legalVersion,
+  );
   expect(await extractConsentVersion(consentHtml().replace(legalVersion, legalVersion.replace("a", "\\u0061")))).toBe(legalVersion);
-  expect(
-    await extractConsentVersion(
-      `<solid-island data-props="${propsAttribute(new Map([["version", decoy]]))}"></solid-island>${consentHtml()}`,
-    ),
-  ).toBe(legalVersion);
+  expect(await extractConsentVersion(`<solid-island>${propsComment(new Map([["version", decoy]]))}</solid-island>${consentHtml()}`)).toBe(
+    legalVersion,
+  );
 });
 
 test("consent version fails closed on missing, invalid, unparsable or ambiguous props", async () => {
   for (const html of [
     `<p>${legalVersion}</p>`,
-    `<solid-island data-props="${propsAttribute({ version: 123 })}"></solid-island>`,
-    `<solid-island data-props="globalThis.pwned=1"></solid-island>${consentHtml()}`,
-    `<solid-client data-props="("></solid-client>${consentHtml()}`,
+    `<solid-island>${propsComment({ version: 123 })}</solid-island>`,
+    `<solid-island>${propsComment(null, "globalThis.pwned=1")}</solid-island>${consentHtml()}`,
+    `<solid-client>${propsComment(null, "(")}</solid-client>${consentHtml()}`,
     `<solid-island></solid-island>${consentHtml()}`,
-    `<solid-island data-props="${propsAttribute({ nested: { version: legalVersion } })}"></solid-island>`,
-    `<solid-island data-props="${propsAttribute(new Map([["version", legalVersion]]))}"></solid-island>`,
+    `<solid-island>${propsComment({ nested: { version: legalVersion } })}</solid-island>`,
+    `<solid-island>${propsComment(new Map([["version", legalVersion]]))}</solid-island>`,
     consentHtml("a".repeat(63)),
     consentHtml("g".repeat(64)),
     consentHtml(legalVersion.toUpperCase()),

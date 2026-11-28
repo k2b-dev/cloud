@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { fromJSON } from "seroval";
+import { fromJSON, toJSON } from "seroval";
 import { renderToString } from "solid-js/web";
 import { islandIdFromFile } from "../../src/island-id";
 import { transform } from "../../src/transform";
@@ -22,6 +22,38 @@ afterEach(() => {
   }
 });
 
+/** The elements and comments of rendered HTML, read by an HTML tokenizer as a browser reads them. */
+const parseHtml = async (html: string) => {
+  const elements: string[] = [];
+  const comments: string[] = [];
+  await new HTMLRewriter()
+    .on("*", { element: (element) => void elements.push(element.tagName) })
+    .onDocument({ comments: (comment) => void comments.push(comment.text) })
+    .transform(new Response(html))
+    .text();
+  return { elements, comments };
+};
+/** The serialized props of the first island in rendered HTML. */
+const propsComment = async (html: string) => (await parseHtml(html)).comments[0]?.replace(/^ssr-props:/, "");
+
+/** Render a server page that passes `props` (a source expression) to one island. */
+const renderProbe = async (props: string, preamble = "") => {
+  const root = makeResolvableTempRoot(".ssr-transform-render-");
+  tempRoots.push(root);
+  writeFileSync(join(root, "Probe.island.tsx"), "export default (props) => props.children;");
+  const filename = join(root, "Page.tsx");
+  const result = await transform(
+    `import Probe from "./Probe.island";\n${preamble}\nexport default () => <main><Probe {...${props}}><p>server</p></Probe></main>;`,
+    filename,
+    "ssr",
+    false,
+    root,
+  );
+  writeFileSync(join(root, "Page.js"), result);
+  const { default: Page } = await import(join(root, "Page.js"));
+  return renderToString(() => Page());
+};
+
 describe("transform() - Island wrapping in SSR mode", () => {
   test("should wrap .island imports with solid-island tag", async () => {
     const input = `
@@ -33,7 +65,7 @@ describe("transform() - Island wrapping in SSR mode", () => {
 
     expect(result).toContain("solid-island");
     expect(result).toContain("data-id");
-    expect(result).toContain("data-props");
+    expect(result).toContain("<!--ssr-props:");
   });
 
   test("should wrap .client imports with solid-client tag", async () => {
@@ -46,7 +78,7 @@ describe("transform() - Island wrapping in SSR mode", () => {
 
     expect(result).toContain("solid-client");
     expect(result).toContain("data-id");
-    expect(result).toContain("data-props");
+    expect(result).toContain("<!--ssr-props:");
     expect(result).not.toContain('import Widget from "./Widget.client"');
   });
 
@@ -74,7 +106,7 @@ describe("transform() - Island wrapping in SSR mode", () => {
     expect(result).not.toContain("const __seroval_toJSON");
   });
 
-  test("should use __seroval_toJSON for data-props", async () => {
+  test("should use __seroval_toJSON for the props comment", async () => {
     const input = `
       import Counter from "./Counter.island";
       export default () => <Counter count={5} name="test" />;
@@ -83,6 +115,8 @@ describe("transform() - Island wrapping in SSR mode", () => {
     const result = await transform(input, "/test/Page.tsx", "ssr");
 
     expect(result).toContain("JSON.stringify(__seroval_toJSON(");
+    // Seroval already writes `<` in strings as \x3C; the comment stays closed without relying on that.
+    expect(result).toContain(String.raw`.replace(/</g, "\\u003c").replace(/>/g, "\\u003e")`);
     // Should serialize the props object
     expect(result).toContain("count");
   });
@@ -147,7 +181,7 @@ describe("transform() - Island wrapping in SSR mode", () => {
     const result = await transform(input, "/test/Page.tsx", "ssr");
 
     expect(result).toContain("solid-island");
-    expect(result).toContain("data-props");
+    expect(result).toContain("<!--ssr-props:");
   });
 
   test("should preserve island children in SSR mode", async () => {
@@ -359,10 +393,8 @@ test("a transformed server page renders rich props as escaped JSON data", async 
   writeFileSync(output, result);
   const { default: Page } = await import(output);
   const html = renderToString(() => Page());
-  const attribute = html.match(/data-props="([^"]*)"/)?.[1];
-  expect(attribute).toBeDefined();
-  const decoded = attribute!.replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
-  const props = fromJSON<{ at: Date; map: Map<string, string>; text: string }>(JSON.parse(decoded));
+  const decoded = await propsComment(html);
+  const props = fromJSON<{ at: Date; map: Map<string, string>; text: string }>(JSON.parse(decoded!));
   expect(props.at.getTime()).toBe(new Date("2026-10-01T12:34:56Z").getTime());
   expect([...props.map]).toEqual([["k", "v"]]);
   expect(props.text).toBe('</script>"&');
@@ -388,13 +420,45 @@ test("spread attributes reach the island props in JSX order", async () => {
   writeFileSync(output, result);
   const { default: Page } = await import(output);
   const html = renderToString(() => Page());
-  const attribute = html.match(/data-props="([^"]*)"/)?.[1];
-  expect(attribute).toBeDefined();
-  const decoded = attribute!.replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
-  expect(fromJSON<Record<string, unknown>>(JSON.parse(decoded))).toEqual({
+  const decoded = await propsComment(html);
+  expect(fromJSON<Record<string, unknown>>(JSON.parse(decoded!))).toEqual({
     label: "from spread",
     route: { view: "overview" },
     count: 2,
     hidden: "override",
   });
+});
+
+test("island props travel as JSON data without attribute escaping", async () => {
+  // A list island's typical props: many quoted keys and strings, a few characters an attribute would escape.
+  const preamble = `const rows = Array.from({ length: 200 }, (_, i) => ({ id: "row-" + i, title: 'Say "hi" & <wave>', tags: ["a", "b"], done: i % 2 === 0 }));`;
+  const html = await renderProbe("{ rows }", preamble);
+  const rows = Array.from({ length: 200 }, (_, i) => ({ id: `row-${i}`, title: 'Say "hi" & <wave>', tags: ["a", "b"], done: i % 2 === 0 }));
+  const serialized = JSON.stringify(toJSON({ rows }));
+  const { comments } = await parseHtml(html);
+  expect(comments).toHaveLength(1);
+  expect(fromJSON<{ rows: typeof rows }>(JSON.parse(comments[0]!.replace(/^ssr-props:/, "")))).toEqual({ rows });
+  // Everything the wrapper adds besides the island's server markup, against seroval's own JSON form.
+  const emitted = Buffer.byteLength(html.replace("<p>server</p>", ""));
+  expect(emitted).toBeLessThanOrEqual(Buffer.byteLength(serialized) * 1.1);
+  expect(html).not.toContain("&quot;");
+});
+
+test.each([
+  ["a closing script tag and markup", "</script><img src=x onerror=globalThis.pwned=1>"],
+  ["a comment end", "--><img src=x onerror=globalThis.pwned=1>"],
+  ["the other comment end", "--!><img src=x>"],
+  ["a nested comment", "<!--<!-- inner -->"],
+  ["an unfinished comment opener at the end", "x <!-"],
+  ["quotes and entities", `"' &amp; &lt; >`],
+  ["line and paragraph separators", "line\u2028paragraph\u2029end"],
+])("props with %s stay data inside their comment", async (_, text) => {
+  const html = await renderProbe(`{ text: ${JSON.stringify(text)} }`);
+  const { elements, comments } = await parseHtml(html);
+  // The tokenizer sees exactly the page's elements and one comment: nothing in the props ended it or started markup.
+  expect(elements).toEqual(["main", "solid-island", "p"]);
+  expect(comments).toHaveLength(1);
+  expect(comments[0]).toStartWith("ssr-props:");
+  expect(comments[0]).not.toMatch(/[<>]/);
+  expect(fromJSON<{ text: string }>(JSON.parse(comments[0]!.replace(/^ssr-props:/, "")))).toEqual({ text });
 });

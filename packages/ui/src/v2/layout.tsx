@@ -7,10 +7,12 @@ import {
   createUniqueId,
   For,
   type JSX,
+  Match,
   onCleanup,
   onMount,
   children as resolveChildren,
   Show,
+  Switch,
   splitProps,
   useContext,
 } from "solid-js";
@@ -30,7 +32,7 @@ import { useOverlayMessages } from "./overlay-messages";
 import { ConfirmDialog } from "./overlays";
 import { Empty, PlaceholderValue } from "./states";
 import { Toasts } from "./toast";
-import type { Action, OnNavigate, Person, Status, Width } from "./types";
+import { type Action, type ColumnWidth, columnPx, draggable, type OnNavigate, type Person, type Status, type Width } from "./types";
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -374,7 +376,7 @@ export const Workspace = (props: WorkspaceProps) => {
 // ── Pane and Pane.Split ──────────────────────────────────────────────────────────────────────────────────────────
 
 type SplitEntry = {
-  readonly width?: Width;
+  readonly width?: ColumnWidth;
   readonly label?: string;
   /** A context column (`side`): the split lets it give way to the end of the main column where it lacks the room. */
   readonly side?: PaneProps["side"];
@@ -402,8 +404,8 @@ export type PaneProps = {
    * the state of an open entry, such as "3 Nachrichten · Wartet auf Antwort · Tag" above a reader.
    */
   status?: JSX.Element;
-  /** A column that can be dragged wider: its minimum and default width. Only inside `Pane.Split`. */
-  width?: Width;
+  /** A column that can be dragged wider: its minimum and default width; `{ fixed }`: one width, no grip. Only inside `Pane.Split`. */
+  width?: ColumnWidth;
   /** The name of the column and of its grip, such as "List". */
   label?: string;
   /**
@@ -418,11 +420,16 @@ export type PaneProps = {
    * The way back to the list on the phone, where the detail is a page of its own, such as "Posteingang". Give it an
    * `href`: the address of the list without the open entry. While it is there, the head of the workspace gives way on
    * the phone, so the way back is the one bar above the detail; it is the part `Back`, which a shell may show in its
-   * own bar instead. With `back`, the close × of the detail's head needs no `keep`: like every head action without
-   * it, the × gives way on the phone, so the detail has one way back there. A pane without a `head` (an editor, whose
-   * name stood in the workspace's head) names itself after the way back by its `label`: "‹ Werkstatt  Notizen.md".
+   * own bar instead. Mark the close × of the detail's head `Button closes`: with `back` it gives way on the phone, so
+   * the detail has one way back there. A pane without a `head` (an editor, whose name stood in the workspace's head)
+   * names itself after the way back by its `label`: "‹ Werkstatt  Notizen.md".
    */
   back?: Action;
+  /**
+   * The way back shows on a wide screen too: for a page that stands in the place of another one, not beside a list,
+   * such as a discussion in the place of its room's stream ("‹ Frühlingsausstellung").
+   */
+  wideBack?: boolean;
   /**
    * The context column (quieter sections): the info column of a record, what a form feeds, a chart beside a table, or
    * the right half of a detail that grows on a large screen (who and what happened, beside what it is).
@@ -473,7 +480,9 @@ export const Pane = (props: PaneProps) => {
     setInner((list) => [...list, need]);
     onCleanup(() => setInner((list) => list.filter((other) => other !== need)));
   };
-  const need = () => Math.max(props.width?.min ?? flexibleMin, ...inner().map((each) => each()));
+  // a fixed column needs its one width; one that can be dragged, its minimum
+  const own = () => (props.width === undefined ? flexibleMin : draggable(props.width) ? props.width.min : columnPx(props.width));
+  const need = () => Math.max(own(), ...inner().map((each) => each()));
   const entry: SplitEntry = {
     get width() {
       return props.width;
@@ -539,13 +548,14 @@ export const Pane = (props: PaneProps) => {
       data-width={props.width ? "" : undefined}
       data-detail={props.detail ? "" : undefined}
       data-side={props.side ? "" : undefined}
+      data-wide-back={props.wideBack && props.back ? "" : undefined}
       data-center={props.center ? "" : undefined}
       style={custom({
-        "--k2-pane-w": props.width ? `${size() ?? props.width.default}px` : undefined,
-        "--k2-pane-min": props.width ? `${props.width.min}px` : undefined,
+        "--k2-pane-w": props.width ? `${size() ?? columnPx(props.width)}px` : undefined,
+        "--k2-pane-min": props.width ? `${draggable(props.width) ? props.width.min : columnPx(props.width)}px` : undefined,
       })}
     >
-      {/* the way back shows only on the phone, above the head of the detail; a public part, so a shell can find it */}
+      {/* the way back shows on the phone (with `wideBack` everywhere), above the head; a public part, so a shell can find it */}
       <Show when={props.back}>
         {(back) => (
           <div class="k2-pane-back" data-k2-part="Back">
@@ -653,7 +663,8 @@ const SplitBody = (props: {
     if (!right) return undefined;
     const moving = right.width ? right : left?.width ? left : undefined;
     const width = moving?.width;
-    if (!moving || !width) return undefined;
+    // a fixed width has no grip: it keeps its width
+    if (!moving || !draggable(width)) return undefined;
     return {
       label: moving.label ?? "Column",
       width,
@@ -681,7 +692,8 @@ const SplitBody = (props: {
   const room = () => {
     if (!props.contextual) return undefined;
     const [main, context] = props.entries;
-    const both = (main?.width?.default ?? flexibleMin) + (context?.width?.default ?? flexibleMin);
+    // a fixed column counts its one width
+    const both = (main?.width ? columnPx(main.width) : flexibleMin) + (context?.width ? columnPx(context.width) : flexibleMin);
     return typeof context?.side === "object" ? Math.max(context.side.from, both) : both;
   };
   // Below that room (from 768 px on; the phone stacks every split) the split wraps: the context column and the line
@@ -959,6 +971,11 @@ export type Tile = {
   href?: string;
   /** … in place on a plain click (see `OnNavigate`). */
   onNavigate?: OnNavigate;
+  /**
+   * Without `href`: the deed of the whole tile, such as opening the dialog that makes a notebook from a template. The
+   * tile's name is then a button, and the whole tile presses it.
+   */
+  onOpen?: () => void;
   /** The data colour of the thing: its symbol becomes its mark on a tint of this colour. */
   color?: string;
   /** Cards only: figures and states under the name, such as tables, forms and "8 knapp". */
@@ -969,7 +986,86 @@ export type Tile = {
   foot?: string;
   /** Cards only: a short history at the top end, in the thing's colour (`Spark`). */
   trend?: SparkProps;
+  /**
+   * Cards only: a glance of what the thing holds, across the top of the card above its name: a small table (its
+   * columns and first rows, as words), a page (its title and first words), or a sign for a thing that holds nothing yet.
+   * It is a picture of the content: assistive technology reads the card by its name. Keep its values short: the app
+   * chooses columns and rows whose words fit, at most about 12 characters a cell, so nothing is cut with "…" at 1440 or
+   * on the phone; leave out what does not fit, such as a book's author. A cut cell reads as cheap. The phone shows a
+   * table's first two columns, so a column that matters, such as an amount, comes second.
+   */
+  preview?: TilePreview;
 };
+
+/** What a card's preview shows: the app gives the words, the card draws them. */
+export type TilePreview =
+  | { table: { columns: readonly TilePreviewColumn[]; rows: readonly (readonly string[])[] }; page?: never; icon?: never }
+  | { page: { title: string; text?: string }; table?: never; icon?: never }
+  | { icon: string; table?: never; page?: never };
+
+/**
+ * A column of a preview's table: its head, or its head and its place. `align: "end"` sets the column at the end with
+ * figures of one width, for amounts and counts.
+ */
+export type TilePreviewColumn = string | { label: string; align?: "end" };
+
+const columnLabel = (column: TilePreviewColumn) => (typeof column === "string" ? column : column.label);
+const columnAlign = (column: TilePreviewColumn | undefined) =>
+  column !== undefined && typeof column !== "string" ? column.align : undefined;
+
+/** The columns of a preview's table that the phone's narrow card shows; the rest are marked `data-past`. */
+const TILE_PREVIEW_PHONE_COLUMNS = 2;
+
+const TilePreviewView = (props: { preview: TilePreview }) => (
+  <div class="k2-tile-preview" aria-hidden="true">
+    <Switch>
+      <Match when={"table" in props.preview && props.preview.table}>
+        {(table) => (
+          <table class="k2-tile-pv-table">
+            <thead>
+              <tr>
+                <For each={table().columns}>
+                  {(column, index) => (
+                    <th data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined} data-align={columnAlign(column)}>
+                      {columnLabel(column)}
+                    </th>
+                  )}
+                </For>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={table().rows}>
+                {(row) => (
+                  <tr>
+                    <For each={row}>
+                      {(cell, index) => (
+                        <td
+                          data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined}
+                          data-align={columnAlign(table().columns[index()])}
+                        >
+                          {cell}
+                        </td>
+                      )}
+                    </For>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        )}
+      </Match>
+      <Match when={"page" in props.preview && props.preview.page}>
+        {(page) => (
+          <span class="k2-tile-pv-page">
+            <b>{page().title}</b>
+            <Show when={page().text}>{(text) => <span>{text()}</span>}</Show>
+          </span>
+        )}
+      </Match>
+      <Match when={"icon" in props.preview && props.preview.icon}>{(icon) => <Icon name={icon()} />}</Match>
+    </Switch>
+  </div>
+);
 
 /** The last card, which makes a new thing: a dashed frame, its name, and optional quick choices such as templates. */
 export type TileCreate = {
@@ -1011,8 +1107,9 @@ export type TilesProps = {
 
 const TileName = (props: { tile: Tile }) => (
   <span class="k2-tile-name">
-    <span class="k2-tile-title">
-      <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate}>
+    {/* a name of one word cannot take a second line without breaking inside it: it stays one line and ends in "…" */}
+    <span class="k2-tile-title" data-one-word={/\s/.test(props.tile.title.trim()) ? undefined : ""}>
+      <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate} onOpen={props.tile.onOpen}>
         {props.tile.title}
       </RowOpen>
     </span>
@@ -1026,9 +1123,11 @@ const TileCard = (props: { tile: Tile }) => (
   <div
     class="k2-tile"
     role="listitem"
-    data-open={props.tile.href !== undefined ? "" : undefined}
+    data-open={props.tile.href !== undefined || props.tile.onOpen ? "" : undefined}
+    data-preview={props.tile.preview ? "" : undefined}
     style={custom({ "--k2-c": props.tile.color })}
   >
+    <Show when={props.tile.preview}>{(preview) => <TilePreviewView preview={preview()} />}</Show>
     <span class="k2-tile-top">
       <Mark icon={props.tile.icon} color={props.tile.color} />
       <TileName tile={props.tile} />
@@ -1109,7 +1208,7 @@ export const Tiles = (props: TilesProps) => (
       fallback={
         <For each={props.items}>
           {(tile) => (
-            <div class="k2-tile" role="listitem" data-open={tile.href !== undefined ? "" : undefined}>
+            <div class="k2-tile" role="listitem" data-open={tile.href !== undefined || tile.onOpen ? "" : undefined}>
               <Show when={tile.color} fallback={<Icon name={tile.icon} />}>
                 {(color) => <Mark icon={tile.icon} color={color()} />}
               </Show>

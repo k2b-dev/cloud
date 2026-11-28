@@ -94,8 +94,8 @@ describe("shared Spaces sidebar", () => {
       const snapshots: string[] = [];
       await new HTMLRewriter()
         .on('solid-island[data-file="SpacesSidebarList.island.tsx"]', {
-          element(element) {
-            snapshots.push(element.getAttribute("data-props") ?? "");
+          comments(comment) {
+            if (comment.text.startsWith("ssr-props:")) snapshots.push(comment.text);
           },
         })
         .transform(new Response(space))

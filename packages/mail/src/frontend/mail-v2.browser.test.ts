@@ -97,6 +97,31 @@ describe("Mail on the v2 pilot", () => {
       }
     }, 60_000);
 
+  test("a failed list says what failed in words; a search that is not valid offers to clear it", async () => {
+    const failed = await open(`${MAIL_V2_PATH}?listError=load_failed`);
+    try {
+      const notice = failed.locator('[data-k2-part="Notice"][data-tone="bad"]');
+      await notice.waitFor({ state: "visible" });
+      expect(await notice.textContent()).toContain("Versuche es gleich noch einmal.");
+      expect(await notice.textContent()).not.toContain("load_failed");
+      expect(await notice.getByRole("button", { name: "Erneut versuchen" }).count()).toBe(1);
+    } finally {
+      await failed.close();
+    }
+    const invalid = await open(`${MAIL_V2_PATH}?listError=invalid_search&q=from%3A`);
+    try {
+      const notice = invalid.locator('[data-k2-part="Notice"][data-tone="bad"]');
+      await notice.waitFor({ state: "visible" });
+      expect(await notice.textContent()).toContain("Die Suche in diesem Link ist ungültig.");
+      expect(await invalid.getByText("invalid_search").count()).toBe(0);
+      const clear = notice.getByRole("link", { name: "Suche zurücksetzen" });
+      expect(await clear.getAttribute("href")).not.toContain("q=");
+      expect(await invalid.getByRole("button", { name: "Erneut versuchen" }).count()).toBe(0);
+    } finally {
+      await invalid.close();
+    }
+  });
+
   test("a row opens its conversation in place, and Escape returns to the row", async () => {
     const page = await open(MAIL_V2_PATH);
     try {
@@ -172,6 +197,31 @@ describe("Mail on the v2 pilot", () => {
       await page.waitForURL((url) => !url.searchParams.has("conversation"));
       await row(page, "Holzwerk Brandt").waitFor();
       expect(await focusedRow(page)).toContain("Holzwerk Brandt");
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  // Every head action stays on the phone now (#4373): beside them, their words folded to symbols, the subject keeps its
+  // words (it wraps instead of being cut) and nothing in the head runs out of it. At 390 the reader's six symbol
+  // controls still leave the subject about 86 px; the bar fold (#4392) moves the overflow into "⋯" and makes this green.
+  test.todo("on the phone the reader's head keeps its subject whole beside its actions, and nothing runs out of it (#4392)", async () => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`, 390);
+    try {
+      const head = page.locator('[data-k2-part="Pane"][data-detail] > [data-slot="head"] > .k2-bar');
+      await head.waitFor();
+      const measured = await head.evaluate((bar) => {
+        const start = bar.querySelector(":scope > .k2-bar-start")!;
+        const title = start.querySelector<HTMLElement>(".k2-text, h1, h2") ?? (start as HTMLElement);
+        const end = bar.querySelector(":scope > .k2-bar-end")!.getBoundingClientRect();
+        const box = bar.getBoundingClientRect();
+        return {
+          cut: title.scrollWidth > title.clientWidth + 1 || title.scrollHeight > title.clientHeight + 1,
+          endInside: end.right <= box.right + 0.5 && end.left >= box.left - 0.5,
+          overflow: bar.scrollWidth > bar.clientWidth + 1,
+        };
+      });
+      expect(measured).toEqual({ cut: false, endInside: true, overflow: false });
     } finally {
       await page.close();
     }

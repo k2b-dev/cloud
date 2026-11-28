@@ -43,7 +43,7 @@ import { mount } from ${JSON.stringify(resolve(import.meta.dir, "../../../ssr/sr
 import { toJSON } from ${JSON.stringify(Bun.resolveSync("seroval", cloud))};
 import AssistantWorkspace from ${JSON.stringify(resolve(import.meta.dir, "AssistantWorkspace.island.tsx"))};
 function Workspace(props) { return <LocaleProvider locale="de"><AssistantWorkspace {...props} /></LocaleProvider>; }
-document.getElementById("root").dataset.props = JSON.stringify(toJSON(window.harness));
+document.getElementById("root").innerHTML = '<!--ssr-props:' + JSON.stringify(toJSON(window.harness)).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e") + "-->";
 mount(Workspace, "#root");`;
 const fakeLiveSource = `export const liveConnection = () => ({ subscribe: (_channel, _scope, handlers) => {
 window.doneLive = handlers; return { close() {} }; } });`;
