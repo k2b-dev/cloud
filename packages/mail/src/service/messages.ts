@@ -31,7 +31,7 @@ import { parseMessageProtocolFacts } from "./message-protocol";
 import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
 import { type MessageRemoteContent, resolveMessagesRemoteContent } from "./remote-content";
 import { assessMessages } from "./security";
-import { cachedConversationViewCounts } from "./view-count-cache";
+import { cachedConversationViewCounts, cachedConversationViewCountsBy } from "./view-count-cache";
 import { type MailboxConversationCounts, queryConversationViewCounts } from "./view-count-query";
 
 type DateCursor = { version: 1; date: string; id: string };
@@ -806,6 +806,41 @@ export const getMailboxConversationCounts = async (params: {
   mailboxId: string;
   cached?: boolean;
 }): Promise<Result<MailboxConversationCounts>> => {
+  const counting = await prepareConversationCounts(params);
+  if (!counting.ok) return counting;
+  const { load, reader } = counting.data;
+  return ok(params.cached ? await cachedConversationViewCounts({ mailboxId: params.mailboxId, reader, load }) : await load());
+};
+
+/**
+ * The cached counts as a page or workspace snapshot reads them: a cold count is awaited only until `until` (epoch ms,
+ * see `FIRST_RENDER_COUNT_WAIT_MS`), then null while it goes on and fills the cache.
+ */
+export const getMailboxConversationCountsBy = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  until: number;
+}): Promise<Result<MailboxConversationCounts | null>> => {
+  const counting = await prepareConversationCounts(params);
+  if (!counting.ok) return counting;
+  const { load, reader } = counting.data;
+  return ok(await cachedConversationViewCountsBy({ mailboxId: params.mailboxId, reader, load, until: params.until }));
+};
+
+/** The view counts a page or workspace snapshot shows: null while they are still cold at `until` (epoch ms). */
+export const getConversationViewCountsBy = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  until: number;
+}): Promise<Result<ConversationViewCounts | null>> => {
+  const counts = await getMailboxConversationCountsBy(params);
+  return counts.ok ? ok(counts.data?.views ?? null) : counts;
+};
+
+const prepareConversationCounts = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+}): Promise<Result<{ load: () => Promise<MailboxConversationCounts>; reader: string }>> => {
   const access = await resolveMailExecution({
     mailboxId: params.mailboxId,
     operation: "actorRead",
@@ -823,7 +858,6 @@ export const getMailboxConversationCounts = async (params: {
       await tx`SET LOCAL statement_timeout = '30s'`;
       return queryConversationViewCounts({ mailboxId: params.mailboxId, currentUserId, visibility }, tx);
     });
-  if (!params.cached) return ok(await load());
   const principal = personalPrincipal(params.context);
   const reader = JSON.stringify([
     principal.kind,
@@ -831,7 +865,7 @@ export const getMailboxConversationCounts = async (params: {
     visibility.scope,
     visibility.scope === "assigned" ? (visibility.userId ?? visibility.serviceAccountId) : null,
   ]);
-  return ok(await cachedConversationViewCounts({ mailboxId: params.mailboxId, reader, load }));
+  return ok({ load, reader });
 };
 
 export type MessageSummary = {

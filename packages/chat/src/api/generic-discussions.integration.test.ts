@@ -4,6 +4,7 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { toPgTextArray } from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import {
   ChangesPageSchema,
@@ -362,6 +363,57 @@ suiteFor(
     expect(next.cursors[collection.type]).toBe("");
     expect([...first.items, ...next.items].map((entry) => entry.ref)).toEqual(refs.slice(1));
   });
+  // v2 draws a place's discussions as cards in its General stream from the thread list that comes with the snapshot:
+  // the first view is this one load, with no request after it, and its statements stay the same for any number of cards.
+  test("a place's General snapshot brings its discussion cards in a pinned number of statements (DATA-13)", async () => {
+    const person = await f.person();
+    const chat = await open(person);
+    const refs = ["66666666-6666-4666-8666-000000000001", "66666666-6666-4666-8666-000000000002"].map((id) => ({ ...item, id }));
+    refs.forEach((ref) => trackKeys(person, ref));
+    const discuss = async (ref: typeof item, body: string) => {
+      const thread = ThreadSchema.parse(
+        await (await api(person, `/conversations/${chat.id}/threads/for-resource`, "POST", { ref })).json(),
+      );
+      const sent = await api(person, `/conversations/${chat.id}/messages`, "POST", { clientId: `card-${body}`, body, thread: thread.id });
+      expect(sent.status).toBe(201);
+    };
+    await discuss(item, "one");
+    const snapshot = async () => {
+      const response = await api(person, `/conversations/${chat.id}/snapshot?thread=general`);
+      expect(response.status).toBe(200);
+      return ChatSnapshotSchema.parse(await response.json());
+    };
+    const meter = await meterSql();
+    const quiet = async () => {
+      for (let round = 0; round < 50; round++) if ((await meter.during(() => Bun.sleep(300))).length === 0) return; // real clock: background work settles
+      throw new Error("Background statements did not settle");
+    };
+    try {
+      await snapshot();
+      await quiet();
+      const one = await meter.during(snapshot);
+      for (const [index, ref] of refs.entries()) await discuss(ref, `more-${index}`);
+      await snapshot();
+      await quiet();
+      let cards = 0,
+        payload = 0;
+      const three = await meter.during(async () => {
+        const seen = await snapshot();
+        cards = seen.threads.items.filter((thread) => thread.resource).length;
+        payload = JSON.stringify(seen).length;
+      });
+      expect(cards).toBe(3);
+      // the same statements for one card and for three: the cards come with the thread list's one page
+      expect(three).toEqual(one);
+      // the snapshot's whole cost (identity, the chat, its General page, the cards' list, the messages' parts); the
+      // cards add none of it, and their payload stays small (3,267 B with three cards on 27.11.)
+      expect(three.length).toBe(32);
+      expect(payload).toBeLessThan(8 * 1024);
+    } finally {
+      await meter.close();
+    }
+  });
+
   test("cold snapshots and directory continuations survive more than sixty item threads", async () => {
     const person = await f.person();
     const container = { ...collection, id: "44444444-4444-4444-8444-444444444444" };
