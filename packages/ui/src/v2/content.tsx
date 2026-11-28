@@ -443,6 +443,8 @@ export const Row = (props: RowProps) => {
       data-avatar={props.avatar && !props.select ? "" : undefined}
       data-time={time() !== undefined ? "" : undefined}
       data-action={props.action ? "" : undefined}
+      // a deed or an end beside the time: on one line both stand at the end, the time first
+      data-end={end() !== undefined || props.action ? "" : undefined}
       style={custom({ "--k2-c": props.color })}
     >
       {/* What opens the row lies over all of it and is named by the title; it holds no part of the row, so a link in

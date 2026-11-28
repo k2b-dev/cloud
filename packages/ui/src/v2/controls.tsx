@@ -195,9 +195,11 @@ type InputBase = {
   placeholder?: string;
   /**
    * The kind of text, which picks the phone's keyboard; `text` when not set. A `search` in the head of a workspace
-   * or pane stays on the phone as its symbol (36 px, like an icon button), where the other head actions hide: a tap
-   * goes into the field, which opens over the head while it has the focus and folds back, its words kept, when the
-   * focus leaves or on Escape (unless `onKeyDown` takes Escape itself with `preventDefault`). Where a host offers the
+   * or pane stands as its symbol (36 px, like an icon button) while it is empty, on every width. From 768 px a press
+   * opens the field in place at its width, and it folds back when it is empty and the focus leaves; its words keep it
+   * open; a search with an `end` (such as a filter) keeps its field there. On the phone, where the other head actions hide, a tap goes into the field, which opens over the head while
+   * it has the focus and folds back, its words kept, when the focus leaves or on Escape (unless `onKeyDown` takes
+   * Escape itself with `preventDefault`). Where a host offers the
    * page's search in a bar of its own (`data-k2-host-search` on the v2 scope, as the Cloud shell's phone bar does),
    * the folded search leaves the head and the order of the Tab key on the phone, and the host focuses it; a head with
    * a path then opens it over the content's first row.
@@ -367,6 +369,10 @@ export const Input = (props: InputProps) => {
   );
   // the end is made once, here (reading the prop twice would make its JSX twice)
   const end = resolveChildren(() => props.end);
+  // whether a search holds words, from its value and from typing: a head's search folds to its symbol only while it is
+  // empty and has no focus (look rule 31); an attribute its owner sets, so no `:has()` restyles the page
+  const [text, setText] = createSignal(props.value ?? "");
+  createRenderEffect(() => setText(props.value ?? ""));
   const shared = () => ({
     id: field?.control,
     name: props.name ?? field?.name,
@@ -410,6 +416,9 @@ export const Input = (props: InputProps) => {
       data-disabled={props.disabled ? "" : undefined}
       data-multiline={props.multiline ? "" : undefined}
       data-search={props.type === "search" ? "" : undefined}
+      data-empty={props.type === "search" && !text() ? "" : undefined}
+      // a search that carries more at its end (a filter) is more than a search: it keeps its field in a head
+      data-with-end={end() !== undefined ? "" : undefined}
       style={props.multiline && props.rows !== undefined ? custom({ "--k2-rows": String(props.rows) }) : undefined}
     >
       <Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>
@@ -427,7 +436,10 @@ export const Input = (props: InputProps) => {
             type={props.type ?? "text"}
             min={props.min}
             max={props.max}
-            onInput={(event) => props.onInput?.(event.currentTarget.value)}
+            onInput={(event) => {
+              setText(event.currentTarget.value);
+              props.onInput?.(event.currentTarget.value);
+            }}
             onKeyDown={(event) => {
               props.onKeyDown?.(event);
               if (props.type === "search") foldHeadSearch(event);

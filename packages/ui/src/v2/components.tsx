@@ -27,6 +27,7 @@ import { Avatar, Chip, custom, Dot, Icon } from "./marks";
 import { Menu, type MenuEntry, type MenuItem, MenuTab } from "./menu";
 import { type NavTree, NavTreeView } from "./nav-tree";
 import { useOverlayMessages } from "./overlay-messages";
+import { useStatusToolbar } from "./status-toolbar";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 
 // Layer 2: components made only of the primitives. They exist where a form must be the same everywhere.
@@ -734,6 +735,7 @@ const holdsContent = (resolved: ChildrenReturn) =>
 
 /** The status row of a pane (52 px): the one lead statement, its loading mark, key figures, filters on the right. */
 export const StatusRow = (props: StatusRowProps) => {
+  useStatusToolbar();
   const t = useUiMessages();
   const filters = resolveChildren(() => props.filters);
   const marks = resolveChildren(() => props.marks);

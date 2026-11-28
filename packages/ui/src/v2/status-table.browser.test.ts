@@ -980,12 +980,14 @@ test("1440 px: Escape in the search of the head is the browser's and the app's, 
   });
 });
 
-test("1440 px: the search of the head is its field of 184 px", async () => {
+// look rule 31 (Valentin 27.11.): the head's search is its symbol while it is empty, and its field of 184 px when pressed
+test("1440 px: the search of the head is its symbol, and its field of 184 px when pressed", async () => {
   await withPage(async (page) => {
-    const width = await page.evaluate(() =>
-      Math.round(document.querySelector('[data-slot="head"] .k2-input[data-search]')!.getBoundingClientRect().width),
-    );
-    expect(width).toBe(184);
+    const width = () =>
+      page.evaluate(() => Math.round(document.querySelector('[data-slot="head"] .k2-input[data-search]')!.getBoundingClientRect().width));
+    expect(await width()).toBe(36);
+    await page.locator('[data-slot="head"] .k2-input[data-search] > input').focus();
+    expect(await width()).toBe(184);
   });
 });
 

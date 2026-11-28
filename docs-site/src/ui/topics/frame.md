@@ -53,6 +53,8 @@ One per screen: the sidebar, the head, the main action, and the columns; it turn
 
 A column that scrolls, with no padding: a head, a status that stays, a `width` inside a split, and `detail`, `back` and `side`.
 
+A pane's `head` and its `status` are one block: no line between them, one line under the block, and the two rows close together. Where the pane is 1200 px or wider, the status row joins the head's row: the path, then the filters and how the list shows, then the head's actions. A head of actions only (a `Bar` without `start`) always shares the status row's row. A row keeps its height when it carries a deed: on one line the time stands at the end and the deed after it; on the phone the deed takes the row under the text.
+
 <Props of="Pane" />
 
 ### Bar
@@ -94,6 +96,8 @@ Until they are fixed, use the nearest part and write `// k2b-ui gap: …` at tha
 - Render the detail only while the address names an entry, and give its `back` the list's address.
 - Declare `detail` and `detailEmpty` on the workspace when a detail opens beside the list. While nothing is open, `detailEmpty` may carry a `hero`: a picture of the place as a whole, such as a [`Heat`](/en/ui/v2/content) of the mails received per day with a line that sums it up.
 - Give a long list a `scrollKey`, so back and forward return to where it was.
+- Give the head of a list's pane to the pane (`Pane head`), not to the workspace, when the pane has a `status`: then they stand as one block.
+- Put the search of a head in the head's `end` as `Input type="search"` with a `placeholder`: it stands as its symbol and opens in place when pressed.
 
 ### Don't
 

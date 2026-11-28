@@ -83,6 +83,8 @@
   /* heights by place */
   --k2-h-head: 56px;
   --k2-h-status: 52px;
+  /* the head row of a head block, close above its status row */
+  --k2-h-block: 48px;
   --k2-h-tabs: 44px;
   --k2-h-bar: 40px;
   --k2-h-columns: 36px;
@@ -783,6 +785,65 @@
 .k2-ui .k2-bar[data-status-row] {
   height: var(--k2-h-status);
 }
+/* A pane's head and its status row are one block (look rule 30, Valentin 27.11.: "diese Border weg und die Gap
+   bissle weniger groß"): the head draws no line, the status row's line is the block's one line, and the two rows
+   stand close together. Where the pane is wide, or the head has no start of its own, the status row joins the head's
+   row: path, filters and how the list shows, then the head's actions. */
+.k2-ui [data-slot="head"][data-block] > .k2-bar {
+  height: var(--k2-h-block);
+  border-bottom: 0;
+}
+.k2-ui [data-slot="head"][data-block] > [data-slot="status"] > .k2-bar[data-status-row] {
+  height: calc(var(--k2-h-status) - 8px);
+  padding-bottom: 8px;
+}
+.k2-ui [data-slot="head"][data-block] > [data-slot="status"] > .k2-fbar {
+  padding-top: 0;
+}
+.k2-ui [data-slot="head"][data-block="row"] {
+  display: flex;
+  align-items: flex-start;
+  border-bottom: var(--k2-hairline);
+}
+.k2-ui [data-slot="head"][data-block="row"] > .k2-bar {
+  order: 2;
+  height: var(--k2-h-status);
+  padding-left: 0;
+}
+.k2-ui [data-slot="head"][data-block="row"] > [data-slot="status"] > :is(.k2-fbar, .k2-bar) {
+  flex: 1;
+  border-bottom: 0;
+  padding-top: 6px;
+}
+@container k2-pane (min-width: 1200px) {
+  .k2-ui [data-slot="head"][data-block=""] {
+    display: flex;
+    align-items: center;
+    min-height: var(--k2-h-status);
+    border-bottom: var(--k2-hairline);
+  }
+  .k2-ui [data-slot="head"][data-block=""] > .k2-bar {
+    display: contents;
+  }
+  .k2-ui [data-slot="head"][data-block=""] > .k2-bar > .k2-bar-start {
+    order: 1;
+    flex: 0 1 auto;
+    padding-left: var(--k2-edge);
+    align-self: center;
+  }
+  .k2-ui [data-slot="head"][data-block=""] > [data-slot="status"] > :is(.k2-fbar, .k2-bar) {
+    order: 2;
+    flex: 1;
+    min-width: 0;
+    border-bottom: 0;
+    padding-block: 6px;
+  }
+  .k2-ui [data-slot="head"][data-block=""] > .k2-bar > .k2-bar-end {
+    order: 3;
+    padding-right: var(--k2-edge);
+    align-self: center;
+  }
+}
 .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar {
   padding-right: 12px;
   gap: 4px;
@@ -1306,6 +1367,21 @@
 }
 .k2-ui .k2-row[data-lines="1"] > .k2-row-end {
   grid-area: time;
+}
+/* A row of one line with a time and a deed or an end keeps its height: the time stands at the end of the line and the
+   deed after it, in a column of its own (Valentin 27.11.: no row taller than its neighbours for its deed). On the phone
+   the deed takes the row under the text (the phone's rules below). */
+.k2-ui .k2-row[data-lines="1"][data-time][data-end] {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "lead l1 time end";
+}
+.k2-ui .k2-row[data-lines="1"][data-time][data-end] > .k2-row-end {
+  grid-area: end;
+}
+/* the deed's 28 px button stands in the row's 40 px (its padding and its line included): it reaches into the row's
+   padding instead of growing the row */
+.k2-ui .k2-row[data-lines="1"][data-end] > .k2-row-end {
+  margin-block: calc((var(--k2-h-row) - 16px - var(--k2-h-control-small)) / 2 - 1px);
 }
 .k2-ui .k2-row-marks {
   grid-area: marks;
@@ -4966,6 +5042,30 @@
 }
 
 /* ── Phone: below 768 px. Columns become pages; rows ≥ 60; the main action floats ───────────────────────────── */
+/* The search of a head is its symbol on every width (look rule 31, Valentin 27.11.: "die Suchleiste könnte auch
+   einfach nur ein Icon sein"): 36 px like an icon button, the same part as on the phone. A press goes into the field,
+   which then stands at its width; it folds back when the focus leaves while it is empty, and keeps its words open. A
+   search with more at its end (a filter) keeps its field from 768 px. */
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search][data-empty]:not([data-with-end], :focus-within) {
+  position: relative;
+  width: var(--k2-h-control);
+  padding: 0;
+  justify-content: center;
+  border-color: transparent;
+  background: transparent;
+}
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search][data-empty]:not([data-with-end], :focus-within) > .k2-icon {
+  color: var(--k2-muted);
+}
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search][data-empty]:not([data-with-end], :focus-within) > input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search][data-empty]:not([data-with-end], :focus-within) > .k2-input-end {
+  display: none;
+}
 @media not all and (min-width: 768px) {
   .k2-ui .k2-ws {
     border: 0;
@@ -5247,6 +5347,23 @@
     grid-area: time;
     justify-content: flex-start;
     padding: 8px 0 4px;
+  }
+  /* a row with a time and a deed: the time stays top right, the deed gets the row under the text (never one over the
+     other) */
+  .k2-ui .k2-row[data-action][data-time][data-end] {
+    grid-template-areas: "lead l1 time" "lead l2 l2" "lead end end";
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .k2-ui .k2-row[data-action][data-time][data-end]:not(:has(> .k2-row-lead > *)):not(.k2-list:has(> .k2-row > .k2-row-lead > *) > .k2-row) {
+    grid-template-areas: "l1 time" "l2 l2" "end end";
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .k2-ui .k2-row[data-action][data-time][data-end] > .k2-row-end {
+    grid-area: end;
+  }
+  /* on the phone the deed has a row of its own: it needs no room of the row's padding */
+  .k2-ui .k2-row[data-lines="1"][data-end] > .k2-row-end {
+    margin-block: 0;
   }
   /* a finger hits 44 px of the row's deed (PS 26.11.); its look and its place stay. Its words never shrink (a button
      keeps its room), so nothing of them needs the button to clip. */

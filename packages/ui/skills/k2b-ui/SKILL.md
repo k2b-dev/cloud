@@ -156,7 +156,8 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
    inputs and tiles are round; panes, bands, sections, groups are square.
 9. **Lines separate groups, not entries or the parts of one thing.** No
    line under a section head, none between its entries, none inside a
-   `Group`.
+   `Group`. A list's head and its status row are one block: give the head
+   to the list's `Pane` with its `status`, and the block draws one line.
 
 One primary action per page: the filled `Button variant="primary"` in the
 head, mirrored as `Workspace primary` so the phone shows it. A form page

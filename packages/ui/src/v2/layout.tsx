@@ -3,6 +3,7 @@ import {
   createContext,
   createEffect,
   createMemo,
+  createRenderEffect,
   createSignal,
   createUniqueId,
   For,
@@ -28,6 +29,7 @@ import { BarFold, Menu, type MenuItem } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 import { ConfirmDialog } from "./overlays";
 import { Empty, PlaceholderValue } from "./states";
+import { StatusToolbarContext } from "./status-toolbar";
 import { Toasts } from "./toast";
 import type { Action, Width } from "./types";
 
@@ -195,6 +197,12 @@ type Column = { readonly need: number; readonly detail: boolean; readonly away?:
 type DetailEmpty = { icon: string; text: string; hero?: JSX.Element };
 type Columns = { register: (column: Column) => void; empty: () => DetailEmpty | undefined };
 const ColumnsContext = createContext<Columns | undefined>();
+/**
+ * The pane whose head a bar is learns whether the bar has a start of its own (a path, a title): a head of actions
+ * only shares its row with the pane's status row. Told while the parts are made, so the server and the first render
+ * agree.
+ */
+const HeadStartContext = createContext<((bare: boolean) => void) | undefined>();
 
 /**
  * The working surface of an app: a sidebar, a head and the columns below it, with one hairline between columns and
@@ -405,7 +413,9 @@ export type PaneProps = {
   head?: JSX.Element;
   /**
    * What stays under the head while the column scrolls: a `StatusRow` (52 px) above a list, or a `Bar` (40 px) with
-   * the state of an open entry, such as "3 Nachrichten · Wartet auf Antwort · Tag" above a reader.
+   * the state of an open entry, such as "3 Nachrichten · Wartet auf Antwort · Tag" above a reader. With a `head` it is
+   * one block: no line between them, close together; from 1200 px of the pane, or under a head of actions only, it
+   * joins the head's row.
    */
   status?: JSX.Element;
   /** A column that can be dragged wider: its minimum and default width. Only inside `Pane.Split`. */
@@ -487,8 +497,16 @@ export const Pane = (props: PaneProps) => {
       return Boolean(props.side) && (contextual?.() ?? false);
     },
   });
-  const head = resolveChildren(() => props.head);
-  const status = resolveChildren(() => props.status);
+  // whether the head is a bar without a start (actions only): then it shares one row with the status row
+  const [bare, setBare] = createSignal(false);
+  const head = resolveChildren(() => <HeadStartContext.Provider value={setBare}>{props.head}</HeadStartContext.Provider>);
+  // whether the status is a toolbar of the list (StatusRow, FilterBar): only a toolbar joins the head as one block
+  const [toolbar, setToolbar] = createSignal(false);
+  const status = resolveChildren(() => (
+    <StatusToolbarContext.Provider value={() => setToolbar(true)}>{props.status}</StatusToolbarContext.Provider>
+  ));
+  // a head with a toolbar under it is one block; any other status keeps its own place under the head
+  const block = () => !!head() && !!status() && toolbar();
   let section: HTMLElement | undefined;
   // A detail appears because something opened it, which then has the focus (the row). When the detail goes while the
   // focus is in it (its way back, its close button), the focus returns there instead of falling to the page.
@@ -540,12 +558,20 @@ export const Pane = (props: PaneProps) => {
           </div>
         )}
       </Show>
+      {/* A head and its status row are one block (look rule 30): no line between them, close together, and where
+          the pane is wide, or the head has no start, the status row joins the head's row. Decided while the parts are
+          made, the same on the server. */}
       <Show when={head()}>
-        <div class="k2-slot" data-slot="head">
+        <div class="k2-slot" data-slot="head" data-block={block() ? (bare() ? "row" : "") : undefined}>
           {head()}
+          <Show when={block()}>
+            <div class="k2-slot" data-slot="status">
+              {status()}
+            </div>
+          </Show>
         </div>
       </Show>
-      <Show when={status()}>
+      <Show when={status() && !block()}>
         <div class="k2-slot" data-slot="status">
           {status()}
         </div>
@@ -759,9 +785,16 @@ export const Bar = (props: BarProps) => {
       waiting.delete(trigger);
     };
   };
-  const start = resolveChildren(() => props.start);
+  const tellStart = useContext(HeadStartContext);
+  // the parts inside the bar are no head bars of their own
+  const start = resolveChildren(() => <HeadStartContext.Provider value={undefined}>{props.start}</HeadStartContext.Provider>);
+  createRenderEffect(() => tellStart?.(start() === undefined));
   // the end is made inside the fold's context, so a menu "…" in it can offer itself to take the folded buttons
-  const end = resolveChildren(() => <BarFold.Provider value={{ offer, host, entries: folded }}>{props.end}</BarFold.Provider>);
+  const end = resolveChildren(() => (
+    <HeadStartContext.Provider value={undefined}>
+      <BarFold.Provider value={{ offer, host, entries: folded }}>{props.end}</BarFold.Provider>
+    </HeadStartContext.Provider>
+  ));
   const hasEnd = createMemo(() => end() !== undefined);
   createEffect(() => {
     if (!bar || !hasEnd()) return;
