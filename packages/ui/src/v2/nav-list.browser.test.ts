@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { demoBundle, serverMarkup } from "../../test/v2-behavior/harness";
 import type {} from "../../test/v2-nav-list.demo";
 import { measureV2Layout } from "./testing";
@@ -154,24 +154,20 @@ for (const width of [1440, 390])
       const end = rows.nth(1).locator(".k2-row-end");
       if (width >= 768) {
         expect(await end.evaluate((element) => getComputedStyle(element).opacity)).toBe("0");
-        await rows.nth(1).hover();
+        await hoverInPlace(rows.nth(1));
         await page.waitForFunction(() => getComputedStyle(document.querySelectorAll(".k2-nav-list .k2-row-end")[1]!).opacity === "1");
       } else expect(await end.isVisible()).toBe(false);
       // a long name stays on one line, its last message on at most two
       const long = rows.nth(5);
-      const title = await long
-        .locator(".k2-row-title")
-        .evaluate((element) => ({
-          height: element.getBoundingClientRect().height,
-          line: parseFloat(getComputedStyle(element).lineHeight),
-        }));
+      const title = await long.locator(".k2-row-title").evaluate((element) => ({
+        height: element.getBoundingClientRect().height,
+        line: parseFloat(getComputedStyle(element).lineHeight),
+      }));
       expect(title.height).toBeLessThanOrEqual(title.line + 1);
-      const second = await long
-        .locator(".k2-row-l2")
-        .evaluate((element) => ({
-          height: element.getBoundingClientRect().height,
-          line: parseFloat(getComputedStyle(element).lineHeight),
-        }));
+      const second = await long.locator(".k2-row-l2").evaluate((element) => ({
+        height: element.getBoundingClientRect().height,
+        line: parseFloat(getComputedStyle(element).lineHeight),
+      }));
       expect(second.height).toBeLessThanOrEqual(2 * second.line + 1);
       const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
       expect({ width, problems: layout.problems }).toEqual({ width, problems: [] });
