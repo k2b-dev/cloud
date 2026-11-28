@@ -1,5 +1,5 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { Empty, List, Pane, Section, Text, useToast, Workspace } from "@k2b/ui/v2";
+import { Empty, List, Pane, Section, useToast, Workspace } from "@k2b/ui/v2";
 import { createSignal, For, Show } from "solid-js";
 import type { PulseBaseNav } from "../../contracts";
 import { usePulseMessages } from "../use-messages";
@@ -13,7 +13,7 @@ export type StartScreenProps = {
 };
 
 /**
- * Pulse before the first base: no sidebar, only the lead line and the way to begin in the middle of the page
+ * Pulse before the first base: no sidebar, only the lead sentence and the way to begin in the middle of the page
  * (approved mockup empty-start-tiles v4). An admin whose bases are being deleted follows them under it.
  */
 export default function StartScreen(props: StartScreenProps) {
@@ -27,11 +27,12 @@ export default function StartScreen(props: StartScreenProps) {
       {/* k2b-ui gap: rows in a centred Pane draw their lines short of the column's edges; with deletions to follow the
           start stands at the top of the column, so their rows reach its edges */}
       <Pane label={words().startLabel} center={props.deleting.length === 0}>
-        <Text type="lead">{words().firstBaseLead}</Text>
-        {/* k2b-ui gap: start tiles (#4505): Leere Base, Server überwachen, Werte per HTTP senden, Website-Besuche */}
+        {/* k2b-ui gap: start tiles (#4505): Leere Base, Server überwachen, Werte per HTTP senden, Website-Besuche.
+            Until they land the lead line is the Empty's own sentence, so sign, sentence and deed stand as one group;
+            with the tiles it returns as the centred line above them. */}
         <Empty
           icon="activity-heartbeat"
-          text={t().firstBaseDescription}
+          text={words().firstBaseLead}
           action={{ label: t().newBase, icon: "plus", onClick: () => setCreating(true) }}
         />
         <Show when={props.deleting.length > 0}>

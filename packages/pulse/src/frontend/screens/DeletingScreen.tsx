@@ -29,7 +29,8 @@ export default function DeletingScreen(props: DeletingScreenProps) {
         sidebar={<Nav title={t().appName} icon="activity-heartbeat" search={nav.search()} groups={nav.groups()} />}
         sidebarLabel={words().bases}
       >
-        <Pane label={props.base.name} center>
+        {/* the row stands at the top like any detail; the sidebar's open entry already names the base */}
+        <Pane label={props.base.name}>
           <List label={words().deletingTitle}>
             <DeletingBase base={props.base} />
           </List>
