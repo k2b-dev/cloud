@@ -9,12 +9,14 @@ import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import * as health from "../health";
+import * as infrastructure from "./infrastructure/sections";
 import * as telemetry from "./telemetry/service";
 
 const root = mkdtempSync(join(tmpdir(), "observability-range-render-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("./page");
+const area = await import("./_components/ObservabilityArea");
 
 const user = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -48,6 +50,12 @@ const server = () => {
   return app;
 };
 
+/** The health the page reads through the area's shared cache, and the build behind it for the sidebar's dots. */
+const healthOf = (value: unknown) => [
+  spyOn(health, "buildGatewayHealth").mockResolvedValue(value as never),
+  spyOn(area, "readHealth").mockResolvedValue(value as never),
+];
+
 /** The text a person reads in the first HTML; drawings are no text (and their inline style stops the test parser). */
 const read = (html: string) =>
   html
@@ -62,12 +70,15 @@ test("sources that cannot be read are named as signals and their figures say so,
   const spies = [
     stubRailSnapshot(),
     spyOn(health, "buildGatewayHealth").mockRejectedValue(unavailable),
+    spyOn(area, "readHealth").mockRejectedValue(unavailable),
     spyOn(telemetry, "getTelemetryOverview").mockRejectedValue(unavailable),
     spyOn(telemetry, "getTelemetryTimeseries").mockResolvedValue([]),
     spyOn(telemetry, "listTelemetryRoutes").mockResolvedValue([]),
     spyOn(logging, "summary").mockRejectedValue(unavailable),
     spyOn(logging, "timeseries").mockResolvedValue([]),
     spyOn(trace, "stats").mockRejectedValue(unavailable),
+    // no real backend is probed: the services' states are given
+    spyOn(infrastructure, "readInfraStates").mockResolvedValue({ postgres: undefined, valkey: undefined, nats: undefined }),
   ];
   try {
     const app = server();
@@ -91,9 +102,7 @@ test("sources that cannot be read are named as signals and their figures say so,
 test("a quiet window says so; failing routes stand with their app and lead to their requests", async () => {
   const spies = [
     stubRailSnapshot(),
-    spyOn(health, "buildGatewayHealth").mockResolvedValue({
-      apps: [{ id: "mail", name: "Mail", icon: "ti ti-mail", status: "ok", online: true }],
-    } as never),
+    ...healthOf({ apps: [{ id: "mail", name: "Mail", icon: "ti ti-mail", status: "ok", online: true }] }),
     spyOn(telemetry, "getTelemetryOverview").mockResolvedValue({
       requests: 1200,
       slowRequests: 4,
@@ -107,6 +116,7 @@ test("a quiet window says so; failing routes stand with their app and lead to th
     spyOn(logging, "summary").mockResolvedValue({ errors24h: 0, warnings24h: 0, total24h: 1_204 } as never),
     spyOn(logging, "timeseries").mockResolvedValue([]),
     spyOn(trace, "stats").mockResolvedValue({ runs: 3_482, failed: 0, stuck: 0 } as never),
+    spyOn(infrastructure, "readInfraStates").mockResolvedValue({ postgres: "ok", valkey: "ok", nats: "ok" }),
   ];
   try {
     const html = await (await server().request("/admin/observability", { headers: { "Accept-Language": "de" } })).text();
@@ -119,7 +129,34 @@ test("a quiet window says so; failing routes stand with their app and lead to th
     expect(text).toContain("1 von 1 online");
     expect(text).toContain("/api/mail/send");
     expect(text).toContain("5 %");
+    // a share from BAD_ROUTE_SHARE on stands in the colour of a problem
+    expect(html).toMatch(/data-tone="bad"[^>]*>5\s%/);
     expect(html).toContain('href="/admin/observability/telemetry?range=24h&amp;app=mail&amp;route=%2Fapi%2Fmail%2Fsend"');
+  } finally {
+    for (const spy of spies) spy.mockRestore();
+  }
+});
+
+test("a service that did not answer and failing routes that could not be read say so in their own place", async () => {
+  const spies = [
+    stubRailSnapshot(),
+    ...healthOf({ apps: [{ id: "mail", name: "Mail", icon: "ti ti-mail", accent: "#2563eb", status: "ok", online: true }] }),
+    spyOn(telemetry, "getTelemetryOverview").mockResolvedValue({ requests: 10, slowRequests: 0, serverErrors: 0, rateLimited: 0 } as never),
+    spyOn(telemetry, "getTelemetryTimeseries").mockResolvedValue([]),
+    spyOn(telemetry, "listTelemetryRoutes").mockRejectedValue(new Error("Telemetry rollups unreadable")),
+    spyOn(logging, "summary").mockResolvedValue({ errors24h: 0, warnings24h: 0, total24h: 0 } as never),
+    spyOn(logging, "timeseries").mockResolvedValue([]),
+    spyOn(trace, "stats").mockResolvedValue({ runs: 0, failed: 0, stuck: 0 } as never),
+    spyOn(infrastructure, "readInfraStates").mockResolvedValue({ postgres: "ok", valkey: "bad", nats: undefined }),
+  ];
+  try {
+    const html = await (await server().request("/admin/observability", { headers: { "Accept-Language": "de" } })).text();
+    const text = read(html);
+    // the side column: each service with its state in a word, one that did not answer as unavailable
+    expect(text).toMatch(/Postgres Fehlerfrei[\s\S]*Valkey Eingriff erforderlich[\s\S]*NATS nicht verfügbar/);
+    // the failing routes say why they are missing and offer a retry in their place
+    expect(text).toContain("Telemetry rollups unreadable");
+    expect(text).toContain("Erneut versuchen");
   } finally {
     for (const spy of spies) spy.mockRestore();
   }

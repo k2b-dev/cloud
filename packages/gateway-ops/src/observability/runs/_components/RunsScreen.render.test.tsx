@@ -125,6 +125,22 @@ describe("the runs list on the server", () => {
   test("a parameter the list cannot apply is named, not dropped", () => {
     expect(render("window=2d").text).toContain("window=2d");
   });
+
+  test("a kind whose store does not answer is named in red, and the other kinds still show their runs", () => {
+    const html = renderToString(() => createComponent(RunsScreenFixture, { search: "", data: "storefailed" })).replace(
+      /<svg[\s\S]*?<\/svg>/g,
+      "",
+    );
+    const body = parser.parseFromString(html, "text/html").body;
+    const notice = [...body.querySelectorAll('[data-k2-part="Notice"]')].find((element) =>
+      element.textContent?.includes("Zustellungen waren nicht lesbar"),
+    );
+    expect(notice?.getAttribute("data-tone")).toBe("bad");
+    for (const element of body.querySelectorAll("*")) element.after(" ");
+    const text = body.textContent?.replace(/\s+/g, " ") ?? "";
+    expect(text).toContain("Jobs");
+    expect(text).toContain("Workflows");
+  });
 });
 
 describe("a delivery's record", () => {

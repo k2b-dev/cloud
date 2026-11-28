@@ -157,7 +157,8 @@ const HUGE: RunRow[] = Array.from({ length: 1000 }, (_, index) => ({
   durationMs: 400 + (index % 9) * 130,
 }));
 
-export type FixtureData = "normal" | "worst" | "huge";
+/** `storefailed`: the deliveries store does not answer; the other kinds still show. */
+export type FixtureData = "normal" | "worst" | "huge" | "storefailed";
 
 const ALL: Record<RunKind, RunRow[]> = { job: JOBS, workflow: WORKFLOWS, delivery: DELIVERIES, deadLetter: DEAD_LETTERS };
 const COUNTED: Record<RunKind, boolean> = { job: true, workflow: false, delivery: true, deadLetter: true };
@@ -177,12 +178,13 @@ export const fixtureParts = (search: string, page = 1, data: FixtureData = "norm
         (!state.filters.app || row.appId === state.filters.app) &&
         (!state.search || `${row.name} ${row.detail}`.toLowerCase().includes(state.search.toLowerCase())),
     );
+    const failed = data === "storefailed" && kind === "delivery";
     return {
       kind,
-      rows: all.slice(offset, offset + limit),
+      rows: failed ? [] : all.slice(offset, offset + limit),
       total: data === "worst" ? WORST_TOTALS[kind] : COUNTED[kind] ? all.length : null,
       more: data === "worst" ? WORST_TOTALS[kind] === null || (WORST_TOTALS[kind] ?? 0) > all.length : offset + limit < all.length,
-      error: null,
+      error: failed ? "connect ECONNREFUSED 10.0.0.12:5432" : null,
     };
   });
 };

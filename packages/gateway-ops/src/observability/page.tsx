@@ -1,27 +1,22 @@
-import { listApps } from "@k2b/cloud";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { logging, type TraceWindow, trace } from "@k2b/cloud/services";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
-import { buildGatewayHealth } from "../health";
 import { gatewayOpsMessages } from "../messages";
 import { observabilityAdminNav } from "./_components/admin-nav";
 import { INFRA_HREF } from "./_components/InfrastructureTabs";
 import type { KeyCell } from "./_components/KeyCells";
-import { readAttention } from "./_components/ObservabilityArea";
+import { readAttention, readHealth } from "./_components/ObservabilityArea";
 import type { FailingRoute, OverviewApp } from "./_components/OverviewScreen";
 import OverviewScreen from "./_components/OverviewScreen.island";
 import { opsCharts } from "./_components/ops-chart";
 import { readInfraStates } from "./infrastructure/sections";
-import { buildOverviewSignals, overviewQuery, overviewVerdict } from "./overview";
+import { BAD_ROUTE_SHARE, buildOverviewSignals, overviewQuery, overviewVerdict } from "./overview";
 import { TELEMETRY_RANGES } from "./telemetry/contracts";
 import { getTelemetryOverview, getTelemetryTimeseries, listTelemetryRoutes } from "./telemetry/service";
 
 /** Routes the overview lists; Telemetry lists them all. */
 const FAILING_ROUTES = 5;
-
-/** From this share of errors a route stands in red: one request in fifty fails. */
-const BAD_ROUTE_SHARE = 0.02;
 
 /** Reports a source that could not be read instead of rendering it as zero. */
 const settled = async <T,>(load: () => Promise<T>, fallback: T): Promise<{ value: T; error: string | null }> => {
@@ -48,20 +43,20 @@ export default ssr<AuthContext>(async (c) => {
   // jobs keep no six-hour window: the next longer one
   const jobsWindow: TraceWindow = range === "6h" ? "12h" : range;
 
-  const [health, telemetry, telemetryTimeseries, failingRoutes, logSummary, logTimeseries, jobStats, apps, attention, infra] =
-    await Promise.all([
-      settled(() => buildGatewayHealth(), null),
-      settled(() => getTelemetryOverview({ range }), null),
-      settled(() => getTelemetryTimeseries({ range }), []),
-      settled(() => listTelemetryRoutes({ range }, "errorRate", { errorsOnly: true, slowOnly: false }), []),
-      settled(() => logging.summary(), null),
-      settled(() => logging.timeseries({ sinceHours: TELEMETRY_RANGES[range].hours }), []),
-      settled(() => trace.stats({ filter: { window: jobsWindow } }), null),
-      listApps().catch(() => []),
-      readAttention(),
-      // the three services' states, shared by the area's pages for 30 s, so a call does not probe them each time
-      readInfraStates(),
-    ]);
+  const [health, telemetry, telemetryTimeseries, failingRoutes, logSummary, logTimeseries, jobStats, attention, infra] = await Promise.all([
+    // the health the area shares for 30 s (its sidebar dots read the same), not a second build per load
+    settled(() => readHealth(), null),
+    settled(() => getTelemetryOverview({ range }), null),
+    settled(() => getTelemetryTimeseries({ range }), []),
+    settled(() => listTelemetryRoutes({ range }, "errorRate", { errorsOnly: true, slowOnly: false }), []),
+    settled(() => logging.summary(), null),
+    settled(() => logging.timeseries({ sinceHours: TELEMETRY_RANGES[range].hours }), []),
+    settled(() => trace.stats({ filter: { window: jobsWindow } }), null),
+    readAttention(),
+    // The three services' states: a probe of Postgres, Valkey and NATS, each bounded by the first picture's budget and
+    // shared by the area's pages for 30 s, so a call probes them at most once per 30 s per process.
+    readInfraStates(),
+  ]);
 
   const offlineApps = health.value?.apps.filter((app) => app.status !== "ok") ?? [];
   const signals = buildOverviewSignals(
@@ -146,9 +141,10 @@ export default ssr<AuthContext>(async (c) => {
     locale,
   );
 
+  // names, signs and colours of the apps come from the health snapshot the page already read
   const appOf = (id: string) => {
-    const app = apps.find((candidate) => candidate.id === id);
-    return { label: app?.name || id, icon: iconOf(app?.icon), color: app?.appearance?.accent };
+    const app = health.value?.apps.find((candidate) => candidate.id === id);
+    return { label: app?.name || id, icon: iconOf(app?.icon), color: app?.accent };
   };
   const rate = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 });
   const routes = {
@@ -173,7 +169,7 @@ export default ssr<AuthContext>(async (c) => {
         id: app.id,
         label: app.name,
         icon: iconOf(app.icon),
-        color: appOf(app.id).color,
+        color: app.accent,
         status: app.status === "ok" ? "ok" : app.online ? "warn" : "bad",
       }))
     : null;

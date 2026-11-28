@@ -41,7 +41,7 @@ export default function RunRecordPane(props: Props) {
         <Bar
           // k2b-ui gap: tinted object head (look.md rule 5); until it lands the run names itself and its kind
           start={<RecordHead name={title()} kinds={[props.kindLabel]} />}
-          end={<Button variant="ghost" icon="x" label={t().closeRecord} href={props.closeHref} />}
+          end={<Button variant="ghost" icon="x" label={t().closeRecord} href={props.closeHref} closes />}
         />
       }
     >

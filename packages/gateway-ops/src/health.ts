@@ -13,6 +13,8 @@ export type GatewayHealthApp = {
   id: string;
   name: string;
   icon: string;
+  /** The app's own colour from its registration, for its mark; absent when it declares none. */
+  accent?: string;
   status: GatewayHealthStatus;
   online: boolean;
   healthy: boolean;
@@ -117,6 +119,7 @@ export const buildGatewayHealth = async (scopeAppIds?: readonly string[]): Promi
       id: app.id,
       name: app.name,
       icon: app.icon,
+      accent: app.appearance?.accent,
       status,
       online: app.isOnline,
       healthy: status === "ok",
