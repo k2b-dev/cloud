@@ -107,10 +107,22 @@ test("an island with a Workspace, a Nav and a Menu loads no tree and no menu pan
   const modules = await islandModules(lean);
   const total = Object.values(modules).reduce((sum, bytes) => sum + bytes, 0);
   console.info(`Workspace, Nav and Menu: ${total} bytes of packages/ui/src (budget ${leanBudget})`);
-  expect(Object.keys(modules).filter((module) => ["v2/nav-tree.tsx", "v2/menu-panel.tsx", "v2/head-search.tsx"].includes(module))).toEqual(
-    [],
-  );
+  expect(
+    Object.keys(modules).filter((module) =>
+      ["v2/nav-tree.tsx", "v2/menu-panel.tsx", "v2/head-search.tsx", "v2/accent.ts"].includes(module),
+    ),
+  ).toEqual([]);
   expect(total).toBeLessThanOrEqual(leanBudget);
+}, 60_000);
+
+// A page's own accent (its contrast work: the primary's ink, the colour as text, a bar's quiet tone, the primary's
+// edge) comes with `pageAccent`; `Workspace accent` only sets the values it made. Worked out in the Workspace itself it
+// cost every island with a Workspace 1.1 KB (#4567).
+test("pageAccent brings the page accent along", async () => {
+  const modules = await islandModules(
+    `import { Menu, Nav, pageAccent, Workspace } from ${v2Index};\nconsole.log(Menu, Nav, pageAccent, Workspace);\n`,
+  );
+  expect(modules["v2/accent.ts"]).toBeGreaterThan(800);
 }, 60_000);
 
 // A head's search (`HeadSearch`: its symbol, its overlay, "/", its words and its held menu) comes with the part that

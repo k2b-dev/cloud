@@ -1,5 +1,5 @@
 import { render } from "solid-js/web";
-import { Band, Bar, Button, Inline, Pane, RangeBar, RecordHead, Row, Section, Table, Text, Workspace } from "../src/v2";
+import { Band, Bar, Button, Inline, Pane, pageAccent, RangeBar, RecordHead, Row, Section, Table, Text, Workspace } from "../src/v2";
 
 // A page with an accent of its own, as a visitor page of a place shows it: its colour (`window.__k2Accent`, set by the
 // test before the script) on the one primary action, on the state in the hero (a band in its tint, as without a
@@ -35,7 +35,7 @@ if (!root) throw new Error("accent: #root is missing");
 render(
   () => (
     <Workspace
-      accent={window.__k2Accent}
+      accent={pageAccent(window.__k2Accent)}
       head={
         <Bar
           start={<RecordHead name="Lindencafé am Markt" avatar={{ name: "Lindencafé am Markt", color: window.__k2Accent }} />}
