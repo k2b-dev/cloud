@@ -1,4 +1,3 @@
-import { prompts, toast } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { ShiftAssignment } from "../../../contracts";
@@ -10,7 +9,7 @@ import { readError } from "./utils";
  * Running actions by key, so an action disables only the controls that would start the same conflicting
  * operation (the same slot or the same sign-up) and shows progress on its own button.
  */
-export const createActionKeys = () => {
+export const createActionKeys = (onError: (message: string) => void) => {
   const [keys, setKeys] = createSignal<ReadonlySet<string>>(new Set());
   const controllers = new Set<AbortController>();
   const pending = (key: string) => keys().has(key);
@@ -24,7 +23,7 @@ export const createActionKeys = () => {
       await action(controller.signal);
       return !controller.signal.aborted;
     } catch (error) {
-      if (!controller.signal.aborted) prompts.error(error instanceof Error ? error.message : String(error));
+      if (!controller.signal.aborted) onError(error instanceof Error ? error.message : String(error));
       return false;
     } finally {
       controllers.delete(controller);
@@ -59,9 +58,9 @@ export const takeShift = async (
 };
 
 /** Says how many shifts a Take added, and that nothing changed when it added none. */
-export const announceTaken = (added: number, t: VenueMessages) => {
-  if (added === 0) toast(t.noShiftsTaken);
-  else toast.success(added === 1 ? t.shiftTaken : t.shiftsTaken({ count: added }));
+export const announceTaken = (added: number, t: VenueMessages, notify: (text: string, status?: "ok") => void) => {
+  if (added === 0) notify(t.noShiftsTaken);
+  else notify(added === 1 ? t.shiftTaken : t.shiftsTaken({ count: added }), "ok");
 };
 
 /** Deletes a sign-up: the viewer's own, or anyone's for admins. The server enforces the same rule. */
@@ -77,22 +76,25 @@ export const cancelAssignment = async (
   if (!res.ok) throw new Error(await readError(res, failure));
 };
 
-/** Leaving is an ordinary action; only its confirmation carries the danger tone. */
-export const confirmLeave = (assignment: ShiftAssignment, timeZone: string, locale: string, t: VenueMessages) =>
-  prompts.confirm(
-    t.leaveShiftQuestion({
-      title: assignment.templateTitle ?? t.freeTime,
-      date: formatVenueSpan(assignment.startsAt, assignment.endsAt, timeZone, locale),
-    }),
-    { title: t.leaveShift, variant: "danger", confirmText: t.leave },
-  );
+/** The question before leaving one's own sign-up. */
+export const leaveQuestion = (assignment: ShiftAssignment, timeZone: string, locale: string, t: VenueMessages) => ({
+  title: t.leaveShift,
+  description: t.leaveShiftQuestion({
+    title: assignment.templateTitle ?? t.freeTime,
+    date: formatVenueSpan(assignment.startsAt, assignment.endsAt, timeZone, locale),
+  }),
+  confirm: t.leave,
+  cancel: t.cancel,
+});
 
-export const confirmRemove = (assignment: ShiftAssignment, timeZone: string, locale: string, t: VenueMessages) =>
-  prompts.confirm(
-    t.removeFromShiftQuestion({
-      name: assignment.userDisplayName,
-      title: assignment.templateTitle ?? t.freeTime,
-      date: formatVenueSpan(assignment.startsAt, assignment.endsAt, timeZone, locale),
-    }),
-    { title: t.removeFromShift, variant: "danger", confirmText: t.remove },
-  );
+/** The question before an admin removes someone from a shift. */
+export const removeQuestion = (assignment: ShiftAssignment, timeZone: string, locale: string, t: VenueMessages) => ({
+  title: t.removeFromShift,
+  description: t.removeFromShiftQuestion({
+    name: assignment.userDisplayName,
+    title: assignment.templateTitle ?? t.freeTime,
+    date: formatVenueSpan(assignment.startsAt, assignment.endsAt, timeZone, locale),
+  }),
+  confirm: t.remove,
+  cancel: t.cancel,
+});

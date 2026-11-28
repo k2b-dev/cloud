@@ -1,7 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import type { Venue, VenueDashboard } from "../../contracts";
-import VenueWorkspace from "./VenueWorkspace.island";
+import VenueScreen from "../screens/VenueScreen";
 
 const venue: Venue = {
   id: "Cafe01",
@@ -41,7 +41,7 @@ const dashboard: VenueDashboard = {
   myUpcomingShifts: [],
   myShiftCount: 0,
   sections: [],
-  feedback: { count: 7, averageRating: 4.07, commentCount: 0, buckets },
+  feedback: { count: 7, averageRating: 4.07, commentCount: 0, lowCount: 0, buckets },
   feedbackEntries: [],
   feedbackEntriesPage: null,
 };
@@ -51,7 +51,7 @@ globalThis.fetch = (async () => Response.json(dashboard)) as unknown as typeof f
 render(
   () => (
     <LocaleProvider locale={document.documentElement.lang}>
-      <VenueWorkspace
+      <VenueScreen
         dashboard={dashboard}
         dashboardSource={{ venueId: "Cafe01", query: {} }}
         userId="user-1"

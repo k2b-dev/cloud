@@ -6,7 +6,7 @@ description: Core concepts, setup path, and public page basics.
 order: 100
 ---
 
-Venues manages staffed places that need public opening status, shift signup, public page content, and visitor feedback. The Venues overview lists every venue you can access and offers templates or a blank venue before you select one.
+Venues manages staffed places that need public opening status, shift signup, public page content, and visitor feedback. The Venues overview shows your next shifts of the coming 14 days across all your venues, by day and with who works along; select one to open it in its venue's schedule. Below, **Venues** lists every venue you can access, 50 to a page, with whether it is open now by its opening hours and exceptions. The search in the head looks through all of them.
 
 ## Overview {icon="layout-grid"}
 
@@ -20,7 +20,7 @@ Venues manages staffed places that need public opening status, shift signup, pub
 ## First useful path {icon="route"}
 
 :::reference
-- **Create or use a template:** Before you have a venue, the overview offers the starter templates and **Start blank** directly; later, **New venue** offers the same. You only enter a name. The slug follows the name, and you can change it under **Advanced**. When another venue already uses the slug, the field says so and keeps everything you entered.
+- **Create or use a template:** **New venue** at the head of **Venues** opens the form; before you have a venue, the overview offers it in the middle of the page. You enter a name and, where templates exist, choose one under **Template** (**Blank venue** by default). The slug follows the name until you change it. When another venue already uses the slug, the field says so and keeps everything you entered.
 - **Follow the setup steps:** Until a venue has shifts, its schedule shows admins **Set up this venue**: set opening hours or shifts, add shifts when staffing opens the venue, and give your team access. Each step opens the right settings tab. The list goes away once the venue has shifts or every step is done. Everyone else reads **No shifts are planned here yet.**
 - **Find your way around:** The sidebar has the same entries however much content the venue has: **Take shift** for staff, **Schedule**, **My shifts**, **Feedback** for staff and admins, **Public page**, and, for admins only, **Venue settings** at the bottom.
 - **Configure the schedule:** In the settings, which only admins open, **General** holds the public page switch, how staff sign up, the time zone, and the public opening logic. **Schedule** holds the weekly opening hours, opening-hour exceptions, and shifts. A new weekly shift can cover several weekdays at once and becomes one shift per weekday; a one-off shift covers one date.

@@ -1,21 +1,19 @@
 import type { AuthContext } from "@k2b/cloud/server";
-import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import { venueMessages } from "../messages";
-import { venueService } from "../service";
-import VenueOverview from "./_components/VenueOverview.island";
+import { loadVenueOverview } from "./page-data";
+import VenueOverviewScreen from "./screens/VenueOverviewScreen.island";
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = venueMessages.resolve([getLocale(c)]);
-  const venues = await venueService.venues.list(expectUserBackedActor(c));
-  const publicVenues = await venueService.publicResources.projectVenues(venues);
-  const templates = venueService.venueTemplates.list(getLocale(c));
-  const initialQuery = (c.req.query("q") ?? "").trim();
-
+  const data = await loadVenueOverview(c);
+  if (data.kind !== "ok") return data.kind === "redirect" ? c.redirect(data.to) : ssr.error(c, data.status);
+  const props = data.props;
   return () => (
-    <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.appName }]}>
-      <VenueOverview venues={publicVenues} templates={templates} initialQuery={initialQuery} />
+    <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.appName }]}>
+      <VenueOverviewScreen {...props} />
     </Layout>
   );
 });

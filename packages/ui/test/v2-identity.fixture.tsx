@@ -1,12 +1,16 @@
 import { Avatar, Cells, Chip, Digest, List, Mark, Nav, Pane, Row, Section, Table, Text, Tiles, Workspace } from "../src/v2";
 
-// teams of 4, 8 and 30 people in a column of 90 px: the stack shows what it holds whole and counts the rest
+// teams of 4, 8 and 30 people in a column of 90 px: the stack shows what it holds whole and counts the rest; teams of
+// 2 and 3 show everyone
 const names = ["Felix Thal", "Jonas Kern", "Mira Solberg", "Tom Oswald", "Sami Yilmaz", "Lena Hartwig", "Ada Renz", "Jana Berger"];
 const crew = (count: number) => Array.from({ length: count }, (_, index) => ({ name: `${names[index % names.length]} ${index + 1}` }));
 export const teams = [
   { name: "Montage", people: crew(4), orders: 12 },
   { name: "Werkstatt", people: crew(8), orders: 41 },
   { name: "Alle Monteure und Aushilfen der Saison", people: crew(30), orders: 1284 },
+  // everyone shows: the stack ends at its last face, without room for a count it does not need (W3)
+  { name: "Büro", people: [{ name: "Charles Augustus Montgomery III" }, { name: "🦊 Fuchs Bau" }], orders: 3 },
+  { name: "Lager", people: crew(3), orders: 7 },
 ];
 
 // Things with a face and people beside what they did: marks by place (sidebar, rows of one and two lines, tiles, a
@@ -104,7 +108,27 @@ export const IdentityScreen = (props: { onChoice?: (name: string) => void; onCre
           <Row mark={{ icon: "photo", color: "#be185d", image: photo }} lines={["Ansicht Front Eiche.jpg", "4,2 MB · heute 09:42"]} />
           <Row mark={{ icon: "photo", color: "#be185d", image: broken }} lines={["Bestand Küche vorher.jpg", "5,6 MB · gestern"]} />
           <Row mark={{ icon: "file-type-pdf", color: "#dc2626", kind: "PDF", label: "PDF" }} lines={["Angebot 2026-118.pdf", "312 KB"]} />
+          {/* a person among the files (who shares them) starts on their edge */}
+          <Row avatar={{ name: "Jana Berger" }} lines={["Jana Berger", "teilt 4 Dateien"]} />
         </List>
+      </Section>
+      {/* who or what a thing is, without a picture: a data list and a table of bases keep the mark's 24 */}
+      <Section title="Bases" count={2}>
+        <List label="Bases">
+          <Row mark={{ ...table }} lines={["Aufträge"]} time="vor 2 Min" />
+          <Row mark={{ ...form }} lines={["Auftrag annehmen", "Formular · 12 Felder"]} />
+        </List>
+        <Table
+          label="Tabellen"
+          rows={[
+            { key: "a", name: "Aufträge", rows: 318 },
+            { key: "k", name: "Kunden", rows: 42 },
+          ]}
+          columns={[
+            { title: "Tabelle", width: { min: 140, default: 200 }, mark: () => table, cell: (row) => row.name },
+            { title: "Einträge", width: { min: 80, default: 90 }, align: "end", cell: (row) => String(row.rows) },
+          ]}
+        />
       </Section>
       <Section title="Aktivität">
         <Digest

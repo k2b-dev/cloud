@@ -30,6 +30,40 @@ export const VenueSchema = z.object({
 });
 export type Venue = z.infer<typeof VenueSchema>;
 
+/** How a venue stands now by its regular hours and date exceptions, as instants; the screen words it. */
+export type VenueOpenState =
+  | { kind: "open"; until: string }
+  | { kind: "opens"; at: string }
+  | { kind: "closed" }
+  /** Opens only while its shifts are staffed: its hours say nothing. */
+  | { kind: "staffed" };
+
+/** The sign of a venue beside a shift or in a list: its public id, name, symbol, colour and time zone. */
+export type VenueSign = { id: string; name: string; icon: string; accentColor: string; timezone: string };
+
+/** One of a person's next shifts, across their venues, with the people who work at the same time. */
+export type UpcomingShift = {
+  /** The sign-up's public id. */
+  id: string;
+  venue: VenueSign;
+  startsAt: string;
+  endsAt: string;
+  title: string | null;
+  /** Up to four of the others in it; `count` counts all of them. */
+  coworkers: { names: string[]; count: number };
+};
+
+/**
+ * A person's next shifts: the first ones, how many there are in the window at how many venues, and the venue of the
+ * first one past them (where the way to the rest leads), if any.
+ */
+export type UpcomingShifts = {
+  entries: UpcomingShift[];
+  total: number;
+  venues: number;
+  next: { venueId: string; venueName: string } | null;
+};
+
 /** A venue slug: 2 to 80 lowercase letters or digits, with single dashes between them. */
 export const VENUE_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const VENUE_SLUG_MIN_LENGTH = 2;
@@ -375,9 +409,14 @@ const FeedbackSummarySchema = z.object({
   count: z.number().int().min(0),
   averageRating: z.number().nullable(),
   commentCount: z.number().int().min(0),
+  /** Ratings of FEEDBACK_LOW_RATING stars or fewer in the window: the ones worth a look. */
+  lowCount: z.number().int().min(0),
   buckets: z.array(z.object({ date: DateKeySchema, count: z.number().int(), averageRating: z.number().nullable() })),
 });
 export type FeedbackSummary = z.infer<typeof FeedbackSummarySchema>;
+
+/** A rating of this many stars or fewer is a bad one: it carries colour and stands as an exception. */
+export const FEEDBACK_LOW_RATING = 2;
 
 /** Feedback entries per page in the workspace table and the dashboard API. */
 export const FEEDBACK_PAGE_SIZE = 50;

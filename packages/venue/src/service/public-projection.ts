@@ -11,23 +11,23 @@ import type {
   VenueDashboard,
 } from "../contracts";
 import type { InternalVenueDashboard, UpcomingSlotSummary } from "../service";
-import { publicIds, requirePublicId } from "./public-resources";
+import { batchedPublicIds, type PublicIdLookup, publicIds, requirePublicId } from "./public-resources";
 
-export const projectVenues = async <T extends Venue>(items: T[]): Promise<T[]> => {
-  const venues = await publicIds(
+export const projectVenues = async <T extends Venue>(items: T[], lookup: PublicIdLookup = publicIds): Promise<T[]> => {
+  const venues = await lookup(
     "venues",
     items.map((item) => item.id),
   );
   return items.map((item) => ({ ...item, id: requirePublicId(venues, item.id) }));
 };
 
-export const projectOpeningRules = async <T extends OpeningRule>(items: T[]): Promise<T[]> => {
+export const projectOpeningRules = async <T extends OpeningRule>(items: T[], lookup: PublicIdLookup = publicIds): Promise<T[]> => {
   const [rules, venues] = await Promise.all([
-    publicIds(
+    lookup(
       "openingRules",
       items.map((item) => item.id),
     ),
-    publicIds(
+    lookup(
       "venues",
       items.map((item) => item.venueId),
     ),
@@ -35,13 +35,13 @@ export const projectOpeningRules = async <T extends OpeningRule>(items: T[]): Pr
   return items.map((item) => ({ ...item, id: requirePublicId(rules, item.id), venueId: requirePublicId(venues, item.venueId) }));
 };
 
-export const projectOverrides = async <T extends DateOverride>(items: T[]): Promise<T[]> => {
+export const projectOverrides = async <T extends DateOverride>(items: T[], lookup: PublicIdLookup = publicIds): Promise<T[]> => {
   const [overrides, venues] = await Promise.all([
-    publicIds(
+    lookup(
       "overrides",
       items.map((item) => item.id),
     ),
-    publicIds(
+    lookup(
       "venues",
       items.map((item) => item.venueId),
     ),
@@ -49,13 +49,13 @@ export const projectOverrides = async <T extends DateOverride>(items: T[]): Prom
   return items.map((item) => ({ ...item, id: requirePublicId(overrides, item.id), venueId: requirePublicId(venues, item.venueId) }));
 };
 
-export const projectTemplates = async <T extends ShiftTemplate>(items: T[]): Promise<T[]> => {
+export const projectTemplates = async <T extends ShiftTemplate>(items: T[], lookup: PublicIdLookup = publicIds): Promise<T[]> => {
   const [templates, venues] = await Promise.all([
-    publicIds(
+    lookup(
       "templates",
       items.map((item) => item.id),
     ),
-    publicIds(
+    lookup(
       "venues",
       items.map((item) => item.venueId),
     ),
@@ -63,17 +63,17 @@ export const projectTemplates = async <T extends ShiftTemplate>(items: T[]): Pro
   return items.map((item) => ({ ...item, id: requirePublicId(templates, item.id), venueId: requirePublicId(venues, item.venueId) }));
 };
 
-export const projectAssignments = async <T extends ShiftAssignment>(items: T[]): Promise<T[]> => {
+export const projectAssignments = async <T extends ShiftAssignment>(items: T[], lookup: PublicIdLookup = publicIds): Promise<T[]> => {
   const [assignments, venues, templates] = await Promise.all([
-    publicIds(
+    lookup(
       "assignments",
       items.map((item) => item.id),
     ),
-    publicIds(
+    lookup(
       "venues",
       items.map((item) => item.venueId),
     ),
-    publicIds(
+    lookup(
       "templates",
       items.map((item) => item.templateId),
     ),
@@ -86,13 +86,13 @@ export const projectAssignments = async <T extends ShiftAssignment>(items: T[]):
   }));
 };
 
-export const projectSections = async <T extends PublicSection>(items: T[]): Promise<T[]> => {
+export const projectSections = async <T extends PublicSection>(items: T[], lookup: PublicIdLookup = publicIds): Promise<T[]> => {
   const [sections, venues] = await Promise.all([
-    publicIds(
+    lookup(
       "sections",
       items.map((item) => item.id),
     ),
-    publicIds(
+    lookup(
       "venues",
       items.map((item) => item.venueId),
     ),
@@ -100,18 +100,27 @@ export const projectSections = async <T extends PublicSection>(items: T[]): Prom
   return items.map((item) => ({ ...item, id: requirePublicId(sections, item.id), venueId: requirePublicId(venues, item.venueId) }));
 };
 
-export const projectFeedbackEntries = async <T extends FeedbackEntry>(items: T[]): Promise<T[]> => {
-  const venues = await publicIds(
+export const projectFeedbackEntries = async <T extends FeedbackEntry>(items: T[], lookup: PublicIdLookup = publicIds): Promise<T[]> => {
+  const venues = await lookup(
     "venues",
     items.map((item) => item.venueId),
   );
   return items.map((item) => ({ ...item, venueId: requirePublicId(venues, item.venueId) }));
 };
 
-export const projectSlots = async (items: (UpcomingSlot & { key: string })[]): Promise<UpcomingSlot[]> => {
+export const projectSlots = async (
+  items: (UpcomingSlot & { key: string })[],
+  lookup: PublicIdLookup = publicIds,
+): Promise<UpcomingSlot[]> => {
   const [templates, assignments] = await Promise.all([
-    projectTemplates(items.map((item) => item.template)),
-    projectAssignments(items.flatMap((item) => item.assignments)),
+    projectTemplates(
+      items.map((item) => item.template),
+      lookup,
+    ),
+    projectAssignments(
+      items.flatMap((item) => item.assignments),
+      lookup,
+    ),
   ]);
   let assignmentIndex = 0;
   return items.map((item, index) => {
@@ -140,15 +149,19 @@ export const projectSlotSummaries = async (items: UpcomingSlotSummary[]): Promis
 };
 
 export const projectPublicStatus = async (value: PublicStatus): Promise<PublicStatus> => {
+  // the parts read their public ids together: one statement per table
+  const lookup = batchedPublicIds();
   const [venues, openingRules, sections] = await Promise.all([
-    projectVenues([value.venue]),
-    projectOpeningRules(value.openingRules),
-    projectSections(value.sections),
+    projectVenues([value.venue], lookup),
+    projectOpeningRules(value.openingRules, lookup),
+    projectSections(value.sections, lookup),
   ]);
   return { ...value, venue: venues[0]!, openingRules, sections };
 };
 
 export const projectDashboard = async (value: InternalVenueDashboard): Promise<VenueDashboard> => {
+  // a dashboard projects ten kinds of parts; they read their public ids together, one statement per table
+  const lookup = batchedPublicIds();
   const [
     venues,
     openingRules,
@@ -162,17 +175,17 @@ export const projectDashboard = async (value: InternalVenueDashboard): Promise<V
     sections,
     feedbackEntries,
   ] = await Promise.all([
-    projectVenues([value.venue]),
-    projectOpeningRules(value.openingRules),
-    projectOverrides(value.overrides),
-    projectTemplates(value.templates),
-    projectSlots(value.slots),
-    projectAssignments(value.otherAssignments),
-    publicIds("templates", [value.outlook.nextGap?.templateId]),
-    projectAssignments(value.assignments),
-    projectAssignments(value.myUpcomingShifts),
-    projectSections(value.sections),
-    projectFeedbackEntries(value.feedbackEntries),
+    projectVenues([value.venue], lookup),
+    projectOpeningRules(value.openingRules, lookup),
+    projectOverrides(value.overrides, lookup),
+    projectTemplates(value.templates, lookup),
+    projectSlots(value.slots, lookup),
+    projectAssignments(value.otherAssignments, lookup),
+    lookup("templates", [value.outlook.nextGap?.templateId]),
+    projectAssignments(value.assignments, lookup),
+    projectAssignments(value.myUpcomingShifts, lookup),
+    projectSections(value.sections, lookup),
+    projectFeedbackEntries(value.feedbackEntries, lookup),
   ]);
   const nextGap = value.outlook.nextGap;
   return {

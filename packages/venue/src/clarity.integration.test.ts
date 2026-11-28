@@ -222,7 +222,8 @@ suite("Venue sections and feedback say what they do", () => {
       );
 
     const first = await dashboard("");
-    expect(first.feedback).toMatchObject({ count: 120, commentCount: 40 });
+    // ratings cycle through 1–5 stars, so two in five are low (≤ 2), and the old 1-star rating stays outside
+    expect(first.feedback).toMatchObject({ count: 120, commentCount: 40, lowCount: 48 });
     expect(first.feedback!.buckets.reduce((sum, bucket) => sum + bucket.count, 0)).toBe(120);
     expect(first.feedbackEntriesPage).toEqual({ page: 1, pageSize: 50, total: 120 });
     expect(first.feedbackEntries).toHaveLength(50);

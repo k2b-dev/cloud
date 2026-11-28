@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { hoverInPlace, launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser } from "../../../../ui/test/browser";
 
 type Browser = Awaited<ReturnType<typeof launchBrowser>>;
 type Page = Awaited<ReturnType<Browser["newPage"]>>;
@@ -49,6 +49,8 @@ beforeAll(async () => {
     "/harness.js": ["text/javascript; charset=utf-8", await build.outputs[0]!.text()],
     "/app.css": ["text/css", css.join("\n")],
     "/styles.css": ["text/css", readFileSync(`${ui}dist/styles.css`, "utf8")],
+    // The feedback view is a v2 screen: its frame and canvases take their size from v2.css.
+    "/v2.css": ["text/css", readFileSync(`${ui}dist/v2.css`, "utf8")],
   };
   browser = await launchBrowser();
 }, 60_000);
@@ -63,7 +65,7 @@ const open = async (page: Page, lang: "de" | "en", search = "") => {
     if (path === "/")
       return route.fulfill({
         contentType: "text/html",
-        body: `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`,
+        body: `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/v2.css"><style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head><body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`,
       });
     const asset = assets[path];
     return asset ? route.fulfill({ contentType: asset[0], body: asset[1] }) : route.fulfill({ status: 404 });
@@ -88,7 +90,7 @@ const boxes = (page: Page) =>
     }),
   );
 
-test("rating line and ratings bars name the day, the rating and the count on keyboard and hover", async () => {
+test("the rating line names the day, the rating and the count on keyboard", async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 1400 } });
   try {
     await open(page, "de");
@@ -108,11 +110,7 @@ test("rating line and ratings bars name the day, the rating and the count on key
     expect(text).toContain("Durchschnittliche Bewertung: 3,0/5");
     await page.keyboard.press("Escape");
 
-    const bar = '[data-chart-kind="bar"]';
-    await hoverInPlace(page.locator(`${bar} .stdlib-chart-bar`).last());
-    text = await tooltipText(page, bar);
-    expect(text).toContain("28. Sept.");
-    expect(text).toContain("Bewertungen: 4");
+    expect(text).toContain("Bewertungen: 2");
     // Inspection draws over the plot; the charts keep their place and size.
     expect(await boxes(page)).toEqual(before);
   } finally {
@@ -135,14 +133,15 @@ test("a single day's point names its day and rating like the line", async () => 
   }
 }, 30_000);
 
-test("a tap on a phone opens the bar's tooltip with its day and count", async () => {
+test("a tap on a phone opens the rating's tooltip with its day, rating and count", async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 1400 }, hasTouch: true, isMobile: true, reducedMotion: "reduce" });
   try {
     await open(page, "en");
-    const bar = '[data-chart-kind="bar"]';
-    await page.locator(`${bar} .stdlib-chart-bar`).first().tap();
-    const text = await tooltipText(page, bar);
+    const line = '[data-chart-kind="line"]';
+    await page.locator(`${line} [data-chart-datum]`).first().tap();
+    const text = await tooltipText(page, line);
     expect(text).toContain("Sep 26");
+    expect(text).toContain("Average rating: 4.3/5");
     expect(text).toContain("Ratings: 1");
   } finally {
     await page.close();
