@@ -218,6 +218,17 @@ what is taller (its history) scrolls inside it, the composer stays in sight.
 No absolute positioning is needed. A fill `Canvas` holds one child, the
 drawing: a second child stands in a row of its own under it and is cut away.
 
+### Cover
+
+A picture across its place, such as a place's banner: `src`, `alt` (what
+it shows; `""` when it is decoration above the place's name), `slim`
+(above a task such as a form: 72 to 88 px instead of 120 to 180 px).
+Directly in a `Pane`, at the top of a page or a detail, from edge to edge,
+`object-fit: cover`. The height follows the place's width by CSS alone (a
+third, 120 to 180 px; slim a sixth), so the server's page holds the room
+and nothing moves when the picture comes; a quiet tint fills it while it
+loads and when it fails. No `src`: no cover, never an empty band.
+
 ## Structure
 
 ### Section
@@ -406,7 +417,7 @@ lines instead of cutting a thing. In a table cell its `Text` gives way to
 the marks beside it (a symbol, an `Avatar`, a `Chip` keep their size): the
 name wraps in a small table and ends with "…" in one with column widths.
 
-### Icon, Avatar, Chip, Progress, Ticks, Heat
+### Icon, Avatar, Chip, Progress, Ticks, RangeBar, Heat
 
 - `Icon`: `name`, `label` (without one it is decoration), `tone`.
 - `Avatar`: a `Person`; the place sets the size. With `image` the picture
@@ -456,6 +467,11 @@ name wraps in a small table and ends with "…" in one with column widths.
   keeps the strip at its start). Ok is soft, a failure red and taller, a
   slot without data a low stub; 140 × 20 px in a table cell. The one column
   of a list that shows its data over time; never decoration.
+- `RangeBar`: `from` and `to`, or `ranges` (several on one track, such as
+  opening hours with a break; `[]` for a closed day), on the `domain` the
+  rows of a list share; `stops` (colours by meaning along the scale),
+  `label` (every range in words: "Di.: 08:00 bis 12:00 und 14:00 bis
+  18:00") or `decorative` when the values stand beside it as text.
 - `Heat`: `days` (`{ date, count }` per day, at most the 53 weeks shown, from
   one bounded aggregate), `today` (a date key from the server: the last day,
   marked), `label` ("Mails pro Tag"), `unit` (a count in the app's words),
@@ -572,6 +588,12 @@ name wraps in a small table and ends with "…" in one with column widths.
   `label`, `onChange`, `disabled` (every option dimmed). With a `label` and no `Field` around it, it shows
   that label as a field of its own; inside a `Field` the field's label is
   its question.
+- `Rating`: stars from 1 to 5 as one radio group: `value`, `onChange`,
+  `name`, `label` (as for `Choice`), `disabled`. One Tab stop, arrows move
+  and choose, Space and Enter choose; each star is named "3 von 5
+  Sternen", 56 px high and at least 44 px wide. `required`, hint and error
+  come from its `Field`. `readOnly` with `value` (an average such as 4.2
+  fills part of a star) shows a given rating as small stars in a line.
 
 ## Components
 

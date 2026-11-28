@@ -362,3 +362,34 @@ describe("upcomingPublicExceptions", () => {
     ]);
   });
 });
+
+describe("buildPublicAvailability now", () => {
+  test("open: until the end of the running window, where touching windows read as one", () => {
+    const { now } = project({
+      openingRules: [
+        openingRule(),
+        openingRule({ id: "rule-2", startTime: "17:00", endTime: "20:00" }),
+        openingRule({ id: "rule-3", weekday: 2, startTime: "10:00", endTime: "12:00" }),
+      ],
+    });
+    expect(now).toMatchObject({ date: "2026-07-13", state: "open", until: "2026-07-13T18:00:00.000Z", exception: null });
+    expect(now.today).toEqual([{ startsAt: "2026-07-13T07:00:00.000Z", endsAt: "2026-07-13T18:00:00.000Z" }]);
+    expect(now.tomorrow).toEqual([{ startsAt: "2026-07-14T08:00:00.000Z", endsAt: "2026-07-14T10:00:00.000Z" }]);
+    expect(now.next).toEqual(now.tomorrow[0]!);
+  });
+
+  test("later today, and closed once the last window of the day has ended", () => {
+    const rules = [openingRule({ startTime: "12:00", endTime: "14:00" }), openingRule({ id: "rule-2", weekday: 4 })];
+    const later = project({ openingRules: rules }).now;
+    expect([later.state, later.until, later.today.map((window) => window.startsAt)]).toEqual(["later", null, ["2026-07-13T10:00:00.000Z"]]);
+    const closed = project({ openingRules: rules, now: new Date("2026-07-13T15:00:00.000Z") }).now;
+    expect([closed.state, closed.today, closed.tomorrow]).toEqual(["closed", [], []]);
+    expect(closed.next?.startsAt).toBe("2026-07-16T07:00:00.000Z");
+  });
+
+  test("a closure today keeps the regular hours it replaces", () => {
+    const { now } = project({ openingRules: [openingRule()], overrides: [closedOverride()] });
+    expect([now.state, now.today, now.exception?.note]).toEqual(["closed", [], "Holiday"]);
+    expect(now.regular).toEqual([{ startsAt: "2026-07-13T07:00:00.000Z", endsAt: "2026-07-13T15:00:00.000Z" }]);
+  });
+});

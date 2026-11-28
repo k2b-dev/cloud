@@ -119,6 +119,7 @@ const status = (overrides: Partial<PublicStatus> = {}): PublicStatus => ({
     { date: "2099-10-03", kind: "closed", startTime: null, endTime: null, note: "Public holiday" },
     { date: "2099-10-17", kind: "open", startTime: "18:00", endTime: "23:00", note: "Long night" },
   ],
+  now: { date: "2099-10-01", state: "open", until: null, today: [], tomorrow: [], next: null, exception: null, regular: [] },
   openingRules: everyDay,
   sections: [notice, menu],
   ...overrides,
@@ -134,8 +135,6 @@ const renderPage = (value: PublicStatus, displayHeight: "scroll" | "full" = "scr
       refresh: false,
     }),
   );
-
-const withoutHydrationKeys = (html: string) => html.replace(/ data-hk="[^"]*"/g, "");
 
 const text = (html: string) =>
   html
@@ -207,106 +206,6 @@ describe("One public section renderer", () => {
 
   test("renders Markdown", () => {
     expect(renderSection(markdown)).toContain("<strong>coffee</strong>");
-  });
-
-  test("is exactly what the public page shows for the section", () => {
-    const notices = (html: string) => (html.match(/<article[^>]*k2b-notice-card[\s\S]*?<\/article>/g) ?? []).map(withoutHydrationKeys);
-    const [view] = notices(renderSection(notice));
-    expect(view).toBeDefined();
-    expect(notices(renderPage(status({ sections: [notice] })))).toEqual([view!]);
-  });
-});
-
-describe("Venue public page", () => {
-  test("reads status, hours, changed hours, content, and feedback in that order", () => {
-    const html = renderPage(status());
-    const order = ["status", "facts", "sections", "feedback"].map((block) => html.indexOf(`data-public-block="${block}"`));
-    expect(order.every((index) => index >= 0)).toBeTrue();
-    expect(order).toEqual(order.toSorted((a, b) => a - b));
-
-    const facts = text(html.slice(order[1], order[2]));
-    expect(facts.indexOf("Regular hours")).toBeLessThan(facts.indexOf("Changed hours"));
-    expect(facts).toContain("Sat, Oct 3 Closed · Public holiday");
-    expect(facts).toContain("Sat, Oct 17 Special opening 18:00–23:00 · Long night");
-    // This week's hours start open and fold away natively.
-    expect(html).toMatch(/<details[^>]*class="k2b-disclosure public-hours[^"]*"[^>]*open/);
-    expect(facts).toContain("Monday 11:00–18:00");
-  });
-
-  test("formats every time range with an en dash and every date without a zero-padded day", () => {
-    const html = text(
-      renderPage(
-        status({
-          venue: { ...venue, openMode: "combined" },
-          upcomingOpenings: [opening(3)],
-          // Monday stays closed; Tuesday has two windows.
-          openingRules: [
-            ...everyDay.filter((rule) => rule.weekday !== 1),
-            { ...everyDay[2]!, id: "Rule2b", startTime: "19:00", endTime: "22:00", note: "Bar" },
-          ],
-        }),
-      ),
-    );
-    expect(html).toContain("Monday Closed");
-    expect(html).toContain("Tuesday 11:00–18:00 & 19:00–22:00 (Bar)");
-    expect(html).toContain("Sat, Oct 3 17:00–21:00");
-    expect(html).not.toMatch(/\d{2}:\d{2}-\d{2}:\d{2}/);
-
-    const german = text(renderPage(status({ venue: { ...venue, openMode: "combined" }, upcomingOpenings: [opening(3)] }), "scroll", "de"));
-    expect(german).toContain("Sa., 3. Okt. 17:00–21:00");
-    expect(german).not.toContain("03. Okt.");
-  });
-
-  test("lists all seven weekdays from Monday once regular hours exist, closed days included", () => {
-    const html = text(renderPage(status({ openingRules: everyDay.filter((rule) => rule.weekday === 3) })));
-    const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((day) => html.indexOf(day));
-    expect(days.every((index) => index >= 0)).toBeTrue();
-    expect(days).toEqual(days.toSorted((a, b) => a - b));
-    expect(html.split("Closed").length - 1).toBeGreaterThanOrEqual(6);
-    expect(html).toContain("Wednesday 11:00–18:00");
-  });
-
-  test("names the current window once and has no separate Today card", () => {
-    const html = text(renderPage(status({ openingRules: [], activeWindowLabel: "11:00–18:00" })));
-    expect(html.split("11:00–18:00").length - 1).toBe(1);
-    expect(html).not.toContain("Today");
-  });
-
-  test("says in one sentence that nothing is planned when a venue has no hours", () => {
-    const html = text(
-      renderPage(
-        status({
-          open: false,
-          activeWindowLabel: null,
-          nextOpeningLabel: null,
-          todayLabel: "No regular hours today",
-          openingRules: [],
-          upcomingExceptions: [],
-        }),
-      ),
-    );
-    expect(html.split("No opening is planned in the next two weeks.").length - 1).toBe(1);
-    expect(html).not.toContain("No regular hours today");
-    expect(html).not.toContain("Changed hours");
-  });
-
-  test("wraps a long venue name instead of cutting it", () => {
-    const html = renderPage(status());
-    const heading = html.match(/<h1[^>]*>/)?.[0] ?? "";
-    expect(heading).toContain("line-clamp-2");
-    expect(heading).not.toContain("truncate");
-  });
-
-  test("keeps in-flow surfaces quiet and on theme tokens", () => {
-    const html = renderPage(status({ sections: [notice, markdown, menu, links] }));
-    expect(html).not.toMatch(/\bshadow-(?:lg|xl)\b/);
-    expect(html.match(FIXED_COLORS)?.[0] ?? null).toBeNull();
-  });
-
-  test("speaks German on a German request", () => {
-    const html = text(renderPage(status(), "scroll", "de"));
-    expect(html).toContain("Abweichende Zeiten");
-    expect(html).toContain("Sa., 3. Okt. Geschlossen · Public holiday");
   });
 });
 

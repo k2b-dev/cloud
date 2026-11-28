@@ -316,6 +316,81 @@ test("a RangeBar's colours are colours: stops sorted, held to the visible part, 
   );
 });
 
+test("a Cover is sent by the server with its picture and its words, and without a picture it is not there", async () => {
+  const { Cover } = await import("./marks");
+  const named = renderToString(() => createComponent(Cover, { src: "https://cover.example/hof.jpg", alt: "Der Innenhof im Sommer" }));
+  expect(named).toContain('data-k2-part="Cover"');
+  expect(named).toContain('src="https://cover.example/hof.jpg"');
+  // the cover is the picture and carries its words; the picture inside says nothing a second time
+  expect(named).toContain('role="img"');
+  expect(named).toContain('aria-label="Der Innenhof im Sommer"');
+  // (an empty attribute: `alt` alone, as the server writes it)
+  expect(named).toMatch(/<img [^>]*\balt(?:="")?[ >]/);
+  expect(named).not.toContain("data-slim");
+  // decoration says nothing to assistive technology
+  const decoration = renderToString(() => createComponent(Cover, { src: "https://cover.example/hof.jpg", alt: "", slim: true }));
+  expect(decoration).toContain('aria-hidden="true"');
+  expect(decoration).not.toContain("aria-label");
+  expect(decoration).not.toContain("role=");
+  expect(decoration).toContain("data-slim");
+  // no picture, no band: nothing stands in its place
+  expect(renderToString(() => createComponent(Cover, { alt: "" }))).not.toContain("<");
+  expect(renderToString(() => createComponent(Cover, { src: "", alt: "Hof" }))).not.toContain("<");
+});
+
+test("a RangeBar with several ranges draws each on the one track, in its own colours, under one label", async () => {
+  const { RangeBar } = await import("./marks");
+  const markup = renderToString(() =>
+    createComponent(RangeBar, {
+      // a day with a break, on a scale from 6 to 24: 8 to 12 and 14 to 18, given in any order and either direction
+      ranges: [
+        { from: 18, to: 14 },
+        { from: 8, to: 12 },
+      ],
+      domain: [6, 24],
+      stops: [
+        { at: 6, color: "#0369a1" },
+        { at: 24, color: "#15803d" },
+      ],
+      label: "Mo.: 08:00 bis 12:00 und 14:00 bis 18:00",
+    }),
+  );
+  // one image with one name: the words list every range, the bars say nothing on their own
+  expect(markup.match(/role="img"/g)).toEqual(['role="img"']);
+  expect(markup).toContain('aria-label="Mo.: 08:00 bis 12:00 und 14:00 bis 18:00"');
+  expect(markup.match(/<i /g)?.length).toBe(2);
+  // in the given order: 14…18 lies 8/18 in from the start and 6/18 short of the end, 8…12 2/18 in and 12/18 short
+  expect(markup).toContain("--k2-range-start:44.4%;--k2-range-end:33.3%");
+  expect(markup).toContain("--k2-range-start:11.1%;--k2-range-end:66.7%");
+  // each bar shows the colours of its own part of the scale: the 6…24 stops seen from 14…18 and from 8…12
+  expect(markup).toContain("linear-gradient(var(--k2-range-way, to right), #0369a1 -200%, #15803d 250%)");
+  expect(markup).toContain("linear-gradient(var(--k2-range-way, to right), #0369a1 -50%, #15803d 400%)");
+});
+
+test("a RangeBar without ranges, or with ranges that are no numbers, keeps its track and draws nothing on it", async () => {
+  const { RangeBar } = await import("./marks");
+  const closed = renderToString(() => createComponent(RangeBar, { ranges: [], domain: [6, 24], label: "So.: geschlossen" }));
+  expect(closed).toContain('data-k2-part="RangeBar"');
+  expect(closed).toContain('aria-label="So.: geschlossen"');
+  expect(closed).not.toContain("<i");
+  // a range that is no number is left out, the others stay
+  const partly = renderToString(() =>
+    createComponent(RangeBar, {
+      ranges: [
+        { from: Number.NaN, to: 12 },
+        { from: 14, to: 18 },
+      ],
+      domain: [6, 24],
+      label: "Di.: 14:00 bis 18:00",
+    }),
+  );
+  expect(partly.match(/<i /g)?.length).toBe(1);
+  // one range in `ranges` draws exactly what `from` and `to` draw
+  const one = (props: { from: number; to: number } | { ranges: { from: number; to: number }[] }) =>
+    renderToString(() => createComponent(RangeBar, { ...props, domain: [0, 10], label: "Bereich" }));
+  expect(one({ ranges: [{ from: 2, to: 8 }] })).toBe(one({ from: 2, to: 8 }));
+});
+
 test("a decorative RangeBar says nothing to assistive technology", async () => {
   const { RangeBar } = await import("./marks");
   const markup = renderToString(() => createComponent(RangeBar, { from: 1, to: 2, domain: [0, 4], decorative: true }));

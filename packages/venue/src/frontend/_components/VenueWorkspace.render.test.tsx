@@ -69,6 +69,7 @@ const previewOf = (previewVenue: Venue, sections: PublicSection[]): PublicStatus
   activeWindowLabel: null,
   upcomingOpenings: [],
   upcomingExceptions: [],
+  now: { date: "2026-08-11", state: "closed", until: null, today: [], tomorrow: [], next: null, exception: null, regular: [] },
   openingRules: [],
   sections,
 });

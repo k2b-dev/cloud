@@ -115,6 +115,7 @@ const status: PublicStatus = {
   activeWindowLabel: null,
   upcomingOpenings: [1, 2, 3, 4, 5].map(opening),
   upcomingExceptions: [],
+  now: { date: "2026-08-11", state: "closed", until: null, today: [], tomorrow: [], next: null, exception: null, regular: [] },
   openingRules: [],
   sections: [],
 };

@@ -7,20 +7,19 @@ import { apiClient } from "../../../api/client";
 import { type PublicStatus, PublicStatusSchema } from "../../../contracts";
 import { venueMessages } from "../../../messages";
 import { FitBlock } from "../../_components/fit-list";
-import PublicFeedbackForm from "../../_components/PublicFeedbackForm";
 import {
   ExceptionRow,
   groupedOpeningHours,
   HoursRow,
   hasRegularHours,
   OpeningRow,
-  PublicPageBody,
   StatusCard,
   VenueIdentity,
   venueToday,
 } from "../../_components/public-page-view";
 import { PublicRefreshNotice, type RefreshDiagnostics } from "../../public-refresh-notice";
 import { type VenuePublicDisplayHeight, venuePublicRefreshBackoffMs } from "../../public-runtime";
+import { GuestPage, GuestUnavailable } from "./guest-page";
 
 /**
  * The monitor: one screen without scrolling, always dark. Wide screens show two columns when the second one has
@@ -154,24 +153,18 @@ function FullDisplay(props: { status: PublicStatus; feedbackQr: string | null } 
   );
 }
 
-/** The scrollable page follows the visitor's Cloud theme; {@link PublicPageBody} owns its content and order. */
-function ScrollablePage(props: { status: PublicStatus } & RefreshDiagnostics) {
-  const status = () => props.status;
+/**
+ * The guest page that refreshes itself in place (`?refresh=true`): the same {@link GuestPage} the server renders,
+ * with the notice that says when live updates pause. The page without refresh needs no script and is no island.
+ */
+function ScrollablePage(props: { status: PublicStatus | null; feedbackUrl: string } & RefreshDiagnostics) {
   return (
-    <main
-      class="min-h-dvh text-primary"
-      data-live-refresh={props.refreshEnabled ? "enabled" : "disabled"}
-      data-last-refresh-at={props.refreshedAt ?? undefined}
-      data-refresh-error={props.refreshError ?? undefined}
-    >
+    <>
       <PublicRefreshNotice {...props} />
-      <div class="mx-auto flex max-w-6xl flex-col gap-4 p-4 sm:gap-6 sm:p-6">
-        <PublicPageBody
-          status={status()}
-          feedback={<PublicFeedbackForm venueId={status().venue.id} accentColor={status().venue.accentColor} />}
-        />
-      </div>
-    </main>
+      <Show when={props.status} fallback={<GuestUnavailable />}>
+        {(status) => <GuestPage status={status()} feedbackUrl={props.feedbackUrl} />}
+      </Show>
+    </>
   );
 }
 
@@ -317,41 +310,22 @@ export default function PublicVenuePage(props: PublicVenuePageProps) {
       ? qr.toSvg(props.feedbackUrl, { correctionLevel: "M", on: "#18181b", off: "transparent" })
       : null;
 
+  const diagnostics = (): RefreshDiagnostics => ({
+    refreshEnabled: props.refresh,
+    refreshedAt: refreshedAt(),
+    refreshError: statusQuery.error()?.message ?? null,
+    refreshing: statusQuery.refreshing(),
+    retryRefresh,
+  });
+
   return (
     <Show
-      when={statusQuery.data()}
-      fallback={
-        <UnavailablePage
-          refreshEnabled={props.refresh}
-          refreshedAt={refreshedAt()}
-          refreshError={statusQuery.error()?.message ?? null}
-          refreshing={statusQuery.refreshing()}
-          retryRefresh={retryRefresh}
-        />
-      }
+      when={props.displayHeight === "full"}
+      fallback={<ScrollablePage status={statusQuery.data() ?? null} feedbackUrl={props.feedbackUrl} {...diagnostics()} />}
     >
-      {(current) =>
-        props.displayHeight === "full" ? (
-          <FullDisplay
-            status={current()}
-            feedbackQr={feedbackQr()}
-            refreshEnabled={props.refresh}
-            refreshedAt={refreshedAt()}
-            refreshError={statusQuery.error()?.message ?? null}
-            refreshing={statusQuery.refreshing()}
-            retryRefresh={retryRefresh}
-          />
-        ) : (
-          <ScrollablePage
-            status={current()}
-            refreshEnabled={props.refresh}
-            refreshedAt={refreshedAt()}
-            refreshError={statusQuery.error()?.message ?? null}
-            refreshing={statusQuery.refreshing()}
-            retryRefresh={retryRefresh}
-          />
-        )
-      }
+      <Show when={statusQuery.data()} fallback={<UnavailablePage {...diagnostics()} />}>
+        {(current) => <FullDisplay status={current()} feedbackQr={feedbackQr()} {...diagnostics()} />}
+      </Show>
     </Show>
   );
 }

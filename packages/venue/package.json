@@ -19,6 +19,7 @@
     "@k2b/stdlib": "workspace:*",
     "hono": "catalog:",
     "hono-openapi": "catalog:",
+    "libphonenumber-js": "catalog:",
     "solid-js": "catalog:",
     "zod": "catalog:"
   },

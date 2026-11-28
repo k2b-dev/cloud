@@ -373,43 +373,6 @@ describe("Venue clarity behavior", () => {
     }
   });
 
-  test("feedback starts without a rating and sends only the rating the visitor chose", async () => {
-    const dom = createDomTestHarness();
-    const originalFetch = globalThis.fetch;
-    const bodies: unknown[] = [];
-    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-      bodies.push(JSON.parse(String(init?.body)));
-      return Response.json({ venueId: "Cafe01", rating: 3, comment: null, createdAt: new Date(fixtureNow).toISOString() }, { status: 201 });
-    }) as typeof fetch;
-
-    const { default: PublicFeedbackForm } = await import("../src/frontend/_components/PublicFeedbackForm.island");
-    const dispose = render(() => <PublicFeedbackForm venueId="Cafe01" accentColor="#facc15" variant="page" />, dom.root);
-    try {
-      const radios = [...dom.root.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
-      const send = buttonNamed(dom.root, "Submit feedback");
-      expect(radios.map((radio) => radio.checked)).toEqual([false, false, false, false, false]);
-      expect(send.disabled).toBe(true);
-      expect(dom.root.textContent).toContain("Choose 1 to 5 stars to send your feedback.");
-      // A light accent gets dark text instead of white.
-      expect(send.getAttribute("style")).toContain("color: var(--venue-on-accent)");
-      expect(send.closest<HTMLElement>("[style*='--venue-on-accent:']")?.style.getPropertyValue("--venue-on-accent")).toBe("#000000");
-
-      radios[2]!.click();
-      await flush();
-      expect(send.disabled).toBe(false);
-      expect(dom.root.textContent).toContain("3 of 5 stars");
-      expect(dom.root.textContent).not.toContain("Choose 1 to 5 stars to send your feedback.");
-
-      send.click();
-      await flush();
-      expect(bodies).toEqual([{ rating: 3, comment: null }]);
-    } finally {
-      dispose();
-      globalThis.fetch = originalFetch;
-      dom.cleanup();
-    }
-  });
-
   test("saving an edited draft keeps it a draft until the switch says otherwise", async () => {
     const dom = createDomTestHarness();
     const draft: PublicSection = {

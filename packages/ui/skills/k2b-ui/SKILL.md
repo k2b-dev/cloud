@@ -111,11 +111,13 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
 | several short values (domains, addresses), an image, a one-time code | `TagsInput`, `ImageInput`, `CodeInput` in a `Field` | `settings.tsx` |
 | a number on a range, a colour | `Slider`, `ColorInput` in a `Field` | `settings.tsx` |
+| stars to rate something (a visit); a given rating shown | `Rating` in a `Field` (`required`, hint, error); `Rating readOnly` | – |
 | a field that goes back to its default | `Field action` ("Auf Standard zurücksetzen") | `settings.tsx` |
 | an answer that opens in place (a question in a FAQ) | `Disclosure` | `settings.tsx` |
 | reading text, an email body, a page of Markdown | `Prose` | `content.tsx`, `mail.tsx` |
 | attachments, media files, like things to press | `Tiles` | `content.tsx`, `mail.tsx` |
 | a state, tag, amount, count | `Chip` | `table.tsx` |
+| a banner across the top of a page or detail (a place's picture); `slim` above a task | `Cover` directly in the `Pane` (no `src`: no band) | – |
 | a person's or agent's picture | `Person image` on `Avatar`, `RecordHead avatar`, `Row avatar` (initials stay while it loads or fails) | – |
 | a deed under way (saving, sending) | `Button busy`; a deed that cannot be taken now: `disabled` | `actions.tsx` |
 | a toggle that is on or off (favourite, reply to all) | `Button pressed` (`true` on, `false` off) | `actions.tsx` |
@@ -182,14 +184,14 @@ a `Notice` that names the deed.
 
 - **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
   `width`, `detail`, `side`), `Pane.Split`, `Bar` (start, end), `Band`
-  (`tone`), `Cells`, `Tiles`, `Canvas`. **Structure:** `Section`, `Group`,
-  `Disclosure`.
+  (`tone`), `Cells`, `Tiles`, `Canvas`, `Cover`. **Structure:** `Section`,
+  `Group`, `Disclosure`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
   body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
-  `Chip`, `Progress`, `Spark`, `Ticks`, `Steps`.
+  `Chip`, `Progress`, `Spark`, `Ticks`, `RangeBar`, `Heat`, `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
   `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`, `ImageInput`,
-  `CodeInput`, `Slider`, `ColorInput`.
+  `CodeInput`, `Slider`, `ColorInput`, `Rating`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,
