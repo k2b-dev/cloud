@@ -6,6 +6,12 @@ import { withWeatherLocationShortId } from "./short-id";
 
 const log = logger("weather");
 
+/**
+ * The most places one person may save: the place list shows them all at once (the sidebar of the weather app), and v2
+ * lists show at most 100 rows without paging. Creating one more is refused; reading without a page reads at most these.
+ */
+export const WEATHER_SAVED_PLACES_MAX = 100;
+
 export type Location = {
   id: string;
   name: string;
@@ -31,6 +37,9 @@ const create = async (config: {
   try {
     const location = await sql.begin(async (tx) => {
       await tx`SELECT pg_advisory_xact_lock(hashtext('cloud.weather.location-short-id-backfill'))`;
+      // the lock above serializes every create, so counting here cannot race another save of the same person
+      const [saved] = await tx<{ count: number }[]>`SELECT COUNT(*)::int AS count FROM weather_locations WHERE user_id = ${config.userId}`;
+      if ((saved?.count ?? 0) >= WEATHER_SAVED_PLACES_MAX) return "full" as const;
       return withWeatherLocationShortId(async (shortId) => {
         const [row] = await tx`
           INSERT INTO weather_locations (short_id, user_id, name, state, lat, lon, provenance)
@@ -41,6 +50,7 @@ const create = async (config: {
         return (row as Location | undefined) ?? null;
       });
     });
+    if (location === "full") return fail(err.conflict(`At most ${WEATHER_SAVED_PLACES_MAX} places can be saved.`));
     return ok(location);
   } catch (error) {
     log.error("Failed to create location", {
@@ -75,7 +85,8 @@ const remove = async (config: { id: string; userId: string }): Promise<Result<vo
 };
 
 /**
- * Lists all saved weather locations for one user with optional search and pagination.
+ * Lists the saved weather locations of one user with optional search and pagination; without a page it reads the
+ * first `WEATHER_SAVED_PLACES_MAX`, which is all of them for anyone who saved them here.
  */
 const list = async (config: { userId: string; pagination?: PageParams; filter?: { query?: string } }): Promise<Paginated<Location>> => {
   const query = config.filter?.query?.trim().toLowerCase() ?? "";
@@ -101,18 +112,18 @@ const list = async (config: { userId: string; pagination?: PageParams; filter?: 
     WHERE user_id = ${config.userId}
       AND ${queryMatch}
     ORDER BY created_at ASC, id ASC
-    LIMIT ${pagination?.perPage ?? null}
+    LIMIT ${pagination?.perPage ?? WEATHER_SAVED_PLACES_MAX}
     OFFSET ${pagination?.offset ?? 0}
   `) as Location[];
   const total = countRow?.count ?? 0;
   const page = pagination?.page ?? 1;
-  const perPage = pagination?.perPage ?? total;
+  const perPage = pagination?.perPage ?? WEATHER_SAVED_PLACES_MAX;
   return {
     items,
     page,
     perPage,
     total,
-    hasNext: pagination !== null && page * perPage < total,
+    hasNext: page * perPage < total,
   };
 };
 
@@ -129,6 +140,8 @@ const get = async (config: { id: string; userId: string }): Promise<Location | n
 };
 
 export const weatherLocationsService = {
+  /** The most places one person may save. */
+  max: WEATHER_SAVED_PLACES_MAX,
   list,
   get,
   create,

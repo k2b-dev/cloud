@@ -27,6 +27,7 @@ import { Avatar, Chip, custom, Dot, Icon, Mark, type MarkProps } from "./marks";
 import { Menu, type MenuEntry, type MenuItem, MenuTab } from "./menu";
 import type { NavTreeGroup } from "./nav-tree";
 import { useOverlayMessages } from "./overlay-messages";
+import { useStatusToolbar } from "./status-toolbar";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 
 // Layer 2: components made only of the primitives. They exist where a form must be the same everywhere.
@@ -579,6 +580,12 @@ export const Path = (props: PathProps) => {
       const step = chevron + 2 * (Number.parseFloat(getComputedStyle(nav).columnGap) || 0);
       const room = nav.clientWidth + 0.5;
       const sum = (widths: number[]) => widths.reduce((total, each) => total + each, 0);
+      // the whole path, every place unfolded: where its room comes from its own width (a pane's head block, whose
+      // grid gives the start the width of what it holds), it asks for this, so a path that folded unfolds again
+      nav.style.setProperty(
+        "--k2-path-whole",
+        `${Math.ceil(sum(places.map((place) => place.scrollWidth)) + current.scrollWidth + places.length * step)}px`,
+      );
       const next: PathFold =
         sum(least) + page + places.length * step <= room
           ? 0
@@ -763,6 +770,7 @@ const holdsContent = (resolved: ChildrenReturn) =>
 
 /** The status row of a pane (52 px): the one lead statement, its loading mark, key figures, filters on the right. */
 export const StatusRow = (props: StatusRowProps) => {
+  useStatusToolbar();
   const t = useUiMessages();
   const filters = resolveChildren(() => props.filters);
   const marks = resolveChildren(() => props.marks);

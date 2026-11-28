@@ -3,10 +3,11 @@ import type { DateContext } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import { Avatar, Band, Button, Chip, Empty, Failed, Icon, List, Notice, Row, Text } from "@k2b/ui/v2";
 import { For, Show } from "solid-js";
-import type { MailListItem } from "../../../service/workspace";
+import type { MailListError, MailListItem } from "../../../service/workspace";
 import { mailRowSnoozeDay, mailRowSuggestedBy } from "../MailConversationRow";
+import { mailConversationListMessages } from "../mail-conversation-list-messages";
 import { mailConversationUiMessages } from "../mail-conversation-ui-messages";
-import { buildMailSelectionHref, isMailListItemActive, mailRouteUrl } from "../mail-navigation";
+import { buildMailSearchClearHref, buildMailSelectionHref, isMailListItemActive, mailRouteUrl } from "../mail-navigation";
 import type { MailV2Text } from "./mail-v2-messages";
 import { mailV2RowTime } from "./mail-v2-time";
 
@@ -20,7 +21,7 @@ export default function MailListV2(props: {
   selectedConversationId: string | null;
   selectedMessageId: string | null;
   dateConfig: DateContext;
-  error: string | null;
+  error: MailListError | null;
   nextCursor: string | null | undefined;
   assigneeNames: (userIds: readonly string[]) => string[];
   text: MailV2Text;
@@ -34,6 +35,15 @@ export default function MailListV2(props: {
 }) {
   const locale = useLocale();
   const t = () => mailConversationUiMessages.resolve([locale()]).t;
+  const listText = () => mailConversationListMessages.resolve([locale()]).t;
+  // The server names what failed; the list says it in words. A search that is not valid cannot succeed again: its way
+  // out is clearing the search, not trying again.
+  const errorText = (error: MailListError) =>
+    error === "invalid_search" ? listText().invalidSearch : error === "search_failed" ? listText().searchFailed : listText().loadFailed;
+  const errorAction = (error: MailListError) =>
+    error === "invalid_search"
+      ? { label: listText().clearSearch, href: buildMailSearchClearHref(requestUrl()) }
+      : { label: props.text.retry, onClick: props.onRetry };
   const requestUrl = () => mailRouteUrl(props.requestPath);
   const sender = (item: MailListItem) => item.participantLabels[0] || item.participantSummary || t().unknownSender;
   const snoozeDay = (item: MailListItem) =>
@@ -78,10 +88,10 @@ export default function MailListV2(props: {
   return (
     <>
       {/* A failed refresh keeps the rows it has and says so above them; without rows the failure takes their place. */}
-      <Show when={props.items.length > 0 ? props.error : null}>
+      <Show when={props.items.length > 0 || props.error === "invalid_search" ? props.error : null}>
         {(error) => (
-          <Notice tone="bad" actions={[{ label: props.text.retry, onClick: props.onRetry }]}>
-            {error()}
+          <Notice tone="bad" actions={[errorAction(error())]}>
+            {errorText(error())}
           </Notice>
         )}
       </Show>
@@ -89,7 +99,11 @@ export default function MailListV2(props: {
         when={props.items.length > 0}
         fallback={
           <Show when={props.error} fallback={<Empty icon="inbox" text={props.text.empty} />}>
-            {(error) => <Failed text={error()} onRetry={props.onRetry} />}
+            {(error) => (
+              <Show when={error() !== "invalid_search"}>
+                <Failed text={errorText(error())} onRetry={props.onRetry} />
+              </Show>
+            )}
           </Show>
         }
       >

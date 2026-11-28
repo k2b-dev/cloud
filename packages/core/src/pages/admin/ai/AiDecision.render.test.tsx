@@ -13,7 +13,8 @@ import { aiAreaMessages } from "./messages";
 const root = mkdtempSync(join(tmpdir(), "core-ai-decision-render-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { AiAreaView } = await import("./view");
+const { default: ClassesScreen } = await import("./ClassesScreen");
+const { adminNavFixture } = await import("../admin-v2.fixture");
 
 test("the decision class renders on the server in both admin locales", () => {
   const catalog = aiFixtureCatalog();
@@ -24,22 +25,17 @@ test("the decision class renders on the server in both admin locales", () => {
       createComponent(LocaleProvider, {
         locale,
         get children() {
-          return createComponent(AiAreaView, {
-            t,
-            locale,
-            query: parseAiAreaQuery({ sec: "classes" }),
-            overview,
-            index: { models: catalog.models, variants: catalog.variants, assignments: overview.assignments },
-            loadFailed: false,
-            studioLinks: [],
-            provider: undefined,
-            providerDetail: null,
-            model: null,
-            usage: null,
-            accountingUnit: "EUR",
-            assignmentDetails: [],
+          return createComponent(ClassesScreen, {
+            nav: adminNavFixture("/admin/ai"),
+            data: {
+              overview,
+              models: catalog.models,
+              variants: catalog.variants,
+              slot: parseAiAreaQuery({ sec: "classes" }).slot ?? null,
+              assignment: null,
+              detailFailed: false,
+            },
             appNames: {},
-            retryHref: "/admin/ai?sec=classes",
           });
         },
       }),

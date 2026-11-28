@@ -1,11 +1,41 @@
 import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Browser } from "playwright";
+import type { Browser, Page } from "playwright";
 import { type FixtureReviewVariant, fixtureApprovalDetail } from "../packages/core/src/pages/admin/code/CodeArea.fixture-data";
 import { launchBrowser, pageErrors, settled } from "../packages/ui/test/browser";
 
 const root = resolve(import.meta.dir, "..");
+const adminStates = ["normal", "own", "sole", "approved", "rejected", "changes", "withdrawn", "followup"] satisfies FixtureReviewVariant[];
+
+/**
+ * The v2 admin review of one state: the pane named after the version holds Cloud's one approval card, the same as
+ * chat and the side panel draw, and the card holds every decision: two while the version is open, the way on once it
+ * is closed. The head of the pane decides nothing, so no approval stands twice on the page.
+ */
+const expectAdminReview = async (page: Page, variant: FixtureReviewVariant, width: number) => {
+  const detail = fixtureApprovalDetail(variant);
+  const n = detail.version.number;
+  const pane = page.getByRole("region", { name: `${detail.code.title} · Version ${n}`, exact: true });
+  const card = pane.getByRole("region", { name: "Code", exact: true }).locator(".cloud-approval-frame");
+  expect(await card.count()).toBe(1);
+  expect(await card.isVisible()).toBe(true);
+  const head = pane.locator('[data-slot="head"]').first();
+  expect(await head.getByRole("button", { includeHidden: true }).count()).toBe(0);
+  const approve = page.getByRole("button", { name: `Version ${n} freigeben`, exact: true, includeHidden: true });
+  if (detail.status === "pending") {
+    expect(
+      await card.getByRole("button", { name: width === 390 ? "Ablehnen / ändern" : "Ablehnen oder ändern …", exact: true }).isVisible(),
+    ).toBe(true);
+    expect(await approve.count()).toBe(1);
+    expect(await card.getByRole("button", { name: `Version ${n} freigeben`, exact: true }).count()).toBe(1);
+    expect(await approve.isVisible()).toBe(true);
+    expect(await approve.isDisabled()).toBe(!detail.canApprove);
+  } else {
+    expect(await approve.count()).toBe(0);
+    expect(await card.getByRole("link", { name: "Zurück zur Liste", exact: true }).isVisible()).toBe(true);
+  }
+};
 const shots = process.env.CAPBLOCKS_SHOTS;
 let browser: Browser;
 let assets: ReturnType<typeof Bun.serve>;
@@ -27,7 +57,9 @@ beforeAll(async () => {
         name: "approval-parity-dom",
         setup(builder) {
           // The cross-app harness has no application package scope; resolve the public browser distribution explicitly.
-          builder.onResolve({ filter: /^@k2b\/ui$/ }, () => ({ path: resolve(ui, "dist/browser/index.js") }));
+          builder.onResolve({ filter: /^@k2b\/ui(\/v2)?$/ }, ({ path }) => ({
+            path: resolve(ui, path === "@k2b/ui" ? "dist/browser/index.js" : "dist/browser/v2/index.js"),
+          }));
           builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
             const result = await transformAsync(await Bun.file(path).text(), {
               filename: path,
@@ -53,12 +85,7 @@ beforeAll(async () => {
   const fonts = ["plex.css", "tabler.css"]
     .map((file) => readFileSync(resolve(ui, "dist", file), "utf8").replace(/url\((["']?)(?:\.\/)?(?!data:|https?:)/g, "url($1/ui/"))
     .join("\n");
-  const adminFixtures = Object.fromEntries(
-    (["normal", "own", "sole", "approved", "rejected", "changes", "withdrawn", "followup"] satisfies FixtureReviewVariant[]).map((s) => [
-      s,
-      fixtureApprovalDetail(s),
-    ]),
-  );
+  const adminFixtures = Object.fromEntries(adminStates.map((s) => [s, fixtureApprovalDetail(s)]));
   const css = [fonts, "@layer properties, theme, base, components, utilities;", ...styles].join("\n");
   assets = Bun.serve({
     hostname: "127.0.0.1",
@@ -100,7 +127,7 @@ const families = {
     "replaced",
   ],
   page: ["new-version", "approval", "changes-requested", "versions-rejected"],
-  admin: ["normal", "own", "sole", "approved", "rejected", "changes", "withdrawn", "followup"],
+  admin: adminStates,
   mixed: ["open"],
 };
 for (const theme of ["light", "dark"])
@@ -126,6 +153,8 @@ for (const theme of ["light", "dark"])
             expect(errors).toEqual([]);
             const frames = page.locator(".cloud-approval-frame");
             expect(await frames.count()).toBeGreaterThan(0);
+            // The v2 admin review shows the same card in its pane; the card geometry below holds for it as for every family.
+            if (family === "admin") await expectAdminReview(page, adminStates.find((s) => s === state) ?? "normal", width);
             for (const frame of await frames.all()) {
               const geometry = await frame.evaluate((node) => {
                 const title = node.querySelector(".k2b-notice-card__title")!;
