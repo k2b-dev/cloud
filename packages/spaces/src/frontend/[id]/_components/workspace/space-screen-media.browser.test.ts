@@ -15,9 +15,12 @@ beforeAll(screen.start, launchHookMs);
 afterAll(screen.stop);
 const open = spaceOpener(screen);
 
-const media: Record<string, { bytes: Buffer; type: string }> = {
-  Reel01: { bytes: readFileSync(resolve(import.meta.dir, "../../../../../../ui/test/media/portrait-180x320.webm")), type: "video/webm" },
-  Broken: { bytes: Buffer.from("This is no video at all."), type: "video/quicktime" },
+const media: Record<string, { bytes: Uint8Array<ArrayBuffer>; type: string }> = {
+  Reel01: {
+    bytes: new Uint8Array(readFileSync(resolve(import.meta.dir, "../../../../../../ui/test/media/portrait-180x320.webm"))),
+    type: "video/webm",
+  },
+  Broken: { bytes: new TextEncoder().encode("This is no video at all."), type: "video/quicktime" },
 };
 const attachment = (id: string, filename: string) => ({
   id,
