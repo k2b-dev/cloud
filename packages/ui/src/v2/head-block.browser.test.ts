@@ -45,7 +45,7 @@ const withPage = async (width: number, kind: Kind, live: boolean, run: (page: Pa
       `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${script}<style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root">${html}</div></body></html>`,
     );
     if (live) {
-      await page.addScriptTag({ content: `window.__k2HeadKind = ${JSON.stringify(kind)};` });
+      await page.addScriptTag({ content: `window.__k2HeadBlockKind = ${JSON.stringify(kind)};` });
       await page.addScriptTag({ content: client });
       await page.waitForFunction(() => window.__k2Hydrated === true);
     }
