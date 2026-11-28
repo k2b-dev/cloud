@@ -176,35 +176,49 @@ const bound = () => {
   }
 };
 
-const buildTable = async (
+/**
+ * Runs `work` on a reserved connection under the lease of `table`, renewed every third of its lifetime while one long
+ * statement runs; `busy` while another holder has it. Without a bound process sync it runs without the lease.
+ */
+const underTableLease = async (
   db: SQL,
-  indexes: readonly ConcurrentIndex[],
-  options: ConcurrentIndexOptions,
+  table: string,
+  work: (connection: SQL) => Promise<ConcurrentIndexOutcome>,
 ): Promise<ConcurrentIndexOutcome> => {
   const lease = bound() ? buildLease() : null;
-  const held = lease ? await lease.acquire({ resource: indexes[0]!.table }) : null;
+  const held = lease ? await lease.acquire({ resource: table }) : null;
   if (lease && !held) return "busy";
   // runtime-timer: renews the build lease while one statement runs; cleared when it ends.
   const renewal = lease && held ? setInterval(() => void lease.extend(held).catch(() => false), LEASE_MS / 3) : null;
   renewal?.unref();
   try {
     // Bun may pipeline ordinary pool queries behind long DDL; a reserved connection keeps them out of its wait.
-    const build = await db.reserve();
+    const connection = await db.reserve();
     try {
-      let outcome: ConcurrentIndexOutcome = "ready";
-      for (const index of indexes) {
-        const built = await buildIndex(build, index, options);
-        if (built === "busy" || built === "failed") return built;
-        if (built === "built") outcome = "built";
-      }
-      return outcome;
+      return await work(connection);
     } finally {
-      build.release();
+      connection.release();
     }
   } finally {
     if (renewal) clearInterval(renewal);
     if (lease && held) await lease.release(held).catch(() => false);
   }
+};
+
+const buildTable = async (
+  db: SQL,
+  indexes: readonly ConcurrentIndex[],
+  options: ConcurrentIndexOptions,
+): Promise<ConcurrentIndexOutcome> => {
+  return underTableLease(db, indexes[0]!.table, async (build) => {
+    let outcome: ConcurrentIndexOutcome = "ready";
+    for (const index of indexes) {
+      const built = await buildIndex(build, index, options);
+      if (built === "busy" || built === "failed") return built;
+      if (built === "built") outcome = "built";
+    }
+    return outcome;
+  });
 };
 
 const running = new Set<Promise<ConcurrentIndexOutcome>>();
@@ -221,7 +235,7 @@ const pause = (ms: number) =>
   });
 
 /** Resolves at once, or once maintenance stage „Ruhe“ ends: a background build starts nothing while the Cloud is quiet. */
-const untilResumed = (): Promise<void> =>
+export const untilResumed = (): Promise<void> =>
   backgroundWork.paused()
     ? new Promise((resolve) => {
         const stop = backgroundWork.onChange((paused) => {
@@ -324,20 +338,10 @@ export const dropConcurrentIndex = async (
 ): Promise<ConcurrentIndexOutcome> => {
   try {
     if (!IDENTIFIER.test(index.name) || !qualifiedTable(index.table)) throw new Error(`Invalid index: ${index.name} ON ${index.table}`);
-    const lease = bound() ? buildLease() : null;
-    const held = lease ? await lease.acquire({ resource: index.table }) : null;
-    if (lease && !held) return "busy";
-    try {
-      const db = await (options.db ?? sql).reserve();
-      try {
-        await dropIndex(db, { ...index, definition: "" });
-        return "ready";
-      } finally {
-        db.release();
-      }
-    } finally {
-      if (lease && held) await lease.release(held).catch(() => false);
-    }
+    return await underTableLease(options.db ?? sql, index.table, async (db) => {
+      await dropIndex(db, { ...index, definition: "" });
+      return "ready";
+    });
   } catch (error) {
     options.log.warn(`The ${options.purpose} index was not dropped; the next attempt retries`, {
       index: index.name,
