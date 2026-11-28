@@ -1,14 +1,16 @@
 import { LocaleProvider } from "@k2b/ui";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
 import type { MailboxPageData, MailListItem, MailWorkspaceMessage } from "../service/workspace";
+import { mailConversationUiMessages } from "./_components/mail-conversation-ui-messages";
 import { mailTestRow } from "./_components/mail-list-test-fixtures";
 import { summaryState } from "./_components/mail-summary-fixtures";
 import { readMailUserPreferencesFromCookieHeader } from "./_components/mail-user-preferences";
 import { readMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
+import { MailDraftReviewChangedV2, MailDraftReviewV2 } from "./MailDraftReviewV2";
 import MailWorkspacePilot from "./MailWorkspaceV2.island";
 import { mailboxData, sidebar } from "./mail-shell.browser-fixture";
-
 import { MAIL_V2_NOW } from "./mail-v2.browser-clock";
+import { mailPageMessages } from "./pages-messages";
 
 /*
  * Mail's mailbox on the v2 pilot with the invented conversations of the approved v2 mockup (mail.html): the real
@@ -334,6 +336,41 @@ export default function MailV2Fixture(props: {
 }) {
   const url = new URL(props.source, "http://mail.example.test");
   const locale = props.locale ?? "de";
+  // `?review=read|changed`: a draft as a review link shows it (read only), and a review whose version is gone
+  const review = url.searchParams.get("review");
+  const place = { mailbox: { name: "Kontakt", href: "/app/mail/Box001" }, subject: "Re: Treppe Haus am Hang" };
+  const pages = mailPageMessages.resolve([locale]).t;
+  const conversationText = mailConversationUiMessages.resolve([locale]).t;
+  if (review === "changed")
+    return (
+      <LocaleProvider locale={locale}>
+        <MailDraftReviewChangedV2
+          {...place}
+          title={pages.reviewChanged}
+          description={pages.reviewChangedDescription}
+          current={{ label: pages.openCurrentDraft, href: "/app/mail/Box001/drafts/Drf001" }}
+        />
+      </LocaleProvider>
+    );
+  if (review === "read")
+    return (
+      <LocaleProvider locale={locale}>
+        <MailDraftReviewV2
+          {...place}
+          note={pages.draftReadOnly}
+          facts={[
+            { label: "An", value: "Architekturbüro Winter <planung@architektur-winter.example>" },
+            { label: "Cc", value: "Jan Kroll <jan@solberg-kramer.example>" },
+          ]}
+          body={{
+            format: "markdown",
+            text: "Hallo Herr Winter,\n\ndie Stufenhöhe beträgt **17,8 cm** bei 16 Stufen. Die Zeichnung mit den Maßen hängt an.\n\n- Lauflänge 3,40 m\n- Handlauf beidseitig\n\nViele Grüße\nJan Kroll",
+          }}
+          attachments={["Treppe-Hang-v3.pdf", "Stufenplan.png"]}
+          text={{ attachments: conversationText.attachments, noMessageBody: conversationText.noMessageBody }}
+        />
+      </LocaleProvider>
+    );
   const data = mailV2Data(url, props.now);
   return (
     <LocaleProvider locale={locale}>

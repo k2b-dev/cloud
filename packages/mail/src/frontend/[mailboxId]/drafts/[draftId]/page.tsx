@@ -5,8 +5,11 @@ import { For, Show } from "solid-js";
 import { ssr } from "../../../../config";
 import type { MailAddress } from "../../../../contracts";
 import { drafts, mailboxes } from "../../../../service";
+import { requireMailboxPermission } from "../../../../service/access";
 import { loadSendReviewContent } from "../../../../service/capability-review-readers";
 import { mailConversationUiMessages } from "../../../_components/mail-conversation-ui-messages";
+import { MailDraftReviewChangedV2, MailDraftReviewV2 } from "../../../MailDraftReviewV2";
+import { readMailV2Pilot, showsMailV2 } from "../../../mail-v2-pilot";
 import { mailPageMessages } from "../../../pages-messages";
 import { pageReadStatus, resolveSsrMailboxId, resolveSsrMailboxResourceId } from "../../../ssr-public-boundary";
 
@@ -30,22 +33,45 @@ export default ssr<AuthContext>(async (c) => {
   if (!mailbox.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, mailbox.error.status));
   if (!result.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, result.error.status));
   const draft = result.data;
+  const actor = c.get("actor");
+  const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
+  // the same pilot as the mailbox page: who sees mailboxes on v2 also sees this page on v2
+  const v2 = showsMailV2(readMailV2Pilot(c), user?.mail);
+  const mailboxPlace = { name: mailbox.data.name, href: `/app/mail/${encodeURIComponent(mailboxShortId)}` };
+  // On v2 a review whose version is gone says so in the page, with the way to the draft as it is now (still 409).
+  const changed = () => {
+    if (!v2) return ssr.error(c, 409, { title: t.reviewChanged, description: t.reviewChangedDescription });
+    c.status(409);
+    return () => (
+      <Layout
+        c={c}
+        printHint={t.printHint}
+        ui="v2"
+        title={[{ title: mailbox.data.name, href: mailboxPlace.href }, { title: draft.subject || ui.noSubject }]}
+      >
+        <MailDraftReviewChangedV2
+          mailbox={mailboxPlace}
+          subject={draft.subject || ui.noSubject}
+          title={t.reviewChanged}
+          description={t.reviewChangedDescription}
+          current={{ label: t.openCurrentDraft, href: new URL(c.req.url).pathname }}
+        />
+      </Layout>
+    );
+  };
   const revision = c.req.query("revision");
   // Review overflow links must show the exact effective message or fail visibly;
   // never replace a reviewed revision with today's raw draft.
-  if (revision !== undefined && (!/^[1-9]\d*$/.test(revision) || Number(revision) !== draft.revision))
-    return ssr.error(c, 409, { title: t.reviewChanged, description: t.reviewChangedDescription });
+  if (revision !== undefined && (!/^[1-9]\d*$/.test(revision) || Number(revision) !== draft.revision)) return changed();
   const sendHash = c.req.query("sendContent");
-  if (sendHash !== undefined && (revision === undefined || !/^[a-f0-9]{64}$/.test(sendHash) || !draft.senderIdentityId))
-    return ssr.error(c, 409, { title: t.reviewChanged, description: t.reviewChangedDescription });
+  if (sendHash !== undefined && (revision === undefined || !/^[a-f0-9]{64}$/.test(sendHash) || !draft.senderIdentityId)) return changed();
   const sendContent =
     sendHash !== undefined && draft.senderIdentityId
       ? await loadSendReviewContent({ context, mailboxId, draft, senderIdentityId: draft.senderIdentityId })
       : null;
   if (sendContent && !sendContent.ok) return ssr.error(c, sendContent.error.status);
   const content = sendContent?.ok ? sendContent.data : null;
-  if (content && content.contentHash !== sendHash)
-    return ssr.error(c, 409, { title: t.reviewChanged, description: t.reviewChangedDescription });
+  if (content && content.contentHash !== sendHash) return changed();
   const shown = content?.draft ?? draft;
   const subject = draft.subject || ui.noSubject;
   const recipients = [
@@ -56,6 +82,22 @@ export default ssr<AuthContext>(async (c) => {
     { label: "Cc", value: addressList(shown.cc) },
     { label: "Bcc", value: addressList(shown.bcc) },
   ].filter((row) => row.value);
+  // Without a version under review the page is the readers' way to a draft; it says so only to someone who cannot write.
+  const readOnly = v2 && revision === undefined && !(await requireMailboxPermission(context, mailboxId, "write")).ok;
+  if (v2)
+    return () => (
+      <Layout c={c} printHint={t.printHint} ui="v2" title={[{ title: mailbox.data.name, href: mailboxPlace.href }, { title: subject }]}>
+        <MailDraftReviewV2
+          mailbox={mailboxPlace}
+          subject={subject}
+          note={revision !== undefined ? t.draftReviewedRevision({ revision: draft.revision }) : readOnly ? t.draftReadOnly : null}
+          facts={recipients}
+          body={shown.body.trim() ? { format: shown.format === "markdown" ? "markdown" : "text", text: shown.body } : null}
+          attachments={shown.attachments.map((attachment) => attachment.filename)}
+          text={{ attachments: ui.attachments, noMessageBody: ui.noMessageBody }}
+        />
+      </Layout>
+    );
   return () => (
     <Layout
       c={c}
