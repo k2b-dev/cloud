@@ -13,6 +13,7 @@ import * as home from "../skills/k2b-ui/recipes/home";
 import * as listDetail from "../skills/k2b-ui/recipes/list-detail";
 import * as mail from "../skills/k2b-ui/recipes/mail";
 import * as overview from "../skills/k2b-ui/recipes/overview";
+import * as publicPage from "../skills/k2b-ui/recipes/public-page";
 import * as record from "../skills/k2b-ui/recipes/record";
 import * as recordGroups from "../skills/k2b-ui/recipes/record-groups";
 import * as settings from "../skills/k2b-ui/recipes/settings";
@@ -41,6 +42,7 @@ const recipes: Record<string, Recipe> = {
   "home.tsx": home,
   "list-detail.tsx": listDetail,
   "mail.tsx": mail,
+  "public-page.tsx": publicPage,
   "overview.tsx": overview,
   "record-groups.tsx": recordGroups,
   "settings.tsx": settings,

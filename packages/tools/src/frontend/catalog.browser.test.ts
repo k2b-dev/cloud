@@ -68,7 +68,10 @@ test("catalog keeps one ordered grouping and search through reload and Back with
       expect(new URL(tab.url()).searchParams.has("q")).toBe(false);
       expect(await tab.locator('[data-k2-part="Tiles"] a').count()).toBe(4);
       await settled(tab);
-      // On the phone the head search is a symbol that opens over the head while it has the focus (it keeps it here).
+      // The head search is a symbol while it is empty (look rule 31): with the focus it stands as its field, and when the
+      // focus leaves it is the symbol again, where it stood before. On the phone it opens over the head while focused.
+      await search.blur();
+      await settled(tab);
       if (width > 768) expect(await search.boundingBox()).toEqual(before);
       expect(await tab.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     } finally {

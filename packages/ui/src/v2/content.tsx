@@ -29,7 +29,7 @@ import { Avatar, custom, Dot, Icon, Mark, type MarkProps } from "./marks";
 import { Empty, type EmptyProps, Loading, LoadingStatus, PlaceholderValue } from "./states";
 import type { TypeRole } from "./tokens";
 import { useTreeMessages } from "./tree-messages";
-import type { Action, OnNavigate, Person, Status } from "./types";
+import { type Action, type ColumnWidth, columnPx, draggable, type OnNavigate, type Person, type Status } from "./types";
 
 // ── Text ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -469,6 +469,8 @@ export const Row = (props: RowProps) => {
       data-time={time() !== undefined ? "" : undefined}
       data-action={props.action ? "" : undefined}
       data-states={states() !== undefined ? "" : undefined}
+      // a deed or an end beside the time: on one line both stand at the end, the time first
+      data-end={end() !== undefined || props.action ? "" : undefined}
     >
       {/* What opens the row lies over all of it and is named by the title; it holds no part of the row, so a link in
           the title stays a link of its own (no link inside a link). */}
@@ -593,10 +595,10 @@ export type Column<T> = {
   /** The cell leads with a person, such as the owner; the name in the cell names the avatar. A row without one leads with nothing. */
   avatar?: (row: T) => Person | undefined;
   /**
-   * A column that can be dragged wider or narrower: its minimum and default in px. The column is exactly its
-   * default wide; cut text never widens it.
+   * A column that can be dragged wider or narrower: its minimum and default in px; `{ fixed }`: one width, no grip. The
+   * column is exactly that wide; cut text never widens it.
    */
-  width?: { min: number; default: number };
+  width?: ColumnWidth;
   /** A text column that may wrap to at most three lines; the row grows, every other cell stays on its first line. */
   wrap?: boolean;
   /** Drops away on the phone (rule 7: columns drop, they do not shrink). */
@@ -806,6 +808,11 @@ export const Table = <T,>(props: TableProps<T>) => {
     if (!(event.relatedTarget instanceof Node && head?.contains(event.relatedTarget))) setHeadFocused(false);
   };
   const sized = () => grid() || props.columns.some((column) => column.width);
+  /** The width of column `index` when it can be dragged, else nothing. */
+  const dragWidth = (index: number) => {
+    const width = props.columns[index]?.width;
+    return draggable(width) ? width : undefined;
+  };
   const key = (row: T, index: number) => props.rowKey?.(row) ?? String(index);
 
   // ── Rows in levels (`tree`) ──
@@ -1135,7 +1142,10 @@ export const Table = <T,>(props: TableProps<T>) => {
   const span = () => props.columns.length + (props.select ? 1 : 0);
   // The widths the grips gave columns, by index; a column keeps its default until then.
   const [sizes, setSizes] = createSignal<Readonly<Record<number, number>>>({});
-  const columnWidth = (index: number) => sizes()[index] ?? props.columns[index]?.width?.default;
+  const columnWidth = (index: number) => {
+    const width = props.columns[index]?.width;
+    return sizes()[index] ?? (width ? columnPx(width) : undefined);
+  };
   const sizeOf = (px: number | undefined) => (px === undefined ? undefined : { width: `${px}px` });
   // The sticky first data column stands after the box column (44 px).
   const stickyLeft = () => (props.select ? "44px" : "0px");
@@ -1241,7 +1251,8 @@ export const Table = <T,>(props: TableProps<T>) => {
                     style={firstSticky(index()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                     aria-sort={props.sort?.column === index() ? props.sort.direction : undefined}
                   >
-                    <Show when={index() > 0 && props.columns[index() - 1]?.width}>
+                    {/* a grip after a column that can be dragged; a fixed one keeps its width */}
+                    <Show when={index() > 0 && dragWidth(index() - 1)}>
                       {(width) => (
                         <ColumnGrip
                           label={props.columns[index() - 1]?.title ?? ""}

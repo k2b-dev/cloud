@@ -61,6 +61,8 @@ describe("loadGridsWorkspaceState — Base access boundary", () => {
         ({
           tables: [],
           tableLevels: {},
+          workflows: [],
+          customApps: [],
           fieldsByTable: { [formTable.id]: [] },
           viewsByTable: {},
           formsByTable: { [formTable.id]: [form] },
@@ -73,7 +75,6 @@ describe("loadGridsWorkspaceState — Base access boundary", () => {
     spyOn(gridsService.permission, "resolve").mockImplementation(() => "none");
     spyOn(gridsService.table, "getByShortIdForBase").mockImplementation(async () => null);
     spyOn(gridsService.view, "getByShortIdForTable").mockImplementation(async () => null);
-    spyOn(gridsService.workflow, "listForBase").mockImplementation(async () => []);
     spyOn(gridsService.workflow.launcher, "listForBase").mockImplementation(async () => []);
   });
 
@@ -182,6 +183,8 @@ describe("loadGridsWorkspaceState — Base access boundary", () => {
         ({
           tables: [formTable],
           tableLevels: { [formTable.id]: "read" },
+          workflows: [],
+          customApps: [],
           fieldsByTable: { [formTable.id]: [] },
           viewsByTable: {},
           formsByTable: {},
