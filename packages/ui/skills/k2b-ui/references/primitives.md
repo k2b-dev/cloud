@@ -169,14 +169,24 @@ Never nested. With `color` the symbol becomes the thing's `Mark`.
 `perRow={n}`: at most n tiles share a row and grow with its width; a tile
 never gets narrower than 240 px for it. Where n do not fit, a row holds
 half of them (four as 2 × 2, never 3 + 1), and below that one under the
-other. On the phone a row always holds half of them, even below 240 px.
+other. On the phone a row always holds half of them, even below 240 px,
+and a card's name there takes a second line before it is cut; it breaks
+between words only, and a name of one word that does not fit ends in
+"…". A card with a `preview` (a way to start) names itself in medium
+weight, as the approved first start.
 
 `variant="card"`: each thing a card in a grid (at least 240 px a card) for
 an overview of things with a face, such as the bases of Grids. A card
 adds `stats` (`{ icon?, label, status?, yours? }`: "6 Tabellen", "8 knapp"
 in `warn`), `people` (an `Avatar.Stack` at the foot), `foot` (quiet words
 at its end: "Felix · vor 2 Min") and `trend` (a `Spark` at the top end, in
-the card's colour). The whole card opens its `href`. `create` adds the last
+the card's colour), `preview` (a glance of what it holds across its top,
+112 px, 84 px on the phone: `{ table: { columns, rows } }` as a small
+table of words (a column `{ label, align: "end" }` for amounts), two columns on the phone, `{ page: { title, text? } }`, or
+`{ icon }` for a thing that holds nothing yet; it is a picture, the card
+keeps its name; keep its values short, about 12 characters a cell, so
+nothing is cut at 1440 or on the phone: leave out what does not fit; the
+phone shows a table's first two columns, so an amount comes second). The whole card opens its `href`. `create` adds the last
 card that makes a new thing: dashed, `title`, `meta`, `href` or `onClick`,
 and `choices` as round chips (templates). Cards hold no box and no line.
 
