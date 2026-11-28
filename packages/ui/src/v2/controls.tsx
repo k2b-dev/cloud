@@ -1542,6 +1542,8 @@ const ChoiceGroup = (props: ChoiceProps) => {
     const inputs = group;
     if (props.onChange)
       setTimeout(() => {
+        // a group that left before the task (a dialog that closes on reset) has no inputs to set any more
+        if (!inputs.isConnected) return;
         for (const input of inputs.querySelectorAll<HTMLInputElement>("input.k2-mark-input"))
           input.checked = chosen().includes(input.value);
       });
