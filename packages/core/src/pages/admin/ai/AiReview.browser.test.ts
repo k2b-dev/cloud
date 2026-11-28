@@ -119,6 +119,9 @@ test("a provider with 1,000 models is ready at once with its first 100, a search
     console.info(JSON.stringify({ ready: query, ms: Math.round(took) }));
     return took;
   };
+  // The budget is for this page, not for the browser's cold start: the fixture inlines 2.8 MB of CSS and an unminified
+  // bundle of every AI screen, which a fresh WebKit pays once on its first page. One ordinary provider page goes first.
+  await timed("sec=providers&p=cortecs");
   expect(await timed("sec=providers&p=cortecs&state=worst")).toBeLessThan(1500);
   expect(await rows().count()).toBeLessThanOrEqual(100);
   // the fixture's three Cortecs models and the 1,000 of the worst case, counted in the page's locale

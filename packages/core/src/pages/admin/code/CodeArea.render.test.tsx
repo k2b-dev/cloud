@@ -62,7 +62,7 @@ const render = (
     }),
   );
 const text = (html: string) =>
-  renderedText(html.replace(/data-props="[^"]*"/g, ""), " ")
+  renderedText(html.replace(/<!--ssr-props:[\s\S]*?-->/g, ""), " ")
     .replaceAll(/\s+/g, " ")
     .replaceAll(" .", ".");
 const review = { sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 };
@@ -395,14 +395,13 @@ test("break-ui: the worst case renders every section with its long, short, forei
   expect(text(render({ sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 }, "worst"))).toContain("Niederlassung Nord-Ost");
 });
 
-/** The props each island of the picture parses, as the server serializes them into `data-props`, in bytes. */
-const islandBytes = (html: string) =>
-  [...html.matchAll(/data-props="([^"]*)"/g)].reduce(
-    (sum, [, value]) =>
-      sum +
-      Buffer.byteLength((value ?? "").replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&")),
-    0,
-  );
+/** The props each island of the picture parses, as the server writes them into its `<!--ssr-props:…-->` comment, in bytes. */
+const islandBytes = (html: string) => {
+  const comments = [...html.matchAll(/<!--ssr-props:([\s\S]*?)-->/g)];
+  // a picture without one would pass any budget; every view here has its island
+  expect(comments.length).toBeGreaterThan(0);
+  return comments.reduce((sum, [, value]) => sum + Buffer.byteLength(value ?? ""), 0);
+};
 
 test("each first view hands its island only what it shows, within a measured budget", () => {
   // The parts `loadCodeArea` reads for each view; the fixture fills every part, the server only these.
