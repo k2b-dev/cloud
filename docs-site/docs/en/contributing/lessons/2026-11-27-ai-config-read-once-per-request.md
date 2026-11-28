@@ -1,0 +1,6 @@
+### One page load read the AI configuration about thirty times
+
+- **What happened:** One server load of Gustav's page cost 61 SQL statements. About thirty of them were the same six reads of the AI configuration (providers, models, variants, assignments, which providers hold a key, the quota rules), once for every function of the page that asked for the model settings, the people's models, the quotas or the status.
+- **Root cause:** `@k2b/cloud/ai` read each configuration table whenever a function needed it (`readAiModelProfiles`, `aiModelCatalog.assignments`, `listAiCredentialProviderIds`, `aiQuotas.config`). Nothing tied the reads of one request together, and a process-wide cache would have kept configuration that an operator had already changed.
+- **Error class:** A shared read that several parts of one request make independently runs once per part instead of once per request.
+- **Guard:** `defineApp` gives every GET request a scope (`aiConfigRequestScope`) in which each configuration table is read once (`readAiConfigOnce`); `packages/cloud/src/ai/config-reads.integration.test.ts` meters one request with several AI reads and pins each table at exactly one statement, a second request at its own reads, and a writing request at fresh reads.

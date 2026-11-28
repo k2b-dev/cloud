@@ -18,6 +18,7 @@ import {
   aiModelClassFallbackChain,
   aiModelSupportsSlot,
 } from "../shared/ai-models";
+import { readAiConfigOnce } from "./config-reads";
 import { listAiCredentialProviderIds } from "./credentials";
 import { AiModelAccessConflict, type AiModelAccessDraft, aiModelAccess } from "./model-access";
 import { getAiRequestHeaders } from "./request-headers";
@@ -59,7 +60,7 @@ export const assertAiRevision = async (
     : [];
   throw new ConfigConflict(current, who ?? null, current.updatedAt);
 };
-const rows = async (table: Table, id?: string, db = sql, lock = false) => {
+const readRows = async (table: Table, id?: string, db = sql, lock = false) => {
   const key = table === "model_assignments" ? "slot" : "id";
   // Keep ai.models itself readable by older strict to_jsonb(t) catalog readers.
   const projection = table === "models" ? "to_jsonb(t) || jsonb_build_object('output_token_limit', l.output_token_limit)" : "to_jsonb(t)";
@@ -70,6 +71,10 @@ const rows = async (table: Table, id?: string, db = sql, lock = false) => {
   );
   return result.map((row) => decode(row.data));
 };
+// A whole table through the shared client is read once per request (`readAiConfigOnce`); a row, a lock or a
+// transaction always reads.
+const rows = (table: Table, id?: string, db = sql, lock = false) =>
+  id === undefined && db === sql && !lock ? readAiConfigOnce(`catalog:${table}`, () => readRows(table)) : readRows(table, id, db, lock);
 const write = async (table: Table, value: Record<string, unknown>, actorId: string, db = sql, id?: string) => {
   const entries = Object.entries(value).filter(
     ([key, value]) => value !== undefined && !(table === "models" && key === "outputTokenLimit"),
@@ -104,7 +109,7 @@ const requireRow = <T>(value: T | undefined): T => {
   if (!value) throw new AiConfigError("model_not_found", "Model or provider no longer exists.");
   return value;
 };
-const presentProvider = async (value: Record<string, unknown>, db = sql, credentialIds?: string[]): Promise<AiProvider> => {
+const presentProvider = async (value: Record<string, unknown>, db = sql, credentialIds?: readonly string[]): Promise<AiProvider> => {
   const id = z.string().parse(value.id);
   return AiProviderSchema.parse({
     ...value,

@@ -1,6 +1,6 @@
 import { sql } from "../runtime/clients";
-
 import { decryptValue, encryptValue } from "../services/settings/crypto";
+import { readAiConfigOnce } from "./config-reads";
 
 type SqlClient = typeof sql;
 
@@ -32,7 +32,9 @@ export const setAiCredential = async (providerId: string, secret: string, db: Sq
 };
 
 /** Provider IDs with a stored key; decrypt only the selected provider at execution. */
-export const listAiCredentialProviderIds = async (db: SqlClient = sql): Promise<string[]> => {
-  const rows = await db<{ provider_id: string }[]>`SELECT provider_id FROM ai.provider_credentials`;
-  return rows.map((row) => row.provider_id);
+export const listAiCredentialProviderIds = async (db: SqlClient = sql): Promise<readonly string[]> => {
+  const read = async () =>
+    (await db<{ provider_id: string }[]>`SELECT provider_id FROM ai.provider_credentials`).map((row) => row.provider_id);
+  // Read once per request through the shared client; a transaction reads its own state.
+  return db === sql ? readAiConfigOnce("credentials:providers", read) : read();
 };
