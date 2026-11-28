@@ -1,8 +1,9 @@
 import { dates } from "@k2b/stdlib";
-import { useLocale } from "@k2b/ui";
+import { MarkdownEditor, useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
+  Canvas,
   Check,
   Chip,
   Choice,
@@ -730,7 +731,19 @@ export default function ItemForm(props: ItemFormProps) {
         />
       </Field>
       <Field label={t.description} name="description" hint={!isEditMode() ? t.descriptionHint : undefined} optional={t.optional}>
-        <Input multiline value={description()} placeholder={t.markdownDescriptionPlaceholder} onInput={setDescription} />
+        {/* main's description editor: the Markdown editor of @k2b/ui with its toolbar in the full form, its keys and lists
+            everywhere. k2b-ui gap: v2 has no Markdown field of its own yet, so the rich editor stands in a Canvas as it is. */}
+        <Canvas label={t.description}>
+          <MarkdownEditor
+            aria-label={t.description}
+            value={description}
+            onValueChange={setDescription}
+            placeholder={t.markdownDescriptionPlaceholder}
+            noToolbar={quickCreate()}
+            showStats={false}
+            font="sans"
+          />
+        </Canvas>
       </Field>
       <Show when={selectedTemplate() && proposals().length > 0}>
         <Field
