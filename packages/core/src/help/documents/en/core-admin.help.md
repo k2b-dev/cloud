@@ -2,7 +2,7 @@
 id: core-admin
 title: Administration
 icon: ti ti-settings
-description: Use the administration overview, publish announcements, change Core settings, and rotate app credentials.
+description: Find the administration pages, publish announcements, change Core settings, and rotate app credentials.
 order: 120
 ---
 
@@ -13,7 +13,7 @@ The account settings link to the matching English guide with **Documentation**. 
 ## Find the administration pages {icon="user-cog"}
 
 :::reference
-- **Overview:** Lists the registered apps with administration pages. It also counts the registered apps, the administration pages that you can open, and the navigation entries that people see.
+- **Start:** `/admin` opens the Observability overview where Gateway Ops runs, and **Apps** otherwise. The admin bar leads to every administration page, the pages of the apps included.
 - **Apps:** Every app with its state, access, keys and events. Open an app to see why it needs attention and what to do. Its **Keys** also hold the tokens for apps that run on the host. User mandates still limit the actions that a key or token can take.
 - **Announcements:** Create and edit announcements or banners. An entry is active, scheduled, or expired, depending on its publish time and expiry time.
 - **Settings:** Edit the settings by group. Each field shows its current value. It also shows the source of the value where the settings service provides it.

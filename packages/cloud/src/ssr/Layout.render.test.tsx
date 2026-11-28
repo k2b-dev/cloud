@@ -418,7 +418,6 @@ describe("Cloud layouts SSR", () => {
       };
       expect(await trailOf("/admin/settings")).toEqual({ title: "Settings", ancestors: [] });
       expect(await trailOf("/admin/mail-probe/security?title=Mail%20security")).toEqual({ title: "Mail security", ancestors: [] });
-      expect(await trailOf("/admin/overview?title=Overview")).toEqual({ title: "Admin", ancestors: [] });
     } finally {
       for (const spy of spies) spy.mockRestore();
     }

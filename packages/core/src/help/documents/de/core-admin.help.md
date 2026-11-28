@@ -2,7 +2,7 @@
 id: core-admin
 title: Administration
 icon: ti ti-settings
-description: Administrationsübersicht nutzen, Ankündigungen veröffentlichen, Core-Einstellungen ändern und App-Schlüssel rotieren.
+description: Administrationsseiten finden, Ankündigungen veröffentlichen, Core-Einstellungen ändern und App-Schlüssel rotieren.
 order: 120
 ---
 
@@ -13,7 +13,7 @@ Die Kontoeinstellungen verlinken mit **Dokumentation** die passende englische An
 ## Administrationsseiten finden {icon="user-cog"}
 
 :::reference
-- **Übersicht:** Listet die registrierten Apps mit Administrationsseiten. Sie zählt außerdem die registrierten Apps, die Administrationsseiten, die du öffnen kannst, und die Navigationseinträge, die Personen sehen.
+- **Start:** `/admin` öffnet die Übersicht von Observability, wo Gateway Ops läuft, sonst **Apps**. Die Admin-Leiste führt zu jeder Administrationsseite, auch zu denen der Apps.
 - **Apps:** Jede App mit Zustand, Zugriff, Schlüsseln und Ereignissen. Öffne eine App, um zu sehen, warum sie Aufmerksamkeit braucht und was zu tun ist. Unter **Schlüssel** stehen auch die Tokens für Apps, die auf dem Host laufen. Nutzermandate begrenzen weiterhin die Aktionen, die ein Schlüssel oder Token ausführen darf.
 - **Ankündigungen:** Erstelle und bearbeite Ankündigungen oder Banner. Ein Eintrag ist aktiv, geplant oder abgelaufen, je nach Veröffentlichungszeit und Ablaufzeit.
 - **Einstellungen:** Bearbeite die Einstellungen nach Gruppen. Jedes Feld zeigt seinen aktuellen Wert. Wo der Einstellungsdienst sie bereitstellt, zeigt es auch die Quelle des Werts.
