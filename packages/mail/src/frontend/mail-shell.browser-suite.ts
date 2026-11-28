@@ -2564,7 +2564,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             }
           });
 
-        // A first visit can paint before the web fonts load (font-display: swap): the fit must then follow the fonts, so
+        // A first visit can paint before the web fonts load (the icon font swaps in late): the fit must then follow the fonts, so
         // the server frame, measured once they are ready, and the client render show the same tabs.
         for (const [width, height] of [
           [1440, 900],

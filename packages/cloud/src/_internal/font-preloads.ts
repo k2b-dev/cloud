@@ -6,12 +6,13 @@ import plexPreset from "@k2b/ui/fonts/plex.css" with { type: "text" };
  * frame: Latin text at 400, 500 (list titles, medium text) and 600 (headings,
  * buttons, labels).
  *
- * The preset declares its faces with `font-display: swap`. Without a preload
- * the browser requests a face only when layout needs it, paints the fallback
- * font and re-wraps the text once Plex arrives. That moves every box after the
- * first changed line, and on a vertically centered page such as sign-in the
- * whole form. Preloaded, the faces download next to the render-blocking
- * stylesheets and the first frame already uses them.
+ * The preset declares its faces with `font-display: optional`: a face that
+ * misses the first frame never replaces the fallback on that page, so a late
+ * face cannot re-wrap text or change a button's width. Without a preload the
+ * browser requests a face only when layout needs it, too late for the first
+ * frame, and a first visit would stay in the fallback font. Preloaded, the
+ * faces download next to the render-blocking stylesheets and the first frame
+ * already uses them.
  *
  * Core serves the faces under `/public/fonts/` with the preset's
  * content-hashed file names (`packages/core/scripts/font-assets.ts`). The
