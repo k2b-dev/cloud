@@ -51,7 +51,7 @@ People over each other with "+n" for the rest, as one picture with one name.
 
 ### Spark
 
-A few bars of a short history beside a number or on a card, the last in full colour.
+A few bars of a short history beside a number or on a card, the last in full colour. Sparks side by side that people compare share one `max`, so the same value has the same height in each.
 
 <Props of="Spark" />
 
