@@ -79,8 +79,11 @@ describe("@k2b/ui motion contract", () => {
       for (const scope of [".k2b-ui", ".k2b-ui *"]) {
         for (const part of ["", "::before", "::after", "::backdrop"]) {
           const state = declarations(`${host}${scope}${part}`, context);
-          for (const property of ["transition-duration", "transition-delay", "animation-duration", "animation-delay"])
+          for (const property of ["transition-duration", "transition-delay", "animation-delay"])
             expect(state.get(property)).toEqual(["0s !important"]);
+          // auto is 0s for a timed animation and lets one on a scroll timeline follow the scroll; 0s stays for a
+          // browser without auto
+          expect(state.get("animation-duration")).toEqual(["0s !important", "auto !important"]);
           expect(state.get("scroll-behavior")).toEqual(["auto !important"]);
         }
       }

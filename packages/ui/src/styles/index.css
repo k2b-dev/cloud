@@ -385,7 +385,9 @@
   .k2b-ui *::backdrop {
     transition-duration: 0s !important;
     transition-delay: 0s !important;
+    /* auto: 0s for a timed animation; one on a scroll timeline (a sticky column's edge) keeps following the scroll */
     animation-duration: 0s !important;
+    animation-duration: auto !important;
     animation-delay: 0s !important;
     scroll-behavior: auto !important;
   }
@@ -433,6 +435,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   transition-duration: 0s !important;
   transition-delay: 0s !important;
   animation-duration: 0s !important;
+  animation-duration: auto !important;
   animation-delay: 0s !important;
   scroll-behavior: auto !important;
 }
