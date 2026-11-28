@@ -175,7 +175,7 @@ export const v2Screens = {
   contact: {
     title: "Angaben · Kontakt einer Kundin",
     description:
-      "A person's details as label and value: e-mail and phone as links with a copy button, an address in its lines, a web address on one line, an ID in monospace, a dash for what is not set, a note at a reading measure. Roomy with a hair in the main column, dense in the side column, the label over its value on the phone.",
+      "A person's details as label and value: e-mail and phone as links with a copy button, an address in its lines, a web address on one line, an ID in monospace, a dash for what is not set, a note at a reading measure. Roomy in the main column (pairs of 34 px), dense in the side column, the label over its value on the phone.",
     mockup: "key-value detail mockup",
     app: "#2563eb",
     phone: { back: "Kunden" },

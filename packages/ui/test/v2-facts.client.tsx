@@ -11,6 +11,9 @@ declare global {
   }
 }
 
+// `?loading` renders the same facts while their values are on their way
+const loading = new URLSearchParams(location.search).has("loading") || document.body.dataset.loading !== undefined;
+
 const root = document.getElementById("root");
 if (!root) throw new Error("facts: #root is missing");
 render(
@@ -20,6 +23,7 @@ render(
         <Pane label="Angaben">
           <Section title="Kontakt">
             <Facts
+              loading={loading}
               items={[
                 { label: "E-Mail", kind: "email", value: "o.brandner@example.org" },
                 {
@@ -36,6 +40,12 @@ render(
                 { label: "Port", kind: "url", value: "example.org:8080/status" },
                 { label: "Kopie", kind: "email", value: "anna@example.org?bcc=mallory@example.org" },
                 { label: "Zentrale", kind: "phone", value: "+49 (0) 30 1234567" },
+                { label: "Leerzeichen", kind: "phone", value: " +49 30 555" },
+                { label: "Durchwahl", kind: "phone", value: "+49 30 5550 ext. 12" },
+                { label: "Komma", kind: "email", value: "anna@example.org,mallory@example.org" },
+                { label: "Strichpunkt", kind: "email", value: "anna@example.org;mallory@example.org" },
+                { label: "Prozent", kind: "email", value: "anna%2Cmallory@example.org" },
+                { label: "Zeilenumbruch", kind: "email", value: "anna@example.org%0D%0Abcc:mallory@example.org" },
                 { label: "Steuer-ID", value: undefined },
                 { label: "Fax", kind: "phone", value: "" },
                 {

@@ -1,7 +1,6 @@
 import { Bar, Facts, Nav, Pane, RecordHead, Section, Workspace } from "@k2b/ui/v2";
 
-// A person's details as label and value: contact data in the main column, roomy with a hair between
-// the pairs; bank data in the side column, dense. Every value says its kind, so `Facts` makes its link and its copy
+// A person's details as label and value: contact data in the main column, roomy (pairs of 34 px); bank data in the side column, dense. Every value says its kind, so `Facts` makes its link and its copy
 // button. The worst case puts long labels, an address that cannot break, six lines of an address, a web address with a
 // query, empty values and a long note into the same places.
 

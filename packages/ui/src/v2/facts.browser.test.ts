@@ -23,14 +23,25 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (width: number, run: (page: Page) => Promise<void>) => {
+const withPage = async (
+  width: number,
+  run: (page: Page) => Promise<void>,
+  options: { loading?: boolean; clipboard?: "ok" | "refused" } = {},
+) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
+      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"${options.loading ? " data-loading" : ""}><div id="root"></div></body></html>`,
     );
+    if (options.clipboard)
+      await page.evaluate((answer) => {
+        Object.defineProperty(navigator, "clipboard", {
+          configurable: true,
+          value: { writeText: () => (answer === "ok" ? Promise.resolve() : Promise.reject(new Error("refused"))) },
+        });
+      }, options.clipboard);
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
     await settled(page);
@@ -91,9 +102,14 @@ test("a kind makes the link and the copy button; a scheme that may not open stay
     expect(byLabel.Telefon).toMatchObject({ links: ["tel:+49305550142", "tel:+49305550990"], copy: 0 });
     expect(byLabel.Anschrift).toMatchObject({ links: [], copy: 1 });
     expect(byLabel.Website!.links).toEqual(["https://www.beispiel-verwaltung.example.org/kunden/portal/rechnungen?jahr=2026"]);
-    // a scheme that may not open, and an address with a query that would add to the mail, stay words without a link
+    // a scheme that may not open, and an address that would add to the mail (a query, a second address, an escape),
+    // stay words without a link; the copy button stays
     expect(byLabel.Skript!.links).toEqual([]);
-    expect(byLabel.Kopie).toMatchObject({ links: [], copy: 1 });
+    for (const label of ["Kopie", "Komma", "Strichpunkt", "Prozent", "Zeilenumbruch"])
+      expect([label, byLabel[label]]).toEqual([label, expect.objectContaining({ links: [], copy: 1 })]);
+    // a number keeps its plus behind a space, and calls the line before its extension
+    expect(byLabel.Leerzeichen!.links).toEqual(["tel:+4930555"]);
+    expect(byLabel.Durchwahl!.links).toEqual(["tel:+49305550"]);
     // a port is no scheme; the trunk zero "(0)" leaves an international number
     expect(byLabel.Port!.links).toEqual(["https://example.org:8080/status"]);
     expect(byLabel.Zentrale!.links).toEqual(["tel:+49301234567"]);
@@ -107,6 +123,11 @@ test("a kind makes the link and the copy button; a scheme that may not open stay
     expect(url.height).toBe(20);
     expect(url.text?.startsWith("www.beispiel-verwaltung")).toBe(true);
     expect(url.title.startsWith("https://")).toBe(true);
+    // the new tab is named for assistive technology, hidden from sight
+    expect(url.text?.endsWith("(öffnet in einem neuen Tab)")).toBe(true);
+    expect(
+      await page.locator(".k2-fact-entry[data-url] .k2-hidden-text").first().evaluate((element) => element.getBoundingClientRect().width),
+    ).toBeLessThanOrEqual(1);
   });
 });
 
@@ -120,3 +141,50 @@ test("390 px: every label stands over its value", async () => {
       }
   });
 });
+
+test("while the values load, an address keeps the room of its lines, so nothing moves when it comes", async () => {
+  const height = async (loading: boolean) => {
+    let found = 0;
+    await withPage(
+      1440,
+      async (page) => {
+        found = await page.evaluate(() => {
+          const pair = [...document.querySelectorAll(".k2-fact-pair")].find(
+            (each) => each.querySelector("dt")?.textContent === "Anschrift",
+          )!;
+          return Math.round(pair.querySelector("dd")!.getBoundingClientRect().height);
+        });
+      },
+      { loading },
+    );
+    return found;
+  };
+  const [loaded, waiting] = [await height(false), await height(true)];
+  expect(loaded).toBeGreaterThan(34);
+  expect(waiting).toBe(loaded);
+});
+
+for (const answer of ["ok", "refused"] as const)
+  test(`a copy that ${answer === "ok" ? "works" : "the browser refuses"} shows it in its symbol for two seconds and says it once; its name stays`, async () => {
+    await withPage(
+      1440,
+      async (page) => {
+        const button = page.getByRole("button", { name: "Kopieren: E-Mail", exact: true });
+        await button.click();
+        const symbol = () => button.locator(".k2-icon").getAttribute("data-name");
+        await page.waitForFunction(
+          (icon) => document.querySelector('[aria-label="Kopieren: E-Mail"] .k2-icon')?.getAttribute("data-name") === icon,
+          answer === "ok" ? "check" : "alert-circle",
+        );
+        expect(await button.getAttribute("aria-label")).toBe("Kopieren: E-Mail");
+        const news = answer === "ok" ? "Kopiert" : "Kopieren nicht möglich";
+        await page.waitForFunction(
+          (words) => [...document.querySelectorAll("[data-k2-news]")].some((region) => region.textContent?.includes(words)),
+          news,
+        );
+        await page.waitForTimeout(2100);
+        expect(await symbol()).toBe("copy");
+      },
+      { clipboard: answer },
+    );
+  });

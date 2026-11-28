@@ -172,7 +172,9 @@ export type FactEntry = string | { value: string; note: string };
 
 /**
  * A label and its value. A value that is not set (left out, `""`, `null` or no entries) shows a quiet "—". With a
- * `kind` the value is text and Facts makes what fits it:
+ * `kind` the value is text and Facts makes what fits it; an address, a number or a web address it cannot link safely
+ * (a second address or a query in an e-mail address, no digits in a number, a scheme other than http or https) stays
+ * plain words, still with its copy button:
  * - `email`, `phone`: a `mailto:` or `tel:` link and a copy button; several entries stand one under the other,
  *   each its own link (and no copy button, as it could copy only one);
  * - `url`: the address without its scheme on one line, cut with "…", that opens in a new tab;
@@ -221,11 +223,18 @@ const isSet = (item: Fact) => {
  * `data:`) gets no link and stays words, as in `Prose`.
  */
 const hrefOf = (kind: "email" | "phone" | "url", value: string): string | undefined => {
-  // an address is one local part and one domain, without a query: `?bcc=` or `&body=` would add to the mail
-  if (kind === "email") return /^[^\s?#&@/]+@[^\s?#&@/]+$/.test(value) ? `mailto:${value}` : undefined;
+  // an address is one local part and one domain and nothing a mail program reads as more: no query or fragment
+  // (`?bcc=`, `&body=`), no second address (`,` `;`), no escapes (`%2C`, `%0D%0A`), no space or control sign
+  if (kind === "email") {
+    const part = "[^\\s?#&@/%,;\\p{Cc}]+";
+    return new RegExp(`^${part}@${part}$`, "u").test(value) ? `mailto:${value}` : undefined;
+  }
   if (kind === "phone") {
-    // the trunk zero of a national number written `+49 (0) 30 …` belongs to no international number
-    const digits = value.replace(/\(0\)/g, "").replace(/(?!^\+)[^\d]/g, "");
+    // the number up to an extension ("ext. 12", "Durchwahl 3"): the link calls the line, the words keep the extension
+    const line = value.trim().split(/\s*(?:ext\.?|extension|x|durchwahl|dw|app\.?|#)\s*\d/i)[0]!;
+    // the trunk zero written `+49 (0) 30 …` after a country code belongs to no international number
+    const plain = line.replace(/^(\+\d{1,3})\s*\(0\)/, "$1");
+    const digits = plain.replace(/(?!^\+)[^\d]/g, "");
     return /^\+?\d{3,}$/.test(digits) ? `tel:${digits}` : undefined;
   }
   // a scheme is letters before `:` that are not a port (`example.org:8080`), or anything before `://`

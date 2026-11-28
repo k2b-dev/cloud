@@ -354,7 +354,8 @@ each `string` or `{ value, note }` such as "mobil", one under the other and
 without a copy button); `url` the address without its scheme on one line,
 cut with "…", opening in a new tab (only http and https get a link);
 `address` its lines (`\n` or an array) with a copy button for all of them;
-`note` longer words at a reading measure with a quiet line before them.
+`note` longer words at a reading measure with a quiet line before them. An
+address, number or web address that cannot be linked safely stays plain words.
 `copy` adds a copy button with that text; `mono` shows a value read sign by
 sign (a token, a key, an ID) in monospace, broken at any sign and selected
 whole by one click. `inline` puts all on one

@@ -189,9 +189,9 @@ export const ActionButton = (props: {
 );
 
 /**
- * The copy button beside a value (internal to Facts); `disabled` while the value is on its way. It says what happened
- * for two seconds, in its symbol and its name, and aloud: copied, or that the browser refused (a page without the
- * permission, an old browser), so a copy never fails in silence.
+ * The copy button beside a value (internal to Facts); `disabled` while the value is on its way. Its name stays "Copy: …";
+ * what happened shows for two seconds in its symbol and is said once aloud: copied, or that the browser refused (a
+ * page without the permission, an old browser), so a copy never fails in silence.
  */
 export const CopyButton = (props: { label: string; value: string; disabled?: boolean }) => {
   const t = useUiMessages();
@@ -209,7 +209,7 @@ export const CopyButton = (props: { label: string; value: string; disabled?: boo
     <Button
       variant="ghost"
       icon={state() === "copied" ? "check" : state() === "failed" ? "alert-circle" : "copy"}
-      label={`${state() === "copied" ? t().copied : state() === "failed" ? said().copyFailed : t().copy}: ${props.label}`}
+      label={`${t().copy}: ${props.label}`}
       disabled={props.disabled}
       onClick={() => {
         copyToClipboard(props.value).then(
