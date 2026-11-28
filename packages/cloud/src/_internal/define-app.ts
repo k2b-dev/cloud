@@ -131,19 +131,13 @@ import { createHttpDrain } from "./http-drain";
 import { createInstallableRoutes } from "./installable-assets";
 import { installableHead, installableThemeScript } from "./installable-head";
 import { createPageResponses } from "./page-responses";
-import { pageScopeClass, pageStylesheetLinks, servedStylesheets } from "./page-stylesheets";
+import { pageScopeClass, pageStylesheetLinks } from "./page-stylesheets";
 import { getProcessSync, startProcessSync } from "./process-sync";
 import { readPwaStaticAssets } from "./pwa-assets";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
 import { appInstanceRegistry, appMembershipLock, appRegistry, type CapabilityRegistryRecord, capabilityRegistry, getApp } from "./registry";
 import { canonicalRoute, isOwnAppPath, validateAppRegistryEntry } from "./registry-validation";
-import {
-  ensureRuntimeWatcher,
-  getCurrentRuntime,
-  registeredCoreRelease,
-  registeredCoreRoutes,
-  stopRuntimeWatcher,
-} from "./runtime-watcher";
+import { ensureRuntimeWatcher, getCurrentRuntime, registeredCoreRelease, stopRuntimeWatcher } from "./runtime-watcher";
 import { runSetupExclusively } from "./setup-lock";
 import { publicFileVersion, servePublicAsset, sharedStylesheetVersion } from "./static-assets";
 import { createStatusPreservingSsrHandler } from "./status-preserving-ssr";
@@ -176,7 +170,10 @@ type ResolvedPageOptions = PageOptions & {
   appAccent?: string;
   /** `Layout ui="v2"`: the body carries the app's v2 inks beside its accent. */
   appUi?: "v2";
-  /** `MinimalLayout ui="v2"`: the page links Core's `v2.css` in place of `global.css` (see `pageStylesheetLinks`). */
+  /**
+   * `MinimalLayout ui="v2"`: the page links Core's `v2.css` in place of `global.css` (see `pageStylesheetLinks`). The
+   * layout sets it only where the registered Core serves that sheet (`servedStylesheets`); the document trusts it.
+   */
   stylesheets?: "v2";
   appPrimary?: AppAppearance["primary"];
   /** Signed-in pages: the person's screen preferences, for the privacy screen. */
@@ -628,8 +625,8 @@ export const defineApp = <
         appUi === "v2"
           ? [appAccentStyle(appAccent), appV2InkStyle(appAccent)].filter(Boolean).join(";") || undefined
           : appAccentStyle(appAccent);
-      // A v2 page without the shell links Core's v2.css alone when the registered Core serves it (else global.css).
-      const sheets = servedStylesheets(stylesheets, registeredCoreRoutes());
+      // A v2 page without the shell links Core's v2.css alone; its layout asked whether the registered Core serves it.
+      const sheets = stylesheets;
       const fixed = theme !== undefined;
       const resolved = theme ?? (themePreference === "light" || themePreference === "dark" ? themePreference : undefined);
       // App pages paint the canvas before any stylesheet and give it to the

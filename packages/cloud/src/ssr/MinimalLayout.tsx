@@ -37,7 +37,8 @@ export type MinimalLayoutProps = {
 /** A v2 page beside an older Core: the frame its sheet lacks, inline (the page fills the window above the footer). */
 const OLDER_CORE = {
   page: "display:flex;flex-direction:column;min-height:100dvh",
-  main: "display:flex;flex:1 1 auto;min-height:0;min-width:0",
+  // the v2 content paints its own surface, in both themes: the older body has v1's
+  main: "display:flex;flex:1 1 auto;min-height:0;min-width:0;background:var(--k2-surface)",
 };
 
 export default function MinimalLayout(props: MinimalLayoutProps) {

@@ -156,4 +156,44 @@ describe("MinimalLayout ui v2", () => {
             await tab.close();
           }
         }, 30_000);
+
+  // review of #4231: the page paints its surface from the v2 token, also in the dark theme (`class="dark"` on <html>).
+  // Beside an older Core the body keeps that Core's v1 surface around its v1 footer; the v2 content paints its own.
+  for (const core of ["with v2.css", "older"] as const)
+    test(`Core ${core}: in the dark theme the v2 content shows the dark v2 surface`, async () => {
+      const tab = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+      try {
+        const surfaces = async (theme: "light" | "dark") => {
+          await tab.setContent(
+            `<!doctype html><html lang="de" class="${theme === "dark" ? "dark" : ""}"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${sheets[core].css}</style></head>` +
+              `<body class="${sheets[core].body}">${render(false, core).html}</body></html>`,
+          );
+          await settled(tab);
+          return tab.evaluate(() => {
+            // the token as a colour: a probe inside the v2 scope paints with it
+            const probe = document.createElement("i");
+            probe.style.background = "var(--k2-surface)";
+            document.querySelector("main")!.append(probe);
+            const surface = getComputedStyle(probe).backgroundColor;
+            probe.remove();
+            // what shows behind an element: its own background, else the first ancestor's that paints one
+            const shown = (element: Element | null): string => {
+              for (let at = element; at; at = at.parentElement) {
+                const colour = getComputedStyle(at).backgroundColor;
+                if (colour !== "rgba(0, 0, 0, 0)" && colour !== "transparent") return colour;
+              }
+              return "transparent";
+            };
+            return { surface, body: shown(document.body), main: shown(document.querySelector("main")) };
+          });
+        };
+        const light = await surfaces("light");
+        const dark = await surfaces("dark");
+        expect(dark.surface).not.toBe(light.surface);
+        expect(dark.main).toBe(dark.surface);
+        if (core === "with v2.css") expect(dark.body).toBe(dark.surface);
+      } finally {
+        await tab.close();
+      }
+    }, 30_000);
 });
