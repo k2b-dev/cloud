@@ -55,8 +55,6 @@ const renderHead = (state: LinkedState, items: MailLinkedItem[] = []) =>
       laterItems: () => [],
       menuItems: () => [],
       menuLabel: "More conversation actions",
-      hint: null,
-      onHintSeen: () => {},
     }),
   );
 

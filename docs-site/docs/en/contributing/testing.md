@@ -104,7 +104,7 @@ To run one file directly:
 ```bash
 bun --no-env-file test --isolate --conditions=browser \
   --preload ./packages/ui/test/solid-dom-preload.ts \
-  ./packages/core/src/pages/admin/CacheNotice.behavior.test.ts
+  ./packages/core/test/consent.behavior.test.tsx
 ```
 
 Guard browser-only tests with `isServer` from `solid-js/web`, so a plain
@@ -210,7 +210,13 @@ scroll-restore test does, because a check after a real-time wait that the delay
 has not fired yet fails on a slow runner. Wait for the state you assert, not
 for a step before it: the continuous month test waits until the grid rests at
 the week and the header names the month, because the view names the month in
-an animation frame after the scroll event.
+an animation frame after the scroll event. A wait after an action names
+something only the action changes: a condition that already held before it
+returns at once, and the next step races the action. When an action loads the
+same address again, mark the old document first and wait for a new document
+without the mark, as the Storage and outgoing mail admin tests do. The
+`test-waits` check cannot see this: whether a condition already holds depends
+on the page's state before the action, not on the test's text.
 
 A live region that a component fills after a timer is read with a bounded
 wait, such as `waitForFunction` on its text, never once after `settled()`.
@@ -1327,6 +1333,11 @@ try {
 }
 ```
 
+A test file can open and close any number of meters, also overlapping ones.
+The proxy stays for the whole process, and the last `close()` binds the
+handle to the database directly again. A pool that a module creates while a
+meter is open keeps the proxy and still works after `close()`.
+
 Warm the caches with one event before the measured window. Keep the window to
 the events under test, because timers that fire inside it count too. Pin the
 number you measured, and name the issue when it is above the target. A fix
@@ -1399,7 +1410,7 @@ optional jobs; failed or cancelled jobs fail the full gate. The `ci-gate`
 rule and its tests check the job list, exact draft and path conditions,
 the red draft gate, skip allowances, event triggers, and concurrency policy.
 
-Unit tests run in fourteen shards, WebKit tests in twenty-two, and integration
+Unit tests run in fourteen shards, WebKit tests in twenty-six, and integration
 tests in six. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
 suite counts as the median of its table. The browser table contains WebKit
@@ -1799,7 +1810,7 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
 
 `bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
-them again in WebKit in twenty-two shards with `bun run test --browser`, against
+them again in WebKit in twenty-six shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
 or `scripts/` changed. At its end, it lists every process that crashed on the

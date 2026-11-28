@@ -101,8 +101,17 @@ const TreeMenu = (props: { label: string; items: readonly MenuEntry[] }) => {
   );
 };
 
+/**
+ * A `Nav` group's tree as `navTree` makes it: the places and the view that draws them. The view comes with the data,
+ * so a page whose `Nav` draws no tree loads none of its code.
+ */
+export type NavTreeGroup = NavTree & { readonly view: (props: NavTree) => JSX.Element };
+
+/** The tree of a `Nav` group: `groups={[{ label: "Ordner", tree: navTree({ label, items, current, load }) }]}`. */
+export const navTree = (tree: NavTree): NavTreeGroup => ({ ...tree, view: NavTreeView });
+
 /** The tree of a `Nav` group: places of 32 px, one level 12 px further in, the arrow before the symbol. */
-export const NavTreeView = (props: NavTree) => {
+const NavTreeView = (props: NavTree) => {
   const t = useTreeMessages();
   const overlay = useOverlayMessages();
   const nodes = createMemo(() => {

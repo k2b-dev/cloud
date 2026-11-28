@@ -98,7 +98,7 @@ const accessRows = async (db: SQL) => {
   >`SELECT ap.app_id, p.key FROM outgoing_mail.app_profiles ap JOIN outgoing_mail.profiles p ON p.id = ap.profile_id ORDER BY p.key`;
   return { access, grants };
 };
-const mapProfile = (row: ProfileRow, appCount: number): AdminMailProfile => ({
+const mapProfile = (row: ProfileRow, appCount: number, usedLast24h: number): AdminMailProfile => ({
   key: row.key,
   name: row.name,
   fromAddress: row.from_address,
@@ -135,15 +135,35 @@ const mapProfile = (row: ProfileRow, appCount: number): AdminMailProfile => ({
   updatedAt: timestamp(row.updated_at),
   updatedBy: row.updated_by,
   appCount,
+  usedLast24h,
 });
+/**
+ * A message that counts against a profile's rolling 24-hour recipient quota: not cancelled and created in the last 24
+ * hours. Its columns stand unqualified, so it reads `outgoing_mail.messages` also inside a subquery beside profiles.
+ */
+export const countsTowardQuota = (db: SQL) => db`status <> 'cancelled' AND created_at > now() - INTERVAL '24 hours'`;
 const list = async (db: SQL = sql, registeredApps?: readonly AppRegistryEntry[]): Promise<AdminMailProfile[]> => {
   const apps = registeredApps ?? (await listApps());
   const rows = await db<ProfileRow[]>`SELECT ${columns(db)} FROM outgoing_mail.profiles ORDER BY is_default DESC, name, key`;
   const { access, grants } = await accessRows(db);
   const selected = new Set(access.filter((a) => a.mode === "selected").map((a) => a.app_id));
   const defaults = apps.filter((app) => app.platformPermissions?.includes("mail:send") && !selected.has(app.id));
+  // The apps' 24-hour count (as profilesForApp reads it), summed per profile over every app that could send: one
+  // statement on the quota index (app_id, profile_id, created_at), read only with this admin list.
+  const senders = [...new Set([...apps.map((app) => app.id), ...access.map((a) => a.app_id)])];
+  const used = senders.length
+    ? await db<{ profile_id: string; used: number }[]>`
+        SELECT profile_id, COALESCE(sum(recipient_count), 0)::int AS used FROM outgoing_mail.messages
+        WHERE app_id = ANY(${senders}) AND ${countsTowardQuota(db)}
+        GROUP BY profile_id`
+    : [];
+  const usedBy = new Map(used.map((entry) => [String(entry.profile_id), entry.used]));
   return rows.map((row) =>
-    mapProfile(row, grants.filter((g) => g.key === row.key && selected.has(g.app_id)).length + (row.is_default ? defaults.length : 0)),
+    mapProfile(
+      row,
+      grants.filter((g) => g.key === row.key && selected.has(g.app_id)).length + (row.is_default ? defaults.length : 0),
+      usedBy.get(String(row.id)) ?? 0,
+    ),
   );
 };
 const get = async (key: string): Promise<AdminMailProfile> => {
@@ -384,7 +404,7 @@ const profilesForApp = async (appId: string): Promise<MailProfile[]> => {
   >`
     SELECT p.key, p.name, p.from_address, p.is_default, p.max_attachment_bytes, p.daily_recipient_limit,
       (SELECT COALESCE(sum(m.recipient_count), 0)::int FROM outgoing_mail.messages m WHERE m.app_id = ${appId}
-        AND m.profile_id = p.id AND m.status <> 'cancelled' AND m.created_at > now() - INTERVAL '24 hours') AS used
+        AND m.profile_id = p.id AND ${countsTowardQuota(sql)}) AS used
     FROM outgoing_mail.profiles p WHERE
       CASE WHEN EXISTS(SELECT 1 FROM outgoing_mail.app_access WHERE app_id = ${appId} AND mode = 'selected')
       THEN EXISTS(SELECT 1 FROM outgoing_mail.app_profiles WHERE app_id = ${appId} AND profile_id = p.id)
@@ -451,7 +471,7 @@ export const listImapMailProfiles = async (): Promise<ImapMailProfile[]> => {
     SELECT ${columns(sql)}, imap_uid_validity::text AS uid_validity, imap_last_uid::text AS last_uid
     FROM outgoing_mail.profiles WHERE imap_host IS NOT NULL ORDER BY imap_checked_at NULLS FIRST, key`;
   return rows.map((row) => {
-    const imap = mapProfile(row, 0).imap;
+    const imap = mapProfile(row, 0, 0).imap;
     if (!imap) throw new Error("Outgoing mail IMAP configuration is invalid.");
     return {
       id: row.id,

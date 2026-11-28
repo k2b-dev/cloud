@@ -1,0 +1,6 @@
+### A closed SQL meter left handles on a dead proxy port
+
+- **What happened:** After `meter.close()` from `scripts/fixtures/sql-meter.ts`, later queries in the same test process failed with `ERR_POSTGRES_CONNECTION_REFUSED`. Lanes kept each statement-count test alone in its own file to avoid it (#4494).
+- **Root cause:** Each meter had its own proxy and closed it on `close()`. Two paths kept the closed port. A pool that a module creates lazily while a meter is open (`pool ??= createSql()`) keeps the proxy URL. And when meters overlap, for example when a timed-out test closes its meter after the next test opened one, the second meter takes the first meter's proxy URL as the direct URL and restores it on `close()`. The order of rebinding and closing the proxy inside `close()` was not the cause: a plain sequence of meters always worked.
+- **Error class:** A test fixture closes a process resource whose address other objects copied and keep after the fixture ends.
+- **Guard:** The proxy now stays for the whole process, and the last open meter binds the platform handle back to the direct URL. `scripts/fixtures/sql-meter.integration.test.ts` opens and closes four meters with a lazily created pool, and closes overlapping meters out of order; both tests fail on the earlier fixture.
