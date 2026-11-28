@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { LocaleProvider } from "../src/intl/locale";
-import { Bar, Button, Menu, Pane, Tabs, Text, Workspace } from "../src/v2";
+import { Avatar, Bar, Button, Menu, Pane, Tabs, Text, Workspace } from "../src/v2";
 
 // Heads that do not fit on the phone, each in a box of its own (`.case`):
 // - "record": three tabs and seven actions that stay on the phone (`keep`), then the primary action. The start stays
@@ -9,6 +9,8 @@ import { Bar, Button, Menu, Pane, Tabs, Text, Workspace } from "../src/v2";
 // - "book": the head of a notebook page, a title and a button "1.000 Kommentare" in the start, five actions at its
 //   end. All of them fold, and then the start shortens down to its least.
 // - "menu": a title, four actions and the head's own menu "…" at the end: the folded actions are its first section.
+// - "people": a title, five people and the primary action: the people give way, with no "…" for them; "peopleDots":
+//   the same with the head's own "…", which lists only its own entries.
 // - "before": a draft's head whose plain "…" stands before the primary "Senden": the "…" takes the folded actions,
 //   among them a link ("Vorschau") that `window.__k2Lock(true)` disables.
 // - "reader": Mail's reader in small: a long subject, the primary "Erledigt", four actions, a menu with words
@@ -121,6 +123,36 @@ export function Fixture() {
           </Pane>
         </Workspace>
       </div>
+      {(["people", "peopleDots"] as const).map((which) => (
+        <div class="case" data-case={which}>
+          <Workspace
+            head={
+              <Bar
+                start={
+                  <Text type="row" weight="strong">
+                    Angebot Lackfabrik Nordhaus
+                  </Text>
+                }
+                end={
+                  <>
+                    {["Ada Lovelace", "Grace Hopper", "Alan Turing", "Edsger Dijkstra", "Barbara Liskov"].map((name) => (
+                      <Avatar name={name} />
+                    ))}
+                    {which === "peopleDots" && <Menu items={[{ label: "Umbenennen", icon: "pencil", onClick: deed("Umbenennen") }]} />}
+                    <Button variant="primary" icon="plus">
+                      Neu
+                    </Button>
+                  </>
+                }
+              />
+            }
+          >
+            <Pane label="Angebot">
+              <Text>Das Angebot.</Text>
+            </Pane>
+          </Workspace>
+        </div>
+      ))}
       <div class="case" data-case="menu">
         <Workspace
           head={

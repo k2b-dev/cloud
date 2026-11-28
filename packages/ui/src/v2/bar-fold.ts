@@ -35,6 +35,11 @@ type Watched = {
 export const foldable =
   '.k2-btn:not([data-variant="primary"], [data-floats], [data-closes], [aria-haspopup], [popover]), :is(button, a).k2-chip:not([popover])';
 /**
+ * The people a head shows (an `Avatar` or its stack that is no button and no link): they give way with the buttons, in
+ * their place in the end, but have no deed, so the "…" lists nothing for them.
+ */
+const givesWay = ":is(.k2-av, .k2-avs):not(button, a)";
+/**
  * What stands after the "…" that takes the folded buttons without folding itself: a closing ×, the primary, a menu
  * of its own (a symbol such as "Ansicht", or words such as "Filter"). A "…" that offers itself is no such menu.
  */
@@ -144,19 +149,22 @@ const measure = (entry: Watched): Found => {
   // not a fraction over: the start would give that fraction, and a tab of it would hide
   for (let index = controls.length - 1; index >= 0 && used > room; index--) {
     const part = controls[index]!;
-    if (!part.matches(foldable)) continue;
+    const entry = part.matches(foldable);
+    if (!entry && !part.matches(givesWay)) continue;
     folded.unshift(part);
     used -= widths[index]! + gaps[index]!;
-    if (folded.length === 1 && moreWidth) used += moreWidth + endGap;
+    // the "…" comes with the first part that is listed in it
+    if (entry && !folded.slice(1).some((other) => other.matches(foldable)) && moreWidth) used += moreWidth + endGap;
   }
   // a fold that gives no room (one icon button into a "…" as wide) is none: the start gives way instead
   const saved =
     folded.reduce((sum, part) => {
       const index = controls.indexOf(part);
       return sum + widths[index]! + gaps[index]!;
-    }, 0) - (moreWidth ? moreWidth + endGap : 0);
+    }, 0) - (moreWidth && folded.some((part) => part.matches(foldable)) ? moreWidth + endGap : 0);
   if (saved <= 0) return { folded: [], host: undefined };
-  return { folded, host: folded.length ? host : undefined };
+  // a "…" takes only what it lists: people who gave way alone leave it as it is
+  return { folded, host: folded.some((part) => part.matches(foldable)) ? host : undefined };
 };
 
 /** Measures the given bars in one pass: all writes, then all reads, then all writes again. */
@@ -179,7 +187,7 @@ const fold = (bars: Iterable<Watched>) => {
     }
     entry.bar.setAttribute("data-k2-fitted", "");
     // the words or the state of a button may have changed while it stayed folded
-    const entries = next.map(entryOf);
+    const entries = next.filter((control) => control.matches(foldable)).map(entryOf);
     const shown = JSON.stringify([
       host ? 1 : 0,
       entries.map(({ label, icon, disabled, checked, href }) => [label, icon, disabled, checked, href]),

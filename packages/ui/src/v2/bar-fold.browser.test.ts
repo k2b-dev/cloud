@@ -394,6 +394,27 @@ const dots = (page: Page, bar: string) =>
     bar,
   );
 
+test("390 px: people give way without a '…' of their own; a '…' beside them lists only its own entries", async () => {
+  await withPage(390, true, async (page) => {
+    const people = (which: string) =>
+      page.evaluate(
+        (bar) => [...document.querySelectorAll(`${bar} > .k2-bar-end > .k2-av`)].filter((person) => person.checkVisibility()).length,
+        head(which),
+      );
+    // the people gave way, and nothing stands for them: no "…" of the bar, and the primary stays
+    expect(await people("people")).toBeLessThan(5);
+    expect([await dots(page, head("people")), await page.locator(`${head("people")} .k2-bar-fold`).count()]).toEqual([0, 0]);
+    expect(await page.locator(head("people")).getByRole("button", { name: "Neu" }).isVisible()).toBe(true);
+    // beside the head's own "…": exactly that one, and it opens with its own entries only
+    expect(await people("peopleDots")).toBeLessThan(5);
+    expect([await dots(page, head("peopleDots")), await page.locator(`${head("peopleDots")} .k2-bar-fold`).count()]).toEqual([1, 0]);
+    await page.locator(head("peopleDots")).getByRole("button", { name: more }).click();
+    const menu = page.locator(".k2-menu").last();
+    expect((await menu.locator("[role^='menuitem']").allTextContents()).map((entry) => entry.trim())).toEqual(["Umbenennen"]);
+    expect(await menu.locator("[role='separator'], hr").count()).toBe(0);
+  });
+});
+
 test("390 px: an app's '…' with a name of its own ('Mehr zum Angebot') takes the folded actions; exactly one '…'", async () => {
   await withPage(390, true, async (page) => {
     expect([await dots(page, head("named")), await page.locator(`${head("named")} .k2-bar-fold`).count()]).toEqual([1, 0]);

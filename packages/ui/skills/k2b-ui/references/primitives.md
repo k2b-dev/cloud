@@ -143,8 +143,10 @@ the primary), they are its first section; no second "…" stands beside it.
 An end made outside the `Bar` (a helper's JSX, an island of its own)
 cannot offer its "…": the bar then shows its own, "Mehr in dieser Leiste". The primary action, a
 closing ×, a `Menu`, a search and a button that opens a menu never fold.
-Only when nothing more can fold does the `start` shorten with "…", down
-to its least, never to nothing. The browser measures the fold once the
+People shown in the end (an `Avatar` that is no button) give way with the
+buttons, unlisted. Only when nothing more can fold does the `start` shorten
+with "…", down to its least, never to nothing; in a workspace's head its tabs
+go first, whole tab by whole tab into "Mehr", and its title last. The browser measures the fold once the
 page is alive; before that the bar stands as it does when nothing folds
 (the end whole, the start given way down to its least), so the server's
 page is the live one wherever nothing folds. Only an end that has to fold
