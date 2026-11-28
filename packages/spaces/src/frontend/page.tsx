@@ -10,7 +10,6 @@ import { parseLastSpaceId } from "./[id]/_components/settings/SpaceSettingsStore
 import { spaceMessages } from "./[id]/messages";
 import { overviewMessages } from "./overview-messages";
 import SpacesOverview from "./SpacesOverview.island";
-import { firstOpenSpacesHint } from "./spaces-hints";
 
 const log = logger("spaces:overview");
 
@@ -54,7 +53,6 @@ export default ssr<AuthContext>(async (c) => {
     >
       <SpacesOverview
         spaces={sidebar.spaces}
-        sidebarHint={firstOpenSpacesHint(c, [{ id: "spaces.overview-sidebar", allowed: true }]) === "spaces.overview-sidebar"}
         initialView={view}
         initialPinnedSpaceIds={sidebar.pinnedSpaceIds}
         initialWork={initialWork}

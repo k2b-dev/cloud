@@ -132,19 +132,16 @@ export function DashboardWidgetFrame(props: { widget: DashboardCatalogWidget; st
           )}
         </Match>
         <Match when={props.state.status === "loading"}>
+          {/* Calm while the app answers: the frame with its title, an empty body and no loading words on screen;
+              assistive technology hears that it loads. The slow notice has its line from the start, so showing it
+              moves nothing. */}
           {state(
-            <Placeholder
-              state="loading"
-              title={t().widgetLoading}
-              // The slow notice has its line from the start, so showing it moves nothing.
-              description={
-                <span class="dashboard-widget-slow" data-shown={slow() ? "true" : undefined}>
-                  {t().widgetSlow({ app: props.widget.appName })}
-                </span>
-              }
-              variant="compact"
-              class="dashboard-widget-placeholder"
-            />,
+            <div class="dashboard-widget-pending" aria-busy="true">
+              <span class="k2b-sr-only">{t().widgetLoading}</span>
+              <span class="dashboard-widget-slow" data-shown={slow() ? "true" : undefined}>
+                {t().widgetSlow({ app: props.widget.appName })}
+              </span>
+            </div>,
           )}
         </Match>
         <Match when={props.state.status === "timeout" || props.state.status === "error"}>

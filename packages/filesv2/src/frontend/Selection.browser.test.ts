@@ -263,18 +263,13 @@ describe("Files selection pill in a browser", () => {
     }
   });
 
-  test("the header says once that its Actions menu moved to the pill", async () => {
-    const { tab } = await open(desktop, "?hint");
+  test("selecting shows no Actions menu in the header and no hint about where it went", async () => {
+    const { tab } = await open(desktop);
     try {
       await tab.getByRole("button", { name: "Select", exact: true }).click();
-      const hint = tab.locator(".k2b-moved-hint").first();
-      await hint.waitFor();
-      expect(await hint.textContent()).toContain("The actions for the selection are now in the bar at the bottom.");
-      // The old menu is gone from the header.
-      expect(await tab.locator(".filesv2-toolbar").getByRole("button", { name: "Actions" }).count()).toBe(0);
-      await hint.locator("button", { hasText: "Got it" }).first().click();
       await settled(tab);
-      expect(await tab.evaluate(() => document.cookie)).toContain("filesv2.selection-pill");
+      expect(await tab.locator(".filesv2-toolbar").getByRole("button", { name: "Actions" }).count()).toBe(0);
+      expect(await tab.locator(".k2b-moved-hint").count()).toBe(0);
     } finally {
       await tab.context().close();
     }

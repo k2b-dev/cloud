@@ -50,8 +50,6 @@ window.mountReaderHead = (options) => {
           laterItems={() => []}
           menuItems={() => []}
           menuLabel="More conversation actions"
-          hint={null}
-          onHintSeen={() => {}}
         />
       </LocaleProvider>
     ),
