@@ -106,14 +106,22 @@ const arrange = (input: { mailboxes?: string[]; denied?: string[]; pinned?: stri
   return list;
 };
 
-const request = (query = "", lastMailboxId: string | null = null, locale = "en", cookieLists: { pinnedMailboxIds?: string[] } = {}) => {
-  const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
+const request = (
+  query = "",
+  lastMailboxId: string | null = null,
+  locale = "en",
+  cookieLists: { pinnedMailboxIds?: string[] } = {},
+  pilot: string[] = [],
+) => {
+  const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime; settings: unknown } }>();
   app.use("*", async (c, next) => {
     c.set("actor", { kind: "user", user });
     c.set("user", user);
     c.set("accessSubject", { type: "user", userId: user.id });
     c.set("credentialKind", "session");
     c.set("credentialScopes", []);
+    // the administrator's list of people who see Mail on UI v2 (`mail.ui_v2_pilot`)
+    c.set("settings", { mail: { ui_v2_pilot: pilot } });
     c.set("runtime", {
       apps: [{ id: "mail", name: "Mail", icon: "ti ti-mail", description: "Fixture", routes: ["/app/mail"] }],
     });
@@ -240,4 +248,26 @@ test("the German page names the error and the retry in German", async () => {
   const html = await (await request("", null, "de")).text();
   expect(html).toContain("Mail konnte deine Postfächer nicht öffnen");
   expect(html).toContain("Erneut versuchen");
+});
+
+test("on UI v2 the page without a mailbox says so in one sentence and offers to create one, without the v1 sidebar", async () => {
+  arrange({ mailboxes: [] });
+  const response = await request("", null, "en", {}, ["*"]);
+  expect(response.status).toBe(200);
+  const html = await response.text();
+  expect(await selectHtml(html, '[data-k2-part="Empty"]')).toHaveLength(1);
+  expect(html).toContain("Create a mailbox to read and send mail");
+  expect(html).toContain("New mailbox");
+  expect(await selectHtml(html, ".mail-sidebar")).toHaveLength(0);
+  expect(html).not.toContain("Mail could not open your mailboxes");
+});
+
+test("on UI v2 a failed read shows the error with a way to retry, never the empty state", async () => {
+  spies.push(spyOn(mailboxes, "listMailboxes").mockResolvedValue(fail(err.internal("Database unavailable"))));
+  const response = await request("", null, "en", {}, ["*"]);
+  expect(response.status).toBe(200);
+  const html = await response.text();
+  expect(await selectHtml(html, '[data-k2-part="Failed"]')).toHaveLength(1);
+  expect(html).toContain("Mail could not open your mailboxes");
+  expect(html).not.toContain("Create a mailbox to read and send mail");
 });
