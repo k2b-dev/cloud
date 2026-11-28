@@ -151,12 +151,13 @@ describe("a head title that repeats the sidebar's current entry", () => {
 });
 
 describe("a head with nothing to show on the phone", () => {
-  test("390 px: a head of only the main action the round button repeats takes no room", async () => {
-    for (const live of [false, true])
-      await withPage(390, "hollow", { live }, async (page) => {
-        expect(await heightOf(page, `${head} > .k2-bar`)).toBe(0);
-        expect(await shows(page, ".k2-fab")).toBe(true);
-      });
+  test("390 px: a head of only the main action the round button repeats takes no room, also inside an island", async () => {
+    for (const kind of ["hollow", "hollowIsland"] as const)
+      for (const live of [false, true])
+        await withPage(390, kind, { live }, async (page) => {
+          expect({ kind, live, height: await heightOf(page, `${head} > .k2-bar`) }).toEqual({ kind, live, height: 0 });
+          expect(await shows(page, ".k2-fab")).toBe(true);
+        });
   }, 30_000);
 
   test("390 px: a head search keeps the head without a host and gives way in a host until it holds words", async () => {

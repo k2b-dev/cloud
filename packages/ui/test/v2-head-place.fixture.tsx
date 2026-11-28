@@ -1,3 +1,4 @@
+import { Dynamic } from "solid-js/web";
 import { LocaleProvider } from "../src/intl/locale";
 import { Bar, Button, HeadCreates, HeadSearch, List, Nav, Pane, Path, Row, Text, Workspace } from "../src/v2";
 
@@ -9,11 +10,12 @@ import { Bar, Button, HeadCreates, HeadSearch, List, Nav, Pane, Path, Row, Text,
 //   (`Text sidebarEntry`): the title gives way while the sidebar shows; `repeatsOnly`: the head holds that title
 //   alone and gives way whole;
 // - `hollow`: a head without a start whose end holds only the main action the round button repeats (`floats`): on the
-//   phone it takes no room; `hollowSearch`: the same with a head search, which keeps the head without a host;
+//   phone it takes no room; `hollowIsland`: the same action inside an island's wrapper, as `@k2b/ssr` renders it;
+//   `hollowSearch`: the same with a head search, which keeps the head without a host;
 // - `detail`: a list beside an open entry whose head names it after a path (small, in the path's row), with its way
 //   back: on the phone the path gives way and the name stays;
 // - `path`: a head whose path ends in a long file name: cut in its middle where it has no room, its end kept.
-export type Kind = "creates" | "repeats" | "repeatsOnly" | "hollow" | "hollowSearch" | "detail" | "path";
+export type Kind = "creates" | "repeats" | "repeatsOnly" | "hollow" | "hollowIsland" | "hollowSearch" | "detail" | "path";
 
 declare global {
   interface Window {
@@ -93,6 +95,18 @@ const Head = (props: { kind: Kind }) => {
             <Button variant="primary" icon="plus" floats>
               Neue Basis
             </Button>
+          }
+        />
+      );
+    case "hollowIsland":
+      return (
+        <Bar
+          end={
+            <Dynamic component="solid-island" style={{ display: "contents" }}>
+              <Button variant="primary" icon="plus" floats>
+                Neue Basis
+              </Button>
+            </Dynamic>
           }
         />
       );
