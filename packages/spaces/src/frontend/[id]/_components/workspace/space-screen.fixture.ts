@@ -447,7 +447,8 @@ export const spaceScreenProps = (href: string, state: SpaceFixtureState = "usual
     accessVisible: false,
     query: url.searchParams.toString(),
     icalBaseUrl: "https://cloud.example.test",
-    eventCursor: null,
+    // The live cursor the page was rendered at, as the server sends it: a page without one refreshes when it starts.
+    eventCursor: "7-1",
     snapshotDay: "2026-10-15",
     itemsResult: result(items, state === "huge" ? hugeItems.length : items.length),
     kanbanBuckets: buckets(items),

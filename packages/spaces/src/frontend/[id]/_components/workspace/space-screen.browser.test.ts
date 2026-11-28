@@ -1,52 +1,15 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { launchHookMs, settled } from "../../../../../../ui/test/browser";
-import { createScreenBrowser, layoutProblems, narrow, phone, type View, wide } from "../../../../../test/v2-screen-browser";
-import { SPACE_NOW, type SpaceFixtureState, spaceScreenProps } from "./space-screen.fixture";
+import { createScreenBrowser, layoutProblems, narrow, phone, wide } from "../../../../../test/v2-screen-browser";
+import { spaceOpener } from "./space-screen.browser-open";
 
 // A Space on v2: its list, table and board, the filters in the address, the open item beside the list, ticking a task
 // off and starting a new one. The test stands in for the server: the page renders invented data, the API answers from it.
 const screen = createScreenBrowser(resolve(import.meta.dir, "space-screen.browser-harness.tsx"));
 beforeAll(screen.start, launchHookMs);
 afterAll(screen.stop);
-
-type Seen = { views: string[]; completed: unknown[] };
-/** `failSearch`: the server answers 503 to every list or board load that searches. */
-const open = (view: View, address: string, state: SpaceFixtureState = "usual", options: { failSearch?: boolean } = {}) => {
-  const seen: Seen = { views: [], completed: [] };
-  const page = screen.open(view, address, {
-    pages: ["/app/spaces/Space1"],
-    now: SPACE_NOW,
-    state,
-    api: (url, route) => {
-      if (url.pathname === "/api/spaces/workspace/view") {
-        const href = url.searchParams.get("href") ?? "";
-        seen.views.push(href);
-        if (options.failSearch && href.includes("q=")) return Response.json({ message: "Service unavailable" }, { status: 503 });
-        const props = spaceScreenProps(href, state).state;
-        const viewName = props.currentView;
-        return viewName === "kanban"
-          ? { kind: "kanban", buckets: props.kanbanBuckets, wormholes: [] }
-          : { kind: "list", currentView: viewName === "table" ? "table" : "list", itemsResult: props.itemsResult };
-      }
-      const detail = url.pathname.match(/^\/api\/spaces\/Space1\/items\/([^/]+)\/detail$/);
-      if (detail) {
-        const found = spaceScreenProps(`/app/spaces/Space1?item=${detail[1]}`, state).state.selectedItemDetail;
-        return found ?? Response.json({ message: "Not found" }, { status: 404 });
-      }
-      if (url.pathname.endsWith("/completed") && route.request().method() === "POST") {
-        seen.completed.push(route.request().postDataJSON());
-        const id = url.pathname.split("/").at(-2);
-        const item = spaceScreenProps("/app/spaces/Space1", state).state.itemsResult.items.find((entry) => entry.id === id);
-        return { ...item, completedAt: "2026-10-15T07:00:00.000Z" };
-      }
-      if (url.pathname.endsWith("/activity")) return { data: [], nextCursor: null };
-      if (url.pathname.endsWith("/wormholes")) return [];
-      return undefined;
-    },
-  });
-  return page.then((opened) => ({ ...opened, seen }));
-};
+const open = spaceOpener(screen);
 
 describe("a Space on v2", () => {
   // k2b-ui gap: on the phone the shell's Back cuts a Space name near the 100-character limit, and the floating main
@@ -68,11 +31,31 @@ describe("a Space on v2", () => {
       ["/app/spaces/Space1?view=kanban", "worst"],
       ["/app/spaces/Space1?view=list&item=Item01", "worst"],
     ] as const)
-      if (view === phone && address.includes("item=") && state === "usual")
+      if (view === phone && address.includes("item=")) {
+        // The first picture of an open item on the phone has no loading and no page error, like every other picture.
+        test(`${view.name} ${address.split("?")[1]} ${state}: shows no loading on the first picture and no page error`, async () => {
+          // The page brings the open item: a load after the first picture would be a loading state, however short.
+          const loads: string[] = [];
+          const { context, tab, errors } = await open(view, address, state, {
+            api: (url) => void (url.pathname.endsWith("/detail") && loads.push(url.pathname)),
+          });
+          try {
+            expect(await tab.locator('[data-k2-part="Pane"][data-detail]').count()).toBe(1);
+            expect(await tab.locator('[data-k2-part="Loading"]').count()).toBe(0);
+            expect(loads).toEqual([]);
+            expect(errors).toEqual([]);
+          } finally {
+            await context.close();
+          }
+        }, 60_000);
         // An open item on the phone is its own page without the list's floating action (coordinator, 26.11.); the v2
         // outline still asks for a primary there. Waits for #4373, which teaches describe.ts that case; then a test again.
-        test.todo(`${view.name} ${address.split("?")[1]} ${state}: keeps the v2 rules (waits for #4373)`, () => {});
-      else if (view !== phone || state !== "worst" || !address.includes("item="))
+        // The worst case also meets the phone gap named above: the shell's Back cuts a Space name near 100 characters.
+        test.todo(
+          `${view.name} ${address.split("?")[1]} ${state}: keeps the v2 layout rules (waits for #4373${state === "worst" ? " and the shell's Back for a 100-character Space name" : ""})`,
+          () => {},
+        );
+      } else
         test(`${view.name} ${address.split("?")[1]} ${state}: keeps the v2 rules and shows no loading on the first picture`, async () => {
           const { context, tab, errors } = await open(view, address, state);
           try {
