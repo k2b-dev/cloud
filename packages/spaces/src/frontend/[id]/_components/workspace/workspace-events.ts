@@ -258,7 +258,8 @@ export const subscribeToSpacesDetailStep = (links: () => HTMLAnchorElement[], op
     if (fromView && next.getClientRects().length > 0) reveal(next);
   };
   const onState = (event: Event) => {
-    const state = (event as CustomEvent<SpacesDetailState>).detail;
+    if (!(event instanceof CustomEvent)) return;
+    const state: SpacesDetailState | null = event.detail;
     if (!state) return;
     const closed = shown.itemId && !state.itemId ? shown : null;
     shown = state;

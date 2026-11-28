@@ -13,7 +13,7 @@ const state = states.find((entry) => entry === document.documentElement.dataset.
 
 // The Cloud shell runs a page's single-key commands (J, K, N): one key, one published command, never while a field or
 // a dialog has the keys. cloud gap: @k2b/cloud/browser/testing does not export the shell's dispatcher
-// (`attachCommandShortcuts`), so the harness stands in for it with the same rule for keys without modifiers.
+// (`attachCommandShortcuts`, #4548), so the harness stands in for it with the same rule for keys without modifiers.
 window.addEventListener(
   "keydown",
   (event) => {

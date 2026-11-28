@@ -103,7 +103,7 @@ const daysAway = (deadline: string, now: number, dateConfig: DateContext | undef
 
 /**
  * Hands the focus to the title in the head of the open detail; false while there is none.
- * k2b-ui gap: the title of a detail Pane's head is no focus target, so the app makes it one (tabindex -1) by its part.
+ * k2b-ui gap (#4547): the title of a detail Pane's head is no focus target, so the app makes it one (tabindex -1) by its part.
  */
 const focusDetailTitle = () => {
   const title = document.querySelector<HTMLElement>('[data-k2-part="Pane"][data-detail] > [data-slot="head"] [data-k2-part="Text"]');
