@@ -13,6 +13,7 @@ import {
   Chip,
   confirm,
   DateInput,
+  Dialog,
   type Fact,
   Facts,
   Failed,
@@ -579,6 +580,22 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
         },
       }),
     );
+    if (!isEvent())
+      onCleanup(
+        registerContextAwareCommand({
+          scope: "selection",
+          id: `spaces.${itemId}.deadline`,
+          title: copy.deadlineTitle,
+          description: copy.deadlineDescription({ title }),
+          icon: "ti ti-calendar",
+          action: () => {
+            if (item().id !== itemId || !canEditItem()) return;
+            setDeadlineDay("");
+            setDeadlineTime("");
+            setDueDialog(true);
+          },
+        }),
+      );
     if (!item().assignees?.some((assignee) => assignee.kind === "user" && assignee.id === props.currentUserId))
       onCleanup(
         registerContextAwareCommand({
@@ -710,6 +727,42 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
       .join(", ");
   const [deadlineDay, setDeadlineDay] = createSignal("");
   const [deadlineTime, setDeadlineTime] = createSignal("");
+  /** The due date's day and optional time, as the fact's panel and the "Change due date" dialog edit them. */
+  const dueFields = () => (
+    <>
+      <Field label={t.date} name="due-day">
+        <DateInput value={deadlineDay() || (deadlineEdit.value() ?? "").slice(0, 10)} onInput={(value) => setDeadlineDay(value)} />
+      </Field>
+      <Field label={t.time} name="due-time" optional={t.optional}>
+        <Input
+          value={
+            deadlineTime() ||
+            (deadlineEdit.value() && !isDateOnlyDeadline(deadlineEdit.value()!)
+              ? dates.formatTime(deadlineEdit.value()!, props.dateConfig)
+              : "")
+          }
+          placeholder="09:00"
+          onInput={setDeadlineTime}
+        />
+      </Field>
+    </>
+  );
+  /** Saves the day and time of the fields; false when there is nothing valid to save. */
+  const saveDue = () => {
+    const day = deadlineDay() || (deadlineEdit.value() ?? "").slice(0, 10);
+    if (!day) return false;
+    const time = deadlineTime().trim();
+    if (time && !/^\d{1,2}:\d{2}$/.test(time)) {
+      toast(t.invalidTime, { status: "bad" });
+      return false;
+    }
+    void deadlineEdit.update(
+      time ? dates.zonedDateTimeToInstant(`${day}T${time}`, props.dateConfig?.timeZone ?? "UTC", { disambiguation: "earlier" }) : day,
+    );
+    return true;
+  };
+  /** The "Change due date" command's dialog, as main asked for the due date from the command palette. */
+  const [dueDialog, setDueDialog] = createSignal(false);
   const [estimateText, setEstimateText] = createSignal("");
 
   /** A property's value, and for editors the control that changes it in place. */
@@ -758,45 +811,12 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
                     title={t.due}
                     content={
                       <>
-                        <Field label={t.date} name="due-day">
-                          <DateInput
-                            value={deadlineDay() || (deadlineEdit.value() ?? "").slice(0, 10)}
-                            onInput={(value) => setDeadlineDay(value)}
-                          />
-                        </Field>
-                        <Field label={t.time} name="due-time" optional={t.optional}>
-                          <Input
-                            value={
-                              deadlineTime() ||
-                              (deadlineEdit.value() && !isDateOnlyDeadline(deadlineEdit.value()!)
-                                ? dates.formatTime(deadlineEdit.value()!, props.dateConfig)
-                                : "")
-                            }
-                            placeholder="09:00"
-                            onInput={setDeadlineTime}
-                          />
-                        </Field>
+                        {dueFields()}
                         <Bar
                           end={
                             <>
                               <Button onClick={() => void deadlineEdit.update(null)}>{t.clear}</Button>
-                              <Button
-                                onClick={() => {
-                                  const day = deadlineDay() || (deadlineEdit.value() ?? "").slice(0, 10);
-                                  if (!day) return;
-                                  const time = deadlineTime().trim();
-                                  if (time && !/^\d{1,2}:\d{2}$/.test(time)) return toast(t.invalidTime, { status: "bad" });
-                                  void deadlineEdit.update(
-                                    time
-                                      ? dates.zonedDateTimeToInstant(`${day}T${time}`, props.dateConfig?.timeZone ?? "UTC", {
-                                          disambiguation: "earlier",
-                                        })
-                                      : day,
-                                  );
-                                }}
-                              >
-                                {t.save}
-                              </Button>
+                              <Button onClick={() => void saveDue()}>{t.save}</Button>
                             </>
                           }
                         />
@@ -1304,6 +1324,30 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
             </Show>
           </Section>
         )}
+      </Show>
+      <Show when={dueDialog()}>
+        <Dialog
+          title={t.due}
+          open
+          onOpenChange={(open) => !open && setDueDialog(false)}
+          foot={
+            <>
+              <Button
+                onClick={() => {
+                  void deadlineEdit.update(null);
+                  setDueDialog(false);
+                }}
+              >
+                {t.clear}
+              </Button>
+              <Button variant="primary" onClick={() => saveDue() && setDueDialog(false)}>
+                {t.save}
+              </Button>
+            </>
+          }
+        >
+          {dueFields()}
+        </Dialog>
       </Show>
     </Pane>
   );
