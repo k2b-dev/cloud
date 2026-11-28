@@ -131,6 +131,8 @@ export {
   type AvatarStackProps,
   Chip,
   type ChipProps,
+  Cover,
+  type CoverProps,
   Icon,
   type IconProps,
   Mark,
