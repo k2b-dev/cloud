@@ -1,7 +1,7 @@
 import { render } from "solid-js/web";
 import { List, Pane, Row, Section, Table, Text, Workspace } from "../src/v2";
 
-// The section head (Valentin 27.11., settings-headings-study v2, A and B). `window.__k2Case` picks:
+// The section head (Valentin 27.11., settings-headings-study v2, A and B). `window.__k2SectionCase` picks:
 // - `form`: a settings screen whose sections are B where the pane is wide and A where it is narrow, then a list
 //   and a table of their own, whose rows draw the subtle lines;
 // - `narrow`: the same form section in a pane of 420 px beside another, at a wide window (A: the container decides);
@@ -10,7 +10,7 @@ import { List, Pane, Row, Section, Table, Text, Workspace } from "../src/v2";
 declare global {
   interface Window {
     __k2Mounted?: boolean;
-    __k2Case?: "form" | "narrow" | "detail" | "custom";
+    __k2SectionCase?: "form" | "narrow" | "detail" | "custom";
   }
 }
 
@@ -56,7 +56,7 @@ const others = () => (
 
 const root = document.getElementById("root");
 if (!root) throw new Error("section head: #root is missing");
-const which = window.__k2Case ?? "form";
+const which = window.__k2SectionCase ?? "form";
 render(
   () => (
     <Workspace>
