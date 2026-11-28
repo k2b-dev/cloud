@@ -8,6 +8,7 @@ const overlayMessages = i18n.define({
     en: {
       moreActions: "More actions",
       moreInBar: "More in this bar",
+      create: "New",
       undo: "Undo",
       retry: "Try again",
       actionsFor: ({ name }: { name: string }) => `Actions for ${name}`,
@@ -16,6 +17,7 @@ const overlayMessages = i18n.define({
     de: {
       moreActions: "Weitere Aktionen",
       moreInBar: "Mehr in dieser Leiste",
+      create: "Neu",
       undo: "Rückgängig",
       retry: "Erneut versuchen",
       actionsFor: ({ name }: { name: string }) => `Aktionen für ${name}`,

@@ -27,7 +27,14 @@ The working surface of an app: one per screen.
 - `head`: a `Bar` across the main column (56 px).
 - `primary`: the main `Action`. It floats bottom right on the phone only;
   also put the same action as `Button variant="primary" floats` in the head
-  end, so the head lets it go on the phone (one primary per page).
+  end, so the head lets it go on the phone (one primary per page). Several
+  main actions: `HeadCreates actions` in the head end (one "+ Neu" menu, a
+  part of its own) and the same list as `primary`, so the phone's round
+  button is that menu; a list of one stays a plain button, an empty list
+  shows none (rights may leave either).
+- `Text sidebarEntry` in the head's start: the title has the words of the
+  sidebar's current entry and gives way while the sidebar shows (it stays the
+  page's name for assistive technology); the drawer and the phone show it.
 - children: a `Pane` or a `Pane.Split`, written as JSX inside the Workspace
   (a pane made before it, kept in a variable, is not counted).
 - `detail` (`true` or the detail's minimum, default 400) when a detail opens
@@ -38,7 +45,8 @@ The working surface of an app: one per screen.
 - Tablet: where the sidebar at its default does not fit beside every column
   at its minimum, it becomes a drawer with a button at the start of the head.
 - Phone (< 768 px): the sidebar leaves, every head action stays; only the
-  `floats` twin of `primary` leaves the head.
+  `floats` twin of `primary` leaves the head. A head without a start that
+  holds only that twin (and a search a host takes over) takes no room.
   A search in the head (`Input type="search"`) stays as its symbol; a tap
   goes into the field, which opens over the head while it has the focus
   and folds back, its words kept, on blur or Escape. A host that offers the
@@ -664,9 +672,13 @@ name wraps in a small table and ends with "…" in one with column widths.
   head `Bar start` instead of `Tabs`. The last item is the page itself;
   without room the places before it shorten to their own width or 12
   characters first, and the page last. Places without room even then go
-  into a "…" menu ("Weitere Orte"): the middle ones first, then all. On
+  into a "…" menu ("Weitere Orte"): the middle ones first, then all. A page
+  name over 16 letters is cut in its middle, its end (an extension or number)
+  kept and its whole name its hint. In a detail's head a `Text` after the
+  path is the open item's name, small in the path's row. On
   the phone the path gives way and the shell's phone bar names the page; the
-  head itself is hidden unless it holds a search, which stays as its symbol.
+  head itself is hidden unless it holds a search, which stays as its symbol,
+  or that name after the path, which stays.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
   }[]`; a way of a few steps, such as a delivery's way inside its `Group`.
 - `Notice`: `tone` `note`, `ai`, `bad`, `warn`; `title`, `meta`, `icon`,

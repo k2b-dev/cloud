@@ -160,8 +160,11 @@ export type WorkspaceProps = {
   sidebarLabel?: string;
   /** The head across the main column: a `Bar` (56 px here) with tabs or a path and the actions. */
   head?: JSX.Element;
-  /** The main action; on the phone it floats at the bottom right. */
-  primary?: Action;
+  /**
+   * The main action; on the phone it floats at the bottom right. Several main actions (a head with `HeadCreates`):
+   * the round button is their one "+" menu ("Neu"), each entry with its name and deed.
+   */
+  primary?: Action | readonly Action[];
   /**
    * A detail opens beside the columns at times (a reader beside a list), and keeps at least this width (`true`:
    * 400 px). The workspace keeps its room also while it is closed: the sidebar never moves between column and drawer
@@ -185,6 +188,13 @@ export type WorkspaceProps = {
 };
 
 const sidebarDefault: Width = { min: 200, default: 248 };
+/**
+ * The workspace's main actions as a list: one, several (a head with `HeadCreates`), or none (a list the person's rights
+ * left empty). Several make the round button one "+", one keeps it a plain button, none leaves it out.
+ */
+const mainActions = (primary: Action | readonly Action[] | undefined): readonly Action[] =>
+  primary === undefined ? [] : isList(primary) ? primary : [primary];
+const isList = (primary: Action | readonly Action[]): primary is readonly Action[] => Array.isArray(primary);
 /** What a column without a width keeps at least: the concept's main column, 400 px (as in v2.css). */
 const flexibleMin = 400;
 
@@ -219,6 +229,7 @@ const HeadBlockContext = createContext<HeadBlock>();
  */
 export const Workspace = (props: WorkspaceProps) => {
   const t = useUiMessages();
+  const overlay = useOverlayMessages();
   const width = () => props.sidebarWidth ?? sidebarDefault;
   // A part passed as JSX is made once, here, and read from here: reading the prop again would make it again (the
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
@@ -259,7 +270,9 @@ export const Workspace = (props: WorkspaceProps) => {
     `@media (min-width: 768px) { .k2-ui [data-k2-ws="${id}"] > .k2-ws-side { max-width: calc(100% - ${room() - width().default}px); } ` +
     `@container k2-ws-${id} (width < ${room()}px) { ` +
     `.k2-ui [data-k2-ws="${id}"] > :is(.k2-ws-side, .k2-ws-side + .k2-seam) { display: none; } ` +
-    `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-ws-toggle: inline-flex; --k2-ws-drawer: 1; } } }`;
+    // a head title that repeats the sidebar's current entry (`Text sidebarEntry`) names the page again in the drawer
+    `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-ws-toggle: inline-flex; --k2-ws-drawer: 1; ` +
+    "--k2-names-place: static; --k2-names-place-size: auto; --k2-names-place-clip: none; --k2-names-place-head: var(--k2-h-head); } } }";
   const [drawerOpen, setDrawerOpen] = createSignal(false);
   const drawer = useDrawer(() => ({ open: drawerOpen(), onOpenChange: setDrawerOpen, side: "start" }));
   let element: HTMLDivElement | undefined;
@@ -361,7 +374,17 @@ export const Workspace = (props: WorkspaceProps) => {
           {props.sidebar}
         </drawer.Popup>
       </Show>
-      <Show when={props.primary}>
+      <Show when={mainActions(props.primary).length > 1 ? mainActions(props.primary) : undefined}>
+        {(actions) => (
+          // several main actions: the round button is their one "+"
+          <span class="k2-fab-menu">
+            <Menu variant="primary" icon="plus" items={actions()}>
+              {overlay().create}
+            </Menu>
+          </span>
+        )}
+      </Show>
+      <Show when={mainActions(props.primary).length === 1 ? mainActions(props.primary)[0] : undefined}>
         {(action) => (
           // a disabled link is an anchor without an address, as in `Button`
           <Dynamic

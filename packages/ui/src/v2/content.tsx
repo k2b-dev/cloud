@@ -55,6 +55,12 @@ export type TextProps = {
    * of something else.
    */
   title?: string;
+  /**
+   * In the start of a workspace's head: the title has the words of the sidebar's current entry ("Einstellungen"), so it
+   * gives way while the sidebar shows; it stays the page's name for assistive technology, and the drawer and the phone
+   * show it again. A head of that title alone gives way whole.
+   */
+  sidebarEntry?: boolean;
   /** The words. */
   children: JSX.Element;
 };
@@ -76,6 +82,7 @@ export const Text = (props: TextProps) => (
     data-k2-part="Text"
     data-type={props.type}
     data-tone={props.tone}
+    data-names-place={props.sidebarEntry ? "" : undefined}
   >
     {props.children}
   </Dynamic>
