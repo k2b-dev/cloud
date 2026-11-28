@@ -13,7 +13,7 @@ Die Kontoeinstellungen verlinken mit **Dokumentation** die passende englische An
 ## Administrationsseiten finden {icon="user-cog"}
 
 :::reference
-- **Start:** `/admin` öffnet die Übersicht von Observability, wo Gateway Ops läuft, sonst **Apps**. Die Admin-Leiste führt zu jeder Administrationsseite, auch zu denen der Apps.
+- **Start:** `/admin` öffnet die Übersicht von Observability, wo Gateway Ops läuft, sonst **Apps**. Die Seitenleiste der Administration führt zu jeder Administrationsseite, auch zu denen der Apps.
 - **Apps:** Jede App mit Zustand, Zugriff, Schlüsseln und Ereignissen. Öffne eine App, um zu sehen, warum sie Aufmerksamkeit braucht und was zu tun ist. Unter **Schlüssel** stehen auch die Tokens für Apps, die auf dem Host laufen. Nutzermandate begrenzen weiterhin die Aktionen, die ein Schlüssel oder Token ausführen darf.
 - **Ankündigungen:** Erstelle und bearbeite Ankündigungen oder Banner. Ein Eintrag ist aktiv, geplant oder abgelaufen, je nach Veröffentlichungszeit und Ablaufzeit.
 - **Einstellungen:** Bearbeite die Einstellungen nach Gruppen. Jedes Feld zeigt seinen aktuellen Wert. Wo der Einstellungsdienst sie bereitstellt, zeigt es auch die Quelle des Werts.

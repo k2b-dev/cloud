@@ -13,7 +13,7 @@ The account settings link to the matching English guide with **Documentation**. 
 ## Find the administration pages {icon="user-cog"}
 
 :::reference
-- **Start:** `/admin` opens the Observability overview where Gateway Ops runs, and **Apps** otherwise. The admin bar leads to every administration page, the pages of the apps included.
+- **Start:** `/admin` opens the Observability overview where Gateway Ops runs, and **Apps** otherwise. The administration sidebar leads to every administration page, the pages of the apps included.
 - **Apps:** Every app with its state, access, keys and events. Open an app to see why it needs attention and what to do. Its **Keys** also hold the tokens for apps that run on the host. User mandates still limit the actions that a key or token can take.
 - **Announcements:** Create and edit announcements or banners. An entry is active, scheduled, or expired, depending on its publish time and expiry time.
 - **Settings:** Edit the settings by group. Each field shows its current value. It also shows the source of the value where the settings service provides it.
