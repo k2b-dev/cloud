@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 import { buildIslands } from "../../src/build";
 import { islandIdFromFile } from "../../src/island-id";
 import { transform } from "../../src/transform";
@@ -85,8 +85,7 @@ afterAll(async () => {
 
 test("a page whose comments a proxy stripped shows the island's error and names the cause", async () => {
   const tab = await browser.newPage();
-  const errors: string[] = [];
-  tab.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(tab);
   try {
     await tab.goto(`${origin}/stripped`);
     await tab.waitForSelector("solid-island [role=alert][data-ssr-error]");

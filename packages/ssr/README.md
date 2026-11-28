@@ -20,7 +20,9 @@ comment, so the server markup looks to them as it does after mounting. Props
 are never evaluated, so pages work under a Content Security Policy without
 `'unsafe-eval'`. Serve pages with their HTML comments: a proxy or optimizer
 that strips them (for example mod_pagespeed `remove_comments`) leaves every
-island without props, and it shows its error fallback. Two consequences of
+island without props: it shows its error fallback, and the browser console
+reports `[@k2b/ssr] Island props comment missing (<!--ssr-props:…-->): does a
+proxy or optimizer strip HTML comments from the page?`. Two consequences of
 re-rendering follow:
 
 - state that exists only in the server HTML inside an island, such as a scroll
