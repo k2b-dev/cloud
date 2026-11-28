@@ -28,11 +28,12 @@ The working surface of an app: one per screen.
 - `primary`: the main `Action`. It floats bottom right on the phone only;
   also put the same action as `Button variant="primary" floats` in the head
   end, so the head lets it go on the phone (one primary per page). Several
-  primary actions in the head stand as one "+ Neu" menu at its end, and the
-  phone's round button is that menu; a pane's bar keeps its actions.
-- A head title with the words of the sidebar's current entry gives way while
-  the sidebar shows (it stays the page's name for assistive technology); the
-  drawer and the phone show it again.
+  main actions: `HeadCreates actions` in the head end (one "+ Neu" menu, a
+  part of its own) and the same list as `primary`, so the phone's round
+  button is that menu.
+- `Text sidebarEntry` in the head's start: the title has the words of the
+  sidebar's current entry and gives way while the sidebar shows (it stays the
+  page's name for assistive technology); the drawer and the phone show it.
 - children: a `Pane` or a `Pane.Split`, written as JSX inside the Workspace
   (a pane made before it, kept in a variable, is not counted).
 - `detail` (`true` or the detail's minimum, default 400) when a detail opens
@@ -675,7 +676,8 @@ name wraps in a small table and ends with "…" in one with column widths.
   kept and its whole name its hint. In a detail's head a `Text` after the
   path is the open item's name, small in the path's row. On
   the phone the path gives way and the shell's phone bar names the page; the
-  head itself is hidden unless it holds a search, which stays as its symbol.
+  head itself is hidden unless it holds a search, which stays as its symbol,
+  or that name after the path, which stays.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
   }[]`; a way of a few steps, such as a delivery's way inside its `Group`.
 - `Notice`: `tone` `note`, `ai`, `bad`, `warn`; `title`, `meta`, `icon`,

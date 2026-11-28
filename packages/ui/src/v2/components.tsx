@@ -14,13 +14,11 @@ import {
   children as resolveChildren,
   Show,
   untrack,
-  useContext,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { watchFold } from "./bar-fold";
-import { SidebarPlaceContext } from "./bar-place";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { Input, MarkCheck } from "./controls";
@@ -277,21 +275,9 @@ const groupDeed = (action: NavGroup["action"]) => (action && !("items" in action
  * The sidebar of an app: its name, its search and main action, groups of round entries with counts, its own rows, and
  * entries at the foot.
  */
-/** The words of the sidebar's current entry, also of one tucked away under another; none where no entry is current. */
-const currentEntry = (items: readonly NavItem[]): string | undefined => {
-  for (const item of items) {
-    if (item.current) return item.label;
-    const inner = item.items ? currentEntry(item.items) : undefined;
-    if (inner !== undefined) return inner;
-  }
-  return undefined;
-};
-
 export const Nav = (props: NavProps) => {
   // A part passed as JSX is made once, here, and read from here (as `Workspace` does with its parts).
   const list = resolveChildren(() => props.list);
-  // the workspace learns which page the sidebar already names, so its head does not name it a second time
-  useContext(SidebarPlaceContext)?.(() => currentEntry([...props.groups.flatMap((group) => group.items ?? []), ...(props.foot ?? [])]));
   return (
     <nav class="k2-nav" data-k2-part="Nav" aria-label={props.title}>
       <div class="k2-nav-title">

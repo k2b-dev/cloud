@@ -164,7 +164,8 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
    to the list's `Pane` with its `status`, and the block draws one line.
 
 One primary action per page: the filled `Button variant="primary"` in the
-head, mirrored as `Workspace primary` so the phone shows it. A form page
+head, mirrored as `Workspace primary` so the phone shows it. Several main
+actions in the workspace head stand as one "+ Neu": `HeadCreates`. A form page
 without a head action has its "Save" as the one primary in its footer
 `Bar`; a form shown beside a page that has a head primary saves with a
 default (framed) button. An open dialog or sheet is a surface of its own
@@ -245,7 +246,7 @@ Details, the outline format and use outside the monorepo:
 | `plain <div> in Pane` | put the content in `Band`, `Section`, `Group`, `List`, `Table` or `Notice` |
 | `loose text in Pane` | wrap it in `<Text>` |
 | `Button … stands alone in Pane` | move it into a `Bar end`, `Row action`, `Section actions` or `Notice actions` |
-| `2 primary buttons` | keep one `primary`; the others are default or `ghost` |
+| `2 primary buttons` | keep one `primary`; the others are default or `ghost`; several main actions in the workspace head: `HeadCreates` |
 | `primary action is hidden at this width` | add `Workspace primary` |
 | `floating main action … covers …` | the form leaves on the phone: put it in a `Pane detail` or its own route |
 | `Table … wider than its column` | give the table `phone(row)`; give a `Pane detail` beside it a `width` |

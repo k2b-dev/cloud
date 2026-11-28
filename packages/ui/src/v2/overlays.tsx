@@ -155,9 +155,7 @@ export const Dialog = (props: DialogProps) => {
       </div>
       <div class="k2-slot" data-slot="foot" ref={foot}>
         <div class="k2-bar">
-          <div class="k2-bar-end">
-            <OverPage>{props.foot}</OverPage>
-          </div>
+          <div class="k2-bar-end">{props.foot}</div>
         </div>
       </div>
     </dialog.Popup>

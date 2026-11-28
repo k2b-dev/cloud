@@ -1,11 +1,13 @@
 import { LocaleProvider } from "../src/intl/locale";
-import { Bar, Button, HeadSearch, List, Nav, Pane, Path, Row, Text, Workspace } from "../src/v2";
+import { Bar, Button, HeadCreates, HeadSearch, List, Nav, Pane, Path, Row, Text, Workspace } from "../src/v2";
 
 // What a workspace's head knows of its place, as the test sets it up:
-// - `creates`: a head with two main actions ("Hochladen", "Neuer Ordner") and a ghost one ("Teilen"): the two stand as
-//   one "+ Neu" menu at the head's end, and the phone's round button offers them both;
-// - `repeats`: the sidebar's current entry is "Einstellungen", and the head's title says the same beside an action:
-//   the title gives way while the sidebar shows; `repeatsOnly`: the head holds that title alone and gives way whole;
+// - `creates`: a head with two main actions ("Hochladen", "Neuer Ordner") as `HeadCreates` beside a ghost one
+//   ("Teilen"), and the same two as the workspace's `primary`: one "+ Neu" menu at the head's end, and the phone's
+//   round button offers them both;
+// - `repeats`: the sidebar's current entry is "Einstellungen", and the head's title says the same beside an action
+//   (`Text sidebarEntry`): the title gives way while the sidebar shows; `repeatsOnly`: the head holds that title
+//   alone and gives way whole;
 // - `hollow`: a head without a start whose end holds only the main action the round button repeats (`floats`): on the
 //   phone it takes no room; `hollowSearch`: the same with a head search, which keeps the head without a host;
 // - `detail`: a list beside an open entry whose head names it after a path (small, in the path's row), with its way
@@ -23,6 +25,11 @@ declare global {
 const created = (deed: string) => () => {
   window.__k2Created = deed;
 };
+
+const creates = [
+  { label: "Hochladen", icon: "upload", onClick: created("upload") },
+  { label: "Neuer Ordner", icon: "folder-plus", onClick: created("folder") },
+];
 
 const Sidebar = () => (
   <Nav
@@ -61,12 +68,7 @@ const Head = (props: { kind: Kind }) => {
               <Button variant="ghost" icon="share">
                 Teilen
               </Button>
-              <Button variant="primary" icon="upload" onClick={created("upload")}>
-                Hochladen
-              </Button>
-              <Button variant="primary" icon="folder-plus" onClick={created("folder")}>
-                Neuer Ordner
-              </Button>
+              <HeadCreates actions={creates} />
             </>
           }
         />
@@ -74,7 +76,7 @@ const Head = (props: { kind: Kind }) => {
     case "repeats":
       return (
         <Bar
-          start={<Text>Einstellungen</Text>}
+          start={<Text sidebarEntry>Einstellungen</Text>}
           end={
             <Button variant="ghost" icon="download">
               Exportieren
@@ -83,7 +85,7 @@ const Head = (props: { kind: Kind }) => {
         />
       );
     case "repeatsOnly":
-      return <Bar start={<Text>Einstellungen</Text>} />;
+      return <Bar start={<Text sidebarEntry>Einstellungen</Text>} />;
     case "hollow":
       return (
         <Bar
@@ -135,7 +137,7 @@ export const Fixture = (props: { kind: Kind }) => (
     <Workspace
       sidebar={<Sidebar />}
       head={<Head kind={props.kind} />}
-      primary={{ label: "Neu", icon: "plus" }}
+      primary={props.kind === "creates" ? creates : { label: "Neu", icon: "plus" }}
       detail={props.kind === "detail" ? true : undefined}
     >
       {props.kind === "detail" ? (

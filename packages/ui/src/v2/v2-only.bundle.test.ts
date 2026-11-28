@@ -107,9 +107,11 @@ test("an island with a Workspace, a Nav and a Menu loads no tree and no menu pan
   const modules = await islandModules(lean);
   const total = Object.values(modules).reduce((sum, bytes) => sum + bytes, 0);
   console.info(`Workspace, Nav and Menu: ${total} bytes of packages/ui/src (budget ${leanBudget})`);
-  expect(Object.keys(modules).filter((module) => ["v2/nav-tree.tsx", "v2/menu-panel.tsx", "v2/head-search.tsx"].includes(module))).toEqual(
-    [],
-  );
+  expect(
+    Object.keys(modules).filter((module) =>
+      ["v2/nav-tree.tsx", "v2/menu-panel.tsx", "v2/head-search.tsx", "v2/head-creates.tsx"].includes(module),
+    ),
+  ).toEqual([]);
   expect(total).toBeLessThanOrEqual(leanBudget);
 }, 60_000);
 
@@ -120,6 +122,15 @@ test("HeadSearch brings the head search along", async () => {
     `import { HeadSearch, Menu, Nav, Workspace } from ${v2Index};\nconsole.log(HeadSearch, Menu, Nav, Workspace);\n`,
   );
   expect(modules["v2/head-search.tsx"]).toBeGreaterThan(0);
+}, 60_000);
+
+// Several main actions as one "+" (`HeadCreates`) come with the part too: an island whose head has one main action
+// loads none of it.
+test('HeadCreates brings the head\'s one "+" along', async () => {
+  const modules = await islandModules(
+    `import { HeadCreates, Menu, Nav, Workspace } from ${v2Index};\nconsole.log(HeadCreates, Menu, Nav, Workspace);\n`,
+  );
+  expect(modules["v2/head-creates.tsx"]).toBeGreaterThan(0);
 }, 60_000);
 
 test("navTree and menuPanel bring the tree and the panel along", async () => {

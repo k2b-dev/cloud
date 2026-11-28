@@ -19,7 +19,6 @@ import {
 import { Dynamic } from "solid-js/web";
 import { renderSafeMarkdown } from "../content/MarkdownView";
 import { useLocale } from "../intl/locale";
-import { inHeadStart, useBarRepeats } from "./bar-place";
 import { useBehaviorMessages } from "./behavior/messages";
 import { useGrip } from "./behavior/resize";
 import { announceBranch, announceText, type TreegridRow, treegridStep } from "./behavior/treegrid";
@@ -56,6 +55,12 @@ export type TextProps = {
    * of something else.
    */
   title?: string;
+  /**
+   * In the start of a workspace's head: the title has the words of the sidebar's current entry ("Einstellungen"), so it
+   * gives way while the sidebar shows; it stays the page's name for assistive technology, and the drawer and the phone
+   * show it again. A head of that title alone gives way whole.
+   */
+  sidebarEntry?: boolean;
   /** The words. */
   children: JSX.Element;
 };
@@ -68,26 +73,20 @@ const weightClass = { medium: "k2-medium", strong: "k2-strong" } as const;
  * block that carries the text edge itself; anywhere else (a bar, a row, a sentence) it runs inline, and in a bar it is
  * cut to one line with "…". The stylesheet decides by place, so text passed as data behaves the same.
  */
-export const Text = (props: TextProps) => {
-  // In the head of a workspace, a title that only repeats the page the sidebar's current entry names gives way while
-  // the sidebar shows (the phone and the drawer show it again). There the words are made once and read from here.
-  const words = inHeadStart() ? resolveChildren(() => props.children) : undefined;
-  const repeats = words ? useBarRepeats(words) : undefined;
-  return (
-    <Dynamic
-      component={props.href ? "a" : "span"}
-      href={props.href}
-      title={props.title}
-      class={`k2-text${props.type ? ` ${typeClass[props.type]}` : ""}${props.weight ? ` ${weightClass[props.weight]}` : ""}${props.muted ? " k2-muted" : ""}${props.href ? " k2-link" : ""}`}
-      data-k2-part="Text"
-      data-type={props.type}
-      data-tone={props.tone}
-      data-names-place={repeats?.() ? "" : undefined}
-    >
-      {words ? words() : props.children}
-    </Dynamic>
-  );
-};
+export const Text = (props: TextProps) => (
+  <Dynamic
+    component={props.href ? "a" : "span"}
+    href={props.href}
+    title={props.title}
+    class={`k2-text${props.type ? ` ${typeClass[props.type]}` : ""}${props.weight ? ` ${weightClass[props.weight]}` : ""}${props.muted ? " k2-muted" : ""}${props.href ? " k2-link" : ""}`}
+    data-k2-part="Text"
+    data-type={props.type}
+    data-tone={props.tone}
+    data-names-place={props.sidebarEntry ? "" : undefined}
+  >
+    {props.children}
+  </Dynamic>
+);
 
 /** The links reading text may carry; any other target shows as text. */
 const proseLinks = ["https:", "http:", "mailto:"] as const;

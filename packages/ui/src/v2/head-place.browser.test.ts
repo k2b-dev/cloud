@@ -73,23 +73,20 @@ const heightOf = (page: Page, selector: string) =>
   page.evaluate((selector) => document.querySelector(selector)?.getBoundingClientRect().height ?? -1, selector);
 
 describe("several main actions in a workspace's head", () => {
-  test("the server's page already holds one \"+ Neu\" for them, and a pane's bar keeps its own", () => {
+  test("the server's page already holds the one \"+ Neu\" and the round button's menu", () => {
     const { html } = server("creates");
-    expect(html).toContain('class="k2-creates"');
-    expect(html).toContain("data-creates");
-    expect(server("repeats").html).not.toContain("k2-creates");
+    expect(html).toMatch(/data-variant="primary"[^>]*data-menu=""[^>]*data-floats=""/);
+    expect(html).toContain('class="k2-fab-menu"');
+    expect(server("repeats").html).not.toContain("k2-fab-menu");
   });
 
   for (const live of [false, true])
     test(`1440 px${live ? ", live" : ""}: one "+ Neu" in place of the two, the ghost action beside it`, async () => {
       await withPage(1440, "creates", { live }, async (page) => {
-        expect(await shows(page, `${head} .k2-creates > .k2-btn`)).toBe(true);
-        expect(await page.locator(`${head} .k2-creates > .k2-btn`).innerText()).toContain("Neu");
-        expect(
-          await page
-            .locator(`${head} .k2-bar-end > .k2-btn[data-variant="primary"]`)
-            .evaluateAll((all) => all.map((one) => getComputedStyle(one).display)),
-        ).toEqual(["none", "none"]);
+        expect(await shows(page, `${head} .k2-bar-end > .k2-btn[data-variant="primary"][data-menu]`)).toBe(true);
+        expect(await page.locator(`${head} .k2-bar-end > .k2-btn[data-variant="primary"][data-menu]`).innerText()).toContain("Neu");
+        // the head holds one main action: the "+"
+        expect(await page.locator(`${head} .k2-bar-end > .k2-btn[data-variant="primary"]`).count()).toBe(1);
         expect(await shows(page, `${head} .k2-bar-end > .k2-btn[data-variant="ghost"]`)).toBe(true);
         // the round button is the phone's only
         expect(await shows(page, ".k2-fab-menu > .k2-btn")).toBe(false);
@@ -98,7 +95,7 @@ describe("several main actions in a workspace's head", () => {
 
   test('1440 px: the "+" lists both by their words and runs the one picked', async () => {
     await withPage(1440, "creates", { live: true }, async (page) => {
-      await page.locator(`${head} .k2-creates > .k2-btn`).click();
+      await page.locator(`${head} .k2-bar-end > .k2-btn[data-variant="primary"][data-menu]`).click();
       const menu = page.locator('[data-k2-part="Menu"]');
       await menu.waitFor();
       expect(await menu.getByRole("menuitem").allInnerTexts()).toEqual(["Hochladen", "Neuer Ordner"]);
@@ -109,7 +106,7 @@ describe("several main actions in a workspace's head", () => {
 
   test('390 px: the head\'s "+" leaves, and the round button offers both', async () => {
     await withPage(390, "creates", { live: true }, async (page) => {
-      expect(await shows(page, `${head} .k2-creates > .k2-btn`)).toBe(false);
+      expect(await shows(page, `${head} .k2-bar-end > .k2-btn[data-variant="primary"][data-menu]`)).toBe(false);
       expect(await shows(page, ".k2-fab-menu > .k2-btn")).toBe(true);
       // one round button: the workspace's single main action gives way to the menu of the head's
       expect(await page.locator(".k2-fab").count()).toBe(0);
