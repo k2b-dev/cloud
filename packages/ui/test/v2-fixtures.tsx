@@ -651,6 +651,37 @@ export const fixtures = {
         </Pane>
       </Pane.Split>,
     ),
+  // break-ui: a name without breaks far longer than the bar, after a way back of one long word, beside its list
+  namedBackLong: () =>
+    shell(
+      <Pane.Split>
+        <Pane label="Breite der Liste" width={{ min: 320, default: 432 }}>
+          <List label="Dateien">
+            {[
+              "Protokoll.md",
+              "Aufmaß Küche.pdf",
+              "Materialliste.xlsx",
+              "Angebot 2026-118.pdf",
+              "Ansicht Front.jpg",
+              "Budget 2027.xlsx",
+            ].map((name, index) => (
+              <Row lines={[name, `Geändert vor ${index + 2} Stunden · Mira Sommer`]} />
+            ))}
+          </List>
+        </Pane>
+        <Pane
+          detail
+          label={`${"Benachrichtigungseinstellungen-".repeat(4)}Protokoll.md`}
+          back={{ label: "Sehr-langer-Ordnername-ohne-Leerzeichen", href: "#ordner" }}
+        >
+          <Prose
+            markdown={
+              "Zuschnitt Küchenfront bis Freitag. Eiche geölt, 19 mm.\n\n- Maße prüfen\n- Kanten bestellen\n- Arbeitsplatte Granit, 38 mm\n- Spüle als Unterbau\n- Sockel 100 mm\n- Lüftungsgitter unter dem Backofen\n- Topfbänder 110°\n- Montage am Donnerstag"
+            }
+          />
+        </Pane>
+      </Pane.Split>,
+    ),
   structure: StructureFixture,
   // head actions of sections: with a leading symbol, with only a trailing "forward" chevron, and words only
   headActions: () => (

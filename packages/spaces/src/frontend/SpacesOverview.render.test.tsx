@@ -27,7 +27,7 @@ const textOf = (html: string) => {
   return plain;
 };
 
-const render = (initialActivityError: string | null = null, locale = "en") =>
+const render = (initialActivityError: string | null = null, locale = "en", spaceColor = "#3b82f6") =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -58,7 +58,7 @@ const render = (initialActivityError: string | null = null, locale = "en") =>
                 shortId: "Item01",
                 spaceShortId: "Space1",
                 spaceName: "Launch",
-                spaceColor: "#3b82f6",
+                spaceColor,
                 title: "Ship overview",
                 priority: "urgent",
                 deadline: "2026-08-21T08:00:00.000Z",
@@ -143,4 +143,12 @@ describe("Spaces overview", () => {
     expect(html).not.toContain("Space and item changes will appear here.");
     expect(html.indexOf("Activity unavailable")).toBeLessThan(html.indexOf('class="k2b-activity"'));
   });
+});
+
+test("a space colour reaches the overview's style only as a colour", () => {
+  for (const color of ["#3b82f6;position:fixed;inset:0", "red;background:url(https://example.org/x.png)"]) {
+    const html = render(null, "en", color);
+    expect(html).not.toMatch(/position:\s*fixed|url\(/);
+    expect(html).toContain("background-color:var(--ui-app-accent-border)");
+  }
 });

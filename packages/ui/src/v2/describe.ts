@@ -140,9 +140,15 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     }
     if (name === "Chip") {
       const kind = element.getAttribute("data-status") ?? element.getAttribute("data-kind");
-      return `(${clip(element.textContent ?? "", 30)}${kind && kind !== "plain" ? ` · ${kind}` : ""})`;
+      return `(${clip(element.textContent ?? "", 30)}${kind && kind !== "plain" ? ` · ${kind}` : ""}${element.hasAttribute("data-quiet") ? " quiet" : ""})`;
     }
     if (name === "Avatar") return `@${element.getAttribute("aria-label") ?? ""}${element.hasAttribute("data-image") ? " picture" : ""}`;
+    if (name === "Avatar.Stack") return `@{${element.getAttribute("aria-label") ?? ""}}`;
+    if (name === "Mark") {
+      const kind = element.querySelector(".k2-mk-kind")?.textContent;
+      return `[${element.querySelector("[data-name]")?.getAttribute("data-name") ?? "mark"}${kind ? ` ${kind}` : ""}${element.hasAttribute("data-image") ? " picture" : ""}]`;
+    }
+    if (name === "Spark") return `spark ${quote(element.getAttribute("aria-label"))}`;
     if (name === "Icon") return element.getAttribute("aria-label") ? `icon ${quote(element.getAttribute("aria-label"))}` : "";
     if (name === "Text") {
       const type = element.getAttribute("data-type");
@@ -297,9 +303,26 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         if (name === "StatusRow") {
           const lead = element.querySelector(".k2-status-lead")?.textContent;
           const facts = [...element.querySelectorAll(".k2-fact")].map((fact) => clip(fact.textContent ?? "", 30));
+          // chips of the statement, such as an exception: [bad "1 ohne Zugriff"]; with layout only the ones in sight
+          // (a chip that gave way wraps out of its one line)
+          const group = element.querySelector(".k2-status-marks")?.getBoundingClientRect();
+          const inSight = (chip: Element) => {
+            if (!options.layout || !group) return true;
+            const box = chip.getBoundingClientRect();
+            return (
+              box.width > 0 &&
+              box.top >= group.top - 0.5 &&
+              box.bottom <= group.bottom + 0.5 &&
+              box.left >= group.left - 0.5 &&
+              box.right <= group.right + 0.5
+            );
+          };
+          const marks = [...element.querySelectorAll(".k2-status-marks .k2-chip")]
+            .filter(inSight)
+            .map((chip) => `[${chip.getAttribute("data-status") ? `${chip.getAttribute("data-status")} ` : ""}${quote(chip.textContent)}]`);
           const select = element.querySelector(".k2-mark, [data-k2-mark]") ? " select-all" : "";
-          if (element.hasAttribute("data-selecting")) return `StatusRow selecting ${quote(lead)}: ${start ? words(start).join(" ") : ""}`;
-          return `StatusRow ${quote(lead)}${facts.length ? ` · ${facts.join(" · ")}` : ""}${select}${end ? ` | ${words(end).join(" ")}` : ""}`;
+          if (element.hasAttribute("data-selecting")) return `StatusRow selecting ${quote(lead)}: ${end ? words(end).join(" ") : ""}`;
+          return `StatusRow ${quote(lead)}${marks.length ? ` ${marks.join(" ")}` : ""}${facts.length ? ` · ${facts.join(" · ")}` : ""}${select}${end ? ` | ${words(end).join(" ")}` : ""}`;
         }
         const startWords = start ? words(start) : [];
         const endWords = end ? words(end) : [];
@@ -307,8 +330,15 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Nav": {
         const items = [...element.querySelectorAll("[data-k2-part='Nav.Item']")];
-        const current = items.find((item) => item.getAttribute("aria-current"));
-        return `Nav ${quote(label)}: ${items.length} entries${current ? `, current ${quote(current.querySelector(".k2-ni-name")?.textContent)}` : ""}`;
+        // a tree marks its open place on the tree item around the row
+        const current =
+          items.find((item) => item.getAttribute("aria-current")) ??
+          element.querySelector("[role='treeitem'][aria-current] > [data-k2-part='Nav.Item']");
+        const trees = [...element.querySelectorAll("[data-k2-part='Nav.Tree']")].map((tree) => {
+          const open = tree.querySelectorAll("[role='treeitem'][aria-expanded='true']").length;
+          return `tree ${quote(tree.getAttribute("aria-label"))} (${tree.querySelectorAll("[role='treeitem']").length} shown, ${open} open)`;
+        });
+        return `Nav ${quote(label)}: ${items.length} entries${trees.length ? `, ${trees.join(", ")}` : ""}${current ? `, current ${quote(current.querySelector(".k2-ni-name")?.textContent)}` : ""}`;
       }
       case "Band": {
         const tone = element.getAttribute("data-tone");
@@ -323,7 +353,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Tiles": {
         const tiles = [...element.querySelectorAll(".k2-tile-title")].map((tile) => clip(tile.textContent ?? "", 30));
-        return `Tiles ${tiles.length}: ${tiles.join(", ")}${rest().length ? ` ${rest().join(" ")}` : ""}`;
+        const variant = element.getAttribute("data-variant");
+        return `Tiles${variant ? ` ${variant}` : ""} ${tiles.length}: ${tiles.join(", ")}${rest().length ? ` ${rest().join(" ")}` : ""}`;
       }
       case "Section":
       case "Group": {
@@ -347,11 +378,17 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         const time = kid(element, ".k2-row-time")?.textContent;
         const meta = element.querySelector(".k2-row-meta")?.textContent;
         const lead = kid(element, ".k2-row-lead")?.querySelector("[data-k2-part]");
-        const leadWord = lead && part(lead) === "Avatar" ? ` @${lead.getAttribute("aria-label")}` : "";
+        const leadWord =
+          lead && part(lead) === "Avatar"
+            ? ` @${lead.getAttribute("aria-label")}`
+            : lead && part(lead) === "Mark"
+              ? ` [${lead.querySelector("[data-name]")?.getAttribute("data-name") ?? "mark"}${lead.hasAttribute("data-image") ? " picture" : ""}]`
+              : "";
         const state = flags(element, ["unread", "current", "selected", "yours", "strong"]);
         const opens = element.tagName === "A" ? " opens link" : element.tagName === "BUTTON" ? " opens" : "";
         const tail = kidsMatching(element, ".k2-row-end, .k2-row-marks").flatMap(words);
-        return `Row${leadWord} ${lineTexts.join(" / ")}${meta ? ` (${clip(meta, 20)})` : ""}${time ? ` · ${clip(time, 20)}` : ""}${state.length ? ` [${state.join(", ")}]` : ""}${opens}${tail.length ? ` ${tail.join(" ")}` : ""}`;
+        const level = element.getAttribute("data-level");
+        return `Row${level ? ` L${level}` : ""}${leadWord} ${lineTexts.join(" / ")}${meta ? ` (${clip(meta, 20)})` : ""}${time ? ` · ${clip(time, 20)}` : ""}${state.length ? ` [${state.join(", ")}]` : ""}${opens}${tail.length ? ` ${tail.join(" ")}` : ""}`;
       }
       case "Table": {
         const table = element.querySelector("table");
@@ -361,6 +398,9 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
           element.querySelector("thead th[data-select]") ? "select" : "",
           groups ? `${groups} groups` : "",
           element.querySelector("[data-sticky]") ? "sticky" : "",
+          table?.getAttribute("role") === "treegrid"
+            ? `tree, ${element.querySelectorAll("tbody > tr[aria-expanded='true']").length} open`
+            : "",
           nextOf(element)?.classList.contains("k2-table-phone") ? "phone rows" : "",
         ].filter(Boolean);
         const columns = heads.map((th) => {
@@ -430,6 +470,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Digest.Entry": {
         const text = (selector: string) => clip(element.querySelector(selector)?.textContent ?? "", 50);
+        if (element.hasAttribute("data-activity"))
+          return `Entry @${kid(kid(element, ".k2-row-lead"), ".k2-av")?.getAttribute("aria-label") ?? ""} ${quote(text(".k2-row-l1"))} · ${text(".k2-row-l2")}`;
         return `Entry ${text(".k2-digest-date")} ${quote(text(".k2-row-l1"))} (${text(".k2-digest-state")}): ${quote(text(".k2-digest-text"))}${element.tagName === "A" ? " opens link" : ""}`;
       }
       default:
@@ -450,7 +492,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         problems.push(`loose text ${quote(node.textContent, 30)} in Band: put it in <Text>`);
       if (node.nodeType !== 1) continue;
       const child = node as Element;
-      if (ownedChild(child)) continue;
+      // the rule a primitive makes for itself (a split's context column): part of that primitive, not the screen's
+      if (ownedChild(child) || child.matches("style[data-k2-rule]")) continue;
       problems.push(
         `plain <${child.tagName.toLowerCase()}> in ${where} ${quote(child.textContent, 30)}: no primitive owns it; use Band, Section, Group, List, Table, Notice or Text`,
       );

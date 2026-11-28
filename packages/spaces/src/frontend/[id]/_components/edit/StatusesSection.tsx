@@ -4,6 +4,7 @@ import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type BoardColumn, boardColumnOrderId, orderBoardColumns } from "@/board-columns";
 import type { SpaceColumn, SpaceVirtualColumn, SpaceVirtualColumnKind } from "@/contracts";
+import { hexColor } from "@/frontend/lib/color";
 import { useSpaceMessages } from "../../messages";
 import { NameColorForm } from "./NameColorForm";
 import { readErrorMessage } from "./utils";
@@ -258,7 +259,7 @@ export function StatusesSection(props: {
               <SettingsCollection.Item
                 title={column.name}
                 description={position()}
-                icon={<span class="h-3 w-3 rounded-full" style={`background-color:${column.color || "#6b7280"}`} />}
+                icon={<span class="h-3 w-3 rounded-full" style={`background-color:${hexColor(column.color) ?? "#6b7280"}`} />}
               >
                 <SettingsCollection.Item.Actions>
                   {reorder()}

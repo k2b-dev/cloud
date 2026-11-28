@@ -1,6 +1,10 @@
 import { i18n } from "@k2b/stdlib";
-import { ColorInput, CopyButton, NoticeCard, TextInput, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Button, Canvas, ColorInput, Facts, Field, Input, Section } from "@k2b/ui/v2";
 import { batch, createSignal } from "solid-js";
+import ToolsScreen, { ToolPane } from "../ToolsScreen";
+import { useToolCopy } from "../tool-copy";
+import { toolsWorkspaceMessages } from "../tools-messages";
 
 export const colorMessages = i18n.define({
   baseLocale: "en",
@@ -8,6 +12,10 @@ export const colorMessages = i18n.define({
     en: {
       hint: "Edit any field and the other formats update automatically.",
       colorPicker: "Color Picker",
+      contrast: "Contrast",
+      onWhite: "On white",
+      onBlack: "On black",
+      ratio: ({ ratio, grade }: { ratio: string; grade: string }) => `${ratio} : 1 · ${grade}`,
       hexDescription: "6-digit hex color code",
       rgbDescription: "Red, Green, Blue — each 0–255",
       hslDescription: "Hue 0–360, Saturation 0–100%, Lightness 0–100%",
@@ -18,6 +26,10 @@ export const colorMessages = i18n.define({
     de: {
       hint: "Ändere ein Feld und die anderen Formate werden automatisch aktualisiert.",
       colorPicker: "Farbauswahl",
+      contrast: "Kontrast",
+      onWhite: "Auf Weiß",
+      onBlack: "Auf Schwarz",
+      ratio: ({ ratio, grade }) => `${ratio} : 1 · ${grade}`,
       hexDescription: "6-stelliger Hex-Farbcode",
       rgbDescription: "Rot, Grün und Blau, jeweils 0 bis 255",
       hslDescription: "Farbton 0 bis 360, Sättigung und Helligkeit 0 bis 100 %",
@@ -102,6 +114,21 @@ const parseHsl = (s: string): [number, number, number] | null => {
 
 type Source = "hex" | "rgb" | "hsl" | "picker";
 
+/** Relative luminance (WCAG 2.x) of an sRGB colour. */
+export const luminance = ([r, g, b]: [number, number, number]): number => {
+  const channel = (value: number) => {
+    const c = value / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+};
+
+/** The WCAG contrast ratio between two luminances, and the level normal text reaches (AAA 7, AA 4.5, else none). */
+export const contrast = (a: number, b: number) => {
+  const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  return { ratio, grade: ratio >= 7 ? "AAA" : ratio >= 4.5 ? "AA" : "–" };
+};
+
 export default function ColorConverter() {
   const locale = useLocale();
   const t = () => colorMessages.resolve([locale()]).t;
@@ -181,88 +208,96 @@ export default function ColorConverter() {
     isUpdating = false;
   };
 
-  const CopyBtn = (props: { value: string }) => <CopyButton text={props.value} class="shrink-0" />;
-
+  const copy = useToolCopy();
+  const w = () => toolsWorkspaceMessages.resolve([locale()]).t;
+  const number = (value: number) => new Intl.NumberFormat(locale(), { maximumFractionDigits: 1, minimumFractionDigits: 1 }).format(value);
+  // against white (luminance 1) or black (0); an unreadable colour says nothing
+  const ratioText = (ground: number) => {
+    const rgb = hexToRgb(pickerColor());
+    if (!rgb) return "–";
+    const result = contrast(luminance(rgb), ground);
+    return t().ratio({ ratio: number(result.ratio), grade: result.grade });
+  };
+  const copyButton = (value: () => string) => <Button variant="ghost" icon="copy" label={w().copy} onClick={() => void copy(value())} />;
   return (
-    <div class="flex flex-col gap-4">
-      <NoticeCard tone="info">{t().hint}</NoticeCard>
-
-      <div class="paper p-4 flex flex-col gap-4">
-        {/* Color preview */}
-        <div class="flex items-center gap-4">
-          <div
-            class="w-20 h-20 thumbnail border border-zinc-200 dark:border-zinc-700 shrink-0"
-            style={{ "background-color": pickerColor() }}
-          />
-          <div class="flex-1">
-            <ColorInput
-              label={t().colorPicker}
-              value={pickerColor}
-              onValueChange={(v) => {
-                setPickerColor(v);
-                syncFrom("picker");
-              }}
+    <ToolsScreen tool="color">
+      <ToolPane
+        lead="result"
+        scrollKey="tools-color"
+        label={w().result}
+        result={
+          <Section icon="palette" title={t().colorPicker} summary={t().hint} measure>
+            {/* the colour itself, large: the page's hero; it is picked with the colour field beside it */}
+            <Canvas label={t().colorPicker} height={240}>
+              <span
+                style={{
+                  display: "block",
+                  height: "100%",
+                  margin: "0 20px",
+                  "border-radius": "8px",
+                  border: "1px solid rgb(0 0 0 / 0.1)",
+                  "background-color": pickerColor(),
+                }}
+              />
+            </Canvas>
+            {/* what the colour is good for: its contrast to white and black text grounds, as WCAG counts it */}
+            <Facts
+              items={[
+                { label: t().onWhite, value: ratioText(1) },
+                { label: t().onBlack, value: ratioText(0) },
+              ]}
             />
-          </div>
-        </div>
-
-        {/* HEX */}
-        <div class="flex items-end gap-2">
-          <div class="flex-1">
-            <TextInput
-              label="HEX"
-              description={t().hexDescription}
-              placeholder="#000000"
-              icon="ti ti-hash"
-              value={hex}
-              onValueChange={(v) => {
-                setHex(v);
-                syncFrom("hex");
-              }}
-              error={hexError}
-            />
-          </div>
-          <CopyBtn value={hex()} />
-        </div>
-
-        {/* RGB */}
-        <div class="flex items-end gap-2">
-          <div class="flex-1">
-            <TextInput
-              label="RGB"
-              description={t().rgbDescription}
-              placeholder="255, 255, 255"
-              icon="ti ti-palette"
-              value={rgb}
-              onValueChange={(v) => {
-                setRgb(v);
-                syncFrom("rgb");
-              }}
-              error={rgbError}
-            />
-          </div>
-          <CopyBtn value={`rgb(${rgb()})`} />
-        </div>
-
-        {/* HSL */}
-        <div class="flex items-end gap-2">
-          <div class="flex-1">
-            <TextInput
-              label="HSL"
-              description={t().hslDescription}
-              placeholder="0, 100%, 50%"
-              icon="ti ti-color-swatch"
-              value={hsl}
-              onValueChange={(v) => {
-                setHsl(v);
-                syncFrom("hsl");
-              }}
-              error={hslError}
-            />
-          </div>
-          <CopyBtn value={`hsl(${hsl()})`} />
-        </div>
-      </div>
-    </div>
+          </Section>
+        }
+        input={
+          // k2b-ui gap: a v2 Input for technical values in monospace (HEX, RGB, HSL); the fields stay proportional
+          <Section icon="adjustments-horizontal" title={w().input} measure>
+            <Field label={t().colorPicker}>
+              <ColorInput
+                value={pickerColor()}
+                onChange={(value) => {
+                  setPickerColor(value);
+                  syncFrom("picker");
+                }}
+              />
+            </Field>
+            <Field label="HEX" hint={t().hexDescription} error={hexError()}>
+              <Input
+                icon="hash"
+                placeholder="#000000"
+                value={hex()}
+                end={copyButton(hex)}
+                onInput={(value) => {
+                  setHex(value);
+                  syncFrom("hex");
+                }}
+              />
+            </Field>
+            <Field label="RGB" hint={t().rgbDescription} error={rgbError()}>
+              <Input
+                placeholder="255, 255, 255"
+                value={rgb()}
+                end={copyButton(() => `rgb(${rgb()})`)}
+                onInput={(value) => {
+                  setRgb(value);
+                  syncFrom("rgb");
+                }}
+              />
+            </Field>
+            <Field label="HSL" hint={t().hslDescription} error={hslError()}>
+              <Input
+                placeholder="360, 100%, 100%"
+                value={hsl()}
+                end={copyButton(() => `hsl(${hsl()})`)}
+                onInput={(value) => {
+                  setHsl(value);
+                  syncFrom("hsl");
+                }}
+              />
+            </Field>
+          </Section>
+        }
+      />
+    </ToolsScreen>
   );
 }

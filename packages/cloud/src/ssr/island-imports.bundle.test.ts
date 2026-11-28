@@ -1,6 +1,6 @@
-// Guards of what every island carries: the error fallback, which loads with each island, brings no v1 module of
-// @k2b/ui, and a helper an island takes from one module of `@k2b/cloud/shared` (`@k2b/cloud/shared/<module>`)
-// brings neither the barrel nor its libraries (zod, liquidjs, marked, the formula engine).
+// Guards of what every island carries: the error fallback, which loads with each island, brings of @k2b/ui only its own
+// v2 modules and the shared intl modules, and a helper an island takes from one module of `@k2b/cloud/shared`
+// (`@k2b/cloud/shared/<module>`) brings neither the barrel nor its libraries (zod, liquidjs, marked, the formula engine).
 import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -55,7 +55,7 @@ const closureInputs = async (source: string): Promise<string[]> => {
   }
 };
 
-test("the island error fallback brings no v1 module of @k2b/ui", async () => {
+test("the island error fallback brings no v1 module of @k2b/ui and of v2 only its own modules", async () => {
   const fallback = resolve(import.meta.dir, "IslandError.tsx");
   const inputs = await closureInputs(`import F from ${JSON.stringify(fallback)};\nconsole.log(F);\n`);
   // v2 and the shared intl modules; anything else of @k2b/ui is a v1 component or its code
@@ -63,6 +63,13 @@ test("the island error fallback brings no v1 module of @k2b/ui", async () => {
     (path) => /packages\/ui\/(?:dist\/browser|src)\//.test(path) && !/\/(?:v2|intl)\/|\/surfaces\/person-color\./.test(path),
   );
   expect(v1).toEqual([]);
+  // An app bundles a module that every island loads into its common chunk with all that any island uses of it (#4292),
+  // so the fallback's v2 modules are its own: never the button, the marks or the other states.
+  const v2 = inputs
+    .filter((path) => /packages\/ui\/(?:dist\/browser|src)\/v2\//.test(path))
+    .map((path) => basename(path).replace(/\.\w+$/, ""));
+  // `colors` is the check of an icon's data colour (a few regular expressions, no component)
+  expect(v2.sort()).toEqual(["colors", "failed", "icon"]);
 }, 60_000);
 
 test("one module of @k2b/cloud/shared brings neither the barrel nor its libraries", async () => {

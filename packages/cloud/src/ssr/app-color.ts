@@ -125,8 +125,8 @@ export const appColors = (accent: HexColor) => {
  * `color-mix(in srgb, accent <tint>, surface)`. A test reads both from `@k2b/ui/v2.css`, so a change there fails here.
  */
 export const v2InkGrounds = {
-  light: { surface: "#ffffff", tint: 0.08 },
-  dark: { surface: "#11151b", tint: 0.28 },
+  light: { surface: "#ffffff", tint: 0.07 },
+  dark: { surface: "#11151b", tint: 0.18 },
 } as const satisfies Record<keyof typeof appColorSurfaces, { surface: HexColor; tint: number }>;
 
 /**

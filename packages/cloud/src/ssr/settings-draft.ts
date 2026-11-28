@@ -9,6 +9,8 @@ export type SettingsSaveControls = {
   state: SaveStatusState;
   savedAt?: string;
   invalidCount?: number;
+  /** How many settings an unsaved draft changes, such as "1 Änderung" beside Save; when the form counts them. */
+  changes?: number;
   save: () => void;
   discard: () => void;
 };
@@ -43,6 +45,8 @@ type Options<T> = {
   validate?: (value: T) => Record<string, string>;
   /** True when saving is needed although the values did not change, such as a confirmed replacement. */
   pending?: () => boolean;
+  /** How many settings the draft changes against what is stored, for the count beside Save. */
+  changes?: (draft: T, stored: T) => number;
   /**
    * Writes the draft and returns what is stored now. A save that writes several values one after another reports
    * each stored step with `commit`, so a later failure keeps what already reached the server as the saved state.
@@ -132,6 +136,7 @@ export const createSettingsDraft = <T>(options: Options<T>) => {
       state: state(),
       savedAt: savedAt(),
       invalidCount: Object.keys(errors()).length,
+      changes: options.changes?.(draft(), stored()),
       save: () => void save(),
       discard,
     }),

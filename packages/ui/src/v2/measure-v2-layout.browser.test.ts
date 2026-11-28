@@ -545,6 +545,53 @@ describe("measureV2Layout", () => {
     TEST_TIMEOUT,
   );
 
+  // A control that sticks out of its bar or pane: the actions of a head squeezed by a long subject ran over the card's
+  // edge (break-ui of Mail's admin), and neither the cut rule nor any other saw it.
+  const outPage = (bar: string, extra = "") =>
+    columns(
+      `<div class="k2-bar" style="${bar}"><div class="k2-bar-start"><span class="k2-text k2-t-body">Rückfrage</span></div>` +
+        `<div class="k2-bar-end"><button type="button" class="k2-btn" data-probe="done" style="width:240px">Erledigt</button></div></div>${extra}`,
+    );
+
+  test(
+    "red: a control that sticks out of its bar",
+    async () => {
+      const page = await open(outPage("width:200px"));
+      try {
+        const result = await measureV2Layout(page);
+        expect(result.out).toEqual([
+          expect.stringMatching(
+            /^control \[data-probe="done"\] "Erledigt" sticks \d+(\.\d+)? px out of div\.k2-bar; the bar gives it its room$/,
+          ),
+        ]);
+        expect(result.problems).toContain(result.out[0] ?? "");
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "green: a control with room in its bar, one in a scroller of the bar, one in a layer of its own",
+    async () => {
+      const page = await open(
+        outPage(
+          "width:400px",
+          `<div class="k2-bar" style="width:200px"><div style="overflow-x:auto;min-width:0;flex:1"><button type="button" class="k2-btn" style="width:320px">Weiterleiten</button></div></div>` +
+            `<div class="k2-bar" style="width:200px"><div popover="manual" data-probe="layer" style="margin:0;inset:auto;position:fixed;left:0;top:0;width:300px"><button type="button" class="k2-btn" style="width:280px">Löschen</button></div></div>`,
+        ),
+      );
+      try {
+        await page.evaluate(() => document.querySelector<HTMLElement>('[data-probe="layer"]')?.showPopover());
+        expect((await measureV2Layout(page)).out).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   test(
     "green: v2's own Band with a Canvas in it; the band's line closes both",
     async () => {
@@ -713,6 +760,87 @@ describe("measureV2Layout", () => {
       } finally {
         await page.close();
         await lines.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // A lead that keeps its width in a start that gave way runs out of it and under the chip beside it: cut mid-word,
+  // no "…" (the status rows of ipa-hosts and proxy-auth with a detail open, 26.11.).
+  const leadRow = (lead: string) =>
+    columns(
+      '<div class="row" style="display:flex; width:300px">' +
+        `<div data-probe="start" style="display:flex; flex:1 1 0; min-width:0"><span class="k2-t-row" data-probe="lead" style="${lead}">1 Client ist bis zur Konfiguration gesperrt</span></div>` +
+        '<span class="k2-t-meta" style="flex:none">bis zur Konfiguration gesperrt</span></div>',
+    );
+
+  test(
+    'red: a text that runs out of a box that does not clip it is cut mid-word under its neighbour; green with "…"',
+    async () => {
+      const page = await open(leadRow("flex:none; white-space:nowrap"));
+      const ellipsis = await open(leadRow("flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"));
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([
+          expect.stringMatching(
+            /^\[data-probe="lead"\] "1 Client ist bis zur Konfiguration ges\w*" runs \d+ px out of \[data-probe="start"\] and under what stands beside it/,
+          ),
+        ]);
+        expect((await measureV2Layout(ellipsis)).cut).toEqual([]);
+      } finally {
+        await page.close();
+        await ellipsis.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "green: text that scrolls in its own box, or stands out of its place on purpose, does not run under a neighbour",
+    async () => {
+      const long = "zeile_eins = holeDieEinträgeAusDemProtokollUndSortiereSie(nachDerZeit)";
+      const page = await open(
+        columns(
+          [
+            // code that scrolls sideways in its own box, and a bar of words that scrolls
+            `<div class="row" style="width:240px"><pre class="k2-t-row" data-probe="code" style="margin:0; overflow-x:auto">${long}</pre></div>`,
+            '<div class="row" style="width:240px"><div class="k2-t-row" data-probe="bar" style="overflow-x:auto; white-space:nowrap">Alle · Fehler · Warnungen · Hinweise · Gateway · Mail · Zustellung</div></div>',
+            // moved on purpose: a transform, a negative margin, an indent
+            '<div class="row" style="width:240px"><span class="k2-t-row" data-probe="moved" style="display:inline-block; transform:translateX(-24px)">Verschoben</span></div>',
+            '<div class="row" style="width:240px"><span class="k2-t-row" data-probe="pulled" style="display:inline-block; margin-left:-8px">Eingerückt</span></div>',
+            '<div class="row" style="width:240px"><div class="k2-t-row" data-probe="indent" style="text-indent:-12px">Hängend</div></div>',
+            '<div class="row" style="width:240px"><span class="k2-t-row" data-probe="placed" style="display:inline-block; position:relative; left:-16px">Versetzt</span></div>',
+          ].join(""),
+        ),
+      );
+      try {
+        expect((await measureV2Layout(page)).cut.filter((line) => line.includes("runs"))).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // A small move is no licence to run far out: a long word shifted by 4 px still runs out by much more than 4 px, and a
+  // box that scrolls its text still must stand in its place.
+  test(
+    "red: a long word moved by 4 px still runs out of its row, and a scroller wider than its row sticks out",
+    async () => {
+      const word = "Protokolleintragszusammenfassungsübersichtsseitenkopfzeilenbeschriftungstextfeld";
+      const page = await open(
+        columns(
+          `<div class="row" style="width:240px"><span class="k2-t-row" data-probe="shifted" style="display:inline-block; white-space:nowrap; transform:translateX(-4px)">${word}</span></div>` +
+            '<div class="row" style="width:240px"><div class="k2-t-row" data-probe="wide" style="width:400px; overflow-x:auto; white-space:nowrap">Alle · Fehler · Warnungen · Hinweise · Gateway · Mail · Zustellung</div></div>',
+        ),
+      );
+      try {
+        const runs = (await measureV2Layout(page)).cut.filter((line) => line.includes(" runs "));
+        expect(runs).toEqual([
+          expect.stringMatching(/^\[data-probe="shifted"\] "Protokoll\S*" runs \d+ px out of/),
+          expect.stringMatching(/^\[data-probe="wide"\] "Alle · Fehler[^"]*" runs \d+ px out of/),
+        ]);
+      } finally {
+        await page.close();
       }
     },
     TEST_TIMEOUT,

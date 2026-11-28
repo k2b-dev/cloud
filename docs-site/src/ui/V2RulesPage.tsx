@@ -71,7 +71,7 @@ const rules: readonly V2Rule[] = [
   {
     id: "edge",
     title: "One line, one text edge",
-    text: "Every line is 1 px in one colour and runs from edge to edge of its column. Text starts at 20 px, after an icon at 44 px; below 768 px at 16 and 40 px. No container pads its children.",
+    text: "Every line is 1 px in one of two weights and runs from edge to edge of its column: the quiet line parts the rows and cells of one thing, the clear line separates two things (a head and its content, a list and its detail, one section and the next). A list ends without a line; only a grid table keeps a clear end line. Text starts at 20 px, after an icon at 44 px; below 768 px at 16 and 40 px. No container pads its children.",
     excerpts: [
       { src: "/assets/ui-v2/line-edge.png", alt: "A row with an icon, text at 44 px; plain text at 20 px", width: 522, height: 95 },
     ],
@@ -81,7 +81,8 @@ const rules: readonly V2Rule[] = [
       language: "text",
       source: [
         ".k2-ui {",
-        "  --k2-hairline: 1px solid var(--k2-line);",
+        "  --k2-hairline: 1px solid var(--k2-line); /* clear: separates two things */",
+        "  --k2-hairline-subtle: 1px solid var(--k2-line-subtle); /* quiet: parts rows and cells */",
         "  --k2-edge: 20px;",
         "  --k2-edge-icon: calc(var(--k2-edge) + 24px);",
         "}",
@@ -168,7 +169,7 @@ const rules: readonly V2Rule[] = [
   {
     id: "app-css",
     title: "An app writes no layout CSS",
-    text: "From its first value import of @k2b/ui/v2, directly or through a local module that re-exports it, a screen has no class, style, spread onto a plain element, styling ref, innerHTML or stylesheet of its own, and no app stylesheet restyles v2. An app may draw freely only inside Canvas, which stands directly in a v2 primitive and never wraps a whole screen.",
+    text: "From its first value import of @k2b/ui/v2, directly or through a local module that re-exports it, a screen has no class, style, spread onto a plain element, styling ref, innerHTML or stylesheet of its own, and no app stylesheet restyles v2. An app may draw freely only inside Canvas, which stands directly in a v2 primitive and never wraps a whole screen. Markup outside @k2b/ui never writes the class of a primitive's inner part either (v2-part-classes): the shipped v2.css gives such a part no way through an island wrapper.",
     excerpts: [],
     checked: "v2-app-layout-css fails bun run check and the gate. Screens without a v2 import are untouched for now.",
     limits:

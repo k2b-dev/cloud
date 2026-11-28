@@ -781,16 +781,18 @@ for (const viewport of [
         await switcher.locator('[role="radio"][aria-checked="true"]', { hasText: name }).waitFor();
         await settled(page);
         expect({ name, boxes: await boxes() }).toEqual({ name, boxes: before });
-        // the checked display's name stays whole within its share
-        expect(
-          await switcher
-            .locator('[aria-checked="true"]')
-            .evaluate(
-              (option) =>
-                option.querySelector(".notebook-graph__display-label")!.getBoundingClientRect().right <=
-                option.getBoundingClientRect().right,
-            ),
-        ).toBe(true);
+        // the checked display's name stays whole within its option; only where names are in sight (below 768 px the
+        // label is a 1 px box for assistive technology, which would pass anyway)
+        if (viewport.width >= 768)
+          expect(
+            await switcher
+              .locator('[aria-checked="true"]')
+              .evaluate(
+                (option) =>
+                  option.querySelector(".notebook-graph__display-label")!.getBoundingClientRect().right <=
+                  option.getBoundingClientRect().right,
+              ),
+          ).toBe(true);
         // where the displays keep only their symbols (the phone), the title names the chosen one in sight; on a wide
         // Main the option shows it and the title does not repeat it
         const named = await page.locator(".notebook-graph__title-display").isVisible();
@@ -1637,8 +1639,13 @@ for (const display of ["network", "neighborhood", "timeline"]) {
         }, width);
         expect(box.overflow).toBeLessThanOrEqual(0);
         expect(box.search).toBeGreaterThanOrEqual(128);
-        // the displays keep only their symbols here, so the title names the chosen one
+        // the displays keep only their symbols here, so the title names the chosen one and each icon its own on hover
         expect(await page.locator(".notebook-graph__title-display").isVisible()).toBe(true);
+        const hints = await page
+          .getByRole("radiogroup", { name: "Display", exact: true })
+          .locator('[role="radio"]')
+          .evaluateAll((options) => options.map((option) => option.getAttribute("title")));
+        expect(hints).toEqual(["Network", "Circle", "Neighborhood", "Timeline"]);
       }
     } finally {
       await close(page);
