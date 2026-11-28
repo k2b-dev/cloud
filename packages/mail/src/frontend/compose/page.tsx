@@ -4,7 +4,9 @@ import { ssr } from "../../config";
 import { type MailRequestContext, mailboxes, senderIdentities } from "../../service";
 import { requestContactDirectory } from "../../service/contact-directory";
 import MailComposeIntentPage from "../_components/MailComposeIntentPage.island";
+import MailComposeIntentPageV2 from "../_components/MailComposeIntentPageV2.island";
 import { parseMailtoIntent } from "../_components/mail-compose-intent";
+import { readMailV2Pilot, showsMailV2 } from "../mail-v2-pilot";
 import { mailPageMessages } from "../pages-messages";
 import { projectSsrMailboxList, projectSsrPaths } from "../ssr-public-boundary";
 
@@ -55,26 +57,30 @@ export default ssr<AuthContext>(async (c) => {
       : "";
 
   const directory = await requestContactDirectory(c);
+  // the same pilot as the mailbox page: who sees mailboxes on v2 also chooses a new message's mailbox on v2
+  const ui = showsMailV2(readMailV2Pilot(c), user?.mail) ? "v2" : undefined;
+  const intent = {
+    mailboxes: writableMailboxes,
+    initialMailboxId,
+    directIdentityId,
+    commandPending: Boolean(c.req.query("command")),
+    autoStart: !c.req.query("command") && c.req.query("autostart") === "1" && Boolean(initialMailboxId) && !c.req.query("mailto"),
+    mailto: c.req.query("mailto") ?? null,
+    returnHref: c.req.query("return") ?? null,
+    contactDirectory: directory,
+    currentUserId: user?.id,
+    currentUserEmail: user?.mail ?? null,
+  };
   return () => (
     <Layout
       c={c}
       printHint={t.printHint}
       fullPage
       focusMode
+      ui={ui}
       title={[{ title: t.breadcrumbMail, href: "/app/mail" }, { title: t.newMessage }]}
     >
-      <MailComposeIntentPage
-        mailboxes={writableMailboxes}
-        initialMailboxId={initialMailboxId}
-        directIdentityId={directIdentityId}
-        commandPending={Boolean(c.req.query("command"))}
-        autoStart={!c.req.query("command") && c.req.query("autostart") === "1" && Boolean(initialMailboxId) && !c.req.query("mailto")}
-        mailto={c.req.query("mailto") ?? null}
-        returnHref={c.req.query("return") ?? null}
-        contactDirectory={directory}
-        currentUserId={user?.id}
-        currentUserEmail={user?.mail ?? null}
-      />
+      {ui === "v2" ? <MailComposeIntentPageV2 {...intent} /> : <MailComposeIntentPage {...intent} />}
     </Layout>
   );
 });

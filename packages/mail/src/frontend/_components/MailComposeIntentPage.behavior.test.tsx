@@ -331,6 +331,8 @@ const renderIntentPage = async (
     mailto?: string | null;
     /** A Command link the page opens with, as another app builds it. */
     commandLink?: string;
+    /** The page on UI v2 (the pilot's), which draws the same choice and start. */
+    v2?: boolean;
   },
   api: { identities?: SenderIdentity[]; seedStatus?: number } = {},
 ) => {
@@ -381,7 +383,9 @@ const renderIntentPage = async (
     },
     { preconnect: originalFetch.preconnect },
   );
-  const { default: MailComposeIntentPage } = await import("./MailComposeIntentPage.island");
+  const { default: MailComposeIntentPage } = props.v2
+    ? await import("./MailComposeIntentPageV2.island")
+    : await import("./MailComposeIntentPage.island");
   delegateEvents(["click"]);
   const dispose = render(
     () => (
@@ -538,5 +542,68 @@ if (!isServer)
       expect(page.requests.some((request) => request.url.endsWith("/sender-identities"))).toBe(false);
     } finally {
       page.cleanup();
+    }
+  });
+
+if (!isServer)
+  test("on UI v2 one mailbox with two senders starts from the remembered one, and a double click makes one draft", async () => {
+    const page = await renderIntentPage(
+      { mailboxIds: ["mail01"], initialMailboxId: "mail01", directIdentityId: null, v2: true },
+      { identities: [verifiedIdentity("Send01", "Support"), verifiedIdentity("Send02", "Sales")] },
+    );
+    localStorage.setItem("cloud:mail:last-sender:mail01", "Send02");
+    try {
+      await page.waitFor(() => page.button("Continue")?.disabled === false);
+      expect(page.dom.root.querySelector('[data-k2-part="Workspace"]')).not.toBeNull();
+      expect(page.seedPosts()).toHaveLength(0);
+      page.button("Continue")!.click();
+      page.button("Continue")!.click();
+      page.releaseSeed();
+      await page.waitFor(() => page.replace.mock.calls.length === 1);
+      expect(page.seedPosts()).toHaveLength(1);
+      expect(page.materializePosts()).toHaveLength(1);
+      expect(page.seedPosts()[0]!.body).toMatchObject({ origin: { input: { senderIdentityId: "Send02" } } });
+      expect(String(page.replace.mock.calls[0]![0])).toBe("/app/mail/mail01?draft=Drf0New1");
+    } finally {
+      page.cleanup();
+    }
+  });
+
+if (!isServer)
+  test("on UI v2 two mailboxes ask for the mailbox and start nothing on their own", async () => {
+    const page = await renderIntentPage({ mailboxIds: ["mail01", "mail02"], initialMailboxId: "", v2: true });
+    try {
+      await page.waitFor(() => Boolean(page.button("Continue")));
+      await Bun.sleep(20);
+      expect(page.button("Continue")?.disabled).toBe(true);
+      expect(page.requests).toHaveLength(0);
+    } finally {
+      page.cleanup();
+    }
+  });
+
+if (!isServer)
+  test("on UI v2 a mailbox without a verified sender says so, and an email link that is not valid says why", async () => {
+    const page = await renderIntentPage(
+      { mailboxIds: ["mail01"], initialMailboxId: "mail01", directIdentityId: null, v2: true },
+      { identities: [] },
+    );
+    try {
+      await page.waitFor(() => Boolean(page.dom.root.querySelector('[data-k2-part="Notice"][data-tone="warn"]')));
+      expect(page.button("Continue")?.disabled).toBe(true);
+    } finally {
+      page.cleanup();
+    }
+    const invalid = await renderIntentPage({
+      mailboxIds: ["mail01"],
+      initialMailboxId: "mail01",
+      mailto: "mailto:not an address",
+      v2: true,
+    });
+    try {
+      await invalid.waitFor(() => Boolean(invalid.dom.root.querySelector('[data-k2-part="Notice"][data-tone="bad"]')));
+      expect(invalid.button("Continue")).toBeUndefined();
+    } finally {
+      invalid.cleanup();
     }
   });

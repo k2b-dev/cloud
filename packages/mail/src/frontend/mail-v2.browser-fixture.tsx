@@ -1,6 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
 import type { MailboxPageData, MailListItem, MailWorkspaceMessage } from "../service/workspace";
+import MailComposeIntentPageV2 from "./_components/MailComposeIntentPageV2.island";
 import { mailTestRow } from "./_components/mail-list-test-fixtures";
 import { summaryState } from "./_components/mail-summary-fixtures";
 import { readMailUserPreferencesFromCookieHeader } from "./_components/mail-user-preferences";
@@ -334,6 +335,27 @@ export default function MailV2Fixture(props: {
 }) {
   const url = new URL(props.source, "http://mail.example.test");
   const locale = props.locale ?? "de";
+  // `?compose=choose|nosender`: New message before its window, choosing the mailbox and its sender
+  const compose = url.searchParams.get("compose");
+  if (compose === "choose" || compose === "nosender")
+    return (
+      <LocaleProvider locale={locale}>
+        <MailComposeIntentPageV2
+          mailboxes={[
+            { id: "Box001", name: "Kontakt", description: null, canManage: true },
+            { id: "Box002", name: "Rechnungen", description: null, canManage: false },
+            { id: "Box003", name: "Personal", description: null, canManage: true },
+          ]}
+          initialMailboxId={compose === "choose" ? "Box001" : "Box003"}
+          autoStart={false}
+          mailto={compose === "choose" ? "mailto:petra.lindqvist@example.org?subject=Termin%20K%C3%BCche" : null}
+          returnHref={null}
+          contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
+          currentUserEmail="mira@solberg-kramer.example"
+          currentUserId="user-mira"
+        />
+      </LocaleProvider>
+    );
   const data = mailV2Data(url, props.now);
   return (
     <LocaleProvider locale={locale}>
