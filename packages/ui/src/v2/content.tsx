@@ -46,6 +46,11 @@ export type TextProps = {
   weight?: "medium" | "strong";
   /** The muted ink, for a second voice beside the main text. */
   muted?: boolean;
+  /**
+   * Words read sign by sign, such as a route, a path or an ID: monospace, in the size of its place (as a `Facts`
+   * value with `mono`).
+   */
+  mono?: boolean;
   /** A colour of meaning, never decoration. */
   tone?: Status | "ai" | "draft";
   /** The words lead to this page: they keep the ink of the text and are underlined (blue is only the main action). */
@@ -76,6 +81,7 @@ export const Text = (props: TextProps) => (
     data-k2-part="Text"
     data-type={props.type}
     data-tone={props.tone}
+    data-mono={props.mono ? "" : undefined}
   >
     {props.children}
   </Dynamic>
