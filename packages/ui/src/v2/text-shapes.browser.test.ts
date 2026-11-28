@@ -57,7 +57,7 @@ const withPage = async (width: number, run: (page: Page) => Promise<void>, optio
 };
 
 for (const width of [1440, 390])
-  test(`at ${width}: a long section title wraps whole and its head grows; a short one keeps its 52 px`, async () => {
+  test(`at ${width}: a long section title wraps whole and its head grows; a short one keeps one line`, async () => {
     await withPage(width, async (page) => {
       const heads = await page.evaluate(() =>
         [...document.querySelectorAll(".k2-sh")].map((head) => {
@@ -71,7 +71,8 @@ for (const width of [1440, 390])
           };
         }),
       );
-      expect(heads[0]).toEqual({ height: heights.status, whole: true, lines: 1, inside: true });
+      // A in a narrow pane keeps its 52 px; B (a pane of 960 px and more) is its title column, one line of 22 px
+      expect(heads[0]).toEqual({ height: width < 768 ? heights.status : 22, whole: true, lines: 1, inside: true });
       expect(heads[1]!.whole).toBe(true);
       expect(heads[1]!.inside).toBe(true);
       if (width < 768) {

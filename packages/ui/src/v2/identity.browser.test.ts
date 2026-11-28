@@ -55,10 +55,10 @@ const box = (page: Page, selector: string) =>
       return `${Math.round(rect.width)}x${Math.round(rect.height)}`;
     });
 
-test("a mark takes its size from its place: 20 in the sidebar and a sentence, 24 and 32 leading rows, 36 on a card", async () => {
+test("a mark takes its size from its place: 20 in the sidebar and a sentence, 28 and 32 leading rows, 36 on a card", async () => {
   await withPage(async (page) => {
     expect(await box(page, ".k2-ni .k2-mk")).toBe("20x20");
-    expect(await box(page, '.k2-row[data-lines="1"] > .k2-row-lead > .k2-mk')).toBe("24x24");
+    expect(await box(page, '.k2-row[data-lines="1"] > .k2-row-lead > .k2-mk')).toBe("28x28");
     expect(await box(page, '.k2-row[data-lines="2"][data-mark] > .k2-row-lead > .k2-mk')).toBe("32x32");
     expect(await box(page, ".k2-tiles[data-variant='card'] .k2-tile-top > .k2-mk")).toBe("36x36");
     expect(await box(page, ".k2-row[data-activity] .k2-row-l1 .k2-mk")).toBe("20x20");
