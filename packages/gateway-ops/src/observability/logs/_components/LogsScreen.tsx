@@ -349,7 +349,7 @@ export default function LogsScreen(props: LogsScreenProps) {
               <Menu
                 label={t().moreActions}
                 items={[
-                  { label: t().retention, icon: "archive", href: "/admin/observability/retention" },
+                  { label: t().retention, icon: "archive", href: "/admin/observability/settings/general" },
                   { label: t().cleanup, icon: "trash", danger: true, onClick: () => setCleanupOpen(true) },
                 ]}
               />

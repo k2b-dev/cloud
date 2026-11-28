@@ -98,7 +98,7 @@ for (const surface of ["linux", "outgoing", "directory", "logs"] as const) {
         await page.getByRole("combobox", { name: /^Suggest recipients/ }).click();
         await page.getByRole("option", { name: /Suggest alternate contacts/ }).click();
       }
-      if (surface === "logs") await page.getByRole("spinbutton", { name: "Logs", exact: true }).fill("45");
+      if (surface === "logs") await page.getByRole("spinbutton", { name: /^Logs\b/ }).fill("45");
       const save = page.getByRole("button", { name: surface === "linux" ? "Check and save setup" : "Save", exact: true });
       await save.click();
       const replacement = page.getByRole("checkbox", { name: /^Replace stored value/ });
@@ -113,7 +113,7 @@ for (const surface of ["linux", "outgoing", "directory", "logs"] as const) {
         expect(await page.getByRole("spinbutton", { name: "Keep text for (days)", exact: true }).inputValue()).toBe("60");
       if (surface === "directory")
         expect(await page.getByRole("combobox", { name: /^Suggest recipients/ }).textContent()).toContain("Suggest alternate contacts");
-      if (surface === "logs") expect(await page.getByRole("spinbutton", { name: "Logs", exact: true }).inputValue()).toBe("45");
+      if (surface === "logs") expect(await page.getByRole("spinbutton", { name: /^Logs\b/ }).inputValue()).toBe("45");
       await replacement.check();
       await save.click();
       if (surface === "directory") await page.locator("dialog[open]").waitFor({ state: "hidden" });

@@ -1,5 +1,5 @@
 import { query } from "@k2b/stdlib/solid";
-import { apiClient } from "@/api/client";
+import { apiClient } from "../api/client";
 
 /** `unreadable`: a saved value exists that this application cannot read; `value` is the one in use. */
 export type SettingEntry = { key: string; value: unknown; default: unknown; description: string; unreadable: boolean };
