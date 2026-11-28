@@ -163,7 +163,8 @@ const measure = (entry: Watched): Found => {
       return sum + widths[index]! + gaps[index]!;
     }, 0) - (moreWidth && folded.some((part) => part.matches(foldable)) ? moreWidth + endGap : 0);
   if (saved <= 0) return { folded: [], host: undefined };
-  return { folded, host: folded.length ? host : undefined };
+  // a "…" takes only what it lists: people who gave way alone leave it as it is
+  return { folded, host: folded.some((part) => part.matches(foldable)) ? host : undefined };
 };
 
 /** Measures the given bars in one pass: all writes, then all reads, then all writes again. */
