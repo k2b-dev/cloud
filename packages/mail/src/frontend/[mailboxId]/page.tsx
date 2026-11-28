@@ -13,6 +13,7 @@ import { CountRefreshBusy } from "../../service/view-count-cache";
 import { loadMailboxPageData, resolveWorkspaceRequest } from "../../service/workspace";
 import { readMailUserPreferencesFromCookieHeader } from "../_components/mail-user-preferences";
 import { readMailWorkspacePreferences } from "../_components/mail-workspace-preferences";
+import { loadMailComposeIntent } from "../compose-intent-data";
 import MailWorkspace from "../MailWorkspace.island";
 import MailWorkspacePilot from "../MailWorkspaceV2.island";
 import { loadMailSidebarData } from "../mail-sidebar-data";
@@ -54,7 +55,9 @@ export default ssr<AuthContext>(async (c) => {
     const dateConfig = getDateConfig(c);
     const opened = new URL(c.req.raw.url).searchParams;
     const opensMail = opened.has("conversation") || opened.has("message");
-    const [internalData, spacesIntegration, sidebar, appUrl, liveDictation] = await Promise.all([
+    // New message's dialog over this mailbox (UI v2): what it starts from is read only when the URL asks for it
+    const composing = ui === "v2" && opened.has("compose");
+    const [internalData, spacesIntegration, sidebar, appUrl, liveDictation, compose] = await Promise.all([
       loadMailboxPageData({
         context,
         mailboxId,
@@ -68,6 +71,7 @@ export default ssr<AuthContext>(async (c) => {
       loadMailSidebarData(context),
       coreSettings.get<string>("app.url"),
       getLiveDictationStatus(c.get("accessSubject")),
+      composing ? loadMailComposeIntent(c, context, user, mailboxShortId) : undefined,
     ]);
     if (!internalData.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, internalData.error.status));
     const data = { ...(await projectMailboxPageData(internalData.data)), codeAttention: await codeAttention.settle() };
@@ -90,6 +94,7 @@ export default ssr<AuthContext>(async (c) => {
       liveDictation: liveDictation.available,
       loadsReceivedPerDay: ui === "v2",
       sidebar,
+      compose,
     };
     return () => (
       <Layout

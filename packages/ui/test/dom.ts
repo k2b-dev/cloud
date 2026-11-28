@@ -27,6 +27,8 @@ const globalBindings = (window: Window): Record<string, unknown> => ({
   Element: window.Element,
   HTMLElement: window.HTMLElement,
   HTMLHeadElement: window.HTMLHeadElement,
+  // A v2 field asks whether a fieldset around it is disabled, as a browser lets it.
+  HTMLFieldSetElement: window.HTMLFieldSetElement,
   SVGElement: window.SVGElement,
   DocumentFragment: window.DocumentFragment,
   ShadowRoot: window.ShadowRoot,

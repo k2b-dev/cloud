@@ -197,6 +197,31 @@ document.documentElement.dataset.mailV2Ready='true';
         ]);
       if (url.pathname.endsWith("/compose-signature") && request.method === "POST")
         return Response.json({ html: null, text: MAIL_V2_SIGNATURE.text, mailHtml: null });
+      // the senders of a mailbox, for New message's choice: Kontakt has two, Personal none that is verified, and those of
+      // Archiv 2024 do not load
+      if (url.pathname.endsWith("/sender-identities")) {
+        const owner = url.pathname.split("/").at(-2);
+        if (owner === "Box005") return new Response(null, { status: 503 });
+        const sender = (id: string, label: string, fromAddress: string, isDefault: boolean) => ({
+          id,
+          label,
+          displayName: "Mira Solberg",
+          fromAddress,
+          status: "verified",
+          statusReason: null,
+          isDefault,
+        });
+        return Response.json(
+          owner === "Box001"
+            ? [
+                sender("Send01", "Kontakt", "kontakt@solberg-kramer.example", true),
+                sender("Send02", "Mira Solberg", "mira@solberg-kramer.example", false),
+              ]
+            : owner === "Box002"
+              ? [sender("Send03", "Rechnungen", "rechnung@solberg-kramer.example", true)]
+              : [],
+        );
+      }
       if (url.pathname.endsWith("/draft-seeds") && request.method === "POST") {
         const body: { origin: { input: Record<string, unknown> } } = await request.json();
         const input = body.origin.input;

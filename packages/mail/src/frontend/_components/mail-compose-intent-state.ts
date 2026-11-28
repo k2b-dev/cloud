@@ -1,0 +1,324 @@
+import { consumeCommandLink, openCommand, registerCommandHandler } from "@k2b/cloud/browser/commands";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
+import { CommandPathSchema, cloudResourceRefAppId } from "@k2b/cloud/contracts";
+import { mutation as mutations, query } from "@k2b/stdlib/solid";
+import { prompts, useLocale } from "@k2b/ui";
+import { createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { apiClient } from "../../api/client";
+import { MailComposeCommandInputSchema, mailCommandMessages } from "../../commands";
+import type { MailContactDirectory } from "../../contact-directory-settings";
+import type { MailDraft, MailDraftSeed, SenderIdentity } from "../../contracts";
+import { readApiError } from "./api-response";
+import { readContact } from "./contact-capabilities";
+import { type MailComposeIntentErrorCode, parseMailtoIntent } from "./mail-compose-intent";
+import { mailComposeDraftSeedInput } from "./mail-compose-seed";
+import { mailComposerMessages } from "./mail-composer-messages";
+import { readMailSenderPreference, selectComposeSenderIdentity, writeMailSenderPreference } from "./mail-sender-preference";
+
+export type WritableMailbox = {
+  id: string;
+  name: string;
+  description: string | null;
+  canManage: boolean;
+};
+
+export type MailComposeIntentProps = {
+  mailboxes: WritableMailbox[];
+  initialMailboxId: string;
+  /** The only verified sender of the only sending mailbox; the page then opens the composer without a chooser. */
+  directIdentityId?: string | null;
+  /** The page opened from a Command link, whose handler supplies the recipient before a direct start. */
+  commandPending?: boolean;
+  autoStart: boolean;
+  mailto: string | null;
+  returnHref: string | null;
+  contactDirectory: MailContactDirectory;
+  currentUserEmail: string | null;
+  currentUserId?: string;
+};
+
+/** Mail opens with `?draft=` in the draft's mailbox, which opens the draft as a window there. */
+export const openInMailbox = (draft: MailDraft) =>
+  window.location.replace(`/app/mail/${encodeURIComponent(draft.mailboxId)}?${new URLSearchParams({ draft: draft.id })}`);
+
+/**
+ * "New message" before its window opens, for the v1 page and the v2 dialog alike: the mailbox and sender choice, a
+ * `mailto:` link or a Command's recipient, and the draft it creates (seed and materialize), which `open` then shows.
+ * The views only draw it.
+ */
+export function createMailComposeIntent(props: MailComposeIntentProps, open: (draft: MailDraft) => void = openInMailbox) {
+  const locale = useLocale();
+  // A seed whose materialization has no answer yet: the next try materializes it again, so no second draft appears.
+  let pendingSeed: { key: string; seed: MailDraftSeed } | null = null;
+  const t = () => mailComposerMessages.resolve([locale()]).t;
+  const [mailto, setMailto] = createSignal(props.mailto);
+  const [returnHref, setReturnHref] = createSignal(CommandPathSchema.safeParse(props.returnHref).success ? props.returnHref : null);
+  const [commandLoading, setCommandLoading] = createSignal(false);
+  const [commandError, setCommandError] = createSignal<string>();
+  const [retryCommand, setRetryCommand] = createSignal<() => Promise<boolean>>();
+  const parsedIntent = createMemo(() => parseMailtoIntent(mailto()));
+  // The server found nothing to choose. A failed or cancelled start falls back to the choosers, which then load the senders.
+  const directIdentityId = props.initialMailboxId ? props.directIdentityId : null;
+  const [direct, setDirect] = createSignal(Boolean(directIdentityId));
+  const [commandDone, setCommandDone] = createSignal(!props.commandPending);
+  const commandAbort = new AbortController();
+  onCleanup(() => commandAbort.abort());
+  onMount(() => {
+    onCleanup(
+      registerCommandHandler("mail.compose", MailComposeCommandInputSchema, async (input, options) => {
+        if (commandLoading()) throw new Error(t().preparingMessage);
+        setRetryCommand(() => () => openCommand("mail.compose", input, options));
+        setCommandLoading(true);
+        setCommandError(undefined);
+        setMailto(null);
+        setReturnHref(options.returnTo ?? null);
+        try {
+          if (input.contact) {
+            const copy = mailCommandMessages.resolve([locale()]).t;
+            const readTarget = props.contactDirectory.read;
+            // Only the configured directory app can read the contact; anything else is unavailable, never guessed.
+            if (!readTarget || cloudResourceRefAppId(input.contact) !== readTarget.appId) throw new Error(copy.unavailable);
+            const emails = await readContact(readTarget, input.contact.id, commandAbort.signal).then(
+              (result) => result.data.emails,
+              () => [],
+            );
+            if (!emails.length) throw new Error(copy.unavailable);
+            const selected =
+              emails.length === 1
+                ? emails[0]
+                : (
+                    await prompts.search<{ email: string }>(
+                      async ({ query }) =>
+                        emails
+                          .filter((email) => email.email.includes(query))
+                          .map((email) => ({ id: email.email, value: email, label: email.email, desc: email.label ?? undefined })),
+                      { title: copy.recipient, minQueryLength: 0 },
+                    )
+                  )?.value;
+            if (commandAbort.signal.aborted || !selected) {
+              setDirect(false);
+              return;
+            }
+            setMailto(`mailto:${encodeURIComponent(selected.email)}`);
+          }
+          setCommandDone(true);
+        } catch (error) {
+          setDirect(false);
+          setCommandError(error instanceof Error ? error.message : mailCommandMessages.resolve([locale()]).t.unavailable);
+          // This form owns error feedback and retry; do not add a second global toast.
+        } finally {
+          setCommandLoading(false);
+        }
+      }),
+    );
+    void consumeCommandLink().finally(() => {
+      // A link the page could not run, such as an unknown or invalid Command, keeps the choosers and its error.
+      if (!commandDone()) setDirect(false);
+    });
+  });
+  const intentData = () => {
+    const parsed = parsedIntent();
+    return parsed.ok ? parsed.intent : undefined;
+  };
+  const intentError = () => {
+    const parsed = parsedIntent();
+    return !parsed.ok ? intentErrorMessage(parsed.code) : undefined;
+  };
+  const intentErrorMessage = (code: MailComposeIntentErrorCode): string => {
+    switch (code) {
+      case "too_large":
+        return t().emailLinkTooLarge;
+      case "invalid_link":
+        return t().emailLinkInvalid;
+      case "invalid_encoding":
+        return t().emailLinkInvalidEncoding;
+      case "duplicate_field":
+        return t().emailLinkDuplicateField;
+      case "subject_too_long":
+        return t().emailLinkSubjectTooLong;
+      case "body_too_long":
+        return t().emailLinkBodyTooLong;
+      case "too_many_to":
+        return t().emailLinkTooManyTo;
+      case "too_many_cc":
+        return t().emailLinkTooManyCc;
+      case "too_many_bcc":
+        return t().emailLinkTooManyBcc;
+      case "invalid_to":
+        return t().emailLinkInvalidTo;
+      case "invalid_cc":
+        return t().emailLinkInvalidCc;
+      case "invalid_bcc":
+        return t().emailLinkInvalidBcc;
+    }
+  };
+  const [mailboxId, setMailboxId] = createSignal(props.initialMailboxId);
+  const [identityId, setIdentityId] = createSignal("");
+  const [autoStartFailed, setAutoStartFailed] = createSignal(false);
+  const identityResults = query.create<string, { mailboxId: string; items: SenderIdentity[] }>({
+    source: mailboxId,
+    enabled: () => Boolean(mailboxId()) && !direct(),
+    load: async (selectedMailboxId, { abortSignal }) => {
+      const response = await apiClient.mailboxes[":mailboxId"]["sender-identities"].$get(
+        { param: { mailboxId: selectedMailboxId } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) throw new Error(await readApiError(response, t().identitiesLoadFailed));
+      return { mailboxId: selectedMailboxId, items: await response.json() };
+    },
+  });
+  const allIdentities = () => {
+    const result = identityResults.data();
+    return result?.mailboxId === mailboxId() ? result.items : [];
+  };
+  const identities = () => allIdentities().filter((identity) => identity.status === "verified");
+  const identityLoading = () => identityResults.loading() || identityResults.refreshing();
+  const identityError = () => identityResults.error()?.message ?? null;
+  const senderUnavailable = () =>
+    Boolean(mailboxId()) && identityResults.data()?.mailboxId === mailboxId() && !identityError() && identities().length === 0;
+
+  createEffect(() => {
+    const selectedMailboxId = mailboxId();
+    setIdentityId("");
+    const result = identityResults.data();
+    if (!selectedMailboxId || result?.mailboxId !== selectedMailboxId) return;
+    const preferredIdentityId = readMailSenderPreference(localStorage, selectedMailboxId);
+    const selected = selectComposeSenderIdentity(result.items, preferredIdentityId, props.autoStart);
+    setIdentityId(selected?.id ?? "");
+  });
+
+  const selectedMailbox = createMemo(() => props.mailboxes.find((mailbox) => mailbox.id === mailboxId()) ?? null);
+  const [settingsOpening, setSettingsOpening] = createSignal(false);
+  const openSenderSettings = async () => {
+    const mailbox = selectedMailbox();
+    if (!mailbox || settingsOpening()) return;
+    setSettingsOpening(true);
+    try {
+      const settings = await importOnDemand(() => import("./MailboxSettingsDialog"));
+      if (!settings) return;
+      const result = await settings.openMailboxSettingsDialog({
+        mailboxId: mailbox.id,
+        currentUserEmail: props.currentUserEmail,
+        contactDirectory: props.contactDirectory,
+        initialTab: "delivery",
+      });
+      if (result.workspaceChanged) await identityResults.refresh();
+    } finally {
+      setSettingsOpening(false);
+    }
+  };
+  const selectedIdentity = createMemo(() => identities().find((identity) => identity.id === identityId()) ?? null);
+  /** The message opens as a window in its mailbox: the draft is created here (seed and materialize, as Compose in the mailbox does). */
+  const draftCreation = mutations.create<{ draft: MailDraft; identityId: string }, { mailboxId: string; identityId: string }>({
+    mutation: async ({ mailboxId: selectedMailboxId, identityId }, { abortSignal }) => {
+      const parsed = parsedIntent();
+      if (!parsed.ok) throw new Error(intentErrorMessage(parsed.code));
+      const key = JSON.stringify([selectedMailboxId, identityId, parsed.intent]);
+      let seed = pendingSeed?.key === key ? pendingSeed.seed : null;
+      if (!seed) {
+        const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
+          { param: { mailboxId: selectedMailboxId }, json: mailComposeDraftSeedInput(identityId, parsed.intent) },
+          { init: { signal: abortSignal } },
+        );
+        if (!response.ok) throw new Error(await readApiError(response, t().draftCreateFailed));
+        const created: MailDraftSeed = await response.json();
+        seed = created;
+        pendingSeed = { key, seed: created };
+      }
+      const materialized = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].materialize.$post(
+        { param: { mailboxId: selectedMailboxId }, json: { idempotencyKey: seed.id, origin: seed.origin, draft: seed.content } },
+        { init: { signal: abortSignal } },
+      );
+      if (!materialized.ok) throw new Error(await readApiError(materialized, t().draftCreateFailed));
+      const draft: MailDraft = await materialized.json();
+      pendingSeed = null;
+      return { draft, identityId };
+    },
+    onSuccess: ({ draft, identityId }) => {
+      writeMailSenderPreference(localStorage, draft.mailboxId, identityId);
+      open(draft);
+    },
+    onError: (error) => {
+      setAutoStartFailed(true);
+      setDirect(false);
+      return prompts.error(error.message, { title: t().startMessageFailed });
+    },
+  });
+
+  onCleanup(() => {
+    draftCreation.abort();
+  });
+
+  const createDraft = () => {
+    const selectedMailboxId = mailboxId();
+    const identity = selectedIdentity();
+    if (!selectedMailboxId || !identity || draftCreation.loading() || commandLoading() || commandError()) return;
+    draftCreation.mutate({ mailboxId: selectedMailboxId, identityId: identity.id });
+  };
+
+  let autoStartAttempted = false;
+  createEffect(() => {
+    if (
+      !props.autoStart ||
+      commandLoading() ||
+      commandError() ||
+      autoStartAttempted ||
+      !parsedIntent().ok ||
+      identityLoading() ||
+      identityError()
+    )
+      return;
+    if (!selectedMailbox() || !selectedIdentity()) return;
+    autoStartAttempted = true;
+    createDraft();
+  });
+
+  let directStartAttempted = false;
+  createEffect(() => {
+    if (!direct() || !directIdentityId || !commandDone() || directStartAttempted) return;
+    // A failed direct start shows the choosers and waits for the person; it never starts again on its own.
+    directStartAttempted = true;
+    autoStartAttempted = true;
+    draftCreation.mutate({ mailboxId: props.initialMailboxId, identityId: directIdentityId });
+  });
+
+  const autoStartPending = createMemo(
+    () =>
+      direct() ||
+      (props.autoStart &&
+        parsedIntent().ok &&
+        Boolean(selectedMailbox()) &&
+        !autoStartFailed() &&
+        !identityError() &&
+        (identityLoading() || draftCreation.loading() || Boolean(selectedIdentity()))),
+  );
+
+  return {
+    t,
+    mailto,
+    returnHref,
+    commandLoading,
+    commandError,
+    retryCommand,
+    parsedIntent,
+    intentData,
+    intentError,
+    mailboxId,
+    setMailboxId,
+    identityId,
+    setIdentityId,
+    identities,
+    allIdentities,
+    identityLoading,
+    identityError,
+    identityResults,
+    senderUnavailable,
+    selectedMailbox,
+    settingsOpening,
+    openSenderSettings,
+    selectedIdentity,
+    draftCreation,
+    createDraft,
+    autoStartPending,
+  };
+}

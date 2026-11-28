@@ -22,6 +22,19 @@ export const mailDraftSeedHref = (mailboxId: string, seedId: string, returnHref:
   return `/app/mail/${mailboxId}/compose/local/${seedId}?${query}`;
 };
 
+/**
+ * New message's own parameters on a mailbox's URL (UI v2): `compose` opens its dialog over the mailbox, the others are
+ * what it starts from. Closing the dialog drops them; a Command link drops its own as it runs.
+ */
+export const MAIL_COMPOSE_PARAMETERS = ["compose", "mailbox", "mailto", "autostart", "return"] as const;
+
+/** The mailbox with New message's dialog over it, carrying what `/app/mail/compose` was asked, so reload and Back keep it. */
+export const mailComposeDialogHref = (mailboxId: string, query: URLSearchParams): string => {
+  const next = new URLSearchParams(query);
+  next.set("compose", "1");
+  return `/app/mail/${mailboxId}?${next}`;
+};
+
 export const mailtoHandlerTemplate = (origin: string): string => `${origin.replace(/\/+$/, "")}/app/mail/compose?mailto=%s`;
 
 type MailtoRegistrationResult = { kind: "requested" } | { kind: "unsupported" } | { kind: "failed" };

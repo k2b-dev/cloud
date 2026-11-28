@@ -1,9 +1,10 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, mock, spyOn, test } from "bun:test";
 import { commandPath } from "@k2b/cloud/contracts";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../../contact-directory-settings";
 import type { MailDraft, MailDraftSeed, SenderIdentity } from "../../contracts";
+import type { MailComposeIntentProps } from "./mail-compose-intent-state";
 
 if (!isServer)
   test("contact Commands read with current authority, never create a draft, and recover from denied access", async () => {
@@ -331,6 +332,8 @@ const renderIntentPage = async (
     mailto?: string | null;
     /** A Command link the page opens with, as another app builds it. */
     commandLink?: string;
+    /** UI v2 (the pilot's): the same choice and start as a dialog over the mailbox, which opens the draft in place. */
+    v2?: boolean;
   },
   api: { identities?: SenderIdentity[]; seedStatus?: number } = {},
 ) => {
@@ -382,10 +385,15 @@ const renderIntentPage = async (
     { preconnect: originalFetch.preconnect },
   );
   const { default: MailComposeIntentPage } = await import("./MailComposeIntentPage.island");
+  const { MailComposeDialogV2 } = await import("./v2/MailComposeDialogV2");
+  const opened = mock((_draft: MailDraft) => {});
+  const closed = mock(() => {});
+  const View = (view: MailComposeIntentProps) =>
+    props.v2 ? <MailComposeDialogV2 {...view} open={opened} onClose={closed} /> : <MailComposeIntentPage {...view} />;
   delegateEvents(["click"]);
   const dispose = render(
     () => (
-      <MailComposeIntentPage
+      <View
         currentUserId="Usr001"
         mailboxes={props.mailboxIds.map((id) => ({ id, name: `Mailbox ${id}`, description: null, canManage: false }))}
         initialMailboxId={props.initialMailboxId}
@@ -408,15 +416,21 @@ const renderIntentPage = async (
     dom,
     requests,
     replace,
+    opened,
+    closed,
     releaseSeed,
     waitFor,
     seedPosts: () => requests.filter((request) => request.url.endsWith("/draft-seeds")),
     materializePosts: () => requests.filter((request) => request.url.endsWith("/draft-seeds/materialize")),
     labels: () => Array.from(dom.root.querySelectorAll("label")).map((label) => label.textContent),
+    // a v2 dialog stands outside the page's root
     button: (name: string) =>
-      Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.includes(name)),
-    cleanup: () => {
+      Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.includes(name)),
+    notice: (tone: string) => document.querySelector(`[data-k2-part="Notice"][data-tone="${tone}"]`),
+    cleanup: async () => {
       dispose();
+      // a closing v2 dialog still asks the document for the focus a moment later
+      await Bun.sleep(20);
       releaseSeed();
       globalThis.fetch = originalFetch;
       if (originalStorage) Object.defineProperty(globalThis, "localStorage", originalStorage);
@@ -456,7 +470,7 @@ if (!isServer)
       expect(page.seedPosts()).toHaveLength(1);
       expect(page.materializePosts()).toHaveLength(1);
     } finally {
-      page.cleanup();
+      await page.cleanup();
     }
   });
 
@@ -475,7 +489,7 @@ if (!isServer)
       expect(page.seedPosts()).toHaveLength(1);
       expect(page.replace).not.toHaveBeenCalled();
     } finally {
-      page.cleanup();
+      await page.cleanup();
     }
   });
 
@@ -502,7 +516,7 @@ if (!isServer)
       expect(page.materializePosts()[0]!.body).toMatchObject({ draft: { senderIdentityId: "Send02" } });
       expect(String(page.replace.mock.calls[0]![0])).toBe("/app/mail/mail01?draft=Drf0New1");
     } finally {
-      page.cleanup();
+      await page.cleanup();
     }
   });
 
@@ -516,7 +530,7 @@ if (!isServer)
       expect(page.button("Continue")?.disabled).toBe(true);
       expect(page.requests).toHaveLength(0);
     } finally {
-      page.cleanup();
+      await page.cleanup();
     }
   });
 
@@ -537,6 +551,75 @@ if (!isServer)
       });
       expect(page.requests.some((request) => request.url.endsWith("/sender-identities"))).toBe(false);
     } finally {
-      page.cleanup();
+      await page.cleanup();
+    }
+  });
+
+if (!isServer)
+  test("on UI v2 one mailbox with two senders starts from the remembered one, and a double click makes one draft", async () => {
+    const page = await renderIntentPage(
+      { mailboxIds: ["mail01"], initialMailboxId: "mail01", directIdentityId: null, v2: true },
+      { identities: [verifiedIdentity("Send01", "Support"), verifiedIdentity("Send02", "Sales")] },
+    );
+    localStorage.setItem("cloud:mail:last-sender:mail01", "Send02");
+    try {
+      await page.waitFor(() => page.button("Continue")?.disabled === false);
+      expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+      expect(page.seedPosts()).toHaveLength(0);
+      page.button("Continue")!.click();
+      page.button("Continue")!.click();
+      page.releaseSeed();
+      await page.waitFor(() => page.opened.mock.calls.length === 1);
+      expect(page.seedPosts()).toHaveLength(1);
+      expect(page.materializePosts()).toHaveLength(1);
+      expect(page.seedPosts()[0]!.body).toMatchObject({ origin: { input: { senderIdentityId: "Send02" } } });
+      // the mailbox under the dialog opens the draft as its window; the page itself does not move
+      expect(page.opened.mock.calls[0]![0]).toMatchObject({ id: "Drf0New1", mailboxId: "mail01" });
+      expect(page.replace).not.toHaveBeenCalled();
+    } finally {
+      await page.cleanup();
+    }
+  });
+
+if (!isServer)
+  test("on UI v2 two mailboxes ask for the mailbox and start nothing on their own, and Cancel closes the dialog", async () => {
+    const page = await renderIntentPage({ mailboxIds: ["mail01", "mail02"], initialMailboxId: "", v2: true });
+    try {
+      await page.waitFor(() => Boolean(page.button("Continue")));
+      await Bun.sleep(20);
+      expect(page.button("Continue")?.disabled).toBe(true);
+      expect(page.requests).toHaveLength(0);
+      page.button("Cancel")!.click();
+      expect(page.closed).toHaveBeenCalledTimes(1);
+      expect(page.requests).toHaveLength(0);
+    } finally {
+      await page.cleanup();
+    }
+  });
+
+if (!isServer)
+  test("on UI v2 a mailbox without a verified sender says so, and an email link that is not valid says why", async () => {
+    const page = await renderIntentPage(
+      { mailboxIds: ["mail01"], initialMailboxId: "mail01", directIdentityId: null, v2: true },
+      { identities: [] },
+    );
+    try {
+      await page.waitFor(() => Boolean(page.notice("warn")));
+      expect(page.button("Continue")?.disabled).toBe(true);
+    } finally {
+      await page.cleanup();
+    }
+    const invalid = await renderIntentPage({
+      mailboxIds: ["mail01"],
+      initialMailboxId: "mail01",
+      mailto: "mailto:not an address",
+      v2: true,
+    });
+    try {
+      await invalid.waitFor(() => Boolean(invalid.notice("bad")));
+      expect(invalid.button("Continue")?.disabled).toBe(true);
+      expect(invalid.seedPosts()).toHaveLength(0);
+    } finally {
+      await invalid.cleanup();
     }
   });
