@@ -452,11 +452,12 @@ export function createBillingTemplate(locale?: string): GridTemplate {
     baseName: t.title,
     baseDescription: t.description,
     preview: {
-      columns: [{ name: t.previewNumber }, { name: t.previewCustomer }, { name: t.previewAmount, align: "end" }],
+      // the phone shows the first two columns: the number and its amount
+      columns: [{ name: t.previewNumber }, { name: t.previewAmount, align: "end" }, { name: t.previewCustomer }],
       rows: [
-        ["RE-0001", "Nordlicht", previewAmount(1190, language)],
-        ["RE-0002", "Weber", previewAmount(476, language)],
-        ["RE-0003", "Atelier K", previewAmount(89.25, language)],
+        ["RE-0001", previewAmount(1190, language), "Nordlicht"],
+        ["RE-0002", previewAmount(476, language), "Weber"],
+        ["RE-0003", previewAmount(89.25, language), "Atelier K"],
       ],
     },
     tables: [
