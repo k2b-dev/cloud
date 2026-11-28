@@ -238,6 +238,25 @@ describe("measureV2Layout", () => {
   );
 
   test(
+    "green: a row's own line from its text on (a nav's list); red: the same line starting anywhere else",
+    async () => {
+      const row = (inset: string) =>
+        `<div class="k2-row" data-k2-part="Row" data-lines="1" style="position: relative; border-bottom: 0"><span class="k2-row-lead" style="width: 32px"><i class="k2-icon"></i></span><span class="k2-row-l1"><span class="k2-row-title">Nora Weber</span></span><span style="position: absolute; left: ${inset}; right: 0; bottom: 0; height: 1px; background: var(--k2-line)"></span></div>`;
+      // the line at the text column (edge 20 px + face 32 px + gap 8 px) is the row's own; 30 px is nobody's
+      const page = await open(columns(`${row("60px")}${row("30px")}`));
+      try {
+        const { edge } = await measureV2Layout(page);
+        expect(edge).toEqual([
+          expect.stringMatching(/^line span box at y \d+ stops 30 px short of the left and 0 px short of the right edge/),
+        ]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
     "red: two lines on top of each other, also when a pseudo-element under display: contents draws one",
     async () => {
       const page = await open(

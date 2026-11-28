@@ -1,18 +1,37 @@
 import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import type { DateContext } from "@k2b/stdlib";
+import type { Space } from "../contracts";
 import { parsePinnedSpaceIds } from "../frontend/[id]/_components/settings/SpaceSettingsStore";
 import type { SpacesSidebarData } from "../frontend/[id]/_components/sidebar/spaces-navigation";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
 import { spacesService } from "./index";
 import { dashboardSnapshot, listMyTasks } from "./items";
 import { spacesPublicResources } from "./public-resources";
+import { listReachableSpaceIds, type ReachableSpaceIds, type ReachableSpaces, reachableSpaces } from "./reach";
+
+/**
+ * Every Space the person reaches, read once per request: the sidebar lists them,
+ * and the overview's counts, lists and activity filter by their ids.
+ */
+export async function loadReachableSpaces(userId: string): Promise<ReachableSpaces<Space>> {
+  return reachableSpaces((await spacesService.space.list({ subject: { type: "user", userId } })).items);
+}
 
 /** Both SSR and view navigation use the same permission-filtered reads and limits. */
-export async function loadOverviewWork(params: { userId: string; view: OverviewView; dateConfig: DateContext }): Promise<OverviewWork> {
+export async function loadOverviewWork(params: {
+  userId: string;
+  view: OverviewView;
+  dateConfig: DateContext;
+  /** The ids of the Spaces the person reaches, when the request resolved them already. */
+  spaceIds?: ReachableSpaceIds;
+}): Promise<OverviewWork> {
+  const spaceIds = params.spaceIds ?? (await listReachableSpaceIds({ type: "user", userId: params.userId }));
   const [dashboard, mine, writable] = await Promise.all([
-    dashboardSnapshot({ ...params, view: params.view === "mine" ? "counts" : params.view, todoLimit: 30 }),
-    params.view === "mine" ? listMyTasks({ userId: params.userId, limit: 100, dateConfig: params.dateConfig }) : Promise.resolve([]),
+    dashboardSnapshot({ ...params, spaceIds, view: params.view === "mine" ? "counts" : params.view, todoLimit: 30 }),
+    params.view === "mine"
+      ? listMyTasks({ userId: params.userId, limit: 100, dateConfig: params.dateConfig, spaceIds })
+      : Promise.resolve([]),
     // The same permission check as a change through the API, read once for every row.
     spacesService.space
       .list({ subject: { type: "user", userId: params.userId }, requiredLevel: "write" })
@@ -69,17 +88,18 @@ export async function loadSpacesSidebar(params: {
   cookieHeader?: string;
   dateConfig?: DateContext;
   myWorkCount?: number | Promise<number>;
+  /** The Spaces the person reaches, when the request read them already (loadReachableSpaces). */
+  spaces?: Promise<ReachableSpaces<Space>>;
 }): Promise<SpacesSidebarData> {
-  const [page, myWorkCount] = await Promise.all([
-    spacesService.space.list({ subject: { type: "user", userId: params.userId } }),
-    params.myWorkCount ??
-      dashboardSnapshot({ userId: params.userId, dateConfig: params.dateConfig, view: "counts", todoLimit: 0 }).then(
+  const [reach, givenWorkCount] = await Promise.all([params.spaces ?? loadReachableSpaces(params.userId), params.myWorkCount]);
+  const { spaces, ids: spaceIds } = reach;
+  const [projected, stats, myWorkCount] = await Promise.all([
+    spacesPublicResources.projectSpaces(spaces),
+    loadSpaceOverviewStats({ spaceIds: [...spaceIds] }),
+    givenWorkCount ??
+      dashboardSnapshot({ userId: params.userId, dateConfig: params.dateConfig, view: "counts", todoLimit: 0, spaceIds }).then(
         (snapshot) => snapshot.assignedToMeCount,
       ),
-  ]);
-  const [projected, stats] = await Promise.all([
-    spacesPublicResources.projectSpaces(page.items),
-    loadSpaceOverviewStats({ spaceIds: page.items.map((space) => space.id) }),
   ]);
   const byId = new Map(stats.map((entry) => [entry.spaceId, entry.openItemCount]));
   return {
@@ -88,7 +108,7 @@ export async function loadSpacesSidebar(params: {
       name: space.name,
       color: space.color,
       description: space.description,
-      openItemCount: byId.get(page.items[index]!.id) ?? 0,
+      openItemCount: byId.get(spaces[index]!.id) ?? 0,
     })),
     pinnedSpaceIds: parsePinnedSpaceIds(params.cookieHeader),
     myWorkCount,

@@ -3,7 +3,8 @@
  * against the mockup instead of a count of error classes (the lesson of the flat audit, 22.11.).
  *
  * - **edge:** a horizontal hairline or a tinted band reaches both edges of its column (within 1.5 px). A column edge
- *   is a vertical hairline, an element matched by `columns`, or the edge of `root`.
+ *   is a vertical hairline, an element matched by `columns`, or the edge of `root`. One line may start further in: a
+ *   row's own line that starts at the row's text (after its symbol or face, as in a nav's list) and reaches the end.
  * - **double:** no two parallel lines lie at most 1 px apart over more than 1 px of length, also across components.
  * - **type:** every run of text is set in a type role: 12, 13, 14 or 18 px on a 16, 20 or 24 px line, in 400, 500 or
  *   600. Reading text (`prose`) may also use 16 px and a 22 px line.
@@ -442,10 +443,15 @@ function measureInPage(options: InPage): DomResult {
         same.along1 = Math.max(same.along1, line.along1);
       } else merged.push({ ...line });
     }
+    // A row may part from the next from its text on (the rows of a nav's list): its line starts at the row's text.
+    const fromText = (line: Line) => {
+      const text = line.element.closest('[data-k2-part="Row"]')?.querySelector(":scope > .k2-row-l1");
+      return !!text && Math.abs(text.getBoundingClientRect().left - line.along0) <= 1.5;
+    };
     for (const line of merged) {
       if (line.along1 - line.along0 < 60) continue;
       const gap = gaps(line.along0, line.along1, line.across0);
-      if (gap.left > 1.5 || gap.right > 1.5)
+      if ((gap.left > 1.5 && !fromText(line)) || gap.right > 1.5)
         edge.push(
           `line ${name(line.element)} ${line.how} at y ${round(line.across0)} stops ${round(gap.left)} px short of the left and ${round(gap.right)} px short of the right edge of its column (${round(gap.edgeLeft)}–${round(gap.edgeRight)})`,
         );

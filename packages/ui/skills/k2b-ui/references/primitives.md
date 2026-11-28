@@ -62,6 +62,8 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   limits, Enter back to the default) move the width; a reload starts at the
   default again. The sidebar's grip works the same. A grip shows only under the
   pointer, on keyboard focus and while dragged (on touch screens it stays).
+  `width={{ fixed }}` keeps one width without a grip, for a page to read
+  rather than to arrange (a visitor page, a wall screen).
 - `detail`: the reader beside a list. What is open belongs in the address:
   render the detail only while the address names an entry. On the phone
   the detail is the page, and the title in its head is never cut: beside the
@@ -72,6 +74,9 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   `back` it gives way on the phone, so the detail has one way back. A long name (a search) is cut with "…" on
   one line; the whole name stays its accessible name and its hint. A detail
   that closes in place returns the focus to the row that opened it.
+- `wideBack`: the way back shows on a wide screen too, for a page that
+  stands in the place of another one, not beside a list (a discussion in
+  the place of its room's stream: "‹ Frühlingsausstellung").
 - `scrollKey` (such as "mail-list"): back and forward bring the column
   back to where it was scrolled.
 - `side`: the context column (the info column of a record, what a form
@@ -169,19 +174,29 @@ key statements of a record or the home of a place.
 Like things to press, such as attachments: `items: { icon, title, meta?,
 href?, onNavigate?, color? }[]`, `more` (an action after them), `label`.
 Never nested. With `color` the symbol becomes the thing's `Mark`. A long
-title is cut in the middle and keeps its extension
+title of one word (a file name) is cut in the middle and keeps its extension
 ("Angebot_Holz…nal_v3.pdf"), whole on hover. A tile is at most 320 px wide;
 `perRow={n}`: at most n tiles share a row and grow with its width; a tile
 never gets narrower than 240 px for it. Where n do not fit, a row holds
 half of them (four as 2 × 2, never 3 + 1), and below that one under the
-other. On the phone a row always holds half of them, even below 240 px.
+other. On the phone a row always holds half of them, even below 240 px,
+and a card's name there takes a second line before it is cut; it breaks
+between words only, and a name of one word that does not fit ends in
+"…". A card with a `preview` (a way to start) names itself in medium
+weight, as the approved first start.
 
 `variant="card"`: each thing a card in a grid (at least 240 px a card) for
 an overview of things with a face, such as the bases of Grids. A card
 adds `stats` (`{ icon?, label, status?, yours? }`: "6 Tabellen", "8 knapp"
 in `warn`), `people` (an `Avatar.Stack` at the foot), `foot` (quiet words
 at its end: "Felix · vor 2 Min") and `trend` (a `Spark` at the top end, in
-the card's colour). The whole card opens its `href`. `create` adds the last
+the card's colour), `preview` (a glance of what it holds across its top,
+112 px, 84 px on the phone: `{ table: { columns, rows } }` as a small
+table of words (a column `{ label, align: "end" }` for amounts), two columns on the phone, `{ page: { title, text? } }`, or
+`{ icon }` for a thing that holds nothing yet; it is a picture, the card
+keeps its name; keep its values short, about 12 characters a cell, so
+nothing is cut at 1440 or on the phone: leave out what does not fit; the
+phone shows a table's first two columns, so an amount comes second). The whole card opens its `href`. `create` adds the last
 card that makes a new thing: dashed, `title`, `meta`, `href` or `onClick`,
 and `choices` as round chips (templates). Cards hold no box and no line.
 
@@ -258,6 +273,8 @@ content, a list and its detail, one section and the next. A `Row`:
 - lead: `mark` (the thing's `Mark`: a base, a file with its thumbnail, a
   table; 24 px on one line, 32 px on two or three), or `avatar`, or a
   quiet `icon` for a plain place or deed, or a dot when `unread`.
+  `badge: { icon, label }` sets a small symbol on the lead's bottom right,
+  such as a pin on a pinned chat's face, in place of a mark by the name.
 - `meta` (quiet note after the title, a count), `time` (top right). Title
   and `meta` share the first line in equal parts, and each takes only what
   it needs: a count or a number stays whole, a long note is cut with "…",
@@ -281,6 +298,10 @@ content, a list and its detail, one section and the next. A `Row`:
   rows with the same deed are told apart: name nothing yourself; on the
   phone a finger hits 44 px of it, its look unchanged),
   `end` (a few icon buttons, or the state chip of a one- or two-line row).
+  `endOnHover`: the end shows only under the pointer or with the focus in
+  the row, its place kept; a touch screen does not draw it, so give the
+  row the same deeds through `Menu.Context` (a long press). Use it for a
+  long list whose every row has a "…".
 - states: `unread`, `strong`, `current` (the open one, app tint),
   `yours` (you are next).
 - `select: { selected, onChange }`: the row stands in a selection (pair it
@@ -311,7 +332,7 @@ open row in the tint of the app it belongs to, a chosen row blue; rows part
 with the quiet line, the column head with the clear one). A column: `title`, `cell(row)`
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
-never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer or holds the focus, and while dragged; on touch screens it stays, and after a touch on the head it takes a 44 px target), `wrap` (one text column may take 3
+never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer or holds the focus, and while dragged; on touch screens it stays, and after a touch on the head it takes a 44 px target; `{ fixed }`: one width, no grip), `wrap` (one text column may take 3
 lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
@@ -422,7 +443,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   the state and the word in the ink of the text ("● Aktiv"), on the chip's
   height. Use it for a column of states in a dense table or list, where a
   chip on every line is too loud.
-- `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
+- `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22"), `status`
+  (`warn` almost full, `bad` full: the bar says it in colour too, beside the
+  chip or words that say why).
 - `Mark`: what a thing looks like. `icon` + `color` (its data colour, or
   the colour of its kind: table, form, PDF), `image` (a thumbnail over the
   symbol; while it loads and when it fails the symbol shows), `kind` (the
@@ -574,13 +597,16 @@ name wraps in a small table and ends with "…" in one with column widths.
 ## Components
 
 - `Nav`: `title`, `icon`, `search?`, `primary?`, `groups: { label?, action?, items }[]`, `list?`, `phone?`, `foot`.
-  `search` (`{ label, value, onInput, onKeyDown? }`) and `primary` (an
-  `Action`, such as "Neuer Chat") stand under the name, each across the
-  column; pass the same action as `Workspace` `primary`, which floats on the
+  `search` (`{ label, value, onInput, onKeyDown? }`) stands under the name,
+  across the column; `primary` (an `Action`, such as "Neuer Chat") is an
+  icon button at the end of the name's row, its label its name and tooltip;
+  pass the same action as `Workspace` `primary`, which floats on the
   phone. `list` holds the app's own rows after the groups (a `List` of
   `Row`s, such as conversations): made once, like the other parts of a
   frame, they reach the column's edges and scroll on their own above the
-  foot; virtualize a long list. With `phone: "page"` the list with the
+  foot; virtualize a long list. Its rows part with a line from their text
+  on (not under the lead), and a row keeps its title on one line and its
+  second line on at most two, cut with "…". With `phone: "page"` the list with the
   search is the phone's page while no pane is open beside it; the title,
   the groups and the foot are then in the platform's menu, and any pane
   that opens (a detail or a page of its own) is the page in its place.

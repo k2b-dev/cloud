@@ -7,7 +7,8 @@ import { islandIdFromFile } from "../../src/island-id";
 import { makeTempRoot } from "../temp-root";
 
 const propsData = (props: object) => JSON.stringify(toJSON(props));
-const propsAttribute = (props: object = {}) => Bun.escapeHTML(propsData(props));
+const propsComment = (props: object = {}, data = propsData(props)) =>
+  `<!--ssr-props:${data.replaceAll("<", "\\u003c").replaceAll(">", "\\u003e")}-->`;
 
 const root = makeTempRoot(".ssr-island-errors-");
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -38,7 +39,7 @@ test("an error in a reactive update after mount is contained and reported", asyn
        return <button onClick={load}>{label()}</button>;
      }`,
   );
-  document.body.innerHTML = `<solid-island data-id="${id}" data-props="${propsAttribute()}">SSR</solid-island>`;
+  document.body.innerHTML = `<solid-island data-id="${id}">${propsComment()}SSR</solid-island>`;
   const reported = spyOn(globalThis, "reportError").mockImplementation(() => {});
   await import(join(root, "_ssr", `${id}.js`));
 
@@ -57,7 +58,7 @@ test("one instance failing on first render does not blank or block the others", 
        return <b>ok</b>;
      }`,
   );
-  const el = (fail: boolean) => `<solid-island data-id="${id}" data-props="${propsAttribute({ fail })}">SSR</solid-island>`;
+  const el = (fail: boolean) => `<solid-island data-id="${id}">${propsComment({ fail })}SSR</solid-island>`;
   document.body.innerHTML = el(false) + el(true) + el(false);
   const reported = spyOn(globalThis, "reportError").mockImplementation(() => {});
   await import(join(root, "_ssr", `${id}.js`)).catch(() => {});
@@ -97,7 +98,7 @@ test.each([false, true])("island error events bubble and cancellation suppresses
       }`,
   });
   const id = bundle.id("Event.island.tsx");
-  document.body.innerHTML = `<section><solid-island data-id="${id}" data-props="${propsAttribute()}"></solid-island></section>`;
+  document.body.innerHTML = `<section><solid-island data-id="${id}">${propsComment()}</solid-island></section>`;
   const element = document.querySelector("solid-island")!;
   let events = 0;
   let bubbled = 0;
@@ -141,14 +142,14 @@ test("Try again remounts with fresh state and rereads the element's props", asyn
         return <button onClick={() => setCount(count() + 1)}>{props.label} {count()}</button>;
       }`,
   });
-  document.body.innerHTML = `<solid-island data-id="${bundle.id("Retry.island.tsx")}" data-props="${propsAttribute({ label: "old" })}">SSR</solid-island>`;
+  document.body.innerHTML = `<solid-island data-id="${bundle.id("Retry.island.tsx")}">${propsComment({ label: "old" })}SSR</solid-island>`;
   const reported = spyOn(globalThis, "reportError").mockImplementation(() => {});
   await bundle.load("Retry.island.tsx");
   const retry = document.querySelector("button")!;
   expect(retry.type).toBe("button");
   expect(retry.textContent).toBe("Try again");
   expect(document.querySelector("[role=alert]")!.textContent).toBe("This part of the page could not be displayed. Try again");
-  document.querySelector<HTMLElement>("solid-island")!.dataset.props = propsData({ label: "fresh" });
+  document.querySelector("solid-island")!.insertAdjacentHTML("afterbegin", propsComment({ label: "fresh" }));
   retry.click();
   expect(document.querySelector("solid-island")!.textContent).toBe("fresh 0");
   document.querySelector("button")!.click();
@@ -173,7 +174,7 @@ test.each([true, false])("shared signal writes keep other islands updating (dev=
     },
     { dev },
   );
-  document.body.innerHTML = `<solid-island data-id="${bundle.id("Broken.island.tsx")}" data-props="${propsAttribute()}"></solid-island><solid-island data-id="${bundle.id("Healthy.island.tsx")}" data-props="${propsAttribute()}"></solid-island>`;
+  document.body.innerHTML = `<solid-island data-id="${bundle.id("Broken.island.tsx")}">${propsComment()}</solid-island><solid-island data-id="${bundle.id("Healthy.island.tsx")}">${propsComment()}</solid-island>`;
   const reported = spyOn(globalThis, "reportError").mockImplementation(() => {});
   await bundle.load("Broken.island.tsx");
   await bundle.load("Healthy.island.tsx");
@@ -199,7 +200,7 @@ test("client components contain initial and reactive errors per instance", async
       }`,
   });
   const id = bundle.id("Broken.client.tsx");
-  document.body.innerHTML = `<solid-client data-id="${id}" data-props="${propsAttribute({ fail: true })}"></solid-client><solid-client data-id="${id}" data-props="${propsAttribute({ fail: false })}"></solid-client>`;
+  document.body.innerHTML = `<solid-client data-id="${id}">${propsComment({ fail: true })}</solid-client><solid-client data-id="${id}">${propsComment({ fail: false })}</solid-client>`;
   const reported = spyOn(globalThis, "reportError").mockImplementation(() => {});
   await bundle.load("Broken.client.tsx");
   const [broken, healthy] = document.querySelectorAll("solid-client");
@@ -213,13 +214,13 @@ test("client components contain initial and reactive errors per instance", async
 test("malformed props are contained and can be corrected before retry", async () => {
   const bundle = await buildTogether({ "Props.island.tsx": `export default (props: { label: string }) => <b>{props.label}</b>;` });
   const id = bundle.id("Props.island.tsx");
-  document.body.innerHTML = `<solid-island data-id="${id}" data-props="("></solid-island><solid-island data-id="${id}" data-props="${propsAttribute({ label: "healthy" })}"></solid-island>`;
+  document.body.innerHTML = `<solid-island data-id="${id}">${propsComment({}, "(")}</solid-island><solid-island data-id="${id}">${propsComment({ label: "healthy" })}</solid-island>`;
   const reported = spyOn(globalThis, "reportError").mockImplementation(() => {});
   await bundle.load("Props.island.tsx");
   const [broken, healthy] = document.querySelectorAll<HTMLElement>("solid-island");
   expect(broken!.querySelector("[data-ssr-error]")).not.toBeNull();
   expect(healthy!.textContent).toBe("healthy");
-  broken!.dataset.props = propsData({ label: "corrected" });
+  broken!.insertAdjacentHTML("afterbegin", propsComment({ label: "corrected" }));
   broken!.querySelector("button")!.click();
   expect(broken!.textContent).toBe("corrected");
   expect(reported).toHaveBeenCalledTimes(1);
@@ -228,7 +229,7 @@ test("malformed props are contained and can be corrected before retry", async ()
 test("a failure outside the boundary does not interrupt mounting later elements", async () => {
   const bundle = await buildTogether({ "Ready.island.tsx": `export default () => <b>Ready</b>;` });
   const id = bundle.id("Ready.island.tsx");
-  document.body.innerHTML = `<solid-island data-id="${id}" data-props="${propsAttribute()}"></solid-island><solid-island data-id="${id}" data-props="${propsAttribute()}"></solid-island>`;
+  document.body.innerHTML = `<solid-island data-id="${id}">${propsComment()}</solid-island><solid-island data-id="${id}">${propsComment()}</solid-island>`;
   const [broken, healthy] = document.querySelectorAll("solid-island");
   const error = new Error("clearing failed");
   Object.defineProperty(broken!, "innerHTML", {
@@ -271,7 +272,7 @@ test("a custom error fallback receives the error and resets the component", asyn
     },
     { errorFallback: "IslandError.tsx" },
   );
-  document.body.innerHTML = `<solid-island data-id="${bundle.id("Retry.island.tsx")}" data-props="${propsAttribute()}"></solid-island>`;
+  document.body.innerHTML = `<solid-island data-id="${bundle.id("Retry.island.tsx")}">${propsComment()}</solid-island>`;
   const reported = spyOn(globalThis, "reportError").mockImplementation(() => {});
   await bundle.load("Retry.island.tsx");
   expect(document.querySelector("[role=alert]")!.textContent).toBe("Custom: component failureRetry custom");
@@ -297,7 +298,7 @@ test.each([false, true])("a throwing custom fallback uses the built-in fallback 
     },
     { errorFallback: "IslandError.tsx" },
   );
-  document.body.innerHTML = `<solid-island data-id="${bundle.id("Retry.island.tsx")}" data-props="${propsAttribute()}"></solid-island>`;
+  document.body.innerHTML = `<solid-island data-id="${bundle.id("Retry.island.tsx")}">${propsComment()}</solid-island>`;
   let events = 0;
   document.querySelector("solid-island")!.addEventListener("ssr:island-error", (event) => {
     events++;

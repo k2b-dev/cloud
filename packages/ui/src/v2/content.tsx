@@ -29,7 +29,7 @@ import { Avatar, custom, Dot, Icon, Mark, type MarkProps } from "./marks";
 import { Empty, type EmptyProps, Loading, LoadingStatus, PlaceholderValue } from "./states";
 import type { TypeRole } from "./tokens";
 import { useTreeMessages } from "./tree-messages";
-import type { Action, OnNavigate, Person, Status } from "./types";
+import { type Action, type ColumnWidth, columnPx, draggable, type OnNavigate, type Person, type Status } from "./types";
 
 // ── Text ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -392,6 +392,11 @@ export type RowProps = {
   mark?: MarkProps;
   /** … or a person. */
   avatar?: Person;
+  /**
+   * A small symbol on the lead's bottom right, such as a pin on a pinned chat's face, in place of a mark beside the
+   * name; its label names it for assistive technology and as its hint.
+   */
+  badge?: { icon: string; label: string };
   /** Unread: a dot leads and the first two lines turn 600. */
   unread?: boolean;
   /** The title in 600. */
@@ -420,6 +425,12 @@ export type RowProps = {
   action?: Action;
   /** At the end: a few icon buttons, such as "Reply" and "More". */
   end?: JSX.Element;
+  /**
+   * The end shows only while the pointer is over the row or the focus is in it (its place stays, so nothing moves); a
+   * list of many rows then carries no "…" on each. On a touch screen it is not drawn: give the row the same deeds
+   * through `Menu.Context` (a long press), or reach them where the entry opens.
+   */
+  endOnHover?: boolean;
   /** The row opens this link … */
   href?: string;
   /** … in place on a plain click, while the link still opens in a new tab (see `OnNavigate`) … */
@@ -503,6 +514,7 @@ export const Row = (props: RowProps) => {
       // in a selection the box takes the person's place, so the row's text starts where the other rows' text does
       data-avatar={props.avatar && !props.select ? "" : undefined}
       data-mark={props.mark && !props.avatar && !props.select ? "" : undefined}
+      data-end-hover={props.endOnHover ? "" : undefined}
       data-time={time() !== undefined ? "" : undefined}
       data-action={props.action ? "" : undefined}
     >
@@ -556,6 +568,13 @@ export const Row = (props: RowProps) => {
         >
           {(select) => <MarkCheck labelledBy={title} checked={select().selected} onChange={(on) => select().onChange(on)} />}
         </Show>
+        <Show when={props.badge && !props.select ? props.badge : undefined}>
+          {(badge) => (
+            <span class="k2-row-badge" title={badge().label}>
+              <Icon name={badge().icon} label={badge().label} />
+            </span>
+          )}
+        </Show>
       </span>
       <span class="k2-row-l1">
         <span class="k2-row-title" id={title} title={cut(0)}>
@@ -608,10 +627,10 @@ export type Column<T> = {
   /** Numbers and amounts stand at the end. */
   align?: "start" | "end";
   /**
-   * A column that can be dragged wider or narrower: its minimum and default in px. The column is exactly its
-   * default wide; cut text never widens it.
+   * A column that can be dragged wider or narrower: its minimum and default in px; `{ fixed }`: one width, no grip. The
+   * column is exactly that wide; cut text never widens it.
    */
-  width?: { min: number; default: number };
+  width?: ColumnWidth;
   /** A text column that may wrap to at most three lines; the row grows, every other cell stays on its first line. */
   wrap?: boolean;
   /** Drops away on the phone (rule 7: columns drop, they do not shrink). */
@@ -823,6 +842,11 @@ export const Table = <T,>(props: TableProps<T>) => {
     if (!(event.relatedTarget instanceof Node && head?.contains(event.relatedTarget))) setHeadFocused(false);
   };
   const sized = () => grid() || props.columns.some((column) => column.width);
+  /** The width of column `index` when it can be dragged, else nothing. */
+  const dragWidth = (index: number) => {
+    const width = props.columns[index]?.width;
+    return draggable(width) ? width : undefined;
+  };
   const key = (row: T, index: number) => props.rowKey?.(row) ?? String(index);
 
   // ── Rows in levels (`tree`) ──
@@ -1152,7 +1176,10 @@ export const Table = <T,>(props: TableProps<T>) => {
   const span = () => props.columns.length + (props.select ? 1 : 0);
   // The widths the grips gave columns, by index; a column keeps its default until then.
   const [sizes, setSizes] = createSignal<Readonly<Record<number, number>>>({});
-  const columnWidth = (index: number) => sizes()[index] ?? props.columns[index]?.width?.default;
+  const columnWidth = (index: number) => {
+    const width = props.columns[index]?.width;
+    return sizes()[index] ?? (width ? columnPx(width) : undefined);
+  };
   // In a small table with widths one column takes the rest of the row: here the last one. With the decided grow default
   // (#4391) it is the growing column: one named `grow`, else one without a `width`, else the widest that is neither a
   // number nor a column that may drop. That column never takes less than its floor: its own `min`, else the narrowest
@@ -1258,7 +1285,8 @@ export const Table = <T,>(props: TableProps<T>) => {
                     style={firstSticky(index()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                     aria-sort={props.sort?.column === index() ? props.sort.direction : undefined}
                   >
-                    <Show when={index() > 0 && props.columns[index() - 1]?.width}>
+                    {/* a grip after a column that can be dragged; a fixed one keeps its width */}
+                    <Show when={index() > 0 && dragWidth(index() - 1)}>
                       {(width) => (
                         <ColumnGrip
                           label={props.columns[index() - 1]?.title ?? ""}
