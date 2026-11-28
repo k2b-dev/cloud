@@ -1,9 +1,10 @@
+import { cloudAvatarImage } from "@k2b/cloud/account/ui";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { navigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
-import { Band, Bar, Disclosure, Empty, Failed, Input, List, Loading, Menu, Notice, Row, Section, useLocale } from "@k2b/ui/v2";
+import { Band, Disclosure, Empty, Failed, Input, List, Loading, Menu, Notice, Row, Section, useLocale } from "@k2b/ui/v2";
 import { defineListQuery, field } from "@k2b/ui/v2/list-query";
-import { createMemo, createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
+import { createMemo, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../../messages";
 import type { ConversationSchema } from "../../service/contracts";
@@ -149,9 +150,10 @@ export function ThreadsPageV2(props: {
 }
 
 /**
- * A place's discussions on v2 (the directory of a system chat): "All threads", then each discussion with its state, its
- * last message and its unread count, newest first. The search and the state filter live in the address through one
- * list-query declaration, so reload, back and forward show the same; the server filters and pages.
+ * A place's discussions on v2 (the directory of a system chat), one list newest first: each discussion with the face
+ * of who spoke last, its state in the owning app's words, the last message, the time and the unread count. The search
+ * and the state filter stand in the pane's head (`tools`); both live in the address through one list-query
+ * declaration, so reload, back and forward show the same; the server filters and pages.
  */
 export function SystemThreadDirectoryV2(props: {
   conversation: Conversation;
@@ -161,16 +163,19 @@ export function SystemThreadDirectoryV2(props: {
   now: () => Date;
   revision: number;
   onOpen: (view: ThreadView, navigation: LinkNavigateEvent) => void | Promise<void>;
+  /** Hands the search and the state filter to the pane's head. */
+  tools: (element: JSX.Element | undefined) => void;
 }): JSX.Element {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
+  const v2 = () => chatV2Messages.resolve([locale()]).t;
   const config = () => ({ ...props.dateConfig, locale: locale() });
   const query = createMemo(() =>
     defineListQuery({
       key: "discussions",
       fields: {
         filter: field.choice({
-          label: chatV2Messages.resolve([locale()]).t.discussionState,
+          label: v2().discussionState,
           multiple: false,
           common: true,
           options: [
@@ -183,12 +188,12 @@ export function SystemThreadDirectoryV2(props: {
       search: { label: t().searchThreads },
       // The server orders discussions by their last activity; there is no other order to choose.
       sort: {
-        options: { activity: { label: chatV2Messages.resolve([locale()]).t.recentActivity } },
+        options: { activity: { label: v2().recentActivity } },
         default: { field: "activity", direction: "desc" },
       },
     }),
   );
-  // The page code loads in the browser, so the address is there to read; the bar writes it, the search below too.
+  // The page code loads in the browser, so the address is there to read; the head writes it.
   // The server takes a search of at most 100 characters; a longer one in the address is cut to it, as the field is.
   const parsed = query().parse(location.search).state;
   const [state, setState] = createSignal(
@@ -203,121 +208,107 @@ export function SystemThreadDirectoryV2(props: {
   };
   const [mounted] = createSignal(true);
   const pages = createDirectoryPages(props, () => ({ q: state().search ?? "", filter: state().filters.filter }), mounted);
-  const preview = (thread: Thread) =>
+  const stateName = (value: string | undefined) =>
+    value === "open" ? t().threadsOpen : value === "done" ? t().threadsDone : value === "unread" ? t().threadsUnread : t().allThreads;
+  // k2b-ui gap (owner Z2, #4398): the state is a menu with a tick until a lazy `Select` stays out of the first chunk.
+  props.tools(
+    <>
+      <Input
+        type="search"
+        maxLength={SEARCH_MAX}
+        icon="search"
+        label={t().searchThreads}
+        placeholder={t().searchThreads}
+        value={state().search ?? ""}
+        onInput={(text) => change(query().set(state(), "q", text))}
+      />
+      <Menu
+        label={v2().discussionState}
+        items={[
+          {
+            title: v2().discussionState,
+            choice: state().filters.filter ?? "any",
+            onChoose: (value: string) =>
+              change(
+                value === "open" || value === "done" || value === "unread"
+                  ? query().set(state(), "filter", value)
+                  : query().clear(state(), "filter"),
+              ),
+            items: [
+              { label: t().allThreads, value: "any" },
+              { label: t().threadsOpen, value: "open" },
+              { label: t().threadsDone, value: "done" },
+              { label: t().threadsUnread, value: "unread" },
+            ],
+          },
+        ]}
+      >
+        {stateName(state().filters.filter)}
+      </Menu>
+    </>,
+  );
+  onCleanup(() => props.tools(undefined));
+  /** The state in the owning app's words, else open or done; then who wrote last and what. */
+  const line = (thread: Thread) =>
     [
-      thread.resource?.status,
+      thread.resource?.status ?? (thread.resource?.done ? t().threadsDone : t().threadsOpen),
       thread.lastMessage
         ? `${thread.lastMessage.author.id === props.viewerId ? t().you : thread.lastMessage.author.name.split(" ")[0]}: ${thread.lastMessage.preview}`
         : t().noMessagesYet,
-    ]
-      .filter(Boolean)
-      .join(" · ");
+    ].join(" · ");
+  /** Who spoke last, by their picture; the item's own sign while nobody has. */
+  const face = (thread: Thread) => {
+    const author = thread.lastMessage?.author;
+    if (!author) return { mark: { icon: iconName(threadIcon(thread)), color: CHAT_COLOR } };
+    return {
+      avatar: {
+        name: author.name,
+        image: cloudAvatarImage({ kind: author.type === "service_account" ? "service_account" : "user", userId: author.id }),
+      },
+    };
+  };
   return (
-    <>
-      {/* k2b-ui gap (owner Z2): `FilterBar` is reached only through the `@k2b/ui/v2` barrel, and the bundler then hoists it (with
-          Lookup and DatePicker) into the chunk every page of Chat loads (+57 KB over Chat's v2 budget). Until it has a
-          path of its own, the search and the one state stand as one row; the address is the declaration's.
-          k2b-ui gap (owner Z2): a v2 `Select` used only in this lazy page still moves its listbox behaviour through the `@k2b/ui/v2` barrel into the chunk every Chat page loads (+47 KB over Chat's v2 budget). The choice is a menu with a tick (menu behaviour is loaded already) until the barrel splits. */}
-      <Bar
-        start={
-          <Input
-            type="search"
-            maxLength={SEARCH_MAX}
-            icon="search"
-            label={t().searchThreads}
-            placeholder={t().searchThreads}
-            value={state().search ?? ""}
-            onInput={(text) => change(query().set(state(), "q", text))}
-          />
-        }
-        end={
-          <Menu
-            label={chatV2Messages.resolve([locale()]).t.discussionState}
-            items={[
-              {
-                title: chatV2Messages.resolve([locale()]).t.discussionState,
-                choice: state().filters.filter ?? "any",
-                onChoose: (value: string) =>
-                  change(
-                    value === "open" || value === "done" || value === "unread"
-                      ? query().set(state(), "filter", value)
-                      : query().clear(state(), "filter"),
-                  ),
-                items: [
-                  { label: t().allThreads, value: "any" },
-                  { label: t().threadsOpen, value: "open" },
-                  { label: t().threadsDone, value: "done" },
-                  { label: t().threadsUnread, value: "unread" },
-                ],
-              },
-            ]}
-          >
-            {state().filters.filter === "open"
-              ? t().threadsOpen
-              : state().filters.filter === "done"
-                ? t().threadsDone
-                : state().filters.filter === "unread"
-                  ? t().threadsUnread
-                  : t().allThreads}
-          </Menu>
-        }
-      />
-      <List label={t().threadsIn({ title: props.conversation.title })}>
-        <Row
-          mark={{ icon: "messages", color: CHAT_COLOR }}
-          lines={[t().allThreads]}
-          href={threadHref(props.conversation.id, "all", null, props.basePath)}
-          onNavigate={(navigation) => props.onOpen("all", navigation)}
-        />
-      </List>
-      <Switch>
-        <Match when={pages.status() === "failed" && !pages.page()}>
-          <Failed text={t().threadsLoadFailed} onRetry={() => void pages.load()} />
-        </Match>
-        <Match when={!pages.page()}>
-          <Loading rows={5} lines={2} />
-        </Match>
-        <Match when={pages.status() === "ready" && pages.page()?.items.length === 0 && pages.page()?.nextCursor == null}>
-          <Empty icon="messages" text={state().search || state().filters.filter ? t().noThreadMatches : t().noItemThreads} />
-        </Match>
-        <Match when={true}>
-          <Section
-            title={t().systemChats}
-            more={
-              pages.page()?.nextCursor != null
-                ? { label: t().moreThreads, icon: "dots", disabled: pages.status() === "loading", onClick: () => void pages.load(true) }
-                : undefined
-            }
-          >
-            <List label={t().systemChats}>
-              <For each={pages.page()?.items ?? []}>
-                {(thread) => (
-                  <Row
-                    mark={{ icon: iconName(threadIcon(thread)), color: CHAT_COLOR }}
-                    lines={[thread.name, preview(thread)]}
-                    meta={thread.unread > 0 ? thread.unread.toLocaleString(locale()) : undefined}
-                    unread={thread.unread > 0}
-                    time={listTime(thread.lastActivityAt, props.now(), config())}
-                    href={threadHref(props.conversation.id, thread.id, null, props.basePath)}
-                    onNavigate={(navigation) => props.onOpen(thread.id, navigation)}
-                  />
-                )}
-              </For>
-            </List>
-            <Show when={pages.page()?.incomplete && pages.status() === "ready"}>
-              <Notice tone="warn" actions={[{ label: t().retry, onClick: () => void pages.load() }]}>
-                {t().discussionsIncomplete}
-              </Notice>
-            </Show>
-            <Show when={pages.status() === "failed" && pages.page()}>
-              <Notice tone="bad" actions={[{ label: t().retry, onClick: () => void pages.load(pages.appending()) }]}>
-                {t().threadsLoadFailed}
-              </Notice>
-            </Show>
-          </Section>
-        </Match>
-      </Switch>
-    </>
+    <Switch>
+      <Match when={pages.status() === "failed" && !pages.page()}>
+        <Failed text={t().threadsLoadFailed} onRetry={() => void pages.load()} />
+      </Match>
+      <Match when={!pages.page()}>
+        <Loading rows={5} lines={2} />
+      </Match>
+      <Match when={pages.status() === "ready" && pages.page()?.items.length === 0 && pages.page()?.nextCursor == null}>
+        <Empty icon="messages" text={state().search || state().filters.filter ? t().noThreadMatches : t().noItemThreads} />
+      </Match>
+      <Match when={true}>
+        <List label={t().threadsIn({ title: props.conversation.title })}>
+          <For each={pages.page()?.items ?? []}>
+            {(thread) => (
+              <Row
+                {...face(thread)}
+                lines={[thread.name, line(thread)]}
+                meta={thread.unread > 0 ? thread.unread.toLocaleString(locale()) : undefined}
+                unread={thread.unread > 0}
+                time={listTime(thread.lastActivityAt, props.now(), config())}
+                href={threadHref(props.conversation.id, thread.id, null, props.basePath)}
+                onNavigate={(navigation) => props.onOpen(thread.id, navigation)}
+              />
+            )}
+          </For>
+          <Show when={pages.page()?.nextCursor != null}>
+            <Row icon="dots" lines={[t().moreThreads]} onOpen={() => void pages.load(true)} />
+          </Show>
+        </List>
+        <Show when={pages.page()?.incomplete && pages.status() === "ready"}>
+          <Notice tone="warn" actions={[{ label: t().retry, onClick: () => void pages.load() }]}>
+            {t().discussionsIncomplete}
+          </Notice>
+        </Show>
+        <Show when={pages.status() === "failed" && pages.page()}>
+          <Notice tone="bad" actions={[{ label: t().retry, onClick: () => void pages.load(pages.appending()) }]}>
+            {t().threadsLoadFailed}
+          </Notice>
+        </Show>
+      </Match>
+    </Switch>
   );
 }
 
@@ -358,36 +349,30 @@ export function DiscoverChannelsV2(props: DiscoverChannelsProps): JSX.Element {
               {t().channelListFailed}
             </Notice>
           </Show>
-          <Section
-            title={t().channels}
-            count={catalog.rows.length}
-            more={
-              catalog.cursor()
-                ? { label: t().showMoreChannels, icon: "dots", disabled: catalog.busy(), onClick: () => void catalog.load(true) }
-                : undefined
-            }
-          >
-            <List label={t().channels}>
-              <For each={catalog.rows}>
-                {(row) => (
-                  <Row
-                    mark={{ icon: iconName(row.icon ?? "ti ti-speakerphone"), color: CHAT_COLOR }}
-                    lines={[row.title, channelLine(row, t())]}
-                    action={
-                      row.member
-                        ? { label: t().subscribed, icon: "check", onClick: () => void props.onOpen(row.id) }
-                        : {
-                            label: t().subscribe,
-                            icon: "bell-plus",
-                            disabled: catalog.pending().includes(row.id),
-                            onClick: () => void catalog.subscribe(row.id),
-                          }
-                    }
-                  />
-                )}
-              </For>
-            </List>
-          </Section>
+          {/* A lone section has no heading: the page's head already names it, and no line closes it (Valentin, v8). */}
+          <List label={t().channels}>
+            <For each={catalog.rows}>
+              {(row) => (
+                <Row
+                  mark={{ icon: iconName(row.icon ?? "ti ti-speakerphone"), color: CHAT_COLOR }}
+                  lines={[row.title, channelLine(row, t())]}
+                  action={
+                    row.member
+                      ? { label: t().subscribed, icon: "check", onClick: () => void props.onOpen(row.id) }
+                      : {
+                          label: t().subscribe,
+                          icon: "bell-plus",
+                          disabled: catalog.pending().includes(row.id),
+                          onClick: () => void catalog.subscribe(row.id),
+                        }
+                  }
+                />
+              )}
+            </For>
+            <Show when={catalog.cursor()}>
+              <Row icon="dots" lines={[t().showMoreChannels]} onOpen={() => void catalog.load(true)} />
+            </Show>
+          </List>
         </Match>
       </Switch>
     </>

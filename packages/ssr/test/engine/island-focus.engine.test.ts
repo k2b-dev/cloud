@@ -45,7 +45,7 @@ beforeAll(async () => {
       }
       // The island loads only when the test calls mountIsland(), like a script that runs late on a slow device.
       return new Response(
-        `<!doctype html><html><body><solid-island data-id="${islandId}" data-props='${JSON.stringify(toJSON({}))}'>${markup}</solid-island>
+        `<!doctype html><html><body><solid-island data-id="${islandId}"><!--ssr-props:${JSON.stringify(toJSON({}))}-->${markup}</solid-island>
         <script type="module">window.mountIsland = () => import('/_ssr/v1/${islandId}.js');</script></body></html>`,
         { headers: { "content-type": "text/html" } },
       );

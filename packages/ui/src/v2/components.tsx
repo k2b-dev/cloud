@@ -131,8 +131,9 @@ export type NavProps = {
   /** The search under the name. */
   search?: NavSearch;
   /**
-   * The main action under the name (and the search), across the column, such as "Neuer Chat". The sidebar is away on
-   * the phone; there the `Workspace`'s `primary` floats, so pass the same action to both.
+   * The main action, such as "Neuer Chat": a button with its icon at the end of the name's row, its label as its name
+   * and tooltip. The sidebar is away on the phone; there the `Workspace`'s `primary` floats, so pass the same action
+   * to both.
    */
   primary?: Action;
   /** The app's places in groups, each with an optional heading and deed. */
@@ -281,6 +282,13 @@ export const Nav = (props: NavProps) => {
       <div class="k2-nav-title">
         <Icon name={props.icon} />
         {props.title}
+        <Show when={props.primary}>
+          {(primary) => (
+            <span class="k2-nav-primary">
+              <ActionButton action={primary()} variant="ghost" iconOnly />
+            </span>
+          )}
+        </Show>
       </div>
       <Show when={props.search}>
         {(search) => (
@@ -294,13 +302,6 @@ export const Nav = (props: NavProps) => {
               onInput={(value) => search().onInput(value)}
               onKeyDown={(event) => search().onKeyDown?.(event)}
             />
-          </div>
-        )}
-      </Show>
-      <Show when={props.primary}>
-        {(primary) => (
-          <div class="k2-nav-primary">
-            <ActionButton action={primary()} variant="primary" />
           </div>
         )}
       </Show>

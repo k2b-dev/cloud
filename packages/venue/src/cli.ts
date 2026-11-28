@@ -26,6 +26,7 @@ import type {
   VenueDashboard,
   VenueInput,
 } from "./contracts";
+import { VENUE_PAGE_MAX } from "./contracts";
 
 type VenueApiKey = {
   id: string;
@@ -89,9 +90,20 @@ const slugify = (value: string): string =>
 
 const encode = (value: string) => encodeURIComponent(value);
 
-const listVenues = async (ctx: CloudCliContext): Promise<Venue[]> => {
-  const response = await apiGet<{ venues: Venue[] }>(ctx, "/venues");
-  return response.venues;
+/**
+ * Every venue of the list (or those whose name or slug holds `q`): reads page after page until a page is shorter
+ * than a full one or brings no venue it has not seen, so a list that changes while it is read neither loops nor
+ * repeats a venue.
+ */
+const listVenues = async (ctx: CloudCliContext, q?: string): Promise<Venue[]> => {
+  const venues = new Map<string, Venue>();
+  for (let offset = 0; ; offset += VENUE_PAGE_MAX) {
+    const search = q ? `&q=${encode(q)}` : "";
+    const page = (await apiGet<{ venues: Venue[] }>(ctx, `/venues?limit=${VENUE_PAGE_MAX}&offset=${offset}${search}`)).venues;
+    const before = venues.size;
+    for (const venue of page) if (!venues.has(venue.id)) venues.set(venue.id, venue);
+    if (page.length !== VENUE_PAGE_MAX || venues.size === before) return [...venues.values()];
+  }
 };
 
 const resolveVenueRef = async (ctx: CloudCliContext, ref?: string): Promise<Venue> => {
@@ -100,7 +112,8 @@ const resolveVenueRef = async (ctx: CloudCliContext, ref?: string): Promise<Venu
 
   if (UUID_PATTERN.test(venueRef)) throw new Error("Legacy Venue UUIDs are not accepted. Use the 6-character Venue ID.");
 
-  const venues = await listVenues(ctx);
+  // The slug or name is searched for on the server, among every page of the search; an ID is read directly below.
+  const venues = await listVenues(ctx, venueRef);
   const matches = venues.filter((venue) => venue.slug === venueRef || venue.name === venueRef);
   if (SHORT_ID_PATTERN.test(venueRef)) {
     const response = await ctx.fetch(apiPath(`/venues/${encode(venueRef)}/dashboard`));
@@ -309,7 +322,7 @@ export default defineCliCommands({
     command("list", {
       summary: "List accessible venues",
       async run({ ctx }) {
-        const venues = await listVenues(ctx);
+        const venues = (await listVenues(ctx)).sort((left, right) => left.name.localeCompare(right.name));
         printJsonOrTable(ctx, { venues: venues.map((venue) => withCloudResourcePermalink(ctx, "venue.venue", venue)) }, venueRows(venues), [
           { key: "name" },
           { key: "slug" },

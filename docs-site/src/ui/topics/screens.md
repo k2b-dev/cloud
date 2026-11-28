@@ -18,6 +18,10 @@ Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`:
 
 <Example recipe="home" height="720" default="Busy" />
 
+## A first start without data
+
+<Example recipe="start" height="560" default="Notizbücher" />
+
 ## Table with a status row
 
 <Example recipe="table" height="440" default="Rows" />

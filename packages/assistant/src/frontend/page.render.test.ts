@@ -43,7 +43,9 @@ const parser = (() => {
 /** The Code seed the workspace island carries to the browser. */
 const codeSeed = (html: string) => {
   const island = parser.parseFromString(html, "text/html").querySelector('solid-island[data-file="AssistantWorkspace.island.tsx"]');
-  const props: ComponentProps<typeof AssistantWorkspace> = fromJSON(JSON.parse(island?.getAttribute("data-props") ?? "null"));
+  const props: ComponentProps<typeof AssistantWorkspace> = fromJSON(
+    JSON.parse(island?.firstChild?.nodeValue?.replace(/^ssr-props:/, "") ?? "null"),
+  );
   return props.code;
 };
 /** The Code destinations load their code in the browser; the server renders their loading surface. */
@@ -773,5 +775,5 @@ test("live dictation availability reaches the composer only when the platform al
   const html = await (await request("https://cloud.example.test/app/assistant")).text();
   expect(status).toHaveBeenCalledWith({ type: "user", userId: user.id });
   // The island props carry the flag; the status asks for this person's own access subject.
-  expect(html).toContain("liveDictationAvailable&quot;");
+  expect(html).toContain('"liveDictationAvailable"');
 });

@@ -170,8 +170,12 @@ after its build finishes. A completed marker skips the destructive work.
 
 After startup, create a reply twice without content and confirm both requests
 return the same ID. Supplied content to an occupied box must return
-`DRAFT_REPLY_BOX_OCCUPIED` (409), with the existing draft ID in the message.
-Switch modes with the current revision and inspect recipients and attachments.
+`DRAFT_REPLY_BOX_OCCUPIED` (409), with the existing draft ID in the message and
+its `draftId`, current `revision` and `intent` as fields. `nextStep` names the
+step that can succeed: `update` for an open draft of the requested intent,
+`intent` to switch an open draft's mode first. A scheduled or sending draft has
+no `nextStep`.
+Inspect recipients and attachments.
 Show any consolidation notice before acknowledging it.
 
 Seed materialization rejects different editable content against another request's

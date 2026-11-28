@@ -92,7 +92,7 @@ test("production adapters preserve one module URL through lazy imports", async (
         assert.ok(!empty.includes("modulepreload"));
         const assetPath = config.ssrPath + "/" + prefix.split("/").pop();
         assert.equal((await runLoader(empty, [])).loader, 'const p=' + JSON.stringify(assetPath) + ";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));");
-        const output = await (await html(() => ssr('<solid-island data-id="' + id + '" data-props="{}"></solid-island>'))).text();
+        const output = await (await html(() => ssr('<solid-island data-id="' + id + '"><!--ssr-props:{}--></solid-island>'))).text();
         const { hrefs, entries } = await runLoader(output, [id]);
         assert.equal(entries.length, 1);
         const [entry] = entries;

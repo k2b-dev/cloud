@@ -18,7 +18,7 @@ let railId: string;
 let columnId: string;
 const swaps = new Map<string, number>();
 const wrapper = (id: string, props: { label?: string; tab?: string; async?: boolean } = {}) =>
-  `<solid-island data-id="${id}" data-props='${JSON.stringify(toJSON(props))}'></solid-island>`;
+  `<solid-island data-id="${id}"><!--ssr-props:${JSON.stringify(toJSON(props))}--></solid-island>`;
 const html = (url: URL) => {
   const label = url.pathname.endsWith("/B") ? "B" : "A";
   return `<!doctype html><html><head><title>${label}</title><link rel="stylesheet" href="/base.css"></head><body class="k2b-ui">
