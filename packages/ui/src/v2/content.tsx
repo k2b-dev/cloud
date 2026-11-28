@@ -1303,10 +1303,11 @@ export const Table = <T,>(props: TableProps<T>) => {
                     <Show
                       when={column.sort}
                       fallback={
-                        <>
+                        // the words in a box of their own, cut with "…" there: a head with a grip lets the grip stand out
+                        <span class="k2-th-label">
                           {column.title}
                           <SortArrow sorted={props.sort?.column === index() ? props.sort.direction : undefined} />
-                        </>
+                        </span>
                       }
                     >
                       {(target) => (

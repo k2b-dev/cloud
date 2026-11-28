@@ -2499,6 +2499,13 @@
 .k2-ui .k2-table th:has(> .k2-cgrip) {
   overflow: visible;
 }
+/* the words of a head cut with "…" in their own box, also where the head lets its grip stand out (above) */
+.k2-ui .k2-th-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ── Facts: label quiet 12, value 13, 32 px per row, copy at the value ──────────────────────────────────────── */
 /* the label column takes the longest label, at least 80 px (short labels keep the values on one edge) and at most
