@@ -123,6 +123,22 @@ describe("public assets", () => {
     expect(logo.headers.get("Access-Control-Allow-Origin")).toBeNull();
   });
 
+  test("Core's v2.css is cached exactly like global.css: immutable under the shared version, revalidated otherwise", async () => {
+    writeFileSync(join(root, "public", "v2.css"), ".k2-ui{color:red}");
+    const app = serve(false, "sha-0123456789ab");
+    for (const sheet of ["global", "v2"])
+      for (const [query, cache] of [
+        ["?v=sha-0123456789ab", immutable],
+        ["?v=sha-other", "no-cache"],
+        ["", "no-cache"],
+      ] as const) {
+        const response = await app.request(`/public/${sheet}.css${query}`);
+        expect(response.status).toBe(200);
+        expect(response.headers.get("Cache-Control")).toBe(cache);
+        expect(response.headers.get("Vary")).toBe("Accept-Encoding");
+      }
+  });
+
   test("other public files stay immutable without a version query", async () => {
     writeFileSync(join(root, "public", "logo.svg"), "<svg/>");
     const response = await serve(false).request("/public/logo.svg");
