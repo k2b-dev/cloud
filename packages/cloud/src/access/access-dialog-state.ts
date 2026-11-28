@@ -23,10 +23,10 @@ import {
   setLevel,
 } from "./access-draft";
 import { accessMessages } from "./messages";
-import { levelKey, type ResolvedLevel, resolveAllowedLevels } from "./PermissionEditor";
+import { levelKey, type ResolvedLevel, resolveAllowedLevels } from "./permission-levels";
 import { principalLabel } from "./principal-label";
-import { serviceAccountLine } from "./ServiceAccountSection";
 import { serviceAccountKindDisplay } from "./service-account-kind";
+import { serviceAccountLine } from "./service-account-line";
 import { findTargetServiceAccount } from "./service-account-lookup";
 
 /**

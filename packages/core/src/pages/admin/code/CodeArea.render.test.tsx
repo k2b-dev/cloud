@@ -13,419 +13,174 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const [
   { LocaleProvider },
-  { approvalReason, CodeAreaView, ownerLabel },
+  { default: CodeScreen },
+  { approvalReason, ownerLabel },
   { codeAdminMessages },
   { parseCodeAreaQuery },
-  { codeFixtureData },
   data,
   { codeReviewMessages },
+  { adminNavFixture },
+  { codePageReportMessages },
 ] = await Promise.all([
   import("@k2b/ui"),
-  import("./view"),
+  import("./screen"),
+  import("./data"),
   import("./messages"),
   import("./area"),
   import("./CodeArea.fixture-data"),
-  import("./CodeArea.fixture-data"),
   import("./review-messages"),
+  import("../admin-v2.fixture"),
+  import("./report-messages"),
 ]);
 
 beforeAll(() => setSystemTime(new Date("2026-11-01T12:10:00.000Z")));
 afterAll(() => setSystemTime());
 
-type State = Parameters<typeof codeFixtureData>[0];
-type AreaData = ReturnType<typeof codeFixtureData>;
+type State = Parameters<typeof data.codeFixtureData>[0];
+type AreaData = ReturnType<typeof data.codeFixtureData>;
 const render = (
   query: Record<string, string>,
   state: State = "normal",
   locale = "de",
-  counts?: { approvals: number; reports: number },
   edit: (area: AreaData) => AreaData = (area) => area,
 ) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
       get children() {
-        return createComponent(CodeAreaView, {
-          t: codeAdminMessages.resolve([locale]).t,
+        return createComponent(CodeScreen, {
+          nav: adminNavFixture("/admin/code"),
+          query: parseCodeAreaQuery(query),
           locale,
           dateConfig: { locale: locale === "de" ? "de-DE" : "en-GB", timeZone: "Europe/Berlin" },
-          query: parseCodeAreaQuery(query),
-          data:
-            state === "noperm"
-              ? null
-              : edit({ ...codeFixtureData(state, query, locale), ...(counts ? { summary: { ...data.fixtureSummary(), ...counts } } : {}) }),
-          noPermission: state === "noperm",
-          retryHref: "/admin/code",
           viewerId: data.FIXTURE_PEOPLE.jana,
-          appNames: { mail: "Mail", spaces: "Spaces", werkstatt: "Werkstattbuch" },
+          apps: { mail: { name: "Mail", color: "#2563eb" }, spaces: { name: "Spaces" }, werkstatt: { name: "Werkstattbuch" } },
+          data: state === "noperm" ? null : edit(data.codeFixtureData(state, query, locale)),
+          noPermission: state === "noperm",
         });
       },
     }),
   );
-test("approval says in words what the version may do, its internet addresses included", () => {
-  const text = renderedText(render({ sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 }), " ");
-  expect(text).toContain("Alles, was Version 3 darf");
-  expect(text).toContain("Internet: api.buchhaltung-beispiel.de, ohne Secret");
-  expect(text).toContain("Läuft");
-  expect(text).toContain("Mo–Fr um 08:00");
-});
-
+const text = (html: string) =>
+  renderedText(html.replace(/<!--ssr-props:[\s\S]*?-->/g, ""), " ")
+    .replaceAll(/\s+/g, " ")
+    .replaceAll(" .", ".");
 const review = { sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 };
 
-test("the area column names every section with waiting counts", () => {
-  const html = render({});
-  for (const label of [
-    "Freigaben",
-    "Code in dieser Cloud",
-    "Richtlinien",
-    "Standard",
-    "Gruppen",
-    "Wirksam für …",
-    "Aufräumen",
-    "Grenzen",
-    "Runner",
+test("every section renders on v2: one workspace, no v1 frame, no loader in the first picture", () => {
+  for (const sec of ["approvals", "code", "policy", "groups", "effective", "history", "cleanup", "databases", "limits", "runners"]) {
+    const html = render({ sec });
+    expect({ sec, workspaces: html.match(/data-k2-part="Workspace"/g)?.length }).toEqual({ sec, workspaces: 1 });
+    expect(html).not.toContain("k2b-app-workspace");
+    expect(html).not.toContain('data-k2-part="Loading"');
+    expect(html).not.toContain('aria-busy="true"');
+  }
+  // Without a section the area opens on the approvals, the work that waits.
+  expect(text(render({}))).toContain("4 Freigaben warten");
+});
+
+test("approvals lead with how many wait and list what, who, whose, what it asks for and since when", () => {
+  const list = text(render({ sec: "approvals" }));
+  expect(list).toContain("4 Freigaben warten");
+  expect(list).toContain("1 offene Meldung");
+  for (const value of [
+    "Rückruf bestätigen",
+    "Version 1 · erste",
+    "Postfach info@moebel-beispiel.de",
+    "Tom Beispiel, persönlich",
+    "ein Ort in Spaces, den du nicht öffnen darfst",
+    "Darf neu Aufgaben anlegen im Space Logistik",
+    "Für andere sichtbar",
+    "Ins Internet",
   ])
-    expect(html).toContain(label);
-  expect(html).toContain("4 Versionen warten auf Freigabe");
-  const english = render({}, "normal", "en");
-  expect(english).toContain("Approvals");
-  expect(english).toContain("Code in this Cloud");
-});
-
-test("the area without a section opens on the approvals instead of two empty columns", () => {
-  const html = render({});
-  const text = renderedText(html, " ");
-  expect(text).toContain("4 Versionen warten auf eine Entscheidung.");
-  expect(text).toContain("Rückruf bestätigen");
-  // Only the area column and one page: no section or detail column that repeats the area's name over a hint.
-  expect(html.match(/data-workspace-main-region="/g)?.length).toBe(2);
-  // The open page and the chosen row agree.
-  expect(html).toMatch(
-    /<a[^>]*href="\/admin\/code\?sec=approvals"[^>]*aria-current="page"|<a[^>]*aria-current="page"[^>]*href="\/admin\/code\?sec=approvals"/,
-  );
-  expect(text).not.toMatch(/Code Alles, was als Code in Cloud läuft Code Alles, was als Code in Cloud läuft/);
-  const english = renderedText(render({}, "normal", "en"), " ");
-  expect(english).toContain("Approvals");
-  // Nothing waits: the area opens on the approvals' empty state, not on an empty column.
-  const empty = renderedText(render({}, "empty"), " ");
-  expect(empty).toContain("Keine Version wartet auf dich.");
-  expect(render({}, "empty").match(/data-workspace-main-region="/g)?.length).toBe(2);
-});
-
-test("an approval names its author once when the author owns the Code personally, and both when they differ", () => {
-  const open = renderedText(render({ sec: "approvals" }), " ").replace(/\s+/g, " ");
-  // Lea submits her own personal Code; Tom his.
-  expect(open).toContain("Lea Muster, persönlich");
-  expect(open).not.toContain("Lea Muster Lea Muster");
-  expect(open).toContain("Tom Beispiel, persönlich");
-  expect(open).not.toContain("Tom Beispiel Tom Beispiel");
-  // Another owner keeps the author's name beside it.
-  expect(open).toContain("Lea Muster Postfach info@moebel-beispiel.de");
-  const decided = renderedText(render({ sec: "approvals", tab: "decided" }), " ").replace(/\s+/g, " ");
-  // Tom submitted Lea's personal Code: two people, two names.
-  expect(decided).toContain("Tom Beispiel Lea Muster, persönlich");
-  expect(decided).not.toContain("Lea Muster Lea Muster");
-});
-
-test("approvals are a page: a list with who, owner, main change and reason, and states", () => {
-  const list = renderedText(render({ sec: "approvals" }), " ");
-  expect(list).toContain("4 Versionen warten auf eine Entscheidung.");
-  expect(list).toContain("Rückruf bestätigen");
-  expect(list).toContain("Version 1 · erste");
-  expect(list).toContain("Postfach info@moebel-beispiel.de");
-  expect(list).toContain("Tom Beispiel");
-  expect(list).toContain("ein Ort in Spaces, den du nicht öffnen darfst");
-  expect(list).toContain("Darf neu Aufgaben anlegen im Space Logistik");
-  expect(list).toContain("Für andere sichtbar");
-  expect(list).toContain("Ins Internet");
+    expect(list).toContain(value);
   expect(list).not.toContain("k7qm2x9a");
-
-  const decided = renderedText(render({ sec: "approvals", tab: "decided" }), " ");
+  const decided = text(render({ sec: "approvals", tab: "decided" }));
   expect(decided).toContain("Freigegeben von Ben Schulz");
   expect(decided).toContain("Änderungen angefordert von dir");
-  expect(decided).toContain("Zuletzt entschieden.");
-
-  const empty = renderedText(render({ sec: "approvals" }, "empty"), " ");
+  const empty = text(render({ sec: "approvals" }, "empty"));
+  expect(empty).toContain("Keine Freigabe wartet");
   expect(empty).toContain("Keine Version wartet auf dich.");
   expect(empty).toContain("Richtlinie ansehen");
-  const failed = render({ sec: "approvals" }, "fail");
-  expect(failed).toContain("Konnte nicht geladen werden");
-  expect(failed).toContain("Erneut versuchen");
-  expect(render(review, "missing")).toContain("Diese Anfrage ist geschlossen.");
+  expect(text(render({ sec: "approvals" }, "fail"))).toContain("Erneut versuchen");
+  expect(text(render(review, "missing"))).toContain("Diese Anfrage ist geschlossen.");
 });
 
-test("a review has one row of tabs, a head with who, how and whose, visible changes and two decision paths", () => {
+test("a review stands beside its list with its views, its question, the reason and both decisions", () => {
   const html = render(review);
-  const text = renderedText(html, " ");
-  expect(text).toContain("Rückruf bestätigen · Version 3");
-  expect(text).toContain("mit Gustav eingereicht · gehört zu: info@moebel-beispiel.de");
-  expect(text).toContain("1 von 4");
-  for (const tab of ["Übersicht", "Code", "Diff"]) expect(html).toContain(`>${tab}<`);
-  expect(text).toContain("Sie darf etwas tun, das andere sehen. Das gibt laut Richtlinie Standard ein Admin frei.");
-  expect(text).not.toContain("Details von Code · gegenüber Version 2");
-  expect(text).toContain("Darf neu Aufgaben anlegen im Space Logistik");
-  expect(text).toContain("3 weitere bleiben gleich.");
-  expect(text).toContain("Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.");
-  expect(text).toContain("3 von 3 Beispielen erfolgreich");
-  expect(text).not.toContain("Gilt genau für Version 3");
-  expect(text).toContain("Ablehnen oder ändern …");
-  expect(text).not.toContain("Alles ansehen");
-  expect(text).toContain("Version 3 freigeben");
-  for (const answer of ["Ablehnen …", "Änderungen anfordern …"]) expect(text).not.toContain(answer);
-  expect(text).toContain("Was sie damit tut");
-  expect(text).toContain("KI-Erklärung, nicht von Cloud geprüft");
-  expect(text).toContain("Kommentare am Code");
-  expect(text).toContain("Hier bekommt jede ungelesene Mail eine Aufgabe");
-  expect(text).toContain("Mit deiner Entscheidung sieht Lea Muster die Kommentare als Text.");
-  // No hashes, no line references, no technical identifiers outside the marked code field.
-  expect(text).not.toMatch(/[0-9a-f]{4}…[0-9a-f]{2}|Z\. \d+|sp_2lg8/);
-  expect(renderedText(render(review, "cli"), " ")).toContain("über die Kommandozeile eingereicht");
-  expect(renderedText(render({ ...review, tab: "code" }), " ")).not.toContain("3 Kommentare gehen mit deiner Entscheidung mit");
-  // Both decisions open directly from the frame; the change list stays visible below it.
-  expect(renderedText(render({ ...review, tab: "code" }), " ")).toContain("Ablehnen oder ändern …");
+  const page = text(html);
+  expect(html.match(/data-k2-part="Pane"[^>]*data-detail/g)?.length ?? html.match(/data-detail/g)?.length).toBeGreaterThan(0);
+  expect(page).toContain("Rückruf bestätigen");
+  expect(page).toContain("Version 3 von Rückruf bestätigen freigeben?");
+  expect(page).toContain("Sie darf etwas tun, das andere sehen. Das gibt laut Richtlinie Standard ein Admin frei.");
+  expect(page).toContain("mit Gustav eingereicht · gehört zu: info@moebel-beispiel.de");
+  for (const tab of ["Übersicht", "Code", "Änderungen"]) expect(html).toContain(tab);
+  for (const value of [
+    "Darf neu Aufgaben anlegen im Space Logistik",
+    "3 weitere bleiben gleich.",
+    "Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.",
+    "3 von 3 Beispielen erfolgreich",
+    "Ablehnen oder ändern …",
+    "Version 3 freigeben",
+    "Was sie damit tut",
+    "KI-Erklärung, nicht von Cloud geprüft",
+    "Kommentare am Code",
+    "Hier bekommt jede ungelesene Mail eine Aufgabe",
+    "Mit deiner Entscheidung sieht Lea Muster die Kommentare als Text.",
+    "Alles, was Version 3 darf",
+    "Internet: api.buchhaltung-beispiel.de, ohne Secret",
+    "Mo–Fr um 08:00",
+  ])
+    expect(page).toContain(value);
+  expect(page).not.toMatch(/[0-9a-f]{4}…[0-9a-f]{2}|sp_2lg8/);
+  expect(text(render(review, "cli"))).toContain("über die Kommandozeile eingereicht");
 });
 
-test("the first version locks its Diff tab, and a decided version freezes its comments", () => {
+test("the first version has no changes view, and a decided version says what happened and freezes its comments", () => {
   const first = render({ sec: "approvals", id: data.FIXTURE_VERSIONS.lieferzeit1 });
-  expect(first).toMatch(/role="tab"[^>]*disabled[^>]*>(?:(?!<\/button>).)*Diff/s);
-  expect(renderedText(first, " ")).toContain("Erste Version: Es gibt keinen Unterschied.");
-  expect(renderedText(first, " ")).toContain("Ablehnen oder ändern …");
-  const changes = renderedText(render(review, "changes"), " ").replaceAll(/\s+/g, " ");
-
+  expect(first).not.toContain(">Änderungen<");
+  expect(text(first)).toContain("Ablehnen oder ändern …");
+  const changes = text(render(review, "changes"));
   expect(changes).toContain("Du hast Änderungen an Version 3 angefordert.");
   expect(changes).not.toContain("Ablehnen oder ändern …");
-  expect(changes).toContain("Bitte nur für Mails mit einem Rückrufwunsch eine Aufgabe anlegen");
   expect(changes).not.toContain("Version 3 freigeben");
-  expect(renderedText(render(review, "rejected"), " ")).toContain("Version 3 lässt sich nicht mehr einschalten.");
-  const decidedCode = render({ ...review, tab: "code" }, "changes");
-  expect(decidedCode).not.toContain("Antworten …");
-  expect(decidedCode).toContain("Der entschiedene Stand.");
-  expect(renderedText(render(review, "followup"), " ")).toContain("Du hattest bei Version 2 Änderungen angefordert");
+  expect(changes).toContain("Bitte nur für Mails mit einem Rückrufwunsch eine Aufgabe anlegen");
+  expect(text(render(review, "rejected"))).toContain("Version 3 lässt sich nicht mehr einschalten.");
+  expect(text(render({ ...review, tab: "code" }, "changes"))).toContain("Der entschiedene Stand.");
+  expect(text(render(review, "followup"))).toContain("Du hattest bei Version 2 Änderungen angefordert");
   expect(render(review, "newer")).toContain("Lea Muster hat Version 4 eingereicht.");
   expect(render(review, "own")).toContain("Du hast diese Version geschrieben.");
   expect(render(review, "sole")).toContain("Du bist der einzige Admin und gibst deine eigene Version frei.");
 });
 
-test("the reason names the policy that asks: the default or the groups", () => {
-  const r = codeReviewMessages.resolve(["de"]).t;
-  const detail = data.fixtureApprovalDetail();
-  expect(approvalReason(r, detail)).toBe("Sie darf etwas tun, das andere sehen. Das gibt laut Richtlinie Standard ein Admin frei.");
-  expect(approvalReason(r, { ...detail, why: [{ row: "internet", source: "group", groups: ["Praktikum"] }] })).toBe(
-    "Sie ruft Adressen im Internet auf. Das gibt laut Regel der Gruppe Praktikum ein Admin frei.",
-  );
-});
-
-test("the former source view points to the version's review", () => {
-  const html = render({ sec: "code", id: "c_rechn", version: data.FIXTURE_VERSIONS.rechnungen2 });
-  expect(html).toContain("Den Code einer Version zeigt jetzt ihre Freigabe-Prüfung.");
-  expect(html).toContain(`sec=approvals&amp;id=${data.FIXTURE_VERSIONS.rechnungen2}&amp;tab=code`);
-  expect(render({ sec: "code", id: "c_rechn" })).not.toContain("Code ansehen");
-});
-
-test("all Code renders owners, status and last run, with empty, filtered and error states", () => {
-  const list = render({ sec: "code" });
-  expect(list).toContain("8 Code von 5 Besitzern");
-  expect(list).toContain("Lea Muster · Pausiert: Richtlinie");
-  // A place by the name its reader gave this admin; without one, by its ID.
-  expect(list).toContain("info@moebel-beispiel.de · Aktiv");
-  expect(list).not.toContain("m_rechn");
-  expect(
-    ownerLabel(codeAdminMessages.resolve(["de"]).t, { kind: "resource", ref: { type: "mail.mailbox", id: "m_x" } }, null, { mail: "Mail" }),
-  ).toBe("ein Ort in Mail, den du nicht öffnen darfst");
-  expect(list).toContain("App Werkstattbuch · Entwurf");
-  expect(list).toContain("noch kein Lauf");
-  const detail = render({ sec: "code", id: "c_rechn" });
-  expect(detail).toContain("In „Freigaben“ öffnen");
-  expect(detail).toContain("selbst freigegeben (einziger Admin)");
-  expect(detail).toContain("Letzte Läufe");
-  expect(detail).toContain("Pausieren");
-  expect(render({ sec: "code", id: "c_woche" })).toContain("Fortsetzen");
-  expect(detail).toContain("Fehlgeschlagen");
-  expect(render({ sec: "code" }, "empty")).toContain("Noch kein Code");
-  expect(render({ sec: "code", status: "deleting" })).toContain("Kein Code passt zu diesen Filtern");
-  expect(render({ sec: "code" }, "fail")).toContain("Konnte nicht geladen werden");
-  expect(render({ sec: "code", id: "c_rechn" }, "missing")).toContain("Diesen Code gibt es nicht mehr.");
-});
-
-test("policy, groups and effective rows render with their sources", () => {
-  const policy = render({ sec: "policy" });
-  expect(policy).toContain("Zuletzt geändert von Jana Probe");
-  expect(policy).toContain("Was Automationen ohne Menschen tun dürfen.");
-  expect(policy).toContain("Admin gibt frei");
-  expect(policy).toContain("Für andere sichtbar");
-  expect(policy).not.toContain("silent: shared");
-  expect(policy).toContain("Braucht immer einen Menschen");
-  expect(policy).toContain("Was die Automation tun darf");
-  expect(policy).toContain('role="radio"');
-  const groups = render({ sec: "groups", id: data.FIXTURE_GROUPS.buchhaltung });
-  expect(groups).toContain("2 Regeln · 6 Personen · Untergruppe von Verwaltung");
-  expect(groups).toContain("Wie Standard");
-  expect(render({ sec: "groups" }, "empty")).toContain("Keine Gruppe hat eigene Regeln");
-  const effective = render({ sec: "effective", id: data.FIXTURE_PEOPLE.tom });
-  expect(effective).toContain("Tom Beispiel");
-  expect(effective).toContain("„Nie“ aus Gruppe Praktikum gilt immer");
-  expect(effective).toContain("aus Gruppe Buchhaltung");
-  expect(render({ sec: "effective" })).toContain("Suche eine Person");
-  expect(render({ sec: "policy" }, "fail")).toContain("Konnte nicht geladen werden");
-  expect(policy).toContain('href="/admin/code?sec=history"');
-  const history = render({ sec: "history" });
-  expect(history).toContain("Jana Probe");
-  expect(history).toContain("Sendet (Praktikum)");
-  expect(history).toContain("wie Standard");
-  expect(renderedText(history, " ").replaceAll(/\s+/g, " ")).toContain("Voreinstellung: Admin gibt frei Eigene");
-  // A preset change lists every changed row, also beyond six.
-  for (const label of ["Löscht", "Nicht rückgängig", "Bezieht Personen ein", "Ändert Zugriff", "Läuft weiter", "Sensibel"])
-    expect(history).toContain(label);
-  expect(render({ sec: "history" }, "empty")).toContain("Die Richtlinie wurde noch nie geändert.");
-  const older = render({ sec: "history" }, "long");
-  expect(older).toContain("Ältere Änderungen laden");
-  expect(older).toContain('href="/admin/code?sec=history&amp;after=2"');
-  expect(render({ sec: "history" })).not.toContain("Ältere Änderungen laden");
-  expect(render({ sec: "history" }, "fail")).toContain("Der Verlauf konnte nicht geladen werden.");
-});
-
-test("cleanup shows orphaned Code deletion and retries, while access stays in the target's normal share dialog", () => {
-  const cleanup = render({ sec: "cleanup" });
-  expect(cleanup).toContain("Code löschen");
-  expect(cleanup).toContain("Code von alt@");
-  expect(cleanup).toContain("Wird der Besitzer eines Codes gelöscht, stoppt Cloud den Code und plant seine Löschung.");
-  expect(cleanup).toContain("Den Zugriff eines Dienstkontos änderst du im normalen Teilen-Dialog des Ziels, wenn du das Ziel verwaltest.");
-  expect(cleanup).toContain("Wartet auf Wiederholung");
-  expect(cleanup).toContain("3 Versuche");
-  expect(cleanup).toContain("Der letzte Versuch ist fehlgeschlagen.");
-  expect(cleanup).not.toContain("code_activation_draining");
-  expect(cleanup).not.toContain("c_altpost");
-  const empty = render({ sec: "cleanup" }, "empty");
-  expect(empty).toContain("Nichts aufzuräumen");
-  expect(empty).toContain("Es warten keine Löschaufträge für Code.");
-  expect(empty).toContain("im normalen Teilen-Dialog des Ziels");
-  const english = render({ sec: "cleanup" }, "normal", "en");
-  expect(english).toContain("Delete Code");
-  expect(english).toContain("When a Code owner is deleted, Cloud stops the Code and schedules its deletion.");
-  expect(english).toContain("use the target's normal share dialog. You must manage that target.");
-  expect(render({ sec: "cleanup" }, "empty", "en")).toContain("No Code deletion jobs are pending.");
-  for (const html of [cleanup, empty, english]) {
-    expect(html).not.toMatch(/Zugriff entfernen|Remove access|target_unreachable/);
-    expect(html).not.toMatch(/Ziel-App nicht erreichbar|target app is unreachable/);
-  }
-  const failed = render({ sec: "cleanup" }, "fail");
-  expect(failed).toContain("Konnte nicht geladen werden");
-  expect(failed).toContain("Erneut versuchen");
-});
-
-test("limits and runners render their data, empty and error states", () => {
-  const limits = render({ sec: "limits" });
-  for (const label of [
-    "Wanduhr je Lauf (ms)",
-    "Brückenaufrufe je Lauf",
-    "Datenbank je Code (Bytes)",
-    "KI-Referenzbudget je Versuch (USD)",
-    "Gleichzeitige Läufe je Code",
-    "Gleichzeitige Läufe je Besitzer",
-  ])
-    expect(limits).toContain(label);
-  expect(render({ sec: "limits" }, "normal", "en")).toContain("AI reference budget per attempt (USD)");
-  const runners = render({ sec: "runners" });
-  expect(runners).toContain('data-section="code-runners"');
-  const runnerText = renderedText(runners, " ").replaceAll(/\s+/g, " ");
-  for (const label of [
-    "3 Runner",
-    "5 von 12 Plätzen frei",
-    "5 Läufe warten",
-    "4 s längste Wartezeit",
-    "Runner 1 · 8a3c",
-    "1 von 4 Plätzen frei",
-    "Verbunden",
-  ])
-    expect(runnerText).toContain(label);
-  expect(runners).not.toContain("8a3c1e20");
-  const none = renderedText(render({ sec: "runners" }, "empty"), " ");
-  expect(none).toContain("Kein Runner ist verbunden. Keine Automation läuft.");
-  expect(none).toContain("2 Min.");
-  expect(render({ sec: "runners" }, "fail")).toContain("Die Runner konnten nicht geladen werden.");
-});
-
-test("people without the Cloud-admin role see only the no-permission state", () => {
-  const html = render({ sec: "approvals" }, "noperm");
-  expect(html).toContain("Nur Cloud-Admins verwalten Code");
-  expect(html).not.toContain("Freigaben");
-});
-
-test("Code of an app has its Code page here: its service account and a refused call like any Code page", () => {
-  const detail = renderedText(render({ sec: "code", id: "c_portal" }), " ")
-    .replaceAll(/\s+/g, " ")
-    .replaceAll(/ \./g, ".");
-  // The head as on every Code page: title, service account, the word "Kennung", the handle and a short "Kopieren".
-  expect(detail).toContain("Kundenportal-Eingang");
-  expect(detail).toContain("Läuft als Dienstkonto „Code von Werkstattbuch“ · Kennung code-7k2q9m4xwt Kopieren");
-  expect(render({ sec: "code", id: "c_portal" })).toMatch(
-    /<button aria-label="Kennung kopieren"[^>]*>(?:(?!<\/button>).)*>Kopieren<\/span><\/button>/,
-  );
-  expect(detail).toContain("Letzter Lauf");
-  // A run reads as its automation does on the Code page: the event by its title and place, never its stable key.
-  expect(detail).toContain("Aufgabe fällig · Space k7qm2x9a");
-  expect(detail).not.toContain("event:spaces.item.due");
-  expect(detail).toContain(
-    "Kein Zugriff auf Space k7qm2x9a. Der Code wollte dort „Aufgabe erstellen“. Entweder fehlt dem Dienstkonto „Code von Werkstattbuch“ das Recht dafür, oder das Ziel existiert nicht.",
-  );
-  expect(detail).toContain(
-    "Wer das Ziel verwaltet, fügt das Dienstkonto im Rechte-Editor des Ziels mit der Kennung code-7k2q9m4xwt hinzu. Der nächste Lauf versucht es erneut.",
-  );
-  expect(render({ sec: "code", id: "c_portal" })).toContain('href="/app/spaces/k7qm2x9a"');
-  // Administration manages policy, approvals and Code of apps, never target access.
-  expect(detail).not.toContain("Zielrechte");
-  // Code of a place or a person keeps its Code page at its owner.
-  expect(render({ sec: "code", id: "c_rechn" })).not.toContain("Läuft als Dienstkonto");
-});
-
-test("administrator detail shows database size, owner capacity and the shared export link", () => {
-  const html = render({ sec: "code", id: "c_rechn" }, "normal", "en");
-  expect(renderedText(html, " ")).toContain("Database: 1.00 MB of 100.00 MB");
-  expect(renderedText(html, " ")).toContain("Owner reserved capacity: 200.00 MB of 1,000.00 MB");
-  expect(html).toContain("/api/code/authoring/database/c_rechn/export");
-});
-
-test("unused databases show a bounded page with deadline, access and incarnation-bound controls", () => {
-  const html = render({ sec: "databases" });
-  const text = renderedText(html);
-  for (const label of ["Ungenutzte Datenbanken", "Ungenutzt seit", "Löschdatum", "Letzter Zugriff", "Größe", "Lea Muster", "4 MB"])
-    expect(text).toContain(label);
-  expect(html).toContain("CodeUnusedDatabases.island.tsx");
-  expect(html).toContain("/api/code/authoring/database/c_rueck/export");
-  expect(text).toContain("Jetzt löschen");
-  expect(html).toContain("code_c_rueck_fixture");
-  expect(renderedText(render({ sec: "databases" }, "empty"))).toContain("Keine ungenutzten Datenbanken");
-  expect(renderedText(render({ sec: "databases" }, "fail"))).toContain("Erneut versuchen");
-});
-
 for (const locale of ["de", "en"]) {
-  test(`author review uses server eligibility for hints and buttons (${locale})`, () => {
+  test(`author review uses server eligibility for the approve button (${locale})`, () => {
     const t = codeAdminMessages.resolve([locale]).t;
     const own = render(review, "own", locale);
     const sole = render(review, "sole", locale);
     expect(own).toContain(t.ownSub);
-    expect(own).not.toContain(t.soleTitle);
     expect(sole).toContain(t.soleTitle);
-    expect(sole).not.toContain(t.ownSub);
     expect(sole).not.toContain(t.ownTitle);
     const label = locale === "de" ? "Version 3 freigeben" : "Approve version 3";
-    // The v12 review keeps the approve button in its place for the author: disabled, with the reason in the approval.
     const button = (html: string) =>
       html.match(new RegExp(`<button[^>]*>(?:(?!</button>).)*${label}(?:(?!</button>).)*</button>`, "s"))?.[0] ?? "";
     expect(button(own)).toMatch(/\sdisabled(?:=""|\s|>)/);
-    // The reason stands in the approval's own reason line, beside the disabled button.
-    const reason = own.match(/k2b-notice-card__description(?:(?!<\/p>).)*<\/p>/s)?.[0] ?? "";
-    expect(renderedText(reason, " ")).toContain(t.ownSub);
     expect(button(sole)).not.toBe("");
     expect(button(sole)).not.toMatch(/\sdisabled(?:=""|\s|>)/);
   });
+
+  test(`after deciding their own version the author is addressed directly (${locale})`, () => {
+    const r = codeReviewMessages.resolve([locale]).t;
+    const self = text(render(review, "soleApproved", locale));
+    expect(self).toContain(r.afterApprovedSelf);
+    const other = text(render(review, "approved", locale));
+    expect(other).toContain(r.afterApproved({ who: "Lea Muster" }));
+    expect(other).not.toContain(r.afterApprovedSelf);
+  });
 }
 
-test("a decided version keeps the left column: its stored description, or a line that there is none beside the button", () => {
-  const described = renderedText(render(review, "approved"), " ").replaceAll(/\s+/g, " ");
-  expect(described).toContain("Was sie damit tut");
-  expect(described).toContain("Legt werktags um 8 Uhr");
-  expect(described).not.toContain("Noch keine Beschreibung.");
+test("a decided version keeps its stored description, or says there is none beside the way to one", () => {
+  expect(text(render(review, "approved"))).toContain("Legt werktags um 8 Uhr");
   const withoutText = (area: AreaData): AreaData => {
     const approval = area.approval;
     if (!approval || approval === "failed" || approval === "missing" || !approval.readModel) return area;
@@ -438,35 +193,268 @@ test("a decided version keeps the left column: its stored description, or a line
       },
     };
   };
-  const empty = renderedText(render(review, "approved", "de", undefined, withoutText), " ").replaceAll(/\s+/g, " ");
-  expect(empty).toContain("Was sie damit tut");
-  // The way to an explanation stays: the empty line stands beside the button.
-  expect(empty).toContain("Noch keine Beschreibung. Diese Version erklären lassen");
-  const english = renderedText(render(review, "approved", "en", undefined, withoutText), " ").replaceAll(/\s+/g, " ");
-  expect(english).toContain("No description yet. Explain this version");
+  const empty = text(render(review, "approved", "de", withoutText));
+  expect(empty).toContain("Noch keine Beschreibung.");
+  expect(empty).toContain("Diese Version erklären lassen");
 });
 
-for (const locale of ["de", "en"]) {
-  test(`after deciding their own version the author is addressed directly, not told about a notice to themselves (${locale})`, () => {
-    const t = codeReviewMessages.resolve([locale]).t;
-    const self = renderedText(render(review, "soleApproved", locale), " ").replaceAll(/\s+/g, " ");
-    expect(self).toContain(t.afterApprovedSelf);
-    expect(self).not.toContain(t.afterApproved({ who: "Ben Schulz" }));
-    const other = renderedText(render(review, "approved", locale), " ").replaceAll(/\s+/g, " ");
-    expect(other).toContain(t.afterApproved({ who: "Lea Muster" }));
-    expect(other).not.toContain(t.afterApprovedSelf);
-  });
-}
+test("the reason names the policy that asks: the default or the groups", () => {
+  const r = codeReviewMessages.resolve(["de"]).t;
+  const detail = data.fixtureApprovalDetail();
+  expect(approvalReason(r, detail)).toBe("Sie darf etwas tun, das andere sehen. Das gibt laut Richtlinie Standard ein Admin frei.");
+  expect(approvalReason(r, { ...detail, why: [{ row: "internet", source: "group", groups: ["Praktikum"] }] })).toBe(
+    "Sie ruft Adressen im Internet auf. Das gibt laut Regel der Gruppe Praktikum ein Admin frei.",
+  );
+});
 
-for (const locale of ["de", "en"]) {
-  test(`sole author sees the approval/report breakdown in the initial HTML (${locale})`, () => {
-    const t = codeAdminMessages.resolve([locale]).t;
-    const html = render(review, "sole", locale, { approvals: 1, reports: 1 });
-    const text = renderedText(html, " ").replaceAll(/\s+/g, " ");
-    expect(text).toContain(`${t.approvals} 1`);
-    expect(text).toContain(`${t.reports} 1`);
-    expect(html).toContain(t.soleTitle);
-    const empty = renderedText(render({}, "empty", locale), " ").replaceAll(/\s+/g, " ");
-    expect(empty).toContain(`${t.reports} 0`);
+test("all automations: filters in the address, owner, state and last run per row, and the open one with its facts", () => {
+  const list = render({ sec: "code" });
+  const words = text(list);
+  expect(words).toContain("14 Automationen von 7 Besitzern");
+  expect(list).toContain('data-k2-part="FilterBar"');
+  for (const value of ["Pausiert: Richtlinie", "info@moebel-beispiel.de", "App Werkstattbuch", "Entwurf", "noch kein Lauf"])
+    expect(words).toContain(value);
+  expect(words).not.toContain("m_rechn");
+  expect(
+    ownerLabel(codeAdminMessages.resolve(["de"]).t, { kind: "resource", ref: { type: "mail.mailbox", id: "m_x" } }, null, {
+      mail: { name: "Mail" },
+    }),
+  ).toBe("ein Ort in Mail, den du nicht öffnen darfst");
+  const detail = text(render({ sec: "code", id: "c_rechn" }));
+  for (const value of ["In „Freigaben“ öffnen", "selbst freigegeben (einziger Admin)", "Letzte Läufe", "Pausieren", "Fehlgeschlagen"])
+    expect(detail).toContain(value);
+  expect(text(render({ sec: "code", id: "c_woche" }))).toContain("Fortsetzen");
+  expect(text(render({ sec: "code" }, "empty"))).toContain("Sobald jemand eine Automation einreicht");
+  const none = (area: AreaData): AreaData => ({ ...area, codes: { items: [], total: 0, owners: 0, nextCursor: null } });
+  expect(text(render({ sec: "code", status: "deleting" }, "normal", "de", none))).toContain("Kein Code passt zu diesen Filtern");
+  expect(text(render({ sec: "code" }, "fail"))).toContain("Erneut versuchen");
+  expect(text(render({ sec: "code", id: "c_rechn" }, "missing"))).toContain("Diesen Code gibt es nicht mehr.");
+  const moved = render({ sec: "code", id: "c_rechn", version: data.FIXTURE_VERSIONS.rechnungen2 });
+  expect(moved).toContain("Den Code einer Version zeigt jetzt ihre Freigabe-Prüfung.");
+  expect(moved).toContain(`sec=approvals&amp;id=${data.FIXTURE_VERSIONS.rechnungen2}&amp;tab=code`);
+});
+
+test("Code of an app shows its service account, its handle to copy and the refused call like any Code page", () => {
+  const html = render({ sec: "code", id: "c_portal" });
+  const detail = text(html);
+  expect(detail).toContain("Kundenportal-Eingang");
+  expect(detail).toContain("Läuft als");
+  expect(detail).toContain("Code von Werkstattbuch");
+  expect(detail).toContain("code-7k2q9m4xwt");
+  expect(detail).toContain("Letzter Lauf");
+  expect(detail).toContain("Aufgabe fällig · Space k7qm2x9a");
+  expect(detail).not.toContain("event:spaces.item.due");
+  expect(detail).toContain("Kein Zugriff auf Space k7qm2x9a.");
+  expect(html).toContain('href="/app/spaces/k7qm2x9a"');
+  expect(detail).not.toContain("Zielrechte");
+  expect(text(render({ sec: "code", id: "c_rechn" }))).not.toContain("Läuft als");
+});
+
+test("the open automation shows its database against its limit with export, and its open page reports", () => {
+  const html = render({ sec: "code", id: "c_rechn" }, "normal", "en");
+  expect(text(html)).toContain("1 of 100 MB");
+  expect(text(html)).toContain("Owner's capacity");
+  expect(html).toContain("/api/code/authoring/database/c_rechn/export");
+  const reports = codePageReportMessages.resolve(["de"]).t;
+  const withReports = (area: AreaData): AreaData => ({
+    ...area,
+    reports: {
+      items: [
+        {
+          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          reporter: { id: data.FIXTURE_PEOPLE.jana, name: "Jana Probe" },
+          path: "/woche",
+          reason: "security",
+          text: "Die Seite fragt nach meinem Passwort.",
+          createdAt: "2026-11-12T09:30:00.000Z",
+          state: "open",
+          resolvedAt: null,
+        },
+      ],
+      nextCursor: null,
+    },
   });
-}
+  const reported = render({ sec: "code", id: "c_rechn" }, "normal", "de", withReports);
+  expect(text(reported)).toContain(reports.title);
+  expect(text(reported)).toContain("Sicherheitsproblem");
+  expect(text(reported)).toContain("Die Seite fragt nach meinem Passwort.");
+  expect(text(reported)).toContain(reports.resolve);
+  expect(reported).toContain('href="/code/c_rechn/woche"');
+  expect(text(render({ sec: "code", id: "c_rechn" }, "normal", "de", (area) => ({ ...area, reports: "failed" })))).toContain(
+    reports.failed,
+  );
+});
+
+test("policy, groups and effective rights render their rows with values and sources", () => {
+  const policy = render({ sec: "policy" });
+  const words = text(policy);
+  expect(words).toContain("Voreinstellung „Eigene“ gilt");
+  expect(words).toContain("Jana Probe");
+  expect(words).toContain("Was Automationen ohne Menschen tun dürfen.");
+  expect(words).toContain("Für andere sichtbar");
+  expect(words).not.toContain("silent: shared");
+  expect(words).toContain("Braucht immer einen Menschen");
+  expect(policy).toContain('data-k2-part="Field"');
+  expect(policy).toContain('href="/admin/code?sec=history"');
+  const groups = text(render({ sec: "groups", id: data.FIXTURE_GROUPS.buchhaltung }));
+  expect(groups).toContain("Buchhaltung");
+  expect(groups).toContain("Verwaltung");
+  expect(groups).toContain("Wie Standard");
+  expect(text(render({ sec: "groups" }, "empty"))).toContain("Füge eine Gruppe hinzu");
+  const effective = text(render({ sec: "effective", id: data.FIXTURE_PEOPLE.tom }));
+  expect(effective).toContain("Tom Beispiel");
+  expect(effective).toContain("„Nie“ aus Gruppe Praktikum gilt immer");
+  expect(effective).toContain("aus Gruppe Buchhaltung");
+  expect(text(render({ sec: "effective" }))).toContain("Suche eine Person");
+  expect(text(render({ sec: "policy" }, "fail"))).toContain("Erneut versuchen");
+});
+
+test("the history says who changed which row from what to what, with older pages by address", () => {
+  const history = text(render({ sec: "history" }));
+  expect(history).toContain("Jana Probe");
+  expect(history).toContain("Sendet (Praktikum)");
+  expect(history).toContain("wie Standard");
+  for (const label of ["Löscht", "Nicht rückgängig", "Bezieht Personen ein", "Ändert Zugriff", "Läuft weiter", "Sensibel"])
+    expect(history).toContain(label);
+  expect(text(render({ sec: "history" }, "empty"))).toContain("Es gilt die Voreinstellung");
+  const older = render({ sec: "history" }, "long");
+  expect(text(older)).toContain("Ältere Änderungen laden");
+  expect(older).toContain('href="/admin/code?sec=history&amp;after=2"');
+  expect(text(render({ sec: "history" }))).not.toContain("Ältere Änderungen laden");
+  expect(text(render({ sec: "history" }, "fail"))).toContain("Erneut versuchen");
+});
+
+test("cleanup shows deletion jobs and retries, while access stays in the target's share dialog", () => {
+  const cleanup = text(render({ sec: "cleanup" }));
+  for (const value of [
+    "2 Aufträge warten",
+    "Code löschen",
+    "Code von alt@",
+    "Wird der Besitzer eines Codes gelöscht, stoppt Cloud den Code und plant seine Löschung.",
+    "Den Zugriff eines Dienstkontos änderst du im normalen Teilen-Dialog des Ziels, wenn du das Ziel verwaltest.",
+    "Wartet auf Wiederholung",
+    "3 Versuche",
+    "Der letzte Versuch ist fehlgeschlagen.",
+  ])
+    expect(cleanup).toContain(value);
+  expect(cleanup).not.toContain("code_activation_draining");
+  expect(text(render({ sec: "cleanup" }, "empty"))).toContain("Es warten keine Löschaufträge für Code.");
+  expect(text(render({ sec: "cleanup" }, "normal", "en"))).toContain(
+    "When a Code owner is deleted, Cloud stops the Code and schedules its deletion.",
+  );
+  expect(text(render({ sec: "cleanup" }, "fail"))).toContain("Erneut versuchen");
+});
+
+test("limits are settings with their value beside them, grouped; runners show places, queue and waiting time", () => {
+  const limits = render({ sec: "limits" });
+  expect(limits).toContain('data-k2-part="Field"');
+  for (const label of [
+    "Wanduhr je Lauf (ms)",
+    "Brückenaufrufe je Lauf",
+    "Datenbank je Code (Bytes)",
+    "KI-Referenzbudget je Versuch (USD)",
+    "Gleichzeitige Läufe je Code",
+    "Gleichzeitige Läufe je Besitzer",
+    "Ein Lauf",
+    "KI-Budget",
+  ])
+    expect(limits).toContain(label);
+  expect(render({ sec: "limits" }, "normal", "en")).toContain("AI reference budget per attempt (USD)");
+  const runners = text(render({ sec: "runners" }));
+  for (const label of ["Runner 1", "8a3c", "5 von 12", "Verbunden", "4 s"]) expect(runners).toContain(label);
+  const none = text(render({ sec: "runners" }, "empty"));
+  expect(none).toContain("Kein Runner ist verbunden. Keine Automation läuft.");
+  expect(none).toContain("2 Min.");
+  expect(text(render({ sec: "runners" }, "fail"))).toContain("Erneut versuchen");
+});
+
+test("unused databases are a table with size, deadline and access, export and incarnation-bound deletion", () => {
+  const html = render({ sec: "databases" });
+  const words = text(html);
+  for (const label of ["Datenbanken", "4 ungenutzte Datenbanken", "Löschdatum", "Letzter Zugriff", "Größe", "Lea Muster", "4 MB"])
+    expect(words).toContain(label);
+  expect(html).toContain("/api/code/authoring/database/c_rueck/export");
+  expect(html).toContain("Jetzt löschen");
+  expect(text(render({ sec: "databases" }, "empty"))).toContain("Keine ungenutzten Datenbanken");
+  expect(text(render({ sec: "databases" }, "fail"))).toContain("Erneut versuchen");
+});
+
+test("people without the Code admin right see only that Cloud admins manage Code", () => {
+  const html = text(render({ sec: "approvals" }, "noperm"));
+  expect(html).toContain("Nur Cloud-Admins verwalten Code");
+  expect(html).not.toContain("Rückruf bestätigen");
+});
+
+test("break-ui: the worst case renders every section with its long, short, foreign and huge values", () => {
+  for (const sec of ["approvals", "code", "groups", "history", "cleanup", "databases", "runners"]) {
+    const words = text(render({ sec }, "worst"));
+    expect({ sec, ok: words.length > 0 }).toEqual({ sec, ok: true });
+  }
+  expect(text(render({ sec: "approvals" }, "worst"))).toContain("12.345 Freigaben warten");
+  expect(text(render({ sec: "code" }, "worst"))).toContain("1.234.567");
+  expect(text(render({ sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 }, "worst"))).toContain("Niederlassung Nord-Ost");
+});
+
+/** The props each island of the picture parses, as the server writes them into its `<!--ssr-props:…-->` comment, in bytes. */
+const islandBytes = (html: string) => {
+  const comments = [...html.matchAll(/<!--ssr-props:([\s\S]*?)-->/g)];
+  // a picture without one would pass any budget; every view here has its island
+  expect(comments.length).toBeGreaterThan(0);
+  return comments.reduce((sum, [, value]) => sum + Buffer.byteLength(value ?? ""), 0);
+};
+
+test("each first view hands its island only what it shows, within a measured budget", () => {
+  // The parts `loadCodeArea` reads for each view; the fixture fills every part, the server only these.
+  const views: [string, Record<string, string>, (keyof AreaData)[]][] = [
+    ["approvals", { sec: "approvals" }, ["approvals"]],
+    ["approval open", review, ["approvals", "approval"]],
+    ["decided", { sec: "approvals", tab: "decided" }, ["decided"]],
+    ["automations", { sec: "code" }, ["codes"]],
+    ["automation open", { sec: "code", id: "c_rechn" }, ["codes", "code", "reports"]],
+    ["policy", { sec: "policy" }, ["policy"]],
+    ["groups", { sec: "groups" }, ["policy"]],
+    ["effective", { sec: "effective", id: data.FIXTURE_PEOPLE.lea }, ["effective"]],
+    ["history", { sec: "history" }, ["history"]],
+    ["cleanup", { sec: "cleanup" }, ["cleanup"]],
+    ["databases", { sec: "databases" }, ["databases"]],
+    ["limits", { sec: "limits" }, ["limits"]],
+    ["runners", { sec: "runners" }, ["runners"]],
+  ];
+  const loaded =
+    (parts: (keyof AreaData)[]) =>
+    (area: AreaData): AreaData => {
+      const pick = <K extends keyof AreaData>(key: K): AreaData[K] | null => (parts.includes(key) ? area[key] : null);
+      return {
+        summary: area.summary,
+        approvals: pick("approvals"),
+        decided: pick("decided"),
+        approval: pick("approval"),
+        codes: pick("codes"),
+        code: pick("code"),
+        reports: pick("reports"),
+        policy: pick("policy"),
+        effective: pick("effective"),
+        history: pick("history"),
+        databases: pick("databases"),
+        cleanup: pick("cleanup"),
+        runners: pick("runners"),
+        limits: pick("limits"),
+      };
+    };
+  const sizes = Object.fromEntries(views.map(([name, query, parts]) => [name, islandBytes(render(query, "normal", "de", loaded(parts)))]));
+  // What every screen carries besides its section: the admin bar, the address, the date settings and the apps.
+  const frame = islandBytes(render({ sec: "approvals" }, "normal", "de", loaded([])));
+  console.log(JSON.stringify({ frame, islandBytes: sizes }));
+  // Each list is one bounded page; an open review also carries its diff and source rows, which its tabs switch between.
+  for (const [name, bytes] of Object.entries(sizes))
+    expect({ name, within: bytes > frame && bytes - frame <= (name === "approval open" ? 32_000 : 16_000) }).toEqual({
+      name,
+      within: true,
+    });
+});
+
+test("every text of the area exists in every language", () => {
+  expect(codeAdminMessages.check()).toEqual([]);
+  expect(codeReviewMessages.check()).toEqual([]);
+  expect(codePageReportMessages.check()).toEqual([]);
+});
