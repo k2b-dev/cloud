@@ -3,7 +3,7 @@ import { databaseSuite, useMigratedDatabase } from "../../../../scripts/fixtures
 import { migrateAiModelClasses, migrateCloudAi } from "../ai/migrate";
 import { migrateAiQuotas } from "../ai/quotas-migrate";
 import { sql } from "../runtime/clients";
-import { ensureConcurrentIndexes, settleBackgroundIndexBuilds } from "./concurrent-index";
+import { dropConcurrentIndex, ensureConcurrentIndexes, settleBackgroundIndexBuilds } from "./concurrent-index";
 import { logger } from "./logging";
 
 databaseSuite()("index builds next to live writes", () => {
@@ -83,6 +83,34 @@ databaseSuite()("index builds next to live writes", () => {
       WHERE attrelid = to_regclass('ai.inference_calls') AND attname = 'code_id' AND NOT attisdropped) AS present`;
     const [index] = await sql<{ present: boolean }[]>`SELECT to_regclass('ai.inference_calls_started') IS NOT NULL AS present`;
     expect([column?.present, index?.present]).toEqual([true, true]);
+  });
+
+  test("a unique index is built unique, and a concurrent drop removes it", async () => {
+    const log = logger("concurrent-index-test");
+    const index = { name: "ai_conversations_unique_test", table: "ai.conversations", definition: "(id)", unique: true };
+    expect(await ensureConcurrentIndexes([index], { log, purpose: "test" })).toBe("built");
+    const [built] = await sql<{ unique: boolean }[]>`SELECT indisunique AS unique FROM pg_catalog.pg_index
+      WHERE indexrelid = to_regclass('ai.ai_conversations_unique_test')`;
+    expect(built?.unique).toBeTrue();
+    expect(await dropConcurrentIndex(index, { log, purpose: "test" })).toBe("ready");
+    expect(await sql`SELECT 1 FROM pg_catalog.pg_class WHERE relname = 'ai_conversations_unique_test'`).toHaveLength(0);
+  });
+
+  test("a unique index over duplicate rows fails once, is reported, and is not retried by the same process", async () => {
+    const log = logger("concurrent-index-test");
+    const error = spyOn(log, "error").mockImplementation(() => {});
+    const index = { name: "concurrent_index_duplicates_v", table: "ai.concurrent_index_duplicates", definition: "(v)", unique: true };
+    await sql`CREATE TABLE ai.concurrent_index_duplicates (v integer NOT NULL)`.simple();
+    await sql`INSERT INTO ai.concurrent_index_duplicates (v) VALUES (1), (1)`;
+    try {
+      expect(await ensureConcurrentIndexes([index], { log, purpose: "test" })).toBe("failed");
+      expect(await ensureConcurrentIndexes([index], { log, purpose: "test" })).toBe("failed");
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(await sql`SELECT 1 FROM pg_catalog.pg_class WHERE relname = 'concurrent_index_duplicates_v'`).toHaveLength(0);
+    } finally {
+      error.mockRestore();
+      await sql`DROP TABLE ai.concurrent_index_duplicates`.simple();
+    }
   });
 
   test("a malformed index never throws: it is logged and nothing is built", async () => {

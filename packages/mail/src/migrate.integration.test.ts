@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import { newShortId } from "./lib/short-id";
-import { buildBackfillActivityIndex, buildCommandTargetIndex, buildOptionalSearchIndex, migrate } from "./migrate";
+import { buildBackfillActivityIndex, buildCommandTargetIndex, buildOptionalSearchIndex, buildRoomAccessIndex, migrate } from "./migrate";
 import { migrateSharedDrafts } from "./migrate-shared-drafts";
 import { stopDraftDocumentPruning } from "./service/draft-document-log";
 import { migrateDraftDocumentLogPolicy } from "./service/draft-document-log-policy";
@@ -85,14 +85,17 @@ suite("mail baseline schema", () => {
       await sql<{ redundant_index: string | null }[]>`SELECT to_regclass('mail.drafts_shared_source_message_idx') AS redundant_index`,
     ).toEqual([{ redundant_index: null }]);
     await sql`DROP INDEX mail.drafts_shared_derived_message_idx`.simple();
-    // CREATE INDEX CONCURRENTLY would fail here if migrate ran it inside its transaction.
+    // Startup leaves the index to the background build.
     await migrate();
+    expect((await indexes()).map(({ name }) => name)).toEqual(["drafts_source_message_idx"]);
+    expect(await buildRoomAccessIndex()).toBe("built");
     const upgraded = await indexes();
     expect(upgraded.find(({ name }) => name === "drafts_source_message_idx")?.oid).toBe(
       baseline.find(({ name }) => name === "drafts_source_message_idx")?.oid,
     );
     expect(upgraded.map(({ oid: _oid, ...shape }) => shape)).toEqual(baseline.map(({ oid: _oid, ...shape }) => shape));
     await migrate();
+    expect(await buildRoomAccessIndex()).toBe("ready");
     expect(await indexes()).toEqual(upgraded);
   });
 

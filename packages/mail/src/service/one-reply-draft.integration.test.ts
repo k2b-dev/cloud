@@ -12,9 +12,10 @@ import { DraftCreateInputSchema, DraftSwitchIntentInputSchema } from "../capabil
 import { forwardMessageBody, quoteReplyBody } from "../compose-quotation";
 import { type DraftContentInput, draftSchema, type MailDraft } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
+import { buildReplyDraftIndex, migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
+import { mergeConversations } from "./conversations";
 import { lockDraftDocumentCoverage, mailDraftDocumentLog } from "./draft-document-log";
 import * as revisionBase from "./draft-document-revision";
 import { mailDraftRoom } from "./draft-document-room";
@@ -266,6 +267,89 @@ suite("one reply draft per conversation", () => {
       }),
     );
     expect(next.id).not.toBe(draft.id);
+  });
+  test("a conversation keeps one open reply draft before and after the unique index is valid", async () => {
+    const openReplies = async (conversationId: string) =>
+      sql`SELECT id FROM mail.drafts WHERE conversation_id = ${conversationId}::uuid
+        AND origin = 'user' AND intent <> 'new' AND state IN ('draft', 'scheduled', 'sending')`;
+    const revision = async (conversationId: string) =>
+      Number(
+        (await sql<{ revision: string }[]>`SELECT revision::text FROM mail.conversations WHERE id = ${conversationId}::uuid`)[0]!.revision,
+      );
+    const merge = async (target: MailDraft, source: MailDraft) =>
+      mergeConversations({
+        context: owner,
+        mailboxId,
+        targetConversationId: target.conversationId!,
+        input: {
+          sourceConversationId: source.conversationId!,
+          expectedTargetRevision: await revision(target.conversationId!),
+          expectedSourceRevision: await revision(source.conversationId!),
+          confirm: true,
+        },
+      });
+    const expectOneReplyEach = async (...conversations: MailDraft[]) => {
+      for (const draft of conversations) expect(await openReplies(draft.conversationId!)).toHaveLength(1);
+    };
+    // Startup leaves the index to a background build: until it is valid, the reply box lock alone keeps the rule.
+    await sql`DROP INDEX mail.drafts_one_open_reply_idx`.simple();
+    try {
+      const [target, source] = [await create(), await create()];
+      const refused = await merge(target, source);
+      expect(refused.ok).toBeFalse();
+      if (!refused.ok) expect(refused.error.code).toBe("DRAFT_SUGGESTION_CONFLICT");
+      await expectOneReplyEach(target, source);
+      const fresh = await thread();
+      const created = await Promise.all(
+        ["reply", "reply_all"].map((intent) =>
+          drafts.createDraft({ context: owner, mailboxId, input: { ...input(fresh), intent: intent as "reply" | "reply_all" } }),
+        ),
+      );
+      expect(new Set(created.map((result) => unwrap(result).id)).size).toBe(1);
+      expect(await openReplies(fresh.conversationId)).toHaveLength(1);
+    } finally {
+      expect(await buildReplyDraftIndex()).toBe("built");
+    }
+    const [index] = await sql<{ valid: boolean; unique: boolean }[]>`SELECT indisvalid AS valid, indisunique AS unique
+      FROM pg_index WHERE indexrelid = 'mail.drafts_one_open_reply_idx'::regclass`;
+    expect(index).toEqual({ valid: true, unique: true });
+    const [target, source] = [await create(), await create()];
+    const refused = await merge(target, source);
+    expect(refused.ok).toBeFalse();
+    if (!refused.ok) expect(refused.error.code).toBe("DRAFT_SUGGESTION_CONFLICT");
+    await expectOneReplyEach(target, source);
+  });
+  test("a merge that loses a deadlock answers try again and merges nothing", async () => {
+    const [target, source] = [await thread(), await create()];
+    const revision = async (conversationId: string) =>
+      Number(
+        (await sql<{ revision: string }[]>`SELECT revision::text FROM mail.conversations WHERE id = ${conversationId}::uuid`)[0]!.revision,
+      );
+    // The merge moves the source's reply draft; this stands in for the deadlock Postgres reports to one of two sessions.
+    await sql`CREATE FUNCTION mail.test_merge_deadlock() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'simulated deadlock' USING ERRCODE = '40P01'; END $$`.simple();
+    await sql`CREATE TRIGGER test_merge_deadlock BEFORE UPDATE OF conversation_id ON mail.drafts
+      FOR EACH ROW EXECUTE FUNCTION mail.test_merge_deadlock()`.simple();
+    try {
+      const result = await mergeConversations({
+        context: owner,
+        mailboxId,
+        targetConversationId: target.conversationId,
+        input: {
+          sourceConversationId: source.conversationId!,
+          expectedTargetRevision: await revision(target.conversationId),
+          expectedSourceRevision: await revision(source.conversationId!),
+          confirm: true,
+        },
+      });
+      expect(result.ok).toBeFalse();
+      if (!result.ok) expect([result.error.code, result.error.status]).toEqual(["CONFLICT", 409]);
+      const [draft] = await sql<{ conversation_id: string }[]>`SELECT conversation_id FROM mail.drafts WHERE id = ${source.id}::uuid`;
+      expect(draft?.conversation_id).toBe(source.conversationId!);
+    } finally {
+      await sql`DROP TRIGGER test_merge_deadlock ON mail.drafts`.simple();
+      await sql`DROP FUNCTION mail.test_merge_deadlock()`.simple();
+    }
   });
   test("suggestions skip human/adopted drafts, and an untouched suggestion is the one draft", async () => {
     const human = await create();
@@ -881,7 +965,7 @@ suite("one reply draft per conversation", () => {
   });
   test("F6 preflight leaves the predecessor usable to reconcile uncertain duplicate sends", async () => {
     const draft = await create();
-    await sql`DROP INDEX mail.drafts_one_open_reply_idx`.simple();
+    await sql`DROP INDEX IF EXISTS mail.drafts_one_open_reply_idx`.simple();
     const [loser] = await sql<{ id: string }[]>`INSERT INTO mail.drafts (short_id, mailbox_id, conversation_id, source_message_id, intent,
       sender_identity_id, author_kind, last_editor_kind, state, body_markdown, created_at)
       VALUES (${newShortId()}, ${mailboxId}::uuid, ${draft.conversationId}::uuid, ${draft.sourceMessageId}::uuid, 'reply',
@@ -1205,7 +1289,7 @@ suite("one reply draft per conversation", () => {
     let older = await create();
     older = unwrap(await attach(older));
     const source = { conversationId: older.conversationId!, sourceMessageId: older.sourceMessageId! };
-    await sql`DROP INDEX mail.drafts_one_open_reply_idx`.simple();
+    await sql`DROP INDEX IF EXISTS mail.drafts_one_open_reply_idx`.simple();
     const [loser] = await sql<{ id: string }[]>`INSERT INTO mail.drafts (short_id, mailbox_id, conversation_id, source_message_id, intent,
       sender_identity_id, author_kind, last_editor_kind, body_markdown, created_at, updated_at)
       VALUES (${newShortId()}, ${mailboxId}::uuid, ${source.conversationId}::uuid, ${source.sourceMessageId}::uuid, 'reply',
@@ -1258,7 +1342,7 @@ suite("one reply draft per conversation", () => {
       await sql`DROP TRIGGER test_f6_lock_timeout ON mail.activity_events`.simple();
       await sql`DROP FUNCTION mail.test_f6_lock_timeout()`.simple();
     }
-    // Also interrupt finish after all erasures and the unique index have committed.
+    // Also interrupt finish after all erasures have committed; the unique index commits with the marker.
     await sql`CREATE FUNCTION mail.test_f6_finish_timeout() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
         IF NEW.version = 4 AND (NEW.details->>'completed')::boolean THEN
@@ -1275,15 +1359,15 @@ suite("one reply draft per conversation", () => {
         affectedConversations: 1,
         completed: false,
       });
-      expect(
-        (await sql`SELECT indisvalid FROM pg_index WHERE indexrelid = 'mail.drafts_one_open_reply_idx'::regclass`)[0]?.indisvalid,
-      ).toBeTrue();
+      const [unique] = await sql<{ present: boolean }[]>`SELECT to_regclass('mail.drafts_one_open_reply_idx') IS NOT NULL AS present`;
+      expect(unique?.present).toBeFalse();
     } finally {
       await sql`DROP TRIGGER test_f6_finish_timeout ON mail.schema_migrations`.simple();
       await sql`DROP FUNCTION mail.test_f6_finish_timeout()`.simple();
     }
     const result = await migrate();
     expect(result).toEqual({ deletedDrafts: 104, affectedConversations: 1, completed: true });
+    expect(await buildReplyDraftIndex()).toBe("ready");
     const kept = unwrap(await drafts.getDraft(owner, mailboxId, older.id));
     expect(kept.consolidatedCount).toBe(104);
     expect(kept.body).toBe("My text");

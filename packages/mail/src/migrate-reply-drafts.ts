@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
+import type { ConcurrentIndex } from "@k2b/cloud/services/concurrent-index";
 import { eraseRetiredDraftInTransaction, retireDraftInTransaction } from "./service/draft-retirement";
 import { hasLegacyReplyBodyEvidence } from "./service/reply-draft-body-evidence";
 
@@ -46,17 +47,29 @@ const bestBodyEvidenceDraft = async (db: typeof sql, conversationId: string): Pr
   }
 };
 
-/** Build a supporting partial index once; subsequent batches group only open user reply drafts. */
-const prepareConsolidationIndex = async () => {
-  const [index] = await sql<{ valid: boolean; building: boolean }[]>`SELECT
-    coalesce((SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('mail.drafts_reply_consolidation_idx')), false) AS valid,
-    EXISTS (SELECT 1 FROM pg_stat_progress_create_index WHERE index_relid = to_regclass('mail.drafts_reply_consolidation_idx')) AS building`;
-  if (index?.valid) return;
-  if (index?.building) throw new Error("Mail consolidation index is being built by another startup; retry startup when it completes");
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.drafts_reply_consolidation_idx`.simple();
-  await sql`CREATE INDEX CONCURRENTLY drafts_reply_consolidation_idx ON mail.drafts (conversation_id)
-    WHERE origin = 'user' AND intent <> 'new' AND state IN ('draft', 'scheduled', 'sending')`.simple();
+/**
+ * DDL of the upgrade start only, while F6 is unfinished: the earlier image is stopped, so a plain build locks out no
+ * writer and, unlike a concurrent build, waits for no older snapshot. It replaces an invalid leftover first.
+ */
+const plainIndex = async (tx: typeof sql, name: string, unique: boolean) => {
+  await tx
+    .unsafe(`DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_index WHERE indexrelid = to_regclass('mail.${name}') AND NOT indisvalid) THEN
+      DROP INDEX mail.${name};
+    END IF;
+  END $$`)
+    .simple();
+  // Both indexes cover the reply box; only the backstop is unique.
+  await tx.unsafe(`CREATE ${unique ? "UNIQUE " : ""}INDEX IF NOT EXISTS ${name} ON mail.drafts ${REPLY_DRAFT_INDEX.definition}`).simple();
 };
+
+/** Lets each batch group only open reply drafts instead of reading every historical draft. */
+const prepareConsolidationIndex = () =>
+  sql.begin(async (tx) => {
+    await tx`SET LOCAL lock_timeout = '10s'`;
+    await tx`SELECT pg_advisory_xact_lock(hashtextextended('cloud.mail.migrations', 0))`;
+    await plainIndex(tx, "drafts_reply_consolidation_idx", false);
+  });
 
 /** Refuse conflicting committed sends and unsafe deliveries before the marker or any deletion. */
 const initialize = () =>
@@ -197,7 +210,31 @@ const batch = () =>
     return result;
   });
 
-/** Startup waits for the unique index. Concurrent DDL keeps ordinary table writes available. */
+/**
+ * The database backstop of the reply box: at most one open person reply draft per conversation. The rule itself holds
+ * without it: every writer that puts a draft into a conversation's reply box takes that conversation's reply-box lock
+ * and looks first (`lockConversationReplyDraft`, conversation merges, F6). F6 builds it with a plain build when it
+ * completes, together with its marker. Later, startup never waits for it: if it is missing or invalid, Mail builds it
+ * concurrently in the background (`buildMailIndexes`), and until then the locks alone keep the rule.
+ */
+export const REPLY_DRAFT_INDEX: ConcurrentIndex = {
+  name: "drafts_one_open_reply_idx",
+  table: "mail.drafts",
+  definition: "(conversation_id) WHERE origin = 'user' AND intent <> 'new' AND state IN ('draft', 'scheduled', 'sending')",
+  unique: true,
+};
+
+/** Indexes of earlier releases that the reply box replaced; F6's last step and the background builds drop them. */
+export const RETIRED_DRAFT_INDEXES = [
+  "drafts_reply_consolidation_idx",
+  "drafts_untouched_suggestion_author_idx",
+  "drafts_untouched_suggestion_idx",
+] as const;
+
+/**
+ * Consolidates legacy duplicates in bounded batches. Its indexes are plain builds on the upgrade start only; a completed
+ * marker skips every step, so later starts lock nothing and wait for no index build.
+ */
 export const migrateReplyDrafts = async (): Promise<ReplyDraftMigrationResult> => {
   const [previous] = await sql<{ details: ReplyDraftMigrationResult }[]>`SELECT details FROM mail.schema_migrations
     WHERE version = ${REPLY_DRAFT_MIGRATION_VERSION}`;
@@ -215,28 +252,19 @@ export const migrateReplyDrafts = async (): Promise<ReplyDraftMigrationResult> =
     }
     result = next;
   }
-  const [index] = await sql<{ valid: boolean; building: boolean }[]>`SELECT
-    coalesce((SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('mail.drafts_one_open_reply_idx')), false) AS valid,
-    EXISTS (SELECT 1 FROM pg_stat_progress_create_index
-      WHERE index_relid = to_regclass('mail.drafts_one_open_reply_idx')) AS building`;
-  if (!index?.valid) {
-    if (index?.building) throw new Error("Mail draft index is being built by another startup; retry startup when it completes");
-    await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.drafts_one_open_reply_idx`.simple();
-    await sql`CREATE UNIQUE INDEX CONCURRENTLY drafts_one_open_reply_idx ON mail.drafts (conversation_id)
-      WHERE origin = 'user' AND intent <> 'new' AND state IN ('draft', 'scheduled', 'sending')`.simple();
-  }
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.drafts_reply_consolidation_idx`.simple();
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.drafts_untouched_suggestion_author_idx`.simple();
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.drafts_untouched_suggestion_idx`.simple();
   return sql.begin(async (tx) => {
     await tx`SET LOCAL lock_timeout = '10s'`;
     await tx`SELECT pg_advisory_xact_lock(hashtextextended('cloud.mail.migrations', 0))`;
     const [marker] = await tx<{ details: ReplyDraftMigrationResult }[]>`SELECT details FROM mail.schema_migrations
       WHERE version = ${REPLY_DRAFT_MIGRATION_VERSION} FOR UPDATE`;
     if (!marker) throw new Error("F6 marker disappeared");
+    if (marker.details.completed) return marker.details;
+    // The marker commits with the unique index: `completed` always means the backstop exists.
+    await plainIndex(tx, REPLY_DRAFT_INDEX.name, true);
+    for (const name of RETIRED_DRAFT_INDEXES) await tx.unsafe(`DROP INDEX IF EXISTS mail.${name}`).simple();
     const completed = { ...marker.details, completed: true };
     await tx`UPDATE mail.schema_migrations SET details = ${completed}::jsonb WHERE version = ${REPLY_DRAFT_MIGRATION_VERSION}`;
-    if (!marker.details.completed) log.info("Mail F6 reply draft consolidation completed", completed);
+    log.info("Mail F6 reply draft consolidation completed", completed);
     return completed;
   });
 };

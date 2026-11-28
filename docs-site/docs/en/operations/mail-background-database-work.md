@@ -75,6 +75,14 @@ uniqueness rule once both indexes are valid. Index construction permits
 writes; the final rule change uses a short lock wait and retries on a later
 start if the table is busy.
 
+Mail's start never waits for one of these builds. A concurrent build waits for
+every older transaction, such as a nightly dump, and holds a lock on its table
+until it ends. While it runs, a Mail start on an unchanged schema takes no
+conflicting lock on that table: it adds a column, index or trigger only when
+the catalog lacks it. Only the first start of an image that adds such an
+object needs that lock; while a build holds it, that start fails after its
+lock timeouts and the next start tries again.
+
 `mail:runtime-history-cleanup` runs every minute while the Mail scheduler
 worker runs. Each pass gives successful runs, other terminal runs, automation
 logs and workflow ordering a separate 1.25-second share of a five-second work
@@ -90,8 +98,9 @@ Deletion targets the already locked tuple locations, so a generic prepared
 plan cannot replace the bounded delete with a hash join over the whole heap.
 
 The upgrade adds one nullable folder checkpoint column. It builds the four
-cleanup indexes with `CREATE INDEX CONCURRENTLY` after startup, using Mail's
-existing index-build lease. Busy or failed builds are retried by subsequent
+cleanup indexes with `CREATE INDEX CONCURRENTLY` after startup, through the
+platform's concurrent index helper, one Mail build at a time across replicas,
+and waits through maintenance stage "Ruhe". Busy or failed builds are retried by subsequent
 minute passes. The smaller auxiliary indexes build first. Sync-history cleanup
 waits for its matching index to be valid; auxiliary cleanup continues with
 bounded statements even before its new indexes exist. No startup migration

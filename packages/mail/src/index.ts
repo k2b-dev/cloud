@@ -6,20 +6,7 @@ import { stopMailDraftConnections } from "./api/draft-document-socket";
 import { mailCapabilities } from "./capabilities";
 import { app } from "./config";
 import { mailHelp } from "./help";
-import {
-  buildActivityFeedIndex,
-  buildActorAssignmentIndex,
-  buildBackfillActivityIndex,
-  buildCommandTargetIndex,
-  buildDraftRemoteIdIndex,
-  buildFolderIdentityIndexes,
-  buildOpenConversationIndex,
-  buildOptionalSearchIndex,
-  buildProviderMessageIndex,
-  buildRemoteMessageIdIndex,
-  buildRuntimeHistoryIndexes,
-  migrate,
-} from "./migrate";
+import { buildMailIndexes, migrate } from "./migrate";
 import { migrateSharedDrafts } from "./migrate-shared-drafts";
 import { createMailNotificationService } from "./notifications";
 import { router } from "./router";
@@ -62,22 +49,8 @@ const result = await app.start({
   lifecycle: {
     setup: async () => {
       await migrate();
-      // Startup waits for none of these builds. A busy predecessor defers the rest until
-      // the next start: concurrent expression builds can wait on each other's snapshots.
-      void (async () => {
-        await buildRuntimeHistoryIndexes();
-        if ((await buildBackfillActivityIndex()) === "busy") return;
-        if ((await buildCommandTargetIndex()) === "busy") return;
-        if ((await buildProviderMessageIndex()) === "busy") return;
-        if ((await buildRemoteMessageIdIndex()) === "busy") return;
-        if ((await buildDraftRemoteIdIndex()) === "busy") return;
-        if ((await buildOpenConversationIndex()) === "busy") return;
-        if ((await buildActivityFeedIndex()) === "busy") return;
-        if ((await buildActorAssignmentIndex()) === "busy") return;
-        await buildOptionalSearchIndex();
-        // Last: its final rule change gives up after a short lock wait and must not defer the builds above.
-        await buildFolderIdentityIndexes();
-      })();
+      // Startup waits for none of these builds; queries and the reply box work without them until they are valid.
+      void buildMailIndexes();
     },
     start: async () => {
       try {

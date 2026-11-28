@@ -12,7 +12,7 @@ import { mergeConversationReferencesInTransaction } from "./conversation-referen
 import { discardConversationSummaries } from "./conversation-summary-lifecycle";
 import { isUnsentOutboundMessage } from "./conversation-timeline";
 import { deriveConversationWorkState, isAutomaticSubmission } from "./conversation-work-state";
-import { databaseErrorCode, databaseErrorConstraint } from "./database-errors";
+import { databaseErrorCode, databaseErrorConstraint, isTransientDatabaseError } from "./database-errors";
 import { type MailActivityChange, mailLive } from "./live";
 import { parseMessageProtocolFacts } from "./message-protocol";
 import { MAIL_NOTIFICATION_DEFINITION_IDS } from "./notification-targets";
@@ -397,6 +397,20 @@ export const mergeConversations = async (params: {
       if (Number(source.revision) !== params.input.expectedSourceRevision) {
         return fail(err.conflict("Source conversation was changed by another collaborator"));
       }
+      // The reply box holds one open reply draft per conversation, also before startup's background build of
+      // drafts_one_open_reply_idx is valid. Creators take the box lock after the mailbox lock, so none holds it now;
+      // only the provider import does, and waiting for it could deadlock on this mailbox lock.
+      for (const conversationId of conversationIds) {
+        const [box] = await tx<{ locked: boolean }[]>`
+          SELECT pg_try_advisory_xact_lock(hashtextextended(${`mail:reply-draft:${conversationId}`}, 0)) AS locked`;
+        if (!box?.locked) return fail(err.conflict("A reply draft in these conversations is being saved; try again"));
+      }
+      const [openReplies] = await tx<{ conversations: number }[]>`
+        SELECT count(DISTINCT conversation_id)::int AS conversations FROM mail.drafts
+        WHERE conversation_id IN (SELECT value::uuid FROM jsonb_array_elements_text(${conversationIds}::jsonb))
+          AND origin = 'user' AND intent <> 'new' AND state IN ('draft', 'scheduled', 'sending')`;
+      if (openReplies?.conversations === 2)
+        return fail({ code: "DRAFT_SUGGESTION_CONFLICT", status: 409, message: draftAdoptionMessages.resolve(["en"]).t.mergeConflict });
       const assignees = await tx<{ user_id: string; assigned_at: string }[]>`
         SELECT principal_id AS user_id, MIN(assigned_at)::text AS assigned_at FROM mail.conversation_assignees
         WHERE conversation_id IN (SELECT value::uuid FROM jsonb_array_elements_text(${conversationIds}::jsonb))
@@ -542,6 +556,8 @@ export const mergeConversations = async (params: {
   } catch (error) {
     if (databaseErrorCode(error) === "23505" && databaseErrorConstraint(error) === "drafts_one_open_reply_idx")
       return fail({ code: "DRAFT_SUGGESTION_CONFLICT", status: 409, message: draftAdoptionMessages.resolve(["en"]).t.mergeConflict });
+    // A deadlock with a provider import that saves a draft of these conversations, or a lost connection: nothing merged.
+    if (isTransientDatabaseError(error)) return fail(err.conflict("The conversations changed while they were merged; try again"));
     log.error("Failed to merge conversations", {
       mailboxId: params.mailboxId,
       targetConversationId: params.targetConversationId,

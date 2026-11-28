@@ -138,17 +138,19 @@ Preflight also refuses consolidation counts or revision/generation counters
 that would overflow during consolidation. These refusals leave marker 4 absent
 and all drafts intact; resolve the reported data before retrying.
 
-F6 builds a temporary supporting partial index concurrently, excluding sent,
-discarded, new-message and private workflow drafts. Building it requires a
-fixed number of scans over the table, including historical sent rows; it does
-not rescan those millions of rows for each conversation. Each batch groups the
-open reply index once, then handles several duplicate conversations, up to
-100 deletions per transaction. A conversation with more than 100 losers spans
-batches. The same index supports a bounded keyset pass that identifies legacy
-source attachment copies before mode switching becomes available. Explicit source
-copies created in Reply or Reply all remain personal files. Switching to Forward
-does not duplicate copies with the same source message and content hash.
-The supporting index is removed after the final unique index is valid.
+On the upgrade start, F6 builds a temporary supporting partial index over the
+open reply drafts with a plain `CREATE INDEX`: the earlier image is stopped, so
+the build waits for no older transaction. It holds a SHARE lock on
+`mail.drafts` while it reads the table, so writes of an earlier image that is
+still running wait for it; this is one more reason to stop that image first.
+Each batch
+groups the open reply drafts once, then handles several duplicate
+conversations, up to 100 deletions per transaction. A
+conversation with more than 100 losers spans batches. A bounded keyset pass
+identifies legacy source attachment copies before mode switching becomes
+available. Explicit source copies created in Reply or Reply all remain personal
+files. Switching to Forward does not duplicate copies with the same source
+message and content hash.
 
 Each batch uses Mail's existing transaction-scoped migration lock and locks the
 affected mailbox and draft rows. It holds no exclusive table lock across
@@ -158,15 +160,45 @@ because of a database outage, lock timeout or interrupted index build, restore
 the infrastructure and restart the same upgraded image. The current batch rolls
 back; earlier committed batches and their counts are preserved. Repeating
 attachment classification and provider retirement is safe. Incomplete or invalid
-concurrent indexes are rebuilt on retry. Keep the earlier image stopped: it
+background index builds are replaced on a later start. Keep the earlier image stopped: it
 refuses marker 4 even while `completed` is false. Never delete the marker to
 retry an earlier image.
 
-The unique index is built with
-`CREATE UNIQUE INDEX CONCURRENTLY`, outside batch transactions; startup waits
-for it. Index-build detection checks that specific index, so unrelated draft
-indexes do not block F6. If another startup is building a migration index, retry
-after its build finishes. A completed marker skips the destructive work.
+The unique index `drafts_one_open_reply_idx` is the database backstop of the
+reply box. F6's last transaction builds it the same plain way, drops the
+supporting index and the per-author suggestion indexes, and commits the
+`completed` marker with them. Later starts skip F6 and never wait for this
+index: if it goes missing or a build is interrupted, Mail builds it again
+concurrently in the background after the migration. A long transaction, such
+as a nightly dump, or a build that another instance runs only delays it, never
+the start. Until it is valid, the reply box still holds one open reply draft per
+conversation: every writer that puts a draft into a conversation's box takes
+that conversation's reply-box lock and checks first, and a merge of two
+conversations that both have an open reply draft returns
+`DRAFT_SUGGESTION_CONFLICT` (409). `pg_index.indisvalid` shows when the build
+has finished. Mail waits through maintenance stage "Ruhe" and builds the index
+once the Cloud resumes. A completed marker skips the destructive work.
+
+### A duplicate open reply draft after F6
+
+If the background build finds two open reply drafts in one conversation, which
+the reply-box locks prevent, Mail logs one error, **The reply box index cannot
+be built: rows that it would keep apart exist twice**, with
+`index: drafts_one_open_reply_idx`. It does not try again until the next start.
+Find the conversations:
+
+```sql
+SELECT conversation_id, array_agg(short_id || ' rev ' || revision ORDER BY updated_at DESC) AS drafts
+FROM mail.drafts
+WHERE origin = 'user' AND intent <> 'new' AND state IN ('draft', 'scheduled', 'sending')
+GROUP BY conversation_id HAVING count(*) > 1;
+```
+
+Keep the draft the person works on and discard the others in Mail, or with
+`cld mail draft discard <draft id> --mailbox <mailbox> --revision <revision> --yes`.
+Cancel a scheduled send first. Do not change `mail.drafts` by hand: a discard
+also closes the draft's shared document and attachments. The next start of
+Mail builds the index again.
 
 After startup, create a reply twice without content and confirm both requests
 return the same ID. Supplied content to an occupied box must return

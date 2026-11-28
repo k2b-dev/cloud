@@ -8,6 +8,8 @@ import { backgroundWork } from "./runtime-quiesce";
  * An index built next to live writes. Queries must work without it; it only makes them faster. A UNIQUE index that a
  * transaction relies on is never one of these: the migration creates it before its first use, in its transaction
  * (`createIndexIfMissing` with `unique`).
+ * `unique` is only for an index no transaction relies on before it is valid, such as a backstop of a rule that locks
+ * already keep, or a feature that waits until the index is valid.
  */
 export type ConcurrentIndex = {
   /** Index name without schema; Postgres creates it in the table's schema. */
@@ -19,6 +21,7 @@ export type ConcurrentIndex = {
    * never request input; it reaches SQL as written, so a `;` is refused.
    */
   definition: string;
+  unique?: boolean;
 };
 
 /**
@@ -68,7 +71,19 @@ const readIndex = async (db: SQL, index: ConcurrentIndex) => {
 const dropIndex = (db: SQL, index: ConcurrentIndex) =>
   db.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS ${index.table.split(".")[0]}.${index.name}`).simple();
 
+/**
+ * Unique indexes whose build found duplicate rows. Each later attempt would read the whole table and fail the same way,
+ * so this process gives up on them; the next start tries once more.
+ */
+const duplicated = new Set<string>();
+const sqlState = (error: unknown) => {
+  const candidate = error as { errno?: unknown; code?: unknown } | null;
+  return typeof candidate?.errno === "string" ? candidate.errno : typeof candidate?.code === "string" ? candidate.code : null;
+};
+
 const buildIndex = async (db: SQL, index: ConcurrentIndex, options: ConcurrentIndexOptions): Promise<ConcurrentIndexOutcome> => {
+  const key = `${index.table}.${index.name}`;
+  if (duplicated.has(key)) return "failed";
   const before = await readIndex(db, index);
   if (before.valid) return "ready";
   if (before.building) return "busy";
@@ -76,15 +91,25 @@ const buildIndex = async (db: SQL, index: ConcurrentIndex, options: ConcurrentIn
   if (before.present) await dropIndex(db, index);
   const startedAt = performance.now();
   try {
-    await db.unsafe(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition}`).simple();
+    await db
+      .unsafe(`CREATE ${index.unique ? "UNIQUE " : ""}INDEX CONCURRENTLY IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition}`)
+      .simple();
   } catch (error) {
     const after = await readIndex(db, index);
     if (after.valid) return "ready";
     if (after.building) return "busy";
-    options.log.warn(`The ${options.purpose} index was not built; queries run without it until the next attempt`, {
-      index: index.name,
-      error: message(error),
-    });
+    if (index.unique && sqlState(error) === "23505") {
+      duplicated.add(key);
+      options.log.error(`The ${options.purpose} index cannot be built: rows that it would keep apart exist twice`, {
+        index: index.name,
+        error: message(error),
+      });
+    } else {
+      options.log.warn(`The ${options.purpose} index was not built; queries run without it until the next attempt`, {
+        index: index.name,
+        error: message(error),
+      });
+    }
     if (after.present) await dropIndex(db, index);
     return "failed";
   }
@@ -151,35 +176,49 @@ const bound = () => {
   }
 };
 
-const buildTable = async (
+/**
+ * Runs `work` on a reserved connection under the lease of `table`, renewed every third of its lifetime while one long
+ * statement runs; `busy` while another holder has it. Without a bound process sync it runs without the lease.
+ */
+const underTableLease = async (
   db: SQL,
-  indexes: readonly ConcurrentIndex[],
-  options: ConcurrentIndexOptions,
+  table: string,
+  work: (connection: SQL) => Promise<ConcurrentIndexOutcome>,
 ): Promise<ConcurrentIndexOutcome> => {
   const lease = bound() ? buildLease() : null;
-  const held = lease ? await lease.acquire({ resource: indexes[0]!.table }) : null;
+  const held = lease ? await lease.acquire({ resource: table }) : null;
   if (lease && !held) return "busy";
   // runtime-timer: renews the build lease while one statement runs; cleared when it ends.
   const renewal = lease && held ? setInterval(() => void lease.extend(held).catch(() => false), LEASE_MS / 3) : null;
   renewal?.unref();
   try {
     // Bun may pipeline ordinary pool queries behind long DDL; a reserved connection keeps them out of its wait.
-    const build = await db.reserve();
+    const connection = await db.reserve();
     try {
-      let outcome: ConcurrentIndexOutcome = "ready";
-      for (const index of indexes) {
-        const built = await buildIndex(build, index, options);
-        if (built === "busy" || built === "failed") return built;
-        if (built === "built") outcome = "built";
-      }
-      return outcome;
+      return await work(connection);
     } finally {
-      build.release();
+      connection.release();
     }
   } finally {
     if (renewal) clearInterval(renewal);
     if (lease && held) await lease.release(held).catch(() => false);
   }
+};
+
+const buildTable = async (
+  db: SQL,
+  indexes: readonly ConcurrentIndex[],
+  options: ConcurrentIndexOptions,
+): Promise<ConcurrentIndexOutcome> => {
+  return underTableLease(db, indexes[0]!.table, async (build) => {
+    let outcome: ConcurrentIndexOutcome = "ready";
+    for (const index of indexes) {
+      const built = await buildIndex(build, index, options);
+      if (built === "busy" || built === "failed") return built;
+      if (built === "built") outcome = "built";
+    }
+    return outcome;
+  });
 };
 
 const running = new Set<Promise<ConcurrentIndexOutcome>>();
@@ -196,7 +235,7 @@ const pause = (ms: number) =>
   });
 
 /** Resolves at once, or once maintenance stage „Ruhe“ ends: a background build starts nothing while the Cloud is quiet. */
-const untilResumed = (): Promise<void> =>
+export const untilResumed = (): Promise<void> =>
   backgroundWork.paused()
     ? new Promise((resolve) => {
         const stop = backgroundWork.onChange((paused) => {
@@ -278,7 +317,7 @@ export const addMissingColumns = async (db: SQL, table: string, columns: Readonl
  * Creates an ordinary index in the migration's transaction only when the catalog lacks it. `CREATE INDEX IF NOT EXISTS`
  * alone waits for the lock of a running concurrent build on the table even when the index exists.
  */
-export const createIndexIfMissing = async (db: SQL, index: ConcurrentIndex & { unique?: boolean }): Promise<void> => {
+export const createIndexIfMissing = async (db: SQL, index: ConcurrentIndex): Promise<void> => {
   if (!validIndex(index)) throw new Error(`Invalid index: ${index.name} ON ${index.table}`);
   const [state] = await db<
     { present: boolean }[]
@@ -287,4 +326,27 @@ export const createIndexIfMissing = async (db: SQL, index: ConcurrentIndex & { u
   await db
     .unsafe(`CREATE ${index.unique ? "UNIQUE " : ""}INDEX IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition}`)
     .simple();
+};
+
+/**
+ * Drops an index with `DROP INDEX CONCURRENTLY` under the same lease per table as the builds, on a reserved connection.
+ * It waits for every transaction that may use the index, so call it only from background work. Never throws.
+ */
+export const dropConcurrentIndex = async (
+  index: Pick<ConcurrentIndex, "name" | "table">,
+  options: ConcurrentIndexOptions,
+): Promise<ConcurrentIndexOutcome> => {
+  try {
+    if (!IDENTIFIER.test(index.name) || !qualifiedTable(index.table)) throw new Error(`Invalid index: ${index.name} ON ${index.table}`);
+    return await underTableLease(options.db ?? sql, index.table, async (db) => {
+      await dropIndex(db, { ...index, definition: "" });
+      return "ready";
+    });
+  } catch (error) {
+    options.log.warn(`The ${options.purpose} index was not dropped; the next attempt retries`, {
+      index: index.name,
+      error: message(error),
+    });
+    return "failed";
+  }
 };
