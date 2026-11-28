@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import type { WidgetStreamLine } from "@k2b/cloud/contracts";
-import { type DashboardTileState, loadDashboardWidgets } from "./widget-board";
+import { type DashboardTileState, initialTiles, loadDashboardWidgets, pendingEntries } from "./widget-board";
 
 /** A stream without a `done` line broke off. */
 const stream = (lines: WidgetStreamLine[]) =>
@@ -99,4 +99,42 @@ test("POST matches repeated keys independently by id, strips titles, and preserv
     ["second", { status: "timeout" }],
     ["first", { status: "empty" }],
   ]);
+});
+
+describe("the server render's widgets", () => {
+  const board = [
+    { id: "a", key: "spaces/today", size: "large" as const },
+    { id: "b", key: "weather/current", size: "small" as const, settings: { place: "Freiburg" } },
+    { id: "c", key: "quotes/quote", size: "small" as const },
+  ];
+  const answered = {
+    a: { type: "widget" as const, id: "a", key: "spaces/today", status: "ok" as const, widget: { title: "Heute", blocks: [] }, ms: 12 },
+    c: { type: "widget" as const, id: "c", key: "quotes/quote", status: "forbidden" as const, ms: 4 },
+  };
+
+  test("frames start with what the server render has; the others load", () => {
+    expect(initialTiles(board, answered)).toEqual({
+      a: { status: "ok", widget: { title: "Heute", blocks: [] } },
+      b: { status: "loading" },
+      c: { status: "forbidden" },
+    });
+  });
+
+  test("after hydration the browser asks exactly the pending entries, in their size and settings", async () => {
+    const bodies: unknown[] = [];
+    answerFetch(async (_input, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return stream([
+        { type: "start", widgets: ["b"] },
+        { type: "done", status: "complete" },
+      ]);
+    });
+    await loadDashboardWidgets({
+      widgets: pendingEntries(board, answered),
+      signal: new AbortController().signal,
+      locale: "de",
+      onTile: () => {},
+    });
+    expect(bodies).toEqual([{ widgets: [{ id: "b", key: "weather/current", size: "small", settings: { place: "Freiburg" } }] }]);
+  });
 });
