@@ -21,7 +21,8 @@ Before, it returned every venue the caller could read, ordered by name.
 - To read further, page with `limit` (1 to 100, default 100) and `offset`. A
   page shorter than `limit` is the last one.
 - The order is stable while venues are renamed or edited, so paging misses
-  none and repeats none.
+  none and repeats none. A venue added or removed between two pages shifts
+  the next page by one, so deduplicate by `id`.
 - To find a venue by name or slug, pass `q`.
 - A `limit` above 100 answers `400`.
 

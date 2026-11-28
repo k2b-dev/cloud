@@ -125,3 +125,88 @@ suiteFor(
     expect(ids).toEqual(shortIds.slice(0, 5).reverse());
   });
 });
+
+/**
+ * The list reaches a venue through every kind of grant a single venue read honours: a group, a group nested in the
+ * granted one, everyone signed in, and the public. A `none` grant never lists a venue and never outranks a `read`.
+ */
+suiteFor(
+  "database",
+  "nats",
+  "valkey",
+)("Venue list grants", () => {
+  const suffix = crypto.randomUUID();
+  const venueIds: string[] = [];
+  const groupIds: string[] = [];
+  let userId = "";
+  let cookie = "";
+
+  const insertVenue = async (name: string, createdAt: string) => {
+    const [row] = await sql<{ id: string }[]>`
+      INSERT INTO venue.venues(short_id, slug, name, public_enabled, created_at, updated_at)
+      VALUES (${testShortId()}, ${`grant-${venueIds.length}-${suffix}`}, ${`${name} ${suffix}`}, false,
+        ${createdAt}::timestamptz, ${createdAt}::timestamptz)
+      RETURNING id`;
+    venueIds.push(row!.id);
+    return row!.id;
+  };
+  const insertGroup = async (label: string) => {
+    const [row] = await sql<{ id: string }[]>`
+      INSERT INTO auth.groups(cn, name, provider) VALUES (${`local:venue-${label}-${suffix}`}, ${`venue-${label}-${suffix}`}, 'local')
+      RETURNING id`;
+    groupIds.push(row!.id);
+    return row!.id;
+  };
+  type Principal = { user_id?: string; group_id?: string; authenticated_only?: boolean };
+  const grant = async (venueId: string, principal: Principal, permission: "none" | "read" | "write") => {
+    const [access] = await sql<{ id: string }[]>`
+      INSERT INTO auth.access(user_id, group_id, authenticated_only, permission)
+      VALUES (${principal.user_id ?? null}::uuid, ${principal.group_id ?? null}::uuid, ${principal.authenticated_only ?? false},
+        ${permission}::auth.permission_level)
+      RETURNING id`;
+    await sql`INSERT INTO venue.venue_access(venue_id, access_id) VALUES (${venueId}::uuid, ${access!.id}::uuid)`;
+  };
+
+  beforeAll(async () => {
+    const [person] = await sql<{ id: string }[]>`
+      INSERT INTO auth.users(uid, provider, profile, display_name)
+      VALUES (${`venue-grantee-${suffix}`}, 'local', 'user', 'Grantee') RETURNING id`;
+    userId = person!.id;
+    const team = await insertGroup("team");
+    const parent = await insertGroup("parent");
+    const child = await insertGroup("child");
+    await sql`INSERT INTO auth.user_groups_v2(user_id, group_id) VALUES (${userId}::uuid, ${team}::uuid), (${userId}::uuid, ${child}::uuid)`;
+    await sql`INSERT INTO auth.group_groups_v2(parent_group_id, child_group_id) VALUES (${parent}::uuid, ${child}::uuid)`;
+
+    await grant(await insertVenue("Gruppe", "2026-03-01T08:00:00Z"), { group_id: team }, "write");
+    await grant(await insertVenue("Verschachtelt", "2026-03-02T08:00:00Z"), { group_id: parent }, "read");
+    await grant(await insertVenue("Angemeldet", "2026-03-03T08:00:00Z"), { authenticated_only: true }, "read");
+    await grant(await insertVenue("Öffentlich", "2026-03-04T08:00:00Z"), {}, "read");
+    await grant(await insertVenue("Gesperrt", "2026-03-05T08:00:00Z"), { user_id: userId }, "none");
+    const mixed = await insertVenue("Gemischt", "2026-03-06T08:00:00Z");
+    await grant(mixed, { user_id: userId }, "none");
+    await grant(mixed, { user_id: userId }, "read");
+    cookie = `session_token=${await createTestSession(userId)}`;
+  });
+  afterAll(async () => {
+    for (const id of venueIds) {
+      await sql`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM venue.venue_access WHERE venue_id = ${id}::uuid)`;
+      await sql`DELETE FROM venue.venues WHERE id = ${id}::uuid`;
+    }
+    for (const id of groupIds) await sql`DELETE FROM auth.groups WHERE id = ${id}::uuid`;
+    if (userId) await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+  });
+
+  test("group, nested-group, signed-in and public grants list a venue; a none grant neither lists one nor outranks read", async () => {
+    const response = await api.request(`/venues?q=${suffix}`, { headers: { cookie, "x-forwarded-for": uniqueCallerAddress() } });
+    expect(response.status).toBe(200);
+    const { venues } = (await response.json()) as { venues: Listed[] };
+    expect(venues.map((venue) => [venue.name.replace(` ${suffix}`, ""), venue.permission])).toEqual([
+      ["Gemischt", "read"],
+      ["Öffentlich", "read"],
+      ["Angemeldet", "read"],
+      ["Verschachtelt", "read"],
+      ["Gruppe", "write"],
+    ]);
+  });
+});
