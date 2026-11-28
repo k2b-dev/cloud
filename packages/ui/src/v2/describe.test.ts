@@ -113,7 +113,7 @@ describe("describeV2", () => {
     const text = fixture("structure");
     expect(text).toContain('head: Tabs "Bereiche": Überblick ✓, Geld (12)');
     expect(text).toContain('Entry 3. Nov. "EL-2611-00009" (Läuft)');
-    expect(text).toContain('Section "Anstehend" (2) ["Todo anlegen" text]');
+    expect(text).toContain('Section "Anstehend" (2) ["Todo anlegen"]');
     expect(text).toContain('Group "EL-2611-00009" (18) · angekommen 3. Nov. · Post (Läuft · ok) ["Öffnen" text]');
     expect(text).toContain('Group "EL-2609-00017" folded · ausgezahlt am 12. Nov.');
     expect(text).toContain('Steps "Weg der Einlieferung": Angekommen done → Ausgelaufen now → Ausgezahlt next');

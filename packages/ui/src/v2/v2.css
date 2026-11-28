@@ -1312,6 +1312,16 @@
     height: auto;
     margin-top: 14px;
   }
+  /* a head with only its fold keeps the chevron on the title's line, so folding does not make the column taller */
+  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) > .k2-sh:not([data-actions]) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "title end" "summary summary";
+  }
+  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) > .k2-sh:not([data-actions]) > .k2-sh-end {
+    justify-self: end;
+    height: 22px;
+    margin-top: 0;
+  }
   /* the content is a column of its own 48 px after the head column, up to the section's end: its rows, fields and
      notices start and end on it, so their hair and their tint stay inside the measure */
   .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll[data-grid], .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) > :not(.k2-sh, .k2-sec-body),
@@ -1319,6 +1329,8 @@
     --k2-edge: 0px;
     --k2-edge-icon: 24px;
     margin-left: calc(232px + 48px);
+    /* B is the measure itself: a section's own `measure` (720 px of text) applies only in a narrower pane */
+    max-width: none;
   }
 }
 .k2-ui .k2-stile {

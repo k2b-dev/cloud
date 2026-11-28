@@ -228,7 +228,7 @@ describe("measureV2Layout", () => {
       try {
         const { edge } = await measureV2Layout(page);
         expect(edge).toHaveLength(2);
-        expect(edge[0]).toMatch(/^line div\.row border-bottom at y 39 stops 8 px short of the left and 8 px short of the right edge/);
+        expect(edge[0]).toMatch(/^line div\.row border-bottom at y 45 stops 8 px short of the left and 8 px short of the right edge/);
         expect(edge[1]).toMatch(/^band div\.tint at y 40 stops 8 px short of the left and 8 px short of the right edge/);
       } finally {
         await page.close();
