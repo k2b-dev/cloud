@@ -1,7 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { NavProps } from "@k2b/ui/v2";
 import { parseRunsAddress, runsQuery } from "../query";
-import RunsScreen from "./RunsScreen";
+import RunsScreen from "./RunsScreen.island";
 import { FIXTURE_APPS, type FixtureData, fixtureJobRecord, fixtureList, fixtureMinutes, fixtureSchedules } from "./runs-fixture-data";
 
 const nav: NavProps = {

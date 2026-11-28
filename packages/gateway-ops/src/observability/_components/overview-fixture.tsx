@@ -1,7 +1,8 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { NavProps } from "@k2b/ui/v2";
 import { buildOverviewSignals, overviewQuery, overviewVerdict } from "../overview";
-import OverviewScreen, { type FailingRoute, type OverviewApp } from "./OverviewScreen";
+import type { FailingRoute, OverviewApp } from "./OverviewScreen";
+import OverviewScreen from "./OverviewScreen.island";
 import { opsCharts } from "./ops-chart";
 
 // Invented operations for render and browser tests: fixed times, no production data.
