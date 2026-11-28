@@ -1,5 +1,6 @@
 import { useLocale } from "@k2b/ui";
-import { Cells, Chip } from "@k2b/ui/v2";
+import { Cells, Chip, Disclosure, Text } from "@k2b/ui/v2";
+import { Show } from "solid-js";
 import type { SpacePulse as Pulse } from "@/overview-contracts";
 import { useSpaceMessages } from "../../messages";
 
@@ -13,26 +14,38 @@ import { useSpaceMessages } from "../../messages";
  * ("● 1 overdue · 3 open without anyone") under a 1 px n100 rule, padding 18 20 14, gaps 14/32. Cells set the value
  * in 600 18/24, the spark 20 px high at the value's end, and stack the cells on the phone.
  */
-export default function SpacePulse(props: { pulse: Pulse; color: string | null }) {
+export default function SpacePulse(props: { pulse: Pulse; color: string | null; description?: string | null }) {
   const t = useSpaceMessages();
   const locale = useLocale();
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const total = () => props.pulse.done.reduce((sum, value) => sum + value, 0);
   return (
-    <Cells>
-      <Cells.Cell
-        icon="circle-check"
-        color={props.color ?? undefined}
-        label={t.pulseDone}
-        value={number(total())}
-        trend={{
-          values: props.pulse.done,
-          label: t.pulseDoneTrend({ total: number(total()), today: number(props.pulse.done.at(-1) ?? 0) }),
-        }}
-        // Nothing overdue is no exception: no red and no "0 overdue".
-        meta={props.pulse.overdue > 0 ? <Chip status="bad">{t.pulseOverdue({ count: number(props.pulse.overdue) })}</Chip> : undefined}
-      />
-      <Cells.Cell icon="user-question" label={t.pulseUnassigned} value={number(props.pulse.unassigned)} />
-    </Cells>
+    <>
+      <Cells>
+        <Cells.Cell
+          icon="circle-check"
+          color={props.color ?? undefined}
+          label={t.pulseDone}
+          value={number(total())}
+          trend={{
+            values: props.pulse.done,
+            label: t.pulseDoneTrend({ total: number(total()), today: number(props.pulse.done.at(-1) ?? 0) }),
+          }}
+          // Nothing overdue is no exception: no red and no "0 overdue".
+          meta={props.pulse.overdue > 0 ? <Chip status="bad">{t.pulseOverdue({ count: number(props.pulse.overdue) })}</Chip> : undefined}
+        />
+        <Cells.Cell icon="user-question" label={t.pulseUnassigned} value={number(props.pulse.unassigned)} />
+      </Cells>
+      {/* The Space's description, once, as a quiet line of the band that opens to the whole text (coordinator, 28.11.); a
+        Space without one shows no line and keeps no room. k2b-ui gap: a Disclosure title cannot be one quiet meta line cut
+        with "…", so the line names "About this Space" and the description opens under it. */}
+      <Show when={props.description?.trim()}>
+        {(description) => (
+          <Disclosure title={t.pulseAbout}>
+            <Text>{description()}</Text>
+          </Disclosure>
+        )}
+      </Show>
+    </>
   );
 }

@@ -160,7 +160,7 @@ export default function ItemsPane(props: Props) {
         )}
       </Show>
       {/* The Space's pulse follows the problem: a failure is the first thing to read under the filter row. */}
-      <SpacePulse pulse={props.pulse} color={props.space.color} />
+      <SpacePulse pulse={props.pulse} color={props.space.color} description={props.space.description} />
       <Show when={!view.failedElsewhere()}>
         <Show
           when={!empty()}

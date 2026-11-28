@@ -139,6 +139,24 @@ describe("a Space on v2", () => {
     }
   }, 60_000);
 
+  for (const view of [wide, phone])
+    test(`${view.name}: the Space's description is one quiet line of the pulse that opens to the whole text`, async () => {
+      const { context, tab, errors } = await open(view, "/app/spaces/Space1?view=list");
+      try {
+        const about = tab.getByRole("button", { name: "About this Space" });
+        expect(await about.count()).toBe(1);
+        const line = await about.boundingBox();
+        expect(line && line.height <= 48).toBe(true);
+        await about.click();
+        await tab.locator('[data-k2-part="Disclosure"] [data-k2-part="Text"], [data-k2-part="Disclosure"] .k2-disc-body').first().waitFor();
+        expect(await tab.locator('[data-k2-part="Disclosure"]').innerText()).toContain("Team work");
+        expect(await layoutProblems(tab)).toEqual([]);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }, 60_000);
+
   test("a task is ticked off at the end of its row", async () => {
     const { context, tab, errors, seen } = await open(wide, "/app/spaces/Space1?view=list");
     try {

@@ -100,7 +100,7 @@ export default function BoardPane(props: Props) {
         )}
       </Show>
       {/* The Space's pulse follows the problem: a failure is the first thing to read under the filter row. */}
-      <SpacePulse pulse={props.pulse} color={props.space.color} />
+      <SpacePulse pulse={props.pulse} color={props.space.color} description={props.space.description} />
       {/* The board is the rest of the pane and scrolls inside its own columns. k2b-ui gap: columns page with "Load
           more" and are not virtualized yet. */}
       <Canvas label={t.kanban} height="fill">
