@@ -363,7 +363,7 @@ const useHostedHeadSearch = (input: () => HTMLInputElement | undefined, search: 
  * box, for the head's search as its symbol, its overlay, "/", its words and its held menu. It comes through this
  * context, so an `Input` elsewhere carries none of its code.
  */
-export type HeadSearchKit = (props: InputProps, end: () => unknown) => JSX.HTMLAttributes<HTMLElement>;
+export type HeadSearchKit = (props: InputProps, end: () => unknown) => JSX.HTMLAttributes<HTMLElement> | undefined;
 export const HeadSearchContext = createContext<HeadSearchKit>();
 
 /** A round text field: 36 px, 1 px edge, a blue ring on focus. In a field it takes its name and error. */
@@ -374,9 +374,10 @@ export const Input = (props: InputProps) => {
     () => input,
     () => props.type === "search",
   );
+  // a head's search takes its kit before its end is made, so a search inside that end finds it taken
+  const head = props.type === "search" ? useContext(HeadSearchContext)?.(props, () => end()) : undefined;
   // the end is made once, here (reading the prop twice would make its JSX twice)
   const end = resolveChildren(() => props.end);
-  const head = props.type === "search" ? useContext(HeadSearchContext)?.(props, end) : undefined;
   const shared = () => ({
     id: field?.control,
     name: props.name ?? field?.name,

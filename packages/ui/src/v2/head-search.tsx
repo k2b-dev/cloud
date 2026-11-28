@@ -56,9 +56,12 @@ const useHeadSearch: HeadSearchKit = (props, end) => {
   let box: HTMLElement | undefined;
   const [filled, setFilled] = createSignal(Boolean(props.value));
   createRenderEffect(() => setFilled(Boolean(props.value)));
+  // the field itself, not a field inside its end
+  const own = (target: EventTarget | null | undefined): target is HTMLInputElement =>
+    target instanceof HTMLInputElement && target.parentElement === box && target.type !== "hidden";
   const readFilled = () => {
-    const input = box?.querySelector("input:not([type='hidden'])");
-    if (input instanceof HTMLInputElement) setFilled(input.value !== "");
+    const input = box?.querySelector(":scope > input:not([type='hidden'])");
+    if (own(input)) setFilled(input.value !== "");
   };
   const [place, setPlace] = createSignal<HTMLElement>();
   const [overlay, setOverlay] = createSignal(false);
@@ -110,12 +113,11 @@ const useHeadSearch: HeadSearchKit = (props, end) => {
       if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setOverlay(false);
     },
     onInput: (event: InputEvent & { target: Element }) => {
-      if (event.target instanceof HTMLInputElement) setFilled(event.target.value !== "");
+      if (own(event.target)) setFilled(event.target.value !== "");
     },
     // after the field's own keys (and the app's `onKeyDown`), which reach the field before its box
     onKeyDown: (event: KeyboardEvent & { target: Element }) => {
-      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing || !place()) return;
-      if (!(event.target instanceof HTMLInputElement)) return;
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing || !place() || !own(event.target)) return;
       event.preventDefault();
       event.target.blur();
     },
@@ -133,8 +135,17 @@ const useHeadSearch: HeadSearchKit = (props, end) => {
  * its words, unless `onKeyDown` takes Escape itself with `preventDefault`. Its code comes with this part: a page whose
  * heads have no search loads none of it.
  */
-export const HeadSearch = (props: InputProps) => (
-  <HeadSearchContext.Provider value={useHeadSearch}>
-    <Input {...props} type="search" icon={props.icon ?? "search"} placeholder={props.placeholder ?? props.label} />
-  </HeadSearchContext.Provider>
-);
+export const HeadSearch = (props: InputProps) => {
+  // its own field takes the kit first (`Input` asks before it makes its end); a search inside the end gets none
+  let taken = false;
+  const once: HeadSearchKit = (field, end) => {
+    if (taken) return;
+    taken = true;
+    return useHeadSearch(field, end);
+  };
+  return (
+    <HeadSearchContext.Provider value={once}>
+      <Input {...props} type="search" icon={props.icon ?? "search"} placeholder={props.placeholder ?? props.label} />
+    </HeadSearchContext.Provider>
+  );
+};

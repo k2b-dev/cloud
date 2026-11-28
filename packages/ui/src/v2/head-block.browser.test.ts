@@ -139,6 +139,25 @@ describe("the head's bar stays one box with the toolbar in it", () => {
       });
     });
 
+  test('a long path folds into "…" where the pane is narrow and unfolds when the room comes back', async () => {
+    await withPage(768, "longPath", true, async (page) => {
+      const fold = () => page.locator(path).getAttribute("data-fold");
+      expect(await fold()).not.toBe("0");
+      expect(await page.locator(path).getByRole("button", { name: "Weitere Orte" }).isVisible()).toBe(true);
+      // in one row the start's column is as wide as what it holds: the path asks for its whole width, not its folded one
+      await page.setViewportSize({ width: 1920, height: 800 });
+      await page.waitForFunction((path) => document.querySelector(path)?.getAttribute("data-fold") === "0", path);
+      await settled(page);
+      expect(await fold()).toBe("0");
+      for (const name of ["Alle Ablagen", "Werkstatt", "Lager Nord", "Angebote", "Kunden 2027", "Ausschreibung"])
+        expect(await page.locator(path).getByRole("link", { name }).isVisible()).toBe(true);
+      // and folds again when the room goes
+      await page.setViewportSize({ width: 768, height: 800 });
+      await page.waitForFunction((path) => document.querySelector(path)?.getAttribute("data-fold") !== "0", path);
+      expect(await fold()).not.toBe("0");
+    });
+  });
+
   // In two rows the toolbar stands under the head's end but between start and end in the page: `reading-flow` lets
   // Chromium follow the rows (WebKit and Firefox do not know it yet and go start, toolbar, end).
   for (const [width, order] of [
@@ -322,6 +341,29 @@ describe("the head's search is its symbol on every width", () => {
       expect(await page.getByRole("button", { name: "Filter der Suche" }).isVisible()).toBe(true);
     });
   });
+
+  for (const live of [false, true])
+    test(`a search inside its end is no head search (${live ? "hydrated" : "server"})`, async () => {
+      await withPage(1440, "nested", live, async (page) => {
+        const marks = () =>
+          page.evaluate((search) => {
+            const [own, nested] = [...document.querySelectorAll(search)];
+            const of = (box: Element | undefined) =>
+              box ? [box.hasAttribute("data-head-search"), box.getAttribute("title"), box.hasAttribute("data-filled")] : null;
+            return { own: of(own), nested: of(nested) };
+          }, search);
+        expect(await marks()).toEqual({ own: [true, "Suchen", false], nested: [false, null, false] });
+        if (!live) return;
+        // its keys are its own: typing fills only it, and Escape is the browser's (it clears the words), the focus stays
+        const inner = page.getByRole("searchbox", { name: "Im Filter suchen" });
+        await inner.focus();
+        await page.keyboard.type("Rechnung");
+        expect(await marks()).toEqual({ own: [true, "Suchen", false], nested: [false, null, false] });
+        await page.keyboard.press("Escape");
+        await settled(page);
+        expect(await inner.evaluate((input) => document.activeElement === input)).toBe(true);
+      });
+    });
 });
 
 // The case DR's #4470 moves into the pane's first row: shared here so both pull requests check the same page.
