@@ -1,4 +1,4 @@
-/** Synthetic admin data for the overview, announcements and navigation on v2; the real AdminLayout and styles. No live services. */
+/** Synthetic admin data for announcements and navigation on v2; the real AdminLayout and styles. No live services. */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -118,7 +118,6 @@ export async function adminV2BrowserFixture() {
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
   registerSsrTestPlugin({ dev: true, rootDir: root });
   const { AdminLayout } = await import("@k2b/cloud/ssr");
-  const { default: OverviewScreen } = await import("./OverviewScreen");
   const { default: AnnouncementsScreen } = await import("./announcements/AnnouncementsScreen");
   const { default: NavigationScreen } = await import("./rail/NavigationScreen");
   const { adminNavFixture } = await import("./admin-v2.fixture");
@@ -203,46 +202,6 @@ export async function adminV2BrowserFixture() {
       `<!doctype html><html lang="${localeOf(c)}" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><style>${css}</style></head><body class="k2b-ui">${body}<script type="application/json" id="screen-props" data-screen="${screen}">${JSON.stringify(props).replaceAll("<", "\\u003c")}</script><script src="/fixture.js"></script></body></html>`,
     );
   };
-  pages.get("/admin", (c) => {
-    const task = (href: string, title: string, description: string, icon: string) => ({ href, title, description, icon });
-    const props = {
-      nav: adminNavFixture("/admin"),
-      title: "Administration",
-      lead: "14 registrierte Dienste",
-      facts: ["3 App-Verwaltungsbereiche"],
-      sections: [
-        {
-          title: "Hier starten",
-          summary: "Wähle, was du erledigen willst.",
-          tasks: [
-            task(
-              "/admin/observability",
-              "System untersuchen",
-              "Beginne mit aktiven Signalen, dann Anfragen, Jobs und Protokolle.",
-              "stethoscope",
-            ),
-            task("/admin/apps", "Apps und Routen", "Registrierte Dienste und wem welche Route gehört.", "route-scan"),
-            task("/admin/signin", "Personen und Zugriff", "Konten, Rollen, Gruppen und ihr Lebenszyklus.", "users"),
-          ],
-        },
-        {
-          title: "Plattform",
-          summary: "Einstellungen der Instanz nach Aufgabe.",
-          tasks: [
-            task("/admin/base", "Grundeinstellungen", "Name, Sprache, Startseite und Verhalten der Instanz.", "app-window"),
-            task("/admin/storage", "Speicher", "Garage-Verbindung und Größengrenze für Apps.", "database"),
-            task("/admin/outgoing-mail", "Ausgehende Mail", "Absenderprofile und welche App senden darf.", "mail"),
-          ],
-        },
-        {
-          title: "App-Verwaltung",
-          summary: "Einstellungen, die Apps selbst mitbringen.",
-          tasks: [task("/admin/mail", "Mail", "Postfächer und Weiterleitungen.", "mail")],
-        },
-      ],
-    };
-    return respond(c, "overview", props, () => createComponent(OverviewScreen, props));
-  });
   pages.get("/admin/announcements", (c) => {
     const rows = data.announcements.map((entry) => ({
       ...entry,

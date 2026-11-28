@@ -63,7 +63,7 @@ const start = () => {
   // would meet a later scenario step than the first read.
   cookies.writeCookie(TIMEZONE_COOKIE, Intl.DateTimeFormat().resolvedOptions().timeZone);
   // The shell's island with the props Layout rendered for this request, mounted as @k2b/ssr mounts islands.
-  const props = fromJSON<ShellRuntimeProps>(JSON.parse(island.dataset.props ?? "{}"));
+  const props = fromJSON<ShellRuntimeProps>(JSON.parse(island.firstChild?.nodeValue?.replace(/^ssr-props:/, "") ?? "{}"));
   island.replaceChildren();
   render(() => <ShellRuntime {...props} />, island);
   // The app reloads its thread, as Mail does when a page opens; during an update or maintenance it waits quietly.

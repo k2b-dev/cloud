@@ -17,6 +17,7 @@ import * as record from "../skills/k2b-ui/recipes/record";
 import * as recordGroups from "../skills/k2b-ui/recipes/record-groups";
 import * as settings from "../skills/k2b-ui/recipes/settings";
 import * as settingsPage from "../skills/k2b-ui/recipes/settings-page";
+import * as start from "../skills/k2b-ui/recipes/start";
 import * as states from "../skills/k2b-ui/recipes/states";
 import * as table from "../skills/k2b-ui/recipes/table";
 import * as tree from "../skills/k2b-ui/recipes/tree";
@@ -45,6 +46,7 @@ const recipes: Record<string, Recipe> = {
   "settings.tsx": settings,
   "record.tsx": record,
   "settings-page.tsx": settingsPage,
+  "start.tsx": start,
   "states.tsx": states,
   "table.tsx": table,
   "tree.tsx": tree,

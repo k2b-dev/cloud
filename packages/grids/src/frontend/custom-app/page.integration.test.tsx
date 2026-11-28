@@ -446,8 +446,8 @@ describe("published App SSR availability", () => {
       // rendered content separately from that public configuration metadata.
       const rendered = await new HTMLRewriter()
         .on("solid-island", {
-          element(element) {
-            element.removeAttribute("data-props");
+          comments(comment) {
+            if (comment.text.startsWith("ssr-props:")) comment.remove();
           },
         })
         .transform(home)

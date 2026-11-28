@@ -296,11 +296,11 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       TEST_TIMEOUT,
     );
 
-  // On the phone the title of an open entry is the page's title: beside the actions the head keeps ("…") it is never
-  // cut, it takes a second line and the head grows; on a wide screen it stays one line in a head of 52 px.
+  // On the phone the title of an open entry is the page's title: beside the head's actions (their symbols below 600 px) it
+  // is never cut, it takes a second line and the head grows; on a wide screen it stays one line in a head of 52 px.
   for (const width of [390, 1440])
     test(
-      `${width} px: the title of an open entry ${width < 768 ? "wraps beside the kept actions instead of being cut" : "stays one line"}`,
+      `${width} px: the title of an open entry ${width < 768 ? "wraps beside the actions instead of being cut" : "stays one line"}`,
       async () => {
         const page = await open("layout", { width });
         try {
@@ -335,8 +335,9 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       TEST_TIMEOUT,
     );
 
-  // On the phone an open detail has one way back: its Back. The × that closes it beside the list (without `keep`, as
-  // every head action) gives way in its head from 767 px down; from 768 px the × closes the detail and there is no Back.
+  // On the phone an open detail has one way back: its Back. The × that closes it beside the list (`Button closes`) gives
+  // way in its head from 767 px down; from 768 px the × closes the detail and there is no Back. Every other head action
+  // stays on the phone, as "Erledigt" here.
   for (const width of [390, 767, 768, 1440])
     test(
       `${width} px: an open detail shows either its way back or its close ×, never both`,
@@ -349,14 +350,14 @@ describe("v2 primitives keep the numbers of the mockup", () => {
             return {
               back: seen(pane.querySelector(':scope > [data-k2-part="Back"]')),
               close: seen(pane.querySelector('[data-slot="head"] [aria-label="Schließen"]')),
-              // the other kept or unkept actions of the head follow their own rule: "Erledigt" leaves on the phone
+              // every other action of the head stays at every width, as "Erledigt"
               done: seen(
                 [...pane.querySelectorAll('[data-slot="head"] .k2-btn')].find((button) => button.textContent === "Erledigt") ?? null,
               ),
             };
           });
           const phone = width < textEdge.phoneBelow;
-          expect(shown).toEqual({ back: phone, close: !phone, done: !phone });
+          expect(shown).toEqual({ back: phone, close: !phone, done: true });
           // (the layout rules at the two boundary widths belong to the workspace between phone and wide screen, which
           // still cuts the detail's head at 768; measured here at the phone and the wide screen)
           if (width === 390 || width === 1440) expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);

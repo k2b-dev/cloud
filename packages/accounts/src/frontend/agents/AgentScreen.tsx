@@ -80,7 +80,7 @@ export default function AgentScreen(props: Props) {
           // A disabled agent gets no key: no action, and the notice on the page says why.
           end={
             props.agent.active ? (
-              <Button variant="primary" icon="plus" href={href("new")}>
+              <Button variant="primary" floats icon="plus" href={href("new")}>
                 {t().createKey}
               </Button>
             ) : undefined
@@ -199,7 +199,7 @@ export default function AgentScreen(props: Props) {
             head={
               <Bar
                 start={<Text type="lead">{openKey()?.name ?? t().keys}</Text>}
-                end={<Button variant="ghost" icon="x" label={t().close} href={href()} />}
+                end={<Button variant="ghost" icon="x" label={t().close} href={href()} closes />}
               />
             }
           >

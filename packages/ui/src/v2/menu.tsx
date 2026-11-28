@@ -107,6 +107,11 @@ export type TriggerProps = {
   icon?: string;
   /** The button cannot open now: dimmed, and pressed no time. */
   disabled?: boolean;
+  /**
+   * The head's twin of `Workspace`'s `primary` (a main action that opens a menu, such as "Neu"): on the phone the
+   * floating button stands for it, so the head lets it go there. As `Button floats`.
+   */
+  floats?: boolean;
 } & (
   | {
       /** The words on the button; a chevron follows them. */
@@ -473,8 +478,7 @@ const MenuRoot = (props: MenuRootProps) => {
         data-variant={(props.variant ?? (iconOnly() ? "ghost" : "secondary")) === "secondary" ? undefined : (props.variant ?? "ghost")}
         data-icon-only={iconOnly() ? "" : undefined}
         data-menu={iconOnly() ? undefined : ""}
-        // the "…" of a head stays on the phone, where the other buttons give way, so their deeds stay reachable
-        data-keep={iconOnly() ? "" : undefined}
+        data-floats={props.floats ? "" : undefined}
         aria-label={iconOnly() ? name() : undefined}
         title={iconOnly() ? name() : undefined}
         tabindex={props.pointerOnly ? -1 : undefined}
