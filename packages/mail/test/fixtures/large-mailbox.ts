@@ -298,6 +298,7 @@ export function digestPlan(plan: LargeMailboxPlan) {
 }
 
 export const fixtureTables = [
+  "attachment_files",
   "provider_connections",
   "remote_resources",
   "provider_bindings",

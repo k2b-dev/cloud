@@ -261,11 +261,11 @@ suite("Mail attachments as a file-provider source", () => {
         // As Apple Mail sends a PDF: inline with a Content-ID that the body never references.
         { filename: "scan.pdf", type: "application/pdf", bytes: 6000, disposition: "inline", contentId: `scan-${suffix}@example.test` },
         // Small, but not a format the list previews, so not taken for a logo.
-        { filename: "icon.svg", type: "image/svg+xml", bytes: 300, disposition: "attachment" },
+        { filename: "icon.svg", type: "image/svg+xml", bytes: 300, disposition: "attachment", contentId: `icon-${suffix}@example.test` },
         // An image the body shows, sent without an inline disposition: the reader shows it in place, so it stays out.
         { filename: "chart.png", type: "image/png", bytes: 6000, disposition: "attachment", contentId: `chart-${suffix}@example.test` },
       ],
-      html: `<p>Body of first</p><img src="cid:logo-${suffix}@example.test" alt="Logo"><img src="cid:chart-${suffix}%40example.test" alt="Chart">`,
+      html: `<p>Body of first</p><img src="cid:logo-${suffix}@example.test" alt="Logo"><img src="cid:chart-${suffix}%40example.test" alt="Chart"><a href="cid:icon-${suffix}@example.test">Icon</a>`,
     });
     await sql`INSERT INTO mail.conversation_assignees (conversation_id, user_id) VALUES (${first.conversationId}::uuid, ${assigned.id}::uuid)`;
     await receive(mailbox, "bob", {
@@ -547,10 +547,14 @@ suite("Mail attachments as a file-provider source", () => {
   });
 
   test("the backfill indexes earlier attachments once, resumes from its cursor and changes nothing on a repeat", async () => {
-    const snapshot = () => sql<{ attachment_id: string; month: string; sender_email: string }[]>`
-      SELECT attachment_id, month::text, sender_email FROM mail.attachment_files
+    // The backfill reads the stored body in SQL; it must decide like ingest did, also for an `href="cid:"` link.
+    const snapshot = () => sql<{ attachment_id: string; month: string; sender_email: string; body_references: boolean }[]>`
+      SELECT attachment_id, month::text, sender_email, body_references FROM mail.attachment_files
       WHERE mailbox_id IN (${mailbox.id}::uuid, ${other.id}::uuid) ORDER BY attachment_id
     `;
+    // The sanitizer drops a `cid:` href, so the stored body gets one here: the SQL rule must not count it.
+    await sql`UPDATE mail.message_contents SET sanitized_html = sanitized_html || ${`<a href="cid:icon-${suffix}@example.test">Icon</a>`}
+      WHERE id = ${envelopes.get("first")!.contentId}::uuid`;
     const before = await snapshot();
     // Every stored attachment of both mailboxes has its row, including the parts the source does not show.
     const [stored] = await sql<{ count: number }[]>`

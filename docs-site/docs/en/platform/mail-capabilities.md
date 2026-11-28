@@ -134,7 +134,9 @@ attachments are not in the source:
 - An image that the message body shows through a `cid:` link to its
   Content-ID, such as a signature logo, whatever its `Content-Disposition`.
   The Mail reader shows these images in the message and leaves them out of
-  its attachment list. A part with a Content-ID that the body does not show
+  its attachment list. A message with more than 32 such images, or more than
+  25 MiB of them, shows the rest in the reader's attachment list; the source
+  still leaves them out. A part with a Content-ID that the body does not show
   stays in the source. Apple Mail and iOS Mail send photos and PDFs this way.
 - A JPEG, PNG, GIF or WebP image smaller than 4 KiB. These are the formats
   that the Mail list previews, and it leaves out the same small images as
@@ -167,17 +169,18 @@ changes no existing data. It also adds the trigger
 `message_contents_attachment_file_dates` on `mail.message_contents`, which
 moves a message's rows when its date changes. If you drop
 `mail.attachment_files`, drop this trigger too, because otherwise every sync
-that changes a message's date fails. Mail fills the table when it stores a
-message.
-After start, Mail adds the attachments that were stored before the upgrade
-in a background job, 100 attachments per transaction. The job saves its
-position in `mail.attachment_files_backfill`. A restart or a second replica
-continues from that position. The job does not wait for a message that Mail
-is storing or syncing at that moment. It leaves that message for a later run
-and pauses for 50 ms between transactions. For messages stored before the
-upgrade, the job recognizes a `cid:` link only with the Content-ID as written
-or with `@` written as `%40`; other encoded links count as not shown. Until the job is done, the source
-shows only part of the older attachments.
+that changes a message's date fails.
+
+Mail fills the table when it stores a message. After start, Mail adds the
+attachments that were stored before the upgrade in a background job, 100
+attachments per transaction. The job saves its position in
+`mail.attachment_files_backfill`. A restart or a second replica continues
+from that position. The job does not wait for a message that Mail is storing
+or syncing at that moment. It leaves that message for a later run and pauses
+for 50 ms between transactions. For messages stored before the upgrade, the
+job recognizes an image's `cid:` source only with the Content-ID as written or
+with `@` written as `%40`; other encoded sources count as not shown. Until the job is
+done, the source shows only part of the older attachments.
 
 A replica that still runs an older image does not add attachments to the
 table. It also removes rows when it loads a message again, because loading

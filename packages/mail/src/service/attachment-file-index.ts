@@ -107,17 +107,19 @@ export const indexMessageAttachments = async (db: SqlClient, messageId: string, 
 };
 
 /**
- * The backfill reads the stored HTML in SQL, where the reader's percent-decoding is not at hand: a `cid:` source
- * matches its normalized Content-ID followed by the closing quote, as is or with `@` written `%40`.
+ * The backfill reads the stored HTML in SQL, where the reader's percent-decoding is not at hand: an image source
+ * `src="cid:…"` matches its normalized Content-ID followed by the closing quote, as is or with `@` written `%40`.
+ * A `cid:` link in `href` does not count, as in the reader.
  */
 const storedBodyReferences = () => {
-  const id = sql`lower(regexp_replace(btrim(a.content_id), '^<|>$', '', 'g'))`;
-  return sql`(
-    a.content_id IS NOT NULL AND length(${id}) > 0 AND (
-      strpos(lower(mc.sanitized_html), 'cid:' || ${id} || '"') > 0
-      OR strpos(lower(mc.sanitized_html), 'cid:' || replace(${id}, '@', '%40') || '"') > 0
+  const id = sql`lower(regexp_replace(btrim(a.content_id, E' \t\r\n'), '^<|>$', '', 'g'))`;
+  return sql`CASE WHEN a.content_id IS NULL OR mc.sanitized_html IS NULL THEN false ELSE (
+    SELECT length(${id}) > 0 AND (
+      strpos(body.html, 'src="cid:' || ${id} || '"') > 0
+      OR strpos(body.html, 'src="cid:' || replace(${id}, '@', '%40') || '"') > 0
     )
-  )`;
+    FROM (SELECT lower(mc.sanitized_html) AS html) body
+  ) END`;
 };
 
 /** One statement: lock one batch without waiting, and say where its cursor may move. */
