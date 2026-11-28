@@ -194,10 +194,11 @@ type InputBase = {
   /** A quiet example while the field is empty. */
   placeholder?: string;
   /**
-   * The kind of text, which picks the phone's keyboard; `text` when not set. A `search` in the head of a workspace
-   * or pane stays on the phone as its symbol (36 px, like an icon button), where the other head actions hide: a tap
-   * goes into the field, which opens over the head while it has the focus and folds back, its words kept, when the
-   * focus leaves or on Escape (unless `onKeyDown` takes Escape itself with `preventDefault`). Where a host offers the
+   * The kind of text, which picks the phone's keyboard; `text` when not set. The search of a head is `HeadSearch`,
+   * which brings its symbol, "/" and its words along. A plain `search` in a head keeps its field from 768 px; on the
+   * phone, where the other head actions hide, it stands as its symbol, and a tap goes into the field, which opens over
+   * the head while it has the focus and folds back, its words kept, when the focus leaves or on Escape (unless
+   * `onKeyDown` takes Escape itself with `preventDefault`). Where a host offers the
    * page's search in a bar of its own (`data-k2-host-search` on the v2 scope, as the Cloud shell's phone bar does),
    * the folded search leaves the head and the order of the Tab key on the phone, and the host focuses it; a head with
    * a path then opens it over the content's first row.
@@ -361,6 +362,14 @@ const useHostedHeadSearch = (input: () => HTMLInputElement | undefined, search: 
   return hosted;
 };
 
+/**
+ * What `HeadSearch` adds to the `Input` it places (`head-search.tsx`): the marks, handlers and `ref` of the field's
+ * box, for the head's search as its symbol, its overlay, "/", its words and its held menu. It comes through this
+ * context, so an `Input` elsewhere carries none of its code.
+ */
+export type HeadSearchKit = (props: InputProps, end: () => unknown) => JSX.HTMLAttributes<HTMLElement> | undefined;
+export const HeadSearchContext = createContext<HeadSearchKit>();
+
 /** A round text field: 36 px, 1 px edge, a blue ring on focus. In a field it takes its name and error. */
 export const Input = (props: InputProps) => {
   const field = useField();
@@ -369,6 +378,8 @@ export const Input = (props: InputProps) => {
     () => input,
     () => props.type === "search",
   );
+  // a head's search takes its kit before its end is made, so a search inside that end finds it taken
+  const head = props.type === "search" ? useContext(HeadSearchContext)?.(props, () => end()) : undefined;
   // the end is made once, here (reading the prop twice would make its JSX twice)
   const end = resolveChildren(() => props.end);
   const shared = () => ({
@@ -396,6 +407,7 @@ export const Input = (props: InputProps) => {
   };
   return (
     <Dynamic
+      {...head}
       component={send() ? "form" : "span"}
       method={send() ? "get" : undefined}
       action={send()?.action}

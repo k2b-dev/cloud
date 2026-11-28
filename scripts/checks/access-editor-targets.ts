@@ -22,9 +22,8 @@ export const checkSource = (file: string, source: string): Finding[] => {
   // These pick identities for installation-wide rules or membership, rather than resource shares.
   const identityPickers = [
     "/accounts/src/frontend/service-accounts/DirectoryShares.island.tsx",
-    "/core/src/pages/admin/ai/AiBudgetDetail.island.tsx",
-    "/core/src/pages/admin/ai/AiModelDetail.island.tsx",
-    "/core/src/pages/admin/settings/_components/AiQuotaRules.tsx",
+    "/core/src/pages/admin/ai/BudgetsScreen.tsx",
+    "/core/src/pages/admin/ai/ModelDetail.tsx",
     "/chat/src/frontend/MemberPicker.tsx",
   ];
   const sharedEditor = ["/cloud/src/access/AccessDialog.tsx", "/cloud/src/access/PermissionEditor.tsx"].some((suffix) =>

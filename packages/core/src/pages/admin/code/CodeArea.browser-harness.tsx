@@ -1,41 +1,24 @@
 import { LocaleProvider } from "@k2b/ui";
-import { fromJSON } from "seroval";
-import type { Component } from "solid-js";
-import { createComponent, render } from "solid-js/web";
-import CoreSettingsForm from "../settings/_components/CoreSettingsForm.island.tsx";
-import CodeApprovalReview from "./CodeApprovalReview.island.tsx";
-import CodeDatabaseControls from "./CodeDatabaseControls.island.tsx";
-import CodeListFilters from "./CodeListFilters.island.tsx";
-import CodePauseAction from "./CodePauseAction.island.tsx";
-import CodePolicyEditor from "./CodePolicyEditor.island.tsx";
-import CodePolicyPicker from "./CodePolicyPicker.island.tsx";
-import CodeUnusedDatabases from "./CodeUnusedDatabases.island.tsx";
+import { createComponent } from "solid-js";
+import { render } from "solid-js/web";
+import CodeScreen, { type CodeScreenProps } from "./screen";
 
-/** Mounts every Code area island the way @k2b/ssr does: the server-rendered wrapper carries its props. */
-const islands: Record<string, Component<never>> = {
-  "CodeApprovalReview.island.tsx": CodeApprovalReview as Component<never>,
-  "CodeListFilters.island.tsx": CodeListFilters as Component<never>,
-  "CodeUnusedDatabases.island.tsx": CodeUnusedDatabases as Component<never>,
-  "CodeDatabaseControls.island.tsx": CodeDatabaseControls as Component<never>,
-  "CodePauseAction.island.tsx": CodePauseAction as Component<never>,
-  "CodePolicyEditor.island.tsx": CodePolicyEditor as Component<never>,
-  "CodePolicyPicker.island.tsx": CodePolicyPicker as Component<never>,
-  "CoreSettingsForm.island.tsx": CoreSettingsForm as Component<never>,
-};
-for (const element of document.querySelectorAll<HTMLElement>("solid-island")) {
-  const island = islands[element.dataset.file ?? ""];
-  if (!island) continue;
-  const props = fromJSON(JSON.parse(element.firstChild?.nodeValue?.replace(/^ssr-props:/, "") ?? "{}")) as never;
-  element.replaceChildren();
+// A Code section on v2: its screen mounts fresh in the page's main area with the props the server rendered.
+const data = document.getElementById("screen-props");
+const main = document.querySelector<HTMLElement>("main.k2-ui");
+if (data && main) {
+  const props: CodeScreenProps = JSON.parse(data.textContent ?? "{}");
+  main.replaceChildren();
   render(
     () =>
       createComponent(LocaleProvider, {
         locale: document.documentElement.lang,
         get children() {
-          return createComponent(island, props);
+          return createComponent(CodeScreen, props);
         },
       }),
-    element,
+    main,
   );
+  main.dataset.ready = "true";
 }
 document.body.dataset.ready = "true";
