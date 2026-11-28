@@ -56,3 +56,8 @@ export type WorkflowsFilterState = ReturnType<typeof workflowsFilter.parse>;
 
 export const RUNS_PER_PAGE = 50;
 export const FINDINGS_PER_PAGE = 50;
+/**
+ * The newest runs the timeline draws: enough for its twelve lanes on one screen, small enough for one quick read and a
+ * light page. The view says "n of all" when the window holds more.
+ */
+export const TIMELINE_SAMPLE = 500;
