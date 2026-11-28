@@ -158,6 +158,16 @@ type FactBase = {
   label: string;
   /** A quiet word under the value, such as "Standard". */
   hint?: string;
+  /**
+   * Why the value is what it is, quiet after " · " on the value's line, such as "Personalversammlung" after
+   * "Geschlossen". A long one wraps under the value, never under its label.
+   */
+  reason?: string;
+  /**
+   * The value is a state: a dot in its colour before it and the value in 500. `neutral` is a grey dot for a change
+   * that is neither good nor bad (other hours). The dot hangs: a value that wraps goes on under its text.
+   */
+  status?: Status | "neutral";
   /** Offers a copy button at the value; the text that is copied. A kind brings its own. */
   copy?: string;
   /**
@@ -314,11 +324,31 @@ export type FactsProps = {
 /**
  * Values with their labels, such as the contact data of a person. The label stands in a column of 116 px and wraps
  * there; the value beside it keeps its lines, and a kind gives it its link and its copy button. In a main column the
- * pairs stand 34 px apart; in a side column they are dense (28 px); on the phone the label stands over its value. No
- * line parts the pairs. Nothing to set: the place decides.
+ * pairs stand 34 px apart, and on the phone the label stands over its value; in a side column they are dense (28 px)
+ * and side by side at any width. No line parts the pairs. Nothing to set: the place decides.
  */
 export const Facts = (props: FactsProps) => {
   const said = useControlMessages();
+  // the value with its reason after it; a state's dot hangs before both, so they wrap under the text
+  const valueOf = (item: Fact) => (
+    <>
+      <FactValue item={item} />
+      <Show when={item.reason}>
+        <span class="k2-fact-reason"> · {item.reason}</span>
+      </Show>
+    </>
+  );
+  const dotOf = (status: Status | "neutral") => (status === "neutral" ? undefined : status);
+  const shown = (item: Fact) => (
+    <Show when={item.status} fallback={valueOf(item)}>
+      {(status) => (
+        <>
+          <Dot status={dotOf(status())} />
+          <span class="k2-fact-state">{valueOf(item)}</span>
+        </>
+      )}
+    </Show>
+  );
   // A list of pairs (dt, dd); a copy button stands inside its value, the end of an inline line beside the list.
   const list = (part?: string) => (
     <dl class="k2-facts" data-k2-part={part} data-inline={props.inline ? "" : undefined} aria-busy={props.loading ? "true" : undefined}>
@@ -327,11 +357,8 @@ export const Facts = (props: FactsProps) => {
           <div class="k2-fact-pair">
             <dt>{item.label}</dt>
             <dd>
-              <span class="k2-fact-value" data-mono={item.mono ? "" : undefined} data-kind={item.kind}>
-                <Show
-                  when={!props.loading}
-                  fallback={<PlaceholderValue>{isSet(item) ? <FactValue item={item} /> : undefined}</PlaceholderValue>}
-                >
+              <span class="k2-fact-value" data-mono={item.mono ? "" : undefined} data-kind={item.kind} data-status={item.status}>
+                <Show when={!props.loading} fallback={<PlaceholderValue>{isSet(item) ? shown(item) : undefined}</PlaceholderValue>}>
                   <Show
                     when={isSet(item)}
                     fallback={
@@ -341,7 +368,7 @@ export const Facts = (props: FactsProps) => {
                       </span>
                     }
                   >
-                    <FactValue item={item} />
+                    {shown(item)}
                   </Show>
                 </Show>
                 <Show when={item.hint}>

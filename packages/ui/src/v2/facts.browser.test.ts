@@ -147,16 +147,60 @@ test("a kind makes the link and the copy button; a scheme that may not open stay
   });
 });
 
-test("390 px: every label stands over its value", async () => {
+test("390 px: in a main column every label stands over its value; a side column keeps its pairs side by side", async () => {
   await withPage(390, async (page) => {
-    for (const list of [0, 1])
+    for (const pair of await pairs(page, 0)) {
+      expect(pair.dd.top).toBeGreaterThanOrEqual(pair.dt.bottom);
+      expect(pair.dd.left).toBe(pair.dt.left);
+      expect(pair.overflows).toBe(false);
+    }
+    for (const list of [1, 2])
       for (const pair of await pairs(page, list)) {
-        expect(pair.dd.top).toBeGreaterThanOrEqual(pair.dt.bottom);
-        expect(pair.dd.left).toBe(pair.dt.left);
+        expect([pair.label, pair.dd.left - pair.dt.left, pair.dd.top - pair.dt.top]).toEqual([pair.label, 108, 0]);
         expect(pair.overflows).toBe(false);
       }
   });
 });
+
+for (const width of [1440, 390])
+  test(`${width} px: a state's dot hangs before its value, and a long reason wraps under the value's text`, async () => {
+    await withPage(width, async (page) => {
+      const states = await page.evaluate(() =>
+        [...document.querySelectorAll(".k2-facts")[2]!.querySelectorAll(".k2-fact-pair")].map((pair) => {
+          const value = pair.querySelector(".k2-fact-value")!;
+          const dot = value.querySelector(":scope > .k2-dot");
+          const text = value.querySelector(":scope > .k2-fact-state") ?? value;
+          const reason = value.querySelector(".k2-fact-reason")!;
+          // the boxes of the reason by line (its words may lie in several boxes on one line), the start of each line
+          const starts = new Map<number, number>();
+          for (const box of reason.getClientRects())
+            starts.set(Math.round(box.top), Math.min(starts.get(Math.round(box.top)) ?? Infinity, Math.round(box.left)));
+          const lines = [...starts].sort(([a], [b]) => a - b).map(([, left]) => left);
+          return {
+            label: pair.querySelector("dt")!.textContent,
+            dot: dot ? { status: dot.getAttribute("data-status"), right: Math.round(dot.getBoundingClientRect().right) } : null,
+            text: Math.round(text.getBoundingClientRect().left),
+            weight: getComputedStyle(text).fontWeight,
+            reason: reason.textContent,
+            reasonWeight: getComputedStyle(reason).fontWeight,
+            // where each line of the reason after the first starts
+            wrapped: lines.slice(1),
+          };
+        }),
+      );
+      const [closed, hours, plain] = states;
+      expect(closed).toMatchObject({ dot: { status: "warn" }, weight: "500", reason: " · Personalversammlung", reasonWeight: "400" });
+      // the text stands 8 px after its dot of 8 px
+      expect(closed!.text - closed!.dot!.right).toBe(8);
+      // a neutral state has a grey dot without a status
+      expect(hours!.dot).toMatchObject({ status: null });
+      // the long reason wraps, and each further line starts under the value's text, not under its dot
+      expect(hours!.wrapped.length).toBeGreaterThan(0);
+      for (const left of hours!.wrapped) expect(left).toBe(hours!.text);
+      // a reason without a state: no dot, the value in 400
+      expect(plain).toMatchObject({ dot: null, weight: "400", reason: " · Tag der offenen Tür" });
+    });
+  });
 
 test("while the values load, an address keeps the room of its lines, so nothing moves when it comes", async () => {
   const height = async (loading: boolean) => {

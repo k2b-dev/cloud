@@ -368,12 +368,15 @@ no rows and nothing loading, the empty state stands in place of the table.
 
 ### Facts
 
-`items: { label, value, kind?, hint?, copy?, mono? }[]`: the key-value
+`items: { label, value, kind?, hint?, reason?, status?, copy?, mono? }[]`: the key-value
 detail, such as contact data. The label stands in a column of 116 px (16 px
 to the value) and wraps there, so the facts of one page start their values
 on one edge; pairs of 34 px in 13 (label n500, value in ink); in a side
-column dense (96 px, label 12, pairs of 28); on the phone the label stands
-over its value. A value not set (left out, `""`, `null`, no entries) is a
+column dense (96 px, label 12, pairs of 28) and side by side at any width;
+in a main column on the phone the label stands over its value. `reason`
+follows the value quietly after " · " ("Geschlossen · Personalversammlung")
+and wraps under the value; `status` (`ok`, `warn`, `bad`, `neutral` grey)
+makes the value a state: a dot that hangs before it and the value in 500. A value not set (left out, `""`, `null`, no entries) is a
 quiet dash named "not set". `kind` makes what fits the value: `email` and
 `phone` a `mailto:` or `tel:` link with a copy button (several entries,
 each `string` or `{ value, note }` such as "mobil", one under the other and

@@ -44,7 +44,10 @@ Reading text, 14/22 with a measure of 720 px; Markdown is rendered safely, witho
 
 ### Facts
 
-Values with their labels; `mono` and `copy` make a key, a token or an ID easy to read and copy.
+Values with their labels; `mono` and `copy` make a key, a token or an ID easy to read and copy. A `reason` follows a
+value quietly after " · ", and a `status` makes the value a state with its dot, such as a closed day in a list of changed
+opening hours. In a side column the pairs stay side by side at any width; in a main column on the phone the label stands
+over its value.
 
 <Props of="Facts Fact" />
 

@@ -2730,6 +2730,27 @@
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
 }
+/* A value that is a state: its dot hangs in a column of 8 px, centred on the first line, and the value in 500 with its
+   reason wraps under its own text. A reason is quiet after " · " and wraps under the value, never under the label. */
+.k2-ui .k2-fact-value[data-status] {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: start;
+}
+.k2-ui .k2-fact-value[data-status] > .k2-dot {
+  margin-top: 6px;
+}
+.k2-ui .k2-fact-value[data-status] > :not(.k2-dot) {
+  grid-column: 2;
+}
+.k2-ui .k2-fact-state {
+  font-weight: 500;
+}
+.k2-ui .k2-fact-reason {
+  font-weight: 400;
+  color: var(--k2-n500);
+}
 /* the copy button stands 2 px below the top of its row and adds no height to it */
 .k2-ui .k2-fact-pair > dd > .k2-btn {
   margin: -4px -6px -4px 0;
@@ -6590,21 +6611,19 @@
     padding: 4px 0 0;
     flex-wrap: wrap;
   }
-  /* the label over its value, 12 over 13 */
-  .k2-ui .k2-facts,
-  .k2-ui .k2-pane[data-side] .k2-facts:not([data-inline]) {
+  /* in a main column the label stands over its value, 12 over 13; a side column keeps its dense pairs side by side,
+     as its labels are short (a day, a name) and its values short states */
+  .k2-ui .k2-facts:not([data-inline], .k2-pane[data-side] *) {
     grid-template-columns: minmax(0, 1fr);
   }
-  .k2-ui .k2-fact-pair > dt,
-  .k2-ui .k2-pane[data-side] .k2-facts:not([data-inline]) > .k2-fact-pair > dt {
+  .k2-ui .k2-facts:not([data-inline], .k2-pane[data-side] *) > .k2-fact-pair > dt {
     font: var(--k2-t-meta);
     padding: 9px 0 0;
   }
-  .k2-ui .k2-fact-pair > dd,
-  .k2-ui .k2-pane[data-side] .k2-facts:not([data-inline]) > .k2-fact-pair > dd {
+  .k2-ui .k2-facts:not([data-inline], .k2-pane[data-side] *) > .k2-fact-pair > dd {
     padding: 2px 0 9px;
   }
-  .k2-ui .k2-fact-pair > dd > .k2-btn {
+  .k2-ui .k2-facts:not([data-inline], .k2-pane[data-side] *) > .k2-fact-pair > dd > .k2-btn {
     margin: 2px -6px -6px 0;
   }
   .k2-ui .k2-facts[data-inline] > .k2-fact-pair > :is(dt, dd) {

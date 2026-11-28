@@ -97,6 +97,15 @@ render(
               ]}
             />
           </Section>
+          <Section title="Geänderte Zeiten">
+            <Facts
+              items={[
+                { label: "Do., 3. Dez.", value: "Geschlossen", status: "warn", reason: "Personalversammlung" },
+                { label: "Fr., 11. Dez.", value: "18:00–23:00", status: "neutral", reason: "Weihnachtsmarkt am Campus mit Lichterfest" },
+                { label: "Sa., 12. Dez.", value: "10:00–14:00", reason: "Tag der offenen Tür" },
+              ]}
+            />
+          </Section>
         </Pane>
       </Pane.Split>
     </Workspace>
