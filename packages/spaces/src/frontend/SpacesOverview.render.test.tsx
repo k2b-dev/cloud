@@ -28,7 +28,13 @@ const textOf = (html: string) => {
   return plain;
 };
 
-type Extra = { itemTitle?: string; activitySpace?: string; initialView?: "mine" | "today"; day?: OverviewWork["day"] };
+type Extra = {
+  itemTitle?: string;
+  activitySpace?: string;
+  initialView?: "mine" | "today";
+  day?: OverviewWork["day"];
+  spaceColor?: string;
+};
 const render = (initialActivityError: string | null = null, locale = "en", extra: Extra = {}) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
@@ -58,7 +64,7 @@ const render = (initialActivityError: string | null = null, locale = "en", extra
                 shortId: "Item01",
                 spaceShortId: "Space1",
                 spaceName: "Launch",
-                spaceColor: "#3b82f6",
+                spaceColor: extra.spaceColor ?? "#3b82f6",
                 title: "Ship overview",
                 priority: "urgent",
                 deadline: "2026-08-21T08:00:00.000Z",
@@ -209,4 +215,12 @@ describe("Spaces overview", () => {
     );
     expect(later).toContain("in 30 min");
   });
+});
+
+test("a space colour reaches the overview's style only as a colour", () => {
+  for (const spaceColor of ["#3b82f6;position:fixed;inset:0", "red;background:url(https://example.org/x.png)"]) {
+    const html = render(null, "en", { spaceColor });
+    expect(html).not.toMatch(/position:\s*fixed|url\(/);
+    expect(html).toContain("Ship overview");
+  }
 });

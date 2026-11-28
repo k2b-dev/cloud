@@ -629,6 +629,8 @@ const EditableNoteRouteStateSchema = z.object({
     taskProgress: TaskProgressSchema,
     attachments: z.array(AttachmentSchema),
     backlinks: z.array(BacklinkSchema),
+    /** All readable backlinks; `backlinks` holds the first page of them. */
+    backlinksTotal: z.number().int().nonnegative(),
     namedBlocks: z.array(NamedBlockSummarySchema),
   }),
 });
@@ -1271,7 +1273,7 @@ const app = new Hono<AuthContext>()
       return respond(
         c,
         toPublicNotebookResult(
-          notebooksService.notebook.create({ data, creatorId: user.id, seedWelcome: welcomeNote ?? true }),
+          notebooksService.notebook.create({ data, creatorId: user.id, seedWelcome: welcomeNote ?? true, locale: getLocale(c) }),
           getLocale(c),
         ),
       );
@@ -3342,17 +3344,20 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Notebooks"],
       summary: "List backlinks",
-      description: "List notes that link to this note. Filtered by access on the source notebook.",
+      description:
+        "List one page of the notes that link to this note, newest change first, with the total. Filtered by access on the source notebook.",
       ...requiresAuth,
       responses: {
-        200: jsonResponse(z.object({ data: z.array(BacklinkSchema) }), "Backlinks"),
+        200: jsonResponse(z.object({ data: z.array(BacklinkSchema), pagination: PaginationResponseSchema }), "Backlinks"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Note or notebook not found"),
       },
     }),
+    v("query", PaginationQuerySchema),
     async (c) => {
       let notebookId = c.req.param("id")!;
       let noteId = c.req.param("noteId")!;
+      const pagination = parsePagination(c.req.valid("query"));
 
       const { notebook, error } = await checkNotebookAccess(c, notebookId);
       if (error) return error;
@@ -3364,15 +3369,17 @@ const app = new Hono<AuthContext>()
       const subject = getNotebookAccessSubject(c);
       const binding = getCollectionNotebookBinding(subject, getLocale(c));
       if (!binding.ok) return respond(c, binding);
-      const items = await notebooksService.note.backlinks.list({
+      const page = await notebooksService.note.backlinks.list({
         noteId,
         userId: subject.userId,
         serviceAccountId: subject.serviceAccountId,
         boundNotebookId: binding.data,
         bypassAccess: Boolean(subject.user && hasRole(subject.user, "admin")),
+        limit: pagination.perPage,
+        offset: pagination.offset,
       });
 
-      return respond(c, ok({ data: items }));
+      return respond(c, ok({ data: page.items, pagination: createPagination(pagination, page.total) }));
     },
   )
 

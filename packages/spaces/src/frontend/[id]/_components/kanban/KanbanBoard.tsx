@@ -23,6 +23,7 @@ import {
   type SpaceWormhole,
   type WormholeTransferResult,
 } from "@/contracts";
+import { hexColor } from "@/frontend/lib/color";
 import { deadlineDayKey, formatDeadline } from "@/presentation/deadline";
 import { descriptionPreview } from "@/presentation/description-preview";
 import { isTaskOverdue } from "@/task-overdue";
@@ -1326,7 +1327,7 @@ export default function KanbanBoard(props: Props) {
   };
 
   const columnOf = (columnId: string) => props.columns.find((column) => column.id === columnId) ?? null;
-  const bucketColor = (bucket: KanbanBucketInitial) => bucket.color ?? (bucket.isDone ? "#10b981" : "#6b7280");
+  const bucketColor = (bucket: KanbanBucketInitial) => hexColor(bucket.color) ?? (bucket.isDone ? "#10b981" : "#6b7280");
   const countText = (bucket: KanbanBucketInitial) =>
     bucket.unfilteredTotal === undefined ? String(bucket.total) : `${bucket.total}/${bucket.unfilteredTotal}`;
   const countLabel = (bucket: KanbanBucketInitial) =>
@@ -1814,7 +1815,7 @@ export default function KanbanBoard(props: Props) {
                                             >
                                               <span
                                                 class="h-1.5 w-1.5 shrink-0 rounded-full"
-                                                style={`background-color:${column().color ?? (column().isDone ? "#10b981" : "#6b7280")}`}
+                                                style={`background-color:${hexColor(column().color) ?? (column().isDone ? "#10b981" : "#6b7280")}`}
                                                 aria-hidden="true"
                                               />
                                               <span class="sr-only">{t.cardStatus({ status: column().name })}</span>
@@ -1867,7 +1868,7 @@ export default function KanbanBoard(props: Props) {
                                             >
                                               <span
                                                 class="h-2 w-2 shrink-0 rounded-full"
-                                                style={{ "background-color": tag().color }}
+                                                style={{ "background-color": hexColor(tag().color) }}
                                                 aria-hidden="true"
                                               />
                                               <span class="spaces-kanban-card-meta min-w-0 truncate">{tag().name}</span>
@@ -1985,12 +1986,12 @@ export default function KanbanBoard(props: Props) {
                             }`}
                             style={
                               active()
-                                ? `border-color:${wormhole.color};box-shadow:var(--ui-focus)`
-                                : `border-color:color-mix(in srgb, ${wormhole.color} 30%, var(--ui-border))`
+                                ? `border-color:${hexColor(wormhole.color) ?? "var(--ui-border)"};box-shadow:var(--ui-focus)`
+                                : `border-color:color-mix(in srgb, ${hexColor(wormhole.color) ?? "var(--ui-border)"} 30%, var(--ui-border))`
                             }
                             title={dropLabel}
                           >
-                            <i class="ti ti-arrow-bounce text-2xl" style={`color:${wormhole.color}`} />
+                            <i class="ti ti-arrow-bounce text-2xl" style={`color:${hexColor(wormhole.color) ?? "currentColor"}`} />
                             <p class="mt-2 max-w-full truncate text-xs font-medium text-primary">{target.spaceName}</p>
                             <p class="mt-0.5 max-w-full truncate text-[11px] text-dimmed">{target.columnName}</p>
                             <p class="mt-2 text-[11px] font-medium text-dimmed">{active() ? t.releaseToMove : t.dropItemHere}</p>

@@ -678,7 +678,7 @@ describe(`Spaces task tray in ${browserName}`, () => {
     await page.context().close();
   }, 60_000);
 
-  test("fits Today and the four views in one header row on tablets and in two rows on a phone, with New event in the page head", async () => {
+  test("fits Today and the views in one header row on tablets and on a phone, where the views are a menu, with New event in the page head", async () => {
     for (const view of [phone, tablet, { width: 1366, height: 1024, touch: true }, desktop]) {
       const page = await open(view);
       const rows = await page.locator(".k2b-calendar-header__actions a, .k2b-calendar-header__actions button").evaluateAll((elements) => {
@@ -689,8 +689,10 @@ describe(`Spaces task tray in ${browserName}`, () => {
         const others = boxes(elements.filter((element) => element.getAttribute("role") !== "radio"));
         return { count: views.length + others.length, all: oneRow([...views, ...others]), views: oneRow(views), others: oneRow(others) };
       });
-      // A phone keeps Today beside the title and puts the views in the row below.
-      expect(rows).toEqual({ count: view === desktop ? 6 : 5, all: view !== phone, views: true, others: true });
+      // A phone keeps Today and the views as one menu ("Woche ▾", no segmented control) in the title's row;
+      // wider screens show the four views as a segmented control in the same row.
+      expect(rows).toEqual({ count: view === desktop ? 6 : view === phone ? 2 : 5, all: true, views: true, others: true });
+      expect(await page.locator(".k2b-calendar-view-menu__trigger").isVisible()).toBe(view === phone);
       // New event left the calendar's header: it is the head's main menu, on a phone the page's main button.
       const create =
         view === phone

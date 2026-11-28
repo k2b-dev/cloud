@@ -32,10 +32,26 @@ afterAll(async () => {
 
 const withPage = async (
   run: (page: Page) => Promise<void>,
-  { width = 1440, scale = 1, long = false, touch = false, two = false, opened = false, slowSheet = false, toEnd = false } = {},
+  {
+    width = 1440,
+    scale = 1,
+    long = false,
+    touch = false,
+    two = false,
+    opened = false,
+    slowSheet = false,
+    toEnd = false,
+    reducedMotion = false,
+  } = {},
 ) => {
   // a phone: a touch screen with a coarse pointer
-  const page = await browser.newPage({ viewport: { width, height: 900 }, deviceScaleFactor: scale, hasTouch: touch, isMobile: touch });
+  const page = await browser.newPage({
+    viewport: { width, height: 900 },
+    deviceScaleFactor: scale,
+    hasTouch: touch,
+    isMobile: touch,
+    reducedMotion: reducedMotion ? "reduce" : "no-preference",
+  });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
@@ -472,6 +488,90 @@ const answerOf = async (page: Page, from: "page" | "island") => {
   return page.evaluate((which) => document.body.dataset[which === "page" ? "answer" : "other"], from);
 };
 
+/** Collects every news node the polite regions of the page take, in order, as a screen reader would hear them. */
+const listen = (page: Page) =>
+  page.evaluate(() => {
+    const said: string[] = [];
+    Reflect.set(window, "__k2Said", said);
+    new MutationObserver((changes) => {
+      for (const change of changes)
+        for (const node of change.addedNodes)
+          if (node.parentElement?.getAttribute("data-k2-news") === "polite") said.push(node.textContent ?? "");
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+const heard = (page: Page) => page.evaluate(() => [...(Reflect.get(window, "__k2Said") as string[])]);
+const say = (page: Page, ...texts: string[]) =>
+  page.evaluate((all) => {
+    for (const text of all) window.__k2Announce?.(text);
+  }, texts);
+
+test("announce: the region is in the page before any news, takes no room, and the outline and the measure see no problem in it", async () => {
+  await withPage(async (page) => {
+    // a status for news said when the reader is idle, an alert for news now
+    const region = page.locator('[data-k2-part="Announcer"]');
+    expect(await region.count()).toBe(1);
+    expect(await region.locator('[role="status"][aria-live="polite"]').count()).toBe(1);
+    expect(await region.locator('[role="alert"][aria-live="assertive"]').count()).toBe(1);
+    await page.evaluate(() => window.__k2Announce?.("Lauf 5 ist fehlgeschlagen.", true));
+    await page.waitForFunction(() => document.querySelector('[data-k2-news="assertive"]')?.textContent === "Lauf 5 ist fehlgeschlagen.");
+    await settled(page);
+    expect(await region.evaluate((element) => [element.getBoundingClientRect().width, element.getBoundingClientRect().height])).toEqual([
+      1, 1,
+    ]);
+    expect(await problems(page, "[data-k2-workspace]")).toEqual([]);
+  });
+});
+
+test("announce: the same news twice is said twice, a burst as its last, a steady stream at least once a second, and spoken news leaves the region", async () => {
+  await withPage(async (page) => {
+    await page.clock.install();
+    await listen(page);
+    await say(page, "Lauf 3 läuft.");
+    await page.clock.runFor(300);
+    await say(page, "Lauf 3 läuft.");
+    await page.clock.runFor(300);
+    // a burst is said as the state it reached
+    await say(page, "Lauf 4 wartet.", "Lauf 4 läuft.", "Lauf 4 ist fertig.");
+    await page.clock.runFor(300);
+    expect(await heard(page)).toEqual(["Lauf 3 läuft.", "Lauf 3 läuft.", "Lauf 4 ist fertig."]);
+    // news every 100 ms for 2.5 s: never quiet for long, yet the latest state is said at least once a second
+    for (let tick = 1; tick <= 25; tick++) {
+      await say(page, `${tick * 4} % kopiert.`);
+      await page.clock.runFor(100);
+    }
+    const stream = (await heard(page)).slice(3);
+    expect(stream.length).toBeGreaterThanOrEqual(2);
+    expect(stream.length).toBeLessThanOrEqual(3);
+    // what was said leaves the region after a while, so a reader browsing the page later finds no old news
+    await page.clock.runFor(10_000);
+    expect(await page.evaluate(() => document.querySelector('[data-k2-news="polite"]')?.textContent)).toBe("");
+  });
+});
+
+test("announce: with two Workspaces the first one shown takes the news, and news whose region leaves within its burst finds another", async () => {
+  await withPage(
+    async (page) => {
+      await page.clock.install();
+      await listen(page);
+      const regions = page.locator('[data-k2-news="polite"]');
+      expect(await regions.count()).toBe(2);
+      // the first Workspace is hidden: the second one, which shows, takes the news
+      await page.evaluate(() => document.querySelector("[data-k2-workspace]")?.setAttribute("hidden", ""));
+      await say(page, "Lauf 6 läuft.");
+      await page.clock.runFor(300);
+      expect(await regions.nth(1).textContent()).toBe("Lauf 6 läuft.");
+      expect(await regions.nth(0).textContent()).toBe("");
+      // the region leaves before the news is said: the news goes where a region is when it is said
+      await say(page, "Lauf 7 läuft.");
+      await page.evaluate(() => window.__k2Drop?.(2));
+      await page.clock.runFor(300);
+      expect(await heard(page)).toEqual(["Lauf 6 läuft.", "Lauf 7 läuft."]);
+      expect(await page.locator('body > .k2-ui [data-k2-news="polite"]').textContent()).toBe("Lauf 7 läuft.");
+    },
+    { two: true },
+  );
+});
+
 test("Dialog.confirm with two Workspaces: the first answers, the other takes over, without one it brings its own", async () => {
   await withPage(
     async (page) => {
@@ -575,6 +675,37 @@ test("select: its label focuses it", async () => {
   });
 });
 
+// A person who asks for less motion sees the dialog's sheet where it rests: from the first frame it shows in, its top
+// stays put (it never slides up), with a mouse and on a touch screen (core moves a touch screen's sheet another way).
+for (const touch of [false, true])
+  test(`reduced motion: the dialog's sheet${touch ? " on a touch screen" : ""} stands where it rests from its first frame`, async () => {
+    await withPage(
+      async (page) => {
+        await page.evaluate(() => {
+          const tops: number[] = [];
+          Object.assign(window, { __k2Tops: tops });
+          const take = () => {
+            const sheet = document.querySelector<HTMLElement>(".k2-dialog");
+            const box = sheet?.getBoundingClientRect();
+            if (sheet && box && box.height > 0 && getComputedStyle(sheet).visibility !== "hidden") tops.push(Math.round(box.top));
+            if (tops.length < 90) requestAnimationFrame(take);
+          };
+          requestAnimationFrame(take);
+        });
+        const trigger = page.getByRole("button", { name: "Abbrechen" });
+        await (touch ? trigger.tap() : trigger.click());
+        await page.waitForFunction(() => (window as unknown as { __k2Tops: number[] }).__k2Tops.length >= 90, undefined, {
+          timeout: 5000,
+        });
+        const tops = await page.evaluate(() => (window as unknown as { __k2Tops: number[] }).__k2Tops);
+        expect(await page.locator(".k2-dialog").getAttribute("data-presentation")).toBe("sheet");
+        // one top only: the place it rests at
+        expect([...new Set(tops)]).toEqual([tops.at(-1)!]);
+      },
+      { width: 390, touch, reducedMotion: true },
+    );
+  });
+
 // The mockup: "a dialog, on the phone a sheet". On a small touch screen core presents it as a sheet from the bottom:
 // the whole width, its top corners round, at the bottom of the window; Escape still closes it.
 test("dialog on a phone: a sheet from the bottom, the whole width, its top corners round", async () => {
@@ -597,6 +728,40 @@ test("dialog on a phone: a sheet from the bottom, the whole width, its top corne
     },
     { width: 390, touch: true },
   );
+});
+
+test("dialog on a phone: the sheet shows a grip to swipe it down and keeps its close button, which closes it (Spaces W3)", async () => {
+  await withPage(
+    async (page) => {
+      await openDialog(page);
+      const dialog = page.locator(".k2-dialog");
+      // the grip: a short bar in the middle of the sheet's top edge, for the eye only (the swipe is core's)
+      const grip = await dialog.locator(".k2-dialog-grip").evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const sheet = element.closest(".k2-dialog")!.getBoundingClientRect();
+        return {
+          hidden: element.getAttribute("aria-hidden"),
+          width: Math.round(box.width),
+          middle: Math.round(box.left + box.width / 2 - (sheet.left + sheet.width / 2)),
+          top: Math.round(box.top - sheet.top),
+        };
+      });
+      expect(grip).toEqual({ hidden: "true", width: 36, middle: 0, top: 8 });
+      const close = dialog.getByRole("button", { name: "Schließen" });
+      expect(await close.isVisible()).toBe(true);
+      expect(await problems(page, ".k2-dialog")).toEqual([]);
+      await close.tap();
+      await page.waitForFunction(() => !document.querySelector(".k2-dialog"));
+    },
+    { width: 390, touch: true },
+  );
+});
+
+test("dialog in the middle of a wide window has no grip", async () => {
+  await withPage(async (page) => {
+    await openDialog(page);
+    expect(await page.locator(".k2-dialog .k2-dialog-grip").isVisible()).toBe(false);
+  });
 });
 
 // Dialog.confirm (the concept's question before something that cannot be taken back): an alert dialog in the shape of

@@ -1131,7 +1131,7 @@ describe(`Spaces month view in ${browserName}`, () => {
       const counts = await dayOverflow(page, "2026-10-15");
       expect(counts.drawn).toBeGreaterThan(0);
       expect(counts.drawn + counts.more).toBe(6);
-      expect(counts.label).toBe(`${counts.more} more on Thursday, October 15, 2026`);
+      expect(counts.label).toBe(`+${counts.more} more on Thursday, October 15, 2026`);
       // A day beside the crowded one keeps its rows: only the crowded day gives a row to "+N".
       expect(await dayOverflow(page, "2026-10-12")).toEqual({ drawn: 2, more: 0, label: null });
       const shape = await gridShape(page);

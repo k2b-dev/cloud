@@ -186,6 +186,8 @@ export type MailWorkspaceProps = {
   calendarIntegrationAvailable: boolean;
   /** Live dictation is set up and allowed for this person; a draft's editor then offers Dictate. */
   liveDictation?: boolean;
+  /** The page shows the mails received per day (the v2 reader): a mailbox switch loads them for the new mailbox. */
+  loadsReceivedPerDay?: boolean;
   /** The mailboxes the sidebar lists, with this person's pins and hidden mailboxes. */
   sidebar: {
     mailboxes: MailSidebarMailbox[];
@@ -478,7 +480,9 @@ export function createMailboxController(props: MailboxControllerProps) {
     );
     if (!response.ok) return null;
     const snapshot = await response.json();
-    return kept ? { ...snapshot, dropAssignees: kept } : snapshot;
+    // A route inside this mailbox never counts the mails per day again: the ones the page loaded stay.
+    const received = unwrap(data).receivedPerDay;
+    return { ...snapshot, ...(kept ? { dropAssignees: kept } : {}), ...(received ? { receivedPerDay: received } : {}) };
   };
 
   /** Every request path resolves against this mailbox and the browser origin; the list never carries a selection. */
@@ -3911,7 +3915,16 @@ export function createMailboxSessions(props: MailWorkspaceProps) {
     setSwitching(true);
     try {
       const response = await apiClient.mailboxes[":mailboxId"]["workspace-route"].$get(
-        { param: { mailboxId: target.id }, query: { href: `${url.pathname}${url.search}`, listMode: shown.handle.listMode() } },
+        {
+          param: { mailboxId: target.id },
+          query: {
+            href: `${url.pathname}${url.search}`,
+            listMode: shown.handle.listMode(),
+            // the v2 reader shows the new mailbox's year of mail when the switch opens no mail
+            receivedPerDay:
+              props.loadsReceivedPerDay && !url.searchParams.has("conversation") && !url.searchParams.has("message") ? "load" : "keep",
+          },
+        },
         { init: { signal: request.signal } },
       );
       if (!response.ok) throw new Error(`Mailbox workspace: ${response.status}`);

@@ -1,6 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { audit, toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type PageParams, type Paginated, paginate } from "@k2b/stdlib";
+import { matchesClientSearch } from "@/client-search";
 import type { CreateProxyAuthClient, ProxyAuthAllowedGroup, ProxyAuthClient, UpdateProxyAuthClient } from "@/contracts";
 
 type Db = typeof sql;
@@ -79,19 +80,8 @@ const list = async (config?: { pagination?: PageParams; filter?: { query?: strin
     GROUP BY c.id
     ORDER BY c.name
   `;
-  const query = config?.filter?.query?.trim().toLowerCase();
-  const items = rows.map(mapRow);
-  const filtered =
-    query && query.length > 0
-      ? items.filter((client) => {
-          const description = client.description ?? "";
-          return (
-            client.name.toLowerCase().includes(query) ||
-            client.clientId.toLowerCase().includes(query) ||
-            description.toLowerCase().includes(query)
-          );
-        })
-      : items;
+  const query = config?.filter?.query ?? "";
+  const filtered = rows.map(mapRow).filter((client) => matchesClientSearch(client, query));
 
   return paginateItems(filtered, config?.pagination);
 };

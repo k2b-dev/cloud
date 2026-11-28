@@ -21,6 +21,17 @@ That is the point: two agents building the same screen get the same result.
 `@k2b/ui/v2` is **provisional** until the maintainer approves it. Names and
 props may change in any release; check the types of the installed version.
 
+## The look is part of done
+
+Every screen follows [the look](references/look.md): a screen brief before
+code, one hero with its real trend, the app's colour where it means
+something, one data picture per row, a tinted head for the open object, a
+large screen that uses its room; dense, not busy: each thing has its mark
+(`Mark`, a person's `Avatar`), a state is a dot and its word, colour only
+for problems, people stand beside what they did; two head rows at most,
+settings as `Setting` rows. Run its wireframe check on your pictures: a
+screen that fails it is not done, however clean it is.
+
 ## Start here
 
 1. Find the screen in the task table below and open its recipe in
@@ -71,14 +82,15 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | --- | --- | --- |
 | an app's frame: sidebar, head, columns | `Workspace` with `sidebar`, `head`, `primary` | all |
 | the app's sections in the sidebar | `Nav` | `list-detail.tsx` |
+| folders or pages in levels: in the sidebar; as rows (a folder's content) | a `Nav` group with `tree` (`load`, `loadMore` for what opens); `Table` with `rowKey` and `tree` | `tree.tsx` |
+| the app's own rows in the sidebar (conversations), the phone's page | `Nav` `list` with `phone: "page"`, `search` and `primary` | `conversations.tsx` |
 | views of the page, or areas of a record | `Tabs` (in the head `Bar`, or as `Pane` head) | `mail.tsx`, `record.tsx` |
 | where a sub-page stands | `Path` in the head `Bar start` | – |
 | the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |
+| an exception in the statement ("1 ohne Zugriff") | `StatusRow marks` with a `Chip status` | – |
 | many like things, one per line | `List` of `Row` | `mail.tsx` |
-| a thing with a face (a base, a file, a table, a storage) | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`) | `overview.tsx` |
-| an overview of things with figures, people and a history | `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
-| who did what | `Digest activity` | `overview.tsx`, `home.tsx` |
-| several people at once (a team, who has access) | `Avatar.Stack` | `overview.tsx` |
+| a thing with a face (a base, a file, a table); an overview of such things with figures, people and a history | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`); `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
+| who did what; several people at once (a team, who has access) | `Digest activity`; `Avatar.Stack` | `overview.tsx`, `home.tsx` |
 | a short history beside a number | `Spark`; in a cell `Cells.Cell trend` | `home.tsx` |
 | many like things with columns | `Table` | `table.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
@@ -89,7 +101,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | filter values that load (people, customers) | a `lookup` field: `FilterBar` opens `Lookup`; in a form, `Lookup` itself | `filtered-table.tsx` |
 | saved views of a list | `FilterBar views` with the app's `ViewStore`s (cookie, own table, none); leave it out and nothing is saved | – |
 | a list beside the open entry | `Pane.Split` with a `Pane detail` | `list-detail.tsx` |
-| a record (customer, contact) | `RecordHead` in the head, `Tabs`, `Pane side` | `record.tsx` |
+| a record (customer, contact) | `RecordHead` in the head, `Tabs`, `Pane side`; what its `kinds` say also stands in `Facts` (on the phone kinds give way to the name) | `record.tsx` |
 | 2–4 key numbers side by side | `Cells` with `Cells.Cell` | `record.tsx` |
 | a titled part of a page | `Section` (title, count, ≤ 2 actions, `more`) | `record.tsx` |
 | what belongs together (a delivery, a thread) | `Group`; `folded` when done | `record-groups.tsx` |
@@ -169,16 +181,6 @@ that failed to load once would stand. A connection that retries on its own
 says so in the `StatusRow` without a button; something a person must fix is
 a `Notice` that names the deed.
 
-## How a screen looks: dense, clear, with faces
-Dense is not busy: show more, never the same thing twice (design pass 26.11.).
-- **Each thing carries its mark** (`Mark`, or a person's `Avatar`), never grey.
-- **The first line says what counts today** (`StatusRow` lead, `Cells`).
-- **A state is colour, symbol and word**; a limit a bar. **Space structures,
-  lines separate groups**; no box in a card, no empty half.
-- **People beside what they did**: avatars, stacks, `Digest activity`.
-- **Four type sizes** (12, 13, 14, 18); sample data dense and real.
-- **Two head rows at most**; **settings are `Setting` rows**.
-
 ## Primitives in one line each
 
 - **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
@@ -187,7 +189,7 @@ Dense is not busy: show more, never the same thing twice (design pass 26.11.).
   `Disclosure`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
   body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
-  `Chip`, `Progress`, `Spark`, `Steps`.
+  `Chip`, `Progress`, `Spark`, `Ticks`, `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Setting`, `Input`,
   `Select`, `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`,
   `ImageInput`, `CodeInput`, `Slider`, `ColorInput`. **Media:** `Preview`.
@@ -199,19 +201,15 @@ Dense is not busy: show more, never the same thing twice (design pass 26.11.).
   and `@k2b/ui/v2/testing` for Playwright tests.
 
 Not there yet (write a `k2b-ui gap` comment, never a replacement):
-the mail and chat composer and a Markdown editor (come from `@k2b/editor`),
-a code block with highlighting, an image or video viewer, and an assistant
+the mail and chat composer (comes from `@k2b/editor`), the menus of the
+Markdown editor (the editor itself goes into a `Canvas`, where its toolbar
+follows v2), a code block with highlighting, an image or video viewer, and an assistant
 message or answer card.
 
 Filters, sorts and groups have exactly one way: declare them once with
-`defineListQuery`, show them with `FilterBar` and `ListOrder`. The state
-lives in the address through that declaration; the server reads it with
-`parse`, and the app filters itself, on its server, with its own access
-checks (`@k2b/ui` filters nothing and stores nothing). In the island,
-keep one signal that mirrors that state: start it with what the server parsed
-and set it in `onChange`, as the recipe does. Never parse search parameters
-yourself, keep filter state the address does not hold, or build filter chips
-by hand. Read [list queries](references/list-queries.md).
+`defineListQuery`, show them with `FilterBar` and `ListOrder`; the app
+filters on its server. The rules (one signal, no own parsing, no filter chips
+by hand): [list queries](references/list-queries.md).
 
 ## See what you built
 

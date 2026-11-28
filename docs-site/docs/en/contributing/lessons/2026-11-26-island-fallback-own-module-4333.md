@@ -1,0 +1,7 @@
+### The island error fallback carried the button, the marks and the states of every app
+
+- **What happened:** On the W7 Assistant branch, the static closure of `PwaPartCount` grew to 101,292 B. Its budget is 98,304 B, and the island itself did not change.
+- **Root cause:** Every island loads Cloud's error fallback, and the fallback draws v2 `Failed`. `Failed` lived in `states.js` and drew `Button` and `Icon`, so it also loaded `button.js`, `marks.js`, `link.js` and `types.js`. A module that every island loads lands in the app's common chunk. Bun keeps in that chunk all that any island uses of the module (#4292). So when one app part used a mark, a chip or `Loading`, every island got that code too.
+- **Error class:** A module that every island loads imports a module that app parts also use, so the shared chunk grows with the union of their use.
+- **Guard:** `Failed` has a module of its own (`v2/failed.tsx`), and `Icon` has one too (`v2/icon.tsx`). `Failed` writes out the markup of its one button. The public exports stay the same. `packages/cloud/src/ssr/island-imports.bundle.test.ts` bundles the fallback and expects only the v2 modules `failed` and `icon` in its static closure. Before the fix, the test found `button`, `link`, `marks`, `states` and `types`.
+- **Measured** with `bun scripts/check.ts island-bundles`: on main, `PwaPartCount` goes from 92,479 B to 65,916 B. With W7 (`feat/assistant-v2` at 16b2d51a23), it goes from 101,292 B to 65,899 B. `PairingNotice` and `StartParts` lose about 26 KB and 3.5 KB.

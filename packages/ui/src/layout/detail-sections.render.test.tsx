@@ -106,6 +106,24 @@ describe("DetailLinks, DetailProperties, DetailTags", () => {
     expect(text(html)).toContain("Links to 2");
     expect(text(render(() => createComponent(DetailLinks, { incoming: [], outgoing: [] })))).toBe("Links None yet");
   });
+  test("a page of incoming links counts all of them and holds its load-more row in the incoming group", () => {
+    const html = render(() =>
+      createComponent(DetailLinks, {
+        incoming: [
+          { id: "a", title: "Onboarding", href: "/a" },
+          { id: "d", title: "Returns", href: "/d" },
+        ],
+        incomingTotal: 250,
+        incomingMore: "Load more",
+        outgoing: [{ id: "b", title: "Glossary", href: "/b" }],
+      }),
+    );
+    // the section's count and "Linked from" count every link, not the loaded page
+    expect(text(html)).toMatch(/Links\s*251/);
+    expect(text(html)).toContain("Linked from 250");
+    // the load-more row stands in the incoming group, before "Links to"
+    expect(text(html).indexOf("Load more")).toBeLessThan(text(html).indexOf("Links to 1"));
+  });
   test("links keep their rows while the rest loads or failed, and end with the footer", () => {
     const loading = render(() =>
       createComponent(DetailLinks, { incoming: [], outgoing: [{ id: "b", title: "Glossary", href: "/b" }], state: "loading" }),
