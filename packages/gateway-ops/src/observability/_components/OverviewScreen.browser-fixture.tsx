@@ -154,7 +154,7 @@ export const OverviewScreenFixture = (props: { search: string; locale?: string; 
             href: "/admin/observability/telemetry?range=24h&only=errors",
             trend: { values: errors, label: "Serverfehler je Stunde" },
           },
-          { icon: "apps", label: "Apps online", value: quiet ? "12/12" : "11/12", meta: "registrierte Apps" },
+          { icon: "apps", label: "Apps online", value: quiet ? "12/12" : "10/12", meta: "registrierte Apps" },
           { icon: "player-play", label: "Läufe", value: worst ? "12.345.678" : "3.482", meta: "24h" },
         ]}
         logs={

@@ -11,6 +11,9 @@ import { getTelemetryAppTotals, getTelemetryPrefixTotals, getTelemetryTimeseries
 import RoutesScreen from "./_components/RoutesScreen.island";
 import { ROUTES_SEARCH_MAX, routesQuery } from "./query";
 
+/** Bars the hero's history draws at most. */
+const TREND_BARS = 12;
+
 /** Apps the context column lists by their requests; the table shows every prefix. */
 const BY_APP = 12;
 
@@ -98,8 +101,14 @@ export default ssr<AuthContext>(async (c) => {
   const windowRequests = [...appTotals.values()].reduce((sum, totals) => sum + totals.requests, 0);
   // requests the router could not give to any app are counted under the gateway itself
   const unmatched = appTotals.get("gateway")?.requests ?? 0;
-  const providers = registered.filter((app) => app.id !== "gateway" && app.id !== "gateway-router" && app.capabilities).length;
-  const requestSeries = timeseries.map((point) => point.requests);
+  // k2b-ui gap: a Cells.Cell trend of more than about twelve bars runs over a long value in a narrow cell; neighbouring
+  // intervals are summed until at most twelve bars stand, so the history stays real and keeps beside its figure
+  const hourly = timeseries.map((point) => point.requests);
+  const step = Math.ceil(hourly.length / TREND_BARS);
+  const requestSeries = Array.from({ length: Math.ceil(hourly.length / step) }, (_, index) =>
+    hourly.slice(index * step, index * step + step).reduce((sum, value) => sum + value, 0),
+  );
+  // three cells beside the context column, so the hero keeps room for its history
   const cells: KeyCell[] = [
     // k2b-ui gap: hero band (look.md rule 1); until it lands the requests of the window lead, with their real history
     {
@@ -122,7 +131,6 @@ export default ssr<AuthContext>(async (c) => {
       value: snapshot ? number(snapshot.routeCount) : "—",
       meta: snapshot ? `v${snapshot.tableVersion}` : t.noRouter,
     },
-    { icon: "plug", label: t.capabilities, value: number(providers), meta: t.providers },
     {
       icon: "clock",
       label: t.uptime,

@@ -135,10 +135,10 @@ export default function RoutesScreen(props: RoutesScreenProps) {
               marks: row.failing ? <Chip status="bad">{row.errors}</Chip> : undefined,
             })}
             columns={[
-              { title: t().prefix, width: { min: 220, default: 420 }, cell: (row) => row.prefix },
+              { title: t().prefix, width: { min: 160, default: 220 }, cell: (row) => row.prefix },
               {
                 title: t().app,
-                width: { min: 120, default: 200 },
+                width: { min: 100, default: 140 },
                 // k2b-ui gap: a table cell has no mark (object symbol in its colour) beside text that may be cut
                 cell: (row) => (
                   <>
@@ -147,12 +147,12 @@ export default function RoutesScreen(props: RoutesScreenProps) {
                 ),
                 drop: true,
               },
-              { title: t().requests, width: { min: 100, default: 120 }, align: "end", cell: (row) => row.requests },
+              { title: t().requests, width: { min: 72, default: 90 }, align: "end", cell: (row) => row.requests },
               {
                 title: t().errors,
-                width: { min: 90, default: 110 },
+                width: { min: 80, default: 96 },
                 align: "end",
-                cell: (row) => (row.failing ? <Chip status="bad">{row.errors}</Chip> : "—"),
+                cell: (row) => (row.failing ? <Text tone="bad">{row.errors}</Text> : "—"),
               },
             ]}
           />

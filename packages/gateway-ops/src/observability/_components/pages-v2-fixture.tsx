@@ -113,7 +113,21 @@ export const PagesFixture = (props: { screen: PagesFixtureScreen; search: string
           nav={nav}
           apps={APPS.map((app) => ({ id: app.id, label: app.label }))}
           state={query.parse(params).state}
-          cells={cells(worst).map((cell, index) => ({ ...cell, label: ["Anfragen", "Routen", "Capabilities", "Laufzeit"][index]! }))}
+          cells={[
+            {
+              icon: "arrows-exchange",
+              label: "Anfragen",
+              value: worst ? "12.345.678.901" : "45.530",
+              meta: "214 nicht zugeordnet · 24h",
+              tone: "warn",
+              trend: {
+                values: [1430, 890, 1460, 4230, 6500, 5850, 6230, 6090, 5100, 3770, 2590, 2180],
+                label: "Anfragen je zwei Stunden: 48.320 insgesamt, höchstens 6.500 in einem Abschnitt",
+              },
+            },
+            { icon: "route", label: "Routen", value: worst ? "12.345" : "86", meta: "v412" },
+            { icon: "clock", label: "Laufzeit", value: "6 Tg.", meta: "seit 09:12" },
+          ]}
           warnings={worst ? [`${LONG} · werkstatt: shadowed (a longer prefix of another app answers first)`] : []}
           rows={routes(worst)}
           total={routes(worst).length}
