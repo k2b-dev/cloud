@@ -1,4 +1,3 @@
-import { markHintSeen } from "@k2b/cloud/browser/hints";
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { NavigationItem } from "@k2b/ui";
 import { createSignal, onCleanup, onMount } from "solid-js";
@@ -94,17 +93,3 @@ export function createNewSpace(t: ReturnType<typeof overviewMessages.resolve>["t
     }
   };
 }
-
-/** Phone navigation lives in the Cloud shell, outside the sidebar island. */
-export const listenSpacesNavigationHints = (document: Document, spaces: SidebarSpace[]) => {
-  const hrefs = new Set(spaces.map((space) => `/app/spaces/${space.id}`));
-  const onClick = (event: MouseEvent) => {
-    if (!(event.target instanceof Element)) return;
-    const anchor = event.target.closest("a");
-    if (!anchor || !hrefs.has(anchor.getAttribute("href") ?? "")) return;
-    markHintSeen("spaces.sidebar-switch");
-    markHintSeen("spaces.overview-sidebar");
-  };
-  document.addEventListener("click", onClick, true);
-  return () => document.removeEventListener("click", onClick, true);
-};
