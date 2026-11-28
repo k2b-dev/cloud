@@ -4,7 +4,7 @@ Every island and client component instance is mounted in its own error boundary 
 
 - an error while mounting, deserializing props, or in a later reactive update replaces only that instance with `<div role="alert" data-ssr-error>` and a **Try again** button
 - other instances and other islands updated by the same signal write keep working
-- **Try again** (or `reset()`) remounts the component with fresh state from the same `data-props`
+- **Try again** (or `reset()`) remounts the component with fresh state from the same props
 - each caught error dispatches a bubbling, cancelable `ssr:island-error` event on the wrapper element with `detail: { error, id, reset }`, then calls `reportError(error)` unless a listener called `preventDefault()`
 - `preventDefault()` only suppresses the report; use it when the app sends errors to its own reporter
 - style the default fallback through `[data-ssr-error]`

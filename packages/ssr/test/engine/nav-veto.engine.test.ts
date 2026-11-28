@@ -20,7 +20,7 @@ let heldB: ReturnType<typeof Promise.withResolvers<Response>> | undefined;
 let receivedB: ReturnType<typeof Promise.withResolvers<void>>;
 const swaps = new Map<string, number>();
 const wrapper = (id: string, label: string) =>
-  `<solid-island data-id="${id}" data-props='${JSON.stringify(toJSON({ label }))}'></solid-island>`;
+  `<solid-island data-id="${id}"><!--ssr-props:${JSON.stringify(toJSON({ label }))}--></solid-island>`;
 const html = (label: string) => `<!doctype html><html><head><title>${label}</title></head><body>
   <div data-nav-shell="veto" data-nav-scope="/app">${wrapper(shellId, "shell")}
   <main data-nav-root><h1>${label}</h1>${wrapper(columnId, label)}</main></div>

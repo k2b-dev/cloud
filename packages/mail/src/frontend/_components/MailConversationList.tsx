@@ -99,7 +99,7 @@ export default function MailConversationList(props: {
   /** Who is responsible for a row, in a mailbox where more than one person can be. */
   assignees?: (userIds: readonly string[]) => MailRowAssignee[];
   /** Conversations done today and how many still need action; drives the done line and "All done." */
-  doneToday?: { done: number; automated: number; open: number; logHref: string } | null;
+  doneToday?: { done: number; automated: number; open: number | null; logHref: string } | null;
   /** The done conversations this work list leaves out, named at its end, and where "Show done" leads. */
   hiddenDone?: { count: number | null; more: boolean; href: string } | null;
   /** Assigned to me: "Your turn" above "Waiting for reply", each with its count for the whole view. */
@@ -202,6 +202,11 @@ export default function MailConversationList(props: {
   /** A new message is a row of its own: an empty list with one open still shows the list, not the empty state. */
   const empty = () => props.items.length === 0;
   const allDone = () => empty() && !searchActive() && (props.doneToday?.done ?? 0) > 0;
+  /** The share done today; an open count still pending leaves the ring an empty, unnamed track in its place. */
+  const doneShare = (done: { done: number; open: number | null }) =>
+    done.open === null ? 0 : (done.done / Math.max(1, done.done + done.open)) * 100;
+  const doneRingLabel = (done: { done: number; open: number | null }) =>
+    done.open === null ? undefined : messages().doneRing({ done: done.done, total: done.done + done.open });
   /** Where each of Assigned to me's groups starts; the service lists every row that needs action first. */
   const assignedStarts = createMemo(() => {
     const starts = new Map<number, keyof MailAssignedGroups>();
@@ -509,11 +514,7 @@ export default function MailConversationList(props: {
               <Show when={!searchActive() && props.doneToday && props.doneToday.done > 0 ? props.doneToday : null}>
                 {(done) => (
                   <p class="mail-done-line" data-mail-done-line>
-                    <ProgressRing
-                      value={(done().done / Math.max(1, done().done + done().open)) * 100}
-                      tone="accent"
-                      label={messages().doneRing({ done: done().done, total: done().done + done().open })}
-                    />
+                    <ProgressRing value={doneShare(done())} tone="accent" label={doneRingLabel(done())} />
                     <b>{messages().doneToday({ count: done().done })}</b>
                     <Show when={done().automated > 0}>
                       <span>· {messages().doneAutomated({ count: done().automated })}</span>

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser } from "playwright";
-import { transparentIslands } from "../../scripts/v2-island-css";
+import { shippedV2Css } from "../../scripts/v2-island-css";
 import { browserName, launchBrowser, launchHookMs } from "../../test/browser";
 
 // Guards for v2.css as it ships, with every relation also through an island wrapper (scripts/v2-island-css.ts).
@@ -11,19 +11,25 @@ import { browserName, launchBrowser, launchHookMs } from "../../test/browser";
 // every frame about 20 times as long as the plain sheet, so its frames, taps, keys and `load` waited. The test times
 // the style and layout of 300 new nodes synchronously (`offsetHeight` and a computed style after each redraw; a time
 // per frame would sit on the 16.7 ms of a frame and see nothing below it), the best of three batches after a warm-up,
-// plain and shipped sheet in turns in the same browser, and prints the ratio, so CI logs add data points.
+// the plain and the shipped sheet one right after the other in the same browser, in three passes, and keeps the
+// median of the three ratios: a busy moment of the machine that hits one sheet of one pass moves neither way. It
+// prints the ratios, so CI logs add data points.
 //
-// The threshold comes from these ratios on the test VM (26.11.2026), the Playwright container at --cpus 0.5 / 1 / 2 and
-// three runs at once at --cpus 1:
-//   WebKit    this transform 1.9 / 3.0–3.4 / 3.2, at once 2.0–2.1   the transform of #4193 14.9 / 20.4–22.4 / 22.1, at once 13.2–14.0
-//   Chromium  this transform 1.3 / 1.6 / 1.6, at once 1.2–1.8       the transform of #4193 2.9 / 2.7 / 2.6, at once 2.1–4.0
-// WebKit fails above 6: twice the highest ratio of this transform, half the lowest of #4193's. In Chromium the two
-// overlap under load, so it fails only above 3, a sheet clearly costlier than this one. WebKit still pays about three
-// times the plain sheet's time here; most of it is the child relation through a wrapper (`A > W > B`) itself.
-const limit = browserName === "webkit" ? 6 : 3;
+// The thresholds come from these ratios on the test VM, the Playwright container at --cpus 0.5 / 1 / 2 and three runs
+// at once at --cpus 1:
+//   WebKit    inner parts without a wrapper's way (#4339, 26.11.2026)  2.9 / 2.6 / 2.6, at once 1.6–2.9
+//             one selector list per rule (#4329, 26.11.2026)           1.9 / 3.0–3.4 / 3.2, at once 2.0–3.4
+//             one :is() per rule (#4193)                               14.9 / 20.4–22.4 / 22.1, at once 13.2–14.0
+//   Chromium  #4339 1.6 / 1.6 / 1.6, at once 1.2 (and once 3.9, a busy moment that hit only the plain sheet)
+//             #4329 1.3 / 1.6 / 1.6, at once 1.2–1.8   #4193 2.9 / 2.7 / 2.6, at once 2.1–4.0
+// WebKit fails above 5: above the highest ratio of today's sheet with room for a busy machine, below half the lowest
+// of #4193's. In Chromium #4193's sheet and today's overlap under load, so it fails only above 3, a sheet clearly
+// costlier than today's. WebKit still pays two to three times the plain sheet's time; most of it is the ways through
+// a wrapper that an app's content needs (`A > W > B`).
+const limit = browserName === "webkit" ? 5 : 3;
 
 const plain = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
-const shipped = transparentIslands(plain);
+const shipped = shippedV2Css(plain);
 
 // v2 sections with fields, some in islands and one empty island, a list, and beside them the graph's SVG
 const field = (i: number) =>
@@ -95,19 +101,16 @@ const styleTime = async (css: string): Promise<number> => {
 };
 
 test("a page that redraws 300 nodes styles them with the shipped v2.css in at most the measured multiple of the plain sheet's time", async () => {
-  // two passes in turns, the best of each, so a busy moment of the machine counts for neither alone
-  let plainTime = Number.POSITIVE_INFINITY;
-  let shippedTime = Number.POSITIVE_INFINITY;
-  for (let pass = 0; pass < 2; pass++) {
-    plainTime = Math.min(plainTime, await styleTime(plain));
-    shippedTime = Math.min(shippedTime, await styleTime(shipped));
-  }
-  const ratio = shippedTime / plainTime;
+  // three passes, each the plain sheet and then the shipped one; the median ratio of a pass counts
+  const passes: { plain: number; shipped: number }[] = [];
+  for (let pass = 0; pass < 3; pass++) passes.push({ plain: await styleTime(plain), shipped: await styleTime(shipped) });
+  const ratios = passes.map((pass) => pass.shipped / pass.plain);
+  const ratio = [...ratios].sort((a, b) => a - b)[1]!;
   console.log(
-    `island-css cost ${browserName}: plain ${plainTime.toFixed(1)} ms, shipped ${shippedTime.toFixed(1)} ms, ratio ${ratio.toFixed(2)} (limit ${limit})`,
+    `island-css cost ${browserName}: ${passes.map((pass) => `plain ${pass.plain.toFixed(1)} ms, shipped ${pass.shipped.toFixed(1)} ms`).join("; ")}; ratios ${ratios.map((r) => r.toFixed(2)).join(" / ")} (limit ${limit})`,
   );
   expect({ browser: browserName, ratio: Math.round(ratio * 100) / 100, within: ratio <= limit }).toMatchObject({ within: true });
-}, 120_000);
+}, 180_000);
 
 // A list of whole selectors drops the whole rule when one of them does not parse, where `:is()` forgave it: the
 // shipped sheet keeps every rule the plain one has.

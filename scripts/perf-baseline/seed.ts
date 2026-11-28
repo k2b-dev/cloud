@@ -3,7 +3,7 @@ import type { BrowserContext, Cookie } from "playwright";
 import { fromJSON } from "seroval";
 import { z } from "zod";
 import { PwaClaimResultSchema, PwaCompleteResultSchema, PwaPairingStartResultSchema } from "../../packages/cloud/src/contracts/pwa";
-import { decodeAttribute, type PageId, type PageResult } from "./model";
+import { islandPropsTexts, type PageId, type PageResult } from "./model";
 import { localTls, type Runtime, waitFor } from "./runtime";
 
 const resourceSchema = z.object({ id: z.string().min(1) });
@@ -11,23 +11,18 @@ const resourceSchema = z.object({ id: z.string().min(1) });
 /** Read only island props; parse props as JSON data, never evaluate them. */
 async function consentVersions(html: string) {
   const versions: string[] = [];
-  await new HTMLRewriter()
-    .on("solid-island, solid-client", {
-      element(element) {
-        const props: unknown = fromJSON(JSON.parse(decodeAttribute(element.getAttribute("data-props") ?? "")));
-        // ConsentForm's version is a string property of its props object.
-        if (props && typeof props === "object" && "version" in props) {
-          versions.push(
-            z
-              .string()
-              .regex(/^[a-f0-9]{64}$/)
-              .parse(props.version),
-          );
-        }
-      },
-    })
-    .transform(new Response(html))
-    .text();
+  for (const text of await islandPropsTexts(html)) {
+    const props: unknown = fromJSON(JSON.parse(text ?? ""));
+    // ConsentForm's version is a string property of its props object.
+    if (props && typeof props === "object" && "version" in props) {
+      versions.push(
+        z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .parse(props.version),
+      );
+    }
+  }
   return versions;
 }
 

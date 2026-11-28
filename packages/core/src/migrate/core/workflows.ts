@@ -21,7 +21,27 @@
  */
 
 import { sql } from "@k2b/cloud";
+import { logger } from "@k2b/cloud/services";
+import {
+  addMissingColumns,
+  buildConcurrentIndexesInBackground,
+  type ConcurrentIndex,
+  createIndexIfMissing,
+} from "@k2b/cloud/services/concurrent-index";
 import type { SQL } from "bun";
+
+/**
+ * The newest top-level runs across all workflows, of everything or of one app: the run list and the timeline of
+ * Betrieb read them without a workflow or scope filter. Built next to live run writes after the migration.
+ */
+const RUN_LIST_INDEXES: ConcurrentIndex[] = [
+  { name: "idx_workflows_run_recent", table: "workflows.run", definition: "(created_at DESC, id DESC) WHERE parent_run_id IS NULL" },
+  {
+    name: "idx_workflows_run_app_recent",
+    table: "workflows.run",
+    definition: "(app_id, created_at DESC, id DESC) WHERE parent_run_id IS NULL",
+  },
+];
 
 /**
  * The state vocabularies below are inlined as literal SQL rather than shared
@@ -211,21 +231,25 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
   `.simple();
   // Set after retention empties data/context/authorization_snapshot. Readers
   // can say "expired", and the retention scan skips already expired payloads.
-  await db`ALTER TABLE workflows.event ADD COLUMN IF NOT EXISTS payload_expired_at TIMESTAMPTZ`.simple();
-  await db`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_workflows_event_dedupe
-    ON workflows.event(app_id, scope_id, type, dedupe_key)
-    WHERE dedupe_key IS NOT NULL
-  `.simple();
-  await db`
-    CREATE INDEX IF NOT EXISTS idx_workflows_event_pending
-    ON workflows.event(dispatch_after, occurred_at, id)
-    WHERE dispatched_at IS NULL AND dispatch_failed_at IS NULL AND matched_count > 0
-  `.simple();
-  await db`
-    CREATE INDEX IF NOT EXISTS idx_workflows_event_history
-    ON workflows.event(app_id, scope_id, occurred_at DESC, id DESC)
-  `.simple();
+  // The retention sweep builds indexes on this table and on runs next to live writes (`ensureConcurrentIndexes`), so
+  // every column and index below takes a lock only when the catalog lacks it.
+  await addMissingColumns(db, "workflows.event", { payload_expired_at: "TIMESTAMPTZ" });
+  await createIndexIfMissing(db, {
+    unique: true,
+    name: "idx_workflows_event_dedupe",
+    table: "workflows.event",
+    definition: "(app_id, scope_id, type, dedupe_key) WHERE dedupe_key IS NOT NULL",
+  });
+  await createIndexIfMissing(db, {
+    name: "idx_workflows_event_pending",
+    table: "workflows.event",
+    definition: "(dispatch_after, occurred_at, id) WHERE dispatched_at IS NULL AND dispatch_failed_at IS NULL AND matched_count > 0",
+  });
+  await createIndexIfMissing(db, {
+    name: "idx_workflows_event_history",
+    table: "workflows.event",
+    definition: "(app_id, scope_id, occurred_at DESC, id DESC)",
+  });
   /**
    * The exact activation/version match is frozen when the event is recorded.
    * Deferred dispatch reads this receipt-time snapshot, so publishing a new
@@ -334,33 +358,33 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
   // Claimable work, oldest first:
   //   WHERE state IN ('queued', 'running') AND claimable_at < now()
   //   ORDER BY claimable_at, created_at, id
-  await db`
-    CREATE INDEX IF NOT EXISTS idx_workflows_run_dispatch
-    ON workflows.run(claimable_at, created_at, id)
-    WHERE state IN ('queued', 'running')
-  `.simple();
+  await createIndexIfMissing(db, {
+    name: "idx_workflows_run_dispatch",
+    table: "workflows.run",
+    definition: "(claimable_at, created_at, id) WHERE state IN ('queued', 'running')",
+  });
   // Parked runs the wake scan has to pick up once their deadline passes.
-  await db`
-    CREATE INDEX IF NOT EXISTS idx_workflows_run_wake
-    ON workflows.run(wake_at, id)
-    WHERE state = 'waiting' AND wake_at IS NOT NULL
-  `.simple();
+  await createIndexIfMissing(db, {
+    name: "idx_workflows_run_wake",
+    table: "workflows.run",
+    definition: "(wake_at, id) WHERE state = 'waiting' AND wake_at IS NOT NULL",
+  });
   // Fan-out: both "how are my children doing" and "list them" read this.
-  await db`
-    CREATE INDEX IF NOT EXISTS idx_workflows_run_children
-    ON workflows.run(parent_run_id, state, created_at, id)
-    WHERE parent_run_id IS NOT NULL
-  `.simple();
-  await db`
-    CREATE INDEX IF NOT EXISTS idx_workflows_run_workflow_history
-    ON workflows.run(workflow_id, created_at DESC, id DESC)
-    WHERE parent_run_id IS NULL
-  `.simple();
-  await db`
-    CREATE INDEX IF NOT EXISTS idx_workflows_run_scope_history
-    ON workflows.run(app_id, scope_id, created_at DESC, id DESC)
-    WHERE parent_run_id IS NULL
-  `.simple();
+  await createIndexIfMissing(db, {
+    name: "idx_workflows_run_children",
+    table: "workflows.run",
+    definition: "(parent_run_id, state, created_at, id) WHERE parent_run_id IS NOT NULL",
+  });
+  await createIndexIfMissing(db, {
+    name: "idx_workflows_run_workflow_history",
+    table: "workflows.run",
+    definition: "(workflow_id, created_at DESC, id DESC) WHERE parent_run_id IS NULL",
+  });
+  await createIndexIfMissing(db, {
+    name: "idx_workflows_run_scope_history",
+    table: "workflows.run",
+    definition: "(app_id, scope_id, created_at DESC, id DESC) WHERE parent_run_id IS NULL",
+  });
   console.log("  ✓ workflows.run table");
 
   /**
@@ -451,4 +475,6 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     )
   `.simple();
   console.log("  ✓ workflows.step_outcome table");
+  // queries run without them until they are valid; startup never waits for the build
+  void buildConcurrentIndexesInBackground(RUN_LIST_INDEXES, { db, log: logger("core:workflows"), purpose: "run list" });
 };

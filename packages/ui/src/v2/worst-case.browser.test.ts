@@ -230,6 +230,37 @@ for (const width of [1024, 390])
     );
   });
 
+// Merge of #4210 with #4174 (Core's domains): on the phone a row with a deed of its own lays out its lines, marks and
+// deed anew; line 3 and the marks kept no place there and fell on top of each other.
+for (const width of [1024, 390])
+  test(`a row with a deed, marks and three or two lines keeps each part in its place at ${width} px`, async () => {
+    await withPage(
+      width,
+      async (page) => {
+        const parts = await page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>(".k2-row")].map((row) => {
+            const box = (selector: string) => row.querySelector(`:scope > ${selector}`)?.getBoundingClientRect();
+            const marks = box(".k2-row-marks");
+            const [l2, l3] = [box(".k2-row-l2"), box(".k2-row-l3")];
+            const lines = [l2, l3].filter((line) => line !== undefined);
+            const meets = (a: DOMRect, b: DOMRect) =>
+              Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 4;
+            const outer = row.getBoundingClientRect();
+            if (!marks) return { l3AsWideAsL2: !!l2 && !!l3 && Math.abs(l3.width - l2.width) <= 0.5 };
+            return {
+              marksShow: marks.width > 0 && marks.right <= outer.right + 0.5,
+              underMarks: lines.some((line) => meets(line, marks)),
+            };
+          }),
+        );
+        // a row of three lines without marks gives line 3 the whole width, as line 2 (review of c19981f9f2)
+        expect(parts).toEqual([{ marksShow: true, underMarks: false }, { marksShow: true, underMarks: false }, { l3AsWideAsL2: true }]);
+        expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
+      },
+      "deeds",
+    );
+  });
+
 test("a phone row of a large table cuts its second line before its marks", async () => {
   await withPage(
     390,
@@ -241,7 +272,8 @@ test("a phone row of a large table cuts its second line before its marks", async
   );
 });
 
-// Review r2 of #4210: a head with views, a kept deed with words and the app's own "…": one "…" only, which holds both
+// Review r2 of #4210: a crowded head with views, a deed with words and the app's own "…": one "…" only (the bar's fold,
+// #4392, hands the deed to the app's "…"), which holds both
 // the app's deeds and the folded one; a pressed deed says so in the menu.
 test("on the phone a head with its own … folds its kept deeds into that one menu, a pressed deed checked", async () => {
   await withPage(
@@ -272,7 +304,7 @@ const shownMenus = (page: Page) =>
       buttons.filter((button) => (button as HTMLElement).offsetWidth > 0).map((button) => button.getAttribute("aria-label")),
     );
 
-// Review r3 of #4210: a kept icon button is no "…": beside it the bar's own "…" still shows and holds the folded deed.
+// Review r3 of #4210: a kept icon button is no "…": beside it the bar's own "…" (#4392) shows and holds the folded deed.
 test("on the phone a kept icon button beside a folded deed leaves the bar's … to hold that deed", async () => {
   await withPage(
     390,
@@ -285,7 +317,8 @@ test("on the phone a kept icon button beside a folded deed leaves the bar's … 
   );
 });
 
-// Review r3 of #4210: with two "…" of its own the head lists a folded deed once, in the first, and shows no third "…".
+// Review r3 of #4210: with two "…" of its own the head lists a folded deed once, in the "…" without a symbol (whatever
+// its name, #4472), and shows no third "…"; the menu with a symbol of its own keeps only its own entries.
 test("on the phone a head with two … of its own folds its kept deed into the first only", async () => {
   await withPage(
     390,
@@ -299,7 +332,8 @@ test("on the phone a head with two … of its own folds its kept deed into the f
         await page.getByRole("menu").waitFor({ state: "hidden" });
         return labels.map((label) => label.trim());
       };
-      expect(await entries("Weitere Aktionen")).toEqual(["Einstellungen", "Freigeben"]);
+      // the folded deed first, then the menu's own (`Bar`: the folded buttons are the first section of its "…")
+      expect(await entries("Weitere Aktionen")).toEqual(["Freigeben", "Einstellungen"]);
       expect(await entries("Ansicht")).toEqual(["Kompakt"]);
     },
     "headtwo",

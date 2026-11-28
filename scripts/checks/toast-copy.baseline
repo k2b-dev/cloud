@@ -43,25 +43,25 @@ packages/chat/src/frontend/ChatDeviceNotice.tsx | untitled | t().endDoNotDisturb
 packages/chat/src/frontend/ChatInfoPanel.tsx | untitled | errorMessage(failure, t().requestFailed)
 packages/chat/src/frontend/ChatInfoPanel.tsx | untitled | errorMessage(failure, t().requestFailed)
 packages/chat/src/frontend/ChatInfoPanel.tsx | untitled | t().removedKeptThroughGroup({ name: member.displayName })
-packages/chat/src/frontend/ChatWorkspace.island.tsx | tone-icon | "ti ti-info-circle"
-packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | archived ? t().archiveFailed : t().restoreFailed
-packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | error instanceof ChatRequestError ? error.message : t().requestFailed
-packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().copyFailed
-packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().itemThreadFailed
-packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().markedUnreadFrom({ name: from.authorName.split(" ")[0] ?? from.authorName })
-packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().openFailed
-packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().openFailed
-packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().quotedSendRejected
-packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().quotesReplaced
-packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().readStateFailed
-packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().requestFailed
-packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().requestFailed
-packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().requestFailed
-packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().requestFailed
-packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().requestFailed
-packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().savingList
-packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().savingList
-packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().sendPreparing
+packages/chat/src/frontend/chat-workspace.tsx | tone-icon | "ti ti-info-circle"
+packages/chat/src/frontend/chat-workspace.tsx | untitled | archived ? t().archiveFailed : t().restoreFailed
+packages/chat/src/frontend/chat-workspace.tsx | untitled | error instanceof ChatRequestError ? error.message : t().requestFailed
+packages/chat/src/frontend/chat-workspace.tsx | untitled | t().copyFailed
+packages/chat/src/frontend/chat-workspace.tsx | untitled | t().itemThreadFailed
+packages/chat/src/frontend/chat-workspace.tsx | untitled | t().markedUnreadFrom({ name: from.authorName.split(" ")[0] ?? from.authorName })
+packages/chat/src/frontend/chat-workspace.tsx | untitled | t().openFailed
+packages/chat/src/frontend/chat-workspace.tsx | untitled | t().openFailed
+packages/chat/src/frontend/chat-workspace.tsx | untitled | t().quotedSendRejected
+packages/chat/src/frontend/chat-workspace.tsx | untitled | t().quotesReplaced
+packages/chat/src/frontend/chat-workspace.tsx | untitled | t().readStateFailed
+packages/chat/src/frontend/chat-workspace.tsx | untitled | t().requestFailed
+packages/chat/src/frontend/chat-workspace.tsx | untitled | t().requestFailed
+packages/chat/src/frontend/chat-workspace.tsx | untitled | t().requestFailed
+packages/chat/src/frontend/chat-workspace.tsx | untitled | t().requestFailed
+packages/chat/src/frontend/chat-workspace.tsx | untitled | t().requestFailed
+packages/chat/src/frontend/chat-workspace.tsx | untitled | t().savingList
+packages/chat/src/frontend/chat-workspace.tsx | untitled | t().savingList
+packages/chat/src/frontend/chat-workspace.tsx | untitled | t().sendPreparing
 packages/chat/src/frontend/DiscoverChannels.tsx | untitled | t().requestFailed
 packages/chat/src/frontend/FollowToggle.tsx | untitled | errorMessage(failure, t().followFailed)
 packages/chat/src/frontend/LeaveChatDialog.tsx | untitled | t().leftKeptThroughGroup
@@ -109,25 +109,13 @@ packages/contacts/src/frontend/_components/ContactNotesSection.tsx | untitled | 
 packages/contacts/src/frontend/_components/ContactsBulkActions.tsx | untitled | error instanceof Error ? error.message : t().couldNotPrepareBulkAction
 packages/contacts/src/frontend/_components/ContactsBulkActions.tsx | untitled | error.message
 packages/contacts/src/frontend/_components/ContactsLiveEvents.island.tsx | untitled | t().liveUpdatesStopped
-packages/core/src/pages/admin/CacheNotice.tsx | untitled | t().cleared
 packages/core/src/pages/admin/ai/AiBudgetToggle.island.tsx | untitled | failure instanceof Error ? failure.message : t().saveFailed
-packages/core/src/pages/admin/apps/remove-dialog.tsx | untitled | t.removed({ name: app.name })
-packages/core/src/pages/admin/outgoing-mail/OutgoingMail.island.tsx | untitled | t().testSent({ recipient: recipient().trim() })
-packages/core/src/pages/admin/outgoing-mail/SendLog.tsx | untitled | cancelled === 0 ? t().cancelBatchEmpty : t().cancelBatchDone({ count: cancelled })
-packages/core/src/pages/admin/outgoing-mail/SendLog.tsx | untitled | error instanceof Error ? error.message : t().logFailed
-packages/core/src/pages/admin/rail/RailAdmin.island.tsx | untitled | t().cacheCleared
-packages/core/src/pages/admin/settings/_components/AccountOperations.island.tsx | untitled | operation.successText
 packages/core/src/pages/admin/settings/_components/AiAppSkillIssueActions.island.tsx | untitled | action === "adopt" ? t().appSkillAdopted : t().appSkillInstalled
 packages/core/src/pages/admin/settings/_components/AiSkillAdminActions.island.tsx | untitled | t().skillResetDone
 packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | untitled | error instanceof Error ? error.message : t().enrichmentFailed
 packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | untitled | summary ? t().enrichmentSummary(summary) : t().enrichmentDone
 packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | untitled | t().freeIpaReachable
 packages/core/src/pages/admin/settings/_components/LegacySettingsSection.tsx | untitled | t().legacyDeleted({ count: result.deleted.length })
-packages/core/src/pages/admin/settings/_components/LinuxIdentityPanel.island.tsx | untitled | t().preparedSuccess({ count: progress().done })
-packages/core/src/pages/admin/settings/_components/LinuxIdentityPanel.island.tsx | untitled | t().saved
-packages/core/src/pages/admin/signin/TestFreeIpaButton.island.tsx | untitled | t().freeIpaReachable
-packages/core/src/pages/admin/storage/StorageBucketDetail.island.tsx | untitled | created ? t().createdOk({ name }) : t().saved
-packages/core/src/pages/admin/storage/StorageBucketDetail.island.tsx | untitled | t().createdFailed({ name })
 packages/core/src/pages/app-approval/Devices.island.tsx | untitled | t().revokeCheckFailed
 packages/core/src/pages/app-approval/InstallApp.tsx | untitled | t().failure
 packages/core/src/pages/app-approval/Pairing.tsx | untitled | saved && !settled ? t().pairCancelFailed : t().failure
@@ -210,26 +198,6 @@ packages/grids/src/frontend/custom-app/document-preview.ts | untitled | reason
 packages/ipa-hosts/src/frontend/EditHost.island.tsx | untitled | t().hostAdded
 packages/ipa-hosts/src/frontend/EditHost.island.tsx | untitled | t().hostRemoved
 packages/ipa-hosts/src/frontend/HostSettings.island.tsx | untitled | t().scheduleUpdated
-packages/mail/src/frontend/mail-workspace.tsx | title | report.conversationCount === 1 ? t().changeNotApplied : t().changesNotApplied({ failed: report.failures.length, total: report.conversationCount })
-packages/mail/src/frontend/mail-workspace.tsx | untitled | context?.keep === false ? conversationText().stopKeepingDone : conversationText().keepSaved
-packages/mail/src/frontend/mail-workspace.tsx | untitled | error instanceof Error ? error.message : t().updateConversationsFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | message
-packages/mail/src/frontend/mail-workspace.tsx | untitled | message
-packages/mail/src/frontend/mail-workspace.tsx | untitled | remainingText().bulkLaterFailed({ failed, total: items.length })
-packages/mail/src/frontend/mail-workspace.tsx | untitled | result.updatedConversationIds.length === 0 ? t().tagsAlreadyPresent : t().tagsAdded({ count: result.updatedConversationIds.length })
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().actionMoved({ actionId, count, messages: messageRows, folder })
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().changeListViewFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().closeConversationFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().healthRefreshFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().listWidthSaveFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().messageMoved
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openConversationFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openConversationFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openViewFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openViewFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().restoreViewFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().restoreViewFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().settingsRefreshFailed
 packages/mail/src/frontend/_components/MailAdminKeptActions.island.tsx | untitled | t().downloadStarted
 packages/mail/src/frontend/_components/MailAdminKeptActions.island.tsx | untitled | t().stopKeepingDone
 packages/mail/src/frontend/_components/MailAdminKeptTable.island.tsx | untitled | t().downloadStarted
@@ -275,6 +243,26 @@ packages/mail/src/frontend/_components/mail-feedback.ts | title | options.title
 packages/mail/src/frontend/_components/mail-mailbox-management.ts | untitled | overviewText().mailboxRestored
 packages/mail/src/frontend/_components/mail-mailbox-preferences.ts | untitled | error instanceof Error ? error.message : messages().failedSaveMailboxPreference
 packages/mail/src/frontend/_components/mail-mailbox-preferences.ts | untitled | preference === "pinned" ? messages().pinLimitReached({ count }) : messages().hideLimitReached({ count })
+packages/mail/src/frontend/mail-workspace.tsx | title | report.conversationCount === 1 ? t().changeNotApplied : t().changesNotApplied({ failed: report.failures.length, total: report.conversationCount })
+packages/mail/src/frontend/mail-workspace.tsx | untitled | context?.keep === false ? conversationText().stopKeepingDone : conversationText().keepSaved
+packages/mail/src/frontend/mail-workspace.tsx | untitled | error instanceof Error ? error.message : t().updateConversationsFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | message
+packages/mail/src/frontend/mail-workspace.tsx | untitled | message
+packages/mail/src/frontend/mail-workspace.tsx | untitled | remainingText().bulkLaterFailed({ failed, total: items.length })
+packages/mail/src/frontend/mail-workspace.tsx | untitled | result.updatedConversationIds.length === 0 ? t().tagsAlreadyPresent : t().tagsAdded({ count: result.updatedConversationIds.length })
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().actionMoved({ actionId, count, messages: messageRows, folder })
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().changeListViewFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().closeConversationFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().healthRefreshFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().listWidthSaveFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().messageMoved
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openConversationFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openConversationFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openViewFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openViewFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().restoreViewFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().restoreViewFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().settingsRefreshFailed
 packages/notebooks/src/frontend/[id]/_components/attachments-overview/AttachmentsOverview.island.tsx | untitled | t().attachmentMarkdownCopied
 packages/notebooks/src/frontend/[id]/_components/attachments-overview/AttachmentsOverview.island.tsx | untitled | t().attachmentMarkdownCopyFailed
 packages/notebooks/src/frontend/[id]/_components/comments/CommentCard.tsx | untitled | t().actionFailed
@@ -311,9 +299,6 @@ packages/notebooks/src/frontend/[id]/_components/versions/restore-notice.ts | un
 packages/notebooks/src/frontend/_components/AdminNotebooksAppSettings.island.tsx | untitled | t().settingsSaved
 packages/notebooks/src/frontend/lib/attachment-preview.tsx | untitled | t.previewAttachmentFailed
 packages/oauth/src/frontend/_components/ClientActions.island.tsx | untitled | t().copyClientIdFailed
-packages/proxy-auth/src/frontend/_components/ProxyClientActions.island.tsx | untitled | t().deleted
-packages/proxy-auth/src/frontend/_components/ProxyClientActions.island.tsx | untitled | t().updated
-packages/proxy-auth/src/frontend/_components/ProxyClientActions.island.tsx | untitled | t().verifyUrlCopyFailed
 packages/pulse/src/frontend/PulseOverview.island.tsx | untitled | t().retryFailed
 packages/pulse/src/frontend/PulseOverview.island.tsx | untitled | t().retryStarted
 packages/pulse/src/frontend/PulseWorkspace.island.tsx | untitled | label

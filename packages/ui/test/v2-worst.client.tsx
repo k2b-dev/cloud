@@ -72,6 +72,49 @@ if (scenario === "rows")
     ),
     root,
   );
+// `<body data-case="deeds">`: rows with a deed of their own, marks and a "…", of three lines and of two (Core's
+// domains, merge of #4210 with #4174): on the phone the deed moves under the lines, and line 3 and the marks keep theirs
+else if (scenario === "deeds")
+  render(
+    () => (
+      <Workspace>
+        <Pane label="Spalte">
+          <List label="Domains">
+            <Row
+              icon="world"
+              lines={["lager.example.test", "Hauptdomain", "certificate has expired for lager.example.test since yesterday"]}
+              marks={
+                <>
+                  <Chip status="bad">DNS</Chip>
+                  <Chip status="bad">Zertifikat</Chip>
+                </>
+              }
+              action={{ label: "Prüfen", icon: "refresh", onClick: () => undefined }}
+              end={<Menu label="Aktionen für lager.example.test" items={[{ label: "Entfernen", onClick: () => undefined }]} />}
+            />
+            <Row
+              icon="world"
+              lines={["shop.example.test", "geprüft vor 12 Minuten, alle drei Schritte ohne Befund"]}
+              marks={<Chip status="ok">Erreichbar</Chip>}
+              action={{ label: "Prüfen", icon: "refresh", onClick: () => undefined }}
+              end={<Menu label="Aktionen für shop.example.test" items={[{ label: "Entfernen", onClick: () => undefined }]} />}
+            />
+            <Row
+              icon="world"
+              lines={[
+                "archiv.example.test",
+                "Weiterleitung auf lager.example.test",
+                "geprüft vor 3 Minuten, alle drei Schritte ohne Befund",
+              ]}
+              action={{ label: "Prüfen", icon: "refresh", onClick: () => undefined }}
+              end={<Menu label="Aktionen für archiv.example.test" items={[{ label: "Entfernen", onClick: () => undefined }]} />}
+            />
+          </List>
+        </Pane>
+      </Workspace>
+    ),
+    root,
+  );
 else if (scenario === "table" || scenario === "head" || scenario === "headmenu" || scenario === "headicon" || scenario === "headtwo")
   render(
     () => (
@@ -81,9 +124,11 @@ else if (scenario === "table" || scenario === "head" || scenario === "headmenu" 
             start={
               <Tabs
                 label="Ansichten"
+                // views that take most of a phone's head, so its deeds have to fold (see `Bar`)
                 items={[
-                  { label: "Alle", current: true, onClick: () => undefined },
+                  { label: "Alle Unterhaltungen", current: true, onClick: () => undefined },
                   { label: "Ungelesen", onClick: () => undefined },
+                  { label: "Wartet auf Antwort", onClick: () => undefined },
                 ]}
               />
             }

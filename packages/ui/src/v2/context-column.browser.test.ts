@@ -131,8 +131,15 @@ describe("a context column stands beside its main column only where there is roo
           const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
           expect([where, layout.problems]).toEqual([where, []]);
           expect([where, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)]).toEqual([where, true]);
-          if (beside) expectBeside(where, mainBox, sideBox, kind === "detail" ? 320 : 340);
-          else await expectBelow(where, page, mainBox, sideBox);
+          if (beside) {
+            expectBeside(where, mainBox, sideBox, kind === "detail" ? 320 : 340);
+            // beside its context each column is its own scroller, as in every split
+            const scrolls = await page.evaluate(
+              (columns) => columns.map((selector) => getComputedStyle(document.querySelector(`${selector} > .k2-scroll`)!).overflowY),
+              [mainOf(kind), side],
+            );
+            expect([where, scrolls]).toEqual([where, ["auto", "auto"]]);
+          } else await expectBelow(where, page, mainBox, sideBox);
         });
       // the server's page and the live one put the columns in the same places
       expect(seen[1]).toEqual(seen[0]);
@@ -148,6 +155,28 @@ describe("a context column stands beside its main column only where there is roo
       const scroll = await scrollOf(page);
       expect([scroll.top, scroll.height <= scroll.client]).toEqual([0, true]);
     });
+  }, 30_000);
+
+  test("beside its context column, a main column far taller than the window scrolls on its own (MW, #4340)", async () => {
+    for (const live of [false, true])
+      await withPage(1920, "tall", live, async (page) => {
+        const where = `tall 1920 px ${live ? "live" : "server"}`;
+        const mainBox = await boxOf(page, mainOf("tall"));
+        const sideBox = await boxOf(page, side);
+        if (!mainBox || !sideBox) throw new Error(`${where}: a column is missing`);
+        expectBeside(where, mainBox, sideBox, 340);
+        const scroll = await page.evaluate((selector) => {
+          const scroller = document.querySelector<HTMLElement>(`${selector} > .k2-scroll`)!;
+          scroller.scrollTop = 500;
+          return {
+            overflow: getComputedStyle(scroller).overflowY,
+            taller: scroller.scrollHeight > scroller.clientHeight,
+            top: scroller.scrollTop,
+            page: document.documentElement.scrollHeight <= innerHeight,
+          };
+        }, mainOf("tall"));
+        expect([where, scroll]).toEqual([where, { overflow: "auto", taller: true, top: 500, page: true }]);
+      });
   }, 30_000);
 
   test("given way, the split scrolls to the end of its content and no further", async () => {

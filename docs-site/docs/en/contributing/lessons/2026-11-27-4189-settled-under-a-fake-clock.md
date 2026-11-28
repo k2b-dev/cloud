@@ -1,0 +1,6 @@
+### A test that settles under a fake clock timed out when it ran first
+
+- **What happened:** In WebKit, the Files test "a changed folder poll keeps scroll and focus" at 1440 px timed out after 5 s when its file ran first and alone. In a longer run, or in Chromium, it passed.
+- **Root cause:** The test installs Playwright's clock, which also takes over `requestAnimationFrame`. `settled()` waited for animation frames, so under the clock it waited for fake time and not for the browser's rendering. The test also loaded the page inside its 5 s. WebKit's first rendering update of a new page took 3.7 s at 1440×700 in CI's image (0.7 s at 390 px), which left too little time for the behavior that the test checks.
+- **Error class:** Faked animation frames in a browser test, together with test work sized for an idle machine.
+- **Guard:** `settled()` waits for the browser's real frames from `__pwClock.builtins` when Playwright's clock is installed. The test "settled() settles a page whose fake clock is paused" in `packages/ui/test/browser.browser.test.ts` failed before the fix and passes after it. `LiveRefresh.browser.test.ts` loads and renders its page in `beforeAll` for each width, so the test's 5 s cover only the poll that it checks.

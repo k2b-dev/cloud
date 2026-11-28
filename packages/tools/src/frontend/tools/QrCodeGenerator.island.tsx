@@ -2,8 +2,29 @@
 // depends on the optional peer `lean-qr`. Use the subpath import; this
 // app declares lean-qr as a direct dep so it's installed in the container.
 import { qr } from "@k2b/stdlib/qr";
-import { Button, ColorInput, CopyButton, DateTimePicker, Select, Slider, TextInput, Switch as Toggle, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import {
+  Band,
+  Button,
+  Canvas,
+  Check,
+  ColorInput,
+  DatePicker,
+  Empty,
+  Facts,
+  Field,
+  Input,
+  Pane,
+  Popover,
+  Section,
+  Select,
+  Slider,
+  Text,
+} from "@k2b/ui/v2";
 import { createMemo, createSignal, Match, Show, Switch } from "solid-js";
+import ToolsScreen from "../ToolsScreen";
+import { toolsWorkspaceMessages } from "../tools-messages";
+import { parseEventMoment } from "./event-moment";
 import { qrMessages } from "./qr-messages";
 
 type Mode = "text" | "wifi" | "email" | "tel" | "vcard" | "event";
@@ -11,6 +32,7 @@ type Mode = "text" | "wifi" | "email" | "tel" | "vcard" | "event";
 export default function QrCodeGenerator() {
   const locale = useLocale();
   const t = () => qrMessages.resolve([locale()]).t;
+  const w = () => toolsWorkspaceMessages.resolve([locale()]).t;
 
   // === Mode ===
   const [mode, setMode] = createSignal<Mode>("text");
@@ -68,6 +90,16 @@ export default function QrCodeGenerator() {
   const [evLocation, setEvLocation] = createSignal("");
   const [evStart, setEvStart] = createSignal("");
   const [evEnd, setEvEnd] = createSignal("");
+  // a typed moment counts only when it is a real date and time; otherwise the field says so and no event is made
+  const eventStart = () => parseEventMoment(evStart());
+  const eventEnd = () => parseEventMoment(evEnd());
+  const startError = () => (evStart().trim() && !eventStart() ? t().evMomentInvalid : undefined);
+  const endError = () =>
+    evEnd().trim() && !eventEnd()
+      ? t().evMomentInvalid
+      : eventStart() && eventEnd() && eventEnd()! < eventStart()!
+        ? t().evEndBeforeStart
+        : undefined;
   const [evDescription, setEvDescription] = createSignal("");
 
   // === Display settings (shared) ===
@@ -118,12 +150,12 @@ export default function QrCodeGenerator() {
             })
           : "";
       case "event":
-        return evTitle().trim()
+        return evTitle().trim() && !startError() && !endError()
           ? qr.event({
               title: evTitle(),
               location: evLocation(),
-              start: evStart(),
-              end: evEnd(),
+              start: eventStart() ?? "",
+              end: eventEnd() ?? "",
               description: evDescription(),
             })
           : "";
@@ -131,6 +163,18 @@ export default function QrCodeGenerator() {
         return "";
     }
   });
+
+  // What the page shows of the content: a Wi-Fi password stands masked, as anyone beside the screen could read it;
+  // copying still gives the whole content, as the code itself holds it.
+  const shownPayload = () =>
+    mode() === "wifi" && wifiPassword() && wifiSsid().trim()
+      ? qr.wifi({
+          ssid: wifiSsid(),
+          password: "••••••••",
+          encryption: wifiEncryption() as "WPA" | "WEP" | "nopass",
+          hidden: wifiHidden(),
+        })
+      : payload();
 
   // === QR rendering ===
   const qrSvg = createMemo(() => {
@@ -192,338 +236,248 @@ export default function QrCodeGenerator() {
     im.src = url;
   };
 
-  return (
-    <div class="tools-qr-root flex flex-col gap-2">
-      <div class="tools-qr-workbench">
-        <section class="paper tools-qr-input flex flex-col gap-4 p-4">
-          <header>
-            <h2 class="text-sm font-semibold text-primary">{t().contentHeading}</h2>
-            <p class="text-xs text-dimmed">{modeInfo()}</p>
-          </header>
-
-          <Select
-            label={t().contentType}
-            icon="ti ti-qrcode"
-            value={mode}
-            onValueChange={(value) => setMode(value as Mode)}
-            options={[
-              { id: "text", label: t().typeText, icon: "ti ti-link" },
-              { id: "wifi", label: t().typeWifi, icon: "ti ti-wifi" },
-              { id: "email", label: t().typeEmail, icon: "ti ti-mail" },
-              { id: "tel", label: t().typeTel, icon: "ti ti-phone" },
-              { id: "vcard", label: t().typeVcard, icon: "ti ti-address-book" },
-              { id: "event", label: t().typeEvent, icon: "ti ti-calendar-event" },
-            ]}
+  const field = (
+    label: string,
+    value: () => string,
+    set: (value: string) => void,
+    extra: {
+      hint?: string;
+      placeholder?: string;
+      icon?: string;
+      optional?: boolean;
+      type?: "password" | "email" | "tel" | "url";
+      multiline?: boolean;
+      error?: string;
+    } = {},
+  ) => (
+    <Field label={label} hint={extra.hint} error={extra.error} optional={extra.optional ? w().optional : undefined}>
+      <Input
+        type={extra.type}
+        icon={extra.icon}
+        multiline={extra.multiline}
+        placeholder={extra.placeholder}
+        value={value()}
+        onInput={set}
+      />
+    </Field>
+  );
+  // A moment as the person reads it: "15.06.2026 14:30" in German, the key order with a space otherwise.
+  const shownMoment = (moment: string) => {
+    const [date = "", time = ""] = moment.split("T");
+    const [year, month, day] = date.split("-");
+    return locale().startsWith("de") ? `${day}.${month}.${year} ${time}` : `${date} ${time}`;
+  };
+  const momentField = (label: string, value: () => string, set: (value: string) => void, error: string | undefined) => (
+    <Field label={label} error={error} optional={w().optional}>
+      <Input
+        placeholder="15.06.2026 14:30"
+        value={value()}
+        onInput={set}
+        end={
+          <Popover
+            icon="calendar"
+            label={t().pickMoment}
+            title={label}
+            content={<DatePicker time label={label} value={parseEventMoment(value())} onPick={(moment) => set(shownMoment(moment))} />}
           />
-
-          <div class="flex flex-col gap-3">
-            <Switch>
-              <Match when={mode() === "text"}>
-                <TextInput
-                  label={t().textLabel}
-                  description={t().textDescription}
-                  placeholder={t().textPlaceholder}
-                  icon="ti ti-link"
-                  multiline
-                  lines={4}
-                  value={text}
-                  onValueChange={setText}
+        }
+      />
+    </Field>
+  );
+  const download = { label: t().downloadSvg, icon: "download", onClick: downloadSvg, disabled: !qrSvg() };
+  return (
+    <ToolsScreen
+      tool="qr"
+      primary={download}
+      end={
+        <>
+          <Button icon="photo-down" disabled={!qrSvg()} onClick={downloadPng}>
+            PNG
+          </Button>
+          <Button variant="primary" icon="download" floats disabled={!qrSvg()} onClick={downloadSvg}>
+            {t().downloadSvg}
+          </Button>
+        </>
+      }
+    >
+      <Pane label={t().contentHeading} scrollKey="tools-qr">
+        <Pane.Split>
+          <Pane label={t().contentHeading} width={{ min: 360, default: 480 }}>
+            <Band label={t().contentHeading}>
+              <Field label={t().contentType} hint={modeInfo()}>
+                <Select
+                  value={mode()}
+                  onChange={(value) => setMode(value as Mode)}
+                  options={[
+                    { value: "text", label: t().typeText },
+                    { value: "wifi", label: t().typeWifi },
+                    { value: "email", label: t().typeEmail },
+                    { value: "tel", label: t().typeTel },
+                    { value: "vcard", label: t().typeVcard },
+                    { value: "event", label: t().typeEvent },
+                  ]}
                 />
-              </Match>
-
-              <Match when={mode() === "wifi"}>
-                <TextInput
-                  label={t().wifiSsidLabel}
-                  description={t().wifiSsidDescription}
-                  placeholder={t().wifiSsidPlaceholder}
-                  icon="ti ti-wifi"
-                  value={wifiSsid}
-                  onValueChange={setWifiSsid}
-                  required
+              </Field>
+              <Switch>
+                <Match when={mode() === "text"}>
+                  {field(t().textLabel, text, setText, { hint: t().textDescription, placeholder: t().textPlaceholder, multiline: true })}
+                </Match>
+                <Match when={mode() === "wifi"}>
+                  {field(t().wifiSsidLabel, wifiSsid, setWifiSsid, {
+                    hint: t().wifiSsidDescription,
+                    placeholder: t().wifiSsidPlaceholder,
+                    icon: "wifi",
+                  })}
+                  {field(t().wifiPasswordLabel, wifiPassword, setWifiPassword, {
+                    hint: t().wifiPasswordDescription,
+                    placeholder: t().wifiPasswordPlaceholder,
+                    type: "password",
+                    optional: true,
+                  })}
+                  <Field label={t().wifiEncryptionLabel}>
+                    <Select
+                      value={wifiEncryption()}
+                      onChange={setWifiEncryption}
+                      options={[
+                        { value: "WPA", label: "WPA / WPA2" },
+                        { value: "WEP", label: "WEP" },
+                        { value: "nopass", label: t().wifiEncryptionNone },
+                      ]}
+                    />
+                  </Field>
+                  <Check switch label={t().wifiHiddenLabel} checked={wifiHidden()} onChange={setWifiHidden} />
+                </Match>
+                <Match when={mode() === "email"}>
+                  {field(t().emailToLabel, emailTo, setEmailTo, {
+                    hint: t().emailToDescription,
+                    placeholder: t().emailToPlaceholder,
+                    type: "email",
+                    icon: "mail",
+                  })}
+                  {field(t().emailSubjectLabel, emailSubject, setEmailSubject, {
+                    placeholder: t().emailSubjectPlaceholder,
+                    optional: true,
+                  })}
+                  {field(t().emailBodyLabel, emailBody, setEmailBody, {
+                    placeholder: t().emailBodyPlaceholder,
+                    multiline: true,
+                    optional: true,
+                  })}
+                </Match>
+                <Match when={mode() === "tel"}>
+                  {field(t().telLabel, telNumber, setTelNumber, {
+                    hint: t().telDescription,
+                    placeholder: "+49 123 456 7890",
+                    type: "tel",
+                    icon: "phone",
+                  })}
+                </Match>
+                <Match when={mode() === "vcard"}>
+                  <Field.Row>
+                    {field(t().vcFirstNameLabel, vcFirstName, setVcFirstName, { placeholder: t().vcFirstNamePlaceholder })}
+                    {field(t().vcLastNameLabel, vcLastName, setVcLastName, { placeholder: t().vcLastNamePlaceholder, optional: true })}
+                  </Field.Row>
+                  <Field.Row>
+                    {field(t().vcOrgLabel, vcOrg, setVcOrg, { placeholder: t().vcOrgPlaceholder, optional: true })}
+                    {field(t().vcTitleLabel, vcTitle, setVcTitle, { placeholder: t().vcTitlePlaceholder, optional: true })}
+                  </Field.Row>
+                  <Field.Row>
+                    {field(t().vcPhoneLabel, vcPhone, setVcPhone, { placeholder: "+49 123 456 7890", type: "tel", optional: true })}
+                    {field(t().vcEmailLabel, vcEmail, setVcEmail, { placeholder: t().vcEmailPlaceholder, type: "email", optional: true })}
+                  </Field.Row>
+                  {field(t().vcWebsiteLabel, vcWebsite, setVcWebsite, { placeholder: "https://example.com", type: "url", optional: true })}
+                  <Field.Row>
+                    {field(t().vcStreetLabel, vcStreet, setVcStreet, { placeholder: t().vcStreetPlaceholder, optional: true })}
+                    {field(t().vcCityLabel, vcCity, setVcCity, { placeholder: "Berlin", optional: true })}
+                  </Field.Row>
+                  <Field.Row>
+                    {field(t().vcZipLabel, vcZip, setVcZip, { placeholder: "10115", optional: true })}
+                    {field(t().vcCountryLabel, vcCountry, setVcCountry, { placeholder: t().vcCountryPlaceholder, optional: true })}
+                  </Field.Row>
+                </Match>
+                <Match when={mode() === "event"}>
+                  {field(t().evTitleLabel, evTitle, setEvTitle, { placeholder: t().evTitlePlaceholder })}
+                  {field(t().evLocationLabel, evLocation, setEvLocation, {
+                    hint: t().evLocationDescription,
+                    placeholder: t().evLocationPlaceholder,
+                    optional: true,
+                  })}
+                  {/* start and end are typed ("15.06.2026 14:30") or picked: the calendar at the field's end is the v2
+                      DatePicker with its time, as v1 had one; parseEventMoment reads what was typed */}
+                  <Field.Row>
+                    {momentField(t().evStartLabel, evStart, setEvStart, startError())}
+                    {momentField(t().evEndLabel, evEnd, setEvEnd, endError())}
+                  </Field.Row>
+                  {field(t().evDescriptionLabel, evDescription, setEvDescription, {
+                    placeholder: t().evDescriptionPlaceholder,
+                    multiline: true,
+                    optional: true,
+                  })}
+                </Match>
+              </Switch>
+            </Band>
+            <Section icon="adjustments" title={t().advancedTitle} summary={t().advancedSubtitle}>
+              <Field label={t().ecLabel} hint={t().ecDescription}>
+                <Select
+                  value={ecLevel()}
+                  onChange={setEcLevel}
+                  options={[
+                    { value: "L", label: t().ecLow },
+                    { value: "M", label: t().ecMedium },
+                    { value: "Q", label: t().ecQuartile },
+                    { value: "H", label: t().ecHigh },
+                  ]}
                 />
-                <TextInput
-                  label={t().wifiPasswordLabel}
-                  description={t().wifiPasswordDescription}
-                  placeholder={t().wifiPasswordPlaceholder}
-                  icon="ti ti-lock"
-                  value={wifiPassword}
-                  onValueChange={setWifiPassword}
-                  password
-                />
-                <div class="grid grid-cols-1 items-end gap-3 sm:grid-cols-2">
-                  <Select
-                    label={t().wifiEncryptionLabel}
-                    icon="ti ti-shield-lock"
-                    value={wifiEncryption}
-                    onValueChange={setWifiEncryption}
-                    options={[
-                      { id: "WPA", label: "WPA / WPA2" },
-                      { id: "WEP", label: "WEP" },
-                      { id: "nopass", label: t().wifiEncryptionNone },
-                    ]}
+              </Field>
+              <Field.Row>
+                <Field label={t().fgLabel} hint={t().fgDescription}>
+                  <ColorInput value={fgColor()} onChange={setFgColor} />
+                </Field>
+                <Field label={t().bgLabel} hint={t().bgDescription}>
+                  <ColorInput value={bgColor()} onChange={setBgColor} />
+                </Field>
+              </Field.Row>
+              <Check switch label={t().transparentLabel} checked={transparentBg()} onChange={setTransparentBg} />
+              <Field label={t().sizeLabel} hint={t().sizeDescription} optional="100–1000 px">
+                <Slider min={100} max={1000} step={10} value={size()} onChange={setSize} />
+              </Field>
+            </Section>
+          </Pane>
+          <Pane label={t().previewHeading}>
+            <Section icon="qrcode" title={t().previewHeading} count={`${size()} px`} summary={t().previewSubtitle}>
+              <Canvas label={t().qrAlt} height={320}>
+                <Show
+                  when={qrSvg()}
+                  fallback={
+                    <Empty
+                      icon={payload() ? "alert-circle" : "qrcode-off"}
+                      text={
+                        payload()
+                          ? `${t().previewUnavailable}. ${t().previewUnavailableHint}`
+                          : `${t().previewEmpty}. ${t().previewEmptyHint}`
+                      }
+                    />
+                  }
+                >
+                  <img
+                    src={svgDataUrl()}
+                    alt={t().qrAlt}
+                    style={{ display: "block", height: "100%", margin: "0 auto", "aspect-ratio": "1" }}
                   />
-                  <div class="flex h-9.5 items-center">
-                    <Toggle label={t().wifiHiddenLabel} value={wifiHidden} onValueChange={setWifiHidden} />
-                  </div>
-                </div>
-              </Match>
-
-              <Match when={mode() === "email"}>
-                <TextInput
-                  label={t().emailToLabel}
-                  description={t().emailToDescription}
-                  placeholder={t().emailToPlaceholder}
-                  icon="ti ti-mail"
-                  value={emailTo}
-                  onValueChange={setEmailTo}
-                  required
-                />
-                <TextInput
-                  label={t().emailSubjectLabel}
-                  placeholder={t().emailSubjectPlaceholder}
-                  icon="ti ti-text-caption"
-                  value={emailSubject}
-                  onValueChange={setEmailSubject}
-                />
-                <TextInput
-                  label={t().emailBodyLabel}
-                  placeholder={t().emailBodyPlaceholder}
-                  icon="ti ti-align-left"
-                  multiline
-                  value={emailBody}
-                  onValueChange={setEmailBody}
-                />
-              </Match>
-
-              <Match when={mode() === "tel"}>
-                <TextInput
-                  label={t().telLabel}
-                  description={t().telDescription}
-                  placeholder="+49 123 456 7890"
-                  icon="ti ti-phone"
-                  value={telNumber}
-                  onValueChange={setTelNumber}
-                  required
-                />
-              </Match>
-
-              <Match when={mode() === "vcard"}>
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <TextInput
-                    label={t().vcFirstNameLabel}
-                    placeholder={t().vcFirstNamePlaceholder}
-                    icon="ti ti-user"
-                    value={vcFirstName}
-                    onValueChange={setVcFirstName}
-                    required
-                  />
-                  <TextInput
-                    label={t().vcLastNameLabel}
-                    placeholder={t().vcLastNamePlaceholder}
-                    value={vcLastName}
-                    onValueChange={setVcLastName}
-                  />
-                </div>
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <TextInput
-                    label={t().vcOrgLabel}
-                    placeholder={t().vcOrgPlaceholder}
-                    icon="ti ti-building"
-                    value={vcOrg}
-                    onValueChange={setVcOrg}
-                  />
-                  <TextInput
-                    label={t().vcTitleLabel}
-                    placeholder={t().vcTitlePlaceholder}
-                    icon="ti ti-briefcase"
-                    value={vcTitle}
-                    onValueChange={setVcTitle}
-                  />
-                </div>
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <TextInput
-                    label={t().vcPhoneLabel}
-                    placeholder="+49 123 456 7890"
-                    icon="ti ti-phone"
-                    value={vcPhone}
-                    onValueChange={setVcPhone}
-                  />
-                  <TextInput
-                    label={t().vcEmailLabel}
-                    placeholder={t().vcEmailPlaceholder}
-                    icon="ti ti-mail"
-                    value={vcEmail}
-                    onValueChange={setVcEmail}
-                  />
-                </div>
-                <TextInput
-                  label={t().vcWebsiteLabel}
-                  placeholder="https://example.com"
-                  icon="ti ti-world"
-                  value={vcWebsite}
-                  onValueChange={setVcWebsite}
-                />
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <TextInput
-                    label={t().vcStreetLabel}
-                    placeholder={t().vcStreetPlaceholder}
-                    icon="ti ti-map-pin"
-                    value={vcStreet}
-                    onValueChange={setVcStreet}
-                  />
-                  <TextInput label={t().vcCityLabel} placeholder="Berlin" value={vcCity} onValueChange={setVcCity} />
-                </div>
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <TextInput label={t().vcZipLabel} placeholder="10115" value={vcZip} onValueChange={setVcZip} />
-                  <TextInput
-                    label={t().vcCountryLabel}
-                    placeholder={t().vcCountryPlaceholder}
-                    value={vcCountry}
-                    onValueChange={setVcCountry}
-                  />
-                </div>
-              </Match>
-
-              <Match when={mode() === "event"}>
-                <TextInput
-                  label={t().evTitleLabel}
-                  placeholder={t().evTitlePlaceholder}
-                  icon="ti ti-calendar-event"
-                  value={evTitle}
-                  onValueChange={setEvTitle}
-                  required
-                />
-                <TextInput
-                  label={t().evLocationLabel}
-                  description={t().evLocationDescription}
-                  placeholder={t().evLocationPlaceholder}
-                  icon="ti ti-map-pin"
-                  value={evLocation}
-                  onValueChange={setEvLocation}
-                />
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <DateTimePicker
-                    label={t().evStartLabel}
-                    value={() => evStart() || null}
-                    onValueChange={(value) => setEvStart(value ?? "")}
-                    clearable
-                  />
-                  <DateTimePicker
-                    label={t().evEndLabel}
-                    value={() => evEnd() || null}
-                    onValueChange={(value) => setEvEnd(value ?? "")}
-                    clearable
-                  />
-                </div>
-                <TextInput
-                  label={t().evDescriptionLabel}
-                  placeholder={t().evDescriptionPlaceholder}
-                  icon="ti ti-align-left"
-                  multiline
-                  value={evDescription}
-                  onValueChange={setEvDescription}
-                />
-              </Match>
-            </Switch>
-          </div>
-        </section>
-
-        <section class="paper tools-qr-preview flex flex-col gap-4 p-4" aria-live="polite">
-          <header class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <h2 class="text-sm font-semibold text-primary">{t().previewHeading}</h2>
-              <p class="text-xs text-dimmed">{t().previewSubtitle}</p>
-            </div>
-            <span class="shrink-0 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] px-2 py-1 text-xs tabular-nums text-dimmed">
-              {size()} px
-            </span>
-          </header>
-
-          <div class="tools-qr-preview-frame">
-            <Show
-              when={qrSvg()}
-              fallback={
-                <div class="max-w-64 text-center">
-                  <div class="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-[var(--ui-radius-control)] border border-[var(--ui-state-icon-border)] bg-[var(--ui-state-icon-surface)] text-dimmed">
-                    <i class={`ti ${payload() ? "ti-alert-circle" : "ti-qrcode-off"} text-lg`} />
-                  </div>
-                  <p class="text-sm font-medium text-primary">{payload() ? t().previewUnavailable : t().previewEmpty}</p>
-                  <p class="mt-0.5 text-xs text-dimmed">{payload() ? t().previewUnavailableHint : t().previewEmptyHint}</p>
-                </div>
-              }
-            >
-              <img src={svgDataUrl()} alt={t().qrAlt} class="tools-qr-image" />
-            </Show>
-          </div>
-
-          <Show when={qrSvg()}>
-            <div class="flex flex-wrap items-center justify-center gap-2">
-              <Button size="sm" onClick={downloadSvg}>
-                <i class="ti ti-download" />
-                {t().downloadSvg}
-              </Button>
-              <Button variant="secondary" size="sm" onClick={downloadPng}>
-                <i class="ti ti-photo-down" />
-                PNG
-              </Button>
-              <CopyButton text={payload()} label={t().copyContent} variant="secondary" size="sm" />
-            </div>
-          </Show>
-        </section>
-
-        <details class="paper tools-qr-advanced group p-4" open>
-          <summary class="focus-ui flex cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--ui-radius-control)]">
-            <span>
-              <span class="block text-sm font-semibold text-primary">{t().advancedTitle}</span>
-              <span class="block text-xs font-normal text-dimmed">{t().advancedSubtitle}</span>
-            </span>
-            <i class="ti ti-chevron-down shrink-0 text-sm text-dimmed transition-transform group-open:rotate-180" />
-          </summary>
-
-          <div class="mt-4 flex flex-col gap-3">
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Select
-                label={t().ecLabel}
-                description={t().ecDescription}
-                icon="ti ti-shield-check"
-                value={ecLevel}
-                onValueChange={setEcLevel}
-                options={[
-                  { id: "L", label: t().ecLow },
-                  { id: "M", label: t().ecMedium },
-                  { id: "Q", label: t().ecQuartile },
-                  { id: "H", label: t().ecHigh },
-                ]}
-              />
-              <ColorInput label={t().fgLabel} description={t().fgDescription} value={fgColor} onValueChange={setFgColor} />
-              <ColorInput
-                label={t().bgLabel}
-                description={t().bgDescription}
-                value={bgColor}
-                onValueChange={setBgColor}
-                transparent
-                transparentValue={transparentBg}
-                onTransparentValueChange={setTransparentBg}
-              />
-            </div>
-            <Slider
-              label={t().sizeLabel}
-              description={t().sizeDescription}
-              value={size}
-              onValueChange={setSize}
-              min={100}
-              max={1000}
-              step={50}
-              showValue
-            />
-          </div>
-        </details>
-      </div>
-
-      <p class="tools-local-note">
-        <i class="ti ti-device-laptop" />
-        {t().localNote}
-      </p>
-    </div>
+                </Show>
+              </Canvas>
+              <Show when={payload()}>
+                <Facts items={[{ label: t().contentHeading, value: shownPayload(), mono: true, copy: payload() }]} />
+              </Show>
+            </Section>
+            <Band label={t().localNote}>
+              <Text type="meta" muted>
+                {t().localNote}
+              </Text>
+            </Band>
+          </Pane>
+        </Pane.Split>
+      </Pane>
+    </ToolsScreen>
   );
 }

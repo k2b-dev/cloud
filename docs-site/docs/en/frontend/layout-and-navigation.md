@@ -545,8 +545,24 @@ layout then adds no wrapper around the content. The older corner values
 `top-left`, `top-right`, `bottom-left`, and `bottom-right` are deprecated and
 behave like the default.
 
-The application remains responsible for its one semantic `main` landmark and
-all page styling. Do not add a second language or theme control or a second
+Set `ui="v2"` (provisional, like `@k2b/ui/v2`) when the page is built with
+`@k2b/ui/v2`, such as a venue's public programme, a public form, a share or a
+kiosk screen. The layout then puts the content in the `main` landmark as the
+v2 scope in the application's colours, as `Layout ui="v2"` does, with no Cloud
+chrome. The content fills the window above the footer: return one `Workspace`
+without a sidebar, with the brand and the one task in its head. With
+`preferences={false}`, a kiosk screen takes the whole window and its `Pane`
+scrolls inside. The k2b-ui recipe `public-page` shows such a page and its kiosk
+state.
+
+```tsx
+<MinimalLayout c={c} ui="v2">
+  <VenueProgramme />
+</MinimalLayout>
+```
+
+Without `ui`, the application remains responsible for its one semantic `main`
+landmark and all page styling. Do not add a second language or theme control or a second
 legal-links footer to the page. Do not use `MinimalLayout` as an
 access-control signal: route middleware, public grants, and share-token
 validation remain separate server responsibilities.
@@ -776,7 +792,8 @@ authorized registry.
 
 ## Provide global app bar shortcuts
 
-Administrators open **Administration → App bar** (`/admin/rail`) to create,
+Administrators open **Administration → Apps → Navigation** (`/admin/apps/navigation`;
+the old address `/admin/rail` leads there) to create,
 edit, reorder, or remove global shortcuts. Each shortcut points to an available
 app or a link with a title and icon.
 
@@ -876,7 +893,7 @@ data:
 </AdminLayout>
 
 // StorageScreen.tsx (island)
-<AdminWorkspace nav={props.nav} head={<Bar start={<Text type="body">{t().storage}</Text>} />}>
+<AdminWorkspace nav={props.nav} head={<Bar end={<Button variant="primary" icon="plus" label={t().add} href="?bucket=new" />} />}>
   <Pane label={t().storage}>…</Pane>
 </AdminWorkspace>
 ```
@@ -890,11 +907,13 @@ not fit; on the phone it leaves the page and the phone bar's title opens it as
 the shell's menu, from the first render. `scroll`, `contentClass` and `ownMain`
 do not apply to a v2 admin page.
 
-The admin sidebar shows the overview, then **Set up** (base settings, storage,
-sign-in, outgoing mail, email templates, announcements, AI), then
-**Operations** (apps, app bar, maintenance mode, Observability, People), then
-app-owned groups, and last **Settings per app** with one entry per app's
-`adminHref`.
+The admin sidebar shows **Set up** (base settings, storage, sign-in, outgoing
+mail with its email templates, announcements, AI), then **Operations** (apps
+with their navigation, maintenance mode, Observability, People), then app-owned
+groups, and last **Settings per app** with one entry per app's `adminHref`.
+`/admin` has no page of its own. It opens the Observability overview where
+Gateway Ops serves it, and the Apps page otherwise, and keeps the parameters of
+the link.
 
 App-owned admin groups come from `adminNav` in the application declaration.
 A group may declare `section: "ai"` or `section: "observability"` to contribute

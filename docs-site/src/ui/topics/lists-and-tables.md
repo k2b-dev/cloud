@@ -18,6 +18,12 @@ Sources of Pulse: two-line rows, the open one tinted, its detail beside the list
 
 <Example recipe="list-detail" height="560" default="Open" />
 
+## Folders as a tree
+
+Files with its folder tree: the sidebar's `Nav` group takes a `tree`, the table takes `tree` for rows in levels. The open folder comes from the address, so the way to it stands open on the server's page. The arrow, or Right and Left, folds a folder without opening it; a press on its name opens it. Load only what opens: a folder loads its children the first time it opens (`load`), a level with thousands of entries ends in "Weitere laden", and a folder that failed to load shows a red mark until opening it again works.
+
+<Example recipe="tree" height="560" />
+
 ## List or table?
 
 ### List
@@ -38,25 +44,36 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 ### List
 
-Many like things, one per line; `label` names it. A list that can grow without end takes its data (`items`, `rowKey`, `row`) instead of written rows: only the rows in view and a margin around them are in the page, the server renders the first rows, the focused row stays while it scrolls away, and each row says where it stands. Use it for every list whose length you do not control.
+Many like things, one per line; `label` names it. Rows part with a quiet line, and the open row takes the tint of the app the rows belong to (`color`, the page's app by default); a row chosen in a selection is blue. A list ends without a line; only a grid table ends with the clear one. A list that can grow without end takes its data (`items`, `rowKey`, `row`) instead of written rows: only the rows in view and a margin around them are in the page, the server renders the first rows, the focused row stays while it scrolls away, and each row says where it stands. Use it for every list whose length you do not control.
 
 <Props of="List" />
 
 ### Row
 
-One entry: one to three lines, a lead, a time, marks and one action; `current`, `unread` and `yours` mark it. Marks take at most half of the row and give way whole when there is no room: a tag is cut to about 12 letters first, lone symbols leave next, then the marks at the end, so pass them in the order of their weight. An address or a file name as a line is cut in the middle with `Cut`, so its domain or extension stays readable.
+One entry: one to three lines, a lead, a time, marks and one action; `current`, `unread` and `yours` mark it. `level` sets an entry 1 to 6 levels deep in a flat list, such as the headings of a note, without folding. Marks take at most half of the row and give way whole when there is no room: a tag is cut to about 12 letters first, lone symbols leave next, then the marks at the end, so pass them in the order of their weight. An address or a file name as a line is cut in the middle with `Cut`, so its domain or extension stays readable.
 
 <Props of="Row" />
 
 ### Table
 
-Columns of like things: fixed widths, cut text, dropped columns and two-line rows on the phone. A table of any length keeps only the rows in view in the page; its head stays.
+Columns of like things: fixed widths, cut text, dropped columns and two-line rows on the phone; a column of states takes `Chip status quiet`, a dot and a word. Rows part with a quiet line, the head with a clear one; the open row takes the tint of its app (`color`), a chosen row the blue of a selection. One column may show each row's data over time as [`Ticks`](/en/ui/v2/content). On a touch screen the grips of the head stay visible; after a touch on the head each takes a 44 px target until a touch lands elsewhere. A table of any length keeps only the rows in view in the page; its head stays.
 
 <Props of="Table Column" />
 
+### Trees
+
+Places in levels: a `Nav` group's `tree` (each place a `NavTreeNode`) and a table's `tree` (rows whose children stand under them). Both are one Tab stop with the keys of the tree pattern; on the phone a table shows its top level.
+
+<Props of="NavTree NavTreeNode TableTree" />
+
 ### StatusRow
 
-Above the rows: the one statement, key figures and filters; a selection bar while rows are selected.
+Above the rows: the one statement, key figures and filters; a selection bar while rows are selected. An exception
+belongs to the statement as a tinted chip in `marks`, such as `<Chip status="bad">1 ohne Zugriff</Chip>`; it stays on
+the phone. In a narrow row the lead is cut and the figures fold first; the chips give way last, whole, where about a
+word of the lead would no longer fit. A chip that must never leave belongs in the lead itself. Put only chips there, no
+buttons: a chip that gave way is out of sight but still in the page. `missing() > 0 && <Chip …/>` is fine; `false`
+draws nothing, so nothing moves when the exception comes or goes.
 
 <Props of="StatusRow" />
 
@@ -74,15 +91,15 @@ The states, in the place of the rows; their rules are in [States and notices](/e
 
 ## Not in v2 yet
 
-Reorder by dragging, and a tree. Until they ship, use the nearest part and write `// k2b-ui gap: …` at that place.
+Reorder by dragging. Until it ships, use the nearest part and write `// k2b-ui gap: …` at that place.
 
 ## Do and don't
 
 ### Do
 
 - Open an entry by `href`; add `onNavigate` to open it in place.
-- Give a list that can grow without end its `items` (write rows out only for a few fixed ones), and every wide table a `phone(row)` with the row's deeds as `phone(row).end`.
-- Put the count and key figures in the `StatusRow`.
+- Give a list that can grow without end its `items` (write rows out only for a few fixed ones), and every wide table a `phone(row)`, with the row's deeds as `phone(row).end`.
+- Put the count and key figures in the `StatusRow`, an exception as a tinted chip in its `marks`.
 - Keep row text short; long text is cut with "…" and shows whole on hover.
 
 ### Don't

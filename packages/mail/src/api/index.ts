@@ -4,6 +4,7 @@ import { CloudResourceRefSchema, ErrorResponseSchema } from "@k2b/cloud/contract
 import {
   auth,
   getLocale,
+  getTimeZone,
   jsonResponse,
   REQUEST_IDLE_TIMEOUT_SECONDS,
   rateLimit,
@@ -212,8 +213,15 @@ import { mailLive } from "../service/live";
 import { mailLiveChannels } from "../service/live-channels";
 import type { AttachmentDownload } from "../service/messages";
 import { discoverMailConfigurations } from "../service/onboarding-discovery";
-import { CountRefreshBusy } from "../service/view-count-cache";
-import { loadMailboxConversationDetail, loadMailboxListView, loadMailboxPageData, resolveWorkspaceRequest } from "../service/workspace";
+import { loadReceivedPerDay } from "../service/received-per-day";
+import { CountRefreshBusy, FIRST_RENDER_COUNT_WAIT_MS } from "../service/view-count-cache";
+import {
+  loadMailboxConversationDetail,
+  loadMailboxListView,
+  loadMailboxPageData,
+  resolveWorkspaceRequest,
+  workspaceRouteCounts,
+} from "../service/workspace";
 import legacyLiveRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
 import automationExportRoutes from "./automation-export";
@@ -344,7 +352,12 @@ const workspaceRouteQuerySchema = z.object({
   listMode: z.enum(["conversations", "messages"]).default("conversations"),
   /** "keep": the browser already holds the drag's people for this mailbox; the answer then leaves them out (null). */
   dropAssignees: z.enum(["load", "keep"]).default("load"),
+  /**
+   * "load": the mails per day, for the v2 reader when the switch opens no mail; otherwise the answer leaves them out.
+   */
+  receivedPerDay: z.enum(["load", "keep"]).default("keep"),
 });
+const workspaceCountsQuerySchema = z.object({ href: z.string().trim().min(1).max(MAX_MAIL_WORKSPACE_HREF_LENGTH) });
 const attachmentQuerySchema = z.object({
   inline: z
     .enum(["true", "false"])
@@ -610,13 +623,24 @@ const respondSenderIdentities = <T>(c: Context<MailApiContext>, result: Result<T
   respondPublic(c, result, "senderIdentities");
 const respondDrafts = async <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) => {
   const resolved = await result;
-  if (!resolved.ok && resolved.error.code === "DRAFT_REPLY_BOX_OCCUPIED" && "draftId" in resolved.error)
-    return respond(
-      c,
-      { ok: false, error: localizeMailError(resolved.error, getLocale(c)).message, status: 409, code: resolved.error.code },
-      { errorDetails: { draftId: String(resolved.error.draftId) } },
-    );
-  return respondPublic(c, resolved, "drafts");
+  if (resolved.ok || resolved.error.status !== 409) return respondPublic(c, resolved, "drafts");
+  // A refused write names the draft's current revision (and an occupied reply box its draft and intent)
+  // so a client can reread, update or switch the mode without guessing.
+  const error = resolved.error;
+  const details = {
+    ...(error.code === "DRAFT_REPLY_BOX_OCCUPIED" && "draftId" in error ? { draftId: String(error.draftId) } : {}),
+    ...("revision" in error && typeof error.revision === "number" ? { revision: error.revision } : {}),
+    ...(error.code === "DRAFT_REPLY_BOX_OCCUPIED" && "intent" in error && typeof error.intent === "string" ? { intent: error.intent } : {}),
+    ...(error.code === "DRAFT_REPLY_BOX_OCCUPIED" && "nextStep" in error && typeof error.nextStep === "string"
+      ? { nextStep: error.nextStep }
+      : {}),
+  };
+  if (Object.keys(details).length === 0) return respondPublic(c, resolved, "drafts");
+  return respond(
+    c,
+    { ok: false, error: localizeMailError(error, getLocale(c)).message, status: 409, code: error.code },
+    { errorDetails: details },
+  );
 };
 const respondDeliveries = <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) => respondPublic(c, result, "deliveries");
 const projectAttachmentLinks = async <T extends AttachmentLink | { link: AttachmentLink } | AttachmentLinkPage>(
@@ -1161,6 +1185,8 @@ const mailOperationsApi = new Hono<MailApiContext>()
         listMode: query.listMode,
         locale: getLocale(c),
         dropAssignees: query.dropAssignees,
+        receivedPerDay: query.receivedPerDay,
+        timeZone: getTimeZone(c),
       });
       return respondAggregate(
         c,
@@ -1173,6 +1199,14 @@ const mailOperationsApi = new Hono<MailApiContext>()
     } finally {
       setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
     }
+  })
+  // The year of mail the v2 reader shows while none is open, when the page or the mailbox switch did not bring it (a
+  // deep link opened a mail): one bounded aggregate, reused per reader and day.
+  .get("/mailboxes/:mailboxId/received-per-day", v("param", mailboxParamSchema), async (c) => {
+    const mailboxId = internalMailboxId(c);
+    const access = await mailboxAccess.requireMailboxAccess(requestContext(c), mailboxId, "read");
+    if (!access.ok) return respondPublic(c, access);
+    return respondPublic(c, ok(await loadReceivedPerDay({ mailboxId, access: access.data, timeZone: getTimeZone(c) })));
   })
   .get("/mailboxes/:mailboxId/workspace-list", v("param", mailboxParamSchema), v("query", workspaceRouteQuerySchema), async (c) => {
     // A list's last page names the done conversations it leaves out from the cached counts; allow their bounded cold fill.
@@ -1996,6 +2030,35 @@ const mailOperationsApi = new Hono<MailApiContext>()
       }),
     ),
   )
+  // The counts a workspace snapshot left pending (its wait for cold counts ran out), for that snapshot's route: the views,
+  // the Assigned to me groups and the done conversations its list leaves out. It waits as briefly as the snapshot did
+  // and answers 202 while the count is still running, so the browser asks again a few times and never hangs.
+  .get("/mailboxes/:mailboxId/workspace-counts", v("param", mailboxParamSchema), v("query", workspaceCountsQuerySchema), async (c) => {
+    const mailboxId = internalMailboxId(c);
+    const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, c.req.valid("query").href);
+    const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
+    if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
+    const counts = await messages.getMailboxConversationCountsBy({
+      context: requestContext(c),
+      mailboxId,
+      until: Date.now() + FIRST_RENDER_COUNT_WAIT_MS,
+    });
+    if (!counts.ok) return respondPublic(c, counts);
+    if (!counts.data) return respond(c, ok({ pending: true as const }), 202);
+    // only the counts this route shows, by the same rule as its snapshot; the others are null
+    const shows = workspaceRouteCounts(request.requestUrl, request.search);
+    const folderId = request.requestUrl.searchParams.get("folder");
+    const mine = counts.data.views.mine;
+    const waiting = Math.min(counts.data.mineWaiting, mine);
+    return respondPublic(
+      c,
+      ok({
+        viewCounts: counts.data.views,
+        assignedGroups: shows.groups ? { needsAction: mine - waiting, waiting } : null,
+        doneLeftOut: shows.doneLeftOut ? (folderId ? (counts.data.doneByFolder[folderId] ?? 0) : counts.data.views.done) : null,
+      }),
+    );
+  })
   .get("/mailboxes/:mailboxId/activity", v("param", mailboxParamSchema), v("query", activityQuerySchema), async (c) => {
     const { kind, actor, ...query } = c.req.valid("query");
     const result = await collaboration.listActivity({
@@ -3279,18 +3342,18 @@ const mailOperationsApi = new Hono<MailApiContext>()
     "/mailboxes/:mailboxId/drafts/:draftId/document/rest",
     describeRoute({
       tags: ["Mail"],
-      summary: "Recover a device document after sending or discard",
+      summary: "Recover a device document after sending, discard or a refused edit",
       description:
-        "Preserves the full device text including deletions. Repeat with the same generation, clientId and state after a lost answer.",
+        "Preserves the full device text including deletions. `unchanged`: nothing beyond the stored draft; `kept`: a recovery copy of the returned existing draft (an open draft keeps refused input this way); `recovered`: a separate new draft. Repeat with the same generation, clientId and state after a lost answer.",
       parameters: draftDocumentAccountParameters,
       ...requiresAuth,
       responses: {
         200: jsonResponse(
           z.union([
             z.object({ status: z.literal("unchanged"), durableSourceState: z.string() }),
-            z.object({ status: z.literal("recovered"), draft: draftSchema, durableSourceState: z.string() }),
+            z.object({ status: z.enum(["kept", "recovered"]), draft: draftSchema, durableSourceState: z.string() }),
           ]),
-          "Unchanged or recovered whole draft",
+          "Where the whole device draft went",
         ),
       },
     }),

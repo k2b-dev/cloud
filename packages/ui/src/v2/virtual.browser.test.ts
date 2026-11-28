@@ -327,11 +327,11 @@ for (const [scenario, name] of [
           await settled(page);
           expect(await current.textContent()).toContain(name);
           const inView = await current.evaluate((element) => {
-            const scroller = element.closest(".k2-nav-scroll")!.getBoundingClientRect();
+            const scroller = element.closest(".k2-nav-groups")!.getBoundingClientRect();
             const box = element.getBoundingClientRect();
             return box.top >= scroller.top - 1 && box.bottom <= scroller.bottom + 1
               ? true
-              : `${Math.round(box.top)} in ${Math.round(scroller.top)}-${Math.round(scroller.bottom)} scrollTop ${element.closest(".k2-nav-scroll")!.scrollTop} height ${element.closest(".k2-nav-scroll")!.scrollHeight}`;
+              : `${Math.round(box.top)} in ${Math.round(scroller.top)}-${Math.round(scroller.bottom)} scrollTop ${element.closest(".k2-nav-groups")!.scrollTop} height ${element.closest(".k2-nav-groups")!.scrollHeight}`;
           });
           expect(inView).toBe(true);
         },

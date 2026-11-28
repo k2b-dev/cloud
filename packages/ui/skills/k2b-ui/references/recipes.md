@@ -17,6 +17,27 @@ state that shows an open menu, panel, dialog or toast is `{ render, press }`:
 the screen, and the names of the buttons and menu entries a person presses,
 in order, to open it.
 
+## The recipes and the look
+
+Every screen must meet [the look](look.md), recipes included. The recipes
+and pictures of this version show the structure of each screen (which
+primitive stands where, the states, the phone), not yet its identity: by
+the wireframe check in look.md, each of them is still a wireframe. Copy
+the structure, then add what look.md asks. Where a part is missing, write
+the gap at its place and name it in your report. Never copy a recipe's
+bare look as the result.
+
+| Recipe | What it still lacks (rule in look.md) |
+| --- | --- |
+| `frame`, `list-detail`, `mail`, `actions` | hero (1), marks and one data picture per row (3), tinted head of the open entry (5), two-column detail on a large screen (12) |
+| `table`, `filtered-table`, `states` | hero with its trend (1), marks and a data column (3), the screen filled with real data, a context column on a large screen (12) |
+| `record`, `record-groups` | tinted object head with sign and key facts (5), people beside what they did (3) |
+| `form`, `form-detail`, `settings` | the object's tinted head (5); settings as `Setting` rows (10) |
+| `dialogs`, `content` | marks and people in rows (3), a large screen that uses its room (12) |
+
+Each rebuilt recipe carries its screen brief (look.md, "Write the screen
+brief") at the top of its section here.
+
 ## frame.tsx: the frame of an app
 
 ![frame at 1440 px](../images/frame-1440.png)
@@ -35,6 +56,42 @@ and a status `Bar` with `Inline` chips.
 - On a tablet the sidebar becomes a drawer behind a button in the head; on
   the phone the open entry is the page and `back` is its one way back.
 - States: `closed`, `empty`, `loading`, `failed`.
+
+## tree.tsx: folders as a tree
+
+![folders as a tree at 1440 px](../images/tree-1440.png)
+![folders as a tree at 390 px](../images/tree-390.png)
+
+`Nav` with a plain group ("Zuletzt", "Favoriten") and a group with `tree`
+(folders; "Website" is `current`, so the way to it is open; "Archiv" and
+"Texte" are `branch` and load on the first open; "Kunden" has `more`); a
+head `Bar` with the `Path` and the one primary; a `Pane` with a
+`StatusRow` and a `Table` with `tree` (folders and files as rows in
+levels; the open file is `current`, so its folder starts open).
+
+- Give the loaded nodes down to the open place; the rest loads through
+  `load` and `loadMore` when a person opens it. Never load the whole tree.
+- On the phone the sidebar is a drawer with the same tree, and the table
+  shows its top level; a folder opens as its own page.
+
+## conversations.tsx: conversations in the sidebar
+
+![conversations in the sidebar at 1440 px](../images/conversations-1440.png)
+![an open conversation at 390 px](../images/conversations-390.png)
+
+`Nav` with the app's name and `primary` ("Neuer Chat", an icon button at the
+end of the name's row), `search` under it,
+a plain group with the filters ("Ungelesen" with its count, "Für dich",
+"Kanäle entdecken"), its `list` (the conversations as a `List` of
+two-line `Row`s; the open one is `current`) with `phone: "page"`, and
+"Archiv" at the foot; the open conversation is the `Pane detail` beside
+it, with its way back. Two columns: no list pane of its own, no head bar.
+
+- The list scrolls on its own between the filters and the foot; it is
+  made once, so a new count or a new group keeps its rows and its scroll.
+- On the phone the list with its search is the page and "Neuer Chat"
+  floats (`Workspace` `primary`); a conversation that opens is the page in
+  its place, and its way back returns to the list.
 
 ## list-detail.tsx: a list beside the open entry
 
@@ -149,6 +206,42 @@ sender `Row` (avatar, icon buttons in `end`), `Prose`, `Tiles`.
   with a `Field` and `<Input multiline />`, followed by a `Bar` whose `end`
   holds "Senden" as a default button (the page's primary stays "Neue
   Nachricht").
+- State `closed`: no message is open. `detailEmpty` has a `hero`: a `Heat`
+  of the mails per day whose `summary` sums up the year ("… Mails in den
+  letzten 12 Monaten · Ø … pro Tag"). The hero is made once in the
+  component and handed over, never written inside the `detailEmpty` object.
+
+## overview.tsx: an overview of things with a face
+
+![overview at 1440 px](../images/overview-1440.png)
+![overview at 390 px](../images/overview-390.png)
+
+The bases of Grids. `Nav` entries with `color`, so each base leads with its
+`Mark`; a `StatusRow` whose lead says what counts today, with chips for
+what lets a person act; `Tiles variant="card"` with `stats`, `people`,
+`foot`, `trend` and the `create` card with templates as `choices`; a
+`List` of two-line `Row`s with `mark` in the colour of their kind; a
+`Pane side` with `Digest activity`, each sentence with the thing's
+`Mark` and name.
+
+- A base has one colour and symbol, the same in the sidebar, on its card
+  and in a sentence. A kind of thing (table, board, form) has one colour
+  across the app.
+- A form or a workflow that did something is a person with its name.
+- States: `empty` (a new installation; the card that makes a base stays).
+
+## home.tsx: the home of one place
+
+![home at 1440 px](../images/home-1440.png)
+![home at 390 px](../images/home-390.png)
+
+One base: `Cells` with a `trend` on the first, the things as `Section`s of
+`Row`s with `mark`, their figures in the second line and their state as a
+chip in `marks`; then `Digest activity` under "Zuletzt geändert".
+
+- A state that needs a person (a failed workflow, new form entries) stands
+  in its row and as a `dot` on its sidebar entry.
+- States: `quiet` (a day without anything that needs a person).
 
 ## table.tsx: a table with a status row
 
@@ -217,6 +310,26 @@ answers with a toast with `status` `ok` or `bad`.
 - The open state of the dialog lives in the screen (`open`,
   `onOpenChange`).
 
+## start.tsx: the first start of an app without data
+
+![start at 1440 px](../images/start-1440.png)
+![start at 390 px](../images/start-390.png)
+
+A person opens Notebooks or Grids for the first time. No sidebar and no
+switcher: a `Pane center` with one `Text type="lead"` line ("Leg dein
+erstes Notizbuch an") and `Tiles variant="card" perRow={4}`. Each card
+shows a `preview` of what it makes across its top (`{ page }` for the
+blank way, `{ table }` with a template's first table, `{ icon }` where
+there is nothing to show), its `Mark` in the app's colour, its name and
+`meta` ("6 Seiten"). The whole card opens the dialog that makes it:
+`onOpen`, or `href` to an address that opens the dialog.
+
+- The blank way first, then at most three templates; the rest stay in
+  the dialog's choice, which a quiet line under the cards says.
+- Four in one row on a wide screen, 2 × 2 where four do not fit and on
+  the phone; the line stands centred, on the phone at the start.
+- States: `grids` (the first base: tables and a sign for the blank base).
+
 ## states.tsx: the states of a list
 
 ![states at 1440 px](../images/states-1440.png)
@@ -257,6 +370,49 @@ empty (`Empty` with "Text schreiben"), loading (`Loading` rows) and failed
   overlay. It needs the `@k2b/ui` stylesheet and a `.k2b-ui` ancestor, which
   every Cloud page has; with `v2.css` alone a chart has no size (gap), so
   this recipe draws its plan itself.
+- A state timeline (`kind="stateTimeline"`) takes `now` from the page (the
+  server's request time, never a clock in the component) and draws it as a
+  thin line with "Jetzt" on its time axis; runs of seconds stay 3 units wide, centred on their
+  start; a start still to come has `planned: true` and is an outline that
+  says "geplant".
 - With no data, put `Empty` in place of the `Canvas`. `Loading` and
   `Failed` hold rows, not the height of a drawing, so the page moves while a
   chart loads (gap).
+
+## public-page.tsx: a page for visitors
+
+![public-page at 1440 px](../images/public-page-1440.png)
+![public-page at 390 px](../images/public-page-390.png)
+
+A page that people open without signing in, without the Cloud shell (a
+venue's programme, a public form, a share). In Cloud it stands in
+`MinimalLayout ui="v2"`. A head `Bar` with the brand as `RecordHead` (its
+initials on its colour) and the one task as the primary with `keep` and short
+words, so on a phone the brand and the task share one row and nothing floats
+over a row; the status row names what asks to act as toned chips ("1 fast
+voll", "1 ausgebucht"), and only on a quiet day the day's count, never the
+figures a group head or a column repeats. The programme is one
+`Table` grouped by day: the event with when, where and its type (the title
+keeps the room at 1024), its host as `Avatar` (every event has one, so every
+phone row leads with a mark and the text edge never jumps), the seats taken
+as `Progress` (a value with a limit gets a meter), and the seats: a `Chip`
+with colour, sign and word only for the exceptions (booked out, almost full),
+quiet words for the rest. A page to read has no grips: its columns and its
+side column keep a width `{ fixed }`. On the phone each event is a row of two
+lines with its seats. A `Pane side` holds the visit and only what the table
+does not say: free places today as one meter, the way in as `Facts`, and
+access as a `Section` of its own (good news is no notice). The status row
+names its reference ("Bis Sonntag"), so its chips count the rows the list
+shows. Seats read one way everywhere: free seats in words beside the meter of
+what is taken. The host shows as a face and a name. Each date is said once.
+`states` exports kiosk (the same page on a wall screen: no task, what runs now
+marked "läuft" on its row, "aktualisiert sich jede Minute" in the head), empty
+and failed.
+
+- A visitor page has no rail and no sidebar: the brand stands in the head.
+- A kiosk refreshes itself and says so in words, never with a button.
+- A long title wraps (`wrap`) before it is cut, and a range of numbers in it
+  (1920–1960) stays on one line.
+- Gaps: the brand mark (`Mark`) and a larger kiosk type come with the
+  identity primitives; a phone row of a table may still wrap a long title; a
+  longer brand name or task still gives the phone head a second row.

@@ -151,7 +151,9 @@ const render = async (path: string, headers: Record<string, string> = {}) => {
 };
 
 const islandProps = (document: Document, file: string): unknown =>
-  fromJSON(JSON.parse(document.querySelector(`solid-island[data-file="${file}"]`)?.getAttribute("data-props") ?? ""));
+  fromJSON(
+    JSON.parse(document.querySelector(`solid-island[data-file="${file}"]`)?.firstChild?.nodeValue?.replace(/^ssr-props:/, "") ?? ""),
+  );
 
 const tabs = (document: Document) =>
   [...document.querySelectorAll<HTMLAnchorElement>(".k2b-tab-bar a")].map((link) => ({
@@ -302,7 +304,7 @@ describe("PwaLayout", () => {
     ];
     const { document } = await render("/pwa/inventory");
     const island = (scope: Element | null) => scope?.querySelector('solid-island[data-file="PwaPartCount.island.tsx"]');
-    const props = (scope: Element | null) => island(scope)?.getAttribute("data-props") ?? "";
+    const props = (scope: Element | null) => island(scope)?.firstChild?.nodeValue?.replace(/^ssr-props:/, "") ?? "";
     const sidebar = (id: string) => document.querySelector(`.k2b-mobile-shell__sidebar a[data-tab="${id}"]`);
     const tab = (id: string) => document.querySelector(`.k2b-tab-bar a[data-tab="${id}"]`);
     expect(props(sidebar("alpha"))).toContain("/pwa/alpha/unread");

@@ -2,7 +2,7 @@ import { brotliCompressSync } from "node:zlib";
 import type { SQL } from "bun";
 import { fromJSON } from "seroval";
 import { z } from "zod";
-import { decodeAttribute, validatePage } from "../../../../scripts/perf-baseline/model";
+import { islandPropsTexts, validatePage } from "../../../../scripts/perf-baseline/model";
 import { command, type Runtime, waitFor } from "../../../../scripts/perf-baseline/runtime";
 import type { Api } from "../../../../scripts/perf-baseline/seed";
 import { type DatabaseMeasurement, planSchema, type RequestMeasurement, type Sample, type Scenario } from "./model";
@@ -51,22 +51,16 @@ export function assertRunUrl(url: string, port: number | undefined, protocol: st
 }
 export async function propsBytes(html: string, checkFailures = false) {
   let bytes = 0;
-  await new HTMLRewriter()
-    .on("solid-island, solid-client", {
-      element(e) {
-        const serialized = decodeAttribute(e.getAttribute("data-props") ?? "");
-        bytes += Buffer.byteLength(serialized);
-        if (checkFailures) {
-          // MailWorkspace.data and MailOverview.initialDetail carry workspace reads.
-          // Inspect every island; entry IDs are build-generated, not stable names.
-          const props: unknown = fromJSON(JSON.parse(serialized));
-          const workspace = z.object({ data: z.unknown().optional(), initialDetail: z.unknown().optional() }).parse(props);
-          for (const data of [workspace.data, workspace.initialDetail]) if (data != null) assertNoPartialFailure(data);
-        }
-      },
-    })
-    .transform(new Response(html))
-    .text();
+  for (const serialized of await islandPropsTexts(html)) {
+    bytes += Buffer.byteLength(serialized ?? "");
+    if (checkFailures) {
+      // MailWorkspace.data and MailOverview.initialDetail carry workspace reads.
+      // Inspect every island; entry IDs are build-generated, not stable names.
+      const props: unknown = fromJSON(JSON.parse(serialized ?? ""));
+      const workspace = z.object({ data: z.unknown().optional(), initialDetail: z.unknown().optional() }).parse(props);
+      for (const data of [workspace.data, workspace.initialDetail]) if (data != null) assertNoPartialFailure(data);
+    }
+  }
   return bytes;
 }
 /** Run only after the action and its database window have ended (including live timestamps). */

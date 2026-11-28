@@ -3,12 +3,14 @@
  * against the mockup instead of a count of error classes (the lesson of the flat audit, 22.11.).
  *
  * - **edge:** a horizontal hairline or a tinted band reaches both edges of its column (within 1.5 px). A column edge
- *   is a vertical hairline, an element matched by `columns`, or the edge of `root`.
+ *   is a vertical hairline, an element matched by `columns`, or the edge of `root`. One line may start further in: a
+ *   row's own line that starts at the row's text (after its symbol or face, as in a nav's list) and reaches the end.
  * - **double:** no two parallel lines lie at most 1 px apart over more than 1 px of length, also across components.
  * - **type:** every run of text is set in a type role: 12, 13, 14 or 18 px on a 16, 20 or 24 px line, in 400, 500 or
  *   600. Reading text (`prose`) may also use 16 px and a 22 px line.
  * - **grip:** the pill of every grip is centred on its 1 px line within ±0.25 CSS px, measured in the DOM and again
- *   in the screenshot at the page's device pixel ratio, inside the grip only.
+ *   in the screenshot at the page's device pixel ratio, inside the grip only. A grip shows only on demand (under the
+ *   pointer, on focus, while dragged), so the measurement shows every grip while it measures and hides them again.
  *
  * A line is any way to draw one: a border side, a `box-shadow` without blur (offset or spread), a box of at most
  * 1.5 px, and the same on `::before` and `::after`, also under a `display: contents` parent whose own box has no
@@ -20,8 +22,8 @@
  * control, a mark, an overlay) floats on its own: its outline is no divider and makes no double line.
  *
  * The DOM contract of v2 marks what the rules need: `data-k2-column` (a column), `data-k2-grip` (a grip whose box is
- * its pill), `data-k2-prose` (reading text), `data-k2-figure` (a drawn mark such as the track of steps; its lines are
- * no dividers), `data-k2-canvas` (free drawing: never measured inside, only the line it draws itself) and
+ * its pill), `data-k2-prose` (reading text; its own lines, such as the rows of a table in it, belong to the text and
+ * are no dividers), `data-k2-figure` (a drawn mark such as the track of steps; its lines are no dividers), `data-k2-canvas` (free drawing: never measured inside, only the line it draws itself) and
  * `data-k2-avatar` (initials, no type role). The options take other selectors, for the mockup's classes for example.
  *
  * - **inside:** a band or a group is one thing (rule 9): a horizontal hairline inside it separates its parts and is a
@@ -29,10 +31,14 @@
  * - **cut:** a control's label never leaves its box and is never clipped, unless it ends in "…" in its own box (the
  *   way back to a list with a long name); a one-line text (the lines of a row, the
  *   cells of a table with column widths) never wraps, it ends with "…"; a box that clips its text shows every line
- *   whole and cuts a line at its end only with "…".
+ *   whole and cuts a line at its end only with "…"; text never runs out of a box that does not clip it, where it would
+ *   run under what stands beside it and look cut mid-word.
  * - **squeezed** (`measure-v2-squeezed.ts`): no text is pressed by its neighbours to a box of a few px or to one
  *   letter per line; a visually hidden name is no finding.
  * - **past** (`measure-v2-squeezed.ts`): no row runs past its column or the screen, no part of a row past the row.
+ * - **out:** a control stays inside every bar and pane around it (`frames`); one that sticks out (the actions of a
+ *   head squeezed by a long subject) is a finding. A scroller or a layer of its own (a menu, a popover, a dialog)
+ *   between them ends the search.
  *
  * ```ts
  * import { measureV2Layout } from "@k2b/ui/v2/testing";
@@ -46,6 +52,7 @@
  * ```
  */
 import type { Page } from "playwright";
+import { foldable } from "../bar-fold";
 import { fontWeights, gripTolerance, hairline, typeRoles } from "../tokens";
 import { measurePastInPage, measureSqueezedInPage } from "./measure-v2-squeezed";
 import { settled } from "./settled";
@@ -65,11 +72,13 @@ export type V2LayoutOptions = {
   unbroken?: string;
   /** Controls whose label must never be cut: a text that leaves the control's box or is clipped by it. */
   controls?: string;
+  /** Bars and panes a control must stay inside; a scroller or a layer of its own (a menu, a popover) between them ends the search. */
+  frames?: string;
   /** Text that stays on one line and ends with "…" when it is too long; wrapping to a second line is a finding. */
   oneLine?: string;
   /** Drawn marks whose lines are no dividers, such as the track of steps; their text is still measured. */
   figure?: string;
-  /** Text that has no type role, such as initials in an avatar. */
+  /** Text that has no type role, such as initials in an avatar or the type on a mark ("PDF"): a glyph, not words. */
   untyped?: string;
 };
 
@@ -94,6 +103,8 @@ export type V2Layout = {
   squeezed: string[];
   /** Rows past their column or the screen, and parts of a row past the row (see `measure-v2-squeezed.ts`). */
   past: string[];
+  /** Controls that stick out of a bar or pane around them, such as a head's actions squeezed by a long subject. */
+  out: string[];
   type: string[];
   grip: string[];
   grips: V2GripMeasure[];
@@ -106,6 +117,8 @@ export type V2Layout = {
 };
 
 type Limits = {
+  /** The buttons a bar folds into "…" (bar-fold.ts). */
+  folds: string;
   sizes: number[];
   lineHeights: number[];
   weights: number[];
@@ -122,6 +135,7 @@ type DomResult = {
   double: string[];
   inside: string[];
   cut: string[];
+  out: string[];
   type: string[];
   grip: string[];
   grips: { grip: string; dom: number; rect: Rect; line: { x0: number; x1: number } | null }[];
@@ -136,6 +150,7 @@ function measureInPage(options: InPage): DomResult {
     double: [],
     inside: [],
     cut: [],
+    out: [],
     type: [],
     grip: [],
     grips: [],
@@ -328,8 +343,9 @@ function measureInPage(options: InPage): DomResult {
       round: boolean,
       boxed = frame,
     ) => {
-      // Lines inside a figure (the track of steps, a progress bar) are marks, not dividers.
-      if (element.closest(options.figure)) return;
+      // Lines inside a figure (the track of steps, a progress bar) are marks, not dividers; lines inside reading text
+      // (the rows of a table in Prose) belong to the text, which keeps its own measure, not to the layout.
+      if (element.closest(options.figure) || element.closest(options.prose)) return;
       const clip = clipOf(element);
       const [cx0, cx1, cy0, cy1] = [Math.max(x0, clip.left), Math.min(x1, clip.right), Math.max(y0, clip.top), Math.min(y1, clip.bottom)];
       if (cx1 - cx0 <= 0.25 || cy1 - cy0 <= 0.25) return;
@@ -427,10 +443,15 @@ function measureInPage(options: InPage): DomResult {
         same.along1 = Math.max(same.along1, line.along1);
       } else merged.push({ ...line });
     }
+    // A row may part from the next from its text on (the rows of a nav's list): its line starts at the row's text.
+    const fromText = (line: Line) => {
+      const text = line.element.closest('[data-k2-part="Row"]')?.querySelector(":scope > .k2-row-l1");
+      return !!text && Math.abs(text.getBoundingClientRect().left - line.along0) <= 1.5;
+    };
     for (const line of merged) {
       if (line.along1 - line.along0 < 60) continue;
       const gap = gaps(line.along0, line.along1, line.across0);
-      if (gap.left > 1.5 || gap.right > 1.5)
+      if ((gap.left > 1.5 && !fromText(line)) || gap.right > 1.5)
         edge.push(
           `line ${name(line.element)} ${line.how} at y ${round(line.across0)} stops ${round(gap.left)} px short of the left and ${round(gap.right)} px short of the right edge of its column (${round(gap.edgeLeft)}–${round(gap.edgeRight)})`,
         );
@@ -585,7 +606,13 @@ function measureInPage(options: InPage): DomResult {
       const clip = hardClipX(control);
       for (const r of textBoxes(control, (node) => shortened.some((part) => part.contains(node))))
         if (r.left < Math.max(box.left, clip.left) - 0.5 || r.right > Math.min(box.right, clip.right) + 0.5) clipped = true;
-      if (clipped) cut.push(`control ${name(control)} cuts its label "${labelOf(control)}"; it needs the room of its whole label`);
+      // A button the end of a bar cuts before the page is alive folds into its "…" once the bar measures (`Bar`): on the
+      // server's page the end cuts what it has no room for, from its start, so the parts at its end stay whole.
+      const folds =
+        control.closest('.k2-bar:is([data-k2-part="Bar"], [data-status-row]):not([data-k2-fitted]) > .k2-bar-end') !== null &&
+        control.matches(options.folds);
+      if (clipped && !folds)
+        cut.push(`control ${name(control)} cuts its label "${labelOf(control)}"; it needs the room of its whole label`);
     }
     // A box of text that clips (overflow hidden or clip, not a scroller) shows every line of it whole and cuts a line at
     // its end only with "…". Only boxes of text count: text of their own or inline children. A control's label is
@@ -610,6 +637,72 @@ function measureInPage(options: InPage): DomResult {
       const holdsControl = Array.from(element.children).some((child) => child.matches(options.controls));
       if (clipsX && !holdsControl && element.scrollWidth > element.clientWidth + 1 && style.textOverflow !== "ellipsis")
         cut.push(`${name(element)} "${labelOf(element)}" cuts its line without "…"`);
+    }
+    // 4d. Controls that stick out: a control reaches past the side of a bar or pane around it (the actions of a head
+    // squeezed by a long subject run over the card's edge). A scroller between them lets a person scroll to it, and a
+    // layer of its own (a menu, a popover, a dialog) stands above the page, so the search stops at either.
+    const sticksOut: string[] = [];
+    for (const control of Array.from(root.querySelectorAll(options.controls))) {
+      if (!visible(control) || control.parentElement?.closest(options.skip)) continue;
+      const box = control.getBoundingClientRect();
+      for (let node = control.parentElement; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (["auto", "scroll"].includes(style.overflowX) || style.position === "fixed" || node.matches("[popover], dialog")) break;
+        if (node.matches(options.frames) && style.display !== "contents") {
+          const frame = node.getBoundingClientRect();
+          const over = Math.max(frame.left - box.left, box.right - frame.right);
+          if (over > 0.5) {
+            sticksOut.push(
+              `control ${name(control)} "${labelOf(control)}" sticks ${round(over)} px out of ${name(node)}; the bar gives it its room`,
+            );
+            break;
+          }
+        }
+        if (node === root) break;
+      }
+    }
+    // Text that runs out of the box it stands in, where that box does not clip, runs under what stands beside it: a
+    // person sees it cut mid-word with no "…" (a lead under the chips at the end of its row). It belongs cut with "…"
+    // in its own box. A box that is placed on its own (absolute, fixed) may stand outside on purpose.
+    for (const element of elements) {
+      if (!(element instanceof HTMLElement) || element.closest(options.controls) || hiddenName(element)) continue;
+      if (!Array.from(element.childNodes).some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim())) continue;
+      const own = getComputedStyle(element);
+      if (["absolute", "fixed"].includes(own.position)) continue;
+      let parent = element.parentElement;
+      while (parent && getComputedStyle(parent).display === "contents") parent = parent.parentElement;
+      if (!parent || !root.contains(parent) || getComputedStyle(parent).overflowX !== "visible") continue;
+      const place = parent.getBoundingClientRect();
+      // Only what is in sight: a box that clips its own text (with "…") keeps it inside, whatever the text's range says,
+      // and a box that scrolls its own text (code, a scrolling bar of words) shows it within its own edges; the box
+      // itself must still stand in its place.
+      const clip = hardClipX(element);
+      if (["auto", "scroll"].includes(own.overflowX)) {
+        const edges = element.getBoundingClientRect();
+        clip.left = Math.max(clip.left, edges.left);
+        clip.right = Math.min(clip.right, edges.right);
+      }
+      // A box moved on purpose may stand out by as much as it was moved, never more: its own shift sideways, a negative
+      // margin, a negative (hanging) indent, or a relative place moved by `left`, `right` or `inset`.
+      const shift = own.transform === "none" ? 0 : Math.abs(new DOMMatrixReadOnly(own.transform).m41);
+      // a relatively placed box moved by `left`, `right` or `inset` counts as moved by that much
+      const offset =
+        own.position === "relative" ? Math.abs(Number.parseFloat(own.left) || 0) + Math.abs(Number.parseFloat(own.right) || 0) : 0;
+      const allowance =
+        shift +
+        offset +
+        Math.max(0, -Number.parseFloat(own.marginLeft)) +
+        Math.max(0, -Number.parseFloat(own.marginRight)) +
+        Math.max(0, -Number.parseFloat(own.textIndent));
+      const boxes = textBoxes(element, (node) => node.parentElement !== element);
+      const out = Math.max(
+        0,
+        ...boxes.map((box) => Math.max(Math.min(box.right, clip.right) - place.right, place.left - Math.max(box.left, clip.left))),
+      );
+      if (out > allowance + 1)
+        cut.push(
+          `${name(element)} "${labelOf(element)}" runs ${Math.round(out)} px out of ${name(parent)} and under what stands beside it; it is cut with "…" in its own box`,
+        );
     }
     for (const element of Array.from(root.querySelectorAll(options.oneLine))) {
       if (!visible(element) || element.parentElement?.closest(options.skip)) continue;
@@ -688,6 +781,7 @@ function measureInPage(options: InPage): DomResult {
       double,
       inside,
       cut,
+      out: sticksOut,
       type: [...type].map(([key, count]) => `text outside the type roles: ${key}${count > 1 ? ` (${count}×)` : ""}`),
       grip,
       grips,
@@ -716,32 +810,44 @@ async function gripPixelsInPage(input: { png: string; scale: number; left: numbe
     return Array.from({ length: canvas.width }, (_, x) => [data[x * 4]!, data[x * 4 + 1]!, data[x * 4 + 2]!]);
   };
   const differs = (a: number[], b: number[]) => Math.abs(a[0]! - b[0]!) + Math.abs(a[1]! - b[1]!) + Math.abs(a[2]! - b[2]!) > 12;
-  // The run of pixels between two columns that differ from the background on both sides (the columns left and right
-  // of a line may have different fills), in device pixels.
-  const run = (pixels: number[][], from: number, to: number) => {
+  type Run = { first: number; last: number };
+  // The pixels between `from` and `to` that differ from the background on both sides (the columns left and right of a
+  // line may have different fills), in device pixels: as one run from the first to the last, and as runs of one colour.
+  const scan = (pixels: number[][], from: number, to: number, within = { from, to }) => {
     const before = pixels[from]!;
     const after = pixels[to]!;
-    let first = -1;
-    let last = -1;
-    for (let x = from; x <= to; x++)
-      if (differs(pixels[x]!, before) && differs(pixels[x]!, after)) {
-        if (first < 0) first = x;
-        last = x;
-      }
-    return first < 0 ? null : { first, last };
+    let span: Run | null = null;
+    const runs: Run[] = [];
+    for (let x = within.from; x <= within.to; x++) {
+      const pixel = pixels[x]!;
+      if (!differs(pixel, before) || !differs(pixel, after)) continue;
+      span = span ? { first: span.first, last: x } : { first: x, last: x };
+      const open = runs.at(-1);
+      if (open && open.last === x - 1 && !differs(pixels[x - 1]!, pixel)) open.last = x;
+      else runs.push({ first: x, last: x });
+    }
+    return { span, runs };
   };
   const s = input.scale;
-  // Only inside the grip and 3 px around it, so text beside it never counts.
+  const centre = (r: Run) => (r.first + r.last + 1) / 2;
+  // The line is looked for 3 px around the grip; what stands beside it there (the cut content of a table wider than its
+  // column) is not the line: the line is the run of one colour nearest the grip's middle.
   const from = Math.round((input.left - 3) * s);
   const to = Math.round((input.left + input.width + 3) * s) - 1;
+  const middle = (input.left + input.width / 2) * s;
+  const lineAt = (y: number) =>
+    scan(row(y * s + s / 2), from, to).runs.sort((a, b) => Math.abs(centre(a) - middle) - Math.abs(centre(b) - middle))[0] ?? null;
   // The line 3 px above the pill, and the pill 3 px below its top edge, above its first dots. A horizontal line or a
   // band edge can cross the column right there, so the line is also looked for further up and below the pill.
   const line = [input.top - 3, input.top - 5, input.top + input.height + 3, input.top + input.height + 5]
-    .map((y) => run(row(y * s + s / 2), from, to))
+    .map(lineAt)
     .find((found) => found !== null);
-  const pill = run(row((input.top + 3) * s + s / 2), from, to);
+  // The pill only inside the grip, its edge pixels included: content cut at the line beside it is not the pill.
+  const pill = scan(row((input.top + 3) * s + s / 2), from, to, {
+    from: Math.floor(input.left * s),
+    to: Math.ceil((input.left + input.width) * s) - 1,
+  }).span;
   if (!line || !pill) return null;
-  const centre = (r: { first: number; last: number }) => (r.first + r.last + 1) / 2;
   return { offset: (centre(pill) - centre(line)) / s, lineWidth: (line.last - line.first + 1) / s };
 }
 
@@ -757,93 +863,109 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     prose: options.prose ?? "[data-k2-prose]",
     skip: options.skip ?? "[data-k2-canvas]",
     figure: options.figure ?? "[data-k2-figure]",
-    untyped: options.untyped ?? "[data-k2-avatar]",
+    untyped: options.untyped ?? "[data-k2-avatar], [data-k2-glyph]",
     unbroken: options.unbroken ?? "[data-k2-part='Band'], [data-k2-part='Group']",
     controls: options.controls ?? ".k2-btn, .k2-chip, .k2-tab",
+    frames: options.frames ?? ".k2-bar, .k2-pane",
     // A row of three lines cuts each line, a row of two its second; the title of one or two lines may wrap (the row is about it).
     oneLine:
       options.oneLine ??
       ".k2-row[data-lines='3'] > :is(.k2-row-l1, .k2-row-l2, .k2-row-l3), .k2-row[data-lines='2'] > .k2-row-l2, .k2-row-meta, .k2-table[data-sized] .k2-cell-line:not([data-wrap])",
+    folds: foldable,
     sizes: roles.map((role) => role.size),
     lineHeights: [...new Set(roles.map((role) => role.lineHeight))],
     weights: [...fontWeights],
     hairline: hairline.width,
     tolerance: gripTolerance,
   };
-  const dom = await page.evaluate(measureInPage, limits);
-  const scale = await page.evaluate(() => window.devicePixelRatio);
-  const margin = 6;
-  const grips: V2GripMeasure[] = [];
-  const grip = [...dom.grip];
-  for (const measure of dom.grips) {
-    if (!measure.line) continue;
-    const { left, top, width, height } = measure.rect;
-    // A clip on whole CSS pixels, so the engine never resamples the picture.
-    const x = Math.floor(left - margin);
-    const y = Math.floor(top - margin);
-    const png = await page.screenshot({
-      clip: { x, y, width: Math.ceil(width + 2 * margin) + 1, height: Math.ceil(height + 2 * margin) + 1 },
-      scale: "device",
-      animations: "disabled",
-      caret: "hide",
-    });
-    const pixels = await page.evaluate(gripPixelsInPage, {
-      png: png.toString("base64"),
-      scale,
-      left: left - x,
-      top: top - y,
-      width,
-      height,
-    });
-    grips.push({ grip: measure.grip, dom: measure.dom, pixels: pixels?.offset ?? null, lineWidth: pixels?.lineWidth ?? null });
-    if (!pixels) grip.push(`grip ${measure.grip}: pill or line not found in the screenshot at DPR ${scale}`);
-    else {
-      if (Math.abs(pixels.offset) > gripTolerance)
-        grip.push(`grip ${measure.grip}: pill centre ${pixels.offset} px off its line in the screenshot at DPR ${scale}`);
-      if (Math.abs(pixels.lineWidth - hairline.width) > 0.01)
-        grip.push(`grip ${measure.grip}: its line is ${pixels.lineWidth} px wide in the screenshot at DPR ${scale}`);
+  // Grips show only on demand; every grip shows for the measurement, as under the pointer.
+  await page.evaluate((selector) => {
+    const style = document.createElement("style");
+    style.id = "k2-measure-grips";
+    style.textContent = `${selector} { opacity: 1 !important; }`;
+    document.head.append(style);
+  }, limits.grips);
+  try {
+    const dom = await page.evaluate(measureInPage, limits);
+    const scale = await page.evaluate(() => window.devicePixelRatio);
+    const margin = 6;
+    const grips: V2GripMeasure[] = [];
+    const grip = [...dom.grip];
+    for (const measure of dom.grips) {
+      if (!measure.line) continue;
+      const { left, top, width, height } = measure.rect;
+      // A clip on whole CSS pixels, so the engine never resamples the picture.
+      const x = Math.floor(left - margin);
+      const y = Math.floor(top - margin);
+      const png = await page.screenshot({
+        clip: { x, y, width: Math.ceil(width + 2 * margin) + 1, height: Math.ceil(height + 2 * margin) + 1 },
+        scale: "device",
+        animations: "disabled",
+        caret: "hide",
+      });
+      const pixels = await page.evaluate(gripPixelsInPage, {
+        png: png.toString("base64"),
+        scale,
+        left: left - x,
+        top: top - y,
+        width,
+        height,
+      });
+      grips.push({ grip: measure.grip, dom: measure.dom, pixels: pixels?.offset ?? null, lineWidth: pixels?.lineWidth ?? null });
+      if (!pixels) grip.push(`grip ${measure.grip}: pill or line not found in the screenshot at DPR ${scale}`);
+      else {
+        if (Math.abs(pixels.offset) > gripTolerance)
+          grip.push(`grip ${measure.grip}: pill centre ${pixels.offset} px off its line in the screenshot at DPR ${scale}`);
+        if (Math.abs(pixels.lineWidth - hairline.width) > 0.01)
+          grip.push(`grip ${measure.grip}: its line is ${pixels.lineWidth} px wide in the screenshot at DPR ${scale}`);
+      }
     }
+    // The DOM measurement and the screenshots are separate round trips; a grip that moved in between was not measured.
+    if (dom.grips.length) {
+      const now = await page.evaluate(
+        ({ root, grips: selector }) =>
+          Array.from(document.querySelector(root)?.querySelectorAll(selector) ?? [])
+            .filter((element) => element.checkVisibility({ visibilityProperty: true, opacityProperty: true }))
+            .map((element) => element.getBoundingClientRect())
+            .filter((r) => r.width > 0 && r.height > 0)
+            .map((r) => [r.left, r.top, r.width, r.height]),
+        { root: limits.root, grips: limits.grips },
+      );
+      const then = dom.grips.map(({ rect }) => [rect.left, rect.top, rect.width, rect.height]);
+      if (JSON.stringify(now) !== JSON.stringify(then))
+        grip.push("the grips moved between the DOM measurement and the screenshots; measure a page that holds still");
+    }
+    const text = await page.evaluate(measureSqueezedInPage, { root: limits.root, skip: limits.skip });
+    const edges = await page.evaluate(measurePastInPage, { root: limits.root, skip: limits.skip });
+    const problems = [
+      ...dom.pseudo,
+      ...dom.edge,
+      ...dom.double,
+      ...dom.inside,
+      ...dom.cut,
+      ...dom.out,
+      ...text.squeezed,
+      ...edges.past,
+      ...dom.type,
+      ...grip,
+    ];
+    return {
+      edge: dom.edge,
+      double: dom.double,
+      inside: dom.inside,
+      cut: dom.cut,
+      out: dom.out,
+      squeezed: text.squeezed,
+      past: edges.past,
+      type: dom.type,
+      grip,
+      grips,
+      pseudo: dom.pseudo,
+      measured: dom.measured,
+      problems,
+    };
+  } finally {
+    // a page that closed or failed must not hide the error that ended the measurement
+    await page.evaluate(() => document.getElementById("k2-measure-grips")?.remove()).catch(() => {});
   }
-  // The DOM measurement and the screenshots are separate round trips; a grip that moved in between was not measured.
-  if (dom.grips.length) {
-    const now = await page.evaluate(
-      ({ root, grips: selector }) =>
-        Array.from(document.querySelector(root)?.querySelectorAll(selector) ?? [])
-          .filter((element) => element.checkVisibility({ visibilityProperty: true, opacityProperty: true }))
-          .map((element) => element.getBoundingClientRect())
-          .filter((r) => r.width > 0 && r.height > 0)
-          .map((r) => [r.left, r.top, r.width, r.height]),
-      { root: limits.root, grips: limits.grips },
-    );
-    const then = dom.grips.map(({ rect }) => [rect.left, rect.top, rect.width, rect.height]);
-    if (JSON.stringify(now) !== JSON.stringify(then))
-      grip.push("the grips moved between the DOM measurement and the screenshots; measure a page that holds still");
-  }
-  const text = await page.evaluate(measureSqueezedInPage, { root: limits.root, skip: limits.skip });
-  const edges = await page.evaluate(measurePastInPage, { root: limits.root, skip: limits.skip });
-  const problems = [
-    ...dom.pseudo,
-    ...dom.edge,
-    ...dom.double,
-    ...dom.inside,
-    ...dom.cut,
-    ...text.squeezed,
-    ...edges.past,
-    ...dom.type,
-    ...grip,
-  ];
-  return {
-    edge: dom.edge,
-    double: dom.double,
-    inside: dom.inside,
-    cut: dom.cut,
-    squeezed: text.squeezed,
-    past: edges.past,
-    type: dom.type,
-    grip,
-    grips,
-    pseudo: dom.pseudo,
-    measured: dom.measured,
-    problems,
-  };
 }
