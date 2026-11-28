@@ -1,6 +1,6 @@
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import { personColor, personColorDark } from "../surfaces/person-color";
+import { personColor } from "../surfaces/person-color";
 import { colorStyle, safeColor, safeValue } from "./colors";
 import { useControlMessages } from "./control-messages";
 import { Icon } from "./icon";
@@ -77,6 +77,8 @@ const createPicture = (src: () => string | undefined) => {
 };
 
 const faceColor = (color: string | undefined): JSX.CSSProperties | undefined => (color === undefined ? undefined : { "--k2-c": color });
+/** A person hue with its dark step, the hue 45 % towards white. */
+const personFace = (hue: string): JSX.CSSProperties => ({ "--k2-c": hue, "--k2-c-dark": `color-mix(in srgb, ${hue} 55%, #ffffff)` });
 
 // A face, and in a stack its place from 1 on, which the stylesheet reads to let the later ones give way (a sibling
 // count such as :nth-of-type cannot see through an island's wrapper). A button with a person uses the face alone, so
@@ -96,12 +98,9 @@ export const Face = (props: AvatarProps & { place?: number }) => {
       aria-hidden={props.decorative ? "true" : undefined}
       // Every person has a colour: given, or the fixed one of their name, the same as everywhere in Cloud. A face reads
       // only the colour itself, none of the inks a mark derives from it; one that is no colour leaves it neutral.
-      // a person's own hue also brings its dark step, for soft initials on the dark surface
-      style={
-        props.color === undefined
-          ? { "--k2-c": personColor(props.name), "--k2-c-dark": personColorDark(props.name) }
-          : faceColor(safeColor(props.color))
-      }
+      // a person's own hue also brings its dark step, for soft initials on the dark surface: the step of
+      // `PERSON_COLORS_DARK`, mixed here so a v2 island carries the palette only once (person-color.test.ts pins both)
+      style={props.color === undefined ? personFace(personColor(props.name)) : faceColor(safeColor(props.color))}
     >
       {initialsOf(props)}
       <picture.Picture />

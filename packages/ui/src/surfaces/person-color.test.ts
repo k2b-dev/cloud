@@ -116,6 +116,14 @@ describe("person colors", () => {
   test("mark a page in either theme: the hue 3:1 on the light surface, its dark step 3:1 on the dark one", () => {
     expect(PERSON_COLORS_DARK).toHaveLength(PERSON_COLORS.length);
     for (const [index, color] of PERSON_COLORS.entries()) {
+      // each dark step is the hue 45 % towards white, the `color-mix` a v2 face writes for it (marks.tsx)
+      // (the table rounds a half, the browser mixes exactly)
+      const exact = channels(color).map((channel) => channel * 0.55 + 255 * 0.45);
+      const step = channels(PERSON_COLORS_DARK[index]!);
+      expect([PERSON_COLORS_DARK[index], exact.every((channel, at) => Math.abs(channel - step[at]!) <= 0.5)]).toEqual([
+        PERSON_COLORS_DARK[index],
+        true,
+      ]);
       expect([color, contrast(channels(color), [255, 255, 255]) >= 3]).toEqual([color, true]);
       const dark = PERSON_COLORS_DARK[index]!;
       expect([dark, contrast(channels(dark), channels("#11151b")) >= 3]).toEqual([dark, true]);
