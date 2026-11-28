@@ -99,6 +99,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | saved views of a list | `FilterBar views` with the app's `ViewStore`s (cookie, own table, none); leave it out and nothing is saved | – |
 | a list beside the open entry | `Pane.Split` with a `Pane detail` | `list-detail.tsx` |
 | a record (customer, contact) | `RecordHead` in the head, `Tabs`, `Pane side`; what its `kinds` say also stands in `Facts` (on the phone kinds give way to the name) | `record.tsx` |
+| a thing's record (a run, a job) | `RecordHead mark meta`: its app's mark, the name, a quiet line under it ("Job · Mail · mail:import"); the head grows to 57 px | – |
 | 2–4 key numbers side by side | `Cells` with `Cells.Cell` | `record.tsx` |
 | a titled part of a page | `Section` (title, count, ≤ 2 actions, `more`) | `record.tsx` |
 | what belongs together (a delivery, a thread) | `Group`; `folded` when done | `record-groups.tsx` |

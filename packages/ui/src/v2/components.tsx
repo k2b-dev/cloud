@@ -1153,6 +1153,13 @@ export type RecordHeadProps = {
   name: string;
   /** The picture or initials before the name. */
   avatar?: Person;
+  /** A thing's mark before the name instead of a person's avatar, such as the app a run belongs to. */
+  mark?: { icon: string; color?: string };
+  /**
+   * A quiet line under the name, such as "Job · Notizbücher · notebooks:reindex"; the head grows to 57 px. With it the
+   * kinds and identifiers leave the head: what they say stands in the line or in the record's `Facts`.
+   */
+  meta?: string;
   /**
    * Kinds of the record, such as "Private". Kinds sum up: whatever a kind says also stands in the record's `Facts`,
    * because on the phone kinds give way to the name.
@@ -1169,9 +1176,13 @@ export type RecordHeadProps = {
 export const RecordHead = (props: RecordHeadProps) => (
   <>
     <Show when={props.avatar}>{(person) => <Avatar {...person()} decorative />}</Show>
+    <Show when={!props.avatar && props.mark}>{(mark) => <Mark icon={mark().icon} color={mark().color} />}</Show>
     <h1 class="k2-record-name" data-k2-part="RecordHead">
       {props.name}
     </h1>
+    <Show when={props.meta}>
+      <span class="k2-record-meta">{props.meta}</span>
+    </Show>
     <For each={props.kinds}>{(kind) => <Chip>{kind}</Chip>}</For>
     <For each={props.ids}>
       {(id) => (
