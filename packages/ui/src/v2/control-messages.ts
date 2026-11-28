@@ -1,7 +1,7 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "../intl/locale";
 
-/** The words of the v2 form controls (tags, image, colour), resolved from the inherited render locale. */
+/** The words of the v2 form controls (tags, image, colour, rating), resolved from the inherited render locale. */
 const controlMessages = i18n.define({
   baseLocale: "en",
   messages: {
@@ -29,6 +29,7 @@ const controlMessages = i18n.define({
       areaValue: ({ saturation, brightness }: { saturation: number; brightness: number }) =>
         `Saturation ${saturation} %, brightness ${brightness} %`,
       imageChosen: "Image chosen",
+      stars: ({ value, max }: { value: string; max: number }) => `${value} of ${max} stars`,
     },
     de: {
       removeValue: ({ label }: { label: string }) => `${label} entfernen`,
@@ -54,6 +55,7 @@ const controlMessages = i18n.define({
       areaValue: ({ saturation, brightness }: { saturation: number; brightness: number }) =>
         `Sättigung ${saturation} %, Helligkeit ${brightness} %`,
       imageChosen: "Bild gewählt",
+      stars: ({ value, max }: { value: string; max: number }) => `${value} von ${max} Sternen`,
     },
   },
 });

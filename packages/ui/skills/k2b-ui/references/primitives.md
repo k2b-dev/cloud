@@ -566,6 +566,12 @@ name wraps in a small table and ends with "…" in one with column widths.
   `label`, `onChange`, `disabled` (every option dimmed). With a `label` and no `Field` around it, it shows
   that label as a field of its own; inside a `Field` the field's label is
   its question.
+- `Rating`: stars from 1 to 5 as one radio group: `value`, `onChange`,
+  `name`, `label` (as for `Choice`), `disabled`. One Tab stop, arrows move
+  and choose, Space and Enter choose; each star is named "3 von 5
+  Sternen", 56 px high and at least 44 px wide. `required`, hint and error
+  come from its `Field`. `readOnly` with `value` (an average such as 4.2
+  fills part of a star) shows a given rating as small stars in a line.
 
 ## Components
 

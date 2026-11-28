@@ -3685,6 +3685,100 @@
 .k2-ui .k2-slider[data-disabled] {
   opacity: 0.5;
 }
+/* a rating: five stars of 56 px in one row, each a round box from 44 to 96 px wide, so a thumb meets one on the phone
+   and the row never grows past 520 px. Amber is the choice alone: a chosen star fills in the amber of a toggle that is
+   on (3:1 on its tint in both themes), on a tint of it. The stars under a pointer preview in neutral ink without the
+   tint, and the choice stays amber beneath them. Read-only: a line of small stars, part of one filled for an average. */
+.k2-ui .k2-rating {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(44px, 96px));
+  gap: 8px;
+}
+.k2-ui .k2-star {
+  display: grid;
+  place-items: center;
+  height: 56px;
+  border: 1px solid var(--k2-line-control);
+  border-radius: var(--k2-r-control);
+  background: var(--k2-surface);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-star > .k2-icon {
+  grid-area: 1 / 1;
+  font-size: 24px;
+}
+/* the filled star lies over the outline: shown on the chosen stars (`data-chosen`, never core's fill, which follows
+   the pointer) */
+.k2-ui .k2-star > .k2-icon[data-name="star-filled"] {
+  visibility: hidden;
+  color: var(--k2-pressed);
+}
+.k2-ui .k2-star[data-chosen] > .k2-icon[data-name="star-filled"] {
+  visibility: visible;
+}
+.k2-ui .k2-star[data-chosen] {
+  border-color: color-mix(in srgb, var(--k2-pressed) 45%, var(--k2-surface));
+  background: color-mix(in srgb, var(--k2-pressed) 8%, var(--k2-surface));
+}
+/* the preview under a pointer (core's `data-highlighted`): an edge in neutral ink, and a star not chosen fills in that
+   ink without a tint */
+.k2-ui .k2-rating[data-preview] > .k2-star[data-highlighted] {
+  border-color: var(--k2-muted);
+}
+.k2-ui .k2-rating[data-preview] > .k2-star[data-highlighted]:not([data-chosen]) > .k2-icon[data-name="star-filled"] {
+  visibility: visible;
+  color: var(--k2-muted);
+}
+/* the radio of a star lies over all of it (core places it): the whole box takes the press */
+.k2-ui .k2-star-hit {
+  border-radius: inherit;
+  cursor: pointer;
+}
+.k2-ui .k2-star-hit:focus-visible {
+  outline: none;
+}
+.k2-ui .k2-star:has(> .k2-star-hit:focus-visible) {
+  border-color: var(--k2-blue);
+  box-shadow: 0 0 0 3px var(--k2-blue-ring);
+}
+.k2-ui .k2-rating[aria-invalid="true"] > .k2-star:not([data-chosen]) {
+  border-color: var(--k2-bad);
+}
+.k2-ui .k2-rating[data-disabled] > .k2-star {
+  opacity: 0.5;
+}
+.k2-ui .k2-rating[data-disabled] .k2-star-hit {
+  cursor: default;
+}
+.k2-ui .k2-rating[data-readonly] {
+  display: inline-flex;
+  gap: 1px;
+  vertical-align: middle;
+}
+.k2-ui .k2-rating[data-readonly] > .k2-star {
+  height: auto;
+  border: 0;
+  background: none;
+}
+.k2-ui .k2-rating[data-readonly] > .k2-star > .k2-icon {
+  font-size: 16px;
+}
+/* read-only, the filled star is cut to the share of the star the rating covers (core's --rating-fill) */
+.k2-ui .k2-rating[data-readonly] > .k2-star > .k2-icon[data-name="star-filled"] {
+  visibility: visible;
+  clip-path: inset(0 calc(100% - var(--rating-fill, 0) * 100%) 0 0);
+}
+.k2-ui .k2-rating[data-readonly] > .k2-star:dir(rtl) > .k2-icon[data-name="star-filled"] {
+  clip-path: inset(0 0 0 calc(100% - var(--rating-fill, 0) * 100%));
+}
+@media (forced-colors: active) {
+  .k2-ui .k2-star > .k2-icon[data-name="star-filled"] {
+    color: Highlight;
+  }
+  .k2-ui .k2-star:has(> .k2-star-hit:focus-visible) {
+    outline: 2px solid Highlight;
+  }
+}
 /* a colour: its swatch and code in one line, the surface and the hue under it, the presets last */
 .k2-ui .k2-color {
   display: flex;
