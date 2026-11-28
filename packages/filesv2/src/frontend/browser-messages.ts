@@ -167,9 +167,6 @@ export const browserMessages = i18n.define({
                 ? "1 document"
                 : `${n} documents`
               : `${n} selected`,
-      pillMovedTitle: "Actions moved",
-      pillMovedText: "The actions for the selection are now in the bar at the bottom.",
-      gotIt: "Got it",
       pdfMerge: "Merge",
       pdfExtract: "Take out pages",
       pdfMergeTitle: (n: number) => `Merge ${n} PDFs`,
@@ -417,9 +414,6 @@ export const browserMessages = i18n.define({
       noRecentByYou: "No activity of yours yet. What you upload, change or open appears here.",
       recentFailed: "Your recent activity could not be loaded.",
       showAllActivity: "Show all",
-      openActivity: "Open Activity",
-      recentMovedTitle: "“Recent” is here now.",
-      recentMovedText: "Activity shows with the filter “Me” what you recently opened and changed.",
       activityOfStorage: "Activity of this storage",
       openedAt: "Opened",
       dropHint: (n: number) => (n === 1 ? "Move 1 entry here" : `Move ${n} entries here`),
@@ -607,9 +601,6 @@ export const browserMessages = i18n.define({
                 ? "1 Dokument"
                 : `${n} Dokumente`
               : `${n} ausgewählt`,
-      pillMovedTitle: "Aktionen umgezogen",
-      pillMovedText: "Die Aktionen für die Auswahl stehen jetzt in der Leiste unten.",
-      gotIt: "Verstanden",
       pdfMerge: "Zusammenfügen",
       pdfExtract: "Seiten herausnehmen",
       pdfMergeTitle: (n: number) => `${n} PDFs zusammenfügen`,
@@ -861,9 +852,6 @@ export const browserMessages = i18n.define({
       noRecentByYou: "Noch keine Aktivität von dir. Was du hochlädst, änderst oder öffnest, steht hier.",
       recentFailed: "Deine letzte Aktivität konnte nicht geladen werden.",
       showAllActivity: "Alle anzeigen",
-      openActivity: "Aktivität öffnen",
-      recentMovedTitle: "„Zuletzt“ ist jetzt hier.",
-      recentMovedText: "Aktivität zeigt mit dem Filter „Ich“, was du zuletzt geöffnet und geändert hast.",
       activityOfStorage: "Aktivität dieser Ablage",
       openedAt: "Geöffnet",
       dropHint: (n: number) => (n === 1 ? "1 Eintrag hierher verschieben" : `${n} Einträge hierher verschieben`),

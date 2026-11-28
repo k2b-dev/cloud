@@ -1122,6 +1122,7 @@ describe("mail capabilities", () => {
     ]);
     expect(Object.keys(mailCapabilities.queries).sort()).toEqual([
       "attachment.content.read",
+      "attachment.files.list",
       "attachment.read",
       "attachment.text.read",
       "comment.read",
@@ -2755,7 +2756,11 @@ describe("mail capabilities", () => {
 
   // Each action's service can reject for access, validation, revision/lifecycle, or availability.
   // Inject at its last read/write boundary so review and run must both use the app's final-message boundary.
-  const draftRejections: Array<{ error: ServiceError & { draftId?: string }; german: string; english?: string }> = [
+  const draftRejections: Array<{
+    error: ServiceError & { draftId?: string; revision?: number; nextStep?: "update" | "intent" };
+    german: string;
+    english?: string;
+  }> = [
     { error: err.badInput("Distinct English validation detail"), german: "Prüfe die Angaben für diese Mail-Aktion" },
     { error: err.badInput("At least one recipient is required before sending"), german: "Gib mindestens eine Empfängeradresse an." },
     { error: err.notFound("Sender identity not found"), german: "Mail-Ressource wurde nicht gefunden" },
@@ -2793,10 +2798,33 @@ describe("mail capabilities", () => {
           ? "Der Entwurf konnte nicht zum Senden vorbereitet werden"
           : "Die Bearbeitungshistorie dieses Entwurfs",
     })),
+    // The hint follows the step Mail chose: update an open draft of the same intent, switch another one, none when scheduled.
     {
-      error: { ...err.conflict("Distinct English occupied reply"), code: "DRAFT_REPLY_BOX_OCCUPIED", draftId },
+      error: {
+        ...err.conflict("Distinct English occupied reply"),
+        code: "DRAFT_REPLY_BOX_OCCUPIED",
+        draftId,
+        revision: 3,
+        nextStep: "update",
+      },
+      german: "Trage deinen Inhalt mit mail.draft.patch bei expectedRevision 3 ein.",
+      english: `Reply draft ${draftId} already exists. Open it and apply your content explicitly; no supplied content was saved. Write your content into it with mail.draft.patch at expectedRevision 3.`,
+    },
+    {
+      error: {
+        ...err.conflict("Distinct English occupied reply"),
+        code: "DRAFT_REPLY_BOX_OCCUPIED",
+        draftId,
+        revision: 4,
+        nextStep: "intent",
+      },
+      german: "Wechsle den Modus mit mail.draft.intent bei expectedRevision 4.",
+      english: `Reply draft ${draftId} already exists. Open it and apply your content explicitly; no supplied content was saved. Switch its mode with mail.draft.intent at expectedRevision 4.`,
+    },
+    {
+      error: { ...err.conflict("Distinct English occupied reply"), code: "DRAFT_REPLY_BOX_OCCUPIED", draftId, revision: 5 },
       german: `Antwortentwurf ${draftId} ist bereits vorhanden.`,
-      english: `Reply draft ${draftId} already exists. Open it and apply your content explicitly; no supplied content was saved. Switch its mode with mail.draft.intent using the current revision.`,
+      english: `Reply draft ${draftId} already exists. Open it and apply your content explicitly; no supplied content was saved.`,
     },
     {
       error: { code: "DRAFT_DOCUMENT_STREAM_FULL", status: 409, message: "Distinct English storage rejection" },

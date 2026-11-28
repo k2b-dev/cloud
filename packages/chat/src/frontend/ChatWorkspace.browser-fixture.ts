@@ -149,6 +149,7 @@ const buildHarness = async () => {
           setup(builder) {
             // Exercise the current shared component source without a separate UI build.
             builder.onResolve({ filter: /^@k2b\/ui$/ }, () => ({ path: resolve(ui, "src/index.ts") }));
+            builder.onResolve({ filter: /^@k2b\/ui\/v2$/ }, () => ({ path: resolve(ui, "src/v2/index.ts") }));
             builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
               const result = await transformAsync(await Bun.file(path).text(), {
                 filename: path,
@@ -417,6 +418,13 @@ export const startChatHarness = async (
         }),
       ),
   });
+  /** As the server: a place's General stream brings its four most recent discussions, its cards, not the directory. */
+  const generalCards = (chat: Chat, view: string) => {
+    const list = threadList(chat);
+    if (chat.conversation.kind !== "system" || view !== "general") return list;
+    const recent = [...list.items].sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || a.id.localeCompare(b.id));
+    return { ...list, items: recent.slice(0, 4), nextCursor: recent.length > 4 ? recent[3]!.id : null };
+  };
   const project = (chat: Chat) => {
     const unread = [null, ...chat.threads.map((thread) => thread.id)].reduce((sum, thread) => sum + unreadIn(chat, thread), 0);
     chat.conversation = {
@@ -784,7 +792,7 @@ export const startChatHarness = async (
     return {
       cursor: `c.${cursor}`,
       conversation: chat.conversation,
-      threads: threadList(chat),
+      threads: generalCards(chat, view),
       page: {
         items,
         seqHead: chat.messages.length,
@@ -874,7 +882,15 @@ export const startChatHarness = async (
       if (harness.has(url.pathname))
         return new Response(harness.get(url.pathname), { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
       if (url.pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
+      // Cloud's own logo, as Core serves it, so the shell in the pictures is the real one.
+      if (url.pathname === "/branding/logo")
+        return new Response(Bun.file(resolve(import.meta.dir, "../../../cloud/public/logo.svg")), {
+          headers: { "Content-Type": "image/svg+xml" },
+        });
       if (url.pathname === "/fonts.css") return new Response(fontAssets.css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
+      // @k2b/ui v2 for the pages on it, as the Layout loads it beside the global stylesheet.
+      if (url.pathname === "/v2.css")
+        return new Response(Bun.file(resolve(ui, "src/v2/v2.css")), { headers: { "Content-Type": "text/css; charset=utf-8" } });
       if (url.pathname === "/tabler-icons.woff2") return new Response(Bun.file(fontAssets.icons));
       if (url.pathname.startsWith("/fonts/")) return new Response(Bun.file(resolve(uiDist, `.${url.pathname}`)));
       if (url.pathname === "/api/accounts/entities" && request.method === "GET") {

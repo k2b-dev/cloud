@@ -26,7 +26,8 @@ The working surface of an app: one per screen.
   (name of its grip).
 - `head`: a `Bar` across the main column (56 px).
 - `primary`: the main `Action`. It floats bottom right on the phone only;
-  also put the same action as `Button variant="primary"` in the head end.
+  also put the same action as `Button variant="primary" floats` in the head
+  end, so the head lets it go on the phone (one primary per page).
 - children: a `Pane` or a `Pane.Split`, written as JSX inside the Workspace
   (a pane made before it, kept in a variable, is not counted).
 - `detail` (`true` or the detail's minimum, default 400) when a detail opens
@@ -36,7 +37,8 @@ The working surface of an app: one per screen.
   whole, such as a `Heat` with a line that sums it up.
 - Tablet: where the sidebar at its default does not fit beside every column
   at its minimum, it becomes a drawer with a button at the start of the head.
-- Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`.
+- Phone (< 768 px): the sidebar leaves, every head action stays; only the
+  `floats` twin of `primary` leaves the head.
   A search in the head (`Input type="search"`) stays as its symbol; a tap
   goes into the field, which opens over the head while it has the focus
   and folds back, its words kept, on blur or Escape. A host that offers the
@@ -57,16 +59,21 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   limits, Enter back to the default) move the width; a reload starts at the
   default again. The sidebar's grip works the same. A grip shows only under the
   pointer, on keyboard focus and while dragged (on touch screens it stays).
+  `width={{ fixed }}` keeps one width without a grip, for a page to read
+  rather than to arrange (a visitor page, a wall screen).
 - `detail`: the reader beside a list. What is open belongs in the address:
   render the detail only while the address names an entry. On the phone
   the detail is the page, and the title in its head is never cut: beside the
   actions the head keeps it takes a second line.
 - `back` (an `Action` with `href`: the list's address without the open
   entry, such as "Posteingang"): the way back on the phone, one bar above
-  the detail (the part `Back`). With `back`, the head's close × needs no
-  `keep`: it gives way on the phone like the other head actions. A long name (a search) is cut with "…" on
+  the detail (the part `Back`). Mark the head's close × `closes`: with
+  `back` it gives way on the phone, so the detail has one way back. A long name (a search) is cut with "…" on
   one line; the whole name stays its accessible name and its hint. A detail
   that closes in place returns the focus to the row that opened it.
+- `wideBack`: the way back shows on a wide screen too, for a page that
+  stands in the place of another one, not beside a list (a discussion in
+  the place of its room's stream: "‹ Frühlingsausstellung").
 - `scrollKey` (such as "mail-list"): back and forward bring the column
   back to where it was scrolled.
 - `side`: the context column (the info column of a record, what a form
@@ -80,7 +87,10 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   it. `side={{ from: 1400 }}` asks for more room, in px of the split, for a
   main column that needs it (a table: beside only on a large screen). In
   any other split (a list, its reader and an info column) it stands beside
-  as every column does.
+  as every column does. Put `side` on the inner column only: an outer
+  `Pane detail` with `side` becomes the list's context column and moves
+  under the list. A split with no measuring place above it (in a dialog, a
+  sidebar, outside a `Workspace`) never gives way.
 - A detail that grows on a large screen is the same part: under the
   detail's one `head` (and what spans both, such as a hero band), a
   `Pane.Split` of what it is (a `Pane`) and who and what happened (a `Pane
@@ -164,14 +174,24 @@ Never nested. With `color` the symbol becomes the thing's `Mark`.
 `perRow={n}`: at most n tiles share a row and grow with its width; a tile
 never gets narrower than 240 px for it. Where n do not fit, a row holds
 half of them (four as 2 × 2, never 3 + 1), and below that one under the
-other. On the phone a row always holds half of them, even below 240 px.
+other. On the phone a row always holds half of them, even below 240 px,
+and a card's name there takes a second line before it is cut; it breaks
+between words only, and a name of one word that does not fit ends in
+"…". A card with a `preview` (a way to start) names itself in medium
+weight, as the approved first start.
 
 `variant="card"`: each thing a card in a grid (at least 240 px a card) for
 an overview of things with a face, such as the bases of Grids. A card
 adds `stats` (`{ icon?, label, status?, yours? }`: "6 Tabellen", "8 knapp"
 in `warn`), `people` (an `Avatar.Stack` at the foot), `foot` (quiet words
 at its end: "Felix · vor 2 Min") and `trend` (a `Spark` at the top end, in
-the card's colour). The whole card opens its `href`. `create` adds the last
+the card's colour), `preview` (a glance of what it holds across its top,
+112 px, 84 px on the phone: `{ table: { columns, rows } }` as a small
+table of words (a column `{ label, align: "end" }` for amounts), two columns on the phone, `{ page: { title, text? } }`, or
+`{ icon }` for a thing that holds nothing yet; it is a picture, the card
+keeps its name; keep its values short, about 12 characters a cell, so
+nothing is cut at 1440 or on the phone: leave out what does not fit; the
+phone shows a table's first two columns, so an amount comes second). The whole card opens its `href`. `create` adds the last
 card that makes a new thing: dashed, `title`, `meta`, `href` or `onClick`,
 and `choices` as round chips (templates). Cards hold no box and no line.
 
@@ -245,6 +265,8 @@ content, a list and its detail, one section and the next. A `Row`:
 - lead: `mark` (the thing's `Mark`: a base, a file with its thumbnail, a
   table; 24 px on one line, 32 px on two or three), or `avatar`, or a
   quiet `icon` for a plain place or deed, or a dot when `unread`.
+  `badge: { icon, label }` sets a small symbol on the lead's bottom right,
+  such as a pin on a pinned chat's face, in place of a mark by the name.
 - `meta` (quiet note after the title, a count), `time` (top right). Title
   and `meta` share the first line in equal parts, and each takes only what
   it needs: a count or a number stays whole, a long note is cut with "…",
@@ -257,6 +279,10 @@ content, a list and its detail, one section and the next. A `Row`:
   rows with the same deed are told apart: name nothing yourself; on the
   phone a finger hits 44 px of it, its look unchanged),
   `end` (a few icon buttons, or the state chip of a one- or two-line row).
+  `endOnHover`: the end shows only under the pointer or with the focus in
+  the row, its place kept; a touch screen does not draw it, so give the
+  row the same deeds through `Menu.Context` (a long press). Use it for a
+  long list whose every row has a "…".
 - states: `unread`, `strong`, `current` (the open one, app tint),
   `yours` (you are next).
 - `select: { selected, onChange }`: the row stands in a selection (pair it
@@ -287,7 +313,7 @@ open row in the tint of the app it belongs to, a chosen row blue; rows part
 with the quiet line, the column head with the clear one). A column: `title`, `cell(row)`
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
-never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer, on focus and while dragged; on touch screens it stays), `wrap` (one text column may take 3
+never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer or holds the focus, and while dragged; on touch screens it stays, and after a touch on the head it takes a 44 px target; `{ fixed }`: one width, no grip), `wrap` (one text column may take 3
 lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
@@ -380,7 +406,7 @@ lines instead of cutting a thing. In a table cell its `Text` gives way to
 the marks beside it (a symbol, an `Avatar`, a `Chip` keep their size): the
 name wraps in a small table and ends with "…" in one with column widths.
 
-### Icon, Avatar, Chip, Progress, Ticks, Heat
+### Icon, Avatar, Chip, Progress, Ticks, RangeBar, Heat
 
 - `Icon`: `name`, `label` (without one it is decoration), `tone`.
 - `Avatar`: a `Person`; the place sets the size. With `image` the picture
@@ -396,7 +422,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   the state and the word in the ink of the text ("● Aktiv"), on the chip's
   height. Use it for a column of states in a dense table or list, where a
   chip on every line is too loud.
-- `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
+- `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22"), `status`
+  (`warn` almost full, `bad` full: the bar says it in colour too, beside the
+  chip or words that say why).
 - `Mark`: what a thing looks like. `icon` + `color` (its data colour, or
   the colour of its kind: table, form, PDF), `image` (a thumbnail over the
   symbol; while it loads and when it fails the symbol shows), `kind` (the
@@ -411,7 +439,9 @@ name wraps in a small table and ends with "…" in one with column widths.
 - `Spark`: `values` (oldest first), `label`: what the bars say as one
   sentence ("Werkstatt: in 7 Tagen von 12 auf 41 Änderungen gestiegen"),
   never only the title of the data. A few bars of a short history, the
-  last strongest; beside a number, never instead of it.
+  last strongest; beside a number, never instead of it. Sparks side by
+  side that compare should share `max`: the same value then has the same
+  height, and a value above it stands at the top.
 - Data colours (`color` of `Mark`, `Avatar`, `Chip tag`, `Nav`, `Tiles`,
   `Section`, `Cells.Cell`, `Digest`) are validated: a hex colour, an
   `oklch()` or `var(--…)`; anything else renders neutral. For a hex colour
@@ -426,6 +456,11 @@ name wraps in a small table and ends with "…" in one with column widths.
   keeps the strip at its start). Ok is soft, a failure red and taller, a
   slot without data a low stub; 140 × 20 px in a table cell. The one column
   of a list that shows its data over time; never decoration.
+- `RangeBar`: `from` and `to`, or `ranges` (several on one track, such as
+  opening hours with a break; `[]` for a closed day), on the `domain` the
+  rows of a list share; `stops` (colours by meaning along the scale),
+  `label` (every range in words: "Di.: 08:00 bis 12:00 und 14:00 bis
+  18:00") or `decorative` when the values stand beside it as text.
 - `Heat`: `days` (`{ date, count }` per day, at most the 53 weeks shown, from
   one bounded aggregate), `today` (a date key from the server: the last day,
   marked), `label` ("Mails pro Tag"), `unit` (a count in the app's words),
@@ -452,8 +487,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   width, the look and the focus stay, a second press and a second sending
   of the form do nothing), `pressed` (a toggle such as a favourite star:
   `true` is on, its symbol and words in the one colour of pressed, `false`
-  is off; not for links or the primary action), `type`, `keep` (stays
-  in a head on the phone), `title` (a hint under the pointer, for a button
+  is off; not for links or the primary action), `type`, `keep`
+  (deprecated: head actions stay on the phone by default), `floats` (the head's twin of `Workspace primary`:
+  it leaves the head on the phone, where the floating button stands for it), `title` (a hint under the pointer, for a button
   whose words give way to its symbol in a narrow place). Without children
   it needs `label`. With children, `label` is its name only where the
   words alone do not say enough, and it begins with the words.
@@ -545,13 +581,16 @@ name wraps in a small table and ends with "…" in one with column widths.
 ## Components
 
 - `Nav`: `title`, `icon`, `search?`, `primary?`, `groups: { label?, action?, items }[]`, `list?`, `phone?`, `foot`.
-  `search` (`{ label, value, onInput, onKeyDown? }`) and `primary` (an
-  `Action`, such as "Neuer Chat") stand under the name, each across the
-  column; pass the same action as `Workspace` `primary`, which floats on the
+  `search` (`{ label, value, onInput, onKeyDown? }`) stands under the name,
+  across the column; `primary` (an `Action`, such as "Neuer Chat") is an
+  icon button at the end of the name's row, its label its name and tooltip;
+  pass the same action as `Workspace` `primary`, which floats on the
   phone. `list` holds the app's own rows after the groups (a `List` of
   `Row`s, such as conversations): made once, like the other parts of a
   frame, they reach the column's edges and scroll on their own above the
-  foot; virtualize a long list. With `phone: "page"` the list with the
+  foot; virtualize a long list. Its rows part with a line from their text
+  on (not under the lead), and a row keeps its title on one line and its
+  second line on at most two, cut with "…". With `phone: "page"` the list with the
   search is the phone's page while no pane is open beside it; the title,
   the groups and the foot are then in the platform's menu, and any pane
   that opens (a detail or a page of its own) is the page in its place.
@@ -615,8 +654,8 @@ name wraps in a small table and ends with "…" in one with column widths.
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`, each with an `icon`; below 600 px of row
-  they keep only their symbols, the words stay their names; leave on the
-  phone),
+  they keep only their symbols, the words stay their names; on the phone
+  they stay in the row, and what has no room folds into one "+n" menu),
   `selection: { count, actions, clear }` (while rows are selected the row
   becomes the bar of what can be done with them; the count is never cut, and
   actions without room go whole into a "…" menu from the end, right after the

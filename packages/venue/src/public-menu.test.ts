@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { PublicSection } from "./contracts";
-import { filterPublicMenuSections, isPublicMenuItemAvailable } from "./public-menu";
+import { MAX_PUBLIC_MENU_ITEMS, MAX_PUBLIC_SECTIONS, type PublicSection } from "./contracts";
+import { capPublicSections, filterPublicMenuSections, isPublicMenuItemAvailable } from "./public-menu";
 
 const item = (availability: { availableFrom?: string | null; availableUntil?: string | null } = {}) => ({
   name: "Lunch special",
@@ -47,5 +47,29 @@ describe("public menu availability", () => {
     const sections = filterPublicMenuSections([menuSection([item({ availableFrom: "2026-07-14" })])], "2026-07-13");
 
     expect(sections).toEqual([]);
+  });
+});
+
+describe("public page limits", () => {
+  const notice = (index: number): PublicSection => ({ ...menuSection([]), id: `notice-${index}`, kind: "notice", content: { text: "Hi" } });
+
+  test("keeps a page within its limits as it is", () => {
+    const sections = [notice(0), menuSection(Array.from({ length: MAX_PUBLIC_MENU_ITEMS }, () => item()))];
+    expect(capPublicSections(sections)).toEqual(sections);
+  });
+
+  test("cuts a page saved before the limits to the first sections and the first menu items", () => {
+    const half = Math.ceil(MAX_PUBLIC_MENU_ITEMS / 2) + 1;
+    const first = { ...menuSection(Array.from({ length: half }, () => item())), id: "menu-1" };
+    const second = { ...menuSection(Array.from({ length: half }, () => item())), id: "menu-2" };
+    const third = { ...menuSection([item()]), id: "menu-3" };
+    const notices = Array.from({ length: MAX_PUBLIC_SECTIONS }, (_, index) => notice(index));
+    const capped = capPublicSections([first, second, third, ...notices]);
+
+    expect(capped).toHaveLength(MAX_PUBLIC_SECTIONS - 1);
+    expect(capped.map((section) => section.id).slice(0, 3)).toEqual(["menu-1", "menu-2", "notice-0"]);
+    expect(capped[0]?.content.items).toHaveLength(half);
+    expect(capped[1]?.content.items).toHaveLength(MAX_PUBLIC_MENU_ITEMS - half);
+    expect(first.content.items).toHaveLength(half);
   });
 });

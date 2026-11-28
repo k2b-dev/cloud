@@ -43,6 +43,7 @@ import {
 } from "../service/contracts";
 import { messagePlainText } from "../system-messages";
 import { lightboxItem, rowAttachments } from "./attachment-views";
+import ChatDiscussionCard, { type ChatDiscussion } from "./ChatDiscussionCard";
 import ChatResourceCards, { type ResourceCards } from "./ChatResourceCards";
 import { createMessageDates } from "./chat-message-dates";
 import { EmojiPopover } from "./emoji-popover";
@@ -54,8 +55,13 @@ import type { Thread } from "./threads";
 export type ChatFeedItem = {
   /** The send's client ID for the reader's own messages sent from this tab, so a row keeps its key once stored. */
   key: string;
-  /** An event and a group of events are no messages: they never count as unread and never answer anything. */
-  kind: "text" | "system" | "event" | "eventGroup";
+  /**
+   * An event and a group of events are no messages: they never count as unread and never answer anything. Neither is
+   * a discussion about an item, which stands as a card in its place's stream (v2 only).
+   */
+  kind: "text" | "system" | "event" | "eventGroup" | "discussion";
+  /** A discussion's card: where it is now and the way to it. */
+  discussion?: ChatDiscussion;
   /** An event's icon. */
   icon?: string;
   /** Optional owning-app path to the passage or resource described by an event. */
@@ -102,6 +108,11 @@ export type ChatConversationProps = {
   dictation?: DictationSource;
   /** The chat's own commands at the end of the header, such as its info. */
   actions?: JSX.Element;
+  /**
+   * A frame of its own names the chat and holds its deeds (Chat on @k2b/ui v2): the conversation then draws no header,
+   * and says where "New messages" lies while it is out of view, so the frame shows the way there.
+   */
+  framed?: { onNewAway: (away: { direction: "above" | "below"; jump: () => void } | null) => void };
   listHref?: string;
   chatId: string;
   title: string;
@@ -215,6 +226,7 @@ const Lightbox = lazy(async () => (await importOnDemand(() => import("./chat-lig
 const ROW_ESTIMATE = 60;
 const SYSTEM_ESTIMATE = 36;
 const EVENT_ESTIMATE = 26;
+const DISCUSSION_ESTIMATE = 100;
 
 /** Header, history, and composer of one open chat. Below 48 rem it covers the visible part of the screen. */
 export default function ChatConversation(props: ChatConversationProps): JSX.Element {
@@ -423,6 +435,12 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
     if (!range || marker < 0) return null;
     return marker < props.items.indexOf(range.first) ? "above" : marker > props.items.indexOf(range.last) ? "below" : null;
   });
+  const jumpToNew = () =>
+    props.unreadGap ? props.unreadGap.jump() : props.markerKey && feed()?.scrollToKey(props.markerKey, { align: "start" });
+  createEffect(() => {
+    const direction = markerAway();
+    props.framed?.onNewAway(direction ? { direction, jump: jumpToNew } : null);
+  });
   // When the chat opens without showing the marker, it moves there once, unless a deep link leads.
   let placed = false;
   createEffect(() => {
@@ -474,6 +492,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
     <section
       ref={frame}
       class="chat-conversation"
+      data-framed={props.framed ? "" : undefined}
       data-wide-title={props.wideTitle ? "" : undefined}
       aria-label={props.title}
       onKeyDown={(event) => {
@@ -485,98 +504,92 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
         props.onReply(item);
       }}
     >
-      <header class="chat-conversation__header">
-        <span class="chat-conversation__back">
-          <IconButtonLink
-            href={props.backHref ?? props.listHref ?? "/app/chat"}
-            navigation="enhanced"
-            onNavigate={props.onBack}
-            label={
-              props.backHref
-                ? t().backToThreads
-                : props.allChats
-                  ? t().panelAllChats
-                  : props.backCount
-                    ? t().backToChatsUnread({ count: props.backCount })
-                    : t().backToChats
-            }
-            tooltip={props.allChats && !props.backHref ? undefined : false}
-          >
-            <i class={props.allChats && !props.backHref ? "ti ti-list" : "ti ti-chevron-left"} aria-hidden="true" />
-            <Show when={!props.backHref && props.backCount !== undefined}>
-              <span class="chat-conversation__back-count" aria-hidden="true">
-                {props.backCount ? (props.backCount > 99 ? "99+" : props.backCount) : ""}
-              </span>
-            </Show>
-          </IconButtonLink>
-        </span>
-        <PageTitle trail={{ title: props.title, ancestors: [] }} subtitle={props.subtitle ?? t().members({ count: props.memberCount })} />
-        <Show when={props.muted}>
-          <i class="ti ti-bell-off chat-conversation__muted" role="img" aria-label={t().notificationsOffMark} />
-        </Show>
-        {props.titleExtra}
-        <Show when={props.wideTitle}>
-          {(wide) => (
-            <div class="chat-conversation__wide-title">
-              <h1 class="chat-conversation__wide-name">{wide().title}</h1>
-              <p class="chat-conversation__wide-subtitle">{wide().subtitle}</p>
-              <p class="chat-conversation__phone-subtitle">
-                {[...new Set([wide().chat, props.subtitle ?? t().members({ count: props.memberCount })])].join(" · ")}
-              </p>
-            </div>
-          )}
-        </Show>
-        <Show when={props.resource}>
-          {(resource) => (
-            <>
-              <Show when={resourceStatus()}>
-                {(status) => (
-                  <span class="chat-resource-head__status">
-                    <StatusBadge tone={resource().done ? "ok" : "neutral"} label={status()} icon={null} />
-                  </span>
-                )}
-              </Show>
-              <span class="chat-resource-head__metadata">
-                <ThreadMetadata resource={resource()} dateConfig={props.dateConfig} />
-              </span>
-              <Show when={resource().href}>
-                {(href) => (
-                  <>
-                    <span class="chat-resource-head__link">
-                      <ButtonLink href={href()} variant="text" size="sm">
-                        {resourceLabel()}
-                      </ButtonLink>
-                    </span>
-                    <span class="chat-resource-head__icon">
-                      <IconButtonLink href={href()} label={resourceLabel()}>
-                        <i class="ti ti-external-link" aria-hidden="true" />
-                      </IconButtonLink>
-                    </span>
-                  </>
-                )}
-              </Show>
-            </>
-          )}
-        </Show>
-        <Show when={markerAway()}>
-          {(direction) => (
-            <Button
-              size="sm"
-              variant="ghost"
-              tooltip={t().jumpToNewLabel}
-              disabled={props.busy}
-              onClick={() =>
-                props.unreadGap ? props.unreadGap.jump() : props.markerKey && feed()?.scrollToKey(props.markerKey, { align: "start" })
+      <Show when={!props.framed}>
+        <header class="chat-conversation__header">
+          <span class="chat-conversation__back">
+            <IconButtonLink
+              href={props.backHref ?? props.listHref ?? "/app/chat"}
+              navigation="enhanced"
+              onNavigate={props.onBack}
+              label={
+                props.backHref
+                  ? t().backToThreads
+                  : props.allChats
+                    ? t().panelAllChats
+                    : props.backCount
+                      ? t().backToChatsUnread({ count: props.backCount })
+                      : t().backToChats
               }
+              tooltip={props.allChats && !props.backHref ? undefined : false}
             >
-              <i class={direction() === "above" ? "ti ti-arrow-up" : "ti ti-arrow-down"} aria-hidden="true" />
-              {t().jumpToNew}
-            </Button>
-          )}
-        </Show>
-        <div class="chat-conversation__actions">{props.actions}</div>
-      </header>
-      <Show when={props.resource}>
+              <i class={props.allChats && !props.backHref ? "ti ti-list" : "ti ti-chevron-left"} aria-hidden="true" />
+              <Show when={!props.backHref && props.backCount !== undefined}>
+                <span class="chat-conversation__back-count" aria-hidden="true">
+                  {props.backCount ? (props.backCount > 99 ? "99+" : props.backCount) : ""}
+                </span>
+              </Show>
+            </IconButtonLink>
+          </span>
+          <PageTitle trail={{ title: props.title, ancestors: [] }} subtitle={props.subtitle ?? t().members({ count: props.memberCount })} />
+          <Show when={props.muted}>
+            <i class="ti ti-bell-off chat-conversation__muted" role="img" aria-label={t().notificationsOffMark} />
+          </Show>
+          {props.titleExtra}
+          <Show when={props.wideTitle}>
+            {(wide) => (
+              <div class="chat-conversation__wide-title">
+                <h1 class="chat-conversation__wide-name">{wide().title}</h1>
+                <p class="chat-conversation__wide-subtitle">{wide().subtitle}</p>
+                <p class="chat-conversation__phone-subtitle">
+                  {[...new Set([wide().chat, props.subtitle ?? t().members({ count: props.memberCount })])].join(" · ")}
+                </p>
+              </div>
+            )}
+          </Show>
+          <Show when={props.resource}>
+            {(resource) => (
+              <>
+                <Show when={resourceStatus()}>
+                  {(status) => (
+                    <span class="chat-resource-head__status">
+                      <StatusBadge tone={resource().done ? "ok" : "neutral"} label={status()} icon={null} />
+                    </span>
+                  )}
+                </Show>
+                <span class="chat-resource-head__metadata">
+                  <ThreadMetadata resource={resource()} dateConfig={props.dateConfig} />
+                </span>
+                <Show when={resource().href}>
+                  {(href) => (
+                    <>
+                      <span class="chat-resource-head__link">
+                        <ButtonLink href={href()} variant="text" size="sm">
+                          {resourceLabel()}
+                        </ButtonLink>
+                      </span>
+                      <span class="chat-resource-head__icon">
+                        <IconButtonLink href={href()} label={resourceLabel()}>
+                          <i class="ti ti-external-link" aria-hidden="true" />
+                        </IconButtonLink>
+                      </span>
+                    </>
+                  )}
+                </Show>
+              </>
+            )}
+          </Show>
+          <Show when={markerAway()}>
+            {(direction) => (
+              <Button size="sm" variant="ghost" tooltip={t().jumpToNewLabel} disabled={props.busy} onClick={jumpToNew}>
+                <i class={direction() === "above" ? "ti ti-arrow-up" : "ti ti-arrow-down"} aria-hidden="true" />
+                {t().jumpToNew}
+              </Button>
+            )}
+          </Show>
+          <div class="chat-conversation__actions">{props.actions}</div>
+        </header>
+      </Show>
+      <Show when={!props.framed && props.resource}>
         {(resource) => (
           <div class="chat-resource-head__mobile">
             {/* The reader's context line already names the kind; show it only when the reader gives none. */}
@@ -603,7 +616,15 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
         class="chat-conversation__feed"
         items={props.items}
         getKey={(item) => item.key}
-        estimateSize={(item) => (item.kind === "system" ? SYSTEM_ESTIMATE : item.kind === "text" ? ROW_ESTIMATE : EVENT_ESTIMATE)}
+        estimateSize={(item) =>
+          item.kind === "system"
+            ? SYSTEM_ESTIMATE
+            : item.kind === "text"
+              ? ROW_ESTIMATE
+              : item.kind === "discussion"
+                ? DISCUSSION_ESTIMATE
+                : EVENT_ESTIMATE
+        }
         label={t().history({ title: props.title })}
         itemLabel={(item) =>
           item.kind === "text" ? `${item.own ? t().you : item.authorName}, ${messageDates().read(item).time}` : undefined
@@ -657,6 +678,8 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             <MessageSystemRow time={messageDates().read(item).time} dateTime={item.at}>
               {item.body}
             </MessageSystemRow>
+          ) : item.kind === "discussion" && item.discussion ? (
+            <ChatDiscussionCard {...item.discussion} time={messageDates().read(item).time} dateTime={item.at} />
           ) : (
             <MessageRow
               author={{ name: item.authorName }}

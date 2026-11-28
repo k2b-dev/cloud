@@ -210,6 +210,11 @@ export type SparkProps = {
    * of the data ("Änderungen der letzten 7 Tage"): a rise, a fall and a flat line would then say the same.
    */
   label: string;
+  /**
+   * The value that fills the height. Sparks side by side that people compare share one `max`, so the same value has the
+   * same height in each; a value above it stands at the top. Without it a spark scales to its own highest value.
+   */
+  max?: number;
 };
 
 /**
@@ -217,11 +222,13 @@ export type SparkProps = {
  * mark's colour), else of the app. 20 px high; only for a trend people glance at, never instead of a number.
  */
 export const Spark = (props: SparkProps) => {
-  const top = () => Math.max(...props.values, 0);
+  const top = () => props.max ?? Math.max(...props.values, 0);
   return (
     <span class="k2-spark" data-k2-part="Spark" role="img" aria-label={props.label}>
       <For each={props.values}>
-        {(value) => <i style={custom({ "--k2-v": `${top() > 0 ? Math.max(8, Math.round((value / top()) * 100)) : 8}%` })} />}
+        {(value) => (
+          <i style={custom({ "--k2-v": `${top() > 0 ? Math.max(8, Math.round((Math.min(value, top()) / top()) * 100)) : 8}%` })} />
+        )}
       </For>
     </span>
   );
@@ -428,6 +435,11 @@ export type ProgressProps = {
   of: number;
   /** The words next to the bar, such as "Arbeitstag 5 von 22". */
   label?: string;
+  /**
+   * A bar near or at its limit says so in colour too: `warn` (almost full), `bad` (full, over). The words that say
+   * why stand beside it (a chip, a hint); never a colour alone.
+   */
+  status?: "warn" | "bad";
 };
 
 /** A thin bar with its value. */
@@ -437,6 +449,7 @@ export const Progress = (props: ProgressProps) => {
     <span
       class="k2-progress"
       data-k2-part="Progress"
+      data-status={props.status}
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={props.of}
@@ -449,6 +462,110 @@ export const Progress = (props: ProgressProps) => {
       <Show when={props.label}>
         <span>{props.label}</span>
       </Show>
+    </span>
+  );
+};
+
+export type RangeBarProps = {
+  /** The one scale the bars of a list share, such as the week's lowest low and highest high. */
+  domain: readonly [number, number];
+  /**
+   * Colours along the scale by meaning, such as cold to warm: each holds at its value and runs over into the next. A
+   * colour is a hex colour, an `oklch()`, a custom property of the page or `light-dark()` of two of them, which the
+   * owner keeps at 3:1 on the surface in both themes; a stop that is no colour is dropped. Without stops the bar is
+   * neutral.
+   */
+  stops?: readonly { at: number; color: string }[];
+} & (
+  | {
+      /** Where the range starts and ends, such as a day's low and high; the order does not matter. */
+      from: number;
+      to: number;
+      ranges?: undefined;
+    }
+  | {
+      /**
+       * Several ranges in one row, such as a day's opening hours with a break (8 to 12 and 14 to 18), in any order; an
+       * empty list leaves the track empty (a day that is closed).
+       */
+      ranges: readonly { from: number; to: number }[];
+      from?: undefined;
+      to?: undefined;
+    }
+) &
+  (
+    | {
+        /**
+         * The range in words, such as "2,9° bis 9,1°", with every range of the row ("Mo.: 08:00 bis 12:00 und 14:00
+         * bis 18:00"): what assistive technology reads instead of the bar.
+         */
+        label: string;
+        decorative?: false;
+      }
+    | {
+        /** The range's words stand beside the bar (its low and high as text): the bar is then decoration. */
+        decorative: true;
+        label?: string;
+      }
+  );
+
+/**
+ * A range on a shared scale: a bar from `from` to `to` on a quiet track, so the rows of a list read at a glance (the
+ * week's days by their low and high). `ranges` puts several on one track, such as opening hours with a break. It reads
+ * in the writing direction, as `Ticks` do: the scale's start stands at the line's start. With `stops` each bar shows
+ * the colours of its part of the scale. A range outside the scale stops at its ends; a range that is no number is
+ * left out, and without one the track stays empty.
+ */
+export const RangeBar = (props: RangeBarProps) => {
+  const scale = () => Number.isFinite(props.domain[0]) && Number.isFinite(props.domain[1]) && props.domain[1] > props.domain[0];
+  const clamp = (value: number) => Math.max(props.domain[0], Math.min(props.domain[1], value));
+  const share = (value: number) => (value - props.domain[0]) / (props.domain[1] - props.domain[0]);
+  const percent = (value: number) => `${Math.round(value * 1000) / 10}%`;
+  // the visible part of each range: its ends held to the scale, so the colours match what is drawn
+  const drawn = () =>
+    scale()
+      ? (props.ranges === undefined ? [{ from: props.from, to: props.to }] : props.ranges).flatMap((range) =>
+          Number.isFinite(range.from) && Number.isFinite(range.to)
+            ? [{ low: clamp(Math.min(range.from, range.to)), high: clamp(Math.max(range.from, range.to)) }]
+            : [],
+        )
+      : [];
+  // the stops in the order of the scale, once for every bar; a stop that is no colour is dropped
+  const stops = () =>
+    (props.stops ?? [])
+      .flatMap((stop) => {
+        const color = safeColor(stop.color);
+        return color === undefined || !Number.isFinite(stop.at) ? [] : [{ at: stop.at, color }];
+      })
+      .sort((first, second) => first.at - second.at);
+  // the stops at their place on one bar: a stop outside it still sets the colour at its ends
+  const fill = (low: number, high: number) => {
+    const sorted = stops();
+    if (sorted.length === 0) return undefined;
+    if (sorted.length === 1) return sorted[0]!.color;
+    const width = Math.max(Number.EPSILON, high - low);
+    const colors = sorted.map((stop) => `${stop.color} ${percent((stop.at - low) / width)}`).join(", ");
+    return `linear-gradient(var(--k2-range-way, to right), ${colors})`;
+  };
+  return (
+    <span
+      class="k2-range"
+      data-k2-part="RangeBar"
+      role="img"
+      aria-label={props.decorative ? undefined : props.label}
+      aria-hidden={props.decorative ? "true" : undefined}
+    >
+      <For each={drawn()}>
+        {(range) => (
+          <i
+            style={custom({
+              "--k2-range-start": percent(share(range.low)),
+              "--k2-range-end": percent(1 - share(range.high)),
+              "--k2-range-fill": fill(range.low, range.high),
+            })}
+          />
+        )}
+      </For>
     </span>
   );
 };

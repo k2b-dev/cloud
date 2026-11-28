@@ -33,7 +33,13 @@ afterAll(async () => {
  */
 const withPage = async (
   run: (page: Page) => Promise<void>,
-  { width = 1440, column = width, host = false, path = false }: { width?: number; column?: number; host?: boolean; path?: boolean } = {},
+  {
+    width = 1440,
+    column = width,
+    host = false,
+    path = false,
+    bare = false,
+  }: { width?: number; column?: number; host?: boolean; path?: boolean; bare?: boolean } = {},
 ) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   page.setDefaultTimeout(2000);
@@ -45,6 +51,10 @@ const withPage = async (
     if (path)
       await page.evaluate(() => {
         window.__k2PathHead = true;
+      });
+    if (bare)
+      await page.evaluate(() => {
+        window.__k2BareHead = true;
       });
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
@@ -419,7 +429,8 @@ for (const [width, column] of [
         const found = await page.evaluate(statusMarks);
         expectMarksHeld(found);
         const seen = found.chips.map((chip) => chip.seen);
-        if (column === 1440 || width < 768) expect(seen).toEqual([true, true]);
+        // a wide row keeps both; on the phone the end stays too (folded into "+n"), so the chips give way, whole
+        if (column === 1440) expect(seen).toEqual([true, true]);
         if (column === 320) expect(seen.includes(false)).toBe(true);
         // the outline names the chips a person sees, not one that gave way
         const outline = await describeV2Page(page);
@@ -800,7 +811,7 @@ for (const column of [1440, 1024, 700])
     );
   });
 
-test("390 px: the search of the head stays as its symbol, opens over the head while it has the focus, and folds back", async () => {
+test("390 px: the search of the head stays as its symbol, opens over the head, keeps its words open and folds back once empty", async () => {
   await withPage(
     async (page) => {
       const search = page.getByRole("searchbox", { name: "Durchsuchen" });
@@ -832,17 +843,22 @@ test("390 px: the search of the head stays as its symbol, opens over the head wh
       });
       // the open field covers the views and draws no line of its own: the head keeps its one line
       expect((await measureV2Layout(page, { root: '[data-slot="head"] > .k2-bar' })).problems).toEqual([]);
+      // its words keep it open over the head (look rule 31); emptied, it folds back to its symbol
       await search.fill("Zeitüberschreitung");
       await search.blur();
       await settled(page);
-      expect(await shape()).toEqual(folded);
+      expect(await shape()).toEqual(open);
       expect(await search.inputValue()).toBe("Zeitüberschreitung");
+      await search.fill("");
+      await search.blur();
+      await settled(page);
+      expect(await shape()).toEqual(folded);
     },
     { width: 390 },
   );
 });
 
-test("390 px: Escape folds the open search of the head back and keeps its words, unless the app takes Escape", async () => {
+test("390 px: Escape leaves the open search of the head, which its words keep open, unless the app takes Escape", async () => {
   await withPage(
     async (page) => {
       const search = page.getByRole("searchbox", { name: "Durchsuchen" });
@@ -854,7 +870,8 @@ test("390 px: Escape folds the open search of the head back and keeps its words,
       await settled(page);
       expect(await search.evaluate((input) => document.activeElement === input)).toBe(false);
       expect(await search.inputValue()).toBe("Zeitüberschreitung");
-      expect(await width()).toBe(36);
+      // its words keep it open over the head (look rule 31)
+      expect(await width()).toBe(390 - 2 * textEdge.phone);
       // an app that takes Escape itself (onKeyDown with preventDefault) decides alone: the field stays open
       await page.evaluate(() => {
         window.__k2TakeEscape = true;
@@ -873,7 +890,7 @@ test("390 px: Escape folds the open search of the head back and keeps its words,
 
 // The Cloud shell offers the page's search in its phone bar (as the mockup draws Mail): the head keeps its tabs, and the
 // field opens over the head when the host focuses it.
-test("390 px in a host's bar: the folded search leaves the head to its tabs, opens over the head on focus, Escape folds it away", async () => {
+test("390 px in a host's bar: the folded search leaves the head to its tabs, opens over the head on focus, and folds away once empty", async () => {
   await withPage(
     async (page) => {
       const search = page.getByRole("searchbox", { name: "Durchsuchen" });
@@ -900,6 +917,11 @@ test("390 px in a host's bar: the folded search leaves the head to its tabs, ope
       await settled(page);
       expect(await search.evaluate((input) => document.activeElement === input)).toBe(false);
       expect(await search.inputValue()).toBe("Zeitüberschreitung");
+      // its words keep it open over the head (look rule 31); emptied, it folds away again
+      expect((await state()).field).toEqual([390 - 2 * textEdge.phone, textEdge.phone, textEdge.phone]);
+      await search.fill("");
+      await page.keyboard.press("Escape");
+      await settled(page);
       expect(await state()).toEqual(folded);
     },
     { width: 390, host: true },
@@ -938,7 +960,8 @@ test("1440 px in a host's page: the search of the head stays in the Tab key's or
   );
 });
 
-// A head with a path gives way on the phone; its search opens over the content's first row, so nothing below moves.
+// A head with a path and nothing else but its search gives way on the phone; its search opens over the content's first
+// row, so nothing below moves. (A head that also holds a menu "…" keeps its height: phone-head-actions.browser.test.ts.)
 test("390 px in a host's bar with a path: the search opens over the status row and nothing below the head moves", async () => {
   await withPage(
     async (page) => {
@@ -965,27 +988,33 @@ test("390 px in a host's bar with a path: the search opens over the status row a
       await settled(page);
       expect({ ...(await state()), field: [], onTop: false }).toEqual({ head: 0, status: 0, field: [], onTop: false });
     },
-    { width: 390, host: true, path: true },
+    { width: 390, host: true, path: true, bare: true },
   );
 });
 
-test("1440 px: Escape in the search of the head is the browser's and the app's, the field is not folded", async () => {
+// review r2 of #4537: Escape leaves the head's search on every width and keeps its words, which keep its field in the row
+test("1440 px: Escape leaves the search of the head and keeps its words, its field stays in the row", async () => {
   await withPage(async (page) => {
     const search = page.getByRole("searchbox", { name: "Durchsuchen" });
     await search.focus();
     await page.keyboard.type("mail");
     await page.keyboard.press("Escape");
     await settled(page);
-    expect(await search.evaluate((input) => document.activeElement === input)).toBe(true);
+    expect(await search.evaluate((input) => document.activeElement === input)).toBe(false);
+    expect(await search.inputValue()).toBe("mail");
+    expect(await search.evaluate((input) => Math.round(input.parentElement!.getBoundingClientRect().width))).toBe(184);
   });
 });
 
-test("1440 px: the search of the head is its field of 184 px", async () => {
+// look rule 31 (Valentin 27.11.): the head's search is its symbol while it is empty, and its field of 184 px when pressed
+test("1440 px: the search of the head is its symbol, and its field of 184 px when pressed", async () => {
   await withPage(async (page) => {
-    const width = await page.evaluate(() =>
-      Math.round(document.querySelector('[data-slot="head"] .k2-input[data-search]')!.getBoundingClientRect().width),
-    );
-    expect(width).toBe(184);
+    const width = () =>
+      page.evaluate(() => Math.round(document.querySelector('[data-slot="head"] .k2-input[data-search]')!.getBoundingClientRect().width));
+    expect(await width()).toBe(36);
+    await page.locator('[data-slot="head"] .k2-input[data-search] > input').focus();
+    await settled(page);
+    expect(await width()).toBe(184);
   });
 });
 

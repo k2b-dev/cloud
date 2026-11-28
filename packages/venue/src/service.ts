@@ -30,6 +30,7 @@ import { stripImageDataUrlMetadata } from "@k2b/cloud/services/image-metadata";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { dates } from "@k2b/stdlib";
+import type { SQLQuery } from "bun";
 import type { z } from "zod";
 import { permissionFromVenueScopes, type VenueAccessScope } from "./access-control";
 import { buildPublicAvailability, templateOccursOn } from "./availability";
@@ -60,14 +61,20 @@ import type {
 } from "./contracts";
 import {
   FEEDBACK_PAGE_SIZE,
+  MAX_PUBLIC_MENU_ITEMS,
+  MAX_PUBLIC_SECTIONS,
+  MENU_ITEM_LIMIT,
   PUBLIC_EXCEPTION_DAYS,
+  PUBLIC_SECTION_LIMIT,
   PublicSectionInputSchema,
+  publicMenuItemCount,
   SCHEDULE_OUTLOOK_DAYS,
   ShiftTemplateInputSchema,
+  VENUE_PAGE_MAX,
 } from "./contracts";
 import { withShortIdDb } from "./lib/short-id";
 import { venueMessages } from "./messages";
-import { filterPublicMenuSections } from "./public-menu";
+import { capPublicSections, filterPublicMenuSections } from "./public-menu";
 import * as publicProjection from "./service/public-projection";
 import { resolvePublicId, resolvePublicIds, resolveVenuePublicId } from "./service/public-resources";
 import { getVenueTemplate, listVenueTemplates as localizedVenueTemplates } from "./templates";
@@ -481,9 +488,30 @@ const getPermission = async (venueId: string, subjectInput: UserLike | VenueAcce
   return grantedPermission(venueId, subject);
 };
 
-const listVenues = async (subjectInput: UserLike | VenueAccessSubject): Promise<Venue[]> => {
+const venueSearchPattern = (query: string | null | undefined): string | null => {
+  const value = query?.trim();
+  return value ? `%${value.replace(/([\\%_])/g, "\\$1")}%` : null;
+};
+
+/**
+ * One page of the venues the subject can read, each with the subject's permission on it, in one statement
+ * whatever the page size. The permission is the highest of the subject's grants on the venue, capped by a service
+ * account's scopes, as `getPermission()` answers for one venue.
+ */
+const readAccessibleVenues = async (
+  subjectInput: UserLike | VenueAccessSubject,
+  page: {
+    search: (pattern: string) => SQLQuery;
+    order: () => SQLQuery;
+    summary: boolean;
+    query?: string | null;
+    limit: number;
+    offset: number;
+  },
+): Promise<Venue[]> => {
   const subject = toAccessSubject(subjectInput);
-  if (!(await mayReadAcrossVenues(subject))) return [];
+  const cap = subject.subject.type === "service_account" ? permissionFromVenueScopes(subject.serviceAccountScopes) : "admin";
+  if (cap === "none" || !(await mayReadAcrossVenues(subject))) return [];
 
   const principalMatch = buildAccessPrincipalCondition({
     subject: subject.subject,
@@ -498,25 +526,47 @@ const listVenues = async (subjectInput: UserLike | VenueAccessSubject): Promise<
     subject.subject.type === "service_account" && subject.serviceAccountResourceId
       ? sql`v.id = ${subject.serviceAccountResourceId}::uuid`
       : sql`true`;
-
-  const rows = await sql<DbVenue[]>`
-    SELECT DISTINCT v.*
-    FROM venue.venues v
-    JOIN venue.venue_access va ON va.venue_id = v.id
-    JOIN auth.access a ON a.id = va.access_id
-    WHERE
-      a.permission <> 'none'
-      AND ${principalMatch}
-      AND ${bindingMatch}
-    ORDER BY v.name
+  const pattern = venueSearchPattern(page.query);
+  const images = page.summary ? sql`NULL::text AS logo_base64, NULL::text AS banner_base64` : sql`v.logo_base64, v.banner_base64`;
+  const rows = await sql<(DbVenue & { permission: PermissionLevel })[]>`
+    WITH granted AS (
+      SELECT va.venue_id, max(CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 END) AS rank
+      FROM venue.venue_access va
+      JOIN auth.access a ON a.id = va.access_id
+      WHERE a.permission <> 'none' AND ${principalMatch}
+      GROUP BY va.venue_id
+    )
+    SELECT
+      v.id, v.slug, v.name, v.icon, v.description, v.timezone, v.open_mode, v.signup_mode,
+      v.public_enabled, v.feedback_enabled, v.accent_color, ${images}, v.created_at, v.updated_at,
+      (ARRAY['read', 'write', 'admin'])[g.rank] AS permission
+    FROM granted g
+    JOIN venue.venues v ON v.id = g.venue_id
+    WHERE ${bindingMatch}
+      AND ${pattern === null ? sql`true` : page.search(pattern)}
+    ORDER BY ${page.order()}
+    LIMIT ${page.limit}
+    OFFSET ${page.offset}
   `;
-
-  const venues: Venue[] = [];
-  for (const row of rows) {
-    venues.push(mapVenue(row, await getPermission(row.id, subject)));
-  }
-  return venues.filter((venue) => venue.permission && venue.permission !== "none");
+  return rows.map((row) => mapVenue(row, minPermission(row.permission, cap)));
 };
+
+/**
+ * One page of the venues the subject can read, newest first. The order rests on what never changes, so paging
+ * with `offset` misses and repeats no venue while venues are renamed or edited. `summary` leaves out the images.
+ */
+const listVenues = (
+  subject: UserLike | VenueAccessSubject,
+  page: { limit: number; offset?: number; query?: string | null; summary?: boolean },
+): Promise<Venue[]> =>
+  readAccessibleVenues(subject, {
+    search: (pattern) => sql`(v.name ILIKE ${pattern} ESCAPE '\\' OR v.slug ILIKE ${pattern} ESCAPE '\\')`,
+    order: () => sql`v.created_at DESC, v.id`,
+    summary: page.summary ?? false,
+    query: page.query,
+    limit: Math.min(VENUE_PAGE_MAX, Math.max(1, page.limit)),
+    offset: Math.max(0, page.offset ?? 0),
+  });
 
 type VenueDiscoveryOptions = {
   query?: string | null;
@@ -524,54 +574,16 @@ type VenueDiscoveryOptions = {
   offset?: number;
 };
 
-const venueSearchPattern = (query: string | null | undefined): string | null => {
-  const value = query?.trim();
-  return value ? `%${value.replace(/([\\%_])/g, "\\$1")}%` : null;
-};
-
-const discoverVenues = async (subjectInput: UserLike | VenueAccessSubject, options: VenueDiscoveryOptions = {}): Promise<Venue[]> => {
-  const subject = toAccessSubject(subjectInput);
-  if (!(await mayReadAcrossVenues(subject))) return [];
-
-  const principalMatch = buildAccessPrincipalCondition({
-    subject: subject.subject,
-    columns: {
-      userId: sql`a.user_id`,
-      groupId: sql`a.group_id`,
-      serviceAccountId: sql`a.service_account_id`,
-      authenticatedOnly: sql`a.authenticated_only`,
-    },
+const discoverVenues = (subject: UserLike | VenueAccessSubject, options: VenueDiscoveryOptions = {}): Promise<Venue[]> =>
+  readAccessibleVenues(subject, {
+    search: (pattern) =>
+      sql`(v.name ILIKE ${pattern} ESCAPE '\\' OR v.slug ILIKE ${pattern} ESCAPE '\\' OR COALESCE(v.description, '') ILIKE ${pattern} ESCAPE '\\')`,
+    order: () => sql`v.name, v.id`,
+    summary: true,
+    query: options.query,
+    limit: Math.min(101, Math.max(1, options.limit ?? 25)),
+    offset: Math.max(0, options.offset ?? 0),
   });
-  const bindingMatch =
-    subject.subject.type === "service_account" && subject.serviceAccountResourceId
-      ? sql`v.id = ${subject.serviceAccountResourceId}::uuid`
-      : sql`true`;
-  const pattern = venueSearchPattern(options.query);
-  const limit = Math.min(101, Math.max(1, options.limit ?? 25));
-  const offset = Math.max(0, options.offset ?? 0);
-  const rows = await sql<DbVenue[]>`
-    SELECT DISTINCT
-      v.id, v.slug, v.name, v.icon, v.description, v.timezone, v.open_mode, v.signup_mode,
-      v.public_enabled, v.feedback_enabled, v.accent_color,
-      NULL::text AS logo_base64, NULL::text AS banner_base64,
-      v.created_at, v.updated_at
-    FROM venue.venues v
-    JOIN venue.venue_access va ON va.venue_id = v.id
-    JOIN auth.access a ON a.id = va.access_id
-    WHERE a.permission <> 'none'
-      AND ${principalMatch}
-      AND ${bindingMatch}
-      AND (${pattern}::text IS NULL OR v.name ILIKE ${pattern} ESCAPE '\\' OR v.slug ILIKE ${pattern} ESCAPE '\\'
-        OR COALESCE(v.description, '') ILIKE ${pattern} ESCAPE '\\')
-    ORDER BY v.name, v.id
-    LIMIT ${limit}
-    OFFSET ${offset}
-  `;
-
-  const venues: Venue[] = [];
-  for (const row of rows) venues.push(mapVenue(row, await getPermission(row.id, subject)));
-  return venues.filter((venue) => venue.permission && venue.permission !== "none");
-};
 
 const discoverPublicVenues = async (options: VenueDiscoveryOptions = {}): Promise<Venue[]> => {
   const pattern = venueSearchPattern(options.query);
@@ -813,7 +825,46 @@ const stripSectionImages = (input: PublicSectionInput): PublicSectionInput => {
   };
 };
 
-const createSectionInTx = async (tx: SqlClient, venueId: string, input: PublicSectionInput): Promise<Result<PublicSection>> => {
+/**
+ * The Venue's stored sections and menu items, drafts included, without the section `exceptId`. Locks the Venue
+ * row first, so two saves at the same time count one after the other and never pass a limit together.
+ */
+const lockSectionTotals = async (tx: SqlClient, venueId: string, exceptId: string | null = null) => {
+  await tx`SELECT 1 FROM venue.venues WHERE id = ${venueId}::uuid FOR NO KEY UPDATE`;
+  const [row] = await tx<{ sections: number; items: number }[]>`
+    SELECT count(*)::int AS sections,
+           coalesce(sum(CASE WHEN kind = 'menu' AND jsonb_typeof(content->'items') = 'array'
+             THEN jsonb_array_length(content->'items') ELSE 0 END), 0)::int AS items
+    FROM venue.public_sections
+    WHERE venue_id = ${venueId}::uuid AND (${exceptId}::uuid IS NULL OR id <> ${exceptId}::uuid)
+  `;
+  return row ?? { sections: 0, items: 0 };
+};
+
+const sectionLimitReached = (locale?: string) =>
+  fail({
+    code: PUBLIC_SECTION_LIMIT,
+    status: 422 as const,
+    message: venueMessages.resolve(locale ? [locale] : []).t.sectionLimitReached({ max: MAX_PUBLIC_SECTIONS }),
+  });
+
+const menuItemLimitReached = (count: number, locale?: string) =>
+  fail({
+    code: MENU_ITEM_LIMIT,
+    status: 422 as const,
+    message: venueMessages.resolve(locale ? [locale] : []).t.menuItemLimitReached({ max: MAX_PUBLIC_MENU_ITEMS, count }),
+  });
+
+const createSectionInTx = async (
+  tx: SqlClient,
+  venueId: string,
+  input: PublicSectionInput,
+  locale?: string,
+): Promise<Result<PublicSection>> => {
+  const totals = await lockSectionTotals(tx, venueId);
+  if (totals.sections >= MAX_PUBLIC_SECTIONS) return sectionLimitReached(locale);
+  const items = totals.items + publicMenuItemCount(input);
+  if (items > MAX_PUBLIC_MENU_ITEMS && publicMenuItemCount(input) > 0) return menuItemLimitReached(items, locale);
   input = stripSectionImages(input);
   const rows = await withShortIdDb(
     tx,
@@ -1557,23 +1608,32 @@ const getPersonalAssignmentById = async (assignmentId: string, userId: string): 
   return row ? { ...mapAssignment(row), venueName: row.venue_name, venueTimezone: row.venue_timezone } : null;
 };
 
+/**
+ * Every section for the workspace, also past the limits of a page saved before them, so admins can edit it down;
+ * the public page reads only its first {@link MAX_PUBLIC_SECTIONS} visible ones.
+ */
 const listSections = async (venueId: string, onlyEnabled = false): Promise<PublicSection[]> => {
   const rows = await sql<DbPublicSection[]>`
     SELECT * FROM venue.public_sections
     WHERE venue_id = ${venueId}::uuid
       AND (${!onlyEnabled} OR enabled = true)
-    ORDER BY position, created_at
+    ORDER BY position, created_at, id
+    LIMIT ${onlyEnabled ? MAX_PUBLIC_SECTIONS : null}
   `;
   return rows.map(mapSection);
 };
 
-const createSection = async (venueId: string, input: PublicSectionInput): Promise<Result<PublicSection>> => {
-  return createSectionInTx(sql, venueId, input);
-};
+const createSection = async (venueId: string, input: PublicSectionInput, locale?: string): Promise<Result<PublicSection>> =>
+  sql.begin((tx) => createSectionInTx(tx, venueId, input, locale));
 
-/** Applies only the fields `patch` names; visibility and position stay as stored unless the patch sets them. */
-const updateSection = async (venueId: string, id: string, patch: PublicSectionPatch): Promise<Result<PublicSection>> =>
+/**
+ * Applies only the fields `patch` names; visibility and position stay as stored unless the patch sets them. A menu
+ * may gain items only within {@link MAX_PUBLIC_MENU_ITEMS}; a change that adds none always saves, so a page saved
+ * before the limits can still be edited down.
+ */
+const updateSection = async (venueId: string, id: string, patch: PublicSectionPatch, locale?: string): Promise<Result<PublicSection>> =>
   sql.begin(async (tx) => {
+    const others = await lockSectionTotals(tx, venueId, id);
     const [row] = await tx<DbPublicSection[]>`
       SELECT * FROM venue.public_sections WHERE venue_id = ${venueId}::uuid AND id = ${id}::uuid FOR UPDATE
     `;
@@ -1589,6 +1649,9 @@ const updateSection = async (venueId: string, id: string, patch: PublicSectionPa
     if (!merged.success) {
       return fail(err.badInput(merged.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join(", ")));
     }
+    const addedItems = publicMenuItemCount(merged.data) - publicMenuItemCount(current);
+    const items = others.items + publicMenuItemCount(merged.data);
+    if (addedItems > 0 && items > MAX_PUBLIC_MENU_ITEMS) return menuItemLimitReached(items, locale);
     const input = stripSectionImages(merged.data);
     const [updated] = await tx<DbPublicSection[]>`
       UPDATE venue.public_sections
@@ -1731,9 +1794,12 @@ const feedbackSummary = async (
  */
 const canSeeInternal = (venue: Venue): boolean => hasPermission(venue.permission ?? "none", "write");
 
-/** The sections the public page shows on the Venue-local date of `now`: enabled ones, with menus cut to available items. */
+/**
+ * The sections the public page shows on the Venue-local date of `now`: enabled ones, with menus cut to available
+ * items, within the page's limits.
+ */
 const publicSections = async (venue: Venue, now: Date): Promise<PublicSection[]> =>
-  filterPublicMenuSections(await listSections(venue.id, true), localDateKey(now, venue.timezone));
+  capPublicSections(filterPublicMenuSections(await listSections(venue.id, true), localDateKey(now, venue.timezone)));
 
 const statusForVenue = async (venue: Venue, now = new Date(), includeSections = true, locale?: string): Promise<PublicStatus> => {
   const { t } = venueMessages.resolve(locale ? [locale] : []);

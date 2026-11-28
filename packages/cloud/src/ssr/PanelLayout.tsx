@@ -11,6 +11,11 @@ import { getRuntimeContext } from "./runtime";
 export type PanelLayoutProps = {
   c: MinimalLayoutContext & { header(name: string, value: string): void };
   title: string;
+  /**
+   * The page is built with `@k2b/ui/v2` (provisional), as `Layout ui="v2"`: the panel page is the v2 scope, its app
+   * colour and inks sit on the body, and its text edge is the panel's 16 px at every panel width.
+   */
+  ui?: "v2";
   children: JSX.Element;
 };
 
@@ -24,6 +29,11 @@ export default function PanelLayout(props: PanelLayoutProps) {
   const app = resolveRuntimeRoute(apps, new URL(props.c.req.raw.url).pathname)?.app;
   props.c.get("page").title = props.title;
   props.c.get("page").appPrimary = app?.appearance?.primary;
+  if (props.ui === "v2") {
+    // As in Layout: the document puts the app's v2 colour and inks on the body, so v2 overlays on the body read them too.
+    props.c.get("page").appAccent = app?.appearance?.accent;
+    props.c.get("page").appUi = "v2";
+  }
   return (
     <LocaleProvider locale={getLocale(props.c)}>
       {(() => {
@@ -36,8 +46,9 @@ export default function PanelLayout(props: PanelLayoutProps) {
         );
         return (
           <div
-            class="cloud-panel-page"
+            class={props.ui === "v2" ? "cloud-panel-page k2-ui" : "cloud-panel-page"}
             data-cloud-panel-page=""
+            data-ui={props.ui}
             data-panel-provider={app?.id}
             data-k2b-title-host=""
             data-k2b-own-title={ownTitle ? "" : undefined}

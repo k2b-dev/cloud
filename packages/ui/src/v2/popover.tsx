@@ -1,6 +1,7 @@
 import { createEffect, createSignal, type JSX, onCleanup, children as resolveChildren, Show } from "solid-js";
 import { usePopover } from "./behavior/overlays";
 import { useTip } from "./behavior/tip";
+import { OverPage } from "./columns-context";
 import { alignTo, TriggerFace, type TriggerProps } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 import { usePhone } from "./overlays";
@@ -53,8 +54,7 @@ const Panel = (props: PopoverPanelProps) => {
         data-variant={(props.variant ?? (iconOnly() ? "ghost" : "secondary")) === "secondary" ? undefined : (props.variant ?? "ghost")}
         data-icon-only={iconOnly() ? "" : undefined}
         data-menu={iconOnly() ? undefined : ""}
-        // like a menu's "…": a button without words stays in a head on the phone, where the other buttons give way
-        data-keep={iconOnly() ? "" : undefined}
+        data-floats={props.floats ? "" : undefined}
         aria-label={iconOnly() ? name() : undefined}
         title={iconOnly() ? name() : undefined}
       >
@@ -62,7 +62,9 @@ const Panel = (props: PopoverPanelProps) => {
       </popover.Trigger>
       <popover.Popup class="k2-pop" data-k2-part="Popover" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
         <Show when={props.title}>{(title) => <popover.Title class="k2-pop-title">{title()}</popover.Title>}</Show>
-        <div class="k2-pop-body">{props.content}</div>
+        <div class="k2-pop-body">
+          <OverPage>{props.content}</OverPage>
+        </div>
       </popover.Popup>
     </>
   );

@@ -103,6 +103,9 @@ export const accessDialogMessages = i18n.define({
       serviceAccount: "Service account",
       you: "You",
       managesAlone: "Manages alone",
+      publicOnShort: "On · view only",
+      publicWarningShort: "Anyone with the link sees this, also without signing in.",
+      link: "Link",
       summaryTitle: "Who has access",
       summaryStackLabel: ({ name, more }: { name: string; more: number }) =>
         more === 0
@@ -221,6 +224,9 @@ export const accessDialogMessages = i18n.define({
       serviceAccount: "Dienstkonto",
       you: "Du",
       managesAlone: "Verwaltet allein",
+      publicOnShort: "An · nur ansehen",
+      publicWarningShort: "Jeder mit dem Link sieht das, auch ohne Anmeldung.",
+      link: "Link",
       summaryTitle: "Wer Zugriff hat",
       summaryStackLabel: ({ name, more }) =>
         more === 0

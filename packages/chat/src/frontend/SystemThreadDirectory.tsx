@@ -10,6 +10,80 @@ import { loadSystemThreads, type ThreadQuery } from "./system-chats";
 import ThreadMetadata from "./ThreadMetadata";
 import { byActivity, type ThreadList, type ThreadView, threadHref, threadIcon } from "./threads";
 
+/**
+ * The pages of a place's discussions for a search and a filter: a change starts again, a revision re-reads the depth
+ * read, "More" appends. Both v1's directory and v2's use it; each keeps the search and filter its own way.
+ */
+export function createDirectoryPages(
+  props: { conversation: Conversation; revision: number },
+  query: () => { q: string; filter: ThreadQuery["filter"] },
+  mounted: () => boolean,
+) {
+  const [directory, setDirectory] = createStore<{ page: ThreadList | undefined }>({ page: undefined });
+  const page = () => directory.page;
+  const setPage = (next: ThreadList | undefined) => setDirectory("page", reconcile(next, { key: "id" }));
+  const [status, setStatus] = createSignal<"loading" | "ready" | "failed">("loading");
+  const [appending, setAppending] = createSignal(false);
+  let controller: AbortController | undefined;
+  let loadedPages = 0;
+  const load = async (append = false) => {
+    controller?.abort();
+    const request = new AbortController();
+    controller = request;
+    setStatus("loading");
+    setAppending(append);
+    try {
+      // A revision re-reads exactly the depth the reader loaded. Only "More" extends it.
+      const depth = append ? 1 : Math.max(1, loadedPages);
+      const items = new Map((append ? (page()?.items ?? []) : []).map((thread) => [thread.id, thread]));
+      let cursor = append ? (page()?.nextCursor ?? undefined) : undefined;
+      let next: ThreadList | undefined;
+      let pages = 0;
+      const seen = new Set<string>();
+      for (; pages < depth; pages++) {
+        request.signal.throwIfAborted();
+        next = await loadSystemThreads(
+          props.conversation.id,
+          { q: query().q.trim() || undefined, filter: query().filter, cursor },
+          request.signal,
+        );
+        if (request.signal.aborted) return;
+        for (const thread of next.items) items.set(thread.id, thread);
+        cursor = next.nextCursor ?? undefined;
+        if (cursor === undefined || next.incomplete) {
+          pages++;
+          break;
+        }
+        if (seen.has(cursor)) throw new Error("Repeated directory cursor");
+        seen.add(cursor);
+      }
+      if (!next) return;
+      loadedPages = append ? loadedPages + pages : pages;
+      setPage({ ...next, items: byActivity([...items.values()]) });
+      setStatus("ready");
+    } catch {
+      if (!request.signal.aborted) setStatus("failed");
+    }
+  };
+  createEffect(
+    on([mounted, () => query().q, () => query().filter, () => props.conversation.id, () => props.revision], ([ready], previous) => {
+      if (!ready) return;
+      controller?.abort();
+      // Old search results never remain actionable while a different query loads.
+      const changed = !previous || previous[1] !== query().q || previous[2] !== query().filter || previous[3] !== props.conversation.id;
+      if (changed) {
+        setPage(undefined);
+        loadedPages = 0;
+      }
+      setStatus("loading");
+      const timer = setTimeout(() => void load(), changed ? 200 : 0);
+      onCleanup(() => clearTimeout(timer));
+    }),
+  );
+  onCleanup(() => controller?.abort());
+  return { page, status, appending, load };
+}
+
 /** The same server-filtered, paged directory in the overview and the wide thread column. */
 export default function SystemThreadDirectory(props: {
   conversation: Conversation;
@@ -26,13 +100,7 @@ export default function SystemThreadDirectory(props: {
   const [input, setInput] = createSignal("");
   const [filter, setFilter] = createSignal<ThreadQuery["filter"]>();
   const [mounted, setMounted] = createSignal(false);
-  const [directory, setDirectory] = createStore<{ page: ThreadList | undefined }>({ page: undefined });
-  const page = () => directory.page;
-  const setPage = (next: ThreadList | undefined) => setDirectory("page", reconcile(next, { key: "id" }));
-  const [status, setStatus] = createSignal<"loading" | "ready" | "failed">("loading");
-  const [appending, setAppending] = createSignal(false);
-  let controller: AbortController | undefined;
-  let loadedPages = 0;
+  const { page, status, appending, load } = createDirectoryPages(props, () => ({ q: input(), filter: filter() }), mounted);
   const readAddress = () => {
     const params = new URL(location.href).searchParams;
     setInput((params.get("q") ?? "").slice(0, 100));
@@ -66,57 +134,6 @@ export default function SystemThreadDirectory(props: {
     else url.searchParams.delete("filter");
     navigate(url.pathname + url.search, { replace: true, scroll: "preserve", viewTransition: false });
   };
-  const load = async (append = false) => {
-    controller?.abort();
-    const request = new AbortController();
-    controller = request;
-    setStatus("loading");
-    setAppending(append);
-    try {
-      // A revision re-reads exactly the depth the reader loaded. Only "More" extends it.
-      const depth = append ? 1 : Math.max(1, loadedPages);
-      const items = new Map((append ? (page()?.items ?? []) : []).map((thread) => [thread.id, thread]));
-      let cursor = append ? (page()?.nextCursor ?? undefined) : undefined;
-      let next: ThreadList | undefined;
-      let pages = 0;
-      const seen = new Set<string>();
-      for (; pages < depth; pages++) {
-        request.signal.throwIfAborted();
-        next = await loadSystemThreads(props.conversation.id, { q: input().trim() || undefined, filter: filter(), cursor }, request.signal);
-        if (request.signal.aborted) return;
-        for (const thread of next.items) items.set(thread.id, thread);
-        cursor = next.nextCursor ?? undefined;
-        if (cursor === undefined || next.incomplete) {
-          pages++;
-          break;
-        }
-        if (seen.has(cursor)) throw new Error("Repeated directory cursor");
-        seen.add(cursor);
-      }
-      if (!next) return;
-      loadedPages = append ? loadedPages + pages : pages;
-      setPage({ ...next, items: byActivity([...items.values()]) });
-      setStatus("ready");
-    } catch {
-      if (!request.signal.aborted) setStatus("failed");
-    }
-  };
-  createEffect(
-    on([mounted, input, filter, () => props.conversation.id, () => props.revision], ([ready], previous) => {
-      if (!ready) return;
-      controller?.abort();
-      // Old search results never remain actionable while a different query loads.
-      const changed = !previous || previous[1] !== input() || previous[2] !== filter() || previous[3] !== props.conversation.id;
-      if (changed) {
-        setPage(undefined);
-        loadedPages = 0;
-      }
-      setStatus("loading");
-      const timer = setTimeout(() => void load(), changed ? 200 : 0);
-      onCleanup(() => clearTimeout(timer));
-    }),
-  );
-  onCleanup(() => controller?.abort());
   return (
     <div class="chat-system-directory">
       <AppWorkspace.SidebarItem

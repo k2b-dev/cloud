@@ -17,7 +17,7 @@ cld venue status --json
 
 Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself.
 
-Commands accept a six-character venue ID, exact slug, or exact name. Direct resource IDs are always the short IDs shown by `cld venue list`; legacy UUIDs are rejected. A slug is discovery metadata and does not become the stored default or a URL identity. If an ID, slug, and name resolve to different venues, the command stops as ambiguous. The configured default venue stores the short ID and is used when a command allows the venue to be omitted.
+Commands accept a six-character venue ID, exact slug, or exact name. Direct resource IDs are always the short IDs shown by `cld venue list`; legacy UUIDs are rejected. A slug is discovery metadata and does not become the stored default or a URL identity. If an ID, slug, and name resolve to different venues, the command stops as ambiguous. `cld venue list` reads every page of the venue list, and a slug or name is searched for on the server, so a venue is found however many venues you can access. The configured default venue stores the short ID and is used when a command allows the venue to be omitted.
 
 Venue, opening-rule, date-override, shift-template, assignment, and public-section IDs follow Cloud's short public-resource convention. A dated shift is a virtual occurrence: identify it by its venue ID, template ID, and date rather than treating its rendered calendar key as a resource ID.
 
@@ -36,7 +36,7 @@ cld venue shifts list "Cafe Counter" --json
 
 With read permission, `cld venue get` returns `"feedback": null` and no feedback entries, and `cld venue sections list` lists only the sections the public page shows. Staff (`write`) and admin see visitor feedback and drafts. The `visibility` column says `public` or `draft`; a draft (`"enabled": false` in JSON) is not on the public page.
 
-Creating a public section requires a section kind, title, and JSON content. Read `cld venue sections create --help` first, then pass multiline JSON with `--content-file` or `--stdin`. A links section takes `{"links": [{"label": "…", "href": "…"}]}`; every `href` must be an `https:`, `http:`, `mailto:`, or `tel:` address or a path on the same Cloud starting with `/`, or the command fails with 400. `cld venue sections update` changes only the flags you pass: a draft stays a draft and every section keeps its position unless you pass `--enabled`, `--disabled`, or `--position`.
+Creating a public section requires a section kind, title, and JSON content. Read `cld venue sections create --help` first, then pass multiline JSON with `--content-file` or `--stdin`. A links section takes `{"links": [{"label": "…", "href": "…"}]}`; every `href` must be an `https:`, `http:`, `mailto:`, or `tel:` address or a path on the same Cloud starting with `/`, or the command fails with 400. A venue stores at most 12 sections and 60 menu items in all its menus together, drafts included; a create or update past either limit fails with 422 and code `PUBLIC_SECTION_LIMIT` or `MENU_ITEM_LIMIT` and changes nothing, while an update that adds no menu item always saves. `cld venue sections update` changes only the flags you pass: a draft stays a draft and every section keeps its position unless you pass `--enabled`, `--disabled`, or `--position`.
 
 ```bash
 cld venue sections update "Cafe Counter" <section-id> --title "Winter hours"

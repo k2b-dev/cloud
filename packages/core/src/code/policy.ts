@@ -75,6 +75,28 @@ export async function readCodePolicyGroups(userId: string | null, db: SQL = sql)
   if (!userId) return { groups: [], ancestors: [] };
   return codePolicyGroupsFromRows(await codePolicyGroupRowsQuery(userId, db));
 }
+/** `readCodePolicyGroups` for several people in one statement, by person; the same ancestry per person. */
+export async function readCodePolicyGroupsOf(userIds: readonly string[], db: SQL = sql): Promise<Map<string, CodePolicyGroups>> {
+  const ids = [...new Set(userIds)];
+  if (!ids.length) return new Map();
+  const rows = await db<(CodePolicyGroupRow & { user_id: string })[]>`
+    WITH RECURSIVE members(user_id,id) AS (
+      SELECT user_id,group_id FROM auth.user_groups_v2 WHERE user_id=ANY(${db.array(ids, "uuid")})
+      UNION SELECT m.user_id,g.id FROM auth.ipa_user_effective_groups m JOIN auth.groups g ON g.provider='ipa' AND g.name=m.group_name
+        WHERE m.user_id=ANY(${db.array(ids, "uuid")})
+      UNION SELECT m.user_id,edge.parent_group_id FROM members m JOIN auth.groups child ON child.id=m.id
+        JOIN auth.group_groups_v2 edge ON edge.child_group_id=m.id
+        JOIN auth.groups parent ON parent.id=edge.parent_group_id AND parent.provider=child.provider
+        WHERE child.provider<>'ipa'
+    ), ancestry(user_id,id,ancestor_id) AS (
+      SELECT user_id,id,id FROM members
+      UNION SELECT a.user_id,a.id,edge.parent_group_id FROM ancestry a JOIN auth.groups child ON child.id=a.ancestor_id
+        JOIN auth.group_groups_v2 edge ON edge.child_group_id=a.ancestor_id
+        JOIN auth.groups parent ON parent.id=edge.parent_group_id AND parent.provider=child.provider
+        WHERE child.provider<>'ipa'
+    ) SELECT a.user_id,a.id,g.provider,a.ancestor_id FROM ancestry a JOIN auth.groups g ON g.id=a.id`;
+  return new Map(ids.map((id) => [id, codePolicyGroupsFromRows(rows.filter((row) => row.user_id === id))]));
+}
 const snapshot = <T>(run: (db: SQL) => Promise<T>) =>
   sql.begin(async (tx) => {
     await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`;

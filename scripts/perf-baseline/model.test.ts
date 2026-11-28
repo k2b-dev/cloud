@@ -66,19 +66,19 @@ describe("performance baseline contracts", () => {
   test("HTML counts instances, distinct entries, decoded UTF-8 props, inline and external modules", async () => {
     const props = JSON.stringify(toJSON({ text: "Grüße & <world>" }));
     const empty = JSON.stringify(toJSON({}));
-    const encoded = props.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
-    const html = `<base href="/app/fixture/"><solid-island data-id="one" data-props="${encoded}"></solid-island><solid-client data-id="one" data-props="${Bun.escapeHTML(empty)}"></solid-client><script type="module">const p="/fixture/_ssr/123";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script><script type="module" src="extra.js"></script><script type="module">import "./inline.js";</script><link rel="stylesheet" href="/public/fixture/app.css"><link rel="preload" href="ignored.css">`;
+    const encoded = props.replaceAll("<", "\\u003c").replaceAll(">", "\\u003e");
+    const html = `<base href="/app/fixture/"><solid-island data-id="one"><!--ssr-props:${encoded}--></solid-island><solid-client data-id="one"><!--ssr-props:${empty}--></solid-client><script type="module">const p="/fixture/_ssr/123";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script><script type="module" src="extra.js"></script><script type="module">import "./inline.js";</script><link rel="stylesheet" href="/public/fixture/app.css"><link rel="preload" href="ignored.css">`;
     const info = await inspectHtml(html, "http://127.0.0.1:4100/fixture");
     expect(info.islands).toBe(2);
     expect(info.islandEntries).toEqual(["/fixture/_ssr/123/one.js"]);
     expect(info.modules).toEqual(["/app/fixture/extra.js", "/app/fixture/inline.js", "/fixture/_ssr/123/one.js"]);
     expect(info.css).toEqual(["/public/fixture/app.css"]);
-    expect(info.propsBytes).toBe(Buffer.byteLength(props) + Buffer.byteLength(empty));
+    expect(info.propsBytes).toBe(Buffer.byteLength(encoded) + Buffer.byteLength(empty));
     expect(info.propsShare).toBeCloseTo(info.propsBytes / Buffer.byteLength(html), 6);
   });
 
   test("content-hashed SSR prefixes and modulepreload preserve the inspector module set", async () => {
-    const html = `<solid-island data-id="one" data-props="{}"></solid-island><script type="module">const p="/fixture/_ssr/0123456789abcdef";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`;
+    const html = `<solid-island data-id="one"><!--ssr-props:{}--></solid-island><script type="module">const p="/fixture/_ssr/0123456789abcdef";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`;
     const preload = `["chunk-abc.js","chunk-def.js"].forEach(f=>{const l=document.createElement('link');l.rel='modulepreload';l.href=p+'/'+f;document.head.append(l)});`;
     const withPreloads = html.replace(";document.querySelectorAll", ";" + preload + "document.querySelectorAll");
     const original = await inspectHtml(html, "http://127.0.0.1:4100/fixture");

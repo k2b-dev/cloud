@@ -1,7 +1,7 @@
 import { Button, DateRangePicker, ImageInput, SegmentedControl, Switch, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { createStore } from "solid-js/store";
-import { type PublicSection, type PublicSectionInput, publicLinkHref } from "../../../contracts";
+import { MAX_PUBLIC_MENU_ITEMS, type PublicSection, type PublicSectionInput, publicLinkHref } from "../../../contracts";
 import { type VenueMessages, venueMessages } from "../../../messages";
 import { createDialogSave, DialogFrame, type SubmittingDialogProps } from "./schedule";
 
@@ -151,6 +151,8 @@ export function PublicSectionDialog(
     initial?: PublicSection;
     title?: string;
     submitLabel?: string;
+    /** Menu items the Venue's other sections hold; with this menu's rows, they count toward {@link MAX_PUBLIC_MENU_ITEMS}. */
+    otherMenuItems: number;
   },
 ) {
   const locale = useLocale();
@@ -192,7 +194,11 @@ export function PublicSectionDialog(
     if (index >= 0) setLinks(index, patch);
   };
 
-  const addItem = () => setItems(items.length, newItem());
+  const menuItemTotal = () => props.otherMenuItems + items.length;
+  const atMenuItemLimit = () => menuItemTotal() >= MAX_PUBLIC_MENU_ITEMS;
+  const addItem = () => {
+    if (!atMenuItemLimit()) setItems(items.length, newItem());
+  };
   const removeItem = (id: string) => {
     if (items.length > 1) setItems(items.filter((item) => item.id !== id));
   };
@@ -387,9 +393,23 @@ export function PublicSectionDialog(
                 </div>
               )}
             </For>
-            <Button type="button" variant="secondary" size="sm" class="justify-center" onClick={addItem}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              class="justify-center"
+              disabled={atMenuItemLimit()}
+              aria-describedby="venue-menu-item-limit"
+              onClick={addItem}
+            >
               <i class="ti ti-plus" /> {t().addMenuItem}
             </Button>
+            {/* Always present, so reaching the limit changes its words, not the layout. */}
+            <p id="venue-menu-item-limit" class="text-xs text-dimmed" aria-live="polite" data-menu-item-limit="">
+              {atMenuItemLimit()
+                ? t().menuItemLimitHint({ count: menuItemTotal(), max: MAX_PUBLIC_MENU_ITEMS })
+                : t().menuItemCount({ count: menuItemTotal(), max: MAX_PUBLIC_MENU_ITEMS })}
+            </p>
           </div>
         </Show>
       </div>

@@ -131,6 +131,45 @@ test("a text field sends autocomplete, length, keyboard, spelling and capitals i
   );
 });
 
+// A page to read, not to arrange (a visitor page, a wall screen): a fixed width keeps the column, without a grip.
+test("a fixed width keeps a column and a table column without a grip", async () => {
+  const { Table } = await import("./content");
+  const fixed = { fixed: 360 };
+  const panes = renderToString(() =>
+    createComponent(Pane.Split, {
+      get children() {
+        return [
+          createComponent(Pane, { label: "Liste", children: "Liste" }),
+          createComponent(Pane, { side: true, label: "Seite", width: fixed, children: "Seite" }),
+        ];
+      },
+    }),
+  );
+  expect(panes).toContain('class="k2-seam"');
+  expect(panes).not.toContain("data-k2-grip");
+  const table = (width: { fixed: number } | { min: number; default: number }) =>
+    renderToString(() =>
+      createComponent(Table<{ name: string }>, {
+        label: "Programm",
+        rows: [{ name: "Lesung" }],
+        columns: [
+          { title: "Name", width, cell: (row: { name: string }) => row.name },
+          { title: "Ort", cell: () => "Saal 2" },
+        ],
+      }),
+    );
+  expect(table(fixed)).not.toContain("k2-cgrip");
+  expect(table({ min: 280, default: 360 })).toContain("k2-cgrip");
+  expect(table(fixed)).toContain("width:360px");
+});
+
+// A meter near or at its limit says so in colour too, as the chip beside it says it in words.
+test("a meter carries its state only when it has one", async () => {
+  const { Progress } = await import("./marks");
+  expect(renderToString(() => createComponent(Progress, { value: 120, of: 120, status: "bad" }))).toContain('data-status="bad"');
+  expect(renderToString(() => createComponent(Progress, { value: 9, of: 12 }))).not.toContain("data-status");
+});
+
 test("an empty state that went wrong carries its tone on its sign; a plain one stays neutral", () => {
   const sign = (markup: string) => markup.match(/<span class="k2-sign"[^>]*>/)?.[0] ?? "";
   const failed = renderToString(() =>
@@ -213,6 +252,141 @@ test("Ticks are drawn by the server alone: a picture with its sentence and one t
   expect(markup).toContain('aria-label="Quelle: 2 Abrufe, 1 fehlgeschlagen"');
   expect(markup.match(/<i data-s="(ok|bad|none)"/g)).toEqual(['<i data-s="none"', '<i data-s="ok"', '<i data-s="bad"']);
   expect(markup).toContain("--k2-c:#7c3aed");
+});
+
+test("a RangeBar is drawn by the server alone: its words, its place on the scale and the colours of its part", async () => {
+  const { RangeBar } = await import("./marks");
+  const markup = renderToString(() =>
+    createComponent(RangeBar, {
+      from: 0,
+      to: 10,
+      domain: [-10, 30],
+      stops: [
+        { at: 0, color: "#0369a1" },
+        { at: 10, color: "#15803d" },
+      ],
+      label: "0° bis 10°",
+    }),
+  );
+  expect(markup).toContain('role="img"');
+  expect(markup).toContain('aria-label="0° bis 10°"');
+  // a quarter in from the start, half the scale short of its end
+  expect(markup).toContain("--k2-range-start:25%");
+  expect(markup).toContain("--k2-range-end:50%");
+  expect(markup).toContain("--k2-range-fill:linear-gradient(var(--k2-range-way, to right), #0369a1 0%, #15803d 100%)");
+});
+
+test("a RangeBar reads from and to in either order, holds a range past its scale to the scale, and stays empty without numbers", async () => {
+  const { RangeBar } = await import("./marks");
+  const draw = (from: number, to: number) =>
+    renderToString(() => createComponent(RangeBar, { from, to, domain: [0, 10], label: "Bereich" }));
+  // the order does not matter
+  expect(draw(8, 2)).toBe(draw(2, 8));
+  // past the scale: held to its ends
+  const past = draw(-5, 15);
+  expect(past).toContain("--k2-range-start:0%");
+  expect(past).toContain("--k2-range-end:0%");
+  // at the scale's very end: a stub that stands at the end (the CSS keeps its 4 px inside the track)
+  expect(draw(10, 10)).toContain("--k2-range-start:100%");
+  // no number: the track alone, no range on it
+  expect(draw(Number.NaN, 3)).not.toContain("<i");
+  expect(renderToString(() => createComponent(RangeBar, { from: 1, to: 2, domain: [5, 5], label: "leer" }))).not.toContain("<i");
+});
+
+test("a RangeBar's colours are colours: stops sorted, held to the visible part, and anything else dropped", async () => {
+  const { RangeBar } = await import("./marks");
+  const markup = renderToString(() =>
+    createComponent(RangeBar, {
+      from: -20,
+      to: 5,
+      domain: [-10, 10],
+      stops: [
+        { at: 10, color: "#15803d" },
+        { at: 0, color: "red), url(https://example.org/x.png), linear-gradient(red" },
+        { at: -10, color: "light-dark(#1d4ed8, #93c5fd)" },
+        { at: 0, color: "#0369a1;background:url(https://example.org/x.png)" },
+      ],
+      label: "-10° bis 5°",
+    }),
+  );
+  expect(markup).not.toContain("url(");
+  // the visible part runs from -10 to 5: the stops sit at their place on it, in the order of the scale
+  expect(markup).toContain(
+    "--k2-range-fill:linear-gradient(var(--k2-range-way, to right), light-dark(#1d4ed8, #93c5fd) 0%, #15803d 133.3%)",
+  );
+});
+
+test("a RangeBar with several ranges draws each on the one track, in its own colours, under one label", async () => {
+  const { RangeBar } = await import("./marks");
+  const markup = renderToString(() =>
+    createComponent(RangeBar, {
+      // a day with a break, on a scale from 6 to 24: 8 to 12 and 14 to 18, given in any order and either direction
+      ranges: [
+        { from: 18, to: 14 },
+        { from: 8, to: 12 },
+      ],
+      domain: [6, 24],
+      stops: [
+        { at: 6, color: "#0369a1" },
+        { at: 24, color: "#15803d" },
+      ],
+      label: "Mo.: 08:00 bis 12:00 und 14:00 bis 18:00",
+    }),
+  );
+  // one image with one name: the words list every range, the bars say nothing on their own
+  expect(markup.match(/role="img"/g)).toEqual(['role="img"']);
+  expect(markup).toContain('aria-label="Mo.: 08:00 bis 12:00 und 14:00 bis 18:00"');
+  expect(markup.match(/<i /g)?.length).toBe(2);
+  // in the given order: 14…18 lies 8/18 in from the start and 6/18 short of the end, 8…12 2/18 in and 12/18 short
+  expect(markup).toContain("--k2-range-start:44.4%;--k2-range-end:33.3%");
+  expect(markup).toContain("--k2-range-start:11.1%;--k2-range-end:66.7%");
+  // each bar shows the colours of its own part of the scale: the 6…24 stops seen from 14…18 and from 8…12
+  expect(markup).toContain("linear-gradient(var(--k2-range-way, to right), #0369a1 -200%, #15803d 250%)");
+  expect(markup).toContain("linear-gradient(var(--k2-range-way, to right), #0369a1 -50%, #15803d 400%)");
+});
+
+test("a RangeBar without ranges, or with ranges that are no numbers, keeps its track and draws nothing on it", async () => {
+  const { RangeBar } = await import("./marks");
+  const closed = renderToString(() => createComponent(RangeBar, { ranges: [], domain: [6, 24], label: "So.: geschlossen" }));
+  expect(closed).toContain('data-k2-part="RangeBar"');
+  expect(closed).toContain('aria-label="So.: geschlossen"');
+  expect(closed).not.toContain("<i");
+  // a range that is no number is left out, the others stay
+  const partly = renderToString(() =>
+    createComponent(RangeBar, {
+      ranges: [
+        { from: Number.NaN, to: 12 },
+        { from: 14, to: 18 },
+      ],
+      domain: [6, 24],
+      label: "Di.: 14:00 bis 18:00",
+    }),
+  );
+  expect(partly.match(/<i /g)?.length).toBe(1);
+  // one range in `ranges` draws exactly what `from` and `to` draw
+  const one = (props: { from: number; to: number } | { ranges: { from: number; to: number }[] }) =>
+    renderToString(() => createComponent(RangeBar, { ...props, domain: [0, 10], label: "Bereich" }));
+  expect(one({ ranges: [{ from: 2, to: 8 }] })).toBe(one({ from: 2, to: 8 }));
+});
+
+test("a decorative RangeBar says nothing to assistive technology", async () => {
+  const { RangeBar } = await import("./marks");
+  const markup = renderToString(() => createComponent(RangeBar, { from: 1, to: 2, domain: [0, 4], decorative: true }));
+  // as a decorative Avatar: hidden from assistive technology, without words of its own
+  expect(markup).toContain('aria-hidden="true"');
+  expect(markup).not.toContain("aria-label");
+});
+
+test("an Icon takes a data colour as a checked --k2-c, and drops what is no colour", async () => {
+  const { Icon } = await import("./marks");
+  const colored = renderToString(() => createComponent(Icon, { name: "sun", color: "light-dark(#b45309, #fbbf24)" }));
+  expect(colored).toContain("--k2-c:light-dark(#b45309, #fbbf24)");
+  expect(colored).toContain("data-color");
+  for (const color of ["red;background:url(https://example.org/x.png)", "red", "light-dark(#fff, red)"]) {
+    const markup = renderToString(() => createComponent(Icon, { name: "sun", color }));
+    expect(markup).not.toMatch(/--k2-c|url\(|background/);
+    expect(markup).not.toContain("data-color");
+  }
 });
 
 // A Heat is drawn whole by the server: every day of the 53 weeks with its tone and words, today marked and the one Tab

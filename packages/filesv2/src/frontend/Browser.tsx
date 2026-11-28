@@ -1,6 +1,5 @@
 import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { markHintSeen } from "@k2b/cloud/browser/hints";
 import { PageTrail } from "@k2b/cloud/ssr/islands";
 import { downloadArchive } from "@k2b/filegate/utils";
 import { navigate as commitHistory, type LinkNavigateEvent } from "@k2b/ssr/nav";
@@ -21,7 +20,6 @@ import {
   fileDropTarget,
   InlineGuidance,
   Lightbox,
-  MovedHint,
   Placeholder,
   prompts,
   ScrollArea,
@@ -70,7 +68,6 @@ import { IssueMessage } from "./feedback";
 import { fileLightboxItem } from "./file-lightbox";
 import { apiFailure, contentLease } from "./file-preview";
 import { askReplace, type FilesUploads, type ReplacePolicy } from "./files-uploads";
-import { SELECTION_PILL_HINT } from "./hints";
 import type { HistoryActions, HistoryEnvironment } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
 import { openDestinationDialog } from "./MoveDialog";
@@ -155,7 +152,6 @@ export default function Browser(props: {
   /** The workspace's upload queue; it outlives this view, so leaving the folder does not stop an upload. */
   uploads: FilesUploads;
   /** The server shows, once, where the header's Actions menu went: to the selection pill at the bottom. */
-  selectionPillHint?: boolean;
 }) {
   const t = useFilesMessages();
   const b = useBrowserMessages();
@@ -1190,7 +1186,6 @@ export default function Browser(props: {
    * The selection pill at the bottom: the count, what fits the selection (such as Merge for several PDFs), then
    * Download, Share and Move, and the rarer commands under More. It replaces the header's Actions menu.
    */
-  const [pillHint, setPillHint] = createSignal(!!props.selectionPillHint);
   const isPdf = (entry: FileEntry) => !entry.directory && previewSource(entry) === "pdf";
   const pillKind = (items: readonly FileEntry[]) => (items.length && items.every(isPdf) ? "pdf" : "any");
   const suggestions = () => {
@@ -1976,19 +1971,6 @@ export default function Browser(props: {
                 <span class="filesv2-selection-status text-xs font-medium" role="status">
                   {b().selectedActions(selectedPaths().length)}
                 </span>
-                {/* The Actions menu that stood here moved to the pill at the bottom; this says so once. */}
-                <MovedHint
-                  open={pillHint()}
-                  target={() => document.querySelector<HTMLElement>(".filesv2-selection-status") ?? undefined}
-                  placement="bottom"
-                  onDismiss={() => {
-                    setPillHint(false);
-                    markHintSeen(SELECTION_PILL_HINT);
-                  }}
-                  action={{ label: b().gotIt, onClick: () => {} }}
-                >
-                  <strong>{b().pillMovedTitle}</strong> {b().pillMovedText}
-                </MovedHint>
                 <Button size="xs" variant="text" onClick={() => toggleSelecting(false)}>
                   {b().endSelect}
                 </Button>

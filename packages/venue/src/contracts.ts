@@ -30,6 +30,20 @@ export const VenueSchema = z.object({
 });
 export type Venue = z.infer<typeof VenueSchema>;
 
+/** Venues per page of the venue list, as many as the Venue list capability returns. */
+export const VENUE_PAGE_MAX = 100;
+export const VenuePageQuerySchema = z.object({
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(VENUE_PAGE_MAX)
+    .optional()
+    .describe(`Venues per page, ${VENUE_PAGE_MAX} at most and by default`),
+  offset: z.coerce.number().int().min(0).optional().describe("Venues to skip, for the next page"),
+  q: z.string().trim().max(200).optional().describe("Only venues whose name or slug contains these words"),
+});
+
 /** A venue slug: 2 to 80 lowercase letters or digits, with single dashes between them. */
 export const VENUE_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const VENUE_SLUG_MIN_LENGTH = 2;
@@ -254,6 +268,35 @@ export const PublicMenuItemSchema = z
     message: "Availability end must be on or after the start date",
   });
 export type PublicMenuItem = z.infer<typeof PublicMenuItemSchema>;
+
+/**
+ * The SSR HTML of one public page at most: 200 kB load in about one second over a 3G phone connection
+ * (1.6 Mbit/s), so a page at its limits still opens quickly where visitors stand in line.
+ */
+export const PUBLIC_PAGE_HTML_BUDGET_BYTES = 200_000;
+
+/**
+ * Sections one Venue stores, drafts included. Derived from {@link PUBLIC_PAGE_HTML_BUDGET_BYTES} with sizes
+ * measured on the guest page (markup plus the island's serialized props, which repeat every section):
+ * - page without sections, with a worst case of hours, changed hours, and openings: 51.5 kB; 60 kB stay reserved;
+ * - one section: 1.4 kB (notice) to 3.3 kB (links section with three links, the largest kind);
+ * - one menu item with a long name, description, allergens, price, and image address: 1.54 kB.
+ * 12 sections × 3.3 kB ≈ 40 kB, which leaves (200 − 60 − 40) kB ÷ 1.54 kB ≈ 65 menu items: 60.
+ * `public-section-limits.integration.test.ts` fills a page to both limits and that worst case and keeps it within
+ * the budget.
+ */
+export const MAX_PUBLIC_SECTIONS = 12;
+
+/** Menu items one Venue stores in all its menus together, drafts included; see {@link MAX_PUBLIC_SECTIONS}. */
+export const MAX_PUBLIC_MENU_ITEMS = 60;
+
+/** The stable error codes (422) of a save that would take a public page past one of its limits. */
+export const PUBLIC_SECTION_LIMIT = "PUBLIC_SECTION_LIMIT";
+export const MENU_ITEM_LIMIT = "MENU_ITEM_LIMIT";
+
+/** How many items a menu section holds; other kinds hold none. */
+export const publicMenuItemCount = (section: { kind: string; content: Record<string, unknown> }): number =>
+  section.kind === "menu" && Array.isArray(section.content.items) ? section.content.items.length : 0;
 
 const PublicSectionKindSchema = z.enum(["markdown", "menu", "notice", "links"]);
 

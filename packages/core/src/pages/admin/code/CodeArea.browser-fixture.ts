@@ -1,4 +1,4 @@
-/** Synthetic admin authority and fictional Code; the real AdminLayout, Code area view, islands and styles. No live services. */
+/** Synthetic admin authority and fictional Code; the real AdminLayout, the Code screens on v2 and styles. No live services. */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -6,9 +6,10 @@ import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
-import { Dynamic, renderToString } from "solid-js/web";
+import { renderToString } from "solid-js/web";
 import { plexPreloads } from "../../../../../ui/test/plex-preloads";
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
+import { adminShellAsset, adminShellRuntime } from "../admin-v2.shell-fixture";
 import {
   CODE_FIXTURE_STATES,
   codeFixtureData,
@@ -17,7 +18,7 @@ import {
   fixtureCodeDetail,
   fixtureData,
 } from "./CodeArea.fixture-data";
-import { fixtureDatabasePage } from "./CodeDatabase.fixture-data";
+import type { CodeScreenProps } from "./screen";
 
 const user: User = {
   id: FIXTURE_PEOPLE.ben,
@@ -43,11 +44,11 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
   const root = mkdtempSync(join(tmpdir(), "core-code-area-"));
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
   registerSsrTestPlugin({ dev: true, rootDir: root });
-  const { AdminLayout, Layout } = await import("@k2b/cloud/ssr");
-  const { default: CodePage } = await import("@k2b/cloud/ssr/code-page");
-  const { CodeAreaView } = await import("./view");
+  const { AdminLayout } = await import("@k2b/cloud/ssr");
+  const { default: CodeScreen } = await import("./screen");
   const { codeAdminMessages } = await import("./messages");
-  const { parseCodeAreaQuery } = await import("./area");
+  const { codeAreaSection, parseCodeAreaQuery } = await import("./area");
+  const { codeNav } = await import("./nav");
   const ui = resolve(import.meta.dir, "../../../../../ui");
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", `${ui}/`));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", `${ui}/`))).default;
@@ -108,11 +109,12 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
     const theme = c.req.query("theme") === "dark" ? "dark" : "light";
     const state = CODE_FIXTURE_STATES.find((entry) => entry === c.req.query("state")) ?? "normal";
     c.req.raw.headers.set("x-cloud-locale", locale);
+    // the shell as a running Cloud has it, plus the workshop app some automations belong to
+    const shell = adminShellRuntime();
     c.set("runtime", {
+      ...shell,
       apps: [
-        { id: "core", name: "Core", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] },
-        { id: "mail", name: "Mail", description: "Mail", icon: "ti ti-mail", routes: ["/app/mail"] },
-        { id: "spaces", name: "Spaces", description: "Tasks", icon: "ti ti-checkbox", routes: ["/app/spaces"] },
+        ...shell.apps,
         { id: "werkstatt", name: "Werkstattbuch", description: "Workshop", icon: "ti ti-tool", routes: ["/app/werkstatt"] },
       ],
     });
@@ -130,39 +132,50 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
     const waiting = 4 - decisions.size;
     if (data && data.summary !== null && typeof data.summary === "object") data.summary = { ...data.summary, approvals: waiting };
     c.set("adminCodeApprovals", data && typeof data.summary === "object" && data.summary ? waiting + data.summary.reports : undefined);
-    const databaseDemo = c.req.query("surface") === "database";
-    const databasePage = fixtureDatabasePage(locale);
-    const body = renderToString(() =>
-      createComponent(databaseDemo ? Layout : AdminLayout, {
-        c,
-        title: t.area,
-        ownMain: !databaseDemo,
-        get children() {
-          if (databaseDemo)
-            return createComponent(Dynamic, {
-              component: "div",
-              class: "p-4 sm:p-6",
-              get children() {
-                return createComponent(CodePage, { data: databasePage });
+    const summary = data && typeof data.summary === "object" && data.summary ? data.summary : null;
+    const props: CodeScreenProps = {
+      nav: codeNav(c, locale, codeAreaSection(query), summary),
+      query,
+      locale,
+      dateConfig: { locale: locale === "de" ? "de-DE" : "en-GB", timeZone: "Europe/Berlin" },
+      viewerId: user.id,
+      apps: {
+        mail: { name: "Mail", color: "#2563eb" },
+        spaces: { name: "Spaces", color: "#7c3aed" },
+        werkstatt: { name: "Werkstattbuch", color: "#c2410c" },
+      },
+      data,
+      noPermission: state === "noperm",
+      recent:
+        query.sec === "limits"
+          ? [
+              {
+                key: "core.code.wall_clock_ms",
+                label: locale === "de" ? "Laufzeit je Lauf" : "Wall-clock time per run",
+                who: "Lea Muster",
+                when: "01.11.2026, 09:40",
               },
-            });
-          return createComponent(CodeAreaView, {
-            t,
-            locale,
-            dateConfig: { locale: locale === "de" ? "de-DE" : "en-GB", timeZone: "Europe/Berlin" },
-            query,
-            data,
-            noPermission: state === "noperm",
-            retryHref: c.req.url,
-            viewerId: user.id,
-            appNames: { mail: "Mail", spaces: "Spaces", werkstatt: "Werkstattbuch" },
-            documentationBase: undefined,
-          });
+              {
+                key: "core.code.ai_daily_budget_usd",
+                label: locale === "de" ? "KI-Tagesbudget" : "Daily AI budget",
+                who: "Ben Schulz",
+                when: "28.10.2026, 16:05",
+              },
+            ]
+          : undefined,
+    };
+    const body = renderToString(() =>
+      createComponent(AdminLayout, {
+        c,
+        ui: "v2",
+        title: t.sectionLabel({ s: codeAreaSection(query) }),
+        get children() {
+          return createComponent(CodeScreen, props);
         },
       }),
     );
     return c.html(
-      `<!doctype html><html lang="${locale}" class="${theme}" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${plexPreloads("/public/fonts/").links}<link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><style>${css}</style></head><body class="k2b-ui">${body}<script src="/fixture.js"></script></body></html>`,
+      `<!doctype html><html lang="${locale}" class="${theme}" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${plexPreloads("/public/fonts/").links}<link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><style>${css}</style></head><body class="k2b-ui">${body}<script type="application/json" id="screen-props">${JSON.stringify(props).replaceAll("<", "\\u003c")}</script><script src="/fixture.js"></script></body></html>`,
     );
   });
 
@@ -321,8 +334,8 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
     port: options.port ?? 0,
     async fetch(request) {
       const url = new URL(request.url);
-      if (url.pathname === "/branding/logo")
-        return new Response(Bun.file(resolve(import.meta.dir, "../../../../../cloud/public/logo.svg")));
+      const shellAsset = adminShellAsset(url.pathname);
+      if (shellAsset) return shellAsset;
       if (url.pathname === "/fixture.js") return new Response(script, { headers: { "Content-Type": "text/javascript" } });
       if (url.pathname.startsWith("/public/")) {
         const path = resolve(root, `.${url.pathname}`);

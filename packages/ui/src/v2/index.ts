@@ -102,6 +102,7 @@ export { type DescribeV2Options, describeV2 } from "./describe";
 export { Failed, type FailedProps } from "./failed";
 // Lists people filter, sort and group: the statements of a `defineListQuery` declaration, and values that load.
 export { FilterBar, type FilterBarProps, type FilterBarViews, ListOrder, type ListOrderProps, viewIcon } from "./filter-bar";
+export { HeadSearch } from "./head-search";
 // A year of days as a picture: what happened per day, in tones of one colour.
 export { Heat, type HeatDay, type HeatProps } from "./heat";
 // Layer 1: the primitives.
@@ -118,6 +119,8 @@ export {
   type PaneProps,
   type Tile,
   type TileCreate,
+  type TilePreview,
+  type TilePreviewColumn,
   type TileStat,
   Tiles,
   type TilesProps,
@@ -137,6 +140,8 @@ export {
   type MarkProps,
   Progress,
   type ProgressProps,
+  RangeBar,
+  type RangeBarProps,
   Spark,
   type SparkProps,
   type TickState,

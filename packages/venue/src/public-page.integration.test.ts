@@ -179,4 +179,38 @@ suite("Venue public page shows changed hours in advance and follows the theme", 
       });
     }
   });
+
+  test("feedback can only be sent while the venue takes feedback", async () => {
+    const feedback = `/api/venue/public/${venue.id}/feedback`;
+    const takeFeedback = async (feedbackEnabled: boolean) =>
+      expectStatus(
+        await send("PATCH", `/api/venue/venues/${venue.id}`, admin.cookie, { name: venue.name, slug: venue.slug, feedbackEnabled }),
+        200,
+        `feedback ${feedbackEnabled ? "on" : "off"}`,
+      );
+    const entries = async () => {
+      const [row] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM venue.feedback_entries fe JOIN venue.venues v ON v.id = fe.venue_id
+        WHERE v.short_id = ${venue.id}
+      `;
+      return row!.count;
+    };
+    const before = await entries();
+
+    await takeFeedback(false);
+    const status = JSON.parse(
+      await expectStatus(await send("GET", `/api/venue/public/${venue.id}/status`, ""), 200, "status while off"),
+    ) as PublicStatus;
+    expect(status.venue.feedbackEnabled).toBe(false);
+    expect(await expectStatus(await send("GET", `/app/venue/public/${venue.id}/feedback`, ""), 200, "form while off")).toContain(
+      "Feedback unavailable",
+    );
+    const refused = await expectStatus(await send("POST", feedback, "", { rating: 4, comment: "Great coffee" }), 400, "send while off");
+    expect(refused).toContain("Feedback is disabled for this venue");
+    expect(await entries()).toBe(before);
+
+    await takeFeedback(true);
+    await expectStatus(await send("POST", feedback, "", { rating: 4, comment: "Great coffee" }), 201, "send while on");
+    expect(await entries()).toBe(before + 1);
+  });
 });

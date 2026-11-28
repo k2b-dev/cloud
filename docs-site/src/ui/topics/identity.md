@@ -18,6 +18,12 @@ One base: key numbers with a short history in `Cells`, then its tables, forms an
 
 <Example recipe="home" height="720" default="Busy" />
 
+## A first start
+
+An app without any data yet: no sidebar, one line in the middle and four cards, the blank way first. Each card previews what it makes (a page, a table, or its sign) and opens the dialog that makes it. Four share a row on a wide screen and stand 2 × 2 on the phone. Switch the state: the first base in Grids.
+
+<Example recipe="start" height="560" default="Notizbücher" />
+
 ## Mark, symbol or avatar?
 
 ### Mark
@@ -51,15 +57,15 @@ People over each other with "+n" for the rest, as one picture with one name.
 
 ### Spark
 
-A few bars of a short history beside a number or on a card, the last in full colour.
+A few bars of a short history beside a number or on a card, the last in full colour. Sparks side by side that people compare share one `max`, so the same value has the same height in each.
 
 <Props of="Spark" />
 
 ### Tiles card
 
-Things as cards: mark, name, figures, people and a short history; the last card makes a new thing.
+Things as cards: mark, name, figures, people and a short history; the last card makes a new thing. A card can preview what it holds across its top (`preview`), and with `onOpen` the whole card is one button. `perRow` sets how many share a row.
 
-<Props of="Tiles Tile TileStat TileCreate" />
+<Props of="Tiles Tile TileStat TileCreate TilePreview" />
 
 ### Digest activity
 

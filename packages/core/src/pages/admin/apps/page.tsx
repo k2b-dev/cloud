@@ -5,7 +5,6 @@ import type { AppRegistryEntry } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, getDateConfig, getLocale } from "@k2b/cloud/server";
 import {
   AppAccessManagementError,
-  accounts,
   appAdminFacts,
   appDetails,
   canReadAppAdministration,
@@ -23,11 +22,13 @@ import { createAppStatusReader } from "../../../app-status";
 import { ssr } from "../../../config";
 import { listAppListing } from "../../../known-apps";
 import { settingsDocumentationHref } from "../settings/documentation";
-import { appsFormat } from "./format";
+import AppsScreen from "./AppsScreen.island";
+import { appsNav } from "./area";
+import { keyCreatorNames } from "./key-creators";
 import type { KeyEntry } from "./keys-dialogs";
 import { type AppInput, type AppStatusWindow, deriveApp, type ProviderNumbers, parseAppsQuery, sortApps } from "./model";
 import { appsPageMessages } from "./page-messages";
-import { AppsView, type AppsViewData, type DetailData, type RouteRow } from "./view";
+import type { AppsViewData, DetailData, RouteRow } from "./view-data";
 
 /** Platform services that route but are not apps an administrator manages here. */
 const HIDDEN = new Set(["gateway", "gateway-router"]);
@@ -127,7 +128,8 @@ export default ssr<AuthContext>(async (c) => {
   if (!canReadAppAdministration(authority)) return ssr.error(c, 403);
   const locale = getLocale(c);
   const dateContext = getDateConfig(c);
-  const format = appsFormat(dateContext);
+  // One moment for the whole page: the server and the browser word relative times from it alike.
+  const now = Date.now();
   const query = parseAppsQuery(c.req.query());
   if (query.invalidApp) return ssr.error(c, 404);
   const signal = c.req.raw.signal;
@@ -310,12 +312,10 @@ export default ssr<AuthContext>(async (c) => {
             filter: { serviceAccountKind: "resource_bound", resourceType: "cloud.app", appId: entry.id, resourceId: entry.id },
           })
           .catch(() => null);
-        const creators = [...new Set((keyList ?? []).map((key) => key.createdBy).filter((id): id is string => Boolean(id)))];
-        const people = Object.fromEntries(
-          (await Promise.all(creators.map((id) => accounts.users.get({ id }).catch(() => null))))
-            .filter((person) => person !== null)
-            .map((person) => [person.id, person.displayName || person.uid]),
-        );
+        const people = await keyCreatorNames(keyList ?? []).catch((error: unknown) => {
+          log.error("Could not read the names of the key creators", { appId: entry.id, error });
+          return {};
+        });
         return {
           view: "keys",
           keys: {
@@ -440,7 +440,8 @@ export default ssr<AuthContext>(async (c) => {
 
   const data: AppsViewData = {
     locale,
-    format,
+    dateConfig: dateContext,
+    now,
     query,
     list,
     app: entry
@@ -469,8 +470,8 @@ export default ssr<AuthContext>(async (c) => {
     detail,
   };
   return () => (
-    <AdminLayout c={c} title={entry?.name ?? appsPageMessages.resolve([locale]).t.apps} ownMain>
-      <AppsView data={data} />
+    <AdminLayout c={c} ui="v2" title={entry?.name ?? appsPageMessages.resolve([locale]).t.apps}>
+      <AppsScreen nav={appsNav(c, locale, "apps")} data={data} />
     </AdminLayout>
   );
 });
