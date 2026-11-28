@@ -538,7 +538,9 @@ beforeAll(async () => {
     ],
   };
   serverChartHtml = renderToString(() => createComponent(ChartHistory, { args, completed: true }));
-  historyProps = Bun.escapeHTML(JSON.stringify(toJSON({ args, completed: true })));
+  historyProps = `<!--ssr-props:${JSON.stringify(toJSON({ args, completed: true }))
+    .replaceAll("<", "\\u003c")
+    .replaceAll(">", "\\u003e")}-->`;
   const tableModule = [...harness].find(([name, source]) => name !== "harness.js" && source.includes("/ai/chat/table-block.tsx"));
   if (!tableModule) throw new Error("Table controls must have their own lazy browser module");
   tableModulePath = `/${tableModule[0]}`;
@@ -568,7 +570,7 @@ beforeAll(async () => {
         `<!doctype html><html lang="${lang}" class="${theme}"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
           `<style>${css}</style></head><body class="k2b-ui" style="margin: 0">` +
           (url.searchParams.has("history")
-            ? `<solid-island data-id="chart-history" data-props="${historyProps}" style="display:block;margin:1rem">${serverChartHtml}</solid-island><script>window.historyServerMarkup=document.querySelector("solid-island").outerHTML;window.historyServerSvg=document.querySelector("solid-island .k2b-chart__svg > svg");window.historyServerHtml=window.historyServerSvg.outerHTML;window.historyServerFrame=document.querySelector("solid-island .k2b-chart-explorer").getBoundingClientRect().toJSON();</script>`
+            ? `<solid-island data-id="chart-history" style="display:block;margin:1rem">${historyProps}${serverChartHtml}</solid-island><script>window.historyServerMarkup=document.querySelector("solid-island").outerHTML;window.historyServerSvg=document.querySelector("solid-island .k2b-chart__svg > svg");window.historyServerHtml=window.historyServerSvg.outerHTML;window.historyServerFrame=document.querySelector("solid-island .k2b-chart-explorer").getBoundingClientRect().toJSON();</script>`
             : "") +
           `<script type="module" src="/harness.js"></script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },

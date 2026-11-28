@@ -205,8 +205,11 @@ conflicts with an occupied box; use `draft intent` to forward the existing draft
 `DRAFT_REPLY_BOX_OCCUPIED` (409) if the box is occupied; the message names its ID,
 and the CLI exits non-zero. Read that draft and update it explicitly. Repeating
 the original idempotency key retains its retry contract. An occupied-box error
-names the existing draft and gives `draft intent` with the requested mode;
-capability errors instead name `mail.draft.intent`. For a reply or forward, start from the conversation. Both commands use its latest message unless `--message` names another one, and the mailbox's verified default identity unless `--identity` names another one:
+names the existing draft and the concrete revision from the 409: for an open
+draft of the requested mode it gives `draft update <id> --revision <n>`, for
+another mode `draft intent <id> --intent <mode> --revision <n>`; a scheduled or
+sending draft gets neither. Capability errors name `mail.draft.patch` or
+`mail.draft.intent` the same way. For a reply or forward, start from the conversation. Both commands use its latest message unless `--message` names another one, and the mailbox's verified default identity unless `--identity` names another one:
 
 ```bash
 cld --json mail reply <conversation-id> --body-file body.md

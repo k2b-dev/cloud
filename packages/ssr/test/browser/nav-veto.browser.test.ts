@@ -17,7 +17,7 @@ const register = (check: (event: BeforeLeaveEvent) => void) => {
 const island = (check: (event: BeforeLeaveEvent) => void, outside = false, mounted = false) => {
   const element = document.createElement("solid-island");
   element.dataset.id = String(document.querySelectorAll("solid-island").length);
-  element.dataset.props = JSON.stringify(toJSON({}));
+  element.innerHTML = `<!--ssr-props:${JSON.stringify(toJSON({}))}-->`;
   (outside ? document.querySelector("nav")! : root()).append(element);
   mount(() => {
     if (mounted) onMount(() => onBeforeLeave(check));

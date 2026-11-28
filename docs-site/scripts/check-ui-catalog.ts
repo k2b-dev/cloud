@@ -230,7 +230,8 @@ if (smokeBaseUrl) {
       try {
         const pageResponse = await fetch(pageUrl);
         const html = await pageResponse.text();
-        const island = html.match(/<solid-island\b[^>]*>([\s\S]*?)<\/solid-island>/);
+        // The island's server markup, after the props comment the transform writes as its first child.
+        const island = html.match(/<solid-island\b[^>]*>(?:<!--ssr-props:[^>]*-->)?([\s\S]*?)<\/solid-island>/);
         if (!pageResponse.ok) {
           smokeFailures.push(`${entry.id}: page returned ${pageResponse.status}`);
         } else if (!island || island[1].trim().length === 0) {
