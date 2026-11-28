@@ -103,9 +103,12 @@ const measure = (entry: Watched): Found => {
     (Number.parseFloat(endStyle.marginRight) || 0);
   const controls = laidOut(end).filter((control) => control.getClientRects().length > 0);
   // the room a part takes in the row: a head's search open over its neighbours takes its 36 px place, not its field
+  // (its negative margins). A positive margin is never counted: an `auto` one, such as the way out of a selection at
+  // the bar's end, reads back as the free room itself, and counting it folds the bar, frees room and unfolds it again
   const widths = controls.map((control) => {
     const own = getComputedStyle(control);
-    return control.getBoundingClientRect().width + (Number.parseFloat(own.marginLeft) || 0) + (Number.parseFloat(own.marginRight) || 0);
+    const pulled = Math.min(0, Number.parseFloat(own.marginLeft) || 0) + Math.min(0, Number.parseFloat(own.marginRight) || 0);
+    return control.getBoundingClientRect().width + pulled;
   });
   // A pane's toolbar that the head's bar holds in its own row (`Pane`'s head block, wide or beside a head of actions
   // only) shares the room with the end: it counts whole, as the start does (v2.css measures it at its whole width), so
