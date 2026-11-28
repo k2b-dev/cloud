@@ -9,7 +9,6 @@ import {
   Cells,
   Check,
   Field,
-  Icon,
   Input,
   Menu,
   type NavProps,
@@ -25,6 +24,7 @@ import {
   useToast,
 } from "@k2b/ui/v2";
 import { createSignal, For, Show } from "solid-js";
+import { StateDot } from "../_area/StateWord";
 import AiBackgroundBudget from "../settings/_components/AiBackgroundBudget";
 import { aiAreaHref } from "./area";
 import type { AiBudgetConfig, AiBudgetsData } from "./catalog-data";
@@ -212,7 +212,7 @@ export default function BudgetsScreen(props: { nav: NavProps; data: AiBudgetsDat
                   cell: (rule) =>
                     (rule.peopleAtLimit ?? 0) > 0 ? (
                       <Text tone="warn" weight="medium">
-                        <Icon name="point-filled" /> {t().atLimitShort({ p: (rule.peopleAtLimit ?? 0).toLocaleString(locale()) })}
+                        <StateDot /> {t().atLimitShort({ p: (rule.peopleAtLimit ?? 0).toLocaleString(locale()) })}
                       </Text>
                     ) : (
                       ""

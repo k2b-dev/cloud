@@ -38,3 +38,15 @@
   -webkit-mask: var(--k2b-ti-feat-code) center / contain no-repeat;
   mask: var(--k2b-ti-feat-code) center / contain no-repeat;
 }
+
+/*
+ * The preset carries Tabler's outline font only, so a filled name draws nothing (#4558). Records may still hold the two
+ * filled names Cloud's icon catalog once offered; they draw their outline glyph, the same codepoint as `ti-star` and
+ * `ti-heart`. New code names outline icons (rule `tabler-filled`).
+ */
+.ti-star-filled::before {
+  content: "\eb2e";
+}
+.ti-heart-filled::before {
+  content: "\eabe";
+}

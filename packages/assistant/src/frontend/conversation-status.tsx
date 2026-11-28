@@ -19,7 +19,7 @@ export function ConversationStatusMeta(props: {
     <span class="assistant-conversation-status inline-flex min-w-0 max-w-full items-center gap-1.5 text-[11px] text-dimmed">
       <Show when={props.conversation.pinnedAt && !props.hidePin}>
         <span class="inline-flex items-center gap-1" title={t().pinnedLabel}>
-          <i class="ti ti-pin-filled text-xs" aria-hidden="true" />
+          <i class="ti ti-pinned text-xs" aria-hidden="true" />
           <Show when={props.labels}>{t().pinnedLabel}</Show>
           <Show when={!props.labels}>
             <span class="sr-only">{t().pinnedLabel}</span>

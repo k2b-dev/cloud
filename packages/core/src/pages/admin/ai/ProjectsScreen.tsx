@@ -6,7 +6,6 @@ import {
   Button,
   Dialog,
   Facts,
-  Icon,
   Menu,
   type NavProps,
   Notice,
@@ -20,6 +19,7 @@ import {
   useToast,
 } from "@k2b/ui/v2";
 import { createSignal, onCleanup, Show } from "solid-js";
+import { StateDot } from "../_area/StateWord";
 import { settingsMessages } from "../settings/_components/messages";
 import { openProjectAccess, readError } from "./content-access";
 import type { AiProjectRow, AiProjectsData } from "./content-data";
@@ -77,7 +77,7 @@ export default function ProjectsScreen(props: { nav: NavProps; data: AiProjectsD
   const adminsText = (project: AiProjectRow) => (project.adminCount === 0 ? s().noAdmins : t().admins({ count: project.adminCount }));
   const noAdmins = () => (
     <Text tone="bad" weight="medium">
-      <Icon name="point-filled" /> {s().noAdmins}
+      <StateDot /> {s().noAdmins}
     </Text>
   );
 
