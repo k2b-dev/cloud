@@ -30,7 +30,7 @@
   --k2-muted: #4b4b55;
   --k2-subtle: #6b6b74;
 
-  /* Lines in two weights, all 1 px (taste study rule 8): the clear line (#e4e4e7) separates what must be told apart: a
+  /* Lines in two weights, all 1 px: the clear line (#e4e4e7) separates what must be told apart: a
      head block from its content, one section from the next, a table's head from its rows, panes, frames. The hair
      (#f0f0f2) stands between the rows of a list or a table and is barely there; between a table's columns it is
      quieter still (#f5f5f6). Nothing under the last, never two lines at one edge. A control's edge is its own grey. */
@@ -1193,7 +1193,7 @@
 .k2-ui .k2-sec-body > * {
   flex: none;
 }
-/* The head of a section (A, Valentin 27.11.): no symbol; a calm title of 15 px, the count quiet beside it, the summary
+/* The head of a section (A): no symbol; a calm title of 15 px, the count quiet beside it, the summary
    as the quiet line right under the title, at most two text buttons at the end of the title's row. Without a summary
    the head is 52 px; a long title (a question, a name) wraps onto more lines and the head grows with it, so no word is
    cut. */
@@ -1238,7 +1238,7 @@
   gap: 8px;
   align-items: center;
 }
-/* Actions are buttons (taste rule 5): a framed button of 30 px with its symbol and its verb, never a bare text link.
+/* Actions are buttons: a framed button of 30 px with its symbol and its verb, never a bare text link.
    Only the fold's chevron stays a quiet symbol. */
 .k2-ui .k2-sh > .k2-sh-end > .k2-btn:not([data-fold]) {
   height: 30px;
@@ -1285,7 +1285,7 @@
   color: var(--k2-n600);
   overflow-wrap: anywhere;
 }
-/* Measure, not canvas (taste rules 1 and 4): in a pane of 960 px and more every section is B. Its title, summary and
+/* Measure, not canvas: in a pane of 960 px and more every section is B. Its title, summary and
    buttons stand in a column of 232 px at the start, its content 48 px beside it, and the whole section, its line too,
    ends at 1040 px, so the deeds stand at the end of what they act on, never at the far edge of a wide window. A
    section that holds a table, tiles, groups or a drawing keeps A and its full width: lists and tables use the room. A narrower
@@ -1334,7 +1334,7 @@
 .k2-ui .k2-stile > .k2-icon {
   font-size: 14px;
 }
-/* Rule 9 with taste rule 8: no line under the head; the rows of a section stand apart by the hair, which is barely
+/* Rule 9 with two line weights: no line under the head; the rows of a section stand apart by the hair, which is barely
    there, and nothing stands under the last row (the section's own line follows). */
 .k2-ui :is(.k2-sec, .k2-sec-body) > .k2-row,
 .k2-ui :is(.k2-sec, .k2-sec-body) > .k2-list > .k2-row {
@@ -1697,7 +1697,7 @@
 .k2-ui .k2-row[data-avatar] {
   column-gap: 12px;
 }
-/* Row anatomy (taste rule 6): a row of one or two lines names its thing in 13/500, so the name stands above its quiet
+/* Row anatomy: a row of one or two lines names its thing in 13/500, so the name stands above its quiet
    note; a row of three lines (a message) keeps 400 and turns 600 while unread. A row of one line leads with its sign
    of 28 px (a person, a mark), and a control at its end (the role of a person) is 30 px. */
 .k2-ui .k2-row:not([data-lines="3"]) .k2-row-title {
@@ -1826,7 +1826,7 @@
   border-spacing: 0;
   table-layout: fixed;
 }
-/* The table's head (taste parts 1): a quiet band of 34 px in n50, its words 12/500 in n500, the clear line under it;
+/* The table's head: a quiet band of 34 px in n50, its words 12/500 in n500, the clear line under it;
    the rows below stand apart by the hair, and the columns by a line quieter still. */
 .k2-ui .k2-table th {
   position: relative;
@@ -2972,7 +2972,7 @@
 .k2-ui .k2-row[data-mark] {
   column-gap: 12px;
 }
-/* leading a row of one line: 28 (taste rule 6) */
+/* leading a row of one line: 28 */
 .k2-ui .k2-row[data-mark][data-lines="1"] > .k2-row-lead > .k2-mk {
   width: 28px;
   height: 28px;

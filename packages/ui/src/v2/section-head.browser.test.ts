@@ -130,6 +130,25 @@ test("390 px, the same settings screen: A, as the pane is narrow", async () => {
   });
 });
 
+test("B begins at a pane of exactly 960 px: at 959 px the head stands over its content (A)", async () => {
+  // the window's width beside the pane: the frame of the workspace
+  let frame = 0;
+  await withPage("form", 1440, async (page) => {
+    frame = 1440 - (await page.evaluate(() => document.querySelector(".k2-pane")!.getBoundingClientRect().width));
+  });
+  const floats: Record<number, string> = {};
+  for (const pane of [959, 960])
+    await withPage("form", pane + frame, async (page) => {
+      const found = await page.evaluate(() => ({
+        pane: document.querySelector(".k2-pane")!.getBoundingClientRect().width,
+        float: getComputedStyle(document.querySelector('[data-k2-part="Section"] > .k2-sh')!).float,
+      }));
+      expect(found.pane).toBe(pane);
+      floats[pane] = found.float;
+    });
+  expect(floats).toEqual({ 959: "none", 960: "left" });
+});
+
 test("1440 px, a settings section in a pane of 420 px: A, the pane decides and not the window", async () => {
   await withPage("narrow", 1440, async (page) => {
     expectA(await shape(page));

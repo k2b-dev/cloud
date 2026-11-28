@@ -106,12 +106,9 @@ SolidJS library remains independent of Cloud and application domains.
 - Do not recreate generic component contracts inside an application. If no
   primitive fits, surface the gap and agree with the application author
   whether to extend `@k2b/ui` or build application-owned UI.
-- A new screen starts as a mockup in the v2 look and is then built from `@k2b/ui/v2`; prefer fewer screens, each
-  with one job. **The look** (`/en/ui/look`) holds the rules as do and don't, the workflow, and the tokens a custom
-  part takes so it lands in the same look.
 - Custom UI follows the same tokens, semantics, interaction, accessibility, responsive, theme, and state principles.
   Reusable presentation belongs in the library; applications retain their domain behavior. Check every screen
-  against **Styling and accessibility** (`/en/docs/frontend/styling-and-accessibility`).
+  against **Styling and accessibility** (`/en/docs/frontend/styling-and-accessibility`). New screens: mockup first, then build from `@k2b/ui/v2`; see **The look** (`/en/ui/look`).
 - Give an application's landing page the shared overview pattern: either a sidebar-first `AppWorkspace`
   (`SidebarItem variant="object"` rows, `AppWorkspace.Main width="content"`, a `PanelHeader size="lg"` with one
   primary action) for many objects, or `AppOverview.Cards` of `LinkCard`s for few; one secondary fact per row or

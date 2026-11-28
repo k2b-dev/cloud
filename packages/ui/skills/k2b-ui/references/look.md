@@ -157,18 +157,15 @@ The object a person opened gets a head in the owner tint:
 - its deeds at the right of the name: one small button, a quiet "…", the
   close ×.
 
-### 6. Three line weights
+### 6. Two line weights
 
-The primitives draw three lines. Do not add your own.
+The primitives draw two lines. Do not add your own.
 
 - The clear line (`--k2-hairline`, n200) separates what must be told
   apart: a head from its content, a column head from the rows, a list from
-  its detail, a frame.
-- The section line (`--k2-hairline-section`, n300) is stronger still: one
-  `Section` from the next.
-- The quiet line (`--k2-hairline-subtle`, n100) separates rows of a list
-  or table.
-- All three are 1 px; only their weight differs.
+  its detail, one section from the next, a frame.
+- The quiet line (`--k2-hairline-subtle`, n100, where your version of
+  `@k2b/ui` has it) separates rows of a list or table.
 - No lines between the columns of a table, and never two lines at one
   edge.
 
@@ -180,14 +177,13 @@ weight 500; a failure a red dot with its word in red; a paused or empty
 state a grey dot with a muted word. No green chips, no tinted pills for
 OK, no chip in every row.
 
-### 8. Six type steps
+### 8. Five type steps
 
 | Step | Value | For |
 | --- | --- | --- |
 | meta | 400 12px/16px | labels, counts, times, captions |
 | row | 400 13px/20px | rows and most text |
-| body | 400 14px/20px | reading text, titles in a head |
-| title | 600 15px/22px | the title of a `Section`: calm, no symbol |
+| body | 400 14px/20px | reading text, section heads (600) |
 | lead | 600 18px/24px | the open object's name, a phone title |
 | figure | 600 30px/34px | the hero figure, once per screen |
 
