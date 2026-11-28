@@ -26,6 +26,7 @@ import {
 import { type JmapTransportDependencies, JmapTransportError } from "./connectors/jmap-transport";
 import { keepLastKeptPlacements } from "./conversation-keep-rules";
 import { isTrashOrJunkFolder } from "./follow-up-scope";
+import { requestMailboxHydration } from "./hydration-work";
 import { enqueueMailInvalidation, mailLive } from "./live";
 import { type JmapScopeEvidence, jmapScopeFingerprint } from "./provider-identity";
 import { claimFence, ingestEnvelope, SYNC_FOLDER_DATA_ERROR_RECHECK_MS, SYNC_FOLDER_MAX_ATTEMPTS } from "./sync-runtime";
@@ -52,7 +53,13 @@ type Batch =
   | { kind: "verify"; checked: JmapVerifyRef[]; notFoundIds: string[] };
 type Stats = { imported: number; memberships: number; flagsUpdated: number; removed: number; folders: number; skippedDrafts: number };
 type SupersededResult = { status: "superseded"; cause: "account_changed" | "folders_required" };
-export type JmapAccountCommitResult = { status: "committed"; hasMore: boolean; stats: Stats } | SupersededResult;
+/**
+ * `hydrationRequested`: the commit stored a body request for new memberships. The caller wakes
+ * hydration after it released the provider lease (`wakeMailboxHydration`), as the IMAP sync does.
+ */
+export type JmapAccountCommitResult =
+  | { status: "committed"; hasMore: boolean; stats: Stats; hydrationRequested: boolean }
+  | SupersededResult;
 export type JmapAccountSyncResult =
   | JmapAccountCommitResult
   /** `axis` names the rejected state: a mailbox state calls for a repair, an Email state for a reconciliation. */
@@ -60,7 +67,7 @@ export type JmapAccountSyncResult =
 /** `retry`: a state moved while the start snapshot was read; nothing was written. */
 export type JmapAccountScanStartResult = { status: "committed"; stats: Stats } | SupersededResult | { status: "retry" };
 export type JmapAccountScanResult =
-  | { status: "committed"; scanComplete: boolean; stats: Stats }
+  | { status: "committed"; scanComplete: boolean; stats: Stats; hydrationRequested: boolean }
   | SupersededResult
   /** No scan is running. */
   | { status: "idle" }
@@ -209,7 +216,11 @@ function validateBatch(params: Account & { beforeState: JmapSyncState | null; ba
   }
 }
 
-/** One reader page, no network and no hydration. The resource serializes all account writes. */
+/**
+ * One reader page, no network. The resource serializes all account writes. A page with new
+ * memberships stores one body request in the same transaction, as an IMAP folder batch does; the
+ * caller wakes hydration once it released the provider lease.
+ */
 export async function commitJmapAccountBatch(
   params: Account & {
     fence: Awaited<ReturnType<typeof claimFence>>;
@@ -527,14 +538,22 @@ export async function commitJmapAccountBatch(
         cursor_after = ${nextState}::jsonb, stats = ${stats}::jsonb, finished_at = now()
         WHERE id = ${fence.runId}::uuid AND state = 'running' RETURNING id`;
       if (!finished) throw new Superseded("account_changed");
+      // The request commits with the memberships, so a lost wake only waits for the publisher. A
+      // complete delta ranks its bodies with arrivals, like a finished IMAP increment; scan pages
+      // and a delta with more changes to read stay in the background.
+      const hydration = stats.memberships > 0;
+      if (hydration)
+        await requestMailboxHydration(tx, resource.mailbox_id, {
+          foreground: batch.kind === "email" && !batch.delta.hasMoreChanges,
+        });
       if (changed) await enqueueMailInvalidation(tx, { mailboxId: resource.mailbox_id });
       assertActive(params.signal);
       const hasMore = batch.kind === "email" || batch.kind === "mailbox" ? batch.delta.hasMoreChanges : nextState.scan !== null;
-      return { stats, changed, hasMore };
+      return { stats, changed, hasMore, hydration };
     });
     // Durable rows above are sufficient if the process exits before the advisory wake.
     if (result.changed) mailLive.wake();
-    return { status: "committed", hasMore: result.hasMore, stats: result.stats };
+    return { status: "committed", hasMore: result.hasMore, stats: result.stats, hydrationRequested: result.hydration };
   } catch (error) {
     if (error instanceof Superseded) return { status: "superseded", cause: error.reason };
     throw error;
@@ -756,7 +775,7 @@ export async function syncJmapAccountScan(params: Account & Network): Promise<Jm
     }
     if (batch.kind === "scan" && batch.page.kind === "restart" && jmapScanRestarts(scan, batch.page) >= JMAP_SCAN_RESTART_LIMIT)
       return { status: "stalled" };
-    return { status: "committed", scanComplete: !result.hasMore, stats: result.stats };
+    return { status: "committed", scanComplete: !result.hasMore, stats: result.stats, hydrationRequested: result.hydrationRequested };
   } catch (error) {
     await finish("JMAP_SYNC_FAILED", "failed");
     throw error;
