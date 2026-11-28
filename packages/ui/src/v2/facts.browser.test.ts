@@ -115,7 +115,10 @@ test("a kind makes the link and the copy button; a scheme that may not open stay
     expect(byLabel.Striche!.links).toEqual(["tel:+49305550"]);
     // a fax number is a number; words before or between numbers, and letters for digits, stay words
     expect(byLabel.Telefax!.links).toEqual(["tel:+49305551"]);
-    for (const label of ["Zwei Nummern", "Vorwort", "Buchstaben"]) expect([label, byLabel[label]!.links]).toEqual([label, []]);
+    for (const label of ["Zwei Nummern", "Vorwort", "Buchstaben", "Zwei mit Strich", "Zwei Zeilen"])
+      expect([label, byLabel[label]!.links]).toEqual([label, []]);
+    // one slash before the subscriber number is part of one number
+    expect(byLabel.Schrägstrich!.links).toEqual(["tel:0305550142"]);
     // an invisible format sign stays words; spaces around an address leave it
     expect(byLabel.Unsichtbar!.links).toEqual([]);
     expect(byLabel["Mit Rand"]!.links).toEqual(["mailto:anna@example.org"]);
@@ -182,14 +185,15 @@ for (const answer of ["ok", "refused"] as const)
       1440,
       async (page) => {
         const button = page.getByRole("button", { name: "Kopieren: E-Mail", exact: true });
-        // every text a live region takes, to count what is said
+        // every news a live region gets is a node of its own: count the nodes added under the regions
         await page.evaluate(() => {
           const said: string[] = [];
           (window as unknown as { __said: string[] }).__said = said;
-          new MutationObserver(() => {
-            for (const region of document.querySelectorAll("[data-k2-news]"))
-              if (region.textContent?.trim()) said.push(region.textContent.trim());
-          }).observe(document.body, { subtree: true, childList: true, characterData: true });
+          new MutationObserver((changes) => {
+            for (const change of changes)
+              if (change.target instanceof Element && change.target.matches("[data-k2-news]"))
+                for (const node of change.addedNodes) said.push(node.textContent?.trim() ?? "");
+          }).observe(document.body, { subtree: true, childList: true });
         });
         await button.click();
         const symbol = () => button.locator(".k2-icon").getAttribute("data-name");
@@ -207,7 +211,7 @@ for (const answer of ["ok", "refused"] as const)
         expect(await symbol()).toBe("copy");
         // said once, and its name was never the news
         const said = await page.evaluate(() => (window as unknown as { __said: string[] }).__said);
-        expect(new Set(said.filter((words) => words.includes(news))).size).toBe(1);
+        expect(said.filter((words) => words.includes(news))).toHaveLength(1);
         expect(said.filter((words) => words.includes("Kopieren: E-Mail"))).toEqual([]);
       },
       { clipboard: answer },

@@ -233,10 +233,16 @@ const hrefOf = (kind: "email" | "phone" | "url", value: string): string | undefi
   if (kind === "phone") {
     // The line before an extension ("ext. 12", "Dw. 3", ";ext=12", ",12", "x 12", "#12"): the link calls the line, the
     // words keep the extension. A word that is no extension ("Fax", "Box") does not count.
-    const line = value.trim().split(/\s*(?:[,;]\s*(?:ext\.?|extension)?|ext\.?|extension|(?<![a-z])x|durchwahl|dw\.?|app\.?|#)\s*=?\s*\d/i)[0]!;
+    const line = value
+      .trim()
+      .split(/\s*(?:[,;]\s*(?:ext\.?|extension)?|ext\.?|extension|(?<![a-z])x|durchwahl|dw\.?|app\.?|#)\s*=?\s*\d/i)[0]!;
     // a number is only digits with a leading plus, spaces, dashes, slashes, dots and brackets; anything else
     // ("Tel:", "oder 0151 …", letters for digits) stays words
-    if (!/^\+?[\d\s\-/.()]+$/.test(line)) return undefined;
+    // one number on one line: spaces and tabs, dashes, dots and brackets, and one slash only after an area code (at
+    // most 6 digits before it), so two numbers joined by a slash or a new line stay words
+    if (!/^\+?[\d \t\-.()]+(?:\/[\d \t\-.]+)?$/.test(line)) return undefined;
+    const [area, subscriber] = line.split("/");
+    if (subscriber !== undefined && area!.replace(/\D/g, "").length > 6) return undefined;
     // the trunk zero written `+49 (0) 30 …` or `+49-(0)-30-…` after a country code belongs to no international number
     const plain = line.replace(/^(\+\d{1,3})[\s-]*\(0\)/, "$1");
     const digits = plain.replace(/(?!^\+)[^\d]/g, "");
