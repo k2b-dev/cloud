@@ -143,6 +143,8 @@ export {
   type PreviewProps,
   Progress,
   type ProgressProps,
+  RangeBar,
+  type RangeBarProps,
   Spark,
   type SparkProps,
   type TickState,
