@@ -124,11 +124,60 @@ export type NavSearch = {
   onKeyDown?: (event: KeyboardEvent) => void;
 };
 
+/** One thing the switcher can open, such as a notebook or a base. */
+export type NavSwitcherOption = {
+  label: string;
+  /** The page of the thing. */
+  href: string;
+  /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
+  onNavigate?: OnNavigate;
+  /** The thing's symbol; with `color` it stands on a tint of it, as the thing's mark (`Mark`). */
+  icon: string;
+  color?: string;
+  /** Quiet words at the end, such as when it was opened. */
+  meta?: string;
+  /** Options one after another with the same group stand under its quiet heading, such as "Zuletzt geöffnet". */
+  group?: string;
+  /** The open one: a tick at its end. */
+  current?: boolean;
+};
+
+/**
+ * The switcher at the top of the sidebar: the open thing (a notebook, a base) as a button, and behind it the others,
+ * a search from 8 of them, and the deeds that make a new one. The app gives every word and the order.
+ */
+export type NavSwitcher = {
+  /** The name of the button, such as "Base wechseln". */
+  label: string;
+  /** The open thing on the button; without it the button says `label`. */
+  current?: { label: string; icon: string; color?: string };
+  options: readonly NavSwitcherOption[];
+  /** The search field's name and placeholder, such as "Base suchen"; the field shows from 8 options. */
+  search: string;
+  /** What the list says when the search finds nothing. */
+  noMatch: string;
+  /**
+   * The quiet line under a list cut short: `hidden` options are not listed, `searching` whether a search narrowed them,
+   * such as "480 weitere Bases über die Suche" or "12 weitere Treffer – genauer suchen".
+   */
+  more: (hidden: number, searching: boolean) => string;
+  /** Deeds after the options, such as "Neue Base" and "Aus Vorlage". */
+  actions?: readonly Action[];
+};
+
+/** A `NavSwitcher` with the code that shows it, made with `navSwitcher` (`nav-switcher.tsx`). */
+export type NavSwitcherPart = NavSwitcher & { view: (props: { switcher: NavSwitcher }) => JSX.Element };
+
 export type NavProps = {
   /** The app's name and symbol at the top. */
   title: string;
   /** A Tabler icon beside the app's name. */
   icon: string;
+  /**
+   * The switcher between the app's things under the name, such as its notebooks or bases: made with `navSwitcher`, which
+   * brings the switcher's code along, so a `Nav` without one loads none of it.
+   */
+  switcher?: NavSwitcherPart;
   /** The search under the name. */
   search?: NavSearch;
   /**
@@ -291,6 +340,7 @@ export const Nav = (props: NavProps) => {
           )}
         </Show>
       </div>
+      <Show when={props.switcher}>{(switcher) => <Dynamic component={switcher().view} switcher={switcher()} />}</Show>
       <Show when={props.search}>
         {(search) => (
           <div class="k2-nav-search">

@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { resolve } from "node:path";
+import { mkdirSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
-import type { Browser } from "playwright";
+import type { Browser, Locator, Page } from "playwright";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 
 const ui = resolve(import.meta.dir, "../../../ui");
@@ -167,3 +169,82 @@ for (const own of [true, false])
       await page.close();
     }
   }, 20_000);
+
+// A v2 app's place switcher on the phone (`Nav` `switcher` through `V2WorkspaceNavigation`), in real type and icons,
+// so the pictures (CLOUD_SWITCHER_SHOTS) count as evidence. `flags` are the harness's `<html>` switches.
+const shots = process.env.CLOUD_SWITCHER_SHOTS;
+const placesMenu = async (flags: string) => {
+  if (shots) mkdirSync(shots, { recursive: true });
+  const iconCssUrl = import.meta.resolve("@k2b/ui/icons/tabler.css");
+  const iconCss = await Bun.file(fileURLToPath(iconCssUrl)).text();
+  const fontAsset = iconCss.match(/url\((\.\/[^)"']+\.woff2(?:[?#][^)"']*)?)\)/)?.[1];
+  if (!fontAsset) throw new Error("@k2b/ui Tabler preset does not reference a WOFF2 asset");
+  const plexCss = fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css"));
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const html =
+    `<!doctype html><html lang="de" ${flags}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<link rel="stylesheet" href="http://localhost/plex.css"><link rel="stylesheet" href="http://localhost/tabler-icons.css"><style>${css}</style></head>` +
+    '<body class="k2b-ui"><div id="workspace"></div></body></html>';
+  await page.route("http://localhost/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/mobile-navigation") return route.fulfill({ contentType: "text/html", body: html });
+    if (url.pathname === "/tabler-icons.css")
+      return route.fulfill({ contentType: "text/css", body: iconCss.replace(fontAsset, "/tabler-icons.woff2") });
+    if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: fileURLToPath(new URL(fontAsset, iconCssUrl)) });
+    if (url.pathname === "/plex.css")
+      return route.fulfill({ contentType: "text/css", body: (await Bun.file(plexCss).text()).replaceAll("./fonts/", "/fonts/") });
+    if (url.pathname.startsWith("/fonts/"))
+      return route.fulfill({ path: join(plexCss, "..", "fonts", url.pathname.slice("/fonts/".length)) });
+    return route.fulfill({ status: 404, body: "" });
+  });
+  await page.goto("http://localhost/mobile-navigation");
+  await page.addScriptTag({ content: harness });
+  await page.getByRole("button", { name: "Open menu", exact: true }).tap();
+  await page.locator("dialog .k2b-navigation").waitFor({ state: "visible" });
+  await page.evaluate(() => document.fonts.ready);
+  await settled(page);
+  return { page, trigger: page.locator("dialog button:has(.k2b-sidebar-switcher__icon)") };
+};
+const openPanel = async (page: Page, trigger: Locator) => {
+  await trigger.tap();
+  const panel = page.locator(".k2b-sidebar-switcher__panel:popover-open");
+  await panel.waitFor();
+  await settled(page);
+  return panel;
+};
+
+test("in the phone menu the place switcher names the open base and lists the others in their groups with their signs", async () => {
+  const { page, trigger } = await placesMenu("data-places");
+  try {
+    expect(await trigger.innerText()).toContain("Werkstatt");
+    if (shots) await page.screenshot({ path: join(shots, "switcher-phone-menu-light-390.png") });
+    const panel = await openPanel(page, trigger);
+    const options = await panel.locator(".k2b-sidebar-switcher__option").allInnerTexts();
+    expect(options.slice(0, 3).map((option) => option.trim())).toEqual(["Werkstatt", "Lager Nord", "Kunden"]);
+    expect(await panel.getByText("Neue Base").count()).toBe(1);
+    if (shots) await page.screenshot({ path: join(shots, "switcher-phone-open-light-390.png") });
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+// The shell's switcher lists at most 20 and 50 matches, as the v2 sidebar's does: a base among 500 keeps the phone's
+// list short, and its quiet line says how many the search reaches.
+test("500 bases on the phone: the menu's switcher lists 20 and says how many more the search reaches; a search at most 50", async () => {
+  const { page, trigger } = await placesMenu("data-places data-many");
+  try {
+    const panel = await openPanel(page, trigger);
+    expect(await panel.locator(".k2b-sidebar-switcher__option").count()).toBe(20);
+    expect(await panel.locator('.k2b-choice-status[role="status"]').innerText()).toBe("480 weitere über die Suche");
+    // the picture shows the end of the list: the 20th base and the line under it
+    await panel.locator(".k2b-sidebar-switcher__options").evaluate((list) => list.scrollTo({ top: list.scrollHeight }));
+    await settled(page);
+    if (shots) await page.screenshot({ path: join(shots, "switcher-phone-500-light-390.png") });
+    await panel.locator("input[type=search]").fill("base 4");
+    // "Base 40" … "Base 49" and "Base 400" … "Base 499": 110 matches, 50 listed
+    expect(await panel.locator(".k2b-sidebar-switcher__option").count()).toBe(50);
+    expect(await panel.locator('.k2b-choice-status[role="status"]').innerText()).toBe("60 weitere Treffer – genauer suchen");
+  } finally {
+    await page.close();
+  }
+}, 30_000);

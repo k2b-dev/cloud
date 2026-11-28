@@ -580,7 +580,19 @@ name wraps in a small table and ends with "…" in one with column widths.
 
 ## Components
 
-- `Nav`: `title`, `icon`, `search?`, `primary?`, `groups: { label?, action?, items }[]`, `list?`, `phone?`, `foot`.
+- `Nav`: `title`, `icon`, `switcher?`, `search?`, `primary?`, `groups: { label?, action?, items }[]`, `list?`, `phone?`, `foot`.
+  `switcher` (`navSwitcher({ label, current?, options, search, noMatch, more, actions? })`, which brings its code along, so a `Nav` without one loads none of it) is the
+  open thing of an app that holds several (a notebook, a base) as a button
+  under the name; its panel lists `options` (`{ label, href, icon, color?,
+  meta?, group?, current? }`) in the order the app gives, consecutive options
+  of one `group` under its quiet heading ("Zuletzt geöffnet", "Alle Basen"),
+  a search from 8 options, and the `actions` ("Neue Base", "Aus Vorlage")
+  after a line. It lists at most 20 options before a search and 50 matches;
+  `more(hidden, searching)` words the quiet line for the rest ("+480 weitere
+  über die Suche"; with a search "12 weitere Treffer – genauer suchen"). The
+  button is named by the open thing, and `label` is its description. On the
+  phone pass the same `switcher` to
+  `V2WorkspaceNavigation`; the shell's menu shows it there.
   `search` (`{ label, value, onInput, onKeyDown? }`) stands under the name,
   across the column; `primary` (an `Action`, such as "Neuer Chat") is an
   icon button at the end of the name's row, its label its name and tooltip;

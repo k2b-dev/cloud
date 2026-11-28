@@ -57,6 +57,12 @@ const uiMessages = i18n.define({
       searchResults: "Search results",
       searchMatches: ({ count }: { count: number }) => (count === 1 ? "1 match" : `${count} matches`),
       moreFilters: ({ count }: { count: number }) => (count === 1 ? "1 more filter" : `${count} more filters`),
+      switcherMore: ({ count, searching }: { count: number; searching: boolean }) =>
+        searching
+          ? count === 1
+            ? "1 more match, search more closely"
+            : `${count} more matches, search more closely`
+          : `${count} more, reach them by search`,
       save: "Save",
       select: "Select...",
       sheetExpand: "Expand to full height",
@@ -153,6 +159,12 @@ const uiMessages = i18n.define({
       searchResults: "Suchergebnisse",
       searchMatches: ({ count }: { count: number }) => (count === 1 ? "1 Treffer" : `${count} Treffer`),
       moreFilters: ({ count }: { count: number }) => (count === 1 ? "1 weiterer Filter" : `${count} weitere Filter`),
+      switcherMore: ({ count, searching }: { count: number; searching: boolean }) =>
+        searching
+          ? count === 1
+            ? "1 weiterer Treffer – genauer suchen"
+            : `${count} weitere Treffer – genauer suchen`
+          : `${count} weitere über die Suche`,
       save: "Speichern",
       select: "Auswählen...",
       sheetExpand: "Auf ganze Höhe vergrößern",

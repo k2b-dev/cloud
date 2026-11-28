@@ -91,9 +91,9 @@ test("an island of v2 alone (every export, and useLocale) bundles no v1 module",
   for (const [module, bytes] of Object.entries(outside)) expect(bytes, module).toBeLessThanOrEqual(allowed[module] ?? 0);
 }, 60_000);
 
-// Guard: a page pays only for the parts it draws. A `Nav` without a tree and a `Menu` without a panel load neither:
-// the tree comes with `navTree`, the panel with `menuPanel` (#4187 and #4157 had added 41 KB and 7.5 KB to every
-// island with a `Nav` or a `Menu`, Chat's first chunk over its budget). The tree's and the panel's behaviour lives in
+// Guard: a page pays only for the parts it draws. A `Nav` without a tree or a switcher and a `Menu` without a panel load
+// none of them: the tree comes with `navTree`, the switcher with `navSwitcher`, the panel with `menuPanel` (#4187 and
+// #4157 had added 41 KB and 7.5 KB to every island with a `Nav` or a `Menu`, Chat's first chunk over its budget). The tree's and the panel's behaviour lives in
 // the behaviour layer, outside this measure; their modules here pull it in, so their absence is the guard.
 const lean = `import { Menu, Nav, Workspace } from ${v2Index};\nconsole.log(Menu, Nav, Workspace);\n`;
 // Measured 27.11.2026 (Bun 1.4.4, minified): 64 453 bytes of this package's own code, plus a tenth for growing. It holds
@@ -103,13 +103,15 @@ const lean = `import { Menu, Nav, Workspace } from ${v2Index};\nconsole.log(Menu
 // adds nothing here: it comes with `HeadSearch` (see below).
 const leanBudget = Math.ceil(64_453 * 1.1) + 305; /* head block, measured 28.11.2026 on 1574c0a269 */
 
-test("an island with a Workspace, a Nav and a Menu loads no tree and no menu panel, and stays under its measure", async () => {
+test("an island with a Workspace, a Nav and a Menu loads no tree, no menu panel and no switcher, and stays under its measure", async () => {
   const modules = await islandModules(lean);
   const total = Object.values(modules).reduce((sum, bytes) => sum + bytes, 0);
   console.info(`Workspace, Nav and Menu: ${total} bytes of packages/ui/src (budget ${leanBudget})`);
-  expect(Object.keys(modules).filter((module) => ["v2/nav-tree.tsx", "v2/menu-panel.tsx", "v2/head-search.tsx"].includes(module))).toEqual(
-    [],
-  );
+  expect(
+    Object.keys(modules).filter((module) =>
+      ["v2/nav-tree.tsx", "v2/menu-panel.tsx", "v2/head-search.tsx", "v2/nav-switcher.tsx"].includes(module),
+    ),
+  ).toEqual([]);
   expect(total).toBeLessThanOrEqual(leanBudget);
 }, 60_000);
 
@@ -122,10 +124,11 @@ test("HeadSearch brings the head search along", async () => {
   expect(modules["v2/head-search.tsx"]).toBeGreaterThan(0);
 }, 60_000);
 
-test("navTree and menuPanel bring the tree and the panel along", async () => {
+test("navTree, menuPanel and navSwitcher bring the tree, the panel and the switcher along", async () => {
   const modules = await islandModules(
-    `import { menuPanel, Menu, Nav, navTree, Workspace } from ${v2Index};\nconsole.log(Menu, Nav, Workspace, navTree, menuPanel);\n`,
+    `import { menuPanel, Menu, Nav, navSwitcher, navTree, Workspace } from ${v2Index};\nconsole.log(Menu, Nav, Workspace, navTree, menuPanel, navSwitcher);\n`,
   );
   expect(modules["v2/nav-tree.tsx"]).toBeGreaterThan(0);
   expect(modules["v2/menu-panel.tsx"]).toBeGreaterThan(0);
+  expect(modules["v2/nav-switcher.tsx"]).toBeGreaterThan(0);
 }, 60_000);
