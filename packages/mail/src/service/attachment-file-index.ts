@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { backgroundWork, logger, startRuntimeInterval, toPgTextArray } from "@k2b/cloud/services";
+import { createIndexes } from "@k2b/cloud/services/migration-ddl";
 import { toPgUuidArray } from "@k2b/cloud/services/postgres";
 import { bodyReferencedContentIds } from "../content-ids";
 import { messageLinkDomains } from "./security-evidence";
@@ -36,13 +37,15 @@ export const migrateAttachmentFiles = async (db: SqlClient): Promise<void> => {
       link_domains text[] NOT NULL
     )
   `.simple();
-  // Years, months and senders group in this order; a sender's files read it newest first.
-  await db`
-    CREATE INDEX IF NOT EXISTS attachment_files_folder_idx
-    ON mail.attachment_files (mailbox_id, month DESC, sender_email, internal_date DESC, attachment_id DESC)
-  `.simple();
-  // An assigned-only reader starts from their conversations' messages; a message whose date moves updates by message.
-  await db`CREATE INDEX IF NOT EXISTS attachment_files_message_idx ON mail.attachment_files (message_id)`.simple();
+  await createIndexes(db, "mail.attachment_files", [
+    // Years, months and senders group in this order; a sender's files read it newest first.
+    {
+      name: "attachment_files_folder_idx",
+      definition: "(mailbox_id, month DESC, sender_email, internal_date DESC, attachment_id DESC)",
+    },
+    // An assigned-only reader starts from their conversations' messages; a message whose date moves updates by message.
+    { name: "attachment_files_message_idx", definition: "(message_id)" },
+  ]);
   await db`
     CREATE TABLE IF NOT EXISTS mail.attachment_files_backfill (
       singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
