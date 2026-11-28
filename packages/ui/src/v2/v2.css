@@ -261,6 +261,10 @@
   --k2-c-soft-dark: initial;
   --k2-c-ink: initial;
   --k2-c-ink-dark: initial;
+  --k2-accent-ink-light: initial;
+  --k2-accent-ink-dark: initial;
+  --k2-accent-soft-light: initial;
+  --k2-accent-soft-dark: initial;
   --k2-pane-w: initial;
   --k2-pane-min: initial;
   --k2-ws-side: initial;
@@ -352,6 +356,9 @@
 /* a data colour by meaning takes the place of the tone; it comes in as --k2-c, checked to be a colour */
 .k2-ui .k2-icon[data-color] {
   color: var(--k2-c);
+}
+.k2-ui .k2-text[data-tone="app"] {
+  color: var(--k2-app-text);
 }
 .k2-ui .k2-text[data-tone="ok"] {
   color: var(--k2-ok);
@@ -911,6 +918,9 @@
 }
 .k2-ui .k2-band[data-tone="bad"] {
   background: var(--k2-bad-tint);
+}
+.k2-ui .k2-band[data-tone="app"] {
+  background: var(--k2-app-tint);
 }
 .k2-ui .k2-band[data-tone="warn"] {
   background: var(--k2-warn-tint);
@@ -1518,9 +1528,12 @@
    The ink as text: the platform may set `--k2-app-ink`, a tone that keeps 4.5:1 on the surfaces (`readableTone`); a
    mix alone does not promise that for every colour. Without it the mix stands, without a colour the blue. v2 never
    sets `--k2-app-ink` itself, so the platform's value reaches every primitive; it belongs to the page's app, so
-   another app's rows drop it. */
+   another app's rows drop it.
+   A page with an accent of its own (`Workspace accent`, a colour from data) is a third such place: `accentStyle` sets
+   the colour as `--k2-app`, the primary's fill and words, and for each theme its ink as text (4.5:1 on the surface and
+   the tint) and the quiet tone of a bar (3:1), worked out where the colour arrives, so the first paint is final. */
 .k2-ui,
-.k2-ui [data-k2-owner] {
+.k2-ui :is([data-k2-owner], [data-k2-accent]) {
   --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 80%, #000000);
   --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 7%, var(--k2-surface));
   --k2-app-text: var(--k2-app-ink, var(--k2-app-ink-mix, var(--k2-blue-ink)));
@@ -1529,14 +1542,24 @@
 .dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui),
 .k2-ui.dark,
 .k2-ui[data-theme="dark"],
-.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) [data-k2-owner],
-.k2-ui.dark [data-k2-owner],
-.k2-ui[data-theme="dark"] [data-k2-owner] {
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) :is([data-k2-owner], [data-k2-accent]),
+.k2-ui.dark :is([data-k2-owner], [data-k2-accent]),
+.k2-ui[data-theme="dark"] :is([data-k2-owner], [data-k2-accent]) {
   --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 55%, #ffffff);
   --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 18%, var(--k2-surface));
 }
 .k2-ui [data-k2-owner] {
   --k2-app-ink: initial;
+}
+.k2-ui [data-k2-accent] {
+  --k2-app-ink: var(--k2-accent-ink-light);
+  --k2-accent-soft: var(--k2-accent-soft-light);
+}
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) [data-k2-accent],
+.k2-ui.dark [data-k2-accent],
+.k2-ui[data-theme="dark"] [data-k2-accent] {
+  --k2-app-ink: var(--k2-accent-ink-dark);
+  --k2-accent-soft: var(--k2-accent-soft-dark);
 }
 
 /* ── Row: 40 · 52 · 72 by its lines; roles by line; square, also when it opens something ────────────────────── */
@@ -2055,10 +2078,10 @@
   border-bottom-color: transparent;
 }
 /* In dark the quiet text of a tinted row moves 60 % towards the muted text (n500 → n600), so it keeps 4.5:1 on the
-   tint of every app colour, white included. */
-.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected])),
-.k2-ui.dark :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected])),
-.k2-ui[data-theme="dark"] :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected])) {
+   tint of every app colour, white included; so does the quiet text of a band in the app's tint. */
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected]), .k2-band[data-tone="app"]),
+.k2-ui.dark :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected]), .k2-band[data-tone="app"]),
+.k2-ui[data-theme="dark"] :is(.k2-row:is([data-current], [data-selected]), .k2-table tbody tr:is([aria-current], [data-selected]), .k2-band[data-tone="app"]) {
   --k2-subtle: color-mix(in srgb, var(--k2-n500) 40%, var(--k2-n600));
 }
 /* Forced colours drop the tint: the open and the chosen rows stand in a frame of the system's highlight. */
@@ -2962,6 +2985,16 @@
   min-width: 4px;
   border-radius: var(--k2-r-round);
   background: var(--k2-range-fill, var(--k2-n600));
+}
+/* In a page with an accent of its own (`Workspace accent`) a bar without stops takes its quiet tone, 3:1 on the
+   surface, and in the open row (today in a week) its ink, the strongest. Forced colours keep their look below. */
+@media (forced-colors: none) {
+  .k2-ui [data-k2-accent] .k2-range > i {
+    background: var(--k2-range-fill, var(--k2-accent-soft));
+  }
+  .k2-ui [data-k2-accent] :is(.k2-row[data-current], .k2-table tbody tr[aria-current]) .k2-range > i {
+    background: var(--k2-range-fill, var(--k2-app-text));
+  }
 }
 /* right to left the colours run from the right, as the scale does */
 .k2-ui .k2-range:dir(rtl) {

@@ -46,8 +46,11 @@ export type TextProps = {
   weight?: "medium" | "strong";
   /** The muted ink, for a second voice beside the main text. */
   muted?: boolean;
-  /** A colour of meaning, never decoration. */
-  tone?: Status | "ai" | "draft";
+  /**
+   * A colour of meaning, never decoration. `app` is the app's ink (the page's own accent with `Workspace accent`),
+   * readable at 4.5:1 on the surface and on the app's tint: for what belongs to it, such as the hero's state.
+   */
+  tone?: Status | "ai" | "draft" | "app";
   /** The words lead to this page: they keep the ink of the text and are underlined (blue is only the main action). */
   href?: string;
   /**

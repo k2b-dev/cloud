@@ -23,6 +23,7 @@ import { type Fold, watchFold } from "./bar-fold";
 import { useDrawer } from "./behavior/overlays";
 import { type GripOptions, useGrip } from "./behavior/resize";
 import { ActionButton } from "./button";
+import { accentStyle } from "./colors";
 import { type Column, ColumnsContext, type DetailEmpty, InnerContext } from "./columns-context";
 import { RowOpen } from "./content";
 import { linkOr } from "./link";
@@ -176,6 +177,16 @@ export type WorkspaceProps = {
    */
   detailEmpty?: { icon: string; text: string; hero?: JSX.Element };
   /**
+   * The page's own accent, a colour from data (such as the colour a place or a team chose), as `#rrggbb` or `#rgb`. It
+   * takes the place of the app's colour in this workspace: the primary action, the open row's tint, `Text` and `Band`
+   * `tone="app"`, and the bars of a `RangeBar` (the open row's the strongest). Its readable tones are worked out where
+   * the colour arrives, on the server too, so the first paint is final: the primary's words are white or near-black,
+   * whichever keeps 4.5:1 on it (a colour on which neither does is darkened until white does), and the colour as text
+   * is darkened in light and lightened in dark until it keeps 4.5:1 on the surface and on its tint. Focus rings and
+   * the colours of states stay. Any other value (an `oklch()`, a custom property, no colour) leaves the app's colour.
+   */
+  accent?: string;
+  /**
    * A `Pane` or `Pane.Split`, written inside the Workspace: its columns tell it their widths, so it knows when the
    * sidebar becomes a drawer. A column made before the Workspace (kept in a variable) is not counted.
    */
@@ -233,6 +244,7 @@ export const Workspace = (props: WorkspaceProps) => {
     return width().default + 1 + list.reduce((sum, column) => sum + column.need, 0) + detail + Math.max(0, panes - 1);
   };
   const id = createUniqueId();
+  const accent = createMemo(() => accentStyle(props.accent));
   // Below that room (from 768 px on; the phone has its own pages) the sidebar is a drawer: one container query on
   // this workspace's width. It is the one rule here that is made per workspace, since the room is the workspace's own.
   // A sidebar its grip made wider gives way first when the window narrows, so the columns keep their minimum.
@@ -304,7 +316,9 @@ export const Workspace = (props: WorkspaceProps) => {
       data-k2-workspace=""
       data-k2-part="Workspace"
       data-k2-ws={id}
+      data-k2-accent={accent() ? "" : undefined}
       style={custom({
+        ...accent(),
         "--k2-ws-side": `${sideWidth()}px`,
         "--k2-ws-side-min": `${width().min}px`,
         "container-name": sidebar() ? `k2-ws-${id}` : undefined,
@@ -854,8 +868,11 @@ export const Bar = (props: BarProps) => {
 // ── Band ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type BandProps = {
-  /** A tone only by meaning: a note, AI, "yours", wrong, waiting. */
-  tone?: "note" | "ai" | "yours" | "bad" | "warn";
+  /**
+   * A tone only by meaning: a note, AI, "yours", wrong, waiting, or `app`: the tint of the app's colour (the page's
+   * own with `Workspace accent`), for the one statement that belongs to it, such as a hero without a picture above it.
+   */
+  tone?: "note" | "ai" | "yours" | "bad" | "warn" | "app";
   /** A name for the band, for assistive technology. */
   label?: string;
   /** `Text`, `Row`s, `Prose`, `Tiles` or fields. */
