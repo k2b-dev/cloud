@@ -56,7 +56,7 @@ const stars = (page: Page, name: string) =>
         name: radio?.getAttribute("aria-label"),
         checked: radio?.getAttribute("aria-checked"),
         stop: radio?.getAttribute("tabindex"),
-        filled: star.hasAttribute("data-filled"),
+        filled: star.hasAttribute("data-chosen"),
       };
     }),
   );
@@ -72,6 +72,9 @@ test("server markup: a named radio group of five stars, each named by its value,
   expect(markup).toContain('aria-label="4 von 5 Sternen"');
   expect(markup).toContain('aria-label="4,2 von 5 Sternen"');
   expect(markup).toContain('aria-label="0 von 5 Sternen"');
+  // a given rating stays on the scale: 7 shows as 5 of 5
+  expect(markup).not.toContain("7 von 5");
+  expect(markup.match(/role="img" [^>]*aria-label="5 von 5 Sternen"|aria-label="5 von 5 Sternen"[^>]*role="img"/g)?.length).toBe(1);
 });
 
 test("keyboard: one Tab stop, Enter and the arrows choose, Space chooses, Enter on the chosen star sends the form", async () => {
@@ -153,6 +156,14 @@ test("read-only: a line of small stars as one picture with its words, part of a 
     const box = await average.boundingBox();
     expect(box?.height).toBeLessThanOrEqual(20);
     expect(await page.getByRole("img", { name: "0 von 5 Sternen" }).count()).toBe(1);
+    // past the scale: five whole stars, named 5 of 5
+    const past = page.getByRole("img", { name: "5 von 5 Sternen" });
+    expect(await past.count()).toBe(1);
+    expect(
+      await past.evaluate((root) =>
+        [...root.querySelectorAll<HTMLElement>(".k2-star")].map((star) => Number(getComputedStyle(star).getPropertyValue("--rating-fill"))),
+      ),
+    ).toEqual([1, 1, 1, 1, 1]);
   });
 }, 30_000);
 
@@ -180,20 +191,30 @@ for (const width of [1440, 390]) {
   }, 30_000);
 }
 
-/** The colour of the filled sign of the first chosen star and the surface, as [r, g, b]. */
-const amber = (page: Page) =>
-  page.evaluate(() => {
-    const rgb = (value: string) =>
-      value
+/**
+ * Each star of the first rating: whether its filled sign shows, that sign's colour, the star's own background (the
+ * tint of a chosen star) and its edge, as [r, g, b]. A colour the browser writes as `color(srgb …)` (a `color-mix()`)
+ * comes in 0 to 1 and is scaled.
+ */
+const look = (page: Page) =>
+  group(page, "Wie war dein Besuch?").evaluate((root) => {
+    const rgb = (value: string) => {
+      const channels = value
         .match(/[\d.]+/g)!
         .slice(0, 3)
         .map(Number);
-    const icon = document.querySelector('[role="radiogroup"] .k2-star[data-filled] [data-name="star-filled"]')!;
-    const surface = getComputedStyle(document.body).getPropertyValue("--k2-surface").trim();
-    return {
-      star: rgb(getComputedStyle(icon).color),
-      surface: [1, 3, 5].map((start) => Number.parseInt(surface.slice(start, start + 2), 16)),
+      return value.startsWith("color(") ? channels.map((channel) => Math.round(channel * 255)) : channels;
     };
+    return [...root.querySelectorAll<HTMLElement>(".k2-star")].map((star) => {
+      const sign = getComputedStyle(star.querySelector('[data-name="star-filled"]')!);
+      const box = getComputedStyle(star);
+      return {
+        shown: sign.visibility === "visible",
+        sign: rgb(sign.color),
+        background: rgb(box.backgroundColor),
+        edge: rgb(box.borderTopColor),
+      };
+    });
   });
 const luminance = ([r, g, b]: number[]) => {
   const [lr, lg, lb] = [r!, g!, b!].map((channel) => {
@@ -207,16 +228,52 @@ const contrast = (a: number[], b: number[]) => {
   return (high! + 0.05) / (low! + 0.05);
 };
 
-test("a chosen star keeps 3:1 on the surface in light and dark, and the layout in the dark is clean", async () => {
-  const seen: { star: number[]; surface: number[] }[] = [];
+test("a chosen star keeps 3:1 on its own tint in light and dark, and the layout in the dark is clean", async () => {
+  const seen: Awaited<ReturnType<typeof look>>[number][] = [];
   for (const dark of [false, true])
     await withPage({ dark }, async (page) => {
       await group(page, "Wie war dein Besuch?").getByRole("radio", { name: "4 von 5 Sternen" }).click();
-      seen.push(await amber(page));
+      await page.mouse.move(0, 0);
+      seen.push((await look(page))[0]!);
       if (dark) expect((await measureV2Layout(page)).problems).toEqual([]);
     });
-  for (const { star, surface } of seen) expect(contrast(star, surface)).toBeGreaterThanOrEqual(3);
-  expect(seen[0]!.star).not.toEqual(seen[1]!.star);
+  for (const { sign, background } of seen) expect(contrast(sign, background)).toBeGreaterThanOrEqual(3);
+  expect(seen[0]!.sign).not.toEqual(seen[1]!.sign);
+}, 30_000);
+
+test("a pointer previews in neutral ink: over a star below the choice the choice stays amber, over one past it no tint", async () => {
+  await withPage({}, async (page) => {
+    const rating = group(page, "Wie war dein Besuch?");
+    await rating.getByRole("radio", { name: "4 von 5 Sternen" }).click();
+    await page.mouse.move(0, 0);
+    const before = await look(page);
+    expect(await rating.getAttribute("data-preview")).toBeNull();
+    expect(before.map((star) => star.shown)).toEqual([true, true, true, true, false]);
+    const amber = before[0]!;
+    // over the second star: still four stars in amber on their tint, the previewed ones with an edge of their own
+    await rating.getByRole("radio", { name: "2 von 5 Sternen" }).hover();
+    await page.waitForFunction(() => document.querySelector('[role="radiogroup"]')?.hasAttribute("data-preview"));
+    const below = await look(page);
+    expect(below.map((star) => star.shown)).toEqual([true, true, true, true, false]);
+    for (const star of below.slice(0, 4)) {
+      expect(star.sign).toEqual(amber.sign);
+      expect(star.background).toEqual(amber.background);
+    }
+    expect(below[1]!.edge).not.toEqual(below[3]!.edge);
+    expect(below[2]!.edge).toEqual(before[2]!.edge);
+    expect(await chosen(page, "Wie war dein Besuch?")).toEqual(["4 von 5 Sternen"]);
+    // over the fifth star: the star past the choice fills in neutral ink, without the tint
+    await rating.getByRole("radio", { name: "5 von 5 Sternen" }).hover();
+    const past = await look(page);
+    expect(past[4]!.shown).toBe(true);
+    expect(past[4]!.sign).not.toEqual(amber.sign);
+    expect(past[4]!.background).not.toEqual(amber.background);
+    expect(past[3]!.sign).toEqual(amber.sign);
+    // the pointer leaves: the choice alone again
+    await page.mouse.move(0, 0);
+    await page.waitForFunction(() => !document.querySelector('[role="radiogroup"]')?.hasAttribute("data-preview"));
+    expect((await look(page)).map((star) => star.shown)).toEqual([true, true, true, true, false]);
+  });
 }, 30_000);
 
 test("in English each star is named in English", async () => {

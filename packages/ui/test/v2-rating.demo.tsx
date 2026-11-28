@@ -3,7 +3,7 @@ import { Band, Bar, Button, Facts, Field, Pane, Rating, Text, Workspace } from "
 
 // A rating as a feedback form asks for it: a required question held by the page, with its reading as the hint, and
 // the form's send; beside it a rating that keeps its own choice, one that is locked, one with an error, and given
-// ratings shown read-only (whole stars, an average, none yet). What a person chose lands in `window.__rated`, what the
+// ratings shown read-only (whole stars, an average, none yet, one past the scale). What a person chose lands in `window.__rated`, what the
 // form sends in `window.__sent`.
 
 declare global {
@@ -54,6 +54,7 @@ export const Demo = () => {
               { label: "Gesendet", value: <Rating readOnly value={4} /> },
               { label: "Durchschnitt", value: <Rating readOnly value={4.2} /> },
               { label: "Noch keine", value: <Rating readOnly value={0} /> },
+              { label: "Zu viel", value: <Rating readOnly value={7} /> },
             ]}
           />
         </Band>

@@ -5,7 +5,8 @@
  */
 import { rating as ratingPrimitive } from "@ui-sdk/core/rating";
 import { tabs as tabsPrimitive } from "@ui-sdk/core/tabs";
-import { mergeProps } from "solid-js";
+import { createSignal, mergeProps, onCleanup } from "solid-js";
+import { isServer } from "solid-js/web";
 import { type SlotComponent, slotComponent, usePrimitive } from "./adapter";
 
 export type TabsParts = {
@@ -39,8 +40,6 @@ export type RatingOptions = {
   /** The score at first, when the rating keeps it itself; a form's reset returns to it. */
   defaultValue?: number | null;
   onValueChange?: (value: number | null) => void;
-  /** How many stars: 5 when not set. */
-  max?: number;
   /** Shows a given score (any score, such as an average of 4.2) as one picture that cannot be changed. */
   readOnly?: boolean;
   disabled?: boolean;
@@ -59,6 +58,12 @@ export type RatingParts = {
   Radio: SlotComponent;
   /** The hidden native radio of a star that a form sends, resets and checks; `value` as for `Radio`. */
   Input: SlotComponent;
+  /**
+   * The chosen score, and the score a pointer previews over the stars (`null` while none does). Core fills a star
+   * from the preview first; these two keep the choice and the preview apart.
+   */
+  chosen: () => number | null;
+  preview: () => number | null;
 };
 
 /**
@@ -69,7 +74,17 @@ export type RatingParts = {
 export function useRating(options: () => RatingOptions): RatingParts {
   const handle = usePrimitive(ratingPrimitive, options);
   const radio = slotComponent(handle, "radio", "button");
+  const read = () => {
+    const highlighted: unknown = Reflect.get(handle.instance.get(), "highlighted");
+    return { chosen: handle.api.getValue(), preview: typeof highlighted === "string" ? Number(highlighted) : null };
+  };
+  const [shown, setShown] = createSignal(read(), {
+    equals: (before, after) => before.chosen === after.chosen && before.preview === after.preview,
+  });
+  if (!isServer) onCleanup(handle.instance.subscribe(() => setShown(read())));
   return {
+    chosen: () => shown().chosen,
+    preview: () => shown().preview,
     Root: slotComponent(handle, "root", "div"),
     Item: slotComponent(handle, "item", "span"),
     Radio: (props) =>

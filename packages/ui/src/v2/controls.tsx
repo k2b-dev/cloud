@@ -1653,10 +1653,12 @@ const RatingStars = (props: RatingProps) => {
   const words = (value: number) =>
     t().stars({ value: new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(value), max: 5 });
   const editable = () => (props.readOnly ? undefined : props);
+  // a given rating stays on the scale: never more than 5 stars, never less than none
+  const given = () => (props.readOnly ? (Number.isFinite(props.value) ? Math.max(0, Math.min(5, props.value)) : 0) : props.value);
   const rating = useRating(() => {
     const own = editable();
     return {
-      ...(props.readOnly || own?.onChange ? { value: props.value ?? null } : { defaultValue: props.value ?? null }),
+      ...(props.readOnly || own?.onChange ? { value: given() ?? null } : { defaultValue: given() ?? null }),
       onValueChange: (next: number | null) => {
         if (next !== null) own?.onChange?.(next);
       },
@@ -1674,10 +1676,12 @@ const RatingStars = (props: RatingProps) => {
       aria-labelledby={field?.label}
       aria-describedby={field?.described}
       aria-invalid={field?.invalid ? "true" : undefined}
+      data-preview={rating.preview() === null ? undefined : ""}
     >
       <For each={STARS}>
         {(index) => (
-          <rating.Item class="k2-star" index={index}>
+          // the stars up to the choice, whatever a pointer previews (core's own fill follows the preview)
+          <rating.Item class="k2-star" index={index} data-chosen={index <= (rating.chosen() ?? 0) ? "" : undefined}>
             <Icon name="star" />
             <Icon name="star-filled" />
             <Show when={!props.readOnly}>
