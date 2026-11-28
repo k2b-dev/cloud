@@ -8,8 +8,10 @@ import { requestContactDirectory } from "../service/contact-directory";
 import { localizeMailError } from "../service/error-messages";
 import { mailWorkspaceCookie, readMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
 import MailLanding from "./MailLanding.island";
+import MailLandingV2 from "./MailLandingV2.island";
 import { readMailLandingLink } from "./mail-landing";
 import { loadMailLanding } from "./mail-sidebar-data";
+import { readMailV2Pilot, showsMailV2 } from "./mail-v2-pilot";
 import { mailPageMessages } from "./pages-messages";
 
 const log = logger("mail:landing");
@@ -45,19 +47,23 @@ export default ssr<AuthContext>(async (c) => {
   const landing = await loadMailLanding(context, workspacePreferences.lastMailboxId);
   if (landing.ok && landing.data) return c.redirect(`/app/mail/${landing.data}${link.view ? `?view=${link.view}` : ""}`);
   const directory = await requestContactDirectory(c);
+  // the same pilot as the mailbox page: who sees mailboxes on v2 also sees this page on v2
+  const ui = showsMailV2(readMailV2Pilot(c), user.mail) ? "v2" : undefined;
+  const landingProps = {
+    error: landing.ok ? null : localizeMailError(landing.error, locale).message,
+    retryHref: requestPath(c),
+    currentUserEmail: user.mail,
+    contactDirectory: directory,
+  };
   return () => (
     <Layout
       c={c}
       printHint={t.printHint}
+      ui={ui}
       workspaceSidebarCollapsible={false}
       title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbMail }]}
     >
-      <MailLanding
-        error={landing.ok ? null : localizeMailError(landing.error, locale).message}
-        retryHref={requestPath(c)}
-        currentUserEmail={user.mail}
-        contactDirectory={directory}
-      />
+      {ui === "v2" ? <MailLandingV2 {...landingProps} /> : <MailLanding {...landingProps} />}
     </Layout>
   );
 });
