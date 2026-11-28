@@ -199,13 +199,41 @@ export const requestSpacesDetailStep = (direction: 1 | -1, selection: { itemId: 
   return detail.target;
 };
 
+/** Whether the focus has nowhere to be: the element that had it left the page or the layout. */
+const focusLost = () => document.activeElement === null || document.activeElement === document.body;
+
+/**
+ * Whether a link shows wherever its pane shows: a table has a second set of rows for the phone, hidden on a wide
+ * screen and the other way round. The pane itself may be hidden while the detail is the page on the phone.
+ */
+const shownInPane = (link: HTMLElement) => {
+  for (let element = link.parentElement; element && element.dataset.k2Part !== "Pane"; element = element.parentElement)
+    if (getComputedStyle(element).display === "none") return false;
+  return getComputedStyle(link).display !== "none";
+};
+
 /**
  * Steps through a view's visible item links in DOM order, without wrapping and only through loaded items. A
  * selection the view does not show starts at its first or last link. The step replaces the history entry, so Back
  * leaves the detail instead of replaying every step. Clicks remember the selected copy of duplicate items.
+ *
+ * The focus follows the step: from a link of the view it moves to the next one, which scrolls into view. Where the
+ * view gives way to the open item (the phone), its link has no place to take the focus; when the item closes with the
+ * focus nowhere, the link of the item shown last takes it and scrolls into view, so the reader is back where they went.
  */
 export const subscribeToSpacesDetailStep = (links: () => HTMLAnchorElement[], opened?: (link: HTMLAnchorElement) => void) => {
   let lastOpened: HTMLAnchorElement | undefined;
+  // The item open when the view starts listening: its first state may have gone out before.
+  const start = new URL(window.location.href).searchParams;
+  let shown: Omit<SpacesDetailState, "selectionId"> = { itemId: start.get("item"), occurrenceId: start.get("occurrence") };
+  const matches = (link: HTMLAnchorElement, selection: { itemId: string | null; occurrenceId: string | null }) => {
+    const url = new URL(link.href, window.location.origin);
+    return url.searchParams.get("item") === selection.itemId && url.searchParams.get("occurrence") === selection.occurrenceId;
+  };
+  const reveal = (link: HTMLAnchorElement) => {
+    link.focus({ preventScroll: true });
+    link.scrollIntoView({ block: "nearest", inline: "nearest" });
+  };
   const onClick = (event: Event) => {
     const anchor = event.target instanceof Element ? event.target.closest("a") : null;
     if (anchor && links().includes(anchor)) lastOpened = anchor;
@@ -214,26 +242,41 @@ export const subscribeToSpacesDetailStep = (links: () => HTMLAnchorElement[], op
     if (!(event instanceof CustomEvent)) return;
     const detail: SpacesDetailStep = event.detail;
     if (!detail || detail.target) return;
-    const visible = links();
-    const matching = visible.filter((link) => {
-      const url = new URL(link.href, window.location.origin);
-      return url.searchParams.get("item") === detail.itemId && url.searchParams.get("occurrence") === detail.occurrenceId;
-    });
+    const visible = links().filter(shownInPane);
+    const matching = visible.filter((link) => matches(link, detail));
     const current =
       matching.find((link) => link.contains(document.activeElement)) ?? matching.find((link) => link === lastOpened) ?? matching[0];
     const index = current ? visible.indexOf(current) + detail.direction : detail.direction === 1 ? 0 : visible.length - 1;
     const next = visible[index];
     const href = next?.getAttribute("href");
     if (!next || !href) return;
+    const fromView = visible.some((link) => link.contains(document.activeElement));
     opened?.(next);
     requestSpacesRouteNavigation(href, { replace: true, scroll: "preserve" });
     lastOpened = next;
     detail.target = next;
+    if (fromView && next.getClientRects().length > 0) reveal(next);
+  };
+  const onState = (event: Event) => {
+    const state = (event as CustomEvent<SpacesDetailState>).detail;
+    if (!state) return;
+    const closed = shown.itemId && !state.itemId ? shown : null;
+    shown = state;
+    if (!closed) return;
+    // After the detail's own hand-back to what opened it, which runs first.
+    requestAnimationFrame(() => {
+      if (!focusLost()) return;
+      const visible = links().filter((link) => matches(link, closed) && link.getClientRects().length > 0);
+      const link = visible.find((entry) => entry === lastOpened) ?? visible[0];
+      if (link) reveal(link);
+    });
   };
   window.addEventListener(SPACES_DETAIL_STEP_EVENT, onStep);
+  window.addEventListener(SPACES_DETAIL_STATE_EVENT, onState);
   document.addEventListener("click", onClick, true);
   return () => {
     window.removeEventListener(SPACES_DETAIL_STEP_EVENT, onStep);
+    window.removeEventListener(SPACES_DETAIL_STATE_EVENT, onState);
     document.removeEventListener("click", onClick, true);
   };
 };

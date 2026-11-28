@@ -101,6 +101,18 @@ const daysAway = (deadline: string, now: number, dateConfig: DateContext | undef
 };
 
 /**
+ * Hands the focus to the title in the head of the open detail; false while there is none.
+ * k2b-ui gap: the title of a detail Pane's head is no focus target, so the app makes it one (tabindex -1) by its part.
+ */
+const focusDetailTitle = () => {
+  const title = document.querySelector<HTMLElement>('[data-k2-part="Pane"][data-detail] > [data-slot="head"] [data-k2-part="Text"]');
+  if (!title) return false;
+  title.tabIndex = -1;
+  title.focus({ preventScroll: true });
+  return true;
+};
+
+/**
  * The open item beside a Space's view: on a wide screen a column, on the phone a page with one way back. The address
  * names it; while it loads or fails, its place says so, and J and K step to the next or previous row.
  */
@@ -109,6 +121,26 @@ export default function ItemDetailPane(props: Props) {
   const closeButton = () => (
     <Button variant="ghost" icon="x" label={t.closeItemDetails} href={props.route.baseHref()} onNavigate={() => props.route.close()} />
   );
+  // The title takes the focus when the detail had it, or nothing had it, and the shown item changes: a step with J or
+  // K from inside the detail, or an open on the phone, where the row that had the focus gives way to the detail. It
+  // keeps the wish while the next item loads, so a second step from the loading title still ends on the item's title.
+  const [titleWanted, setTitleWanted] = createSignal(false);
+  createEffect(() => {
+    const loaded = props.route.detail();
+    props.route.error();
+    if (!titleWanted()) return;
+    queueMicrotask(() => {
+      if (focusDetailTitle() && loaded) setTitleWanted(false);
+    });
+  });
+  onMount(() => {
+    const opener = document.activeElement;
+    if (!(opener instanceof HTMLElement) || opener === document.body || opener.closest("[data-detail]")) return;
+    requestAnimationFrame(() => {
+      if (document.activeElement === document.body || (document.activeElement === opener && opener.getClientRects().length === 0))
+        setTitleWanted(true);
+    });
+  });
   createEffect(() => {
     if (!props.steppable) return;
     // J and K step through the rows of the view, as the shortcuts of the page.
@@ -124,7 +156,11 @@ export default function ItemDetailPane(props: Props) {
           description: t.stepDescription,
           icon: direction === 1 ? "ti ti-arrow-down" : "ti ti-arrow-up",
           shortcut: key,
-          action: () => void props.route.step(direction),
+          action: () => {
+            const active = document.activeElement;
+            const fromDetail = !active || active === document.body || active.closest("[data-detail]") !== null;
+            if (props.route.step(direction) && fromDetail) setTitleWanted(true);
+          },
         }),
       );
   });
