@@ -1289,12 +1289,17 @@
     display: none !important;
   }
 
+  /* Under reduced motion every timed animation and transition ends at once. `auto` is 0s for a timed animation, and
+     lets an animation on a scroll timeline (the edge at a sticky column) fill its timeline: it follows the person's own
+     scroll, no motion of its own, and with 0s it would stand at its end, the edge shown before any scroll. A browser
+     without `auto` keeps the 0s before it. */
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
     *::after {
       transition-duration: 0s !important;
       animation-duration: 0s !important;
+      animation-duration: auto !important;
     }
   }
 

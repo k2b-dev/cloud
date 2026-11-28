@@ -14,6 +14,11 @@ import { textEdge } from "./tokens";
 // starts body, head and group rows on one text edge; a phone row ends in the state of its entry.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
+// the global base sheet and the shipped sheet of .k2b-ui, for a test that needs their rules too (their stop of motion
+// under reduced motion, as a v2 island in the Cloud shell gets them)
+const shellCss = ["../base/base.css", "../../dist/styles.css"]
+  .map((path) => readFileSync(resolve(import.meta.dir, path), "utf8"))
+  .join("\n");
 const testCss =
   "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0 auto 0 0; display: flex; } .ti { display: inline-block; width: 1em; height: 1em; }";
 
@@ -39,14 +44,26 @@ const withPage = async (
     host = false,
     path = false,
     bare = false,
-  }: { width?: number; column?: number; host?: boolean; path?: boolean; bare?: boolean } = {},
+    shell = false,
+    reducedMotion = false,
+    hostReduced = false,
+  }: {
+    width?: number;
+    column?: number;
+    host?: boolean;
+    path?: boolean;
+    bare?: boolean;
+    shell?: boolean;
+    reducedMotion?: boolean;
+    hostReduced?: boolean;
+  } = {},
 ) => {
-  const page = await browser.newPage({ viewport: { width, height: 900 } });
+  const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: reducedMotion ? "reduce" : "no-preference" });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"${host ? " data-k2-host-search" : ""}><div id="root" style="width: ${column}px"></div></body></html>`,
+      `<!doctype html><html lang="de"${hostReduced ? ' data-k2b-motion="reduced"' : ""}><head><meta charset="utf-8">${shell ? `<style>${shellCss}</style>` : ""}<style>${css}</style><style>${testCss}</style></head><body class="${shell ? "k2b-ui k2-ui" : "k2-ui"}"${host ? " data-k2-host-search" : ""}><div id="root" style="width: ${column}px"></div></body></html>`,
     );
     if (path)
       await page.evaluate(() => {
@@ -808,6 +825,33 @@ for (const column of [1440, 1024, 700])
         expect(edges.end.body).toBe(edges.end.head);
       },
       { column },
+    );
+  });
+
+// The edge at a sticky column follows the person's own scroll on a scroll timeline: no motion of its own, so it works
+// the same under reduced motion, where the shell's sheets stop every timed animation (asked by the system or the host).
+for (const motion of ["full motion", "reduced motion", "motion reduced by the host"] as const)
+  test(`with ${motion}, the edge at a sticky column shows only while the table is scrolled sideways`, async () => {
+    await withPage(
+      async (page) => {
+        const edge = () =>
+          page.evaluate(() => {
+            const cell = document.querySelector('.k2-table[data-grid] tbody td[data-sticky="last"]')!;
+            return Number(getComputedStyle(cell, "::after").opacity);
+          });
+        const scroller = await page.evaluate(() => {
+          const table = document.querySelector<HTMLElement>(".k2-table[data-grid]")!.parentElement!;
+          return { scrolls: table.scrollWidth > table.clientWidth + 40, left: table.scrollLeft };
+        });
+        expect(scroller).toEqual({ scrolls: true, left: 0 });
+        expect(await edge()).toBe(0);
+        await page.evaluate(() => {
+          document.querySelector<HTMLElement>(".k2-table[data-grid]")!.parentElement!.scrollLeft = 40;
+        });
+        await settled(page);
+        expect(await edge()).toBe(1);
+      },
+      { column: 700, shell: true, reducedMotion: motion === "reduced motion", hostReduced: motion === "motion reduced by the host" },
     );
   });
 
