@@ -348,6 +348,9 @@ for (const [width, height] of [
       expect(await cards.locator(".chat-discussion__name").allInnerTexts()).toEqual(["Einladung freigeben", "Besichtigung", "Aufbau"]);
       expect(await cards.nth(0).locator(".chat-discussion__state").innerText()).toBe("Erledigt");
       expect(await cards.nth(1).getAttribute("data-unread")).toBe("");
+      // the place has no directory of its own: on the phone its stream leads back to the chats
+      if (width < 768)
+        expect(await page.locator('[data-k2-part="Pane"][data-detail] [data-k2-part="Back"] a').first().textContent()).toContain("Chats");
       const layout = await measureV2Layout(page, { root: "[data-k2-workspace]", skip: '[data-k2-part="Canvas"]' });
       expect({ width, problems: layout.problems }).toEqual({ width, problems: [] });
       if (width >= 768) {

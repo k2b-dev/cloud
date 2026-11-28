@@ -921,7 +921,7 @@ export function ChatWorkspaceView(
       { filter: filter === "all" ? undefined : filter, cursor },
       AbortSignal.timeout(15_000),
     ).catch(() => null);
-    if (!page) return void toast.error(t().threadsLoadFailed);
+    if (!page) return void toast.error(t().threadsLoadFailed, { title: t().threadsLoadFailedTitle });
     if (placeFilter() !== filter || conversation()?.id !== chatId) return;
     setPlaceFound({ chat: chatId, filter, list: { ...page, items: more && same ? [...previous.list.items, ...page.items] : page.items } });
   };
@@ -3579,6 +3579,8 @@ export function ChatWorkspaceView(
         href: listHref(threadHref(current.id, "general")),
         onNavigate: (navigation: LinkNavigateEvent) => openView(current.id, "general", navigation),
       };
+    // A place has no directory of its own in v2 (its route leads to the place): its stream leads back to the chats.
+    if (props.v2 && current?.kind === "system") return { label: t().chats, href: listHref(), onNavigate: backToList };
     return backToThreadDirectory() && route().chatId
       ? { label: t().backToThreads, href: listHref(threadsPageHref(route().chatId!)), onNavigate: backToThreads }
       : { label: t().chats, href: listHref(), onNavigate: backToList };
