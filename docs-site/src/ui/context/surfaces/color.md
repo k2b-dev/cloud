@@ -289,6 +289,17 @@ second palette. The palette has no plum, which means AI, and no yellow, which
 reads as a text highlight. Two people can share a color, so the name always
 appears next to it.
 
+The eleven hues are dark enough for white initials (at least 4.5:1) and stay
+apart for people with a color-vision deficiency. On the dark surface each hue
+has a lighter step (`PERSON_COLORS_DARK`, `personColorDark(name)`). A mark
+drawn on the page in a person's color, such as a comment bar, a commented
+passage, a dot or a presence swatch, takes `personMarkColor(name)`: a
+`light-dark()` of both hues, so it keeps 3:1 against the surface in either
+theme. Where a contract stores the hex, `personMarkColorOf(hex)` turns a hue of
+the palette into that pair and leaves any other color as it is. Use the mark
+color in CSS only; a fill behind white text, such as initials or a caret's
+label, keeps `personColor`.
+
 ## App color in Cloud
 
 A Cloud app declares one six-digit `accent`. Cloud derives the app ink and

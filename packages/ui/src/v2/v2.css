@@ -255,6 +255,7 @@
    reader falls back to its own default until the primitive sets one. */
 .k2-ui {
   --k2-c: initial;
+  --k2-c-dark: initial;
   --k2-c-fg: initial;
   --k2-c-fg-dark: initial;
   --k2-c-soft: initial;
