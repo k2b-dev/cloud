@@ -14,10 +14,9 @@ import * as routeState from "../../service/route-state";
 import { mockNoteTree } from "./page-tree.test-fixture";
 import "./_components/detail/ssr-test-plugin";
 
-const islandProps = (attribute: string | undefined) =>
-  fromJSON<Record<string, unknown>>(
-    JSON.parse((attribute ?? "").replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&")),
-  );
+/** The props the server sends the first wrapper `selector` matches, from its props comment. */
+const islandProps = async (html: string, selector: string) =>
+  fromJSON<Record<string, unknown>>(JSON.parse((await propsComments(html, selector))[0] ?? ""));
 
 const { default: handler } = await import("./page");
 const { default: attachmentsHandler } = await import("./attachments/page");
@@ -114,6 +113,20 @@ const renderEmptyNotebook = async (mode: "write" | "book" | "graph" | "graph&fro
 };
 
 /** Attributes and text of every element that matches a selector in the server-rendered page. */
+/** The props comments inside the wrappers `selector` matches; a wrapper's own one comes first. */
+const propsComments = async (html: string, selector: string) => {
+  const found: string[] = [];
+  await new HTMLRewriter()
+    .on(selector, {
+      comments(comment) {
+        if (comment.text.startsWith("ssr-props:")) found.push(comment.text.slice("ssr-props:".length));
+      },
+    })
+    .transform(new Response(html))
+    .text();
+  return found;
+};
+
 const select = async (html: string, selector: string) => {
   const found: { attributes: Record<string, string>; text: string }[] = [];
   await new HTMLRewriter()
@@ -275,10 +288,10 @@ test.each(["write", "book"] as const)(
   "a notebook shown in %s mode records itself as the notebook the Notebooks entry opens next",
   async (mode) => {
     const html = await renderEmptyNotebook(mode);
-    const [island, ...others] = await select(html, 'solid-island[data-file="RememberNotebook.island.tsx"]');
+    const [, ...others] = await select(html, 'solid-island[data-file="RememberNotebook.island.tsx"]');
 
     expect(others).toEqual([]);
-    expect(islandProps(island?.attributes["data-props"])).toEqual({ notebookId: "book01" });
+    expect(await islandProps(html, 'solid-island[data-file="RememberNotebook.island.tsx"]')).toEqual({ notebookId: "book01" });
   },
 );
 
@@ -316,10 +329,10 @@ test.each([
   expect(response.status).toBe(200);
   const html = await response.text();
   expect(await select(html, 'solid-island[data-file="BookController.island.tsx"]')).toHaveLength(bookMode ? 1 : 0);
-  const [island, ...others] = await select(html, 'solid-island[data-file="RememberNotebook.island.tsx"]');
+  const [, ...others] = await select(html, 'solid-island[data-file="RememberNotebook.island.tsx"]');
 
   expect(others).toEqual([]);
-  expect(islandProps(island?.attributes["data-props"])).toEqual({ notebookId: "book01" });
+  expect(await islandProps(html, 'solid-island[data-file="RememberNotebook.island.tsx"]')).toEqual({ notebookId: "book01" });
   const [links] = await select(html, ".notebook-sidebar-foot a");
   expect(links?.attributes.href).toBe(
     `/app/notebooks/book01?mode=graph${bookMode ? "&amp;from=book" : ""}&amp;back=${encodeURIComponent(path)}`,
@@ -622,14 +635,12 @@ test("write mode opens with the saved Markdown in the preview, as the editor ope
 test("read-only without a snapshot starts from the saved Markdown", async () => {
   const html = await renderEditorPage({ mode: "readonly", snapshot: null });
   expect((await select(html, "#notebook-note-preview"))[0]?.text).toContain("Wir sammeln wichtige Gedanken für das Team.");
-  const [editor] = await select(html, 'solid-client[data-file="NoteEditor.client.tsx"]');
-  expect(islandProps(editor?.attributes["data-props"]).initialContent).toStartWith("# Wochenplan");
+  expect((await islandProps(html, 'solid-client[data-file="NoteEditor.client.tsx"]')).initialContent).toStartWith("# Wochenplan");
 });
 
 test("write mode sends the saved Markdown and no collaboration state, which loads only on the first edit", async () => {
   const html = await renderEditorPage();
-  const [editor] = await select(html, 'solid-client[data-file="NoteEditor.client.tsx"]');
-  const props = islandProps(editor?.attributes["data-props"]);
+  const props = await islandProps(html, 'solid-client[data-file="NoteEditor.client.tsx"]');
   expect(props.initialContent).toStartWith("# Wochenplan");
   expect(props.initialDetail).toHaveProperty("contentMd");
   expect(props.initialDetail).toMatchObject({ contentMd: props.initialContent });
@@ -666,13 +677,11 @@ for (const mode of ["write", "readonly"] as const) {
   test(`${mode}: the first HTML renders full width and seeds Ansicht from the cookie`, async () => {
     for (const fullWidth of [false, true]) {
       const html = await renderNotebookWithNotes(fullWidth ? { fullWidth: true } : {}, mode);
-      const [presence] = await select(html, 'solid-island[data-file="WorkspaceEventBridge.island.tsx"]');
-      expect(islandProps(presence?.attributes["data-props"]).initialNoteId).toBe("note01");
+      expect((await islandProps(html, 'solid-island[data-file="WorkspaceEventBridge.island.tsx"]')).initialNoteId).toBe("note01");
       const surfaces = await select(html, ".notebook-document-surface");
       expect(surfaces).toHaveLength(1);
       expect(surfaces[0]?.attributes["data-full-width"]).toBe(fullWidth ? "" : undefined);
-      const [panel] = await select(html, 'solid-island[data-file="NotebookDetailPanel.island.tsx"]');
-      expect(islandProps(panel?.attributes["data-props"]).fullWidth).toBe(fullWidth);
+      expect((await islandProps(html, 'solid-island[data-file="NotebookDetailPanel.island.tsx"]')).fullWidth).toBe(fullWidth);
       expect(await select(html, ".notebook-view-menu__trigger")).toHaveLength(1);
       expect(await select(html, '.notebooks-full-width-option input[role="switch"]')).toHaveLength(0);
     }
@@ -870,10 +879,12 @@ test.each(["write", "readonly"] as const)("%s: SSR supplies author identities to
   const html = await renderEditorPage({ mode });
   const [panel] = await select(html, '[data-file="NotebookDetailPanel.island.tsx"]');
   expect(panel).toBeDefined();
-  const props = islandProps(panel?.attributes["data-props"]);
+  const props = await islandProps(html, '[data-file="NotebookDetailPanel.island.tsx"]');
   expect(props.noteAuthors).toEqual(noteAuthors);
-  const [editor] = await select(html, 'solid-client[data-file="NoteEditor.client.tsx"]');
-  expect(islandProps(editor?.attributes["data-props"]).initialDetail).toHaveProperty("noteAuthors", noteAuthors);
+  expect((await islandProps(html, 'solid-client[data-file="NoteEditor.client.tsx"]')).initialDetail).toHaveProperty(
+    "noteAuthors",
+    noteAuthors,
+  );
 });
 
 test.each(["note02", "other1"])(
@@ -886,7 +897,7 @@ test.each(["note02", "other1"])(
     );
     const [island] = await select(html, 'solid-island[data-file="NotebookGraph.island.tsx"]');
     expect(island).toBeDefined();
-    const props = islandProps(island?.attributes["data-props"]);
+    const props = await islandProps(html, 'solid-island[data-file="NotebookGraph.island.tsx"]');
     expect(props.selectedNoteId).toBe(queryNote === "note02" ? "note02" : "note01");
     expect(props.view).toMatchObject({ display: "neighborhood", depth: 2, sort: null });
     expect(props.timeZone).toBe("UTC");

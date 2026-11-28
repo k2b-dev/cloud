@@ -23,7 +23,7 @@ const islands: Record<string, Component<never>> = {
 for (const element of document.querySelectorAll<HTMLElement>("solid-island")) {
   const island = islands[element.dataset.file?.split("/").pop() ?? ""];
   if (!island) continue;
-  const props = fromJSON(JSON.parse(element.dataset.props ?? "{}")) as never;
+  const props = fromJSON(JSON.parse(element.firstChild?.nodeValue?.replace(/^ssr-props:/, "") ?? "{}")) as never;
   element.replaceChildren();
   render(
     () =>
