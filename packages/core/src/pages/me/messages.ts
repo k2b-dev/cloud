@@ -475,8 +475,6 @@ export const accountMessages = i18n.define({
       deliveries: "Deliveries",
       signInActivity: "Sign-ins and changes",
       deliveryStatus: "Delivery",
-      openApprovalsCount: ({ count }: { count: number }) =>
-        i18n.plural(count, "en", { one: `${count} open approval`, other: `${count} open approvals` }),
       groups: "Groups",
       connectAction: "CLI & MCP",
       connectTitle: "Connect the CLI and agents",
@@ -1015,7 +1013,6 @@ export const accountMessages = i18n.define({
       deliveries: "Zustellungen",
       signInActivity: "Anmeldungen und Änderungen",
       deliveryStatus: "Zustellung",
-      openApprovalsCount: ({ count }) => i18n.plural(count, "de", { one: `${count} offene Freigabe`, other: `${count} offene Freigaben` }),
       groups: "Gruppen",
       connectAction: "CLI & MCP",
       connectTitle: "CLI und Agenten verbinden",

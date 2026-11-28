@@ -52,14 +52,19 @@ export default function ActivityScreen(props: ActivityScreenProps) {
   const query = createMemo(() => activityQueryFor(t(), kindOfState(state())));
   const entries = () => (props.content.kind === "open" ? null : props.content);
   const open = () => (props.content.kind === "open" ? props.content : null);
-  // The count is a fact of the bar; the lead says what needs the person.
+  // The count is a fact of the bar; the lead says what needs the person. Open approvals carry none here: their list
+  // names its own open count and keeps it current while the person decides (one page holds only the first ones).
   const count = () => {
     const content = props.content;
     return content.kind === "open"
-      ? t().openApprovalsCount({ count: content.approvals.items.length })
+      ? undefined
       : content.kind === "deliveries"
         ? t().deliveryCount({ count: content.total })
         : t().activityCount({ count: content.total });
+  };
+  const countFacts = () => {
+    const value = count();
+    return value ? [{ value }] : [];
   };
   // A state is shown where it is an exception; what went as expected carries no chip.
   const exceptional = (row: ActivityRow) => row.state.tone !== "ok";
@@ -110,7 +115,7 @@ export default function ActivityScreen(props: ActivityScreenProps) {
             {/* with nothing to show the empty state speaks alone, so the lead never says it a second time */}
             <Show when={needsYou()}>
               {/* k2b-ui gap: once `FilterBar end` (#4223) shows `results`, the count leaves these facts (said once) */}
-              <StatusRow lead={lead()} facts={[{ value: count() }]} />
+              <StatusRow lead={lead()} facts={countFacts()} />
             </Show>
           </>
         }

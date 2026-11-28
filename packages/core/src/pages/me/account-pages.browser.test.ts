@@ -108,6 +108,8 @@ let freeIpaEnabled = false;
 let requestsEnabled = false;
 /** A FreeIPA account request that waits, or none. */
 let pending: { id: string; createdAt: Date } | null = null;
+/** The first page of the open approvals. */
+let approvalsPage = fixture.openApprovals;
 
 const spies: Array<{ mockRestore(): void }> = [];
 beforeEach(() => {
@@ -116,6 +118,7 @@ beforeEach(() => {
   freeIpaEnabled = false;
   requestsEnabled = false;
   pending = null;
+  approvalsPage = fixture.openApprovals;
   spies.push(
     spyOn(cloudSsr, "Layout").mockImplementation(((props: { c: Parameters<typeof server.getLocale>[0]; children: JSX.Element }) => {
       return createComponent(LocaleProvider, {
@@ -175,7 +178,7 @@ beforeEach(() => {
       enabled: true,
       adminPairing: false,
     }),
-    spyOn(server, "loadPendingApprovals").mockResolvedValue(fixture.openApprovals),
+    spyOn(server, "loadPendingApprovals").mockImplementation(async () => approvalsPage),
     spyOn(services.appApproval, "listDevices").mockResolvedValue({ items: fixture.appDevices, nextCursor: null }),
     spyOn(server.auth.session, "getToken").mockReturnValue("demo-session" as never),
     spyOn(server.auth.session, "authenticateRequest").mockImplementation(async () => ({ user, data: { sid: "demo-session" } }) as never),
@@ -386,6 +389,19 @@ describe("account pages on v2", () => {
     await content("/me/activity", "en", "?kind=deliveries&status=failed&page=2");
     expect(services.notifications.user.history.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: "failed", page: 2 }));
     expect(server.loadPendingApprovals).toHaveBeenCalledTimes(1);
+  });
+
+  test("21 open approvals: the bar counts none of one page's twenty, and the list names all 21 itself", async () => {
+    const [first] = fixture.openApprovals.items;
+    const items = Array.from({ length: 20 }, (_, index) => ({
+      ...first!,
+      id: `00000000-0000-4000-8000-${String(900 + index).padStart(12, "0")}`,
+    }));
+    approvalsPage = { items, nextCursor: "next", count: 21, elsewhere: 0 };
+    const html = await content("/me/activity", "en");
+    // the list keeps its count current while the person decides; a page of twenty never stands for all of them
+    expect(html).toContain("21 open");
+    expect(html).not.toMatch(/\b20 open/);
   });
 
   test("the account's areas and its activity are entries of the sidebar, each with its own address", async () => {
