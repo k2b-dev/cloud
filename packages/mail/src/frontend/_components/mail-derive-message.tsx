@@ -1,30 +1,24 @@
-import { importOnDemand } from "@k2b/cloud/browser/reload";
-import { documentNavigate } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, CheckboxCard, prompts, Select, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, on, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
-import type { DeriveDraftFromMessageInput, DraftDerivationKind, MailDraftSeed, SenderIdentity } from "../../contracts";
-import { openMailUserDraftStorage } from "../../lib/mail-user-draft-storage";
+import type { DeriveDraftFromMessageInput, DraftDerivationKind, MailDraft, SenderIdentity } from "../../contracts";
 import type { MailWorkspaceMessage } from "../../service/workspace";
 import { readApiError } from "./api-response";
-import { mailDraftSeedHref } from "./mail-compose-route";
+import { openDraftWindow } from "./mail-compose-windows";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 
 type DeriveChoice = Omit<DeriveDraftFromMessageInput, "idempotencyKey">;
 
 /**
  * "Use as new" for one message: the person picks the sender and whether the attachments come along, the server derives
- * a draft seed from the message, and the compose page opens with it. One at a time: while a seed is on its way, `busy`
- * holds and a second request is dropped. A failure says why; a change of mailbox aborts it. The v1 reader and the v2
- * pilot use this.
+ * a draft from the message, and it opens as a window over the mailbox, as a new message does. One at a time: while the
+ * draft is on its way, `busy` holds and a second request is dropped. A failure says why; a change of mailbox aborts it.
+ * The v1 reader and the v2 pilot use this.
  */
 export function createMailMessageDerive(props: {
   mailboxId: () => string;
   identities: () => readonly SenderIdentity[];
-  currentUserId: () => string | null;
-  /** Where the compose page returns to. */
-  returnHref: () => string;
   /** What the reader shows; a choice made after it changed is dropped. */
   selection: () => string | null;
   /** The reader still shows this message. */
@@ -38,23 +32,11 @@ export function createMailMessageDerive(props: {
   onCleanup(() => {
     disposed = true;
   });
-  const openSeed = async (seed: MailDraftSeed, stillCurrent: () => boolean) => {
-    const store = await importOnDemand(() => import("./mail-draft-seed-store"));
-    const userId = props.currentUserId();
-    if (!store || disposed || !stillCurrent()) return;
-    try {
-      if (!userId) throw new Error(t().localDraftFailed);
-      store.storeMailDraftSeed(openMailUserDraftStorage(localStorage, userId), seed);
-    } catch {
-      return void prompts.error(t().localDraftFailed, { title: t().startMessageFailed });
-    }
-    documentNavigate(mailDraftSeedHref(props.mailboxId(), seed.id, props.returnHref(), { popout: false }));
-  };
   const request = createMemo(
     on(props.mailboxId, (mailboxId) => {
       let active = true;
       const current = mutations.create<
-        MailDraftSeed,
+        MailDraft,
         { message: MailWorkspaceMessage; input: DeriveChoice },
         { message: MailWorkspaceMessage }
       >({
@@ -75,10 +57,19 @@ export function createMailMessageDerive(props: {
             { init: { signal: abortSignal } },
           );
           if (!response.ok) throw new Error(await readApiError(response, t().createFromMessageFailed));
-          return response.json();
+          const seed = await response.json();
+          // the seed becomes the draft at once (its ID keeps a repeated answer to one draft), as a new message does
+          const materialized = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].materialize.$post(
+            { param: { mailboxId }, json: { idempotencyKey: seed.id, origin: seed.origin, draft: seed.content } },
+            { init: { signal: abortSignal } },
+          );
+          if (!materialized.ok) throw new Error(await readApiError(materialized, t().createFromMessageFailed));
+          return materialized.json();
         },
-        onSuccess: (seed, context) => {
-          if (context && active && props.shows(context.message.id)) void openSeed(seed, () => active && props.shows(context.message.id));
+        onSuccess: (draft) => {
+          // the window belongs to the mailbox, not to the conversation: it opens even when another one is shown now
+          if (active && !disposed)
+            openDraftWindow(draft.id, { mailboxId, initialDraft: draft, fresh: draft.creationOutcome === "created" });
         },
         onError: (error) => prompts.error(error.message),
       });
