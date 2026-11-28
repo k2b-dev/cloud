@@ -891,11 +891,13 @@ not fit; on the phone it leaves the page and the phone bar's title opens it as
 the shell's menu, from the first render. `scroll`, `contentClass` and `ownMain`
 do not apply to a v2 admin page.
 
-The admin sidebar shows the overview, then **Set up** (base settings, storage,
-sign-in, outgoing mail with its email templates, announcements, AI), then
-**Operations** (apps with their navigation, maintenance mode, Observability, People), then
-app-owned groups, and last **Settings per app** with one entry per app's
-`adminHref`.
+The admin sidebar shows **Set up** (base settings, storage, sign-in, outgoing
+mail with its email templates, announcements, AI), then **Operations** (apps
+with their navigation, maintenance mode, Observability, People), then app-owned
+groups, and last **Settings per app** with one entry per app's `adminHref`.
+`/admin` has no page of its own. It opens the Observability overview where
+Gateway Ops serves it, and the Apps page otherwise, and keeps the parameters of
+the link.
 
 App-owned admin groups come from `adminNav` in the application declaration.
 A group may declare `section: "ai"` or `section: "observability"` to contribute

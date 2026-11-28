@@ -21,7 +21,6 @@ import {
   profilesPage as outgoingMailPage,
   templatesPage as outgoingMailTemplatesPage,
 } from "./admin/outgoing-mail/page";
-import adminPage from "./admin/page";
 import railAdminPage from "./admin/rail/page";
 import settingsPage from "./admin/settings/page";
 import {
@@ -32,6 +31,7 @@ import {
   registrationPage,
   signinPage,
 } from "./admin/signin/page";
+import { adminStart } from "./admin/start";
 import storageAdminPage from "./admin/storage/page";
 import pairDevicePage from "./app-approval/pair.page";
 import { createAppIconRoutes } from "./app-icons";
@@ -120,7 +120,8 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     .get("/me/developer", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...developerPage)
     .get("/me/app", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...appPage)
     // Admin pages (admin only)
-    .get("/admin", auth.requireRole("admin", ssr.access), ...adminPage)
+    // The administration has no start page of its own: the operations overview, or Apps without it.
+    .get("/admin", auth.requireRole("admin", ssr.access), (c) => c.redirect(adminStart(getRuntimeContext(c).apps, c.req.url), 302))
     // The app bar's shortcuts became the section Navigation of Apps; the old address keeps its parameters.
     .get("/admin/rail", auth.requireRole("admin", ssr.access), (c) => c.redirect(railRedirect(c.req.url), 302))
     .get("/admin/apps/navigation", auth.requireRole("admin", ssr.access), ...railAdminPage)
