@@ -568,6 +568,26 @@ state. Beside a Core from before `v2.css` the page keeps that Core's
 </MinimalLayout>
 ```
 
+By default the content spans the window. Set `measure` to stand it in one
+centered card instead: `measure="page"` for a page such as a programme, at
+most 1200 px wide, and `measure="task"` for one task such as a feedback form,
+at most 560 px wide. From 768 px the card stands on the page's canvas, 48 px
+below the top of the window, and ends with its content; the `Workspace` is the
+card, with its thin edge and rounded corners, so no second box surrounds it.
+The card's edge closes its content, so the last line in each column gives way.
+The window's own background is the canvas too, so pulling past the end of
+the page shows no strip of another color.
+Below 768 px the content keeps the full width and the normal text edge, as
+without a measure. The measure is a rule of Core's `v2.css` on the server's
+markup, so nothing moves while the page loads. Beside a Core from before
+`v2.css` the content spans the window.
+
+```tsx
+<MinimalLayout c={c} ui="v2" measure="task">
+  <FeedbackForm />
+</MinimalLayout>
+```
+
 Without `ui`, the application remains responsible for its one semantic `main`
 landmark and all page styling. Do not add a second language or theme control or a second
 legal-links footer to the page. Do not use `MinimalLayout` as an

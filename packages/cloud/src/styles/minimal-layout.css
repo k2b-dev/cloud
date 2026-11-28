@@ -30,6 +30,57 @@
   color: var(--k2-text);
 }
 
+/* A v2 page in a measure (`MinimalLayout measure`): from 768 px its content stands as one centred card on the
+   canvas, at most 1200 px wide for a page and 560 px for one task, as tall as its content. The card is the content's
+   own surface (a Workspace: 1 px card edge, card radius), never a second box around it. On the phone the content
+   keeps the full width and the text edge, as without a measure. Plain CSS on the server's markup: nothing shifts. */
+@media (min-width: 768px) {
+  .minimal-layout[data-ui="v2"]:has(> .minimal-layout-main[data-measure]),
+  .k2-ui.minimal-layout-main[data-measure] {
+    background: var(--k2-canvas);
+  }
+
+  .minimal-layout-main[data-measure] {
+    box-sizing: border-box;
+    justify-content: center;
+    padding: 48px 24px 24px;
+  }
+
+  /* above the footer the card ends with its content; a kiosk screen's card keeps the window's height */
+  .minimal-layout > .minimal-layout-main[data-measure] {
+    align-items: flex-start;
+  }
+
+  .minimal-layout > .minimal-layout-main[data-measure] > * {
+    height: auto;
+  }
+
+  .minimal-layout-main[data-measure="page"] > * {
+    max-width: 1200px;
+  }
+
+  .minimal-layout-main[data-measure="task"] > * {
+    max-width: 560px;
+  }
+
+  /* the window's own background is the canvas too, so an overscroll (iOS rubber band) shows no strip of the surface;
+     the body's background paints the whole canvas of the window */
+  body.k2-ui:has(.minimal-layout-main[data-measure]) {
+    background-color: var(--k2-canvas);
+  }
+
+  /* the card's edge closes its content: the last line in each of its columns (a section's, a row's, a band's, a bar's,
+     a table's end) gives way, so no line doubles the edge and a shorter column ends without one */
+  .minimal-layout-main[data-measure] .k2-pane > .k2-scroll > :is(.k2-sec, .k2-row, .k2-band, .k2-bar, .k2-cells):last-child,
+  .minimal-layout-main[data-measure] .k2-pane > .k2-scroll > .k2-list:last-child > .k2-row:last-child {
+    border-bottom: 0;
+  }
+
+  .minimal-layout-main[data-measure] .k2-pane > .k2-scroll > .k2-table-scroll:nth-last-child(1 of :not(.k2-table-phone)) {
+    --k2-table-end: 0;
+  }
+}
+
 /* The visitor footer on v2: the legal links and the language and theme menus, quiet, centred, in v2's words and
    lines. On touch screens every control is at least 44 px tall. */
 .minimal-layout-footer[data-ui="v2"] {

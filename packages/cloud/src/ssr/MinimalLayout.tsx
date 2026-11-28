@@ -32,6 +32,12 @@ export type MinimalLayoutProps = {
    * footer with the legal links and the language and theme settings stays as it is.
    */
   ui?: "v2";
+  /**
+   * With `ui="v2"`: from 768 px the content stands as a centred card on the page's canvas, at most 1200 px wide for a
+   * page (`"page"`, a venue's programme) or 560 px for one task (`"task"`, a feedback form), as tall as its content. On
+   * the phone it keeps the full width and the text edge. Without it the content spans the window.
+   */
+  measure?: "page" | "task";
 };
 
 /** A v2 page beside an older Core: the frame its sheet lacks, inline (the page fills the window above the footer). */
@@ -62,11 +68,14 @@ export default function MinimalLayout(props: MinimalLayoutProps) {
   // Without the footer the main area is the v2 scope; with it, the whole page is (see below), or beside an older Core
   // the main area alone.
   // (A `style` is written only where it is set: Solid's server writes an empty one for `undefined`.)
+  // The measure is a rule of the v2 sheet; beside an older Core, whose sheet lacks it, the content spans the window.
   const content = (scope: boolean, kiosk: boolean) =>
     !v2 ? (
       props.children
     ) : v2Sheet ? (
-      <main class={scope ? "k2-ui minimal-layout-main" : "minimal-layout-main"}>{props.children}</main>
+      <main class={scope ? "k2-ui minimal-layout-main" : "minimal-layout-main"} data-measure={props.measure}>
+        {props.children}
+      </main>
     ) : (
       <main class="k2-ui minimal-layout-main" style={kiosk ? `${OLDER_CORE.main};height:100dvh` : OLDER_CORE.main}>
         {props.children}
