@@ -31,7 +31,12 @@ import { SettingsTabs } from "./SettingsTabs";
 export type SettingsScreenProps = {
   nav: NavProps;
   timeZone: string;
+  /** The first alerts in name order; null when they could not be read. */
   webhooks: HealthWebhook[] | null;
+  /** More alerts exist than the list shows. */
+  more: boolean;
+  /** The open alert, read on its own, so one beyond the list opens too. */
+  openWebhook: HealthWebhook | null;
   apps: HealthApp[];
   /** The open alert: an id, "new" for the form of a new one, or null. */
   open: string | null;
@@ -56,7 +61,8 @@ export default function SettingsScreen(props: SettingsScreenProps) {
   const g = () => gatewayOpsMessages.resolve([locale()]).t;
   const toast = useToast();
   const add = () => ({ label: t().addWebhook, icon: "plus", href: webhookHref("new") });
-  const selected = () => (props.open && props.open !== "new" ? (props.webhooks?.find((row) => row.id === props.open) ?? null) : null);
+  const selected = () =>
+    props.open && props.open !== "new" ? (props.webhooks?.find((row) => row.id === props.open) ?? props.openWebhook) : null;
   const remove = async (webhook: HealthWebhook) => {
     if (
       !(await confirm({
@@ -125,6 +131,11 @@ export default function SettingsScreen(props: SettingsScreenProps) {
                     )}
                   </For>
                 </List>
+                <Show when={props.more}>
+                  <Text type="meta" muted>
+                    {t().alertsFirst({ count: webhooks().length })}
+                  </Text>
+                </Show>
               </Show>
             )}
           </Show>

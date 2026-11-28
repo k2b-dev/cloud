@@ -348,6 +348,85 @@ describe("the service pages of Observability on v2", () => {
     }
   }, 60_000);
 
+  test("a save that stops after an earlier step says what is saved and what is open, and the retry writes only the rest", async () => {
+    const puts: { path: string; body: unknown }[] = [];
+    let refuseLogs = true;
+    const { context, tab, errors } = await open(desktop, "general", "/admin/observability/settings/general", {
+      api: (route, url) => {
+        puts.push({ path: url.pathname, body: route.request().postDataJSON() });
+        if (url.pathname === "/api/logging/settings/retention" && refuseLogs)
+          return route.fulfill({ status: 400, json: { message: "Logs müssen mindestens 7 Tage bleiben." } });
+        return route.fulfill({ json: { success: true } });
+      },
+    });
+    try {
+      await tab.getByRole("textbox", { name: /^Prüfplan/ }).fill("*/10 * * * *");
+      const logs = tab.getByRole("spinbutton", { name: /^Logs/ });
+      await logs.fill("3");
+      await tab.getByRole("button", { name: "Speichern" }).click();
+      const notice = tab.getByText("Teilweise gespeichert.");
+      await notice.waitFor();
+      const text = await tab.locator('[data-k2-part="Notice"]', { hasText: "Teilweise gespeichert." }).innerText();
+      expect(text).toContain("Gespeichert: Prüfplan.");
+      expect(text).toContain("Noch offen: Logs.");
+      expect(await logs.getAttribute("aria-invalid")).toBe("true");
+      expect(await tab.getByText("Logs müssen mindestens 7 Tage bleiben.").count()).toBeGreaterThan(0);
+      expect(puts.map((put) => put.path)).toEqual([
+        "/api/gateway/settings/gateway.health_check_schedule",
+        "/api/logging/settings/retention",
+      ]);
+      // the retry writes only what is still open; the schedule stays saved
+      refuseLogs = false;
+      await logs.fill("7");
+      await tab.getByRole("button", { name: "Speichern" }).click();
+      await tab
+        .getByText(/^Gespeichert/)
+        .first()
+        .waitFor();
+      expect(puts.slice(2)).toEqual([{ path: "/api/logging/settings/retention", body: { retentionDays: 7, replaceUnreadable: false } }]);
+      expect(await notice.count()).toBe(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a bare server error while a retention value is written leaves the outcome unclear and names what was saved before", async () => {
+    const { context, tab, errors } = await open(desktop, "general", "/admin/observability/settings/general", {
+      api: (route, url) =>
+        url.pathname.endsWith("gateway.telemetry_event_retention_days")
+          ? route.fulfill({ status: 503, body: "Service Unavailable" })
+          : route.fulfill({ json: { success: true } }),
+    });
+    try {
+      await tab.getByRole("spinbutton", { name: /^Logs/ }).fill("30");
+      await tab.getByRole("spinbutton", { name: /^Anfragen(?! je)/ }).fill("21");
+      await tab.getByRole("button", { name: "Speichern" }).click();
+      await tab.getByText("Die Verbindung brach beim Speichern ab.").waitFor();
+      expect(await tab.getByText(/Vor dem Abbruch gespeichert: Logs\./).count()).toBe(1);
+      expect(await tab.getByText("Nicht gespeichert.").count()).toBe(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a cleared days field stays empty and blocks Save until it holds a whole number", async () => {
+    const { context, tab, errors } = await open(desktop, "general", "/admin/observability/settings/general");
+    try {
+      const logs = tab.getByRole("spinbutton", { name: /^Logs/ });
+      await logs.fill("");
+      expect(await logs.inputValue()).toBe("");
+      expect(await tab.getByRole("button", { name: "Speichern" }).isDisabled()).toBe(true);
+      expect(await tab.getByText("Mindestens 1 Tag.").count()).toBeGreaterThan(0);
+      await logs.fill("21");
+      expect(await tab.getByRole("button", { name: "Speichern" }).isDisabled()).toBe(false);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
   test("a new metrics token takes a quick expiry or its own day, ending that day in the person's zone", async () => {
     const posts: { expiresAt: string | null }[] = [];
     const { context, tab, errors } = await open(desktop, "metrics", "/admin/observability/metrics", {
