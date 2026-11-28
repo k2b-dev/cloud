@@ -31,17 +31,6 @@ import {
 import type { SQL } from "bun";
 
 /**
- * The state vocabularies below are inlined as literal SQL rather than shared
- * constants because `.simple()` admits no bind parameters. They are a
- * projection of the kernel's own `WorkflowRunState`, `WorkflowStepOutcome` and
- * `WorkflowPlanningOutcome` discriminants — a state only one app can enter is
- * a state the other app's UI renders wrong, so nothing is invented here.
- */
-/**
- * `db` lets a test point this at an isolated connection. Production always uses
- * the ambient one, through `runCoreSetup`.
- */
-/**
  * The newest top-level runs across all workflows, of everything or of one app: the run list and the timeline of
  * Betrieb read them without a workflow or scope filter. Built next to live run writes after the migration.
  */
@@ -54,6 +43,17 @@ const RUN_LIST_INDEXES: ConcurrentIndex[] = [
   },
 ];
 
+/**
+ * The state vocabularies below are inlined as literal SQL rather than shared
+ * constants because `.simple()` admits no bind parameters. They are a
+ * projection of the kernel's own `WorkflowRunState`, `WorkflowStepOutcome` and
+ * `WorkflowPlanningOutcome` discriminants — a state only one app can enter is
+ * a state the other app's UI renders wrong, so nothing is invented here.
+ */
+/**
+ * `db` lets a test point this at an isolated connection. Production always uses
+ * the ambient one, through `runCoreSetup`.
+ */
 export const migrate = async (db: SQL = sql): Promise<void> => {
   await db`CREATE SCHEMA IF NOT EXISTS workflows`.simple();
   console.log("  ✓ workflows schema");
