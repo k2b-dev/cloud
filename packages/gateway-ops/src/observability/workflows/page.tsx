@@ -27,7 +27,7 @@ import { observabilityAdminNav } from "../_components/admin-nav";
 import type { KeyCell } from "../_components/KeyCells";
 import { areaText, readAttention } from "../_components/ObservabilityArea";
 import WorkflowsScreen, { type RunDetailView, type Worded } from "./_components/WorkflowsScreen.island";
-import { FINDINGS_PER_PAGE, RUNS_PER_PAGE, type WindowFilter, type WorkflowView, windowStart } from "./filters";
+import { FINDINGS_PER_PAGE, RUNS_PER_PAGE, TIMELINE_SAMPLE, type WindowFilter, type WorkflowView, windowStart } from "./filters";
 import { eventState, LAG_WARN_MS, runErrorSummary, stepDetail } from "./presentation";
 import { findingsQuery, legacyWorkflowsHref, runsQuery, workflowRunsHref, workflowsHref } from "./query";
 import { buildWorkflowTimelineRows } from "./timeline";
@@ -141,7 +141,7 @@ export default ssr<AuthContext>(async (c) => {
     run ? getWorkflowRun(run) : Promise.resolve(null),
     workflowHealth({ since }),
     showFamilies ? listWorkflowFamilies({ ...runFilter, limit: RUNS_PER_PAGE + 1, offset }) : Promise.resolve([]),
-    view === "runs" ? listWorkflowRunTimeline(runFilter, { limit: 2_000 }) : Promise.resolve({ runs: [], total: 0 }),
+    view === "runs" ? listWorkflowRunTimeline(runFilter, { limit: TIMELINE_SAMPLE }) : Promise.resolve({ runs: [], total: 0 }),
     view === "effects"
       ? listStrandedWorkflowEffects({ appId: filters.app || undefined, limit: FINDINGS_PER_PAGE + 1, offset })
       : Promise.resolve([]),
