@@ -3,24 +3,31 @@ import { read } from "@k2b/cloud/services";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import type { HealthApp, HealthWebhook } from "../../frontend/health-webhook-queries";
-import { isHealthWebhookId, listHealthWebhooks } from "../../health-webhooks";
+import { getHealthWebhook, isHealthWebhookId, listHealthWebhooks } from "../../health-webhooks";
 import { observabilityAdminNav } from "../_components/admin-nav";
 import { areaText, readAttention, readHealth } from "../_components/ObservabilityArea";
 import SettingsFormScreen from "./_components/SettingsFormScreen.island";
 import SettingsScreen from "./_components/SettingsScreen.island";
+
+/** Alerts the list shows, in name order; a person with more finds the rest through the address of each. */
+export const ALERTS_SHOWN = 100;
 
 /** Alerts: the list of health webhooks, the open one (`?webhook=<id>`) or a new one (`?webhook=new`) beside it. */
 export const alertsPage = ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const param = new URL(c.req.url).searchParams.get("webhook");
   const open = param === "new" || (param && isHealthWebhookId(param)) ? param : null;
-  const [attention, webhooks, health] = await Promise.all([
+  const [attention, webhooks, health, opened] = await Promise.all([
     readAttention(),
-    listHealthWebhooks().catch(() => null),
+    // one more than shown, to know whether more exist
+    listHealthWebhooks({ limit: ALERTS_SHOWN + 1 }).catch(() => null),
     readHealth().catch(() => null),
+    // the open alert on its own, so one beyond the first page still opens
+    open && open !== "new" ? getHealthWebhook(open).catch(() => null) : null,
   ]);
   // The island receives plain JSON, as the API would send it.
-  const rows: HealthWebhook[] | null = webhooks ? JSON.parse(JSON.stringify(webhooks)) : null;
+  const rows: HealthWebhook[] | null = webhooks ? JSON.parse(JSON.stringify(webhooks.slice(0, ALERTS_SHOWN))) : null;
+  const openWebhook: HealthWebhook | null = opened ? JSON.parse(JSON.stringify(opened)) : null;
   const apps: HealthApp[] = (health?.apps ?? []).map((app) => ({
     id: app.id,
     name: app.name,
@@ -36,6 +43,8 @@ export const alertsPage = ssr<AuthContext>(async (c) => {
         nav={observabilityAdminNav(c, locale, attention, "settings")}
         timeZone={getTimeZone(c)}
         webhooks={rows}
+        more={(webhooks?.length ?? 0) > ALERTS_SHOWN}
+        openWebhook={openWebhook}
         apps={apps}
         open={open}
       />

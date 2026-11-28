@@ -61,7 +61,15 @@ export const SettingsScreenFixture = (props: {
   return (
     <LocaleProvider locale={locale}>
       {area === "alerts" ? (
-        <SettingsScreen nav={fixtureNav} timeZone="Europe/Berlin" webhooks={webhooks} apps={apps} open={props.open ?? null} />
+        <SettingsScreen
+          nav={fixtureNav}
+          timeZone="Europe/Berlin"
+          webhooks={webhooks}
+          more={props.worst === true}
+          openWebhook={null}
+          apps={apps}
+          open={props.open ?? null}
+        />
       ) : (
         <SettingsFormScreen
           nav={fixtureNav}
